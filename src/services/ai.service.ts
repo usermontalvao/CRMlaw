@@ -491,6 +491,84 @@ Responda com um JSON: {"actions": ["ação 1", "ação 2", "ação 3"]}`;
   }
 
   /**
+   * Gera o corpo (HTML) de um e-mail a partir de uma instrução curta do usuário —
+   * usado pelo botão "Escrever com IA" do compose de e-mail. Nunca inclui
+   * assinatura (o compose já anexa a do usuário depois) nem markdown; retorna
+   * um fragmento HTML pronto para inserir direto no editor.
+   */
+  async generateEmailDraft(params: {
+    instruction: string;
+    tone?: 'formal' | 'cordial' | 'direto';
+    to?: string;
+    subject?: string;
+  }): Promise<{ subject: string; html: string }> {
+    if (!this.isEnabled()) throw new Error('Serviço de IA não está disponível');
+
+    const instruction = String(params.instruction || '').trim();
+    if (!instruction) throw new Error('Descreva o que o e-mail deve dizer');
+
+    await this.ensureSettingsLoaded();
+    const taskOpts = this.getTaskOpts('email_compose');
+
+    const toneLabel = {
+      formal: 'formal e distante, próprio para autoridades ou partes contrárias',
+      cordial: 'cordial e profissional, próprio para clientes',
+      direto: 'direto e objetivo, frases curtas, sem rodeios',
+    }[params.tone ?? 'cordial'];
+
+    const defaultSystemPrompt = `Você é o assistente de redação de um escritório de advocacia brasileiro. Escreva o CORPO de um e-mail em HTML, pronto para ser inserido direto num editor visual.
+
+NUNCA escreva assinatura, nome do remetente, cargo, telefone ou dados de contato no final — isso já é adicionado automaticamente depois do seu texto.
+
+Conteúdo:
+- Tom: ${toneLabel}. Direto ao ponto — nada de "frufru", enrolação ou linguagem de carta cartorial.
+- Saudação padrão: "Prezados," (é assim que este escritório sempre começa). Só use "Prezado(a) [Nome]," se um nome específico de destinatário for informado, e "Olá," apenas se a instrução pedir um tom bem informal.
+- Vá direto ao assunto já no primeiro parágrafo. Não use frases de abertura vazias como "Vimos por meio deste e-mail...", "Vimos por meio do presente...", "Esperamos que esta mensagem o encontre bem.".
+- Desenvolva exatamente o que foi pedido, de forma clara, objetiva e no menor número de frases possível. Não invente fatos, valores, prazos, número de processo ou documentos que não foram informados na instrução.
+- Encerramento: NUNCA use fórmulas prontas e infladas como "Informamos que estamos à disposição para prestar eventuais esclarecimentos adicionais que se façam necessários", "Colocamo-nos à inteira disposição para quaisquer esclarecimentos que se façam necessários" ou variações. Se fizer sentido oferecer contato, use no máximo uma frase curta (ex.: "Qualquer dúvida, estamos à disposição."). Termine com "Atenciosamente," — sem nome depois.
+- Corte qualquer frase que não agregue informação nova. Prefira um e-mail curto e direto a um e-mail "completo" com enchimento.
+- Português do Brasil, gramática impecável, sem erros de digitação.
+
+Formatação HTML (capriche — isso é o que diferencia um e-mail profissional de um rascunho):
+- Retorne um FRAGMENTO HTML válido — sem <html>, <head>, <body> ou DOCTYPE.
+- Um parágrafo por ideia, sempre dentro de <p style="margin:0 0 14px 0">...</p> (nunca use <br><br> para separar parágrafos, e nunca deixe o parágrafo sem esse style — é o que garante o espaçamento entre parágrafos no e-mail final).
+- Listas (<ul style="margin:0 0 14px 0"> / <ol style="margin:0 0 14px 0">) seguem a mesma regra de espaçamento.
+- O último elemento do corpo (geralmente o parágrafo de encerramento) não precisa de margem inferior.
+- Use <strong> para destacar datas, prazos, valores em dinheiro e nomes de documentos importantes — com moderação, só o que realmente importa.
+- Se houver 3 ou mais itens (documentos, passos, pendências), use <ul><li> em vez de listar no meio do parágrafo.
+- Não use markdown (nada de **, #, -, \`\`\`), não use cores nem fontes. O ÚNICO estilo inline permitido é a margem de espaçamento acima — nenhum outro.
+
+Responda APENAS com um JSON válido, sem texto antes ou depois:
+{"subject": "assunto sugerido, curto e específico (string vazia se não fizer sentido sugerir um)", "html": "o fragmento HTML do corpo do e-mail"}`;
+
+    const systemPrompt = this.getPrompt('email_compose', defaultSystemPrompt);
+
+    const userPrompt = [
+      params.to ? `Destinatário: ${params.to}` : '',
+      params.subject ? `Assunto atual do e-mail: ${params.subject}` : 'Assunto atual do e-mail: (vazio — sugira um se fizer sentido)',
+      `O que o e-mail deve dizer:\n${instruction}`,
+    ].filter(Boolean).join('\n\n');
+
+    const content = await this.generateText(systemPrompt, userPrompt, Math.max(taskOpts.maxTokens, 900), 'email_compose');
+    if (!content) throw new Error('IA não retornou o e-mail');
+
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const raw = jsonMatch ? jsonMatch[0] : content;
+    let parsed: { subject?: string; html?: string };
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // A IA respondeu sem o wrapper JSON: trata a resposta inteira como o HTML do corpo.
+      parsed = { html: content };
+    }
+
+    const html = String(parsed.html || '').trim();
+    if (!html) throw new Error('IA não retornou o corpo do e-mail');
+
+    return { subject: String(parsed.subject || '').trim(), html };
+  }
+
+  /**
    * Formata texto usando IA - funciona para qualquer tipo de texto
    * Detecta automaticamente o tipo de texto e aplica formatação apropriada
    */

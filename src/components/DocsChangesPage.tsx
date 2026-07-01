@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.282': { name: 'Cafe Rascunho Persistente', emoji: '[mail]' },
   '1.10.281': { name: 'Cafe Revisao Contextual', emoji: '[memo]' },
   '1.10.280': { name: 'Cafe Editor Unificado', emoji: '[memo]' },
   '1.10.279': { name: 'Cafe Financeiro em Definicao', emoji: '[coffee]' },
@@ -933,6 +934,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.282',
+    date: '01/07/2026',
+    summary: 'O compose de email passou a manter rascunhos minimizados entre recargas e retornos ao módulo, enquanto os apoios de IA e ambiente de desenvolvimento desta entrega foram registrados no mesmo checkpoint.',
+    modules: [
+      { moduleId: 'email', changes: [
+        { type: 'feature' as const, title: 'Rascunho minimizado passou a persistir por usuário', description: 'O módulo de email agora salva qual rascunho estava aberto e se ele estava minimizado, restaurando automaticamente esse estado após atualizar a página ou voltar ao módulo.' },
+        { type: 'improvement' as const, title: 'Preferências do compose ganharam cache local e persistência remota', description: 'O estado do composer passou a usar localStorage como retomada imediata e dashboard preferences no Supabase para seguir o usuário entre sessões.' },
+      ]},
+      { moduleId: 'peticoes', changes: [
+        { type: 'improvement' as const, title: 'Apoios de IA seguiram integrados ao shell de edição', description: 'Os serviços auxiliares de IA e os pontos de edição relacionados foram mantidos no mesmo pacote desta release para preservar coerência operacional entre compose e editores do CRM.' },
+      ]},
+      { moduleId: 'configuracoes', changes: [
+        { type: 'improvement' as const, title: 'Ambiente local ganhou atalho adicional de execução', description: 'A configuração de launch local recebeu um perfil complementar para facilitar abertura rápida do fluxo de desenvolvimento durante testes internos.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.281',
     date: '01/07/2026',

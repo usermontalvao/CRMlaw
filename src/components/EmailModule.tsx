@@ -6,14 +6,17 @@ import {
   Settings, Type, Printer, PenLine, SlidersHorizontal, ShieldCheck, Plus, X,
   Bold, Italic, Underline, List, ListOrdered, Link2,
   Strikethrough, AlignLeft, AlignCenter, AlignRight, Quote, RemoveFormatting, Palette, ChevronDown,
-  AlertCircle, ChevronLeft, Keyboard, ImageOff, Star, Ban,
+  AlertCircle, ChevronLeft, Keyboard, ImageOff, Star, Ban, Sparkles, User,
 } from 'lucide-react';
 import { emailService } from '../services/email.service';
+import { aiService } from '../services/ai.service';
+import { clientService } from '../services/client.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../config/supabase';
 import type { EmailFolder, EmailMessage, EmailSignature, SendEmailDTO, EmailSpamRule, SpamRuleKind, SpamRuleMatch } from '../types/email.types';
+import type { Client } from '../types/client.types';
 import { Modal, ModalBody, ModalFooter, Button, Input, Label } from './ui';
 import { resolveFolder } from '../utils/email.transitions';
 
@@ -38,6 +41,7 @@ const LS_FOLDERS_W = 'email:foldersW';
 const LS_LIST_W = 'email:listW';
 const LS_PREFS = 'email:prefs';
 const LS_SHOWN_IMAGES = 'email:shownImages';
+const LS_COMPOSE_UI = 'email:composeUi';
 
 // Memória de "imagens liberadas" por mensagem. Uma vez que o usuário clica em
 // "Exibir imagens" num e-mail, não faz sentido bloquear de novo toda vez que ele
@@ -81,6 +85,11 @@ interface EmailPrefs {
   autoMarkRead: boolean;
 }
 
+interface EmailComposeUiPrefs {
+  activeDraftId: string | null;
+  composeMinimized: boolean;
+}
+
 const DEFAULT_PREFS: EmailPrefs = { perPage: 50, autoMarkRead: true };
 
 function loadPrefs(): EmailPrefs {
@@ -90,6 +99,20 @@ function loadPrefs(): EmailPrefs {
     return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
   } catch {
     return DEFAULT_PREFS;
+  }
+}
+
+function loadComposeUiPrefs(): EmailComposeUiPrefs {
+  try {
+    const raw = localStorage.getItem(LS_COMPOSE_UI);
+    if (!raw) return { activeDraftId: null, composeMinimized: false };
+    const parsed = JSON.parse(raw);
+    return {
+      activeDraftId: typeof parsed?.activeDraftId === 'string' ? parsed.activeDraftId : null,
+      composeMinimized: !!parsed?.composeMinimized,
+    };
+  } catch {
+    return { activeDraftId: null, composeMinimized: false };
   }
 }
 
@@ -453,6 +476,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeExpanded, setComposeExpanded] = useState(false);
+  const [composeMinimized, setComposeMinimized] = useState(false);
   // Inline = responder/encaminhar no rodapé da conversa (sem sair da leitura).
   // Quando false e composeOpen, abre o compose em tela cheia (e-mail novo).
   const [composeInline, setComposeInline] = useState(false);
@@ -491,6 +515,8 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const [ruleForm, setRuleForm] = useState<{ kind: SpamRuleKind; match_type: SpamRuleMatch; value: string }>({
     kind: 'whitelist', match_type: 'address', value: '',
   });
+  const composeUiRef = useRef<EmailComposeUiPrefs>(loadComposeUiPrefs());
+  const restoredDraftRef = useRef<string | null>(null);
 
   // Ids que devem PERMANECER na lista mesmo após saírem do filtro atual — ex.: no
   // filtro "Não lidas", o e-mail que você abre vira lido mas não pode sumir/fechar
@@ -585,6 +611,11 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const openMessage = async (m: EmailMessage) => {
     // Fecha uma resposta inline aberta ao navegar para outra mensagem.
     if (composeInline) { setComposeOpen(false); setComposeInline(false); }
+    if (composeOpenRef.current && !composeInline) {
+      setComposeExpanded(false);
+      setComposeMinimized(true);
+      persistComposeUiState({ composeMinimized: true });
+    }
     setSelected(m);
     setFocusedId(m.id);
     // Abriu o e-mail: a notificação de "novo e-mail" no sino não deve mais
@@ -958,6 +989,25 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     return `<p><br></p><p><br></p>${sigBlock}${quoteHtml}`;
   };
 
+  const persistComposeUiState = useCallback((override?: Partial<EmailComposeUiPrefs>) => {
+    const next: EmailComposeUiPrefs = {
+      ...composeUiRef.current,
+      activeDraftId: draftIdRef.current ?? null,
+      composeMinimized,
+      ...override,
+    };
+    composeUiRef.current = next;
+    try { localStorage.setItem(LS_COMPOSE_UI, JSON.stringify(next)); } catch { /* noop */ }
+    if (user?.id) {
+      dashboardPreferencesService.saveEmailLayoutPrefs(user.id, {
+        foldersW: widthsRef.current.foldersW,
+        listW: widthsRef.current.listW,
+        activeDraftId: next.activeDraftId,
+        composeMinimized: next.composeMinimized,
+      }).catch(() => {});
+    }
+  }, [composeMinimized, user?.id]);
+
   const startCompose = (preset?: Partial<ComposeState>, inline = false) => {
     const next = { ...emptyCompose, bodyHtml: buildInitialBody(), ...preset };
     // Novo compose: zera o rastreio de rascunho. Não há rascunho até o usuário digitar.
@@ -969,7 +1019,10 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     setSendError(null);
     setFieldErrors({});
     setComposeInline(inline);
+    setComposeMinimized(false);
+    setComposeExpanded(false);
     setComposeOpen(true);
+    persistComposeUiState({ activeDraftId: null, composeMinimized: false });
   };
 
   // Abre um rascunho existente no compose para continuar editando.
@@ -992,8 +1045,24 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     setDraftStatus('saved');
     setCompose(next);
     setSendError(null);
+    setComposeInline(false);
+    setComposeMinimized(false);
+    setComposeExpanded(false);
     setComposeOpen(true);
+    persistComposeUiState({ activeDraftId: m.id, composeMinimized: false });
   };
+
+  const discardCompose = () => {
+    setComposeOpen(false);
+    setComposeInline(false);
+    setComposeMinimized(false);
+    setComposeExpanded(false);
+    persistComposeUiState({ activeDraftId: null, composeMinimized: false });
+  };
+
+  useEffect(() => {
+    if (composeOpen && !composeInline) persistComposeUiState({ composeMinimized });
+  }, [composeOpen, composeInline, composeMinimized, persistComposeUiState]);
 
   // Autosave do rascunho: salva 1,5s após parar de digitar, só se mudou desde a abertura.
   useEffect(() => {
@@ -1010,6 +1079,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
           inReplyTo: compose.inReplyTo, threadKey: compose.threadKey, clientId: compose.clientId,
         });
         draftIdRef.current = id;
+        persistComposeUiState({ activeDraftId: id });
         lastSavedKeyRef.current = key;
         setDraftStatus('saved');
         if (folder === 'drafts') void load(true);
@@ -1137,6 +1207,9 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       const wasInline = composeInline;
       setComposeOpen(false);
       setComposeInline(false);
+      setComposeMinimized(false);
+      setComposeExpanded(false);
+      persistComposeUiState({ activeDraftId: null, composeMinimized: false });
       // Resposta inline: recarrega a thread para mostrar a mensagem enviada.
       if (wasInline && selected?.thread_key) {
         emailService.listThread(selected.thread_key).then((msgs) => { if (msgs.length) setThread(msgs); }).catch(() => {});
@@ -1263,10 +1336,37 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
+    const cachedUi = loadComposeUiPrefs();
+    composeUiRef.current = cachedUi;
+    if (cachedUi.activeDraftId && restoredDraftRef.current !== cachedUi.activeDraftId) {
+      restoredDraftRef.current = cachedUi.activeDraftId;
+      emailService.getMessage(cachedUi.activeDraftId)
+        .then((m) => {
+          if (cancelled || !m?.is_draft) return;
+          openDraft(m);
+          setComposeMinimized(!!cachedUi.composeMinimized);
+        })
+        .catch(() => {});
+    }
     dashboardPreferencesService.getEmailLayoutPrefs(user.id).then((p) => {
       if (cancelled || !p) return;
       if (typeof p.foldersW === 'number') { setFoldersW(clamp(p.foldersW, 120, 280)); localStorage.setItem(LS_FOLDERS_W, String(p.foldersW)); }
       if (typeof p.listW === 'number') { setListW(clamp(p.listW, 220, 540)); localStorage.setItem(LS_LIST_W, String(p.listW)); }
+      composeUiRef.current = {
+        activeDraftId: typeof p.activeDraftId === 'string' ? p.activeDraftId : null,
+        composeMinimized: !!p.composeMinimized,
+      };
+      try { localStorage.setItem(LS_COMPOSE_UI, JSON.stringify(composeUiRef.current)); } catch { /* noop */ }
+      if (composeUiRef.current.activeDraftId && restoredDraftRef.current !== composeUiRef.current.activeDraftId) {
+        restoredDraftRef.current = composeUiRef.current.activeDraftId;
+        emailService.getMessage(composeUiRef.current.activeDraftId)
+          .then((m) => {
+            if (cancelled || !m?.is_draft) return;
+            openDraft(m);
+            setComposeMinimized(!!composeUiRef.current.composeMinimized);
+          })
+          .catch(() => {});
+      }
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [user?.id]);
@@ -1312,7 +1412,11 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       };
       localStorage.setItem(LS_FOLDERS_W, String(next.foldersW));
       localStorage.setItem(LS_LIST_W, String(next.listW));
-      if (user?.id) dashboardPreferencesService.saveEmailLayoutPrefs(user.id, next).catch(() => {});
+      if (user?.id) dashboardPreferencesService.saveEmailLayoutPrefs(user.id, {
+        ...next,
+        activeDraftId: composeUiRef.current.activeDraftId,
+        composeMinimized: composeUiRef.current.composeMinimized,
+      }).catch(() => {});
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -1568,7 +1672,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
         {/* Leitura — full-width no mobile; oculta quando nenhuma mensagem aberta */}
         <div className={`${!selected && !composeOpen && isNarrow ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col md:flex`}>
-          {composeOpen && !composeInline ? (
+          {composeOpen && !composeInline && !composeMinimized ? (
             /* Compose de novo e-mail embutido como 3ª coluna */
             <div className="flex min-h-0 flex-1 flex-col"
               onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!sending) void doSend(); } }}>
@@ -1588,7 +1692,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                       ? <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
                       : <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>}
                   </button>
-                  <button onClick={() => { setComposeOpen(false); setComposeExpanded(false); }}
+                  <button onClick={discardCompose}
                     className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12px] text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300">
                     Cancelar
                   </button>
@@ -1654,6 +1758,8 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                     initialHtml={compose.bodyHtml}
                     onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))}
                     onAttach={addAttachments}
+                    aiContext={{ to: compose.to, subject: compose.subject }}
+                    onSubjectSuggested={(s) => setCompose((c) => (c.subject.trim() ? c : { ...c, subject: s }))}
                   />
                 </div>
                 {compose.attachments.length > 0 && (
@@ -1704,13 +1810,22 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                 ]}
               />
               <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
                   <h3 className="text-[16px] font-medium text-zinc-900 dark:text-zinc-100">{selected.subject || '(sem assunto)'}</h3>
                   {thread.length > 1 && (
                     <span className="flex-none rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500">
                       {thread.length} mensagens
                     </span>
                   )}
+                  <div className="ml-auto">
+                    <ClientLinkChip
+                      message={selected}
+                      onLinked={(clientId) => {
+                        setSelected((prev) => (prev ? { ...prev, client_id: clientId } : prev));
+                        setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, client_id: clientId } : m)));
+                      }}
+                    />
+                  </div>
                 </div>
 
                 {(selected.is_spam || (selected.spam_reason && (selected.spam_score ?? 0) > 0)) && (
@@ -1800,7 +1915,9 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                       </div>
 
                       <RichEditor key={compose.inReplyTo ?? 'inline'} initialHtml={compose.bodyHtml} autoFocus
-                        onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))} onAttach={addAttachments} />
+                        onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))} onAttach={addAttachments}
+                        aiContext={{ to: compose.to, subject: compose.subject }}
+                        onSubjectSuggested={(s) => setCompose((c) => (c.subject.trim() ? c : { ...c, subject: s }))} />
 
                       {compose.attachments.length > 0 && (
                         <div className="flex flex-wrap gap-2">
@@ -1852,7 +1969,36 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       )}
 
       {/* Compose expandido (tela cheia sobre o módulo) */}
-      {composeOpen && !composeInline && composeExpanded && (
+      {composeOpen && !composeInline && composeMinimized && (
+        <div className="fixed bottom-[88px] right-5 z-[9990] flex items-center gap-2 rounded-2xl border border-[#e7e5df] bg-white px-3 py-2 shadow-[0_10px_30px_-10px_rgba(15,23,42,0.35)] sm:right-6">
+          <button
+            type="button"
+            onClick={() => setComposeMinimized(false)}
+            className="flex items-center gap-2 text-left"
+            title="Restaurar rascunho"
+          >
+            <PenSquare className="h-4 w-4 text-amber-600" />
+            <div className="min-w-0">
+              <div className="max-w-[180px] truncate text-[12px] font-medium text-zinc-800">
+                {compose.subject || 'Nova mensagem'}
+              </div>
+              <div className="max-w-[180px] truncate text-[11px] text-zinc-400">
+                {compose.to || 'Rascunho em andamento'}
+              </div>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={discardCompose}
+            className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600"
+            title="Fechar rascunho"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {composeOpen && !composeInline && !composeMinimized && composeExpanded && (
         <div className="absolute inset-0 z-30 flex flex-col bg-white dark:bg-zinc-950"
           onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (!sending) void doSend(); } }}>
           <div className="flex flex-none items-center justify-between border-b border-[#e7e5df] px-5 py-3 dark:border-zinc-800">
@@ -1867,7 +2013,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                 className="rounded-lg border border-[#e7e5df] bg-white p-1.5 text-zinc-500 hover:bg-zinc-50 dark:bg-zinc-800">
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
               </button>
-              <button onClick={() => { setComposeOpen(false); setComposeExpanded(false); }}
+              <button onClick={discardCompose}
                 className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[13px] text-zinc-600 hover:bg-zinc-50">Cancelar</button>
               <button onClick={doSend} disabled={sending}
                 className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-1.5 text-[13px] font-medium text-white hover:bg-amber-700 disabled:opacity-60">
@@ -1913,7 +2059,9 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
             </div>
             <div className="min-h-0 flex-1 overflow-hidden">
               <RichEditor key={(compose.inReplyTo ?? 'new') + '-exp'} fill initialHtml={compose.bodyHtml}
-                onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))} onAttach={addAttachments} />
+                onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))} onAttach={addAttachments}
+                aiContext={{ to: compose.to, subject: compose.subject }}
+                onSubjectSuggested={(s) => setCompose((c) => (c.subject.trim() ? c : { ...c, subject: s }))} />
             </div>
             {compose.attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 border-t border-[#f0efe9] pt-2">
@@ -2204,6 +2352,140 @@ function AttachmentChips({ m }: { m: EmailMessage }) {
   );
 }
 
+type ClientLite = Pick<Client, 'id' | 'full_name' | 'email' | 'phone' | 'mobile' | 'status' | 'client_type'>;
+
+/**
+ * Chip de vínculo e-mail↔cliente, na leitura. Sem vínculo: sugere automaticamente
+ * se o remetente/destinatário bate com o e-mail cadastrado de algum cliente
+ * (match exato, sem IA), ou permite buscar manualmente. Com vínculo: mostra o
+ * nome e permite desvincular.
+ */
+function ClientLinkChip({ message, onLinked }: { message: EmailMessage; onLinked: (clientId: string | null) => void }) {
+  const [linkedName, setLinkedName] = useState<string | null>(null);
+  const [loadingName, setLoadingName] = useState(false);
+  const [suggested, setSuggested] = useState<{ id: string; full_name: string } | null>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<ClientLite[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setLinkedName(null);
+    if (!message.client_id) return;
+    let cancelled = false;
+    setLoadingName(true);
+    clientService.getClientById(message.client_id)
+      .then((c) => { if (!cancelled) setLinkedName(c?.full_name ?? null); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingName(false); });
+    return () => { cancelled = true; };
+  }, [message.client_id]);
+
+  useEffect(() => {
+    setSuggested(null);
+    if (message.client_id) return;
+    const addr = message.direction === 'inbound'
+      ? message.from_address
+      : addressOf(parseRecipients(message.to_text || '')[0] || '');
+    if (!addr) return;
+    let cancelled = false;
+    clientService.getClientByEmail(addr)
+      .then((c) => { if (!cancelled && c) setSuggested({ id: c.id, full_name: c.full_name }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [message.id, message.client_id, message.direction, message.from_address, message.to_text]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) { setResults([]); return; }
+    const q = query.trim();
+    if (!q) { setResults([]); return; }
+    setSearching(true);
+    const t = setTimeout(() => {
+      clientService.searchClients(q, 6).then(setResults).catch(() => setResults([])).finally(() => setSearching(false));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [query, open]);
+
+  const link = async (clientId: string, name: string) => {
+    setLinking(true);
+    try {
+      await emailService.linkClient(message.id, clientId);
+      setLinkedName(name);
+      setSuggested(null);
+      setOpen(false);
+      setQuery('');
+      onLinked(clientId);
+    } catch { /* noop */ } finally { setLinking(false); }
+  };
+
+  const unlink = async () => {
+    setLinking(true);
+    try {
+      await emailService.linkClient(message.id, null);
+      setLinkedName(null);
+      onLinked(null);
+    } catch { /* noop */ } finally { setLinking(false); }
+  };
+
+  if (message.client_id) {
+    return (
+      <span className="flex flex-none items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[12px] text-amber-800 ring-1 ring-amber-200">
+        <User className="h-3.5 w-3.5" />
+        {loadingName ? 'Carregando…' : (linkedName || 'Cliente vinculado')}
+        <button type="button" onClick={() => void unlink()} disabled={linking} title="Desvincular"
+          className="text-amber-500 hover:text-amber-700 disabled:opacity-50">
+          <X className="h-3 w-3" />
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <div ref={panelRef} className="relative flex-none">
+      {suggested && !open ? (
+        <button type="button" onClick={() => void link(suggested.id, suggested.full_name)} disabled={linking}
+          className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[12px] text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+          {linking ? <Loader2 className="h-3 w-3 animate-spin" /> : <User className="h-3 w-3" />}
+          Vincular a {suggested.full_name}
+        </button>
+      ) : (
+        <button type="button" onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-1.5 rounded-full border border-[#e7e5df] px-2.5 py-1 text-[12px] text-zinc-500 hover:bg-zinc-50">
+          <User className="h-3 w-3" /> Vincular a cliente
+        </button>
+      )}
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+4px)] z-[110] w-[260px] rounded-xl border border-[#eadfce] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
+          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar cliente por nome ou e-mail…"
+            className="w-full rounded-lg border border-[#e7e5df] px-2.5 py-1.5 text-[13px] outline-none focus:border-amber-400" />
+          <div className="mt-1.5 max-h-[220px] overflow-y-auto">
+            {searching && <div className="px-2 py-2 text-[12px] text-zinc-400">Buscando…</div>}
+            {!searching && query.trim() && results.length === 0 && (
+              <div className="px-2 py-2 text-[12px] text-zinc-400">Nenhum cliente encontrado.</div>
+            )}
+            {results.map((c) => (
+              <button key={c.id} type="button" onClick={() => void link(c.id, c.full_name)} disabled={linking}
+                className="flex w-full flex-col items-start rounded-lg px-2 py-1.5 text-left hover:bg-amber-50 disabled:opacity-50">
+                <span className="text-[13px] font-medium text-zinc-800">{c.full_name}</span>
+                {c.email && <span className="text-[11px] text-zinc-400">{c.email}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Uma mensagem na leitura. Quando faz parte de uma conversa (single=false) vira
  * um card colapsável (cabeçalho clicável); a última fica aberta por padrão.
@@ -2379,12 +2661,14 @@ function EmailHtmlFrame({ html, msgId }: { html: string; msgId?: string }) {
  * execCommand. Gera HTML. Barra com negrito/itálico/sublinhado/listas/link
  * e botão de anexar — no estilo do compose do webmail.
  */
-function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
+function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContext, onSubjectSuggested }: {
   initialHtml: string;
   onChange: (html: string) => void;
   onAttach: (files: FileList | null) => void;
   fill?: boolean;
   autoFocus?: boolean;
+  aiContext?: { to?: string; subject?: string };
+  onSubjectSuggested?: (subject: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -2399,6 +2683,63 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
     word: string;
     suggestions: string[];
   } | null>(null);
+
+  // ── Escrever com IA ─────────────────────────────────────────────────────
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiTone, setAiTone] = useState<'formal' | 'cordial' | 'direto'>('cordial');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const aiPanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!aiOpen) return;
+    const close = (e: MouseEvent) => {
+      if (aiPanelRef.current && !aiPanelRef.current.contains(e.target as Node)) setAiOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setAiOpen(false); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', onKey); };
+  }, [aiOpen]);
+
+  // Insere o HTML gerado pela IA no lugar do corpo digitado — preserva
+  // assinatura (`[data-signature]`) e citação de resposta (`blockquote`),
+  // que ficam sempre DEPOIS do texto novo.
+  const insertAiHtml = (html: string) => {
+    const root = ref.current;
+    if (!root) return;
+    const marker = root.querySelector('[data-signature], blockquote');
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html;
+    if (marker) {
+      while (root.firstChild && root.firstChild !== marker) root.removeChild(root.firstChild);
+      while (wrapper.firstChild) root.insertBefore(wrapper.firstChild, marker);
+    } else {
+      root.innerHTML = html;
+    }
+    emitEditorState();
+  };
+
+  const generateWithAi = async () => {
+    const instruction = aiPrompt.trim();
+    if (!instruction || aiLoading) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const result = await aiService.generateEmailDraft({
+        instruction, tone: aiTone, to: aiContext?.to, subject: aiContext?.subject,
+      });
+      insertAiHtml(result.html);
+      if (result.subject && !aiContext?.subject?.trim()) onSubjectSuggested?.(result.subject);
+      setAiOpen(false);
+      setAiPrompt('');
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : 'Falha ao gerar e-mail com IA.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (ref.current && ref.current.innerHTML !== initialHtml) {
@@ -2539,6 +2880,44 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
   return (
     <div className={`relative flex flex-col rounded-lg border border-[#e7e5df] focus-within:border-amber-400 ${fill ? 'min-h-0 flex-1' : ''}`}>
       <div className="flex flex-wrap items-center gap-0.5 border-b border-[#f0efe9] px-1.5 py-1.5">
+        <div ref={aiPanelRef} className="relative">
+          <button type="button" onClick={() => setAiOpen((v) => !v)} title="Escrever com IA"
+            className="flex items-center gap-1 rounded p-1.5 text-amber-600 hover:bg-amber-50">
+            <Sparkles className="h-4 w-4" />
+          </button>
+          {aiOpen && (
+            <div className="absolute left-0 top-[calc(100%+6px)] z-[130] w-[340px] rounded-xl border border-[#eadfce] bg-white p-3 shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
+              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-zinc-800">
+                <Sparkles className="h-4 w-4 text-amber-500" /> Escrever e-mail com IA
+              </div>
+              <div className="mb-2 flex gap-1">
+                {([['formal', 'Formal'], ['cordial', 'Cordial'], ['direto', 'Direto']] as const).map(([v, label]) => (
+                  <button key={v} type="button" onClick={() => setAiTone(v)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${aiTone === v ? 'bg-amber-100 text-amber-800' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <textarea value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} autoFocus rows={3}
+                placeholder="Descreva o que o e-mail deve dizer. Ex.: peça ao cliente o comprovante de residência atualizado até sexta-feira"
+                onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void generateWithAi(); } }}
+                className="w-full resize-none rounded-lg border border-[#e7e5df] px-2.5 py-2 text-[13px] outline-none placeholder:text-zinc-400 focus:border-amber-400" />
+              <p className="mt-1.5 text-[11px] text-zinc-400">Substitui o corpo do e-mail (a assinatura é mantida).</p>
+              {aiError && <p className="mt-1.5 text-[12px] text-red-600">{aiError}</p>}
+              <div className="mt-2.5 flex items-center justify-end gap-2">
+                <button type="button" onClick={() => setAiOpen(false)} className="rounded-lg px-2.5 py-1.5 text-[12px] text-zinc-500 hover:bg-zinc-100">
+                  Cancelar
+                </button>
+                <button type="button" onClick={() => void generateWithAi()} disabled={!aiPrompt.trim() || aiLoading}
+                  className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-[12px] font-medium text-white hover:bg-amber-700 disabled:opacity-50">
+                  {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  Gerar e-mail
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        <Sep />
         <select title="Fonte" className={`${selCls} w-[92px]`}
           onMouseDown={saveSel}
           onChange={(e) => { const v = e.target.value; e.currentTarget.selectedIndex = 0; if (v) execFromControl('fontName', v); }}>
@@ -2603,7 +2982,7 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
           });
         }}
         style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '14px', lineHeight: 1.6, color: '#1f2937' }}
-        className={`overflow-y-auto px-4 py-3 outline-none [&_a]:text-amber-700 [&_a]:underline [&_blockquote]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:border-zinc-200 [&_blockquote]:pl-3 [&_blockquote]:text-zinc-500 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${fill ? 'min-h-[280px] flex-1' : 'min-h-[260px] max-h-[45vh]'}`} />
+        className={`overflow-y-auto px-4 py-3 outline-none [&_a]:text-amber-700 [&_a]:underline [&_blockquote]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:border-zinc-200 [&_blockquote]:pl-3 [&_blockquote]:text-zinc-500 [&_p]:mb-3.5 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-3.5 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-3.5 [&_li]:mb-1 ${fill ? 'min-h-[280px] flex-1' : 'min-h-[260px] max-h-[45vh]'}`} />
       {spellLoading && (
         <div className="pointer-events-none absolute right-3 top-[46px] rounded-full bg-white/95 px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-[#ece7dc]">
           Revisando...

@@ -27,6 +27,10 @@ export interface EmailLayoutPrefs {
   foldersW: number;
   /** Largura da coluna da lista de mensagens (px). */
   listW: number;
+  /** Último rascunho aberto no módulo de e-mail. */
+  activeDraftId?: string | null;
+  /** Se o composer estava minimizado quando o usuário saiu. */
+  composeMinimized?: boolean;
 }
 
 /** Retorna true se o reveal ainda está ativo (dentro do prazo). */
