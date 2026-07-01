@@ -98,7 +98,12 @@ const repairLikelyMojibake = (value: string) => {
   }
 };
 
-const sanitizeText = (value: unknown) => repairLikelyMojibake(String(value ?? ''));
+const decodeUnicodeEscapes = (value: string) =>
+  String(value ?? '').replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
+
+const sanitizeText = (value: unknown) => repairLikelyMojibake(decodeUnicodeEscapes(String(value ?? '')));
 
 const sanitizeLegalAreaRecord = (area: LegalArea): LegalArea => ({
   ...area,
@@ -4150,71 +4155,76 @@ Regras:
 
   const ribbonTopContent = (
     <>
-      <button
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="p-1.5 hover:bg-slate-100 rounded transition-colors"
-        title={sidebarOpen ? 'Ocultar painel' : 'Mostrar painel'}
-      >
-        {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
-      </button>
-
-      <div className="flex items-center rounded-lg border border-[#e7e5df] bg-slate-50 p-0.5">
+      <div className="pet-top-group is-left">
         <button
-          type="button"
-          onClick={() => setActiveWorkspace('editor')}
-          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-            activeWorkspace === 'editor'
-              ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
-              : 'text-slate-600 hover:text-slate-800'
-          }`}
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="p-1.5 hover:bg-slate-100 rounded transition-colors"
+          title={sidebarOpen ? 'Ocultar painel' : 'Mostrar painel'}
         >
-          Editor
+          {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
         </button>
-        {blocksEnabled && (
+
+        <div className="flex items-center rounded-lg border border-[#e7e5df] bg-slate-50 p-0.5">
           <button
             type="button"
-            onClick={() => setActiveWorkspace('blocks')}
+            onClick={() => setActiveWorkspace('editor')}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-              activeWorkspace === 'blocks'
+              activeWorkspace === 'editor'
                 ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
           >
-            Blocos
+            Editor
           </button>
-        )}
+          {blocksEnabled && (
+            <button
+              type="button"
+              onClick={() => setActiveWorkspace('blocks')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                activeWorkspace === 'blocks'
+                  ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              Blocos
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={() => {
+            if (hasUnsavedChanges) {
+              const what = [
+                petitionTitle ? `Documento: "${petitionTitle}"` : '',
+                selectedClient?.full_name ? `Cliente: ${selectedClient.full_name}` : '',
+              ]
+                .filter(Boolean)
+                .join('\n');
+              const msg = `Ha alteracoes nao salvas.${what ? `\n\n${what}` : ''}\n\nDeseja voltar para a tela inicial mesmo assim?`;
+              if (!confirm(msg)) return;
+            }
+            setShowStartScreen(true);
+          }}
+          className="p-1.5 hover:bg-amber-100 rounded transition-colors text-slate-500 hover:text-amber-600"
+          title="Voltar para a tela inicial"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+
+        <div className="pet-top-grow min-w-0">
+          <input
+            type="text"
+            value={petitionTitle}
+            onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); window.setTimeout(() => savePetition(), 0); }}
+            className="pet-top-title-input px-2 py-1 text-sm font-semibold border border-transparent hover:border-[#e7e5df] focus:border-amber-400 rounded focus:outline-none w-full"
+            placeholder={"T\u00edtulo da peti\u00e7\u00e3o..."}
+          />
+        </div>
       </div>
 
-      <button
-        onClick={() => {
-          if (hasUnsavedChanges) {
-            const what = [
-              petitionTitle ? `Documento: "${petitionTitle}"` : '',
-              selectedClient?.full_name ? `Cliente: ${selectedClient.full_name}` : '',
-            ]
-              .filter(Boolean)
-              .join('\n');
-            const msg = `Ha alteracoes nao salvas.${what ? `\n\n${what}` : ''}\n\nDeseja voltar para a tela inicial mesmo assim?`;
-            if (!confirm(msg)) return;
-          }
-          setShowStartScreen(true);
-        }}
-        className="p-1.5 hover:bg-amber-100 rounded transition-colors text-slate-500 hover:text-amber-600"
-        title="Voltar para a tela inicial"
-      >
-        <ArrowLeft className="w-4 h-4" />
-      </button>
-
-      <input
-        type="text"
-        value={petitionTitle}
-        onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); window.setTimeout(() => savePetition(), 0); }}
-        className="w-[240px] sm:w-[320px] px-2 py-1 text-sm font-semibold border border-transparent hover:border-[#e7e5df] focus:border-amber-400 rounded focus:outline-none"
-        placeholder="Titulo da peticao..."
-      />
-
-      {legalAreas.length > 0 && (
-        <div className="flex items-center gap-1">
+      <div className="pet-top-group is-center">
+        {legalAreas.length > 0 && (
+          <div className="flex items-center gap-1 pet-top-grow justify-center">
           <select
             value={selectedStandardTypeId ? `type:${selectedStandardTypeId}` : `area:${selectedLegalAreaId || ''}`}
             onChange={(e) => {
@@ -4270,12 +4280,12 @@ Regras:
                 setPetitionTitle(`Nova Peticao ${sanitizeText(area.name)}`);
               }
             }}
-            className="px-2 py-1 text-xs border border-[#e7e5df] rounded bg-white hover:border-amber-400 focus:border-amber-400 focus:outline-none"
+            className="pet-top-select px-2 py-1 text-xs border border-[#e7e5df] rounded bg-white hover:border-amber-400 focus:border-amber-400 focus:outline-none"
             style={{ borderLeftColor: selectedLegalArea?.color || '#e2e8f0', borderLeftWidth: '3px' }}
           >
             {legalAreas.map((area) => (
               <optgroup key={area.id} label={area.name}>
-                <option value={`area:${area.id}`}>Todos da area</option>
+                <option value={`area:${area.id}`}>{"Todos da \u00e1rea"}</option>
                 {(standardTypesByArea[area.id] ?? []).map((t) => (
                   <option key={t.id} value={`type:${t.id}`}>
                     {t.name}
@@ -4287,96 +4297,105 @@ Regras:
           <button
             onClick={() => openLegalAreaModal()}
             className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-            title="Gerenciar areas juridicas"
+            title={"Gerenciar \u00e1reas jur\u00eddicas"}
           >
             <Settings className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => openStandardTypeModal()}
             className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-            title="Gerenciar modelos (peticoes padroes)"
+            title={"Gerenciar modelos (peti\u00e7\u00f5es padr\u00e3o)"}
           >
             <FileText className="w-3.5 h-3.5" />
           </button>
-        </div>
-      )}
+          </div>
+        )}
 
-      {legalAreas.length === 0 && (
+        {legalAreas.length === 0 && (
+          <button
+            onClick={() => openLegalAreaModal()}
+            className="px-2 py-1 text-xs text-amber-600 hover:bg-amber-50 border border-amber-200 rounded transition-colors flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            {"Criar \u00c1rea Jur\u00eddica"}
+          </button>
+        )}
+      </div>
+
+      <div className="pet-top-group is-right">
+        {selectedClient && (
+          <div className="pet-top-shrink flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs max-w-[120px] sm:max-w-[180px] lg:max-w-[260px]">
+            <User className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span className="text-amber-700 font-medium truncate">{selectedClient.full_name}</span>
+            <button onClick={() => { setSelectedClient(null); window.setTimeout(() => savePetition(), 0); }} className="text-amber-500 hover:text-amber-700 shrink-0">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {lastSaved && (
+          <>
+            <div className="flex sm:hidden items-center rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-400 whitespace-nowrap">
+              <span title={lastSaved.toLocaleString('pt-BR')}>Agora</span>
+            </div>
+            <div className="pet-top-shrink hidden sm:flex lg:hidden items-center gap-1 rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-400 tabular-nums whitespace-nowrap">
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              <span title={lastSaved.toLocaleString('pt-BR')}>{formatRelativeTime(lastSaved.toISOString())}</span>
+            </div>
+            <div className="pet-top-shrink hidden lg:flex items-center gap-1.5 rounded-md bg-slate-50 px-2.5 py-1 text-xs text-slate-400 min-w-[170px] justify-end tabular-nums whitespace-nowrap">
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              <span title={lastSaved.toLocaleString('pt-BR')}>Atualizado {formatRelativeTime(lastSaved.toISOString())}</span>
+            </div>
+          </>
+        )}
+
         <button
-          onClick={() => openLegalAreaModal()}
-          className="px-2 py-1 text-xs text-amber-600 hover:bg-amber-50 border border-amber-200 rounded transition-colors flex items-center gap-1"
+          onClick={() => newPetition({ keepClient: true })}
+          className="hidden sm:flex px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors items-center gap-1"
         >
           <Plus className="w-3.5 h-3.5" />
-          Criar Area Juridica
+          Novo
         </button>
-      )}
+        <button
+          onClick={savePetition}
+          disabled={savingDoc}
+          className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors flex items-center gap-1 disabled:opacity-50"
+        >
+          {savingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+          <span className="hidden sm:inline">Salvar</span>
+        </button>
+        <button
+          onClick={exportToWord}
+          className="hidden sm:flex px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors items-center gap-1"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Word
+        </button>
 
-      {selectedClient && (
-        <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs">
-          <User className="w-3.5 h-3.5 text-amber-600" />
-          <span className="text-amber-700 font-medium">{selectedClient.full_name}</span>
-          <button onClick={() => { setSelectedClient(null); window.setTimeout(() => savePetition(), 0); }} className="text-amber-500 hover:text-amber-700">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+        <div className="hidden sm:block h-4 w-px bg-slate-200 mx-1" />
 
-      <div className="flex-1" />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="hidden sm:flex px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors items-center gap-1"
+          title="Importar modelo Word"
+        >
+          <FileUp className="w-3.5 h-3.5" />
+          Modelo
+        </button>
 
-      {lastSaved && (
-        <div className="flex items-center gap-1 text-xs text-slate-400 w-[170px] justify-end tabular-nums whitespace-nowrap">
-          <Clock className="w-3.5 h-3.5" />
-          <span title={lastSaved.toLocaleString('pt-BR')}>Atualizado {formatRelativeTime(lastSaved.toISOString())}</span>
-        </div>
-      )}
+        <button
+          onClick={loadDefaultTemplate}
+          disabled={!hasDefaultTemplate}
+          className="hidden sm:flex px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors items-center gap-1 disabled:opacity-50 disabled:hover:bg-transparent"
+          title={hasDefaultTemplate ? `Carregar modelo padrão${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum modelo padrão definido'}
+        >
+          <FolderOpen className="w-3.5 h-3.5" />
+          {"Padrão"}
+        </button>
 
-      <button
-        onClick={() => newPetition({ keepClient: true })}
-        className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1"
-      >
-        <Plus className="w-3.5 h-3.5" />
-        Novo
-      </button>
-      <button
-        onClick={savePetition}
-        disabled={savingDoc}
-        className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors flex items-center gap-1 disabled:opacity-50"
-      >
-        {savingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-        Salvar
-      </button>
-      <button
-        onClick={exportToWord}
-        className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1"
-      >
-        <Download className="w-3.5 h-3.5" />
-        Word
-      </button>
+        <div className="hidden sm:block h-4 w-px bg-slate-200 mx-1" />
 
-      <div className="h-4 w-px bg-slate-200 mx-1" />
-
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1"
-        title="Importar modelo Word"
-      >
-        <FileUp className="w-3.5 h-3.5" />
-        Modelo
-      </button>
-
-      <button
-        onClick={loadDefaultTemplate}
-        disabled={!hasDefaultTemplate}
-        className="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors flex items-center gap-1 disabled:opacity-50 disabled:hover:bg-transparent"
-        title={hasDefaultTemplate ? `Carregar modelo padrao${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum modelo padrao definido'}
-      >
-        <FolderOpen className="w-3.5 h-3.5" />
-        Padrao
-      </button>
-
-      <div className="h-4 w-px bg-slate-200 mx-1" />
-
-      <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1">
         <button
           onClick={() => {
             if (isFloatingWidget) {
@@ -4422,6 +4441,7 @@ Regras:
         >
           <XCircle className="w-4 h-4" />
         </button>
+        </div>
       </div>
     </>
   );
@@ -5262,10 +5282,16 @@ Regras:
         onExportDocx={() => { void exportToWord(); }}
       />
 
-      <div className="flex-1 flex min-w-0 max-w-full overflow-hidden">
-        {/* Sidebar */}
+      <div className="flex-1 flex min-w-0 max-w-full overflow-hidden relative">
+        {/* Sidebar — overlay no mobile, inline no desktop */}
         {sidebarOpen && (
-          <div className="relative z-[20] flex flex-col flex-shrink-0 border-r border-[#ddd7cd] bg-[#f7f3ec] shadow-[inset_-1px_0_0_rgba(255,255,255,0.65)]" style={{ width: sidebarWidth }}>
+          <div
+            className="fixed inset-0 z-[30] bg-black/40 sm:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+        {sidebarOpen && (
+          <div className="fixed sm:relative inset-y-0 left-0 z-[31] sm:z-[20] flex flex-col flex-shrink-0 border-r border-[#ddd7cd] bg-[#f7f3ec] shadow-[inset_-1px_0_0_rgba(255,255,255,0.65)]" style={{ width: Math.min(sidebarWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : sidebarWidth) }}>
             {/* Tabs */}
             <div className="flex items-end gap-1 border-b border-[#ddd7cd] bg-[#f3eee5] px-2 pt-2">
               <button
@@ -5584,10 +5610,10 @@ Regras:
           </div>
         )}
 
-        {/* Splitter */}
+        {/* Splitter — oculto no mobile */}
         {sidebarOpen && (
           <div
-            className="w-1 flex-shrink-0 bg-slate-200 hover:bg-amber-400 cursor-col-resize"
+            className="hidden sm:block w-1 flex-shrink-0 bg-slate-200 hover:bg-amber-400 cursor-col-resize"
             onMouseDown={(e) => {
               isResizingSidebarRef.current = true;
               sidebarResizeStartXRef.current = e.clientX;

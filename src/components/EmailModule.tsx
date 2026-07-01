@@ -210,6 +210,178 @@ function sigToHtml(sig: EmailSignature | null): string {
   return '';
 }
 
+type SpellIssue = {
+  word: string;
+  suggestions: string[];
+};
+
+const SPELLCHECK_ENDPOINT = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/syncfusion-proxy/SpellCheckByPage`;
+
+async function checkTextSpelling(text: string): Promise<SpellIssue[]> {
+  const normalized = text
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/gi, ' ')
+    .replace(/\b\d[\d().\-\/\s]{5,}\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 4000);
+
+  if (!normalized || normalized.length < 3) return [];
+
+  const resp = await fetch(SPELLCHECK_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ TexttoCheck: normalized }),
+  });
+  if (!resp.ok) throw new Error(`SpellCheckByPage ${resp.status}`);
+
+  const data = await resp.json();
+  const rows = Array.isArray(data?.SpellCollection) ? data.SpellCollection : [];
+  const seen = new Set<string>();
+  const issues: SpellIssue[] = [];
+
+  for (const row of rows) {
+    if (!row?.HasSpellError || typeof row?.Text !== 'string') continue;
+    const word = String(row.Text).trim();
+    const key = word.toLocaleLowerCase('pt-BR');
+    if (!word || seen.has(key)) continue;
+    seen.add(key);
+    issues.push({
+      word,
+      suggestions: Array.isArray(row.Suggestions)
+        ? row.Suggestions.filter((s: unknown) => typeof s === 'string' && s.trim()).slice(0, 3)
+        : [],
+    });
+    if (issues.length >= 8) break;
+  }
+
+  return issues;
+}
+
+const SPELL_MARK_ATTR = 'data-email-spell-error';
+const WORD_TOKEN_RE = /[A-Za-zÀ-ÿ]+(?:'[A-Za-zÀ-ÿ]+)*/g;
+
+function unwrapSpellMarkers(root: ParentNode): void {
+  root.querySelectorAll(`[${SPELL_MARK_ATTR}]`).forEach((el) => {
+    const parent = el.parentNode;
+    if (!parent) return;
+    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+    parent.removeChild(el);
+  });
+}
+
+function getEditorCleanHtml(root: HTMLDivElement): string {
+  const clone = root.cloneNode(true) as HTMLDivElement;
+  unwrapSpellMarkers(clone);
+  return clone.innerHTML;
+}
+
+function captureSelectionOffsets(root: HTMLElement): { start: number; end: number } | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null;
+
+  const startRange = document.createRange();
+  startRange.selectNodeContents(root);
+  startRange.setEnd(range.startContainer, range.startOffset);
+
+  const endRange = document.createRange();
+  endRange.selectNodeContents(root);
+  endRange.setEnd(range.endContainer, range.endOffset);
+
+  return {
+    start: startRange.toString().length,
+    end: endRange.toString().length,
+  };
+}
+
+function restoreSelectionOffsets(root: HTMLElement, saved: { start: number; end: number } | null): void {
+  if (!saved) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  let startNode: Node | null = null;
+  let endNode: Node | null = null;
+  let startOffset = 0;
+  let endOffset = 0;
+  let count = 0;
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const len = node.textContent?.length ?? 0;
+    if (!startNode && saved.start <= count + len) {
+      startNode = node;
+      startOffset = Math.max(0, saved.start - count);
+    }
+    if (!endNode && saved.end <= count + len) {
+      endNode = node;
+      endOffset = Math.max(0, saved.end - count);
+      break;
+    }
+    count += len;
+  }
+
+  if (!startNode || !endNode) {
+    range.selectNodeContents(root);
+    range.collapse(false);
+  } else {
+    range.setStart(startNode, startOffset);
+    range.setEnd(endNode, endOffset);
+  }
+
+  const sel = window.getSelection();
+  if (!sel) return;
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function applySpellMarkers(root: HTMLDivElement, issues: SpellIssue[]): void {
+  unwrapSpellMarkers(root);
+  if (!issues.length) return;
+
+  const issueMap = new Map(issues.map((issue) => [issue.word.toLocaleLowerCase('pt-BR'), issue]));
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if (!node.nodeValue?.trim()) continue;
+    textNodes.push(node);
+  }
+
+  for (const node of textNodes) {
+    const text = node.nodeValue ?? '';
+    let match: RegExpExecArray | null;
+    let lastIndex = 0;
+    let hasMarkedWord = false;
+    WORD_TOKEN_RE.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+
+    while ((match = WORD_TOKEN_RE.exec(text)) !== null) {
+      const word = match[0];
+      const issue = issueMap.get(word.toLocaleLowerCase('pt-BR'));
+      if (!issue) continue;
+
+      hasMarkedWord = true;
+      if (match.index > lastIndex) {
+        frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      }
+
+      const span = document.createElement('span');
+      span.setAttribute(SPELL_MARK_ATTR, issue.word);
+      span.setAttribute('data-suggestions', JSON.stringify(issue.suggestions));
+      span.className = 'cursor-context-menu underline decoration-red-500 decoration-[1.25px] underline-offset-[2px] [text-decoration-style:wavy]';
+      span.textContent = word;
+      frag.appendChild(span);
+      lastIndex = match.index + word.length;
+    }
+
+    if (!hasMarkedWord) continue;
+    if (lastIndex < text.length) frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+    node.parentNode?.replaceChild(frag, node);
+  }
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -324,6 +496,12 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   // filtro "Não lidas", o e-mail que você abre vira lido mas não pode sumir/fechar
   // embaixo do cursor. Limpo ao trocar pasta/busca/filtro.
   const keepVisibleRef = useRef<Set<string>>(new Set());
+  // Espelha `composeOpen` num ref: `load` não pode depender do estado de compose
+  // (recriaria a função e disparava reload a cada tecla digitada), mas precisa
+  // saber se há uma composição em andamento para não fechar a leitura/resposta
+  // embaixo do usuário quando um recarregamento silencioso (realtime) chega.
+  const composeOpenRef = useRef(false);
+  useEffect(() => { composeOpenRef.current = composeOpen; }, [composeOpen]);
 
   // `silent`: recarrega sem trocar a lista por spinner (fluido). O spinner só
   // aparece no 1º carregamento (lista vazia); refresh/realtime não "piscam".
@@ -349,8 +527,10 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       setHasMore(list.length >= limit);
       setUnread(count);
       setSpamUnread(spamCount);
-      // Mantém aberto o e-mail selecionado mesmo que tenha saído do filtro (fixado).
-      setSelected((prev) => (prev && (list.some((m) => m.id === prev.id) || keepVisibleRef.current.has(prev.id)) ? prev : null));
+      // Mantém aberto o e-mail selecionado mesmo que tenha saído do filtro (fixado)
+      // ou que haja uma composição (nova/resposta) em andamento — um recarregamento
+      // silencioso de fundo (realtime) não pode fechar a caixa de composição.
+      setSelected((prev) => (prev && (list.some((m) => m.id === prev.id) || keepVisibleRef.current.has(prev.id) || composeOpenRef.current) ? prev : null));
       setChecked((prev) => new Set([...prev].filter((id) => list.some((m) => m.id === id) || keepVisibleRef.current.has(id))));
     } finally {
       if (!silent) setLoading(false);
@@ -2209,12 +2389,22 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const colorRef = useRef<HTMLInputElement>(null);
+  const ignoredWordsRef = useRef<Set<string>>(new Set());
+  const [plainText, setPlainText] = useState('');
+  const [spellIssues, setSpellIssues] = useState<SpellIssue[]>([]);
+  const [spellLoading, setSpellLoading] = useState(false);
+  const [spellMenu, setSpellMenu] = useState<{
+    x: number;
+    y: number;
+    word: string;
+    suggestions: string[];
+  } | null>(null);
 
   useEffect(() => {
     if (ref.current && ref.current.innerHTML !== initialHtml) {
       ref.current.innerHTML = initialHtml;
+      setPlainText(ref.current.innerText || '');
     }
-    // Foca o corpo ao montar (resposta inline) e leva o cursor para o início.
     if (autoFocus && ref.current) {
       ref.current.focus();
       const sel = window.getSelection();
@@ -2226,12 +2416,47 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
         sel.addRange(r);
       }
     }
-    // só na montagem (key force remonta ao trocar de mensagem)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Guarda a seleção atual — controles nativos (select/color) tiram o foco do
-  // editor e colapsam a seleção; salvamos e restauramos para aplicar no trecho certo.
+  useEffect(() => {
+    const close = () => setSpellMenu(null);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  useEffect(() => {
+    const cleaned = plainText.replace(/\s+/g, ' ').trim();
+    if (!cleaned) {
+      setSpellIssues([]);
+      setSpellLoading(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setSpellLoading(true);
+      checkTextSpelling(cleaned)
+        .then((issues) => {
+          const filtered = issues.filter((issue) => !ignoredWordsRef.current.has(issue.word.toLocaleLowerCase('pt-BR')));
+          setSpellIssues(filtered);
+        })
+        .catch(() => {
+          setSpellIssues([]);
+        })
+        .finally(() => setSpellLoading(false));
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [plainText]);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const root = ref.current;
+    const saved = captureSelectionOffsets(root);
+    applySpellMarkers(root, spellIssues);
+    restoreSelectionOffsets(root, saved);
+  }, [spellIssues]);
+
   const savedRange = useRef<Range | null>(null);
   const saveSel = () => {
     const s = window.getSelection();
@@ -2244,13 +2469,18 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
     if (savedRange.current && s) { s.removeAllRanges(); s.addRange(savedRange.current); }
   };
 
+  const emitEditorState = () => {
+    if (!ref.current) return;
+    onChange(getEditorCleanHtml(ref.current));
+    setPlainText(ref.current.innerText || '');
+  };
+
   const exec = (cmd: string, value?: string) => {
     ref.current?.focus();
     try { document.execCommand('styleWithCSS', false, 'true'); } catch { /* noop */ }
     document.execCommand(cmd, false, value);
-    if (ref.current) onChange(ref.current.innerHTML);
+    emitEditorState();
   };
-  // exec a partir de controle que tirou o foco (select/color): restaura a seleção antes.
   const execFromControl = (cmd: string, value?: string) => {
     ref.current?.focus();
     restoreSel();
@@ -2260,6 +2490,31 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
   const addLink = () => {
     const url = window.prompt('URL do link:', 'https://');
     if (url) exec('createLink', url);
+  };
+
+  const replaceCurrentMarkedWord = (replacement: string) => {
+    if (!ref.current || !spellMenu) return;
+    const marker = ref.current.querySelector(`[${SPELL_MARK_ATTR}="${spellMenu.word}"]`) as HTMLSpanElement | null;
+    if (!marker) return;
+
+    const textNode = document.createTextNode(replacement);
+    marker.replaceWith(textNode);
+    const range = document.createRange();
+    range.setStart(textNode, textNode.textContent?.length ?? 0);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    setSpellMenu(null);
+    emitEditorState();
+  };
+
+  const ignoreCurrentWord = () => {
+    if (!spellMenu) return;
+    ignoredWordsRef.current.add(spellMenu.word.toLocaleLowerCase('pt-BR'));
+    setSpellIssues((prev) => prev.filter((issue) => issue.word.toLocaleLowerCase('pt-BR') !== spellMenu.word.toLocaleLowerCase('pt-BR')));
+    setSpellMenu(null);
   };
 
   const FONTS = [
@@ -2282,9 +2537,8 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
   const selCls = 'h-7 rounded-md border border-[#e7e5df] bg-white px-1.5 text-[12px] text-zinc-600 outline-none hover:bg-zinc-50 focus:border-amber-400';
 
   return (
-    <div className={`flex flex-col rounded-lg border border-[#e7e5df] focus-within:border-amber-400 ${fill ? 'min-h-0 flex-1' : ''}`}>
+    <div className={`relative flex flex-col rounded-lg border border-[#e7e5df] focus-within:border-amber-400 ${fill ? 'min-h-0 flex-1' : ''}`}>
       <div className="flex flex-wrap items-center gap-0.5 border-b border-[#f0efe9] px-1.5 py-1.5">
-        {/* Fonte e tamanho */}
         <select title="Fonte" className={`${selCls} w-[92px]`}
           onMouseDown={saveSel}
           onChange={(e) => { const v = e.target.value; e.currentTarget.selectedIndex = 0; if (v) execFromControl('fontName', v); }}>
@@ -2299,7 +2553,6 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
         </select>
         <Sep />
 
-        {/* Estilo */}
         <Btn onClick={() => exec('bold')} Icon={Bold} title="Negrito (Ctrl+B)" />
         <Btn onClick={() => exec('italic')} Icon={Italic} title="Itálico (Ctrl+I)" />
         <Btn onClick={() => exec('underline')} Icon={Underline} title="Sublinhado (Ctrl+U)" />
@@ -2312,30 +2565,78 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus }: {
           onChange={(e) => execFromControl('foreColor', e.target.value)} />
         <Sep />
 
-        {/* Alinhamento */}
         <Btn onClick={() => exec('justifyLeft')} Icon={AlignLeft} title="Alinhar à esquerda" />
         <Btn onClick={() => exec('justifyCenter')} Icon={AlignCenter} title="Centralizar" />
         <Btn onClick={() => exec('justifyRight')} Icon={AlignRight} title="Alinhar à direita" />
         <Sep />
 
-        {/* Listas, citação, link */}
         <Btn onClick={() => exec('insertUnorderedList')} Icon={List} title="Lista" />
         <Btn onClick={() => exec('insertOrderedList')} Icon={ListOrdered} title="Lista numerada" />
         <Btn onClick={() => exec('formatBlock', 'blockquote')} Icon={Quote} title="Citação" />
         <Btn onClick={addLink} Icon={Link2} title="Inserir link" />
         <Sep />
 
-        {/* Limpar e anexar */}
         <Btn onClick={() => exec('removeFormat')} Icon={RemoveFormatting} title="Limpar formatação" />
         <Btn onClick={() => fileRef.current?.click()} Icon={Paperclip} title="Anexar arquivo" />
         <input ref={fileRef} type="file" multiple className="hidden"
           onChange={(e) => { onAttach(e.target.files); e.target.value = ''; }} />
       </div>
-      <div ref={ref} contentEditable suppressContentEditableWarning spellCheck lang="pt-BR"
-        onInput={(e) => onChange((e.target as HTMLDivElement).innerHTML)}
+      <div ref={ref} contentEditable suppressContentEditableWarning spellCheck={true} lang="pt-BR"
+        autoCorrect="on" autoCapitalize="sentences"
+        onInput={() => emitEditorState()}
         onKeyUp={saveSel} onMouseUp={saveSel} onBlur={saveSel}
+        onContextMenu={(e) => {
+          const marker = (e.target as HTMLElement).closest(`[${SPELL_MARK_ATTR}]`) as HTMLElement | null;
+          if (!marker) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const word = marker.getAttribute(SPELL_MARK_ATTR) || marker.textContent || '';
+          const rect = marker.getBoundingClientRect();
+          const suggestions = (() => {
+            try { return JSON.parse(marker.getAttribute('data-suggestions') || '[]') as string[]; } catch { return []; }
+          })();
+          setSpellMenu({
+            x: Math.min(e.clientX, window.innerWidth - 260),
+            y: Math.min(e.clientY + 6, window.innerHeight - 180),
+            word,
+            suggestions,
+          });
+        }}
         style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '14px', lineHeight: 1.6, color: '#1f2937' }}
         className={`overflow-y-auto px-4 py-3 outline-none [&_a]:text-amber-700 [&_a]:underline [&_blockquote]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:border-zinc-200 [&_blockquote]:pl-3 [&_blockquote]:text-zinc-500 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${fill ? 'min-h-[280px] flex-1' : 'min-h-[260px] max-h-[45vh]'}`} />
+      {spellLoading && (
+        <div className="pointer-events-none absolute right-3 top-[46px] rounded-full bg-white/95 px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-[#ece7dc]">
+          Revisando...
+        </div>
+      )}
+      {spellMenu && (
+        <div
+          className="fixed z-[120] min-w-[220px] rounded-xl border border-[#eadfce] bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.18)]"
+          style={{ left: spellMenu.x, top: spellMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {spellMenu.suggestions.length > 0 ? spellMenu.suggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => replaceCurrentMarkedWord(suggestion)}
+              className="block w-full rounded-lg px-3 py-2 text-left text-[13px] text-zinc-700 hover:bg-amber-50 hover:text-amber-900"
+            >
+              {suggestion}
+            </button>
+          )) : (
+            <div className="px-3 py-2 text-[12px] text-zinc-500">Sem sugestão automática</div>
+          )}
+          <div className="my-1 h-px bg-[#f0efe9]" />
+          <button
+            type="button"
+            onClick={ignoreCurrentWord}
+            className="block w-full rounded-lg px-3 py-2 text-left text-[12px] text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
+          >
+            Ignorar nesta mensagem
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -141,21 +141,21 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
   const topContent = useMemo(
     () => (
       <>
-        <button
-          type="button"
-          onClick={handleClose}
-          disabled={saving}
-          className="p-1.5 hover:bg-amber-100 rounded transition-colors text-slate-500 hover:text-amber-600 disabled:opacity-60"
-          title="Voltar"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
+        <div className="pet-top-group is-left">
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={saving}
+            className="p-1.5 hover:bg-amber-100 rounded transition-colors text-slate-500 hover:text-amber-600 disabled:opacity-60"
+            title="Voltar"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
 
-        <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-white">
             <FileText className="h-5 w-5" />
           </div>
-          <div className="min-w-0">
+          <div className="pet-top-grow min-w-0">
             <div className="flex items-center gap-2">
               <div className="truncate text-[15px] font-semibold text-slate-900">Editar documento</div>
               {badge ? (
@@ -168,7 +168,9 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
           </div>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="pet-top-group is-center" />
+
+        <div className="pet-top-group is-right">
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.281': { name: 'Cafe Revisao Contextual', emoji: '[memo]' },
   '1.10.280': { name: 'Cafe Editor Unificado', emoji: '[memo]' },
   '1.10.279': { name: 'Cafe Financeiro em Definicao', emoji: '[coffee]' },
   '1.10.278': { name: 'Cafe WhatsApp Operacional Afinado', emoji: '[green_heart]' },
@@ -932,6 +933,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.281',
+    date: '01/07/2026',
+    summary: 'Os editores ganharam um novo checkpoint de refinamento: o compose de email passou a revisar texto no proprio corpo com menu contextual, enquanto os shells de edicao com IA e DOCX foram consolidados nesta entrega.',
+    modules: [
+      { moduleId: 'email', changes: [
+        { type: 'feature' as const, title: 'Correcao ortografica do email ficou contextual no proprio texto', description: 'O compose agora marca palavras suspeitas com sublinhado ondulado mais discreto e abre as sugestoes com botao direito diretamente sobre o trecho, em vez de exibir uma faixa separada abaixo do editor.' },
+        { type: 'improvement' as const, title: 'Spellcheck do compose deixou de depender so do navegador', description: 'O modulo de email passou a consultar a camada de revisao existente no backend para manter deteccao mais consistente mesmo dentro do editor rich text baseado em contentEditable.' },
+      ]},
+      { moduleId: 'peticoes', changes: [
+        { type: 'improvement' as const, title: 'Fluxos de edicao assistida e ribbon seguiram em consolidacao', description: 'Os componentes do editor principal e da ribbon receberam o pacote complementar desta entrega para manter coerencia com o shell unificado de edicao introduzido nas versoes anteriores.' },
+      ]},
+      { moduleId: 'documentos', changes: [
+        { type: 'improvement' as const, title: 'Editor DOCX continuou alinhado ao shell unificado', description: 'O modal de edicao de documentos foi incluido no mesmo checkpoint para preservar consistencia visual e comportamental entre edicao documental e fluxo principal do CRM.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.280',
     date: '29/06/2026',

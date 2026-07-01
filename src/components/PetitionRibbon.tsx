@@ -62,6 +62,7 @@ interface FmtState {
   subscript: boolean;
   fontFamily: string;
   fontSize: number | '';
+  fontColor: string;
   alignment: '' | 'Left' | 'Center' | 'Right' | 'Justify';
   styleName: string;
 }
@@ -75,9 +76,38 @@ const EMPTY_FMT: FmtState = {
   subscript: false,
   fontFamily: '',
   fontSize: '',
+  fontColor: '#000000',
   alignment: '',
   styleName: 'Normal',
 };
+
+interface CustomStylePreset {
+  id: string;
+  name: string;
+  fontFamily: string;
+  fontSize: number;
+  fontColor: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  textAlignment: '' | 'Left' | 'Center' | 'Right' | 'Justify';
+  leftIndent: number;
+  rightIndent: number;
+  firstLineIndent: number;
+  beforeSpacing: number;
+  afterSpacing: number;
+  lineSpacing: number;
+  lineSpacingType: string;
+  tabStops: Array<{
+    position: number;
+    deletePosition: number;
+    tabJustification: string;
+    tabLeader: string;
+  }>;
+  listMode: 'none' | 'bullet' | 'number';
+  listText: string;
+  numberFormat: string;
+}
 
 const FONT_FAMILIES = [
   'Times New Roman',
@@ -117,6 +147,30 @@ const STYLES = ['Normal', 'Heading 1', 'Heading 2', 'Heading 3'];
 const A4 = { w: 595.3, h: 841.9 };
 const LETTER = { w: 612, h: 792 };
 const RIBBON_COLLAPSED_STORAGE_KEY = 'petition-ribbon-collapsed-v1';
+const CUSTOM_STYLES_STORAGE_KEY = 'petition-ribbon-custom-styles-v1';
+
+const getReadablePreviewColor = (color: string) => {
+  const raw = String(color || '').trim();
+  const hex = raw.startsWith('#') ? raw.slice(1) : raw;
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return raw || '#1f2937';
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.86 ? '#1f2937' : `#${hex}`;
+};
+
+const normalizeTabStops = (tabs: any[] | undefined) =>
+  Array.isArray(tabs)
+    ? tabs
+        .map((tab) => ({
+          position: typeof tab?.position === 'number' ? tab.position : 0,
+          deletePosition: typeof tab?.deletePosition === 'number' ? tab.deletePosition : 0,
+          tabJustification: typeof tab?.tabJustification === 'string' ? tab.tabJustification : 'Left',
+          tabLeader: typeof tab?.tabLeader === 'string' ? tab.tabLeader : 'None',
+        }))
+        .filter((tab) => tab.position > 0 || tab.deletePosition > 0)
+    : [];
 
 interface PetitionRibbonProps {
   editorRef: React.RefObject<SyncfusionEditorRef | null>;
@@ -157,6 +211,15 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [tableGridOpen, setTableGridOpen] = useState(false);
   const [tableHover, setTableHover] = useState({ r: 0, c: 0 });
+  const [customStyles, setCustomStyles] = useState<CustomStylePreset[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(CUSTOM_STYLES_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
   const lastColorRef = useRef('#dc2626');
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const isBodyVisible = !isCollapsed || hoverReveal;
@@ -169,6 +232,13 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     }
     if (!isCollapsed) setHoverReveal(false);
   }, [isCollapsed]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CUSTOM_STYLES_STORAGE_KEY, JSON.stringify(customStyles));
+    } catch {
+      // ignore
+    }
+  }, [customStyles]);
   useEffect(() => {
     try {
       editorRef.current?.setShowRuler?.(showRuler);
@@ -201,6 +271,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
         subscript: cf.baselineAlignment === 'Subscript',
         fontFamily: typeof cf.fontFamily === 'string' ? cf.fontFamily : '',
         fontSize: typeof cf.fontSize === 'number' && cf.fontSize > 0 ? cf.fontSize : '',
+        fontColor: typeof cf.fontColor === 'string' && cf.fontColor ? cf.fontColor : '#000000',
         alignment: (pf.textAlignment as FmtState['alignment']) || '',
         styleName: typeof pf.styleName === 'string' && pf.styleName ? pf.styleName : 'Normal',
       });
@@ -305,6 +376,94 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     run((ed) => {
       ed.editor?.applyStyle?.(name, true);
     });
+  const captureCurrentStyle = () => {
+    const name = window.prompt('Nome do estilo personalizado:', '');
+    if (!name?.trim()) return;
+    const trimmed = name.trim();
+    const ed = getEd();
+    const pf = ed?.selection?.paragraphFormat;
+    const listLevel = pf?.listFormat?.listLevel;
+    const listText = typeof pf?.listText === 'string' ? pf.listText : '';
+    const numberFormat = typeof listLevel?.numberFormat === 'string' ? listLevel.numberFormat : '';
+    const listMode: CustomStylePreset['listMode'] =
+      listText
+        ? numberFormat && numberFormat.includes('%')
+          ? 'number'
+          : 'bullet'
+        : 'none';
+    const nextStyle: CustomStylePreset = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: trimmed,
+      fontFamily: fmt.fontFamily || 'Calibri',
+      fontSize: typeof fmt.fontSize === 'number' && fmt.fontSize > 0 ? fmt.fontSize : 11,
+      fontColor: fmt.fontColor || '#000000',
+      bold: fmt.bold,
+      italic: fmt.italic,
+      underline: fmt.underline,
+      textAlignment: fmt.alignment,
+      leftIndent: typeof pf?.leftIndent === 'number' ? pf.leftIndent : 0,
+      rightIndent: typeof pf?.rightIndent === 'number' ? pf.rightIndent : 0,
+      firstLineIndent: typeof pf?.firstLineIndent === 'number' ? pf.firstLineIndent : 0,
+      beforeSpacing: typeof pf?.beforeSpacing === 'number' ? pf.beforeSpacing : 0,
+      afterSpacing: typeof pf?.afterSpacing === 'number' ? pf.afterSpacing : 0,
+      lineSpacing: typeof pf?.lineSpacing === 'number' && pf.lineSpacing > 0 ? pf.lineSpacing : 1,
+      lineSpacingType: typeof pf?.lineSpacingType === 'string' && pf.lineSpacingType ? pf.lineSpacingType : 'Multiple',
+      tabStops: normalizeTabStops(ed?.editorModule?.getTabsInSelection?.() ?? pf?.tabs),
+      listMode,
+      listText,
+      numberFormat,
+    };
+    setCustomStyles((prev) => {
+      const withoutSameName = prev.filter((item) => item.name.toLowerCase() !== trimmed.toLowerCase());
+      return [...withoutSameName, nextStyle];
+    });
+  };
+  const applyCustomStyle = (style: CustomStylePreset) =>
+    run((ed) => {
+      const cf = ed.selection?.characterFormat;
+      const pf = ed.selection?.paragraphFormat;
+      if (cf) {
+        cf.fontFamily = style.fontFamily;
+        cf.fontSize = style.fontSize;
+        cf.fontColor = style.fontColor;
+        cf.bold = style.bold;
+        cf.italic = style.italic;
+        cf.underline = style.underline ? 'Single' : 'None';
+      }
+      if (pf && style.textAlignment) {
+        pf.textAlignment = style.textAlignment;
+      }
+      if (pf) {
+        pf.leftIndent = style.leftIndent;
+        pf.rightIndent = style.rightIndent;
+        pf.firstLineIndent = style.firstLineIndent;
+        pf.beforeSpacing = style.beforeSpacing;
+        pf.afterSpacing = style.afterSpacing;
+        pf.lineSpacing = style.lineSpacing;
+        pf.lineSpacingType = style.lineSpacingType;
+      }
+      if (Array.isArray(style.tabStops) && style.tabStops.length > 0) {
+        ed.editorModule?.onApplyParagraphFormat?.(
+          'tabStop',
+          style.tabStops.map((tab) => ({
+            position: tab.position,
+            deletePosition: tab.deletePosition,
+            tabJustification: tab.tabJustification,
+            tabLeader: tab.tabLeader,
+          })),
+          false,
+          false,
+        );
+      }
+      if (style.listMode === 'bullet') {
+        ed.editor?.applyBullet?.(style.listText || '•', 'Symbol');
+      } else if (style.listMode === 'number') {
+        ed.editor?.applyNumbering?.(style.numberFormat || '%1.', 'Arabic');
+      }
+    });
+  const removeCustomStyle = (id: string) => {
+    setCustomStyles((prev) => prev.filter((item) => item.id !== id));
+  };
 
   // Lista com toggle-off: se o parÃ¡grafo jÃ¡ Ã© lista, remove; senÃ£o aplica.
   const isInList = (ed: any): boolean => {
@@ -550,10 +709,10 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
           )}
         </div>
         {([
-          ['inicio', 'Inicio'],
+          ['inicio', 'Início'],
           ['inserir', 'Inserir'],
           ['layout', 'Layout'],
-          ['revisao', 'Revisao'],
+          ['revisao', 'Revisão'],
           ['exibir', 'Exibir'],
         ] as [RibbonTab, string][]).map(([key, label]) => (
           <button
@@ -597,8 +756,8 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
               </div>
             </RibbonGroup>
 
-            {/* Area de transferencia */}
-            <RibbonGroup label="Area de Transferencia" className="is-clipboard" bodyClassName="is-inline">
+            {/* Área de transferência */}
+            <RibbonGroup label={"Área de Transferência"} className="is-clipboard" bodyClassName="is-inline">
               <Btn title="Colar" onClick={() => run((ed) => ed.editor?.paste?.())}>
                 <ClipboardPaste size={18} />
                 <span className="lbl">Colar</span>
@@ -657,7 +816,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <IconBtn title="Negrito" active={fmt.bold} onClick={() => run((ed) => ed.editor?.toggleBold?.())}>
                   <Bold size={15} />
                 </IconBtn>
-                <IconBtn title="Italico" active={fmt.italic} onClick={() => run((ed) => ed.editor?.toggleItalic?.())}>
+                <IconBtn title={"Itálico"} active={fmt.italic} onClick={() => run((ed) => ed.editor?.toggleItalic?.())}>
                   <Italic size={15} />
                 </IconBtn>
                 <IconBtn
@@ -824,7 +983,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                     if (e.target.value) setLineSpacing(Number(e.target.value));
                     e.target.value = '';
                   }}
-                  title="Espacamento entre linhas"
+                  title={"Espaçamento entre linhas"}
                 >
                   <option value="" disabled>
                     ↕
@@ -848,7 +1007,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                     onClick={() => applyStyle(s)}
                     title={s}
                   >
-                    <span className="pet-style-name">{s === 'Normal' ? 'Normal' : s.replace('Heading', 'Titulo')}</span>
+                    <span className="pet-style-name">{s === 'Normal' ? 'Normal' : s.replace('Heading', 'Título')}</span>
                     <span
                       className="pet-style-preview"
                       style={{
@@ -861,11 +1020,53 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                     </span>
                   </button>
                 ))}
+                {customStyles.map((style) => (
+                  <button
+                    key={style.id}
+                    type="button"
+                    className="pet-style pet-style-custom"
+                    onClick={() => applyCustomStyle(style)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      if (window.confirm(`Remover o estilo "${style.name}"?`)) {
+                        removeCustomStyle(style.id);
+                      }
+                    }}
+                    title={`${style.name} (clique direito para remover)`}
+                  >
+                    <span className="pet-style-name">{style.name}</span>
+                    <span
+                      className="pet-style-preview"
+                      style={{
+                        fontFamily: style.fontFamily,
+                        fontWeight: style.bold ? 700 : 400,
+                        fontStyle: style.italic ? 'italic' : 'normal',
+                        textDecoration: style.underline ? 'underline' : 'none',
+                        color: getReadablePreviewColor(style.fontColor),
+                        fontSize: Math.max(11, Math.min(15, style.fontSize)),
+                      }}
+                    >
+                      AaBbCc
+                    </span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="pet-style pet-style-add"
+                  onClick={captureCurrentStyle}
+                  title={"Salvar estilo da seleção atual"}
+                >
+                  <span className="pet-style-name">Novo</span>
+                  <span className="pet-style-preview pet-style-add-preview">
+                    <FilePlus2 size={14} />
+                    Estilo
+                  </span>
+                </button>
               </div>
             </RibbonGroup>
 
-            {/* Edicao */}
-            <RibbonGroup label="Edicao" className="is-slim" bodyClassName="is-inline is-center">
+            {/* Edição */}
+            <RibbonGroup label={"Edição"} className="is-slim" bodyClassName="is-inline is-center">
               <div className="pet-stack">
                 <Btn small title="Localizar / Substituir" onClick={openFind}>
                   <Search size={14} /> <span>Localizar</span>
@@ -880,7 +1081,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
 
         {tab === 'inserir' && (
           <>
-            <RibbonGroup label="Ilustracoes">
+            <RibbonGroup label={"Ilustrações"}>
               <Btn title="Imagem" onClick={() => imageInputRef.current?.click()}>
                 <ImageIcon size={18} />
                 <span className="lbl">Imagem</span>
@@ -928,38 +1129,38 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <span className="lbl">Indicador</span>
               </Btn>
             </RibbonGroup>
-            <RibbonGroup label="Cabecalho e Rodape">
-              <Btn title="Editar cabecalho" onClick={goToHeader}>
+            <RibbonGroup label={"Cabeçalho e Rodapé"}>
+              <Btn title={"Editar cabeçalho"} onClick={goToHeader}>
                 <PanelTop size={18} />
-                <span className="lbl">Cabecalho</span>
+                <span className="lbl">{"Cabeçalho"}</span>
               </Btn>
-              <Btn title="Editar rodape" onClick={goToFooter}>
+              <Btn title={"Editar rodapé"} onClick={goToFooter}>
                 <PanelBottom size={18} />
-                <span className="lbl">Rodape</span>
+                <span className="lbl">{"Rodapé"}</span>
               </Btn>
-              <Btn title="Numero de pagina" onClick={insertPageNumber}>
+              <Btn title={"Número de página"} onClick={insertPageNumber}>
                 <Hash size={18} />
-                <span className="lbl">No Pagina</span>
+                <span className="lbl">{"Nº Página"}</span>
               </Btn>
             </RibbonGroup>
-            <RibbonGroup label="Paginas">
-              <Btn title="Quebra de pagina (Ctrl+Enter)" onClick={insertPageBreak}>
+            <RibbonGroup label={"Páginas"}>
+              <Btn title={"Quebra de página (Ctrl+Enter)"} onClick={insertPageBreak}>
                 <SeparatorHorizontal size={18} />
                 <span className="lbl">Quebra Pag.</span>
               </Btn>
-              <Btn title="Quebra de secao" onClick={insertSectionBreak}>
+              <Btn title={"Quebra de seção"} onClick={insertSectionBreak}>
                 <SeparatorVertical size={18} />
                 <span className="lbl">Quebra Sec.</span>
               </Btn>
             </RibbonGroup>
-            <RibbonGroup label="Referencias">
-              <Btn title="Inserir sumario" onClick={insertTOC}>
+            <RibbonGroup label={"Referências"}>
+              <Btn title={"Inserir sumário"} onClick={insertTOC}>
                 <ListTree size={18} />
-                <span className="lbl">Sumario</span>
+                <span className="lbl">{"Sumário"}</span>
               </Btn>
-              <Btn title="Inserir nota de rodape" onClick={insertFootnote}>
+              <Btn title={"Inserir nota de rodapé"} onClick={insertFootnote}>
                 <StickyNote size={18} />
-                <span className="lbl">Nota Rodape</span>
+                <span className="lbl">{"Nota Rodapé"}</span>
               </Btn>
             </RibbonGroup>
           </>
@@ -967,7 +1168,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
 
         {tab === 'layout' && (
           <>
-            <RibbonGroup label="Configurar Pagina">
+            <RibbonGroup label={"Configurar Página"}>
               <select
                 className="pet-select"
                 defaultValue="25"
@@ -983,7 +1184,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 className="pet-select"
                 defaultValue="portrait"
                 onChange={(e) => setOrientation(e.target.value === 'landscape')}
-                title="Orientacao"
+                title={"Orientação"}
               >
                 <option value="portrait">Retrato</option>
                 <option value="landscape">Paisagem</option>
@@ -1013,28 +1214,28 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 onChange={(e) => {
                   if (e.target.value) setLineSpacing(Number(e.target.value));
                 }}
-                title="Espacamento entre linhas"
+                  title={"Espaçamento entre linhas"}
               >
                 <option value="" disabled>
-                  Espacamento
+                  {"Espaçamento"}
                 </option>
                 <option value="1">Simples</option>
                 <option value="1.5">1,5 linhas</option>
                 <option value="2">Duplo</option>
               </select>
             </RibbonGroup>
-            <RibbonGroup label="Espacamento">
+            <RibbonGroup label={"Espaçamento"}>
               <div className="pet-flow-row">
-                <Btn small title="Aumentar espaco antes" onClick={() => bumpParagraphSpacing('before', 6)}>
+                <Btn small title={"Aumentar espaço antes"} onClick={() => bumpParagraphSpacing('before', 6)}>
                   <span>Antes +</span>
                 </Btn>
-                <Btn small title="Remover espaco antes" onClick={() => bumpParagraphSpacing('before', -6)}>
+                <Btn small title={"Remover espaço antes"} onClick={() => bumpParagraphSpacing('before', -6)}>
                   <span>Antes -</span>
                 </Btn>
-                <Btn small title="Aumentar espaco depois" onClick={() => bumpParagraphSpacing('after', 6)}>
+                <Btn small title={"Aumentar espaço depois"} onClick={() => bumpParagraphSpacing('after', 6)}>
                   <span>Depois +</span>
                 </Btn>
-                <Btn small title="Remover espaco depois" onClick={() => bumpParagraphSpacing('after', -6)}>
+                <Btn small title={"Remover espaço depois"} onClick={() => bumpParagraphSpacing('after', -6)}>
                   <span>Depois -</span>
                 </Btn>
               </div>
@@ -1044,20 +1245,20 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
 
         {tab === 'revisao' && (
           <>
-            <RibbonGroup label="Revisao de Texto">
+            <RibbonGroup label={"Revisão de Texto"}>
               <Btn title="Verificar ortografia" onClick={toggleSpellCheck}>
                 <SpellCheck size={18} />
                 <span className="lbl">Ortografia</span>
               </Btn>
             </RibbonGroup>
-            <RibbonGroup label="Comentarios">
-              <Btn title="Novo comentario" onClick={insertComment}>
+            <RibbonGroup label={"Comentários"}>
+              <Btn title={"Novo comentário"} onClick={insertComment}>
                 <MessageSquarePlus size={18} />
-                <span className="lbl">Comentario</span>
+                <span className="lbl">{"Comentário"}</span>
               </Btn>
             </RibbonGroup>
-            <RibbonGroup label="Controle de Alteracoes">
-              <Btn title="Ativar/desativar controle de alteracoes" onClick={toggleTrackChanges}>
+            <RibbonGroup label={"Controle de Alterações"}>
+              <Btn title={"Ativar/desativar controle de alterações"} onClick={toggleTrackChanges}>
                 <History size={18} color={trackChanges ? '#b5611f' : undefined} />
                 <span className="lbl" style={trackChanges ? { color: '#b5611f', fontWeight: 600 } : undefined}>
                   Controlar
@@ -1076,13 +1277,13 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
         {tab === 'exibir' && (
           <>
             <RibbonGroup label="Mostrar">
-              <label className="pet-check" title="Mostrar regua">
+              <label className="pet-check" title={"Mostrar régua"}>
                 <input type="checkbox" checked={showRuler} onChange={toggleRuler} />
-                <span>Regua</span>
+                <span>{"Régua"}</span>
               </label>
-              <label className="pet-check" title="Painel de navegacao (titulos)">
+              <label className="pet-check" title={"Painel de navegação (títulos)"}>
                 <input type="checkbox" checked={showNavPane} onChange={toggleNavPane} />
-                <span>Painel de Navegacao</span>
+                <span>{"Painel de Navegação"}</span>
               </label>
               <label className="pet-check" title="Recolhe a barra e mostra novamente quando o mouse vai para o topo">
                 <input
@@ -1122,7 +1323,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
         )}
       </div>
 
-      {/* BotÃµes de undo/redo flutuantes no canto direito da faixa de abas */}
+      {/* Botões de undo/redo flutuantes no canto direito da faixa de abas */}
       <input
         ref={imageInputRef}
         type="file"
@@ -1183,10 +1384,18 @@ const Btn: React.FC<{
 const RIBBON_CSS = `
 .pet-ribbon{display:flex;flex-direction:column;background:#f6f4f0;border-bottom:1px solid #e6e3dd;flex-shrink:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#3a3a38;user-select:none;position:relative;z-index:40;overflow:visible;}
 .pet-ribbon-peek{display:none;}
-.pet-ribbon-topslot{display:flex;align-items:center;padding:6px 12px;border-bottom:1px solid #e7e3db;background:#fff;transition:opacity .14s ease,transform .14s ease,max-height .16s ease,padding .16s ease,border-color .16s ease;max-height:56px;overflow-x:auto;overflow-y:hidden;position:relative;z-index:3;}
-.pet-ribbon-topslot-inner{display:flex;align-items:center;gap:8px;min-width:max-content;flex-wrap:nowrap;white-space:nowrap;}
-.pet-ribbon-topslot-inner > *{flex-shrink:0;}
-.pet-ribbon-topslot-inner > .flex-1{flex:1 0 120px;min-width:120px;}
+.pet-ribbon-topslot{display:flex;align-items:center;padding:6px 12px;border-bottom:1px solid #e7e3db;background:#fff;transition:opacity .14s ease,transform .14s ease,max-height .16s ease,padding .16s ease,border-color .16s ease;max-height:64px;overflow-x:auto;overflow-y:hidden;position:relative;z-index:3;}
+.pet-ribbon-topslot-inner{display:flex;align-items:center;gap:12px;width:100%;min-width:0;}
+.pet-top-group{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:nowrap;}
+.pet-top-group.is-left{justify-content:flex-start;flex:1 1 340px;}
+.pet-top-group.is-center{justify-content:center;flex:0 1 260px;}
+.pet-top-group.is-right{justify-content:flex-end;flex:1 1 360px;min-width:0;margin-left:auto;padding-left:8px;}
+.pet-top-grow{flex:1 1 auto;min-width:0;}
+.pet-top-shrink{flex:0 1 auto;min-width:0;}
+.pet-top-group > *{flex-shrink:0;}
+.pet-top-group .pet-top-grow{flex-shrink:1;}
+.pet-top-title-input{width:100%;min-width:170px;}
+.pet-top-select{width:100%;min-width:180px;max-width:280px;}
 .pet-ribbon-topslot::-webkit-scrollbar{height:6px;}
 .pet-ribbon-topslot::-webkit-scrollbar-thumb{background:#d6d3cd;border-radius:6px;}
 .pet-ribbon-tabs{display:flex;align-items:flex-end;gap:1px;padding:0 8px;height:30px;background:#f6f4f0;position:relative;z-index:2;transition:opacity .14s ease,transform .14s ease;}
@@ -1218,7 +1427,7 @@ const RIBBON_CSS = `
 .pet-ribbon.is-collapsed .pet-ribbon-body{min-height:0;max-height:0;padding-top:0;padding-bottom:0;border-top-color:transparent;opacity:0;overflow:hidden;pointer-events:none;}
 .pet-ribbon.is-collapsed.is-revealed{border-bottom-color:#e6e3dd;background:#f6f4f0;}
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-peek{display:none;}
-.pet-ribbon.is-collapsed.is-revealed .pet-ribbon-topslot{max-height:56px;padding-top:6px;padding-bottom:6px;border-bottom-color:#e7e3db;opacity:1;transform:translateY(0);pointer-events:auto;}
+.pet-ribbon.is-collapsed.is-revealed .pet-ribbon-topslot{max-height:64px;padding-top:6px;padding-bottom:6px;border-bottom-color:#e7e3db;opacity:1;transform:translateY(0);pointer-events:auto;}
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-tabs{height:30px;padding-top:0;padding-bottom:0;opacity:1;transform:translateY(0);overflow:visible;pointer-events:auto;}
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body{min-height:66px;max-height:88px;padding-top:3px;padding-bottom:2px;border-top-color:#e6e3dd;opacity:1;overflow-x:auto;pointer-events:auto;}
 
@@ -1278,6 +1487,9 @@ const RIBBON_CSS = `
 .pet-style{display:flex;flex-direction:column;justify-content:center;gap:1px;width:78px;height:42px;padding:0 8px;background:#fff;border:1px solid #e0ddd6;border-radius:4px;cursor:pointer;text-align:left;}
 .pet-style:hover{border-color:#d8b98a;}
 .pet-style.is-active{border-color:#c0531f;box-shadow:0 0 0 1px #c0531f inset;}
+.pet-style-custom{background:#fffdf9;}
+.pet-style-add{border-style:dashed;color:#9a6a32;justify-content:center;align-items:center;text-align:center;}
+.pet-style-add-preview{display:flex;align-items:center;justify-content:center;gap:4px;font-size:11px;font-weight:600;color:#9a6a32;}
 .pet-style-name{font-size:8px;color:#9a958c;}
 .pet-style-preview{line-height:1;}
 
@@ -1308,6 +1520,25 @@ const RIBBON_CSS = `
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="layout"],
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="revisao"],
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="exibir"]{min-height:50px;max-height:72px;}
+
+@media (max-width:639px){
+  .pet-ribbon-topslot{padding:4px 8px;}
+  .pet-ribbon-topslot-inner{gap:6px;flex-wrap:nowrap;}
+  .pet-top-group.is-center{display:none;}
+  .pet-top-group.is-right{flex:0 0 auto;}
+  .pet-top-group.is-left{flex:1 1 auto;min-width:0;gap:4px;}
+  .pet-top-title-input{min-width:90px;}
+  .pet-ribbon-tabs{overflow-x:auto;overflow-y:hidden;gap:0;padding:0 4px;scrollbar-width:none;}
+  .pet-ribbon-tabs::-webkit-scrollbar{display:none;}
+  .pet-ribbon-body{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;}
+  .pet-ribbon-body::-webkit-scrollbar{display:none;}
+  .pet-ribbon-file{padding:0 10px;font-size:11px;}
+  .pet-ribbon-tab{padding:0 10px;font-size:11px;white-space:nowrap;}
+  .pet-font{width:100px;}
+  .pet-size{width:44px;}
+  .pet-style{width:64px;}
+  .pet-styles{gap:3px;}
+}
 `;
 
 if (typeof document !== 'undefined' && !document.getElementById('petition-ribbon-styles')) {
@@ -1318,4 +1549,3 @@ if (typeof document !== 'undefined' && !document.getElementById('petition-ribbon
 }
 
 export default PetitionRibbon;
-
