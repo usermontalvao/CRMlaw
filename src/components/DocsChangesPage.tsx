@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.288': { name: 'Cafe Showcase com Troca Suave', emoji: '[art]' },
   '1.10.287': { name: 'Cafe Showcase Sem Distorcao', emoji: '[art]' },
   '1.10.286': { name: 'Cafe Rodape Sem Quebra', emoji: '[art]' },
   '1.10.285': { name: 'Cafe Login Sem Scroll', emoji: '[art]' },
@@ -938,6 +939,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.288',
+    date: '02/07/2026',
+    summary: 'A transicao entre os destaques do login do portal foi refeita para ficar mais limpa, sem blur pesado nem troca brusca de estrutura entre os slides.',
+    modules: [
+      { moduleId: 'portal', changes: [
+        { type: 'fix' as const, title: 'Showcase passou a trocar slides com camadas sobrepostas', description: 'A vitrine agora anima a saida do slide anterior e a entrada do novo em camadas sincronizadas, com deslocamento horizontal curto e fade, deixando mockup e legenda muito mais estaveis.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.287',
     date: '02/07/2026',

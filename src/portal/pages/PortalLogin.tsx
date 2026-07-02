@@ -236,7 +236,7 @@ const ShowcasePreview: React.FC<{ showcase: number }> = ({ showcase }) => {
   const moduleLabel = SHOWCASE[showcase].module;
 
   return (
-    <div className="mock-modal show-fade" style={{ fontFamily: MOCK_FONT }}>
+    <div className="mock-modal" style={{ fontFamily: MOCK_FONT }}>
       <div className="mock-accent" />
       <div className="mock-header">
         <div>
@@ -472,10 +472,26 @@ export const PortalLogin: React.FC = () => {
 
   // ── Carrossel de destaques do produto (painel de marca)
   const [showcase, setShowcase] = useState(0);
+  const [renderedShowcase, setRenderedShowcase] = useState(0);
+  const [leavingShowcase, setLeavingShowcase] = useState<number | null>(null);
+  const [showcaseAnimating, setShowcaseAnimating] = useState(false);
   useEffect(() => {
     const t = setInterval(() => setShowcase((s) => (s + 1) % SHOWCASE.length), 5200);
     return () => clearInterval(t);
   }, []);
+  useEffect(() => {
+    if (showcase === renderedShowcase) return;
+    setLeavingShowcase(renderedShowcase);
+    setRenderedShowcase(showcase);
+    setShowcaseAnimating(true);
+    const settleTimer = window.setTimeout(() => {
+      setLeavingShowcase(null);
+      setShowcaseAnimating(false);
+    }, 420);
+    return () => {
+      window.clearTimeout(settleTimer);
+    };
+  }, [showcase, renderedShowcase]);
 
   useEffect(() => {
     const load = async () => {
@@ -996,8 +1012,19 @@ export const PortalLogin: React.FC = () => {
         .show-apptitle { font-size: 14px; font-weight: 700; color: #2a2320; letter-spacing: -0.01em; }
         .show-live { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #c56a1a; }
         .show-livedot { width: 6px; height: 6px; border-radius: 50%; background: #ea6a1e; box-shadow: 0 0 0 3px rgba(234,106,30,0.16); }
-        .show-fade { animation: showFade 0.55s cubic-bezier(0.22,0.61,0.36,1) both; }
-        @keyframes showFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .show-stack { position: relative; }
+        .show-screen-stack { position: relative; min-height: 430px; }
+        .show-screen-layer { position: absolute; inset: 0; transition: opacity 0.38s ease, transform 0.38s cubic-bezier(0.22,0.61,0.36,1); will-change: opacity, transform; }
+        .show-screen-layer[data-state="current"] { opacity: 1; transform: translateX(0); position: relative; z-index: 2; }
+        .show-screen-layer[data-state="entering"] { opacity: 1; transform: translateX(0); position: relative; z-index: 2; animation: showScreenIn 0.38s cubic-bezier(0.22,0.61,0.36,1) both; }
+        .show-screen-layer[data-state="leaving"] { opacity: 0; transform: translateX(-22px); z-index: 1; }
+        .show-meta-stack { position: relative; min-height: 96px; }
+        .show-meta-layer { position: absolute; inset: 0; transition: opacity 0.34s ease, transform 0.34s cubic-bezier(0.22,0.61,0.36,1); will-change: opacity, transform; }
+        .show-meta-layer[data-state="current"] { opacity: 1; transform: translateX(0); position: relative; z-index: 2; }
+        .show-meta-layer[data-state="entering"] { opacity: 1; transform: translateX(0); position: relative; z-index: 2; animation: showMetaIn 0.34s cubic-bezier(0.22,0.61,0.36,1) both; }
+        .show-meta-layer[data-state="leaving"] { opacity: 0; transform: translateX(-16px); z-index: 1; }
+        @keyframes showScreenIn { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes showMetaIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
         .show-dotbtn { width: 22px; height: 4px; border-radius: 999px; border: none; cursor: pointer; padding: 0; background: rgba(255,255,255,0.22); transition: background 0.35s ease, width 0.35s ease; }
         .show-dotbtn[data-on="true"] { width: 34px; background: linear-gradient(90deg, #f59e0b, #ea6a1e); }
         .mock-modal { background: #fff; border: 1px solid #e7e5df; box-shadow: 0 18px 38px -26px rgba(15,23,42,0.35); min-height: 100%; display: flex; flex-direction: column; }
@@ -1141,27 +1168,54 @@ export const PortalLogin: React.FC = () => {
               <span className="show-dot" style={{ background: '#ef6a5f' }} />
               <span className="show-dot" style={{ background: '#f5bd4f' }} />
               <span className="show-dot" style={{ background: '#58c66a' }} />
-              <div className="show-url">{SHOWCASE[showcase].url}</div>
+              <div className="show-url">{SHOWCASE[renderedShowcase].url}</div>
             </div>
 
-            <div key={showcase} className="show-screen show-fade">
-              <div className="show-appbar">
-                <span className="show-apptitle">{SHOWCASE[showcase].module}</span>
-                <span className="show-live"><span className="show-livedot" /> ao vivo</span>
+            <div className="show-screen-stack">
+              {leavingShowcase !== null && (
+                <div className="show-screen-layer" data-state="leaving">
+                  <div className="show-screen">
+                    <div className="show-appbar">
+                      <span className="show-apptitle">{SHOWCASE[leavingShowcase].module}</span>
+                      <span className="show-live"><span className="show-livedot" /> ao vivo</span>
+                    </div>
+                    <ShowcasePreview showcase={leavingShowcase} />
+                  </div>
+                </div>
+              )}
+              <div className="show-screen-layer" data-state={showcaseAnimating ? 'entering' : 'current'}>
+                <div className="show-screen">
+                  <div className="show-appbar">
+                    <span className="show-apptitle">{SHOWCASE[renderedShowcase].module}</span>
+                    <span className="show-live"><span className="show-livedot" /> ao vivo</span>
+                  </div>
+                  <ShowcasePreview showcase={renderedShowcase} />
+                </div>
               </div>
-              <ShowcasePreview showcase={showcase} />
             </div>
           </div>
 
           {/* legenda + carrossel */}
-          <div className="login-showcase-meta" style={{ marginTop: 'clamp(20px, 3vh, 34px)', minHeight: 96 }}>
-            <div key={showcase} className="show-fade">
-              <h2 style={{ fontFamily: BRAND_SERIF, fontWeight: 500, fontSize: 'clamp(21px, 2vw, 27px)', lineHeight: 1.15, letterSpacing: '-0.01em', color: '#f7f1e8' }}>
-                {SHOWCASE[showcase].title}
-              </h2>
-              <p style={{ marginTop: 10, fontSize: 'clamp(13px, 1vw, 15px)', lineHeight: 1.6, color: 'rgba(244,237,226,0.6)', maxWidth: 460 }}>
-                {SHOWCASE[showcase].text}
-              </p>
+          <div className="login-showcase-meta" style={{ marginTop: 'clamp(20px, 3vh, 34px)' }}>
+            <div className="show-meta-stack">
+              {leavingShowcase !== null && (
+                <div className="show-meta-layer" data-state="leaving">
+                  <h2 style={{ fontFamily: BRAND_SERIF, fontWeight: 500, fontSize: 'clamp(21px, 2vw, 27px)', lineHeight: 1.15, letterSpacing: '-0.01em', color: '#f7f1e8' }}>
+                    {SHOWCASE[leavingShowcase].title}
+                  </h2>
+                  <p style={{ marginTop: 10, fontSize: 'clamp(13px, 1vw, 15px)', lineHeight: 1.6, color: 'rgba(244,237,226,0.6)', maxWidth: 460 }}>
+                    {SHOWCASE[leavingShowcase].text}
+                  </p>
+                </div>
+              )}
+              <div className="show-meta-layer" data-state={showcaseAnimating ? 'entering' : 'current'}>
+                <h2 style={{ fontFamily: BRAND_SERIF, fontWeight: 500, fontSize: 'clamp(21px, 2vw, 27px)', lineHeight: 1.15, letterSpacing: '-0.01em', color: '#f7f1e8' }}>
+                  {SHOWCASE[renderedShowcase].title}
+                </h2>
+                <p style={{ marginTop: 10, fontSize: 'clamp(13px, 1vw, 15px)', lineHeight: 1.6, color: 'rgba(244,237,226,0.6)', maxWidth: 460 }}>
+                  {SHOWCASE[renderedShowcase].text}
+                </p>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
               {SHOWCASE.map((_, i) => (
