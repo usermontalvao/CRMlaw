@@ -1,8 +1,17 @@
 import { supabase } from '../config/supabase';
-import type { EmailMessage, EmailFolder, SendEmailDTO, EmailSignature, EmailSpamRule, SpamRuleKind, SpamRuleMatch } from '../types/email.types';
+import type { EmailMessage, EmailFolder, SendEmailDTO, EmailSignature, EmailSpamRule, SpamRuleKind, SpamRuleMatch, EmailSearchFilters } from '../types/email.types';
 import { patchForInbox, patchForSpam } from '../utils/email.transitions';
 
 const TABLE = 'email_messages';
+const EMPTY_FILTERS: EmailSearchFilters = {
+  from: '',
+  to: '',
+  subject: '',
+  hasAttachments: false,
+  starredOnly: false,
+  dateFrom: '',
+  dateTo: '',
+};
 
 function folderFilter(query: any, folder: EmailFolder) {
   switch (folder) {
@@ -24,20 +33,41 @@ function folderFilter(query: any, folder: EmailFolder) {
 }
 
 class EmailService {
-  async listMessages(folder: EmailFolder, search?: string, limit = 50, onlyUnread = false): Promise<EmailMessage[]> {
+  async listMessages(folder: EmailFolder, search?: string, limit = 50, onlyUnread = false, filters?: Partial<EmailSearchFilters>): Promise<EmailMessage[]> {
+    const activeFilters = { ...EMPTY_FILTERS, ...filters };
     let query = supabase.from(TABLE).select('*');
     query = folderFilter(query, folder);
     if (onlyUnread) query = query.eq('is_read', false);
-    if (search && search.trim()) {
-      const term = `%${search.trim()}%`;
-      query = query.or(`subject.ilike.${term},from_text.ilike.${term},from_address.ilike.${term},to_text.ilike.${term}`);
+    if (activeFilters.starredOnly) query = query.eq('is_starred', true);
+    if (activeFilters.dateFrom) {
+      query = query.gte('sent_at', `${activeFilters.dateFrom}T00:00:00`);
+    }
+    if (activeFilters.dateTo) {
+      query = query.lte('sent_at', `${activeFilters.dateTo}T23:59:59`);
     }
     const { data, error } = await query
       .order('sent_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
-      .limit(Math.max(1, Math.min(limit, 500)));
+      .limit(Math.max(50, Math.min(limit * 4, 500)));
     if (error) throw new Error(error.message);
-    return (data ?? []) as EmailMessage[];
+    const rows = (data ?? []) as EmailMessage[];
+    const normalizedSearch = search?.trim().toLocaleLowerCase('pt-BR') || '';
+    const fromFilter = activeFilters.from.trim().toLocaleLowerCase('pt-BR');
+    const toFilter = activeFilters.to.trim().toLocaleLowerCase('pt-BR');
+    const subjectFilter = activeFilters.subject.trim().toLocaleLowerCase('pt-BR');
+
+    return rows.filter((row) => {
+      const fromText = `${row.from_text ?? ''} ${row.from_address ?? ''}`.toLocaleLowerCase('pt-BR');
+      const toText = `${row.to_text ?? ''} ${row.cc_text ?? ''} ${row.bcc_text ?? ''}`.toLocaleLowerCase('pt-BR');
+      const subjectText = (row.subject ?? '').toLocaleLowerCase('pt-BR');
+      const searchable = `${subjectText} ${fromText} ${toText}`.trim();
+      if (normalizedSearch && !searchable.includes(normalizedSearch)) return false;
+      if (fromFilter && !fromText.includes(fromFilter)) return false;
+      if (toFilter && !toText.includes(toFilter)) return false;
+      if (subjectFilter && !subjectText.includes(subjectFilter)) return false;
+      if (activeFilters.hasAttachments && (!Array.isArray(row.attachments) || row.attachments.length === 0)) return false;
+      return true;
+    }).slice(0, Math.max(1, Math.min(limit, 500)));
   }
 
   /** Uma mensagem específica por id (usado ao abrir via notificação). */

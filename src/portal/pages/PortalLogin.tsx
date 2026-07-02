@@ -1,9 +1,7 @@
 ﻿import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Loader2, AlertCircle, ArrowLeft, ArrowRight,
-  Eye, EyeOff, Lock, Shield, Bell, MessageSquare, Ban, ChevronRight, CheckCircle, X,
-  Calendar, MessageCircle, Users, Scale, Briefcase, FileText,
-  PiggyBank, AlarmClock, Library, PenTool, Cloud, UserPlus,
+  Eye, EyeOff, Lock, Shield, Ban, ChevronRight, CheckCircle, X,
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { supabase } from '../../config/supabase';
@@ -172,46 +170,55 @@ const BannedMsg: React.FC = () => (
 
 // ── Módulos do sistema (vitrine no painel de marca) ────────────────────────────
 
-const MODULES: { icon: React.ElementType; label: string }[] = [
-  { icon: Users,      label: 'Clientes' },
-  { icon: UserPlus,   label: 'Leads' },
-  { icon: Scale,      label: 'Processos' },
-  { icon: Calendar,   label: 'Agenda' },
-  { icon: AlarmClock, label: 'Prazos' },
-  { icon: Bell,       label: 'Intimações' },
-  { icon: PiggyBank,  label: 'Financeiro' },
-  { icon: Briefcase,  label: 'Requerimentos' },
-  { icon: FileText,   label: 'Petições' },
-  { icon: Library,    label: 'Documentos' },
-  { icon: PenTool,    label: 'Assinaturas' },
-  { icon: MessageSquare, label: 'WhatsApp' },
-  { icon: MessageCircle, label: 'Chat da Equipe' },
-  { icon: Cloud,      label: 'Cloud' },
+// Destaques rotativos exibidos sob o mockup do produto (painel de marca).
+const SHOWCASE: { title: string; text: string; url: string; module: string }[] = [
+  {
+    url: 'jurius.com.br/agenda',
+    module: 'Prazos & Andamentos',
+    title: 'Prazos sob controle',
+    text: 'Vencimentos, audiências e andamentos em um só painel — com alertas automáticos antes de cada prazo fatal.',
+  },
+  {
+    url: 'jurius.com.br/clientes',
+    module: 'Clientes',
+    title: 'Carteira de clientes organizada',
+    text: 'Histórico completo, documentos e processos vinculados a cada cliente, com busca e filtros instantâneos.',
+  },
+  {
+    url: 'jurius.com.br/processos',
+    module: 'Processos',
+    title: 'Processos com andamentos em tempo real',
+    text: 'Acompanhe cada processo, movimentação e prazo em um painel intuitivo, sempre conectado ao cliente.',
+  },
+  {
+    url: 'jurius.com.br/peticoes',
+    module: 'Petições & Req. INSS',
+    title: 'Do requerimento à assinatura',
+    text: 'Petições, requerimentos do INSS e assinaturas com validade jurídica, tudo sem sair do sistema.',
+  },
+  {
+    url: 'jurius.com.br/documentos',
+    module: 'Cloud & Documentos',
+    title: 'Arquivos seguros na nuvem',
+    text: 'Documentos organizados por cliente e processo, com acesso de qualquer lugar e controle de versões.',
+  },
+  {
+    url: 'jurius.com.br/assinaturas',
+    module: 'Assinaturas Digitais',
+    title: 'Assine com validade jurídica',
+    text: 'Contratos e termos assinados digitalmente com certificação ICP-Brasil, enviados e monitorados direto pelo sistema.',
+  },
+  {
+    url: 'jurius.com.br/financeiro',
+    module: 'Financeiro',
+    title: 'Gestão financeira integrada',
+    text: 'Honorários, recebimentos e despesas em um único painel — com relatórios por cliente ou processo.',
+  },
 ];
-
-// Movimento por chip (determinístico — sem random a cada render, para a flutuação
-// ser estável e o ciclo nunca "sincronizar"). Entrega por chip:
-//  · --chip-anim         variante de flutuação (A/B/C em rodízio)
-//  · --chip-dur          duração da flutuação (varia → desencontro natural)
-//  · --chip-in           atraso do fade-in de entrada (cascata suave)
-//  · --chip-float-delay  quando a flutuação assume — após a entrada
-const CHIP_VARIANTS = ['chipFloatA', 'chipFloatB', 'chipFloatC'] as const;
-const chipMotion = (i: number): React.CSSProperties => ({
-  // ts: variáveis CSS customizadas não existem no tipo CSSProperties
-  ['--chip-anim' as any]:  CHIP_VARIANTS[i % CHIP_VARIANTS.length],
-  ['--chip-dur'  as any]: `${(9 + (i % 5) * 1.15).toFixed(2)}s`,     // 9.0s … 13.6s
-  ['--chip-in'   as any]: `${(0.45 + i * 0.045).toFixed(2)}s`,       // entrada em cascata
-  ['--chip-float-delay' as any]: `${(1.4 + i * 0.05).toFixed(2)}s`,  // flutuação após assentar
-});
 
 // ── Tipos compartilhados ──────────────────────────────────────────────────────
 
 type SvcStatus = 'checking' | 'online' | 'offline';
-
-interface LiveStats {
-  clientes: number; processos: number; assinaturas: number;
-  acordos: number; prazos: number;
-}
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -287,18 +294,24 @@ export const PortalLogin: React.FC = () => {
   const [clientLoading, setClientLoading] = useState(false);
   const [clientError, setClientError]     = useState<string | null>(null);
 
-  // ── Stats ao vivo
-  const [stats,   setStats]   = useState<LiveStats | null>(null);
+  // ── Estado da conexão com o backend (mede latência via RPC leve)
   const [svc,     setSvc]     = useState<SvcStatus>('checking');
   const [latency, setLatency] = useState<number | null>(null);
+
+  // ── Carrossel de destaques do produto (painel de marca)
+  const [showcase, setShowcase] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setShowcase((s) => (s + 1) % SHOWCASE.length), 5200);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     const load = async () => {
       const t0 = performance.now();
       try {
-        const { data, error } = await supabase.rpc('portal_public_stats');
+        const { error } = await supabase.rpc('portal_public_stats');
         const ms = Math.round(performance.now() - t0);
-        if (!error && data) { setStats(data as LiveStats); setSvc('online'); setLatency(ms); }
+        if (!error) { setSvc('online'); setLatency(ms); }
         else { setSvc('offline'); setLatency(null); }
       } catch { setSvc('offline'); setLatency(null); }
     };
@@ -775,7 +788,7 @@ export const PortalLogin: React.FC = () => {
 
   // ────────────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', width: '100%', background: '#FCFAF6', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }} className="flex-col md:flex-row">
+    <div style={{ display: 'flex', minHeight: '100vh', width: '100%', background: '#f8f7f5', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }} className="flex-col md:flex-row">
 
       {/* ── Efeito de abertura: keyframes + barra de carregamento no topo ── */}
       <style>{`
@@ -785,8 +798,7 @@ export const PortalLogin: React.FC = () => {
         @keyframes loginBarFade { to { opacity: 0; } }
         .login-anim { animation: loginFadeUp 0.62s cubic-bezier(0.22,0.61,0.36,1) both; }
 
-        /* ── Vitrine de módulos: fade-in em cascata + flutuação orgânica + hover ── */
-        /* Camadas: .chip-float (fade-in de entrada) › .chip-drift (flutuação) › .chip (hover). */
+        /* ── Vitrine de módulos: entrada em cascata + cards compactos com profundidade ── */
         @keyframes chipIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
         @keyframes chipFloatA { 0%,100% { transform: translate3d(0,0,0) rotate(0deg); } 50% { transform: translate3d(0,-6px,0) rotate(-0.4deg); } }
         @keyframes chipFloatB { 0%,100% { transform: translate3d(0,0,0); } 34% { transform: translate3d(3px,-4px,0); } 67% { transform: translate3d(-2px,-7px,0); } }
@@ -795,26 +807,39 @@ export const PortalLogin: React.FC = () => {
 
         .chip-grid { position: relative; transition: transform 0.55s cubic-bezier(0.22,0.61,0.36,1); will-change: transform; }
         .chip-float {
-          display: inline-flex; opacity: 0; will-change: transform, opacity;
+          display: block; opacity: 0; will-change: transform, opacity;
           animation: chipIn 0.6s cubic-bezier(0.22,0.61,0.36,1) var(--chip-in,0s) both;
         }
-        .chip-drift {
-          display: inline-flex; will-change: transform;
-          animation: var(--chip-anim,chipFloatA) var(--chip-dur,9s) ease-in-out var(--chip-float-delay,1.4s) infinite;
+        /* showcase do produto — moldura de navegador + gráfico + tabela + carrossel */
+        .show-browser {
+          width: 100%; border-radius: 14px; overflow: hidden; background: #fff;
+          border: 1px solid rgba(0,0,0,0.06);
+          box-shadow: 0 44px 88px -34px rgba(0,0,0,0.72), 0 10px 26px -14px rgba(0,0,0,0.5);
         }
-        .chip {
-          display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 6px;
-          font-size: 12px; font-weight: 600; color: #aeb6c4; white-space: nowrap;
-          background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
-          transition: transform 0.35s cubic-bezier(0.22,0.61,0.36,1), background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease, color 0.35s ease;
-        }
-        .chip:hover {
-          transform: translateY(-3px);
-          background: rgba(255,255,255,0.06); border-color: rgba(242,99,26,0.45); color: #e7ebf2;
-          box-shadow: 0 8px 22px -10px rgba(242,99,26,0.4), inset 0 0 0 1px rgba(242,99,26,0.08);
-        }
-        .chip-ico { color: #FF9259; }
-        .chip-breathe { animation: chipBreathe 9s ease-in-out infinite; }
+        .show-bar { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; background: #f1ede6; border-bottom: 1px solid rgba(0,0,0,0.05); }
+        .show-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .show-url { margin-left: 10px; flex: 1; max-width: 280px; height: 20px; border-radius: 6px; background: #e5e0d7; color: #8a8177; font-size: 10.5px; font-weight: 500; display: flex; align-items: center; padding: 0 10px; }
+        .show-screen { padding: 16px; background: #faf8f5; }
+        .show-appbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .show-apptitle { font-size: 14px; font-weight: 700; color: #2a2320; letter-spacing: -0.01em; }
+        .show-live { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #c56a1a; }
+        .show-livedot { width: 6px; height: 6px; border-radius: 50%; background: #ea6a1e; box-shadow: 0 0 0 3px rgba(234,106,30,0.16); }
+        .show-card { background: #fff; border: 1px solid #efeae2; border-radius: 12px; padding: 14px; }
+        .show-cardhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .show-cardtitle { font-size: 12px; font-weight: 700; color: #3a332c; }
+        .show-chip { font-size: 10px; font-weight: 700; color: #9a8f82; background: #f3efe8; border-radius: 5px; padding: 2px 7px; }
+        .show-line { stroke-dasharray: 1100; animation: showDraw 1.6s cubic-bezier(0.22,0.61,0.36,1) 0.45s both; }
+        @keyframes showDraw { from { stroke-dashoffset: 1100; } to { stroke-dashoffset: 0; } }
+        .show-tip { position: absolute; top: 18px; right: 16px; background: #fff; border: 1px solid #ececec; border-radius: 9px; padding: 8px 11px; box-shadow: 0 14px 28px -12px rgba(0,0,0,0.28); display: flex; flex-direction: column; gap: 2px; }
+        .show-tiplabel { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #a49a8d; }
+        .show-tipval { font-size: 11.5px; font-weight: 600; color: #2a2320; }
+        .show-tipval strong { color: #d1521a; }
+        .show-row { display: grid; grid-template-columns: 0.9fr 1.2fr 0.7fr; gap: 10px; align-items: center; padding: 9px 14px; font-size: 11.5px; border-top: 1px solid #f2ede6; }
+        .show-rowhead { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: #a49a8d; border-top: none; padding-top: 11px; padding-bottom: 7px; }
+        .show-fade { animation: showFade 0.55s cubic-bezier(0.22,0.61,0.36,1) both; }
+        @keyframes showFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .show-dotbtn { width: 22px; height: 4px; border-radius: 999px; border: none; cursor: pointer; padding: 0; background: rgba(255,255,255,0.22); transition: background 0.35s ease, width 0.35s ease; }
+        .show-dotbtn[data-on="true"] { width: 34px; background: linear-gradient(90deg, #f59e0b, #ea6a1e); }
 
         /* ── Brilho interno passando pelo logo J (sheen diagonal em loop com pausa) ── */
         @keyframes logoShine {
@@ -853,80 +878,278 @@ export const PortalLogin: React.FC = () => {
         className="hidden md:flex"
         style={{
           position: 'relative', overflow: 'hidden', flex: '0 0 56%', minWidth: 0,
-          flexDirection: 'column', justifyContent: 'space-between', padding: 'clamp(36px, 5vw, 72px)', color: '#fff',
-          backgroundColor: '#0C1320',
-          backgroundImage: 'linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px),radial-gradient(640px 540px at 8% 92%, rgba(242,99,26,0.16), transparent 62%),radial-gradient(520px 460px at 96% 4%, rgba(74,108,170,0.16), transparent 60%)',
-          backgroundSize: '80px 80px, 80px 80px, 100% 100%, 100% 100%',
+          flexDirection: 'column', justifyContent: 'flex-start', padding: 'clamp(36px, 4.5vw, 72px)', color: '#f4ede2',
+          backgroundColor: '#1e1811',
+          backgroundImage: 'radial-gradient(900px 640px at 84% 8%, rgba(244,150,60,0.18), transparent 60%),radial-gradient(760px 640px at -4% 106%, rgba(242,122,35,0.10), transparent 62%),linear-gradient(158deg, #29221b 0%, #1d1710 55%, #140f0a 100%)',
+          backgroundSize: '100% 100%, 100% 100%, 100% 100%',
           animation: 'loginPanelIn 0.7s ease both',
         }}>
-        {/* watermark monogram */}
-        <div style={{ position: 'absolute', right: -60, bottom: -90, fontFamily: BRAND_SERIF, fontSize: 460, lineHeight: 1, fontWeight: 600, color: 'rgba(255,255,255,0.018)', zIndex: 1, userSelect: 'none' }}>J</div>
+        {/* textura de papel — grão sutil em multiply para dar corpo ao marfim */}
+        <div aria-hidden="true" style={{
+          position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none', opacity: 0.05,
+          backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
+        }} />
+        {/* vinheta — aprofunda as bordas para o mockup ganhar destaque no centro */}
+        <div aria-hidden="true" style={{
+          position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
+          background: 'radial-gradient(ellipse at 55% 42%, transparent 52%, rgba(0,0,0,0.4) 100%)',
+        }} />
 
         {/* logo */}
         <div className="login-anim" style={{ position: 'relative', zIndex: 2, animationDelay: '0.12s' }}>
           <BrandLogo variant="reversed" size="md" divider={false} shine />
         </div>
 
-        {/* headline editorial */}
-        <div className="login-anim" style={{ position: 'relative', zIndex: 2, maxWidth: 580, animationDelay: '0.26s' }}>
-          <div style={{ width: 34, height: 2, background: '#F2631A', marginBottom: 'clamp(20px, 3vw, 34px)', opacity: 0.9 }} />
-          <h1 style={{ fontFamily: "'Newsreader', serif", fontWeight: 400, fontSize: 'clamp(30px, 3.3vw, 52px)', lineHeight: 1.08, letterSpacing: '-0.015em', color: '#F5F2EB' }}>
-            Gestão jurídica conduzida com <span style={{ fontStyle: 'italic', color: '#FF9259' }}>precisão</span>.
-          </h1>
-          <p style={{ fontSize: 'clamp(13px, 1.05vw, 16px)', lineHeight: 1.65, color: '#97a1b4', fontWeight: 400, marginTop: 'clamp(16px, 2vw, 26px)', maxWidth: 460 }}>
-            Processos, prazos e documentos do escritório reunidos em um só ambiente — com a segurança e o rigor que a advocacia exige.
-          </p>
+        {/* showcase do produto — mockup em moldura de navegador + carrossel */}
+        <div className="login-anim" style={{ position: 'relative', zIndex: 2, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', maxWidth: 620, marginTop: 'clamp(20px, 3vh, 40px)', animationDelay: '0.26s' }}>
 
-          {/* módulos do sistema — vitrine viva (chips suspensos, parallax + flutuação) */}
-          <div style={{ marginTop: 'clamp(26px, 3.4vw, 44px)', position: 'relative' }}>
-            <span style={{ fontSize: 10, letterSpacing: '0.22em', color: '#5e6a82', fontWeight: 700, textTransform: 'uppercase' }}>
-              Tudo o que o escritório precisa
-            </span>
+          {/* moldura de navegador */}
+          <div className="show-browser">
+            <div className="show-bar">
+              <span className="show-dot" style={{ background: '#ef6a5f' }} />
+              <span className="show-dot" style={{ background: '#f5bd4f' }} />
+              <span className="show-dot" style={{ background: '#58c66a' }} />
+              <div className="show-url">{SHOWCASE[showcase].url}</div>
+            </div>
 
-            {/* brilho ambiente que "respira" por trás dos chips → profundidade e ar */}
-            <div aria-hidden="true" className="chip-breathe"
-              style={{
-                position: 'absolute', left: -28, right: 60, top: 40, bottom: -24, zIndex: 0,
-                pointerEvents: 'none', filter: 'blur(28px)',
-                background: 'radial-gradient(420px 200px at 28% 55%, rgba(242,99,26,0.11), transparent 70%)',
-              }} />
+            <div key={showcase} className="show-screen show-fade">
+              <div className="show-appbar">
+                <span className="show-apptitle">{SHOWCASE[showcase].module}</span>
+                <span className="show-live"><span className="show-livedot" /> ao vivo</span>
+              </div>
 
-            <div ref={chipGridRef} className="chip-grid"
-              style={{ position: 'relative', zIndex: 1, display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 16, maxWidth: 540 }}>
-              {MODULES.map(({ icon: Icon, label }, i) => (
-                <span key={label} className="chip-float" style={chipMotion(i)}>
-                  <span className="chip-drift">
-                    <span className="chip">
-                      <Icon size={12.5} strokeWidth={1.75} className="chip-ico" />
-                      {label}
+              {/* ── Slide 0: Prazos & Andamentos ── */}
+              {showcase === 0 && (<>
+                <div className="show-card" style={{ position: 'relative' }}>
+                  <div className="show-cardhead">
+                    <span className="show-cardtitle">Prazos por mês</span>
+                    <span className="show-chip">2025</span>
+                  </div>
+                  <svg viewBox="0 0 520 176" preserveAspectRatio="none" style={{ width: '100%', height: 120, display: 'block' }}>
+                    <defs>
+                      <linearGradient id="showArea" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.34" />
+                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                    {[44, 88, 132].map((y) => (
+                      <line key={y} x1="0" y1={y} x2="520" y2={y} stroke="#efeae2" strokeWidth="1" />
+                    ))}
+                    <path d="M0,132 L52,120 L104,128 L156,96 L208,104 L260,74 L312,86 L364,58 L416,66 L468,40 L520,52 L520,176 L0,176 Z" fill="url(#showArea)" />
+                    <path className="show-line" d="M0,132 L52,120 L104,128 L156,96 L208,104 L260,74 L312,86 L364,58 L416,66 L468,40 L520,52" fill="none" stroke="#ea6a1e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                    <circle cx="364" cy="58" r="4.5" fill="#fff" stroke="#ea6a1e" strokeWidth="2.5" />
+                  </svg>
+                  <div className="show-tip">
+                    <span className="show-tiplabel">Setembro</span>
+                    <span className="show-tipval">28 prazos · <strong>4 fatais</strong></span>
+                  </div>
+                </div>
+                <div className="show-card" style={{ marginTop: 10, padding: 0, overflow: 'hidden' }}>
+                  <div className="show-row show-rowhead"><span>Processo</span><span>Cliente</span><span style={{ textAlign: 'right' }}>Vence</span></div>
+                  {[
+                    { p: '1002345-67', c: 'Maria Oliveira', d: 'em 2 dias', warn: true },
+                    { p: '0456123-70', c: 'Construtora Ápice', d: 'em 5 dias', warn: false },
+                    { p: '2231908-18', c: 'João P. Santos', d: 'em 8 dias', warn: false },
+                  ].map((r) => (
+                    <div key={r.p} className="show-row">
+                      <span style={{ fontVariantNumeric: 'tabular-nums', color: '#5a534c' }}>{r.p}</span>
+                      <span style={{ color: '#2a2320', fontWeight: 600 }}>{r.c}</span>
+                      <span style={{ textAlign: 'right', fontWeight: 700, color: r.warn ? '#d1521a' : '#6a625a' }}>{r.d}</span>
+                    </div>
+                  ))}
+                </div>
+              </>)}
+
+              {/* ── Slide 1: Clientes ── */}
+              {showcase === 1 && (<>
+                <div style={{ background: '#f3f0eb', borderRadius: 8, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, fontSize: 11, color: '#8a8177' }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  Buscar cliente, CPF ou CNPJ…
+                </div>
+                {[
+                  { name: 'Maria S. Oliveira', doc: '812.***.**8', procs: 12, ini: 'MS', hi: true },
+                  { name: 'Construtora Ápice Ltda.', doc: 'CNPJ 12.***/0001', procs: 3, ini: 'CA', hi: false },
+                  { name: 'João P. Santos', doc: '074.***.**1', procs: 8, ini: 'JP', hi: false },
+                  { name: 'Roberta C. Lima', doc: '531.***.**7', procs: 5, ini: 'RL', hi: false },
+                ].map((c, i) => (
+                  <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 0', borderTop: i === 0 ? 'none' : '1px solid #f2ede6' }}>
+                    <div style={{ width: 30, height: 30, borderRadius: '50%', background: c.hi ? '#ea6a1e' : '#e8e3d8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: c.hi ? '#fff' : '#6a625a', flexShrink: 0 }}>{c.ini}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 600, color: '#2a2320', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+                      <div style={{ fontSize: 10, color: '#9a8f82' }}>{c.doc}</div>
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#6a625a', background: '#f3efe8', borderRadius: 5, padding: '2px 7px', flexShrink: 0 }}>{c.procs} proc.</span>
+                  </div>
+                ))}
+              </>)}
+
+              {/* ── Slide 2: Processos ── */}
+              {showcase === 2 && (<>
+                <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
+                  {[['Em andamento', true], ['Aguardando', false], ['Arquivado', false]].map(([s, on]) => (
+                    <span key={String(s)} style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 999, padding: '3px 9px', background: on ? '#ea6a1e' : '#f3efe8', color: on ? '#fff' : '#8a8177' }}>{String(s)}</span>
+                  ))}
+                </div>
+                <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: '#a49a8d', display: 'grid', gridTemplateColumns: '0.9fr 1fr 0.75fr', gap: 8, padding: '6px 0' }}>
+                  <span>Número</span><span>Cliente</span><span>Situação</span>
+                </div>
+                {[
+                  { num: '1002345-67.2023', client: 'Maria Oliveira', st: 'Em andamento', color: '#22c55e' },
+                  { num: '0456123-70.2022', client: 'Construtora Ápice', st: 'Aguardando', color: '#f59e0b' },
+                  { num: '2231908-18.2024', client: 'João P. Santos', st: 'Em andamento', color: '#22c55e' },
+                  { num: '0987654-32.2021', client: 'Roberta C. Lima', st: 'Arquivado', color: '#94a3b8' },
+                ].map((p) => (
+                  <div key={p.num} style={{ display: 'grid', gridTemplateColumns: '0.9fr 1fr 0.75fr', gap: 8, padding: '7px 0', borderTop: '1px solid #f2ede6', alignItems: 'center' }}>
+                    <span style={{ fontVariantNumeric: 'tabular-nums', color: '#5a534c', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.num}</span>
+                    <span style={{ color: '#2a2320', fontWeight: 600, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.client}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+                      <span style={{ color: '#6a625a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.st}</span>
                     </span>
-                  </span>
-                </span>
+                  </div>
+                ))}
+              </>)}
+
+              {/* ── Slide 3: Petições & Req. INSS ── */}
+              {showcase === 3 && (<>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#3a332c' }}>Documentos recentes</span>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, background: '#ea6a1e', color: '#fff', borderRadius: 5, padding: '2px 9px', cursor: 'default' }}>+ Novo</span>
+                </div>
+                {[
+                  { icon: '📄', title: 'Contestação — Proc. 1002345', tag: 'Petição', st: 'Rascunho', sb: '#f3efe8', tc: '#8a8177' },
+                  { icon: '📋', title: 'Req. INSS BPC/LOAS — Maria S.', tag: 'Req. INSS', st: 'Pronto', sb: '#d1fae5', tc: '#059669' },
+                  { icon: '📄', title: 'Recurso Ordinário — Const. Ápice', tag: 'Petição', st: 'Revisão', sb: '#fef3c7', tc: '#d97706' },
+                  { icon: '📋', title: 'Req. Auxílio-Doença — João S.', tag: 'Req. INSS', st: 'Rascunho', sb: '#f3efe8', tc: '#8a8177' },
+                ].map((d) => (
+                  <div key={d.title} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: '1px solid #f2ede6' }}>
+                    <span style={{ fontSize: 14, flexShrink: 0 }}>{d.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#2a2320', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: '#9a8f82', background: '#f3efe8', borderRadius: 4, padding: '1px 5px' }}>{d.tag}</span>
+                    </div>
+                    <span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 5, padding: '2px 7px', background: d.sb, color: d.tc, flexShrink: 0 }}>{d.st}</span>
+                  </div>
+                ))}
+              </>)}
+
+              {/* ── Slide 4: Cloud & Documentos ── */}
+              {showcase === 4 && (<>
+                <div style={{ background: '#f3f0eb', borderRadius: 8, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, fontSize: 11, color: '#8a8177' }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  Buscar arquivos e pastas…
+                </div>
+                {[
+                  { indent: 0, icon: '📁', name: 'Clientes', isFolder: true },
+                  { indent: 1, icon: '📂', name: 'Maria Souza', isFolder: true },
+                  { indent: 2, icon: '📄', name: 'RG.pdf', size: '340 KB' },
+                  { indent: 2, icon: '📄', name: 'Procuração.pdf', size: '1.2 MB' },
+                  { indent: 1, icon: '📂', name: 'João Santos', isFolder: true },
+                  { indent: 2, icon: '📄', name: 'Contrato_Hon.pdf', size: '88 KB' },
+                  { indent: 0, icon: '📁', name: 'Processos', isFolder: true },
+                ].map((f, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 0', paddingLeft: f.indent * 14, borderTop: i > 0 ? '1px solid #f7f3ee' : 'none' }}>
+                    <span style={{ fontSize: 13, flexShrink: 0 }}>{f.icon}</span>
+                    <span style={{ fontSize: 11, color: f.isFolder ? '#2a2320' : '#5a534c', fontWeight: f.isFolder ? 600 : 400, flex: 1 }}>{f.name}</span>
+                    {!f.isFolder && 'size' in f && <span style={{ fontSize: 9.5, color: '#a49a8d', flexShrink: 0 }}>{(f as any).size}</span>}
+                  </div>
+                ))}
+              </>)}
+
+              {/* ── Slide 5: Assinaturas Digitais ── */}
+              {showcase === 5 && (<>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 7, marginBottom: 10 }}>
+                  {([['Pendentes', '2', '#fef3c7', '#d97706'], ['Assinados', '5', '#d1fae5', '#059669'], ['Expirados', '1', '#fee2e2', '#dc2626']] as const).map(([l, n, bg, tc]) => (
+                    <div key={l} style={{ background: bg, borderRadius: 8, padding: '8px 6px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: tc, lineHeight: 1 }}>{n}</div>
+                      <div style={{ fontSize: 9, fontWeight: 600, color: tc, opacity: 0.75, marginTop: 2 }}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+                {[
+                  { doc: 'Contrato de Honorários', client: 'Maria Oliveira', st: 'Pendente', prog: '1 de 2', sb: '#fef3c7', tc: '#d97706' },
+                  { doc: 'Procuração ad judicia', client: 'João P. Santos', st: 'Assinado', prog: '2 de 2', sb: '#d1fae5', tc: '#059669' },
+                  { doc: 'Termo de Confidencialidade', client: 'Construtora Ápice', st: 'Expirado', prog: '0 de 1', sb: '#fee2e2', tc: '#dc2626' },
+                ].map((s) => (
+                  <div key={s.doc} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: '1px solid #f2ede6' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: '#2a2320', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.doc}</div>
+                      <div style={{ fontSize: 10, color: '#9a8f82' }}>{s.client} · {s.prog}</div>
+                    </div>
+                    <span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 5, padding: '2px 7px', background: s.sb, color: s.tc, flexShrink: 0 }}>{s.st}</span>
+                  </div>
+                ))}
+              </>)}
+
+              {/* ── Slide 6: Financeiro ── */}
+              {showcase === 6 && (<>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                  {([['Honorários (Jul)', 'R$ 14.800', '+18%', '#d1fae5', '#059669'], ['Pendente', 'R$ 5.600', '3 faturas', '#fef3c7', '#d97706']] as const).map(([l, v, s, bg, tc]) => (
+                    <div key={l} style={{ background: bg, borderRadius: 8, padding: '9px 10px' }}>
+                      <div style={{ fontSize: 9, fontWeight: 600, color: tc, opacity: 0.75, marginBottom: 2 }}>{l}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: tc, lineHeight: 1 }}>{v}</div>
+                      <div style={{ fontSize: 9.5, fontWeight: 600, color: tc, opacity: 0.65, marginTop: 2 }}>{s}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="show-card" style={{ padding: '10px 12px' }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: '#3a332c', marginBottom: 8 }}>Receita mensal — 2025</div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 60 }}>
+                    {[42, 58, 50, 72, 64, 88, 76].map((h, i) => (
+                      <div key={i} style={{ flex: 1, borderRadius: '3px 3px 0 0', background: i === 5 ? '#ea6a1e' : '#e8e3d8', height: `${h}%`, position: 'relative', transition: 'height .4s ease' }}>
+                        {i === 5 && <div style={{ position: 'absolute', top: -16, left: '50%', transform: 'translateX(-50%)', fontSize: 8, fontWeight: 700, color: '#ea6a1e', whiteSpace: 'nowrap' }}>Jul</div>}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
+                    {['Jan','Fev','Mar','Abr','Mai','Jun','Jul'].map((m) => (
+                      <span key={m} style={{ fontSize: 8, color: '#a49a8d', flex: 1, textAlign: 'center' }}>{m}</span>
+                    ))}
+                  </div>
+                </div>
+              </>)}
+            </div>
+          </div>
+
+          {/* legenda + carrossel */}
+          <div style={{ marginTop: 'clamp(20px, 3vh, 34px)', minHeight: 96 }}>
+            <div key={showcase} className="show-fade">
+              <h2 style={{ fontFamily: BRAND_SERIF, fontWeight: 500, fontSize: 'clamp(21px, 2vw, 27px)', lineHeight: 1.15, letterSpacing: '-0.01em', color: '#f7f1e8' }}>
+                {SHOWCASE[showcase].title}
+              </h2>
+              <p style={{ marginTop: 10, fontSize: 'clamp(13px, 1vw, 15px)', lineHeight: 1.6, color: 'rgba(244,237,226,0.6)', maxWidth: 460 }}>
+                {SHOWCASE[showcase].text}
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
+              {SHOWCASE.map((_, i) => (
+                <button key={i} type="button" aria-label={`Destaque ${i + 1}`} onClick={() => setShowcase(i)}
+                  className="show-dotbtn" data-on={i === showcase ? 'true' : 'false'} />
               ))}
             </div>
           </div>
         </div>
 
         {/* footer meta — estado real da conexão com o backend (Supabase) */}
-        <div className="login-anim" style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.08)', animationDelay: '0.4s' }}>
-          <span style={{ fontSize: 13, color: '#6e7a92', fontWeight: 500, letterSpacing: '0.01em' }}>jurius.com.br</span>
+        <div className="login-anim" style={{ position: 'relative', zIndex: 2, marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 22, borderTop: '1px solid rgba(255,255,255,0.10)', animationDelay: '0.4s' }}>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 500, letterSpacing: '0.24em', textTransform: 'uppercase' }}>© {new Date().getFullYear()} jurius.com.br</span>
           <span
             title={svc === 'online'
               ? `Servidor Supabase · ${supabaseRegion} (${supabaseRegionCode})${latency != null ? ` · ${latency} ms` : ''}`
               : svc === 'offline' ? `Sem conexão com o servidor (${supabaseRegion})` : `Conectando ao servidor (${supabaseRegion})…`}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#8a94a8', fontWeight: 500 }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: svc === 'online' ? '#3ec47a' : svc === 'offline' ? '#ef4444' : '#f5a623', boxShadow: svc === 'online' ? '0 0 0 3px rgba(62,196,122,0.18)' : 'none' }} />
-            <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#5e6a82' }}>Servidor</span>
-            <span style={{ color: '#aeb6c4' }}>{supabaseRegion}</span>
-            {svc === 'online' && latency != null && <span style={{ color: '#5e6a82' }}>· {latency} ms</span>}
-            {svc === 'offline' && <span style={{ color: '#c2603f' }}>· offline</span>}
-            {svc === 'checking' && <span style={{ color: '#5e6a82' }}>· …</span>}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'rgba(255,255,255,0.5)', fontWeight: 500 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: svc === 'online' ? '#5cc47a' : svc === 'offline' ? '#e05a4a' : '#e0a54a', boxShadow: svc === 'online' ? '0 0 0 3px rgba(92,196,122,0.18)' : 'none' }} />
+            <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.38)' }}>Servidor</span>
+            <span style={{ color: 'rgba(255,255,255,0.62)' }}>{supabaseRegion}</span>
+            {svc === 'online' && latency != null && <span style={{ color: 'rgba(255,255,255,0.38)' }}>· {latency} ms</span>}
+            {svc === 'offline' && <span style={{ color: '#e05a4a' }}>· offline</span>}
+            {svc === 'checking' && <span style={{ color: 'rgba(255,255,255,0.38)' }}>· …</span>}
           </span>
         </div>
       </aside>
 
       {/* ── PAINEL DO FORMULÁRIO ── */}
-      <main className="min-h-screen md:h-auto" style={{ position: 'relative', flex: '1 1 0', minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(28px, 4vw, 56px) clamp(18px, 3vw, 44px)' }}>
+      <main className="min-h-screen md:h-auto" style={{ position: 'relative', flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', padding: 'clamp(28px, 4vw, 56px) clamp(18px, 3vw, 44px) clamp(20px, 2.5vw, 32px)' }}>
 
         {/* backdrop decorativo — SÓ mobile (no desktop o painel de marca já cumpre esse papel).
             Eco da identidade: brilho âmbar no topo + grade tênue, para o formulário não
@@ -941,9 +1164,18 @@ export const PortalLogin: React.FC = () => {
           backgroundSize: '100% 100%, 100% 100%, 40px 40px, 40px 40px',
         }} />
 
+        {/* eco quente no desktop — o formulário não flutua num branco estéril */}
+        <div aria-hidden="true" className="hidden md:block" style={{
+          position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none',
+          background:
+            'radial-gradient(560px 420px at 88% 6%, rgba(242,122,35,0.055), transparent 70%),' +
+            'radial-gradient(480px 380px at 10% 100%, rgba(242,122,35,0.035), transparent 70%)',
+        }} />
+
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: 'clamp(52px, 8vw, 108px)', position: 'relative', zIndex: 1, width: '100%' }}>
         <div id="login-card" tabIndex={-1}
           className="login-anim relative z-10 w-full bg-white md:bg-transparent border border-slate-200 md:border-0 rounded-xl md:rounded-none overflow-hidden md:overflow-visible p-7 sm:p-8 md:p-0 shadow-[0_10px_30px_-6px_rgba(15,23,42,0.10)] md:shadow-none"
-          style={{ maxWidth: 408, animationDelay: '0.34s' }}>
+          style={{ maxWidth: 420, animationDelay: '0.34s' }}>
 
           {/* acento de marca no topo do cartão — só mobile */}
           <div aria-hidden="true" className="md:hidden absolute inset-x-0 top-0 h-1"
@@ -970,7 +1202,7 @@ export const PortalLogin: React.FC = () => {
             {/* Tabs — segmented control; só aparece quando o login do cliente está ativo */}
             {portalEnabled !== false && (
             <div className="mb-6">
-              <div className="flex gap-1 rounded-lg bg-slate-100/80 p-1 ring-1 ring-slate-200/70">
+              <div className="flex gap-1 rounded-xl bg-[#efece6] p-1 ring-1 ring-[#e5e1d8]">
                 <button type="button" onClick={() => switchMode('client')}
                   className={`flex-1 py-2.5 rounded-md text-[13px] font-semibold tracking-wide transition-all ${
                     mode === 'client'
@@ -1003,7 +1235,7 @@ export const PortalLogin: React.FC = () => {
                   <form onSubmit={handleClientContinue} className="space-y-4">
                     <div>
                       <span className="inline-block px-2 py-0.5 bg-orange-50 rounded text-[10px] font-bold text-orange-600 tracking-widest uppercase">Passo 1 de 2</span>
-                      <h2 className="text-xl font-bold text-slate-900 mt-2 tracking-tight">Qual é o seu CPF?</h2>
+                      <h2 className="text-[22px] font-semibold text-[#211c18] mt-2 tracking-tight" style={{ fontFamily: BRAND_SERIF }}>Qual é o seu CPF?</h2>
                       <p className="text-[13px] text-slate-500 mt-1">Informe seus dados para acessar o painel.</p>
                     </div>
                     <div className="space-y-4">
@@ -1012,13 +1244,15 @@ export const PortalLogin: React.FC = () => {
                         <input ref={cpfRef} type="text" value={formatCPF(cpf)}
                           onChange={(e) => { setCpf(e.target.value); setClientError(null); }}
                           placeholder="000.000.000-00" autoComplete="username" inputMode="numeric" disabled={clientLoading}
-                          className="w-full px-4 py-3.5 bg-white border border-slate-300 rounded-lg focus:ring-4 focus:ring-orange-500/15 focus:border-orange-400 outline-none transition-all text-base font-semibold text-slate-900 placeholder:text-slate-400"
+                          className="w-full px-4 py-3.5 bg-white border border-[#e7e4de] rounded-xl focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all text-base font-semibold text-slate-900 placeholder:text-slate-400 hover:border-[#d9d5cd] shadow-[0_1px_2px_rgba(33,28,24,0.04)]"
                         />
                       </div>
                       {clientError && <ErrorMsg msg={clientError} />}
                       <button type="submit" disabled={clientLoading || !cpfOk}
-                        className="w-full text-white py-3.5 rounded-lg font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50"
-                        style={{ background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }}>
+                        className="w-full py-3.5 rounded-xl font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                        style={clientLoading || !cpfOk
+                          ? { background: '#eceae4', color: '#a8a199', boxShadow: 'none' }
+                          : { background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', color: '#fff', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }}>
                         {clientLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Verificando...</> : <><span>Continuar</span><ArrowRight className="h-5 w-5" /></>}
                       </button>
                     </div>
@@ -1034,7 +1268,7 @@ export const PortalLogin: React.FC = () => {
                         <ArrowLeft className="h-3.5 w-3.5" /> Voltar
                       </button>
                       <span className="block px-2 py-0.5 bg-orange-50 rounded text-[10px] font-bold text-orange-600 tracking-widest uppercase w-fit">Passo 2 de 2</span>
-                      <h2 className="text-xl font-bold text-slate-900 mt-2 tracking-tight">Confirme seu acesso</h2>
+                      <h2 className="text-[22px] font-semibold text-[#211c18] mt-2 tracking-tight" style={{ fontFamily: BRAND_SERIF }}>Confirme seu acesso</h2>
                     </div>
                     {phoneHint && (
                       <div className="flex items-center gap-3 rounded-lg bg-orange-50/60 px-3.5 py-3 border border-orange-100">
@@ -1060,8 +1294,10 @@ export const PortalLogin: React.FC = () => {
                     </div>
                     {clientError && <ErrorMsg msg={clientError} />}
                     <button type="submit" disabled={clientLoading || !pinOk}
-                      className="w-full text-white py-3.5 rounded-lg font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50"
-                      style={{ background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }}>
+                      className="w-full py-3.5 rounded-xl font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                      style={clientLoading || !pinOk
+                        ? { background: '#eceae4', color: '#a8a199', boxShadow: 'none' }
+                        : { background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', color: '#fff', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }}>
                       {clientLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Entrando...</> : 'Entrar na minha área'}
                     </button>
                   </form>
@@ -1106,11 +1342,8 @@ export const PortalLogin: React.FC = () => {
                 {!identifierLoading && staffStep === 'identifier' && (
                   <form onSubmit={handleIdentifierSubmit} className="space-y-6">
                     <div>
-                      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200/70 shadow-inner">
-                        <Shield className="h-[22px] w-[22px] text-slate-500" strokeWidth={1.75} />
-                      </div>
-                      <h2 className="text-[22px] font-bold text-slate-900 tracking-tight leading-none">Área Restrita</h2>
-                      <p className="text-[13px] text-slate-500 mt-2">Acesso exclusivo para colaboradores do escritório</p>
+                      <h2 className="text-[26px] font-semibold text-[#211c18] tracking-tight leading-[1.15]" style={{ fontFamily: BRAND_SERIF }}>Bem-vindo de volta</h2>
+                      <p className="text-[14px] text-slate-500 mt-2 leading-relaxed">Entre com seu CPF ou e-mail corporativo para continuar.</p>
                     </div>
                     <div className="space-y-1.5">
                       <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider">CPF ou E-mail</label>
@@ -1129,14 +1362,16 @@ export const PortalLogin: React.FC = () => {
                         }}
                         inputMode="text"
                         placeholder="000.000.000-00 ou email@..." autoComplete="username" disabled={identifierLoading}
-                        className="w-full px-4 py-3.5 bg-white border border-slate-300 rounded-lg focus:ring-4 focus:ring-orange-500/15 focus:border-orange-400 outline-none transition-all text-base font-medium text-slate-900 placeholder:text-slate-400"
+                        className="w-full px-4 py-3.5 bg-white border border-[#e7e4de] rounded-xl focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all text-base font-medium text-slate-900 placeholder:text-slate-400 hover:border-[#d9d5cd] shadow-[0_1px_2px_rgba(33,28,24,0.04)]"
                       />
                     </div>
                     {staffBanned && <BannedMsg />}
                     {staffError && !staffBanned && <ErrorMsg msg={staffError} />}
                     <button type="submit" disabled={identifierLoading || !identifier.trim()}
-                      className="w-full text-white py-3.5 rounded-lg font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50"
-                      style={{ background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }}>
+                      className="w-full py-3.5 rounded-xl font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:hover:brightness-100"
+                      style={identifierLoading || !identifier.trim()
+                        ? { background: '#eceae4', color: '#a8a199', boxShadow: 'none' }
+                        : { background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', color: '#fff', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }}>
                       {identifierLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Buscando...</> : <><span>Continuar</span><ArrowRight className="h-5 w-5" /></>}
                     </button>
                   </form>
@@ -1147,7 +1382,7 @@ export const PortalLogin: React.FC = () => {
                   <div style={{ animation: 'staffProfileIn 0.35s cubic-bezier(0.34,1.56,0.64,1) both' }} className="space-y-4">
                     <style>{`@keyframes staffProfileIn { from{opacity:0;transform:translateY(18px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }`}</style>
                     <div>
-                      <h2 className="text-xl font-bold text-slate-900 tracking-tight">Bem-vindo de volta</h2>
+                      <h2 className="text-[22px] font-semibold text-[#211c18] tracking-tight" style={{ fontFamily: BRAND_SERIF }}>Bem-vindo de volta</h2>
                       <p className="text-[13px] text-slate-500 mt-1">
                         {accounts.length > 1 ? 'Escolha uma conta para continuar' : 'Continue com sua conta para acessar o sistema'}
                       </p>
@@ -1265,7 +1500,7 @@ export const PortalLogin: React.FC = () => {
                           onKeyUp={(e) => setCapsOn(e.getModifierState('CapsLock'))}
                           onBlur={() => setCapsOn(false)}
                           placeholder="••••••••" autoComplete="current-password" disabled={staffLoading}
-                          className="w-full px-4 py-3.5 bg-white border border-slate-300 rounded-lg focus:ring-4 focus:ring-orange-500/15 focus:border-orange-400 outline-none transition-all pr-12 text-base font-medium text-slate-900"
+                          className="w-full px-4 py-3.5 bg-white border border-[#e7e4de] rounded-xl focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all pr-12 text-base font-medium text-slate-900 hover:border-[#d9d5cd] shadow-[0_1px_2px_rgba(33,28,24,0.04)]"
                         />
                         <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1}
                           className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition">
@@ -1281,8 +1516,13 @@ export const PortalLogin: React.FC = () => {
                     {staffBanned && <BannedMsg />}
                     {staffError && !staffBanned && <ErrorMsg msg={staffError} />}
                     <button type="submit" disabled={staffLoading || !staffPw}
-                      style={{ animation: 'staffProfileIn 0.4s ease 0.4s both', background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }}
-                      className="w-full text-white py-3.5 rounded-lg font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50">
+                      style={{
+                        animation: 'staffProfileIn 0.4s ease 0.4s both',
+                        ...(staffLoading || !staffPw
+                          ? { background: '#eceae4', color: '#a8a199', boxShadow: 'none' }
+                          : { background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', color: '#fff', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }),
+                      }}
+                      className="w-full py-3.5 rounded-xl font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:hover:brightness-100">
                       {staffLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Autenticando...</> : <><Shield className="h-5 w-5" /> Acessar Sistema</>}
                     </button>
                   </form>
@@ -1291,8 +1531,27 @@ export const PortalLogin: React.FC = () => {
             )}
           </div>
 
-          {/* rodapé do painel */}
-          <p style={{ textAlign: 'center', marginTop: 22, fontSize: 12, color: '#9aa0ab', fontWeight: 500 }}>© {new Date().getFullYear()} Jurius</p>
+          {/* rodapé do painel — só mobile (no desktop há rodapé institucional fixo) */}
+          <p className="md:hidden" style={{ textAlign: 'center', marginTop: 22, fontSize: 12, color: '#9aa0ab', fontWeight: 500 }}>© {new Date().getFullYear()} Jurius</p>
+        </div>
+        </div>
+
+        {/* rodapé institucional — ancora a página (só desktop) */}
+        <div className="login-anim hidden md:flex" style={{ justifyContent: 'center', position: 'relative', zIndex: 1, animationDelay: '0.5s' }}>
+          <div style={{ width: '100%', maxWidth: 420 }}>
+            <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(33,28,24,0.12), transparent)', marginBottom: 16 }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.5, fontWeight: 600, color: '#a8a199' }}>
+                <Lock className="h-3 w-3" strokeWidth={1.8} />
+                Conexão segura e criptografada
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 14, fontSize: 11.5, fontWeight: 500, color: '#b5afa6' }}>
+                <a href="#/terms" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:text-orange-600 transition-colors">Termos</a>
+                <a href="#/privacidade" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:text-orange-600 transition-colors">Privacidade</a>
+                <span>© {new Date().getFullYear()} jurius.com.br</span>
+              </span>
+            </div>
+          </div>
         </div>
       </main>
     </div>

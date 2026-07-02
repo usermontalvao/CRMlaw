@@ -1134,7 +1134,21 @@ const MainApp: React.FC = () => {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
-  const { user, loading, signIn, signOut, resetPassword, isAccountBlocked } = useAuth();
+  const { user, loading: authLoading, signIn, signOut, resetPassword, isAccountBlocked } = useAuth();
+  const [minLoadingElapsed, setMinLoadingElapsed] = useState(false);
+  const [fontsReady, setFontsReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setMinLoadingElapsed(true), 2600);
+    // Espera fontes carregarem para evitar FOUT/reflow na wordmark
+    const anyDoc = document as unknown as { fonts?: { ready?: Promise<unknown> } };
+    if (anyDoc.fonts?.ready) {
+      anyDoc.fonts.ready.then(() => setFontsReady(true));
+    } else {
+      setFontsReady(true);
+    }
+    return () => clearTimeout(t);
+  }, []);
+  const loading = authLoading || !minLoadingElapsed;
 
   useEffect(() => {
     if (!user) return;
@@ -1865,10 +1879,126 @@ useEffect(() => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 text-amber-600 animate-spin mx-auto mb-4" />
-          <p className="text-slate-600">Carregando...</p>
+      <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-[#0a0806]">
+        <style>{`
+          @keyframes jx-breathe{0%,100%{opacity:.55;transform:translate(-50%,-50%) scale(1)}50%{opacity:.9;transform:translate(-50%,-50%) scale(1.08)}}
+          @keyframes jx-orbit{to{transform:rotate(360deg)}}
+          @keyframes jx-rise{from{opacity:0;transform:translateY(16px) scale(.985);filter:blur(8px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
+          @keyframes jx-bar{0%{transform:translateX(-105%)}50%{transform:translateX(72%)}100%{transform:translateX(255%)}}
+          @keyframes jx-ellipsis{0%,60%,100%{opacity:.2}30%{opacity:1}}
+          .jx-rise{animation:jx-rise 1.1s cubic-bezier(.16,1,.3,1) both}
+          @media (prefers-reduced-motion:reduce){.jx-rise,.jx-anim{animation:none!important;opacity:1!important}}
+        `}</style>
+
+        {/* Ambient: um único glow central respirando + vinheta + grain */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div
+            className="absolute left-1/2 top-1/2 w-[720px] h-[720px] rounded-full jx-anim"
+            style={{
+              background: 'radial-gradient(circle, rgba(242,122,35,0.10) 0%, rgba(242,122,35,0.04) 38%, transparent 68%)',
+              animation: 'jx-breathe 7s ease-in-out infinite',
+            }}
+          />
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.55) 100%)' }} />
+          <div
+            className="absolute inset-0 opacity-[0.035]"
+            style={{
+              backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
+            }}
+          />
+        </div>
+
+        {/* Conteúdo — coreografia em cascata, revelado só com fontes prontas (anti-FOUT) */}
+        <div
+          className="relative z-10 flex flex-col items-center px-6"
+          style={{ opacity: fontsReady ? 1 : 0, transition: 'opacity 500ms cubic-bezier(.16,1,.3,1)' }}
+        >
+          {/* Tile + arco orbital único */}
+          <div className="relative mb-9 jx-rise">
+            <svg
+              className="absolute inset-[-34px] jx-anim"
+              viewBox="0 0 140 140"
+              fill="none"
+              style={{ animation: 'jx-orbit 3.6s cubic-bezier(.45,.05,.55,.95) infinite' }}
+              aria-hidden="true"
+            >
+              <circle cx="70" cy="70" r="66" stroke="rgba(255,255,255,0.07)" strokeWidth="1" />
+              <circle
+                cx="70" cy="70" r="66"
+                stroke="url(#jx-arc)" strokeWidth="1.5" strokeLinecap="round"
+                strokeDasharray="112 303"
+              />
+              <defs>
+                <linearGradient id="jx-arc" x1="0" y1="0" x2="140" y2="140" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#f97316" stopOpacity="0" />
+                  <stop offset="0.5" stopColor="#fbbf24" />
+                  <stop offset="1" stopColor="#f27a23" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+            </svg>
+            {/* halo suave sob o tile */}
+            <div
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full blur-2xl jx-anim"
+              style={{ background: 'rgba(242,122,35,0.16)', animation: 'jx-breathe 7s ease-in-out infinite' }}
+            />
+            <BrandLogo iconOnly size="lg" shine />
+          </div>
+
+          {/* Wordmark */}
+          <div className="flex flex-col items-center jx-rise" style={{ animationDelay: '140ms' }}>
+            <BrandLogo wordmarkOnly variant="reversed" size="lg" />
+          </div>
+
+          <div
+            className="mt-6 mb-9 h-px w-64 jx-rise"
+            style={{
+              animationDelay: '280ms',
+              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent)',
+            }}
+          />
+
+          {/* Barra de progresso — segmento com caudas em gradiente deslizando */}
+          <div className="w-60 sm:w-72 mb-7 jx-rise" style={{ animationDelay: '400ms' }}>
+            <div className="relative h-[3px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)' }}>
+              <div
+                className="absolute inset-y-0 w-[40%] rounded-full jx-anim"
+                style={{
+                  background: 'linear-gradient(90deg, transparent, #f27a23 25%, #fbbf24 55%, #f27a23 80%, transparent)',
+                  boxShadow: '0 0 18px rgba(242,122,35,0.45)',
+                  animation: 'jx-bar 2.1s cubic-bezier(.4,0,.2,1) infinite',
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Status — discreto, uppercase, tracking largo */}
+          <p
+            className="jx-rise flex items-baseline gap-[3px] text-[11px] font-medium uppercase"
+            style={{ animationDelay: '520ms', letterSpacing: '0.32em', color: 'rgba(255,255,255,0.42)' }}
+          >
+            <span>Verificando sessão</span>
+            <span className="inline-flex gap-[3px]" aria-hidden="true">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="jx-anim"
+                  style={{ animation: `jx-ellipsis 1.6s ease-in-out ${i * 0.22}s infinite` }}
+                >
+                  .
+                </span>
+              ))}
+            </span>
+          </p>
+        </div>
+
+        {/* Rodapé institucional */}
+        <div
+          className="absolute bottom-8 left-0 right-0 flex justify-center jx-rise"
+          style={{ animationDelay: '700ms', opacity: fontsReady ? undefined : 0 }}
+        >
+          <span className="text-[10px] uppercase" style={{ letterSpacing: '0.28em', color: 'rgba(255,255,255,0.22)' }}>
+            © 2026 jurius.com.br
+          </span>
         </div>
       </div>
     );

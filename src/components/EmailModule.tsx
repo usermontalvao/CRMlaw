@@ -15,7 +15,7 @@ import { userNotificationService } from '../services/userNotification.service';
 import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../config/supabase';
-import type { EmailFolder, EmailMessage, EmailSignature, SendEmailDTO, EmailSpamRule, SpamRuleKind, SpamRuleMatch } from '../types/email.types';
+import type { EmailFolder, EmailMessage, EmailSignature, SendEmailDTO, EmailSpamRule, SpamRuleKind, SpamRuleMatch, EmailSearchFilters } from '../types/email.types';
 import type { Client } from '../types/client.types';
 import { Modal, ModalBody, ModalFooter, Button, Input, Label } from './ui';
 import { resolveFolder } from '../utils/email.transitions';
@@ -90,6 +90,16 @@ interface EmailComposeUiPrefs {
   composeMinimized: boolean;
 }
 
+const EMPTY_EMAIL_FILTERS: EmailSearchFilters = {
+  from: '',
+  to: '',
+  subject: '',
+  hasAttachments: false,
+  starredOnly: false,
+  dateFrom: '',
+  dateTo: '',
+};
+
 const DEFAULT_PREFS: EmailPrefs = { perPage: 50, autoMarkRead: true };
 
 function loadPrefs(): EmailPrefs {
@@ -115,6 +125,8 @@ function loadComposeUiPrefs(): EmailComposeUiPrefs {
     return { activeDraftId: null, composeMinimized: false };
   }
 }
+
+const EMAIL_SELECT_ALL_EVENT = 'email-select-all-shortcut';
 
 function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)); }
 
@@ -196,6 +208,11 @@ interface ComposeState {
   attachments: ComposeAttachment[];
 }
 
+interface ComposeWarning {
+  id: string;
+  message: string;
+}
+
 const emptyCompose: ComposeState = {
   to: '', cc: '', bcc: '', subject: '', bodyHtml: '', showCc: false, attachments: [],
 };
@@ -208,6 +225,35 @@ function composeKey(c: ComposeState): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function normalizeComposeText(html: string): string {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return (tmp.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function getComposeWarnings(compose: ComposeState, selected: EmailMessage | null, userEmail: string | null): ComposeWarning[] {
+  const warnings: ComposeWarning[] = [];
+  const plain = normalizeComposeText(compose.bodyHtml).toLocaleLowerCase('pt-BR');
+  const allRecipients = [...parseRecipients(compose.to), ...parseRecipients(compose.cc), ...parseRecipients(compose.bcc)].map((item) => addressOf(item).toLowerCase());
+  const informalHits = ['vc', 'vcs', 'kd', 'pq', 'blz', 'mano', 'amigo', 'amiguinho'].filter((token) => new RegExp(`\\b${token}\\b`, 'i').test(plain));
+
+  if (/\banex(a|o|ei|ando|ado|amos)\b|\bem anexo\b|\bsegue anexo\b/i.test(plain) && compose.attachments.length === 0) {
+    warnings.push({ id: 'missing-attachment', message: 'Você mencionou anexo, mas não há arquivo anexado.' });
+  }
+  if (informalHits.length >= 2) {
+    warnings.push({ id: 'informal-tone', message: 'O texto parece informal demais para e-mail profissional.' });
+  }
+  if (compose.inReplyTo && selected?.from_address) {
+    const expected = selected.from_address.toLowerCase();
+    const self = (userEmail || '').toLowerCase();
+    if (!allRecipients.includes(expected) || (self && allRecipients.length === 1 && allRecipients[0] === self)) {
+      warnings.push({ id: 'reply-recipient', message: 'Confira o destinatário: a resposta pode não estar indo para o remetente original.' });
+    }
+  }
+
+  return warnings;
 }
 
 // Assinatura deve ser um FRAGMENTO inline. Se o usuário colar um documento HTML
@@ -234,13 +280,17 @@ function sigToHtml(sig: EmailSignature | null): string {
 }
 
 type SpellIssue = {
+  id: string;
   word: string;
+  matchText: string;
+  label: string;
+  ignoreKey: string;
   suggestions: string[];
 };
 
 const SPELLCHECK_ENDPOINT = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/syncfusion-proxy/SpellCheckByPage`;
 
-async function checkTextSpelling(text: string): Promise<SpellIssue[]> {
+async function checkTextSpelling(text: string, signal?: AbortSignal): Promise<SpellIssue[]> {
   const normalized = text
     .replace(/https?:\/\/\S+/gi, ' ')
     .replace(/\b[^\s@]+@[^\s@]+\.[^\s@]+\b/gi, ' ')
@@ -255,6 +305,7 @@ async function checkTextSpelling(text: string): Promise<SpellIssue[]> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ TexttoCheck: normalized }),
+    signal,
   });
   if (!resp.ok) throw new Error(`SpellCheckByPage ${resp.status}`);
 
@@ -270,7 +321,11 @@ async function checkTextSpelling(text: string): Promise<SpellIssue[]> {
     if (!word || seen.has(key)) continue;
     seen.add(key);
     issues.push({
+      id: `spell:${key}`,
       word,
+      matchText: word,
+      label: `Ortografia: ${word}`,
+      ignoreKey: `spell:${key}`,
       suggestions: Array.isArray(row.Suggestions)
         ? row.Suggestions.filter((s: unknown) => typeof s === 'string' && s.trim()).slice(0, 3)
         : [],
@@ -282,8 +337,88 @@ async function checkTextSpelling(text: string): Promise<SpellIssue[]> {
 }
 
 const SPELL_MARK_ATTR = 'data-email-spell-error';
-const WORD_TOKEN_RE = /[A-Za-zÀ-ÿ]+(?:'[A-Za-zÀ-ÿ]+)*/g;
+const SPELL_MARK_ID_ATTR = 'data-email-spell-id';
+const SIGNATURE_ATTR = 'data-signature';
+const SIGNATURE_DELETE_ATTR = 'data-signature-delete';
+const SIGNATURE_DELETE_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
 
+function buildSignatureBlockHtml(signatureHtml: string): string {
+  return `<p><br></p><div ${SIGNATURE_ATTR} contenteditable="false" spellcheck="false" style="position:relative;border-top:1px solid #fed7aa;padding-top:14px;margin-top:10px;user-select:none;cursor:default"><button ${SIGNATURE_DELETE_ATTR} type="button" title="Remover assinatura desta mensagem" style="position:absolute;top:-13px;right:0;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid #fdba74;border-radius:9999px;background:#fff7ed;color:#f97316;box-shadow:0 4px 10px rgba(249,115,22,.16);cursor:pointer">${SIGNATURE_DELETE_ICON}</button>${signatureHtml}</div>`;
+}
+const COMMON_EMAIL_SHORTHANDS: Record<string, string[]> = {
+  kd: ['cadê', 'onde está'],
+  pq: ['porque', 'por que'],
+  vc: ['você'],
+  vcs: ['vocês'],
+  tb: ['também'],
+  qdo: ['quando'],
+  msg: ['mensagem'],
+};
+const REPEATED_ENDING_ALLOWLIST = new Set(['voo', 'enjoo']);
+
+function buildLocalTextIssues(text: string): SpellIssue[] {
+  const issues: SpellIssue[] = [];
+  const seen = new Set<string>();
+  const repetitionRe = /\b([A-Za-zÀ-ÿ]+)\b(?:\s+\1\b)+/gi;
+  const wordRe = /\b[A-Za-zÀ-ÿ]{2,}\b/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = repetitionRe.exec(text)) !== null) {
+    const phrase = match[0].replace(/\s+/g, ' ').trim();
+    const word = match[1].trim();
+    const normalizedPhrase = phrase.toLocaleLowerCase('pt-BR');
+    if (!phrase || !word || seen.has(normalizedPhrase)) continue;
+    seen.add(normalizedPhrase);
+
+    issues.push({
+      id: `repeat:${normalizedPhrase}`,
+      word: phrase,
+      matchText: phrase,
+      label: `Repetição: ${phrase}`,
+      ignoreKey: `repeat:${normalizedPhrase}`,
+      suggestions: [word],
+    });
+  }
+
+  while ((match = wordRe.exec(text)) !== null) {
+    const original = match[0];
+    const normalized = original.toLocaleLowerCase('pt-BR');
+    if (seen.has(`word:${normalized}`)) continue;
+
+    const shorthandSuggestions = COMMON_EMAIL_SHORTHANDS[normalized];
+    if (shorthandSuggestions?.length) {
+      seen.add(`word:${normalized}`);
+      issues.push({
+        id: `shorthand:${normalized}`,
+        word: original,
+        matchText: original,
+        label: `Abreviação informal: ${original}`,
+        ignoreKey: `shorthand:${normalized}`,
+        suggestions: shorthandSuggestions,
+      });
+      continue;
+    }
+
+    const repeatedEndingMatch = normalized.match(/^(.*?)([a-zà-ÿ])\2$/i);
+    if (!repeatedEndingMatch) continue;
+    if (REPEATED_ENDING_ALLOWLIST.has(normalized)) continue;
+
+    const shortened = repeatedEndingMatch[1] + repeatedEndingMatch[2];
+    if (shortened.length < 3) continue;
+
+    seen.add(`word:${normalized}`);
+    issues.push({
+      id: `ending:${normalized}`,
+      word: original,
+      matchText: original,
+      label: `Possível letra repetida: ${original}`,
+      ignoreKey: `ending:${normalized}`,
+      suggestions: [shortened],
+    });
+  }
+
+  return issues;
+}
 function unwrapSpellMarkers(root: ParentNode): void {
   root.querySelectorAll(`[${SPELL_MARK_ATTR}]`).forEach((el) => {
     const parent = el.parentNode;
@@ -296,7 +431,67 @@ function unwrapSpellMarkers(root: ParentNode): void {
 function getEditorCleanHtml(root: HTMLDivElement): string {
   const clone = root.cloneNode(true) as HTMLDivElement;
   unwrapSpellMarkers(clone);
+  clone.querySelectorAll(`[${SIGNATURE_DELETE_ATTR}]`).forEach((el) => el.remove());
   return clone.innerHTML;
+}
+
+function isNodeInsideSignature(root: HTMLElement, node: Node | null): boolean {
+  if (!node) return false;
+  const base = node instanceof Element ? node : node.parentElement;
+  return !!base?.closest?.(`[${SIGNATURE_ATTR}]`) && root.contains(base);
+}
+
+function placeCaretBeforeSignature(root: HTMLElement): void {
+  const signature = root.querySelector(`[${SIGNATURE_ATTR}]`);
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+
+  if (signature && signature.parentNode) {
+    range.setStartBefore(signature);
+  } else {
+    range.selectNodeContents(root);
+    range.collapse(false);
+  }
+
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function placeCaretAtEditableStart(root: HTMLElement): void {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  const topLevelNodes = Array.from(root.childNodes);
+  const firstEditableNode = topLevelNodes.find((node) => {
+    if (node.nodeType === Node.TEXT_NODE) return !!node.textContent?.trim();
+    if (!(node instanceof HTMLElement)) return false;
+    return !node.hasAttribute(SIGNATURE_ATTR);
+  });
+
+  if (firstEditableNode) {
+    range.setStart(firstEditableNode, 0);
+  } else {
+    range.selectNodeContents(root);
+  }
+
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function keepSelectionOutOfSignature(root: HTMLElement): void {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.startContainer)) return;
+  if (!isNodeInsideSignature(root, range.startContainer) && !isNodeInsideSignature(root, range.endContainer)) return;
+  placeCaretBeforeSignature(root);
+}
+
+function hasSignatureBlock(root: ParentNode | null): boolean {
+  return !!root?.querySelector?.(`[${SIGNATURE_ATTR}]`);
 }
 
 function captureSelectionOffsets(root: HTMLElement): { start: number; end: number } | null {
@@ -362,7 +557,9 @@ function applySpellMarkers(root: HTMLDivElement, issues: SpellIssue[]): void {
   unwrapSpellMarkers(root);
   if (!issues.length) return;
 
-  const issueMap = new Map(issues.map((issue) => [issue.word.toLocaleLowerCase('pt-BR'), issue]));
+  const orderedIssues = [...issues]
+    .filter((issue) => issue.matchText.trim())
+    .sort((a, b) => b.matchText.length - a.matchText.length);
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];
 
@@ -374,33 +571,45 @@ function applySpellMarkers(root: HTMLDivElement, issues: SpellIssue[]): void {
 
   for (const node of textNodes) {
     const text = node.nodeValue ?? '';
-    let match: RegExpExecArray | null;
-    let lastIndex = 0;
+    const lower = text.toLocaleLowerCase('pt-BR');
+    let cursor = 0;
     let hasMarkedWord = false;
-    WORD_TOKEN_RE.lastIndex = 0;
     const frag = document.createDocumentFragment();
 
-    while ((match = WORD_TOKEN_RE.exec(text)) !== null) {
-      const word = match[0];
-      const issue = issueMap.get(word.toLocaleLowerCase('pt-BR'));
-      if (!issue) continue;
+    while (cursor < text.length) {
+      let nextIssue: SpellIssue | null = null;
+      let nextIndex = -1;
+
+      for (const issue of orderedIssues) {
+        const idx = lower.indexOf(issue.matchText.toLocaleLowerCase('pt-BR'), cursor);
+        if (idx === -1) continue;
+        if (nextIndex === -1 || idx < nextIndex) {
+          nextIndex = idx;
+          nextIssue = issue;
+          if (idx === cursor) break;
+        }
+      }
+
+      if (!nextIssue || nextIndex === -1) break;
 
       hasMarkedWord = true;
-      if (match.index > lastIndex) {
-        frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      if (nextIndex > cursor) {
+        frag.appendChild(document.createTextNode(text.slice(cursor, nextIndex)));
       }
 
       const span = document.createElement('span');
-      span.setAttribute(SPELL_MARK_ATTR, issue.word);
-      span.setAttribute('data-suggestions', JSON.stringify(issue.suggestions));
+      span.setAttribute(SPELL_MARK_ATTR, nextIssue.word);
+      span.setAttribute(SPELL_MARK_ID_ATTR, nextIssue.id);
+      span.setAttribute('data-suggestions', JSON.stringify(nextIssue.suggestions));
+      span.setAttribute('data-label', nextIssue.label);
       span.className = 'cursor-context-menu underline decoration-red-500 decoration-[1.25px] underline-offset-[2px] [text-decoration-style:wavy]';
-      span.textContent = word;
+      span.textContent = text.slice(nextIndex, nextIndex + nextIssue.matchText.length);
       frag.appendChild(span);
-      lastIndex = match.index + word.length;
+      cursor = nextIndex + nextIssue.matchText.length;
     }
 
     if (!hasMarkedWord) continue;
-    if (lastIndex < text.length) frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+    if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
     node.parentNode?.replaceChild(frag, node);
   }
 }
@@ -439,6 +648,8 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   // Campo da busca (digitação imediata) vs. termo aplicado (debounced) — evita
   // disparar uma query no banco a cada tecla numa caixa com milhares de e-mails.
   const [searchInput, setSearchInput] = useState('');
+  const [searchFilters, setSearchFilters] = useState<EmailSearchFilters>(EMPTY_EMAIL_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [spamUnread, setSpamUnread] = useState(0);
 
@@ -499,6 +710,10 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const lastSavedKeyRef = useRef('');
   const initialComposeKeyRef = useRef('');
   const [draftStatus, setDraftStatus] = useState<'' | 'saving' | 'saved'>('');
+  const composeRef = useRef<ComposeState>(emptyCompose);
+  const sendingRef = useRef(false);
+  const folderRef = useRef<EmailFolder>('inbox');
+  const flushingDraftRef = useRef<Promise<string | null> | null>(null);
 
   const [signature, setSignature] = useState<EmailSignature | null>(null);
   const [savingSig, setSavingSig] = useState(false);
@@ -528,6 +743,9 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   // embaixo do usuário quando um recarregamento silencioso (realtime) chega.
   const composeOpenRef = useRef(false);
   useEffect(() => { composeOpenRef.current = composeOpen; }, [composeOpen]);
+  useEffect(() => { composeRef.current = compose; }, [compose]);
+  useEffect(() => { sendingRef.current = sending; }, [sending]);
+  useEffect(() => { folderRef.current = folder; }, [folder]);
 
   // `silent`: recarrega sem trocar a lista por spinner (fluido). O spinner só
   // aparece no 1º carregamento (lista vazia); refresh/realtime não "piscam".
@@ -535,7 +753,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     if (!silent) setLoading(true);
     try {
       const [list, count, spamCount] = await Promise.all([
-        emailService.listMessages(folder, search, limit, onlyUnread),
+        emailService.listMessages(folder, search, limit, onlyUnread, searchFilters),
         emailService.countUnread('inbox'),
         emailService.countUnread('spam'),
       ]);
@@ -561,11 +779,11 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [folder, search, limit, onlyUnread]);
+  }, [folder, search, limit, onlyUnread, searchFilters]);
 
   useEffect(() => { load(); }, [load]);
   // Ao trocar de pasta/busca/filtro, volta ao tamanho de página inicial e limpa seleção.
-  useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); keepVisibleRef.current = new Set(); }, [folder, search, prefs.perPage, onlyUnread]);
+  useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); keepVisibleRef.current = new Set(); }, [folder, search, prefs.perPage, onlyUnread, searchFilters]);
   useEffect(() => { emailService.getSignature().then((s) => { if (s) setSignature(s); }).catch(() => {}); }, []);
   useEffect(() => { emailService.listSpamRules().then(setSpamRules).catch(() => {}); }, []);
 
@@ -896,8 +1114,16 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
         e.preventDefault(); setHelpOpen(true);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const onSelectAllShortcut = () => {
+      if (settingsOpen || composeOpen || !messages.length) return;
+      setChecked((prev) => (prev.size === messages.length ? new Set() : new Set(messages.map((m) => m.id))));
+    };
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener(EMAIL_SELECT_ALL_EVENT, onSelectAllShortcut);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener(EMAIL_SELECT_ALL_EVENT, onSelectAllShortcut);
+    };
   }, [messages, focusedId, checked, selected, composeOpen, settingsOpen, folder, helpOpen]);
 
   const onMarkAllRead = async () => {
@@ -984,7 +1210,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const buildInitialBody = (quoteHtml = '') => {
     const sig = sigToHtml(signature);
     const sigBlock = sig
-      ? `<p><br></p><div data-signature style="border-top:1px solid #ececec;padding-top:12px;margin-top:8px">${sig}</div>`
+      ? buildSignatureBlockHtml(sig)
       : '';
     return `<p><br></p><p><br></p>${sigBlock}${quoteHtml}`;
   };
@@ -1007,6 +1233,43 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       }).catch(() => {});
     }
   }, [composeMinimized, user?.id]);
+
+  const flushDraftNow = useCallback(async (reason: 'autosave' | 'nav-away' | 'unmount' = 'autosave'): Promise<string | null> => {
+    if (!composeOpenRef.current || sendingRef.current) return null;
+    const currentCompose = composeRef.current;
+    const key = composeKey(currentCompose);
+    if (key === initialComposeKeyRef.current || key === lastSavedKeyRef.current) return draftIdRef.current ?? null;
+    if (flushingDraftRef.current) return flushingDraftRef.current;
+
+    if (reason === 'autosave') setDraftStatus('saving');
+
+    const pending = emailService.saveDraft({
+      id: draftIdRef.current,
+      to: currentCompose.to,
+      cc: currentCompose.cc,
+      bcc: currentCompose.bcc,
+      subject: currentCompose.subject,
+      html: currentCompose.bodyHtml,
+      inReplyTo: currentCompose.inReplyTo,
+      threadKey: currentCompose.threadKey,
+      clientId: currentCompose.clientId,
+    }).then((id) => {
+      draftIdRef.current = id;
+      persistComposeUiState({ activeDraftId: id });
+      lastSavedKeyRef.current = key;
+      if (reason === 'autosave') setDraftStatus('saved');
+      if (folderRef.current === 'drafts') void loadRef.current(true);
+      return id;
+    }).catch((error) => {
+      if (reason === 'autosave') setDraftStatus('');
+      throw error;
+    }).finally(() => {
+      flushingDraftRef.current = null;
+    });
+
+    flushingDraftRef.current = pending;
+    return pending;
+  }, [persistComposeUiState]);
 
   const startCompose = (preset?: Partial<ComposeState>, inline = false) => {
     const next = { ...emptyCompose, bodyHtml: buildInitialBody(), ...preset };
@@ -1064,6 +1327,25 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     if (composeOpen && !composeInline) persistComposeUiState({ composeMinimized });
   }, [composeOpen, composeInline, composeMinimized, persistComposeUiState]);
 
+  useEffect(() => {
+    const flushOnLeave = () => {
+      void flushDraftNow('nav-away').catch(() => {});
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flushOnLeave();
+    };
+
+    window.addEventListener('pagehide', flushOnLeave);
+    window.addEventListener('beforeunload', flushOnLeave);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('beforeunload', flushOnLeave);
+      window.removeEventListener('pagehide', flushOnLeave);
+      void flushDraftNow('unmount').catch(() => {});
+    };
+  }, [flushDraftNow]);
+
   // Autosave do rascunho: salva 1,5s após parar de digitar, só se mudou desde a abertura.
   useEffect(() => {
     if (!composeOpen || sending) return;
@@ -1072,23 +1354,13 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     setDraftStatus('saving');
     const t = setTimeout(async () => {
       try {
-        const id = await emailService.saveDraft({
-          id: draftIdRef.current,
-          to: compose.to, cc: compose.cc, bcc: compose.bcc,
-          subject: compose.subject, html: compose.bodyHtml,
-          inReplyTo: compose.inReplyTo, threadKey: compose.threadKey, clientId: compose.clientId,
-        });
-        draftIdRef.current = id;
-        persistComposeUiState({ activeDraftId: id });
-        lastSavedKeyRef.current = key;
-        setDraftStatus('saved');
-        if (folder === 'drafts') void load(true);
+        await flushDraftNow('autosave');
       } catch {
         setDraftStatus('');
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [compose, composeOpen, sending, folder, load]);
+  }, [compose, composeOpen, sending, flushDraftNow]);
 
   const onReply = () => {
     if (!selected) return;
@@ -1163,6 +1435,11 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     return (tmp.textContent ?? '').trim();
   };
 
+  const composeWarnings = useMemo(
+    () => getComposeWarnings(compose, selected, user?.email ?? null),
+    [compose, selected, user?.email]
+  );
+
   const doSend = async () => {
     const toList = parseRecipients(compose.to);
     const missingTo = !toList.length;
@@ -1170,7 +1447,11 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     const missingBody = !stripHtml(compose.bodyHtml);
     if (missingTo || missingSubject || missingBody) {
       setFieldErrors({ to: missingTo, subject: missingSubject });
-      setSendError('Preencha destinatário, assunto e mensagem.');
+      setSendError(
+        missingSubject && compose.inReplyTo
+          ? 'Defina um assunto para a resposta antes de enviar.'
+          : 'Preencha destinatário, assunto e mensagem.'
+      );
       return;
     }
     const allRecipients = [...toList, ...parseRecipients(compose.cc), ...parseRecipients(compose.bcc)];
@@ -1179,6 +1460,12 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       setFieldErrors({ to: true });
       setSendError(`Endereço inválido: ${invalid.map(addressOf).join(', ')}`);
       return;
+    }
+    if (composeWarnings.length > 0) {
+      const proceed = window.confirm(
+        `Revise antes de enviar:\n\n${composeWarnings.map((warning) => `• ${warning.message}`).join('\n')}\n\nDeseja enviar mesmo assim?`
+      );
+      if (!proceed) return;
     }
     setFieldErrors({});
     const dto: SendEmailDTO = {
@@ -1424,6 +1711,18 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   }, [user?.id]);
 
   const folderInfo = useMemo(() => FOLDERS.find((f) => f.key === folder), [folder]);
+  const activeFilterCount = useMemo(() => (
+    [
+      searchFilters.from.trim(),
+      searchFilters.to.trim(),
+      searchFilters.subject.trim(),
+      searchFilters.dateFrom,
+      searchFilters.dateTo,
+      searchFilters.hasAttachments ? '1' : '',
+      searchFilters.starredOnly ? '1' : '',
+      onlyUnread ? '1' : '',
+    ].filter(Boolean).length
+  ), [searchFilters, onlyUnread]);
 
   return (
     <div ref={rootRef} className="relative flex h-full flex-col bg-[#f5f5f3] p-3 dark:bg-zinc-950 sm:p-4">
@@ -1511,6 +1810,18 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                 </button>
               )}
             </div>
+            <button
+              onClick={() => setFiltersOpen((v) => !v)}
+              title="Busca avançada"
+              className={`relative flex-none rounded-lg border p-1.5 ${filtersOpen || activeFilterCount ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-[#e7e5df] text-zinc-500 hover:bg-zinc-50'}`}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              {activeFilterCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-medium text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
             <button onClick={() => load()} title="Atualizar"
               className="flex-none rounded-lg border border-[#e7e5df] p-1.5 text-zinc-500 hover:bg-zinc-50">
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -1520,6 +1831,66 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
               <Keyboard className="h-4 w-4" />
             </button>
           </div>
+          {filtersOpen && (
+            <div className="grid grid-cols-1 gap-2 border-b border-[#f0efe9] bg-[#fcfbf8] px-3 py-2.5 dark:border-zinc-800 md:grid-cols-2">
+              <input
+                value={searchFilters.from}
+                onChange={(e) => setSearchFilters((prev) => ({ ...prev, from: e.target.value }))}
+                placeholder="Remetente"
+                className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
+              />
+              <input
+                value={searchFilters.to}
+                onChange={(e) => setSearchFilters((prev) => ({ ...prev, to: e.target.value }))}
+                placeholder="Destinatário"
+                className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
+              />
+              <input
+                value={searchFilters.subject}
+                onChange={(e) => setSearchFilters((prev) => ({ ...prev, subject: e.target.value }))}
+                placeholder="Assunto exato ou parcial"
+                className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  value={searchFilters.dateFrom}
+                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
+                  className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
+                />
+                <input
+                  type="date"
+                  value={searchFilters.dateTo}
+                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
+                  className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
+                />
+              </div>
+              <label className="flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={searchFilters.hasAttachments}
+                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, hasAttachments: e.target.checked }))}
+                />
+                Com anexo
+              </label>
+              <div className="flex items-center justify-between rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] text-zinc-600">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={searchFilters.starredOnly}
+                    onChange={(e) => setSearchFilters((prev) => ({ ...prev, starredOnly: e.target.checked }))}
+                  />
+                  Com estrela
+                </label>
+                <button
+                  onClick={() => { setSearchFilters(EMPTY_EMAIL_FILTERS); setOnlyUnread(false); }}
+                  className="text-amber-700 hover:underline"
+                >
+                  Limpar filtros
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Barra de seleção / filtros */}
           {(messages.length > 0 || onlyUnread) && (
@@ -1707,6 +2078,14 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                   <AlertCircle className="h-3.5 w-3.5 flex-none" />{sendError}
                 </div>
               )}
+              {composeWarnings.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2 text-[12px] text-amber-800">
+                  <AlertCircle className="h-3.5 w-3.5 flex-none" />
+                  {composeWarnings.map((warning) => (
+                    <span key={warning.id} className="rounded-full bg-white/80 px-2 py-0.5">{warning.message}</span>
+                  ))}
+                </div>
+              )}
               <div className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden">
                 <div className="flex items-center gap-2 border-b border-[#f0efe9] px-4 py-2 dark:border-zinc-800">
                   <span className="w-14 text-[12px] text-zinc-400">De</span>
@@ -1755,7 +2134,9 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                   <RichEditor
                     key={compose.inReplyTo ?? 'new'}
                     fill
+                    autoFocus
                     initialHtml={compose.bodyHtml}
+                    signatureHtml={sigToHtml(signature)}
                     onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))}
                     onAttach={addAttachments}
                     aiContext={{ to: compose.to, subject: compose.subject }}
@@ -1915,6 +2296,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                       </div>
 
                       <RichEditor key={compose.inReplyTo ?? 'inline'} initialHtml={compose.bodyHtml} autoFocus
+                        signatureHtml={sigToHtml(signature)}
                         onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))} onAttach={addAttachments}
                         aiContext={{ to: compose.to, subject: compose.subject }}
                         onSubjectSuggested={(s) => setCompose((c) => (c.subject.trim() ? c : { ...c, subject: s }))} />
@@ -1934,6 +2316,13 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                       )}
 
                       {sendError && <p className="text-[13px] text-red-600">{sendError}</p>}
+                      {composeWarnings.length > 0 && (
+                        <div className="flex flex-wrap gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+                          {composeWarnings.map((warning) => (
+                            <span key={warning.id} className="rounded-full bg-white/80 px-2 py-0.5">{warning.message}</span>
+                          ))}
+                        </div>
+                      )}
 
                       <div className="flex items-center justify-end gap-2 pt-1">
                         <button onClick={() => { setComposeOpen(false); setComposeInline(false); }}
@@ -1950,9 +2339,28 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                 {threadLoading && thread.length <= 1 ? (
                   <div className="flex h-20 items-center justify-center text-zinc-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
                 ) : (
-                  (thread.length ? thread : [selected]).map((m, idx, arr) => (
-                    <MessageView key={m.id} m={m} single={arr.length === 1} defaultOpen={idx === 0} />
-                  ))
+                  (() => {
+                    const conversation = thread.length ? thread : [selected];
+                    const latest = conversation[0];
+                    const older = conversation.slice(1);
+                    return (
+                      <div className="space-y-3">
+                        <MessageView key={latest.id} m={latest} single defaultOpen featured />
+                        {older.length > 0 && (
+                          <details className="rounded-xl border border-[#ece7dc] bg-[#faf8f4]">
+                            <summary className="cursor-pointer list-none px-4 py-3 text-[12px] font-medium text-zinc-600">
+                              Histórico anterior · {older.length} {older.length === 1 ? 'mensagem' : 'mensagens'}
+                            </summary>
+                            <div className="border-t border-[#ece7dc] px-3 py-3">
+                              {older.map((m, idx) => (
+                                <MessageView key={m.id} m={m} single={false} defaultOpen={idx === 0} />
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })()
                 )}
               </div>
             </>
@@ -2026,6 +2434,14 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
               <AlertCircle className="h-3.5 w-3.5 flex-none" />{sendError}
             </div>
           )}
+          {composeWarnings.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-amber-100 bg-amber-50 px-5 py-2 text-[12px] text-amber-800">
+              <AlertCircle className="h-3.5 w-3.5 flex-none" />
+              {composeWarnings.map((warning) => (
+                <span key={warning.id} className="rounded-full bg-white/80 px-2 py-0.5">{warning.message}</span>
+              ))}
+            </div>
+          )}
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-3 gap-2">
             <div className="flex items-center gap-2 border-b border-[#f0efe9] pb-2">
               <span className="w-14 text-[13px] text-zinc-400">De</span>
@@ -2058,7 +2474,8 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                 className="flex-1 bg-transparent text-[14px] text-zinc-800 outline-none placeholder:text-zinc-400" />
             </div>
             <div className="min-h-0 flex-1 overflow-hidden">
-              <RichEditor key={(compose.inReplyTo ?? 'new') + '-exp'} fill initialHtml={compose.bodyHtml}
+              <RichEditor key={(compose.inReplyTo ?? 'new') + '-exp'} fill autoFocus initialHtml={compose.bodyHtml}
+                signatureHtml={sigToHtml(signature)}
                 onChange={(html) => setCompose((c) => ({ ...c, bodyHtml: html }))} onAttach={addAttachments}
                 aiContext={{ to: compose.to, subject: compose.subject }}
                 onSubjectSuggested={(s) => setCompose((c) => (c.subject.trim() ? c : { ...c, subject: s }))} />
@@ -2490,25 +2907,27 @@ function ClientLinkChip({ message, onLinked }: { message: EmailMessage; onLinked
  * Uma mensagem na leitura. Quando faz parte de uma conversa (single=false) vira
  * um card colapsável (cabeçalho clicável); a última fica aberta por padrão.
  */
-function MessageView({ m, single, defaultOpen }: { m: EmailMessage; single: boolean; defaultOpen: boolean }) {
+function MessageView({ m, single, defaultOpen, featured = false }: { m: EmailMessage; single: boolean; defaultOpen: boolean; featured?: boolean }) {
   const [open, setOpen] = useState(single || defaultOpen);
   const name = senderName(m);
   const time = formatTime(m.sent_at || m.created_at);
   const isOut = m.direction === 'outbound';
+  const personLabel = isOut ? 'Você' : 'Cliente';
   const body = m.body_html
     ? <EmailHtmlFrame html={m.body_html} msgId={m.id} />
     : <pre className="whitespace-pre-wrap break-words font-sans text-[14px] leading-relaxed text-zinc-800 dark:text-zinc-200">{m.body_text || '(sem conteúdo)'}</pre>;
 
   if (single) {
     return (
-      <div>
+      <div className={`rounded-2xl border px-4 py-4 ${featured ? 'border-amber-200 bg-amber-50/40' : 'border-[#ece7dc] bg-white'}`}>
         <div className="mb-4 flex items-center gap-2.5">
           <div className={`flex h-9 w-9 flex-none items-center justify-center rounded-full text-[13px] font-medium ${avatarColor(name)}`}>
             {name.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <div className="truncate text-[13px]">
+            <div className="flex items-center gap-2 truncate text-[13px]">
               <span className="font-medium text-zinc-800 dark:text-zinc-100">{name}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isOut ? 'bg-zinc-800 text-white' : 'bg-amber-100 text-amber-800'}`}>{personLabel}</span>
               {m.from_address && <span className="text-zinc-500"> &lt;{m.from_address}&gt;</span>}
             </div>
             <div className="text-[12px] text-zinc-400">para {m.to_text || '—'} · {time}</div>
@@ -2521,16 +2940,19 @@ function MessageView({ m, single, defaultOpen }: { m: EmailMessage; single: bool
   }
 
   return (
-    <div className={`mb-2 overflow-hidden rounded-lg border ${open ? 'border-[#e7e5df]' : 'border-[#f0efe9]'}`}>
+    <div className={`mb-2 overflow-hidden rounded-xl border ${open ? 'border-[#e7e5df]' : 'border-[#f0efe9]'}`}>
       <button onClick={() => setOpen((o) => !o)} className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-zinc-50">
         <div className={`flex h-8 w-8 flex-none items-center justify-center rounded-full text-[12px] font-medium ${avatarColor(name)}`}>
           {name.charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
-              {isOut ? `Você → ${m.to_text || '—'}` : name}
-            </span>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
+                {isOut ? `Você → ${m.to_text || '—'}` : name}
+              </span>
+              <span className={`flex-none rounded-full px-2 py-0.5 text-[10px] font-semibold ${isOut ? 'bg-zinc-800 text-white' : 'bg-amber-100 text-amber-800'}`}>{personLabel}</span>
+            </div>
             <span className="flex-none text-[11px] text-zinc-400">{time}</span>
           </div>
           {open
@@ -2618,7 +3040,20 @@ function EmailHtmlFrame({ html, msgId }: { html: string; msgId?: string }) {
   const onLoad = useCallback(() => {
     measure();
     // Remede apos imagens carregarem (alteram a altura).
-    const doc = ref.current?.contentDocument;
+    const frame = ref.current as (HTMLIFrameElement & { __emailSelectAllHandler?: (event: KeyboardEvent) => void }) | null;
+    const doc = frame?.contentDocument;
+    if (doc) {
+      if (frame?.__emailSelectAllHandler) {
+        doc.removeEventListener('keydown', frame.__emailSelectAllHandler);
+      }
+      const forwardSelectAllShortcut = (event: KeyboardEvent) => {
+        if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'a') return;
+        event.preventDefault();
+        window.dispatchEvent(new Event(EMAIL_SELECT_ALL_EVENT));
+      };
+      frame.__emailSelectAllHandler = forwardSelectAllShortcut;
+      doc.addEventListener('keydown', forwardSelectAllShortcut);
+    }
     doc?.querySelectorAll('img').forEach((img) => {
       if (!img.complete) img.addEventListener('load', measure, { once: true });
     });
@@ -2661,7 +3096,7 @@ function EmailHtmlFrame({ html, msgId }: { html: string; msgId?: string }) {
  * execCommand. Gera HTML. Barra com negrito/itálico/sublinhado/listas/link
  * e botão de anexar — no estilo do compose do webmail.
  */
-function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContext, onSubjectSuggested }: {
+function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContext, onSubjectSuggested, signatureHtml }: {
   initialHtml: string;
   onChange: (html: string) => void;
   onAttach: (files: FileList | null) => void;
@@ -2669,20 +3104,27 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
   autoFocus?: boolean;
   aiContext?: { to?: string; subject?: string };
   onSubjectSuggested?: (subject: string) => void;
+  signatureHtml?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const colorRef = useRef<HTMLInputElement>(null);
-  const ignoredWordsRef = useRef<Set<string>>(new Set());
+  const ignoredIssuesRef = useRef<Set<string>>(new Set());
   const [plainText, setPlainText] = useState('');
   const [spellIssues, setSpellIssues] = useState<SpellIssue[]>([]);
   const [spellLoading, setSpellLoading] = useState(false);
+  const [signaturePresent, setSignaturePresent] = useState(false);
+  const [spellDecorationsEnabled, setSpellDecorationsEnabled] = useState(true);
   const [spellMenu, setSpellMenu] = useState<{
     x: number;
     y: number;
+    issueId: string;
+    ignoreKey: string;
     word: string;
+    label: string;
     suggestions: string[];
   } | null>(null);
+  const spellRequestSeqRef = useRef(0);
 
   // ── Escrever com IA ─────────────────────────────────────────────────────
   const [aiOpen, setAiOpen] = useState(false);
@@ -2709,7 +3151,7 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
   const insertAiHtml = (html: string) => {
     const root = ref.current;
     if (!root) return;
-    const marker = root.querySelector('[data-signature], blockquote');
+    const marker = root.querySelector(`[${SIGNATURE_ATTR}], blockquote`);
     const wrapper = document.createElement('div');
     wrapper.innerHTML = html;
     if (marker) {
@@ -2718,6 +3160,7 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
     } else {
       root.innerHTML = html;
     }
+    placeCaretBeforeSignature(root);
     emitEditorState();
   };
 
@@ -2744,18 +3187,13 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
   useEffect(() => {
     if (ref.current && ref.current.innerHTML !== initialHtml) {
       ref.current.innerHTML = initialHtml;
+      keepSelectionOutOfSignature(ref.current);
+      setSignaturePresent(hasSignatureBlock(ref.current));
       setPlainText(ref.current.innerText || '');
     }
     if (autoFocus && ref.current) {
       ref.current.focus();
-      const sel = window.getSelection();
-      if (sel && ref.current.firstChild) {
-        const r = document.createRange();
-        r.setStart(ref.current, 0);
-        r.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(r);
-      }
+      placeCaretAtEditableStart(ref.current);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -2763,43 +3201,76 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
   useEffect(() => {
     const close = () => setSpellMenu(null);
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      if (resumeSpellDecorationsTimerRef.current !== null) {
+        window.clearTimeout(resumeSpellDecorationsTimerRef.current);
+        resumeSpellDecorationsTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
+    const localIssues = buildLocalTextIssues(plainText);
+    const localFiltered = localIssues.filter((issue) => !ignoredIssuesRef.current.has(issue.ignoreKey));
     const cleaned = plainText.replace(/\s+/g, ' ').trim();
+    setSpellIssues(localFiltered);
     if (!cleaned) {
-      setSpellIssues([]);
       setSpellLoading(false);
       return;
     }
 
+    const requestSeq = ++spellRequestSeqRef.current;
+    const controller = new AbortController();
+    let loadingTimer: number | null = null;
     const timer = window.setTimeout(() => {
-      setSpellLoading(true);
-      checkTextSpelling(cleaned)
+      loadingTimer = window.setTimeout(() => {
+        if (requestSeq === spellRequestSeqRef.current && !controller.signal.aborted) {
+          setSpellLoading(true);
+        }
+      }, 450);
+
+      checkTextSpelling(cleaned, controller.signal)
         .then((issues) => {
-          const filtered = issues.filter((issue) => !ignoredWordsRef.current.has(issue.word.toLocaleLowerCase('pt-BR')));
+          if (requestSeq !== spellRequestSeqRef.current) return;
+          const merged = [...localIssues, ...issues];
+          const filtered = merged.filter((issue) => !ignoredIssuesRef.current.has(issue.ignoreKey));
           setSpellIssues(filtered);
         })
-        .catch(() => {
-          setSpellIssues([]);
+        .catch((error) => {
+          if (controller.signal.aborted || requestSeq !== spellRequestSeqRef.current) return;
+          if (error instanceof DOMException && error.name === 'AbortError') return;
+          setSpellIssues(localFiltered);
         })
-        .finally(() => setSpellLoading(false));
-    }, 500);
+        .finally(() => {
+          if (loadingTimer !== null) {
+            window.clearTimeout(loadingTimer);
+            loadingTimer = null;
+          }
+          if (requestSeq === spellRequestSeqRef.current) setSpellLoading(false);
+        });
+    }, 250);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (loadingTimer !== null) window.clearTimeout(loadingTimer);
+      controller.abort();
+      if (requestSeq === spellRequestSeqRef.current) setSpellLoading(false);
+    };
   }, [plainText]);
 
   useEffect(() => {
-    if (!ref.current) return;
+    if (!ref.current || !spellDecorationsEnabled) return;
     const root = ref.current;
     const saved = captureSelectionOffsets(root);
     applySpellMarkers(root, spellIssues);
     restoreSelectionOffsets(root, saved);
-  }, [spellIssues]);
+  }, [spellIssues, spellDecorationsEnabled]);
 
   const savedRange = useRef<Range | null>(null);
+  const resumeSpellDecorationsTimerRef = useRef<number | null>(null);
   const saveSel = () => {
+    if (ref.current) keepSelectionOutOfSignature(ref.current);
     const s = window.getSelection();
     if (s && s.rangeCount && ref.current?.contains(s.anchorNode)) {
       savedRange.current = s.getRangeAt(0).cloneRange();
@@ -2812,8 +3283,21 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
 
   const emitEditorState = () => {
     if (!ref.current) return;
+    keepSelectionOutOfSignature(ref.current);
+    setSignaturePresent(hasSignatureBlock(ref.current));
     onChange(getEditorCleanHtml(ref.current));
     setPlainText(ref.current.innerText || '');
+  };
+
+  const scheduleSpellDecorationsResume = () => {
+    if (resumeSpellDecorationsTimerRef.current !== null) {
+      window.clearTimeout(resumeSpellDecorationsTimerRef.current);
+    }
+    resumeSpellDecorationsTimerRef.current = window.setTimeout(() => {
+      resumeSpellDecorationsTimerRef.current = null;
+      setSpellDecorationsEnabled(true);
+      emitEditorState();
+    }, 180);
   };
 
   const exec = (cmd: string, value?: string) => {
@@ -2833,9 +3317,41 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
     if (url) exec('createLink', url);
   };
 
+  const removeSignatureBlock = () => {
+    const root = ref.current;
+    if (!root) return;
+    const signature = root.querySelector(`[${SIGNATURE_ATTR}]`);
+    if (!signature) return;
+    if (!window.confirm('Remover a assinatura somente desta mensagem?')) return;
+
+    const prev = signature.previousElementSibling as HTMLElement | null;
+    signature.remove();
+    if (prev && prev.tagName === 'P' && !(prev.textContent || '').trim() && prev.querySelector('br')) {
+      prev.remove();
+    }
+    root.focus();
+    placeCaretBeforeSignature(root);
+    emitEditorState();
+  };
+
+  const addSignatureBlock = () => {
+    const root = ref.current;
+    if (!root || !signatureHtml?.trim() || hasSignatureBlock(root)) return;
+    const marker = root.querySelector('blockquote');
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = buildSignatureBlockHtml(signatureHtml);
+    while (wrapper.firstChild) {
+      if (marker) root.insertBefore(wrapper.firstChild, marker);
+      else root.appendChild(wrapper.firstChild);
+    }
+    root.focus();
+    placeCaretBeforeSignature(root);
+    emitEditorState();
+  };
+
   const replaceCurrentMarkedWord = (replacement: string) => {
     if (!ref.current || !spellMenu) return;
-    const marker = ref.current.querySelector(`[${SPELL_MARK_ATTR}="${spellMenu.word}"]`) as HTMLSpanElement | null;
+    const marker = ref.current.querySelector(`[${SPELL_MARK_ID_ATTR}="${spellMenu.issueId}"]`) as HTMLSpanElement | null;
     if (!marker) return;
 
     const textNode = document.createTextNode(replacement);
@@ -2853,8 +3369,8 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
 
   const ignoreCurrentWord = () => {
     if (!spellMenu) return;
-    ignoredWordsRef.current.add(spellMenu.word.toLocaleLowerCase('pt-BR'));
-    setSpellIssues((prev) => prev.filter((issue) => issue.word.toLocaleLowerCase('pt-BR') !== spellMenu.word.toLocaleLowerCase('pt-BR')));
+    ignoredIssuesRef.current.add(spellMenu.ignoreKey);
+    setSpellIssues((prev) => prev.filter((issue) => issue.ignoreKey !== spellMenu.ignoreKey));
     setSpellMenu(null);
   };
 
@@ -2960,29 +3476,78 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
         <input ref={fileRef} type="file" multiple className="hidden"
           onChange={(e) => { onAttach(e.target.files); e.target.value = ''; }} />
       </div>
-      <div ref={ref} contentEditable suppressContentEditableWarning spellCheck={true} lang="pt-BR"
+      <div ref={ref} contentEditable suppressContentEditableWarning spellCheck={false} lang="pt-BR"
         autoCorrect="on" autoCapitalize="sentences"
         onInput={() => emitEditorState()}
+        onKeyDown={(e) => {
+          const lower = e.key.toLowerCase();
+          if ((e.ctrlKey || e.metaKey) && !e.shiftKey && lower === 'z') {
+            e.preventDefault();
+            setSpellDecorationsEnabled(false);
+            try { document.execCommand('undo'); } catch { /* noop */ }
+            scheduleSpellDecorationsResume();
+            return;
+          }
+          if ((e.ctrlKey || e.metaKey) && ((e.shiftKey && lower === 'z') || lower === 'y')) {
+            e.preventDefault();
+            setSpellDecorationsEnabled(false);
+            try { document.execCommand('redo'); } catch { /* noop */ }
+            scheduleSpellDecorationsResume();
+          }
+        }}
         onKeyUp={saveSel} onMouseUp={saveSel} onBlur={saveSel}
+        onFocus={() => { if (ref.current) keepSelectionOutOfSignature(ref.current); }}
+        onMouseDown={(e) => {
+          const target = e.target as HTMLElement | null;
+          if (target?.closest?.(`[${SIGNATURE_DELETE_ATTR}]`)) {
+            e.preventDefault();
+            e.stopPropagation();
+            removeSignatureBlock();
+            return;
+          }
+          if (target?.closest?.(`[${SIGNATURE_ATTR}]`)) {
+            e.preventDefault();
+            if (ref.current) {
+              ref.current.focus();
+              placeCaretBeforeSignature(ref.current);
+            }
+          }
+        }}
         onContextMenu={(e) => {
           const marker = (e.target as HTMLElement).closest(`[${SPELL_MARK_ATTR}]`) as HTMLElement | null;
           if (!marker) return;
           e.preventDefault();
           e.stopPropagation();
+          const issueId = marker.getAttribute(SPELL_MARK_ID_ATTR) || '';
+          const ignoreKey = issueId;
           const word = marker.getAttribute(SPELL_MARK_ATTR) || marker.textContent || '';
-          const rect = marker.getBoundingClientRect();
+          const label = marker.getAttribute('data-label') || word;
           const suggestions = (() => {
             try { return JSON.parse(marker.getAttribute('data-suggestions') || '[]') as string[]; } catch { return []; }
           })();
           setSpellMenu({
             x: Math.min(e.clientX, window.innerWidth - 260),
             y: Math.min(e.clientY + 6, window.innerHeight - 180),
+            issueId,
+            ignoreKey,
             word,
+            label,
             suggestions,
           });
         }}
         style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '14px', lineHeight: 1.6, color: '#1f2937' }}
         className={`overflow-y-auto px-4 py-3 outline-none [&_a]:text-amber-700 [&_a]:underline [&_blockquote]:my-1 [&_blockquote]:border-l-2 [&_blockquote]:border-zinc-200 [&_blockquote]:pl-3 [&_blockquote]:text-zinc-500 [&_p]:mb-3.5 [&_p:last-child]:mb-0 [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:mb-3.5 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:mb-3.5 [&_li]:mb-1 ${fill ? 'min-h-[280px] flex-1' : 'min-h-[260px] max-h-[45vh]'}`} />
+      {!signaturePresent && !!signatureHtml?.trim() && (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={addSignatureBlock}
+          className="absolute bottom-3 right-3 z-[2] inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-[12px] font-medium text-amber-700 shadow-sm hover:bg-amber-100"
+        >
+          <span className="text-[14px] leading-none">+</span>
+          <span>Adicionar assinatura</span>
+        </button>
+      )}
       {spellLoading && (
         <div className="pointer-events-none absolute right-3 top-[46px] rounded-full bg-white/95 px-2 py-1 text-[11px] font-medium text-zinc-500 shadow-sm ring-1 ring-[#ece7dc]">
           Revisando...
@@ -3006,6 +3571,7 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
           )) : (
             <div className="px-3 py-2 text-[12px] text-zinc-500">Sem sugestão automática</div>
           )}
+          <div className="px-3 pb-1 pt-0.5 text-[11px] text-zinc-400">{spellMenu.label}</div>
           <div className="my-1 h-px bg-[#f0efe9]" />
           <button
             type="button"

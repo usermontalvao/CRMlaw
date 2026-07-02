@@ -1,33 +1,19 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Scale, Shield, Sparkles, Heart, Gift, Egg, Flag, Ghost, TreePine, Star, Flame, Snowflake, PartyPopper, Music, Rocket, User, Lock, ArrowRight, Ban } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Scale, Shield, Sparkles, Rocket, User, Lock, ArrowRight, Ban,
+  Users, Target, Briefcase, Calendar, Bell, PiggyBank, Library, Newspaper, FileText, PenTool, MessageSquare, Cloud,
+} from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { clientService } from '../services/client.service';
 import { BrandLogo } from './ui';
-
-const BrazilFlag: React.FC<{ className?: string }> = ({ className }) => (
-  <svg
-    viewBox="0 0 28 20"
-    className={className}
-    role="img"
-    aria-label="Bandeira do Brasil"
-  >
-    <rect width="28" height="20" rx="2" fill="#009C3B" />
-    <polygon points="14,3 25,10 14,17 3,10" fill="#FFDF00" />
-    <circle cx="14" cy="10" r="5" fill="#002776" />
-    <path
-      d="M9 9.5c3-.8 7 1.2 10 1"
-      stroke="#fff"
-      strokeWidth="0.8"
-      fill="none"
-    />
-  </svg>
-);
+import { BRAND_SERIF } from '../constants/brand';
 
 interface LoginProps {
   onLogin: (email: string, password: string) => Promise<void>;
   onResetPassword: (email: string) => Promise<void>;
 }
 
+// Uma imagem por mês — mantém o painel vivo ao longo do ano, sempre discreta.
 const HERO_IMAGES = [
   'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=1920&q=80', // Janeiro
   'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=1920&q=80', // Fevereiro
@@ -43,347 +29,36 @@ const HERO_IMAGES = [
   'https://images.unsplash.com/photo-1482517967863-00e15c9b44be?auto=format&fit=crop&w=1920&q=80', // Dezembro
 ];
 
-// Partícula animada
-interface Particle {
-  id: number;
-  x: number;
-  y: number;
-  size: number;
-  color: string;
-  delay: number;
-  duration: number;
-  type: 'confetti' | 'snow' | 'heart' | 'star' | 'firework' | 'leaf' | 'balloon' | 'sparkle';
-}
+const MODULES: { icon: React.ElementType; accent: boolean; title: string; caption: string }[] = [
+  { icon: User, accent: true, title: 'Gerenciar Clientes', caption: 'CRM Jurídico completo' },
+  { icon: Scale, accent: false, title: 'Processos & Prazos', caption: 'Monitoramento 24/7' },
+  { icon: AlertCircle, accent: false, title: 'Intimações', caption: 'Captura automática' },
+  { icon: Shield, accent: false, title: 'Admin. Previdenciário', caption: 'Integração INSS' },
+  { icon: Rocket, accent: false, title: 'Gestão de Leads', caption: 'Converta mais clientes potenciais' },
+  { icon: Sparkles, accent: true, title: '...e muito mais', caption: 'Automação, integrações e insights' },
+];
 
-// Temas festivos brasileiros por mês
-interface FestiveTheme {
-  name: string;
-  emoji: string;
-  gradient: string;
-  accentColor: string;
-  particleColors: string[];
-  message: string;
-  icon: React.ReactNode;
-  particleType: Particle['type'];
-  bannerAnimation: string;
-  specialEffect: 'confetti' | 'snow' | 'fireworks' | 'hearts' | 'leaves' | 'balloons' | 'sparkles' | 'none';
-  backgroundOverlay: string;
-  heroImage: string;
-  symbolRenderer?: (className?: string) => React.ReactNode;
-}
-
-// Gerar partículas aleatórias
-const generateParticles = (count: number, type: Particle['type'], colors: string[]): Particle[] => {
-  return Array.from({ length: count }, (_, i) => ({
-    id: i,
-    x: Math.random() * 100,
-    y: Math.random() * 100,
-    size: Math.random() * 10 + 5,
-    color: colors[Math.floor(Math.random() * colors.length)],
-    delay: Math.random() * 5,
-    duration: Math.random() * 3 + 2,
-    type,
-  }));
-};
-
-const getFestiveTheme = (): FestiveTheme => {
-  const now = new Date();
-  const month = now.getMonth(); // 0-11
-  const day = now.getDate();
-  const heroImage = HERO_IMAGES[month] ?? HERO_IMAGES[0];
-
-  // Janeiro - Ano Novo / Verão
-  if (month === 0) {
-    return {
-      name: 'Ano Novo',
-      emoji: '🎆',
-      gradient: 'from-yellow-400 via-orange-500 to-red-500',
-      accentColor: 'text-yellow-500',
-      particleColors: ['#FFD700', '#FFA500', '#FF6347', '#FFE4B5', '#FFFFFF'],
-      message: '✨ Feliz Ano Novo! ✨',
-      icon: <PartyPopper className="w-4 h-4" />,
-      particleType: 'firework',
-      bannerAnimation: 'animate-pulse',
-      specialEffect: 'fireworks',
-      backgroundOverlay: 'bg-gradient-to-br from-indigo-900/90 via-purple-900/80 to-pink-900/70',
-      heroImage,
-    };
-  }
-
-  // Fevereiro - Carnaval
-  if (month === 1) {
-    return {
-      name: 'Carnaval',
-      emoji: '🎭',
-      gradient: 'from-purple-500 via-pink-500 to-yellow-400',
-      accentColor: 'text-purple-500',
-      particleColors: ['#9333EA', '#EC4899', '#FBBF24', '#22C55E', '#3B82F6', '#EF4444'],
-      message: '🎉 É Carnaval! 🎊',
-      icon: <Music className="w-4 h-4 animate-bounce" />,
-      particleType: 'confetti',
-      bannerAnimation: 'animate-bounce',
-      specialEffect: 'confetti',
-      backgroundOverlay: 'bg-gradient-to-br from-purple-900/80 via-pink-900/70 to-yellow-900/60',
-      heroImage,
-    };
-  }
-
-  // Março/Abril - Páscoa (aproximado)
-  if (month === 2 || (month === 3 && day <= 20)) {
-    return {
-      name: 'Páscoa',
-      emoji: '🐰',
-      gradient: 'from-pink-400 via-purple-400 to-indigo-400',
-      accentColor: 'text-pink-500',
-      particleColors: ['#F9A8D4', '#C084FC', '#A78BFA', '#FDE68A', '#86EFAC'],
-      message: '🐣 Feliz Páscoa! 🥚',
-      icon: <Egg className="w-4 h-4" />,
-      particleType: 'sparkle',
-      bannerAnimation: '',
-      specialEffect: 'sparkles',
-      backgroundOverlay: 'bg-gradient-to-br from-pink-900/70 via-purple-900/60 to-indigo-900/70',
-      heroImage,
-    };
-  }
-
-  // Abril - Tiradentes / Outono
-  if (month === 3) {
-    return {
-      name: 'Outono',
-      emoji: '🍂',
-      gradient: 'from-orange-400 via-red-500 to-yellow-600',
-      accentColor: 'text-orange-500',
-      particleColors: ['#F97316', '#EF4444', '#FBBF24', '#92400E', '#DC2626'],
-      message: '🍁 Boas vindas ao Outono! 🍂',
-      icon: <Flame className="w-4 h-4" />,
-      particleType: 'leaf',
-      bannerAnimation: '',
-      specialEffect: 'leaves',
-      backgroundOverlay: 'bg-gradient-to-br from-orange-900/80 via-red-900/70 to-yellow-900/60',
-      heroImage,
-    };
-  }
-
-  // Maio - Dia das Mães
-  if (month === 4) {
-    return {
-      name: 'Dia das Mães',
-      emoji: '💐',
-      gradient: 'from-pink-400 via-rose-500 to-red-400',
-      accentColor: 'text-pink-500',
-      particleColors: ['#EC4899', '#F43F5E', '#FB7185', '#FDA4AF', '#FFFFFF'],
-      message: '💕 Feliz Dia das Mães! 💐',
-      icon: <Heart className="w-4 h-4 animate-pulse" />,
-      particleType: 'heart',
-      bannerAnimation: '',
-      specialEffect: 'hearts',
-      backgroundOverlay: 'bg-gradient-to-br from-pink-900/80 via-rose-900/70 to-red-900/60',
-      heroImage,
-    };
-  }
-
-  // Junho - Festa Junina
-  if (month === 5) {
-    return {
-      name: 'Festa Junina',
-      emoji: '🎪',
-      gradient: 'from-orange-500 via-red-600 to-yellow-500',
-      accentColor: 'text-orange-500',
-      particleColors: ['#F97316', '#DC2626', '#FBBF24', '#22C55E', '#FFFFFF'],
-      message: '🌽 Arraiá! 🔥',
-      icon: <Flame className="w-4 h-4 animate-pulse" />,
-      particleType: 'sparkle',
-      bannerAnimation: '',
-      specialEffect: 'sparkles',
-      backgroundOverlay: 'bg-gradient-to-br from-orange-900/80 via-red-900/70 to-yellow-900/60',
-      heroImage,
-    };
-  }
-
-  // Julho - Inverno / Férias
-  if (month === 6) {
-    return {
-      name: 'Inverno',
-      emoji: '❄️',
-      gradient: 'from-blue-400 via-cyan-400 to-sky-500',
-      accentColor: 'text-blue-400',
-      particleColors: ['#FFFFFF', '#E0F2FE', '#BAE6FD', '#7DD3FC', '#38BDF8'],
-      message: '❄️ Bom Inverno! ☃️',
-      icon: <Snowflake className="w-4 h-4 animate-spin-slow" />,
-      particleType: 'snow',
-      bannerAnimation: '',
-      specialEffect: 'snow',
-      backgroundOverlay: 'bg-gradient-to-br from-blue-900/80 via-cyan-900/70 to-sky-900/60',
-      heroImage,
-    };
-  }
-
-  // Agosto - Dia dos Pais
-  if (month === 7) {
-    return {
-      name: 'Dia dos Pais',
-      emoji: '👔',
-      gradient: 'from-blue-500 via-indigo-500 to-purple-600',
-      accentColor: 'text-blue-500',
-      particleColors: ['#3B82F6', '#6366F1', '#8B5CF6', '#FFFFFF', '#1E40AF'],
-      message: '👨 Feliz Dia dos Pais! 💙',
-      icon: <Heart className="w-4 h-4" />,
-      particleType: 'star',
-      bannerAnimation: '',
-      specialEffect: 'sparkles',
-      backgroundOverlay: 'bg-gradient-to-br from-blue-900/80 via-indigo-900/70 to-purple-900/60',
-      heroImage,
-    };
-  }
-
-  // Setembro - Independência / Primavera
-  if (month === 8) {
-    return {
-      name: 'Independência',
-      emoji: '🇧🇷',
-      gradient: 'from-green-500 via-yellow-400 to-blue-500',
-      accentColor: 'text-green-500',
-      particleColors: ['#22C55E', '#FBBF24', '#3B82F6', '#FFFFFF'],
-      message: '🇧🇷 Viva o Brasil! 💚💛',
-      icon: <Flag className="w-4 h-4" />,
-      particleType: 'confetti',
-      bannerAnimation: '',
-      specialEffect: 'confetti',
-      backgroundOverlay: 'bg-gradient-to-br from-green-900/80 via-yellow-900/60 to-blue-900/70',
-      heroImage,
-    };
-  }
-
-  // Outubro - Dia das Crianças / Halloween
-  if (month === 9) {
-    return {
-      name: 'Dia das Crianças',
-      emoji: '🎈',
-      gradient: 'from-orange-400 via-pink-500 to-purple-500',
-      accentColor: 'text-orange-500',
-      particleColors: ['#F97316', '#EC4899', '#A855F7', '#22C55E', '#3B82F6', '#EF4444'],
-      message: '🎈 Feliz Dia das Crianças! 🎁',
-      icon: <Gift className="w-4 h-4 animate-bounce" />,
-      particleType: 'balloon',
-      bannerAnimation: 'animate-bounce',
-      specialEffect: 'balloons',
-      backgroundOverlay: 'bg-gradient-to-br from-orange-900/70 via-pink-900/60 to-purple-900/70',
-      heroImage,
-    };
-  }
-
-  // Novembro - Proclamação da República
-  if (month === 10) {
-    return {
-      name: 'República',
-      emoji: '🇧🇷',
-      gradient: 'from-green-600 via-yellow-400 to-green-600',
-      accentColor: 'text-yellow-400',
-      particleColors: ['#16A34A', '#FACC15', '#166534', '#FDE047', '#15803D'],
-      message: '🇧🇷 Viva a República! 15 de Novembro 🇧🇷',
-      icon: <BrazilFlag className="w-5 h-4" />,
-      particleType: 'star',
-      bannerAnimation: '',
-      specialEffect: 'sparkles',
-      backgroundOverlay: 'bg-gradient-to-br from-green-900/85 via-yellow-900/70 to-green-900/80',
-      symbolRenderer: (className) => <BrazilFlag className={`inline-block ${className ?? ''}`} />,
-      heroImage,
-    };
-  }
-
-  // Dezembro - Natal
-  return {
-    name: 'Natal',
-    emoji: '🎄',
-    gradient: 'from-red-500 via-green-600 to-red-600',
-    accentColor: 'text-red-500',
-    particleColors: ['#FFFFFF', '#EF4444', '#22C55E', '#FBBF24', '#F87171'],
-    message: '🎅 Feliz Natal! 🎄',
-    icon: <TreePine className="w-4 h-4" />,
-    particleType: 'snow',
-    bannerAnimation: '',
-    specialEffect: 'snow',
-    backgroundOverlay: 'bg-gradient-to-br from-red-900/80 via-green-900/70 to-red-900/60',
-    heroImage,
-  };
-};
-
-// Componente de partículas animadas
-const AnimatedParticles: React.FC<{ theme: FestiveTheme }> = ({ theme }) => {
-  const particles = useMemo(() => generateParticles(15, theme.particleType, theme.particleColors), [theme]);
-
-  const getParticleStyle = (particle: Particle): React.CSSProperties => {
-    const baseStyle: React.CSSProperties = {
-      position: 'absolute',
-      left: `${particle.x}%`,
-      animationDelay: `${particle.delay}s`,
-      animationDuration: `${particle.duration}s`,
-    };
-
-    switch (particle.type) {
-      case 'snow':
-        return { ...baseStyle, top: '-20px', fontSize: `${particle.size}px` };
-      case 'confetti':
-        return { ...baseStyle, top: '-20px', width: `${particle.size}px`, height: `${particle.size * 0.6}px`, backgroundColor: particle.color };
-      case 'heart':
-        return { ...baseStyle, top: '-20px', fontSize: `${particle.size + 5}px`, color: particle.color };
-      case 'star':
-        return { ...baseStyle, top: '-20px', fontSize: `${particle.size}px`, color: particle.color };
-      case 'firework':
-        return { ...baseStyle, bottom: '0', fontSize: `${particle.size + 8}px` };
-      case 'leaf':
-        return { ...baseStyle, top: '-20px', fontSize: `${particle.size + 3}px` };
-      case 'balloon':
-        return { ...baseStyle, bottom: '-50px', fontSize: `${particle.size + 10}px` };
-      case 'sparkle':
-        return { ...baseStyle, top: `${particle.y}%`, fontSize: `${particle.size}px`, color: particle.color };
-      default:
-        return baseStyle;
-    }
-  };
-
-  const getParticleContent = (particle: Particle) => {
-    switch (particle.type) {
-      case 'snow': return '❄';
-      case 'confetti': return null;
-      case 'heart': return '❤';
-      case 'star': return '⭐';
-      case 'firework': return '✨';
-      case 'leaf': return '🍂';
-      case 'balloon': return '🎈';
-      case 'sparkle': return '✦';
-      default: return '•';
-    }
-  };
-
-  const getAnimationClass = (type: Particle['type']) => {
-    switch (type) {
-      case 'snow': return 'animate-snowfall';
-      case 'confetti': return 'animate-confetti';
-      case 'heart': return 'animate-float-up';
-      case 'star': return 'animate-twinkle';
-      case 'firework': return 'animate-firework';
-      case 'leaf': return 'animate-leaf-fall';
-      case 'balloon': return 'animate-balloon';
-      case 'sparkle': return 'animate-sparkle';
-      default: return '';
-    }
-  };
-
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none z-10">
-      {particles.map((particle) => (
-        <div
-          key={particle.id}
-          className={`${getAnimationClass(particle.type)} opacity-80`}
-          style={getParticleStyle(particle)}
-        >
-          {getParticleContent(particle)}
-        </div>
-      ))}
-    </div>
-  );
-};
+const MODULE_CARDS: {
+  icon: React.ElementType;
+  title: string;
+  caption: string;
+  tone: 'amber' | 'ink' | 'olive';
+  size?: 'sm' | 'lg';
+}[] = [
+  { icon: Users, title: 'Clientes', caption: 'cadastro, histórico e relacionamento', tone: 'amber', size: 'lg' },
+  { icon: Target, title: 'Leads', caption: 'captação e conversão comercial', tone: 'ink' },
+  { icon: Briefcase, title: 'Processos', caption: 'andamento processual em contexto', tone: 'ink' },
+  { icon: Calendar, title: 'Agenda & Prazos', caption: 'audiências, tarefas e vencimentos', tone: 'olive', size: 'lg' },
+  { icon: Bell, title: 'Intimações', caption: 'captura e triagem operacional', tone: 'ink' },
+  { icon: PiggyBank, title: 'Financeiro', caption: 'honorários, acordos e cobrança', tone: 'amber' },
+  { icon: Library, title: 'Requerimentos', caption: 'fluxos jurídicos e documentos', tone: 'olive' },
+  { icon: Newspaper, title: 'Petições', caption: 'produção com mais consistência', tone: 'ink' },
+  { icon: FileText, title: 'Documentos', caption: 'modelos, arquivos e kits', tone: 'amber' },
+  { icon: PenTool, title: 'Assinaturas', caption: 'envio e acompanhamento digital', tone: 'olive' },
+  { icon: MessageSquare, title: 'WhatsApp', caption: 'atendimento integrado ao CRM', tone: 'amber', size: 'lg' },
+  { icon: Shield, title: 'Chat da Equipe', caption: 'coordenação interna com contexto', tone: 'ink' },
+  { icon: Cloud, title: 'Cloud', caption: 'armazenamento e organização central', tone: 'olive' },
+];
 
 const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
   const [email, setEmail] = useState('');
@@ -401,8 +76,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     return false;
   });
   const [resetting, setResetting] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const [logoHover, setLogoHover] = useState(false);
   const [identifierConfirmed, setIdentifierConfirmed] = useState(false);
   const [identifierRaw, setIdentifierRaw] = useState('');
   const [identifierProfileName, setIdentifierProfileName] = useState<string | null>(null);
@@ -433,7 +106,27 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     return () => clearInterval(interval);
   }, [testimonials.length]);
 
-  const theme = useMemo(() => getFestiveTheme(), []);
+  const heroImage = useMemo(() => HERO_IMAGES[new Date().getMonth()] ?? HERO_IMAGES[0], []);
+  const moduleToneClass: Record<'amber' | 'ink' | 'olive', { shell: string; iconWrap: string; icon: string; eyebrow: string }> = {
+    amber: {
+      shell: 'border-[#efddc9] bg-[linear-gradient(145deg,rgba(255,251,246,0.96),rgba(247,236,222,0.88))] shadow-[0_18px_44px_-28px_rgba(215,118,33,0.45)]',
+      iconWrap: 'bg-[#fff4e7] border-[#f0d2ae]',
+      icon: 'text-[#d97706]',
+      eyebrow: 'text-[#c56a1a]',
+    },
+    ink: {
+      shell: 'border-[#ddd6cb] bg-[linear-gradient(145deg,rgba(255,255,255,0.94),rgba(245,241,235,0.88))] shadow-[0_18px_44px_-30px_rgba(44,33,24,0.18)]',
+      iconWrap: 'bg-[#f5f1eb] border-[#e4dbcf]',
+      icon: 'text-[#3f342a]',
+      eyebrow: 'text-[#6f6258]',
+    },
+    olive: {
+      shell: 'border-[#d9dccd] bg-[linear-gradient(145deg,rgba(251,252,247,0.96),rgba(239,242,229,0.92))] shadow-[0_18px_44px_-30px_rgba(89,96,58,0.18)]',
+      iconWrap: 'bg-[#f0f4e6] border-[#d7dfbf]',
+      icon: 'text-[#667249]',
+      eyebrow: 'text-[#778260]',
+    },
+  };
 
   const translateAuthError = useCallback((message?: string) => {
     if (!message) {
@@ -465,12 +158,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     return 'Não foi possível fazer login. Verifique os dados e tente novamente.';
   }, []);
 
-  const renderThemeSymbol = useCallback(
-    (className?: string) =>
-      theme.symbolRenderer ? theme.symbolRenderer(className) : <span className={className}>{theme.emoji}</span>,
-    [theme]
-  );
-
   const LAST_LOGIN_CPF_KEY = 'crm-last-login-cpf';
 
   const formatCpf = useCallback((value: string) => {
@@ -484,11 +171,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     if (digits.length <= 6) return `${p1}.${p2}`;
     if (digits.length <= 9) return `${p1}.${p2}.${p3}`;
     return `${p1}.${p2}.${p3}-${p4}`;
-  }, []);
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setMounted(true));
-    return () => cancelAnimationFrame(frame);
   }, []);
 
   const loadIdentifierProfile = useCallback(async (identifier: string): Promise<{ found: boolean; message?: string }> => {
@@ -699,49 +381,47 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
 
   return (
     <div className="min-h-screen md:h-screen flex flex-col md:flex-row overflow-hidden bg-[#f8f7f5]">
+      <style>{`
+        @keyframes lg-rise{from{opacity:0;transform:translateY(18px);filter:blur(6px)}to{opacity:1;transform:translateY(0);filter:blur(0)}}
+        @keyframes lg-breathe{0%,100%{opacity:.45;transform:scale(1)}50%{opacity:.8;transform:scale(1.07)}}
+        .lg-rise{animation:lg-rise .9s cubic-bezier(.16,1,.3,1) both}
+        @media (prefers-reduced-motion:reduce){.lg-rise,.lg-anim{animation:none!important;opacity:1!important}}
+      `}</style>
+
       {/* ===== LADO ESQUERDO - LOGIN ===== */}
-      <div
-        className={`w-full md:w-[45%] lg:w-[40%] flex flex-col justify-between p-8 md:p-10 lg:p-12 bg-[#f8f7f5] relative z-20 shadow-2xl min-h-screen md:h-screen md:overflow-y-auto transition-all duration-700 ${
-          mounted ? 'opacity-100' : 'opacity-0'
-        }`}
-      >
+      <div className="w-full md:w-[45%] lg:w-[40%] flex flex-col justify-between p-8 md:p-10 lg:p-12 bg-[#f8f7f5] relative z-20 shadow-2xl min-h-screen md:h-screen md:overflow-y-auto">
         {/* Header - Logo */}
-        <BrandLogo variant="light" size="sm" divider={false} className="select-none" />
+        <div className="lg-rise">
+          <BrandLogo variant="light" size="sm" divider={false} className="select-none" />
+        </div>
 
         {/* Centro - Formulário */}
         <div className="flex flex-col justify-center flex-grow py-8 max-w-md mx-auto w-full">
           {/* Título */}
           <h2
-            className={`text-3xl md:text-4xl font-bold text-slate-900 mb-3 tracking-tight transition-all duration-500 delay-75 ${
-              mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-            }`}
+            className="text-[34px] md:text-[40px] font-semibold text-[#211c18] mb-3 leading-[1.12] tracking-tight lg-rise"
+            style={{ fontFamily: BRAND_SERIF, animationDelay: '80ms' }}
           >
             Bem-vindo de volta
           </h2>
-          <p
-            className={`text-slate-500 mb-10 text-base leading-relaxed transition-all duration-500 delay-100 ${
-              mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-            }`}
-          >
+          <p className="text-slate-500 mb-10 text-[15px] leading-relaxed lg-rise" style={{ animationDelay: '160ms' }}>
             Acesse seu painel jurídico e gerencie seu escritório com eficiência e segurança.
           </p>
 
           {/* Formulário */}
-          <form
-            onSubmit={handleSubmit}
-            className={`space-y-5 transition-all duration-500 delay-150 ${
-              mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
-            }`}
-          >
+          <form onSubmit={handleSubmit} className="space-y-5 lg-rise" style={{ animationDelay: '240ms' }}>
             {/* Etapa 1 - Identificador */}
             {!identifierConfirmed && (
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                <label
+                  className="block text-[11px] font-semibold text-slate-500 mb-2.5 uppercase"
+                  style={{ letterSpacing: '0.14em' }}
+                >
                   E-mail ou CPF
                 </label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <User className="w-5 h-5 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <User className="w-[18px] h-[18px] text-slate-400 group-focus-within:text-orange-500 transition-colors" />
                   </div>
                   <input
                     type="text"
@@ -763,7 +443,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                       setIdentifierRaw(value);
                       setEmail(value);
                     }}
-                    className="block w-full rounded-xl border border-[#e7e5df] bg-slate-50 text-slate-900 pl-10 pr-4 py-3.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 text-sm placeholder-slate-400 transition-all duration-200 hover:border-slate-300"
+                    className="block w-full rounded-xl border border-[#e7e4de] bg-white text-slate-900 pl-11 pr-4 py-3.5 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 text-sm placeholder-slate-400 transition-all duration-200 hover:border-[#d9d5cd] shadow-[0_1px_2px_rgba(33,28,24,0.04)]"
                     placeholder="seu email ou CPF"
                     required
                   />
@@ -783,9 +463,9 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
             {identifierConfirmed && (
               <>
                 {/* Card do usuário identificado */}
-                <div className="flex items-center gap-3 rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] px-4 py-3 shadow-sm">
+                <div className="flex items-center gap-3 rounded-2xl border border-[#e7e4de] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(33,28,24,0.05)]">
                   <div className="relative h-12 w-12">
-                    <div className="h-12 w-12 rounded-2xl bg-slate-50 text-slate-600 font-bold text-lg flex items-center justify-center uppercase overflow-hidden">
+                    <div className="h-12 w-12 rounded-2xl bg-[#f4f2ee] text-slate-600 font-bold text-lg flex items-center justify-center uppercase overflow-hidden">
                       {identifierProfileAvatar ? (
                         <img
                           src={identifierProfileAvatar}
@@ -796,16 +476,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                         (identifierProfileName || identifierRaw || email).trim().charAt(0) || '?'
                       )}
                     </div>
-                    <span className="absolute -bottom-1 -right-1 bg-[#f8f7f5] rounded-full p-0.5 shadow-sm">
+                    <span className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-900 truncate">
-                        {identifierProfileName || identifierRaw || email}
-                      </p>
-                    </div>
+                    <p className="text-sm font-semibold text-slate-900 truncate">
+                      {identifierProfileName || identifierRaw || email}
+                    </p>
                     <p className="text-xs text-slate-500 truncate">{email}</p>
                   </div>
                   <button
@@ -822,18 +500,21 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
 
                 {/* Campo de senha */}
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  <label
+                    className="block text-[11px] font-semibold text-slate-500 mb-2.5 uppercase"
+                    style={{ letterSpacing: '0.14em' }}
+                  >
                     Senha
                   </label>
                   <div className="relative group">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Lock className="w-5 h-5 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <Lock className="w-[18px] h-[18px] text-slate-400 group-focus-within:text-orange-500 transition-colors" />
                     </div>
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => { setPassword(e.target.value); setIsBanned(false); }}
-                      className="block w-full rounded-xl border border-[#e7e5df] bg-slate-50 text-slate-900 pl-10 pr-12 py-3.5 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 text-sm placeholder-slate-400 transition-all duration-200 hover:border-slate-300"
+                      className="block w-full rounded-xl border border-[#e7e4de] bg-white text-slate-900 pl-11 pr-12 py-3.5 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 text-sm placeholder-slate-400 transition-all duration-200 hover:border-[#d9d5cd] shadow-[0_1px_2px_rgba(33,28,24,0.04)]"
                       placeholder="Digite sua senha"
                       required
                       autoFocus
@@ -862,7 +543,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                     type="button"
                     onClick={handleResetPassword}
                     disabled={resetting}
-                    className="text-sm font-medium text-orange-500 hover:text-orange-600 disabled:opacity-50 transition-colors"
+                    className="text-sm font-medium text-orange-600 hover:text-orange-700 disabled:opacity-50 transition-colors"
                   >
                     {resetting ? 'Enviando...' : 'Esqueceu a senha?'}
                   </button>
@@ -921,7 +602,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
             <button
               type="submit"
               disabled={loading || identifierLoading || (identifierConfirmed && !password)}
-              className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-xl shadow-lg shadow-orange-500/20 text-sm font-semibold text-white bg-gradient-to-r from-slate-900 to-slate-800 hover:from-black hover:to-slate-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-all duration-300 transform active:scale-[0.98] group mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex justify-center items-center py-4 px-4 rounded-xl text-sm font-semibold text-white bg-[#16110d] hover:bg-black focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-all duration-300 active:scale-[0.985] group mt-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_10px_30px_-12px_rgba(242,122,35,0.45),inset_0_1px_0_rgba(255,255,255,0.08)]"
             >
               {loading ? (
                 <>
@@ -943,10 +624,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
           </form>
 
           {/* Link para contato */}
-          <div className="mt-8 pt-6 border-t border-slate-100">
+          <div className="mt-8 pt-6 border-t border-[#eceae4] lg-rise" style={{ animationDelay: '320ms' }}>
             <p className="text-center text-xs text-slate-400">
               Precisa de ajuda?{' '}
-              <a href="mailto:pedro@advcuiaba.com" className="font-semibold text-orange-500 hover:text-orange-600 transition-colors">
+              <a href="mailto:pedro@advcuiaba.com" className="font-semibold text-orange-600 hover:text-orange-700 transition-colors">
                 Fale com um consultor
               </a>
             </p>
@@ -954,133 +635,145 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-between items-center text-xs text-slate-400 mt-auto">
+        <div className="flex justify-between items-center text-xs text-slate-400 mt-auto lg-rise" style={{ animationDelay: '400ms' }}>
           <span>© {new Date().getFullYear()} jurius.com.br</span>
           <div className="flex gap-4">
-            <a href="#/terms" className="hover:text-orange-500 transition-colors">Termos</a>
-            <a href="#/privacidade" className="hover:text-orange-500 transition-colors">Privacidade</a>
+            <a href="#/terms" className="hover:text-orange-600 transition-colors">Termos</a>
+            <a href="#/privacidade" className="hover:text-orange-600 transition-colors">Privacidade</a>
           </div>
         </div>
       </div>
 
       {/* ===== LADO DIREITO - VISUAL ===== */}
-      <div
-        className={`hidden md:flex md:w-[55%] lg:w-[60%] relative bg-slate-900 items-center justify-center overflow-hidden min-h-screen md:h-screen transition-all duration-700 delay-100 ${
-          mounted ? 'opacity-100' : 'opacity-0'
-        }`}
-      >
-        {/* Background */}
-        <div className="absolute inset-0 z-0">
+      <div className="hidden md:flex md:w-[55%] lg:w-[60%] relative items-center justify-center overflow-hidden min-h-screen md:h-screen bg-[#efe7dc]">
+        {/* Ambient: foto do mês bem sutil + glow respirando + vinheta + grain */}
+        <div className="absolute inset-0 z-0 pointer-events-none">
           <img
-            src={theme.heroImage}
-            alt="Background"
-            className="w-full h-full object-cover opacity-20"
+            src={heroImage}
+            alt=""
+            aria-hidden="true"
+            className="w-full h-full object-cover opacity-[0.08]"
+            style={{ filter: 'sepia(0.18) saturate(0.72) brightness(1.08)' }}
           />
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-800/90" />
-          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-orange-500/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3" />
-          <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-600/10 rounded-full blur-[100px] translate-y-1/3 -translate-x-1/3" />
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(245,240,233,0.92) 0%, rgba(239,231,220,0.9) 36%, rgba(227,214,197,0.88) 100%)' }} />
+          <div
+            className="absolute -top-24 -right-16 w-[540px] h-[540px] rounded-full lg-anim"
+            style={{
+              background: 'radial-gradient(circle, rgba(242,122,35,0.16) 0%, rgba(242,122,35,0.07) 38%, transparent 70%)',
+              animation: 'lg-breathe 8s ease-in-out infinite',
+            }}
+          />
+          <div
+            className="absolute -bottom-32 left-[-120px] h-[440px] w-[440px] rounded-full"
+            style={{ background: 'radial-gradient(circle, rgba(120,81,45,0.12) 0%, rgba(120,81,45,0.05) 44%, transparent 72%)' }}
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(120,99,77,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(120,99,77,0.06)_1px,transparent_1px)] bg-[size:100px_100px]" />
+          <div
+            className="absolute inset-0 opacity-[0.028]"
+            style={{
+              backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
+            }}
+          />
         </div>
 
         {/* Conteúdo */}
-        <div className="relative z-10 w-full max-w-4xl px-8 lg:px-14 py-10 text-white h-full flex flex-col justify-between">
+        <div className="relative z-10 w-full max-w-5xl px-8 lg:px-14 py-10 text-[#2c241d] h-full flex flex-col justify-between">
           {/* Header */}
-          <div className={`mb-8 transition-all duration-700 delay-200 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#f8f7f5]/5 border border-white/10 backdrop-blur-sm mb-6 w-fit">
-              <span className="w-2 h-2 rounded-full bg-orange-500" />
-              <span className="text-xs font-medium tracking-wide uppercase text-slate-300">Plataforma All-in-One</span>
+          <div className="mb-8 lg-rise" style={{ animationDelay: '200ms' }}>
+            <div
+              className="inline-flex items-center gap-2.5 mb-7 rounded-full border border-[#e6d8c7] bg-white/65 px-4 py-2 text-[11px] font-semibold uppercase shadow-[0_12px_30px_-24px_rgba(44,33,24,0.35)] backdrop-blur-sm"
+              style={{ letterSpacing: '0.28em', color: '#8e7156' }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+              Plataforma Jurídica Integrada
             </div>
-            <h2 className="text-4xl lg:text-5xl font-bold leading-tight mb-4">
-              Simplifique a rotina do <br />
-              <span className="bg-gradient-to-r from-white to-slate-400 text-transparent bg-clip-text">seu escritório.</span>
+            <h2
+              className="text-4xl lg:text-[52px] font-semibold leading-[1.1] tracking-tight mb-5"
+              style={{ fontFamily: BRAND_SERIF }}
+            >
+              Gestão jurídica com{' '}
+              <span
+                className="text-transparent bg-clip-text"
+                style={{ backgroundImage: 'linear-gradient(100deg, #f59e0b, #dc6b1f)' }}
+              >
+                seu escritório.
+              </span>
             </h2>
-            <p className="text-slate-300 text-base lg:text-lg leading-relaxed max-w-xl font-light">
+            <p className="text-base lg:text-lg leading-relaxed max-w-2xl font-medium" style={{ color: '#6f6258' }}>
               Centralize operações, automatize prazos e foque no que realmente importa: seus clientes.
             </p>
           </div>
 
           {/* Cards de módulos */}
-          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 lg:gap-5 mb-8 transition-all duration-700 delay-300 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white shadow-lg shadow-orange-500/20 group-hover:scale-110 transition-transform duration-300">
-                  <User className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white text-base">Gerenciar Clientes</h3>
-                  <p className="text-xs text-slate-400 mt-1">CRM Jurídico completo</p>
-                </div>
+          <div className="mb-8">
+            <div className="mb-4 flex items-end justify-between gap-6">
+              <div className="lg-rise" style={{ animationDelay: '300ms' }}>
+                <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-[#9b7a5c]">Tudo o que o escritório precisa</p>
+                <p className="mt-2 max-w-xl text-sm leading-relaxed text-[#7a6a5d]">
+                  Os módulos agora aparecem como uma vitrine funcional, não como uma lista corrida de etiquetas.
+                </p>
+              </div>
+              <div className="hidden xl:flex items-center gap-2 rounded-full border border-white/70 bg-white/60 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8a7059] shadow-[0_12px_28px_-24px_rgba(44,33,24,0.4)]">
+                <Sparkles className="h-3.5 w-3.5 text-orange-500" />
+                Fluxo unificado
               </div>
             </div>
-            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <Scale className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white text-base">Processos & Prazos</h3>
-                  <p className="text-xs text-slate-400 mt-1">Monitoramento 24/7</p>
-                </div>
-              </div>
-            </div>
-            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <AlertCircle className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white text-base">Intimações</h3>
-                  <p className="text-xs text-slate-400 mt-1">Captura automática</p>
-                </div>
-              </div>
-            </div>
-            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <Shield className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white text-base">Admin. Previdenciário</h3>
-                  <p className="text-xs text-slate-400 mt-1">Integração INSS</p>
-                </div>
-              </div>
-            </div>
-            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <Rocket className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white text-base">Gestão de Leads</h3>
-                  <p className="text-xs text-slate-400 mt-1">Converta mais clientes potenciais</p>
-                </div>
-              </div>
-            </div>
-            <div className="group bg-slate-800/40 backdrop-blur-md border border-white/5 hover:border-orange-500/30 p-4 rounded-2xl transition-all duration-300 hover:bg-slate-800/60 hover:-translate-y-1">
-              <div className="flex items-center gap-4">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-lg shadow-orange-500/20 group-hover:scale-110 transition-transform duration-300">
-                  <Sparkles className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white text-base">...e muito mais</h3>
-                  <p className="text-xs text-slate-400 mt-1">Automação, integrações e insights para todo o escritório</p>
-                </div>
-              </div>
+
+            <div className="grid grid-cols-2 xl:grid-cols-3 gap-3.5 lg:gap-4">
+              {MODULE_CARDS.map((m, i) => {
+                const tone = moduleToneClass[m.tone];
+                return (
+                  <div
+                    key={m.title}
+                    className={`group rounded-[26px] border p-4 lg:p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_22px_50px_-30px_rgba(44,33,24,0.28)] lg-rise ${tone.shell} ${m.size === 'lg' ? 'col-span-2 xl:col-span-1' : ''}`}
+                    style={{ animationDelay: `${360 + i * 55}ms` }}
+                  >
+                    <div className="mb-5 flex items-start justify-between gap-3">
+                      <div className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition-transform duration-300 group-hover:scale-105 ${tone.iconWrap}`}>
+                        <m.icon className={`h-5 w-5 ${tone.icon}`} />
+                      </div>
+                      <span className={`text-[10px] font-bold uppercase tracking-[0.24em] ${tone.eyebrow}`}>
+                        módulo
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-[#231b15] text-[15px] lg:text-[16px]">{m.title}</h3>
+                      <p className="mt-2 text-[12.5px] leading-relaxed text-[#76685d]">{m.caption}</p>
+                    </div>
+                    <div className="mt-5 h-px w-full bg-[linear-gradient(90deg,rgba(128,101,79,0.18),rgba(128,101,79,0.02))]" />
+                    <div className="mt-4 flex items-center gap-2 text-[11px] font-semibold text-[#8b7766]">
+                      <span className="inline-flex h-1.5 w-1.5 rounded-full bg-current opacity-60" />
+                      Pronto para operação diária
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* Depoimento */}
           {testimonials.length > 0 && (
-            <div className={`relative pl-5 border-l-2 border-orange-500/50 transition-all duration-700 delay-400 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
-              <p className="text-slate-200 italic mb-3 relative z-10 text-sm font-light leading-relaxed">
+            <div className="lg-rise" style={{ animationDelay: '820ms' }}>
+              <div
+                className="h-px w-full mb-6"
+                style={{ background: 'linear-gradient(90deg, rgba(114,91,72,0.18), transparent 65%)' }}
+              />
+              <p
+                className="mb-4 text-[15px] leading-relaxed max-w-2xl"
+                style={{ fontFamily: BRAND_SERIF, fontStyle: 'italic', color: '#5e4f42' }}
+              >
                 "{testimonials[testimonialIndex].quote}"
               </p>
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold text-xs ring-2 ring-slate-800">
+                <div
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-[0_12px_28px_-16px_rgba(217,119,6,0.6)]"
+                  style={{ background: 'linear-gradient(140deg, #f59e0b, #ea580c)' }}
+                >
                   {testimonials[testimonialIndex].initials}
                 </div>
                 <div>
-                  <div className="text-white font-medium text-sm">{testimonials[testimonialIndex].name}</div>
-                  <div className="text-slate-400 text-xs">{testimonials[testimonialIndex].role}</div>
+                  <div className="text-[#2b241d] font-medium text-sm">{testimonials[testimonialIndex].name}</div>
+                  <div className="text-xs text-[#8a7868]">{testimonials[testimonialIndex].role}</div>
                 </div>
               </div>
             </div>

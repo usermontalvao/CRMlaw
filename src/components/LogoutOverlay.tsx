@@ -1,14 +1,14 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { BrandLogo } from './ui';
 
 /**
- * LogoutOverlay — despedida cinematográfica, sóbria e premium.
- *
- * Estética: fundo escuro sólido (sem vazar a app atrás) com vinheta quente,
- * brasas subindo discretas, emblema com glow SIMÉTRICO e anel orbital fino.
- * A cena se mantém estável até o redirect (~3,6s, sincronizado com o
- * setTimeout(3600) do handleLogout). Puro CSS, respeita prefers-reduced-motion.
+ * LogoutOverlay — despedida sóbria e premium, na mesma linguagem visual
+ * da tela de boot (App.tsx): fundo #0a0806, glow central respirando,
+ * grain sutil, arco orbital fino em SVG e coreografia em cascata com
+ * ease-out-expo. A cena se mantém estável até o redirect (~3,6s,
+ * sincronizado com o setTimeout(3600) do handleLogout).
+ * Puro CSS, respeita prefers-reduced-motion.
  */
 
 interface LogoutOverlayProps {
@@ -18,120 +18,114 @@ interface LogoutOverlayProps {
 export const LogoutOverlay: React.FC<LogoutOverlayProps> = ({ userName }) => {
   const firstName = (userName || '').trim().split(/\s+/)[0] || '';
 
-  // Brasas que sobem suavemente — atmosfera quente, sem virar "poeira".
-  const embers = useMemo(
-    () =>
-      Array.from({ length: 18 }, (_, i) => ({
-        id: i,
-        x: (i * 61) % 100, // 0..100 %
-        dx: ((i % 5) - 2) * 16, // deriva lateral
-        size: 2 + (i % 3) * 1.3,
-        delay: ((i % 9) * 0.32).toFixed(2),
-        dur: (3.4 + (i % 5) * 0.5).toFixed(2),
-        rise: 32 + (i % 6) * 9, // quanto sobe (vh)
-      })),
-    [],
-  );
-
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden"
-      style={{ background: 'radial-gradient(135% 115% at 50% 38%, #1b140e 0%, #0b0a0e 52%, #050507 100%)' }}
-    >
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-[#0a0806]">
       <style>{`
-        @keyframes loEmber {
-          0%   { transform: translateY(0) translateX(0); opacity: 0; }
-          14%  { opacity: 0.85; }
-          80%  { opacity: 0.45; }
-          100% { transform: translateY(var(--rise)) translateX(var(--dx)); opacity: 0; }
-        }
-        @keyframes loGlow {
-          0%,100% { opacity: 0.6; transform: translate(-50%,-50%) scale(1); }
-          50%     { opacity: 1;   transform: translate(-50%,-50%) scale(1.09); }
-        }
-        @keyframes loRing {
-          0%   { transform: translate(-50%,-50%) scale(0.55); opacity: 0.55; }
-          100% { transform: translate(-50%,-50%) scale(3.4);  opacity: 0; }
-        }
-        @keyframes loSpin { to { transform: rotate(360deg); } }
-        @keyframes loEmblemIn {
-          0%   { transform: scale(0.55); opacity: 0; filter: blur(8px); }
-          60%  { transform: scale(1.06); opacity: 1; filter: blur(0); }
-          100% { transform: scale(1); }
-        }
-        @keyframes loTextIn {
-          0%,26% { opacity: 0; transform: translateY(10px); }
-          46%    { opacity: 1; transform: none; }
-        }
-        .lo-emblem { animation: loEmblemIn 1s cubic-bezier(0.34,1.56,0.64,1) both; will-change: transform, opacity, filter; }
-        .lo-ember  { position: absolute; bottom: -10px; border-radius: 9999px;
-                     background: radial-gradient(circle, #FFC089, #F2631A); will-change: transform, opacity; }
-
-        @media (prefers-reduced-motion: reduce) {
-          .lo-scene, .lo-emblem, .lo-anim-rm { animation: none !important; }
-          .lo-ember { display: none !important; }
-        }
+        @keyframes lo-breathe{0%,100%{opacity:.55;transform:translate(-50%,-50%) scale(1)}50%{opacity:.9;transform:translate(-50%,-50%) scale(1.08)}}
+        @keyframes lo-orbit{to{transform:rotate(360deg)}}
+        @keyframes lo-rise{from{opacity:0;transform:translateY(16px) scale(.985);filter:blur(8px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
+        @keyframes lo-ellipsis{0%,60%,100%{opacity:.2}30%{opacity:1}}
+        .lo-rise{animation:lo-rise 1.1s cubic-bezier(.16,1,.3,1) both}
+        @media (prefers-reduced-motion:reduce){.lo-rise,.lo-anim{animation:none!important;opacity:1!important}}
       `}</style>
 
-      {/* vinheta para concentrar o olhar no centro */}
-      <div aria-hidden className="pointer-events-none absolute inset-0"
-        style={{ background: 'radial-gradient(circle at 50% 42%, transparent 32%, rgba(0,0,0,0.5) 100%)' }} />
-
-      {/* brasas subindo */}
-      <div aria-hidden className="absolute inset-0 overflow-hidden">
-        {embers.map((e) => (
-          <span key={e.id} className="lo-ember"
-            style={{
-              left: `${e.x}%`, width: e.size, height: e.size,
-              // ts: custom props
-              ['--dx' as any]: `${e.dx}px`,
-              ['--rise' as any]: `-${e.rise}vh`,
-              animation: `loEmber ${e.dur}s ease-in ${e.delay}s infinite`,
-            }} />
-        ))}
+      {/* Ambient: glow central respirando + vinheta + grain */}
+      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+        <div
+          className="absolute left-1/2 top-1/2 w-[720px] h-[720px] rounded-full lo-anim"
+          style={{
+            background: 'radial-gradient(circle, rgba(242,122,35,0.10) 0%, rgba(242,122,35,0.04) 38%, transparent 68%)',
+            animation: 'lo-breathe 7s ease-in-out infinite',
+          }}
+        />
+        <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.55) 100%)' }} />
+        <div
+          className="absolute inset-0 opacity-[0.035]"
+          style={{
+            backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")`,
+          }}
+        />
       </div>
 
-      <div className="lo-scene relative flex flex-col items-center">
-        {/* glow simétrico atrás do emblema */}
-        <div aria-hidden className="lo-anim-rm absolute left-1/2"
-          style={{
-            top: 44, width: 300, height: 300, transform: 'translate(-50%,-50%)', borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(242,99,26,0.5), rgba(242,99,26,0.08) 48%, transparent 72%)',
-            filter: 'blur(20px)', animation: 'loGlow 2.8s ease-in-out infinite',
-          }} />
-
-        {/* anel(éis) expandindo — discreto */}
-        {[0, 1.4].map((d, i) => (
-          <div key={i} aria-hidden className="lo-anim-rm absolute left-1/2 rounded-full"
-            style={{
-              top: 44, width: 92, height: 92, transform: 'translate(-50%,-50%)',
-              border: '1px solid rgba(242,99,26,0.45)',
-              animation: `loRing 2.8s cubic-bezier(0.22,0.61,0.36,1) ${d}s infinite`,
-            }} />
-        ))}
-
-        {/* emblema */}
-        <div className="lo-emblem relative mb-10">
-          {/* anel orbital fino com ponto luminoso */}
-          <div aria-hidden className="lo-anim-rm absolute -inset-[14px] rounded-full"
-            style={{ border: '1px solid rgba(255,255,255,0.09)', animation: 'loSpin 9s linear infinite' }}>
-            <span className="absolute left-1/2 -top-[3px] h-1.5 w-1.5 -translate-x-1/2 rounded-full"
-              style={{ background: '#FFB37A', boxShadow: '0 0 10px 2px rgba(242,99,26,0.85)' }} />
-          </div>
-
+      {/* Conteúdo — coreografia em cascata */}
+      <div className="relative z-10 flex flex-col items-center px-6">
+        {/* Tile + arco orbital único */}
+        <div className="relative mb-9 lo-rise">
+          <svg
+            className="absolute inset-[-34px] lo-anim"
+            viewBox="0 0 140 140"
+            fill="none"
+            style={{ animation: 'lo-orbit 3.6s cubic-bezier(.45,.05,.55,.95) infinite' }}
+            aria-hidden="true"
+          >
+            <circle cx="70" cy="70" r="66" stroke="rgba(255,255,255,0.07)" strokeWidth="1" />
+            <circle
+              cx="70" cy="70" r="66"
+              stroke="url(#lo-arc)" strokeWidth="1.5" strokeLinecap="round"
+              strokeDasharray="112 303"
+            />
+            <defs>
+              <linearGradient id="lo-arc" x1="0" y1="0" x2="140" y2="140" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#f97316" stopOpacity="0" />
+                <stop offset="0.5" stopColor="#fbbf24" />
+                <stop offset="1" stopColor="#f27a23" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+          </svg>
+          {/* halo suave sob o tile */}
+          <div
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full blur-2xl lo-anim"
+            style={{ background: 'rgba(242,122,35,0.16)', animation: 'lo-breathe 7s ease-in-out infinite' }}
+            aria-hidden="true"
+          />
           <BrandLogo iconOnly size="lg" shine className="relative" />
         </div>
 
-        {/* texto */}
-        <div className="px-6 text-center" style={{ animation: 'loTextIn 2.4s ease both' }}>
-          <h1 className="text-[28px] sm:text-[34px] font-bold tracking-tight text-white">
+        {/* Despedida */}
+        <div className="text-center lo-rise" style={{ animationDelay: '140ms' }}>
+          <h1 className="text-[26px] sm:text-[32px] font-bold tracking-tight text-white">
             {firstName ? <>Até logo, <span style={{ color: '#FF9259' }}>{firstName}</span></> : <>Até logo</>}
           </h1>
-          <p className="mt-3 flex items-center justify-center gap-2 text-[13px] font-medium text-white/45">
-            <ShieldCheck className="h-4 w-4" style={{ color: '#FF9259' }} />
-            Sessão encerrada com segurança
-          </p>
         </div>
+
+        <div
+          className="mt-6 mb-8 h-px w-64 lo-rise"
+          style={{
+            animationDelay: '280ms',
+            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent)',
+          }}
+        />
+
+        {/* Selo de segurança */}
+        <p
+          className="lo-rise flex items-center gap-2 text-[11px] font-medium uppercase"
+          style={{ animationDelay: '400ms', letterSpacing: '0.32em', color: 'rgba(255,255,255,0.42)' }}
+        >
+          <ShieldCheck className="h-4 w-4 flex-shrink-0" style={{ color: '#FF9259' }} aria-hidden="true" />
+          <span>Sessão encerrada com segurança</span>
+        </p>
+
+        {/* Status de saída */}
+        <p
+          className="lo-rise mt-4 flex items-baseline gap-[3px] text-[11px] font-medium uppercase"
+          style={{ animationDelay: '520ms', letterSpacing: '0.32em', color: 'rgba(255,255,255,0.28)' }}
+        >
+          <span>Saindo</span>
+          <span className="inline-flex gap-[3px]" aria-hidden="true">
+            {[0, 1, 2].map((i) => (
+              <span key={i} className="lo-anim" style={{ animation: `lo-ellipsis 1.6s ease-in-out ${i * 0.22}s infinite` }}>
+                .
+              </span>
+            ))}
+          </span>
+        </p>
+      </div>
+
+      {/* Rodapé institucional */}
+      <div className="absolute bottom-8 left-0 right-0 flex justify-center lo-rise" style={{ animationDelay: '700ms' }}>
+        <span className="text-[10px] uppercase" style={{ letterSpacing: '0.28em', color: 'rgba(255,255,255,0.22)' }}>
+          © 2026 jurius.com.br
+        </span>
       </div>
     </div>
   );

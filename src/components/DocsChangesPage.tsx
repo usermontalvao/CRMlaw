@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.284': { name: 'Cafe Login Editorial', emoji: '[art]' },
   '1.10.282': { name: 'Cafe Rascunho Persistente', emoji: '[mail]' },
   '1.10.281': { name: 'Cafe Revisao Contextual', emoji: '[memo]' },
   '1.10.280': { name: 'Cafe Editor Unificado', emoji: '[memo]' },
@@ -934,6 +935,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.284',
+    date: '02/07/2026',
+    summary: 'As experiências de login foram refinadas com direção visual mais editorial, vitrine de módulos mais elegante e ajustes relacionados no fluxo de comunicação.',
+    modules: [
+      { moduleId: 'portal', changes: [
+        { type: 'improvement' as const, title: 'Portal Login ganhou vitrine de módulos mais sofisticada', description: 'Os antigos chips do painel institucional foram substituídos por cards compactos com melhor hierarquia, subtítulo e destaque visual mais coerente com a marca.' },
+      ]},
+      { moduleId: 'configuracoes', changes: [
+        { type: 'improvement' as const, title: 'Login interno recebeu refinamento visual complementar', description: 'A tela de login principal foi clareada e reorganizada para reduzir o peso do preto e alinhar melhor a apresentação visual entre os acessos do sistema.' },
+      ]},
+      { moduleId: 'email', changes: [
+        { type: 'improvement' as const, title: 'Ajustes relacionados de email seguiram no mesmo checkpoint', description: 'Mudanças auxiliares em compose, tipos e serviço de email foram consolidadas nesta entrega para manter o repositório consistente no mesmo commit.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.283',
     date: '01/07/2026',

@@ -50,6 +50,16 @@ export interface EmailSignature {
   updated_at?: string;
 }
 
+export interface EmailSearchFilters {
+  from: string;
+  to: string;
+  subject: string;
+  hasAttachments: boolean;
+  starredOnly: boolean;
+  dateFrom: string;
+  dateTo: string;
+}
+
 export type SpamRuleKind = 'whitelist' | 'blocklist';
 export type SpamRuleMatch = 'address' | 'domain' | 'from_regex' | 'subject_regex' | 'body_regex';
 
