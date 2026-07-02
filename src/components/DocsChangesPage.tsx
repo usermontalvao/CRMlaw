@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.289': { name: 'Cafe Peticao com Texto Integro', emoji: '[memo]' },
   '1.10.288': { name: 'Cafe Showcase com Troca Suave', emoji: '[art]' },
   '1.10.287': { name: 'Cafe Showcase Sem Distorcao', emoji: '[art]' },
   '1.10.286': { name: 'Cafe Rodape Sem Quebra', emoji: '[art]' },
@@ -939,6 +940,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.289',
+    date: '02/07/2026',
+    summary: 'O peticionamento passou a sanear melhor os dados importados de cliente e empresa ao montar qualificacoes, evitando texto corrompido no editor.',
+    modules: [
+      { moduleId: 'petitions', changes: [
+        { type: 'fix' as const, title: 'Qualificacao de cliente e empresa deixou de inserir caracteres corrompidos', description: 'O modulo passou a normalizar os campos vindos do cadastro e da consulta de empresa antes de compor a qualificacao, alem de corrigir os literais quebrados que geravam trechos como nÂº, jurÃ­dica e separadores invalidos no texto final.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.288',
     date: '02/07/2026',

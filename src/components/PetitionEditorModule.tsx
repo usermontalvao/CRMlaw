@@ -131,6 +131,24 @@ const sanitizeBlockRecord = (block: PetitionBlock): PetitionBlock => ({
   tags: Array.isArray(block.tags) ? block.tags.map((tag) => sanitizeText(tag)) : block.tags,
 });
 
+const sanitizeClientRecord = (client: Client): Client => ({
+  ...client,
+  full_name: sanitizeText(client.full_name),
+  cpf_cnpj: client.cpf_cnpj ? sanitizeText(client.cpf_cnpj) : client.cpf_cnpj,
+  rg: client.rg ? sanitizeText(client.rg) : client.rg,
+  nationality: client.nationality ? sanitizeText(client.nationality) : client.nationality,
+  profession: client.profession ? sanitizeText(client.profession) : client.profession,
+  address_street: client.address_street ? sanitizeText(client.address_street) : client.address_street,
+  address_number: client.address_number ? sanitizeText(client.address_number) : client.address_number,
+  address_complement: client.address_complement ? sanitizeText(client.address_complement) : client.address_complement,
+  address_neighborhood: client.address_neighborhood ? sanitizeText(client.address_neighborhood) : client.address_neighborhood,
+  address_city: client.address_city ? sanitizeText(client.address_city) : client.address_city,
+  address_state: client.address_state ? sanitizeText(client.address_state) : client.address_state,
+  address_zip_code: client.address_zip_code ? sanitizeText(client.address_zip_code) : client.address_zip_code,
+  phone: client.phone ? sanitizeText(client.phone) : client.phone,
+  email: client.email ? sanitizeText(client.email) : client.email,
+});
+
 const loadDocxWithFallback = async (
   editor: SyncfusionEditorRef,
   arrayBuffer: ArrayBuffer,
@@ -1748,9 +1766,9 @@ Regras:
 
     // Ajustes comuns sem depender de biblioteca externa
     return base
-      .replace(/\bSao\b/g, 'SÃ£o')
-      .replace(/\bJoao\b/g, 'JoÃ£o')
-      .replace(/\bCuiaba\b/g, 'CuiabÃ¡');
+      .replace(/\bSao\b/g, 'São')
+      .replace(/\bJoao\b/g, 'João')
+      .replace(/\bCuiaba\b/g, 'Cuiabá');
   };
 
   const expandLogradouro = (value: string): string => {
@@ -1798,24 +1816,31 @@ Regras:
   };
 
   const formatCompanyQualification = (payload: any): string => {
-    const cnpjDigits = normalizeCnpj(payload?.cnpj);
+    const normalizedPayload = Object.fromEntries(
+      Object.entries(payload || {}).map(([key, value]) => [
+        key,
+        typeof value === 'string' ? sanitizeText(value) : value,
+      ])
+    ) as Record<string, any>;
+
+    const cnpjDigits = normalizeCnpj(normalizedPayload?.cnpj);
     const cnpjFmt = formatCnpj(cnpjDigits);
-    const razao = String(payload?.razao_social || '').trim();
-    const fantasia = String(payload?.nome_fantasia || '').trim();
+    const razao = String(normalizedPayload?.razao_social || '').trim();
+    const fantasia = String(normalizedPayload?.nome_fantasia || '').trim();
     const nomeBase = fantasia ? `${fantasia} - ${razao}` : razao;
 
-    const logradouro = expandLogradouro(payload?.logradouro);
-    const numero = String(payload?.numero || '').trim();
-    const complemento = String(payload?.complemento || '').trim();
-    const bairro = String(payload?.bairro || '').trim();
-    const municipio = titleCaseCity(payload?.municipio);
-    const uf = String(payload?.uf || '').trim().toUpperCase();
-    const cepDigits = String(payload?.cep || '').replace(/\D/g, '');
-    const cepFmt = cepDigits.length === 8 ? `${cepDigits.slice(0, 5)}-${cepDigits.slice(5)}` : String(payload?.cep || '').trim();
+    const logradouro = expandLogradouro(normalizedPayload?.logradouro);
+    const numero = String(normalizedPayload?.numero || '').trim();
+    const complemento = String(normalizedPayload?.complemento || '').trim();
+    const bairro = String(normalizedPayload?.bairro || '').trim();
+    const municipio = titleCaseCity(normalizedPayload?.municipio);
+    const uf = String(normalizedPayload?.uf || '').trim().toUpperCase();
+    const cepDigits = String(normalizedPayload?.cep || '').replace(/\D/g, '');
+    const cepFmt = cepDigits.length === 8 ? `${cepDigits.slice(0, 5)}-${cepDigits.slice(5)}` : String(normalizedPayload?.cep || '').trim();
 
     const partsAddr: string[] = [];
     if (logradouro) partsAddr.push(logradouro);
-    if (numero) partsAddr.push(`nÃºmero ${numero}`);
+    if (numero) partsAddr.push(`número ${numero}`);
     if (complemento) partsAddr.push(complemento);
     if (bairro) partsAddr.push(bairro);
     let addr = partsAddr.join(', ');
@@ -1826,7 +1851,7 @@ Regras:
       addr = addr ? `${addr}, CEP: ${cepFmt}` : `CEP: ${cepFmt}`;
     }
 
-    const phones = Array.isArray(payload?.telefones) ? payload.telefones : [];
+    const phones = Array.isArray(normalizedPayload?.telefones) ? normalizedPayload.telefones : [];
     const phoneFormattedRaw = phones
       .map((p: any) => formatPhone(p?.ddd, p?.numero))
       .filter((x: string) => Boolean(x));
@@ -1842,12 +1867,12 @@ Regras:
     const phoneLabel = phoneFormatted.length > 1 ? 'telefones' : 'telefone';
     const phoneText = phoneFormatted.length ? `${phoneLabel} ${phoneFormatted.join('/ ')}` : '';
 
-    const email = String(payload?.email || '').trim().toLowerCase();
+    const email = String(normalizedPayload?.email || '').trim().toLowerCase();
     const emailText = email ? `e-mail ${email}` : '';
 
     const addrIntro = logradouro ? formatAddressIntro(logradouro) : '';
     const addrRestParts: string[] = [];
-    if (numero) addrRestParts.push(`nÃºmero ${numero}`);
+    if (numero) addrRestParts.push(`número ${numero}`);
     if (complemento) addrRestParts.push(complemento);
     if (bairro) addrRestParts.push(bairro);
     let addrRest = addrRestParts.join(', ');
@@ -1864,7 +1889,7 @@ Regras:
     const tail = tailParts.length ? `, ${tailParts.join(', ')}` : '';
 
     const nomeUpper = (nomeBase || '').toUpperCase();
-    return `${nomeUpper}, pessoa jurÃ­dica de direito privado, inscrita no CNPJ sob o nÂº ${cnpjFmt}${tail}, pelos fatos e fundamentos jurÃ­dicos enunciados.`;
+    return `${nomeUpper}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº ${cnpjFmt}${tail}, pelos fatos e fundamentos jurídicos enunciados.`;
   };
 
   const openCompanyLookup = () => {
@@ -3437,7 +3462,7 @@ Regras:
       console.error('Erro ao carregar clientes:', error);
       return [];
     }
-    return data || [];
+    return (data || []).map(sanitizeClientRecord);
   };
 
   // Notificar parent sobre mudanças nÃ£o salvas (para widget flutuante)
@@ -3802,28 +3827,29 @@ Regras:
 
   // Gerar qualificaçÃ£o do cliente
   const generateClientQualification = (client: Client): string => {
+    const normalizedClient = sanitizeClientRecord(client);
     const parts: string[] = [];
     
-    parts.push(`${client.full_name.toUpperCase()}`);
+    parts.push(`${normalizedClient.full_name.toUpperCase()}`);
     
-    if (client.nationality) parts.push(client.nationality.toLowerCase());
-    if (client.marital_status) parts.push(MARITAL_STATUS_LABELS[client.marital_status] || client.marital_status);
-    if (client.profession) parts.push(client.profession.toLowerCase());
-    if (client.cpf_cnpj) parts.push(`inscrito(a) no CPF sob o nÂº ${client.cpf_cnpj}`);
-    if (client.rg) parts.push(`RG nÂº ${client.rg}`);
+    if (normalizedClient.nationality) parts.push(normalizedClient.nationality.toLowerCase());
+    if (normalizedClient.marital_status) parts.push(MARITAL_STATUS_LABELS[normalizedClient.marital_status] || normalizedClient.marital_status);
+    if (normalizedClient.profession) parts.push(normalizedClient.profession.toLowerCase());
+    if (normalizedClient.cpf_cnpj) parts.push(`inscrito(a) no CPF sob o nº ${normalizedClient.cpf_cnpj}`);
+    if (normalizedClient.rg) parts.push(`RG nº ${normalizedClient.rg}`);
     
     let address = '';
-    if (client.address_street) address += `residente e domiciliado(a) na ${client.address_street}`;
-    if (client.address_number) address += `, nÂº ${client.address_number}`;
-    if (client.address_complement) address += `, ${client.address_complement}`;
-    if (client.address_neighborhood) address += `, Bairro ${client.address_neighborhood}`;
-    if (client.address_city) address += `, ${client.address_city}`;
-    if (client.address_state) address += ` â€“ ${client.address_state}`;
-    if (client.address_zip_code) address += `, CEP ${client.address_zip_code}`;
+    if (normalizedClient.address_street) address += `residente e domiciliado(a) na ${normalizedClient.address_street}`;
+    if (normalizedClient.address_number) address += `, nº ${normalizedClient.address_number}`;
+    if (normalizedClient.address_complement) address += `, ${normalizedClient.address_complement}`;
+    if (normalizedClient.address_neighborhood) address += `, Bairro ${normalizedClient.address_neighborhood}`;
+    if (normalizedClient.address_city) address += `, ${normalizedClient.address_city}`;
+    if (normalizedClient.address_state) address += ` – ${normalizedClient.address_state}`;
+    if (normalizedClient.address_zip_code) address += `, CEP ${normalizedClient.address_zip_code}`;
     if (address) parts.push(address);
     
-    if (client.phone) parts.push(`telefone/WhatsApp ${client.phone}`);
-    if (client.email) parts.push(`e-mail ${client.email}`);
+    if (normalizedClient.phone) parts.push(`telefone/WhatsApp ${normalizedClient.phone}`);
+    if (normalizedClient.email) parts.push(`e-mail ${normalizedClient.email}`);
     
     return parts.join(', ');
   };
@@ -3834,12 +3860,13 @@ Regras:
       setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       return;
     }
-    setSelectedClient(client);
+    const normalizedClient = sanitizeClientRecord(client);
+    setSelectedClient(normalizedClient);
     const editor = editorRef.current;
     if (!editor) return;
 
-    const name = (client.full_name || '').toUpperCase();
-    const qualification = generateClientQualification(client);
+    const name = (normalizedClient.full_name || '').toUpperCase();
+    const qualification = generateClientQualification(normalizedClient);
     const rest = qualification.startsWith(name) ? qualification.slice(name.length) : `, ${qualification}`;
 
     editor.focus();
