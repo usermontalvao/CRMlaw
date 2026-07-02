@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.286': { name: 'Cafe Rodape Sem Quebra', emoji: '[art]' },
   '1.10.285': { name: 'Cafe Login Sem Scroll', emoji: '[art]' },
   '1.10.284': { name: 'Cafe Login Editorial', emoji: '[art]' },
   '1.10.282': { name: 'Cafe Rascunho Persistente', emoji: '[mail]' },
@@ -936,6 +937,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.286',
+    date: '02/07/2026',
+    summary: 'O rodape desktop do login do portal foi ajustado para manter os elementos institucionais alinhados em uma unica linha, sem quebra visual no meio do bloco.',
+    modules: [
+      { moduleId: 'portal', changes: [
+        { type: 'fix' as const, title: 'Rodape institucional do portal passou a permanecer em linha unica', description: 'A largura util do bloco foi ampliada e os grupos de conexao segura, links e marca foram travados sem quebra para evitar que o texto fique em duas linhas no desktop.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.285',
     date: '02/07/2026',

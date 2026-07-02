@@ -1579,14 +1579,14 @@ export const PortalLogin: React.FC = () => {
 
         {/* rodapé institucional — ancora a página (só desktop) */}
         <div className="login-anim hidden md:flex" style={{ justifyContent: 'center', position: 'relative', zIndex: 1, animationDelay: '0.5s' }}>
-          <div style={{ width: '100%', maxWidth: 420 }}>
+          <div style={{ width: '100%', maxWidth: 560 }}>
             <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(33,28,24,0.12), transparent)', marginBottom: 16 }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.5, fontWeight: 600, color: '#a8a199' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'nowrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.5, fontWeight: 600, color: '#a8a199', whiteSpace: 'nowrap' }}>
                 <Lock className="h-3 w-3" strokeWidth={1.8} />
                 Conexão segura e criptografada
               </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 14, fontSize: 11.5, fontWeight: 500, color: '#b5afa6' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 14, fontSize: 11.5, fontWeight: 500, color: '#b5afa6', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 <a href="#/terms" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:text-orange-600 transition-colors">Termos</a>
                 <a href="#/privacidade" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:text-orange-600 transition-colors">Privacidade</a>
                 <span>© {new Date().getFullYear()} jurius.com.br</span>
