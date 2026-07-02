@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.285': { name: 'Cafe Login Sem Scroll', emoji: '[art]' },
   '1.10.284': { name: 'Cafe Login Editorial', emoji: '[art]' },
   '1.10.282': { name: 'Cafe Rascunho Persistente', emoji: '[mail]' },
   '1.10.281': { name: 'Cafe Revisao Contextual', emoji: '[memo]' },
@@ -935,6 +936,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.285',
+    date: '02/07/2026',
+    summary: 'A tela de login do portal passou a manter toda a composicao principal visivel no desktop, com previews dos modulos mais fieis ao sistema e sem exigir scroll vertical.',
+    modules: [
+      { moduleId: 'portal', changes: [
+        { type: 'improvement' as const, title: 'Cards da vitrine passaram a simular modais reais dos modulos', description: 'O showcase institucional da esquerda foi refeito com header, secoes, campos e footer inspirados no design system real dos modais, deixando a apresentacao mais fiel ao produto.' },
+        { type: 'improvement' as const, title: 'Layout desktop do login foi compactado para caber inteiro na viewport', description: 'Espacamentos, escala do showcase, bloco de legenda e alinhamento do formulario foram recalibrados no desktop para evitar scroll vertical e manter tudo visivel na area util.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.284',
     date: '02/07/2026',

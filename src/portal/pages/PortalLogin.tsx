@@ -216,6 +216,178 @@ const SHOWCASE: { title: string; text: string; url: string; module: string }[] =
   },
 ];
 
+const MOCK_FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+
+const PreviewField: React.FC<{ label: string; value: string; span?: number }> = ({ label, value, span = 6 }) => (
+  <div style={{ gridColumn: `span ${span} / span ${span}` }}>
+    <div className="mock-label">{label}</div>
+    <div className="mock-input">{value}</div>
+  </div>
+);
+
+const PreviewSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <div className="mock-section">
+    <div className="mock-sectionhead">{title}</div>
+    <div className="mock-grid">{children}</div>
+  </div>
+);
+
+const ShowcasePreview: React.FC<{ showcase: number }> = ({ showcase }) => {
+  const moduleLabel = SHOWCASE[showcase].module;
+
+  return (
+    <div className="mock-modal show-fade" style={{ fontFamily: MOCK_FONT }}>
+      <div className="mock-accent" />
+      <div className="mock-header">
+        <div>
+          <div className="mock-eyebrow">{moduleLabel}</div>
+          <div className="mock-title">
+            {showcase === 0 && 'Novo prazo processual'}
+            {showcase === 1 && 'Cadastro de cliente'}
+            {showcase === 2 && 'Detalhes do processo'}
+            {showcase === 3 && 'Novo requerimento / petição'}
+            {showcase === 4 && 'Upload de documento'}
+            {showcase === 5 && 'Solicitar assinatura'}
+            {showcase === 6 && 'Novo lançamento financeiro'}
+          </div>
+        </div>
+        <div className="mock-close">×</div>
+      </div>
+
+      <div className="mock-body">
+        {showcase === 0 && (
+          <>
+            <PreviewSection title="Dados do prazo">
+              <PreviewField label="Título" value="Manifestação sobre laudo pericial" span={12} />
+              <PreviewField label="Processo" value="1002345-67.2023.8.11.0001" span={7} />
+              <PreviewField label="Vencimento" value="18/07/2026" span={5} />
+              <PreviewField label="Cliente" value="Maria Oliveira" span={7} />
+              <PreviewField label="Responsável" value="Dr. Pedro Neto" span={5} />
+            </PreviewSection>
+            <div className="mock-sidegrid">
+              <div className="mock-note">
+                <span className="mock-badge mock-badge-amber">Fatal</span>
+                <span className="mock-badge">15 dias</span>
+                <span className="mock-badge">TJMT</span>
+              </div>
+              <div className="mock-list">
+                <div className="mock-listrow"><span>Checklist</span><strong>4 itens</strong></div>
+                <div className="mock-listrow"><span>Alertas</span><strong>D-3 e D-1</strong></div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {showcase === 1 && (
+          <>
+            <PreviewSection title="Informações principais">
+              <PreviewField label="Nome / Razão social" value="Construtora Ápice Ltda." span={8} />
+              <PreviewField label="Tipo" value="Pessoa jurídica" span={4} />
+              <PreviewField label="CPF / CNPJ" value="12.345.678/0001-90" span={5} />
+              <PreviewField label="Telefone" value="(65) 99999-1200" span={4} />
+              <PreviewField label="Status" value="Cliente ativo" span={3} />
+            </PreviewSection>
+            <PreviewSection title="Relacionamentos">
+              <PreviewField label="Processos vinculados" value="3 processos ativos" span={6} />
+              <PreviewField label="Documentos" value="12 arquivos na cloud" span={6} />
+            </PreviewSection>
+          </>
+        )}
+
+        {showcase === 2 && (
+          <>
+            <PreviewSection title="Capa do processo">
+              <PreviewField label="Número CNJ" value="0456123-70.2022.8.11.0042" span={7} />
+              <PreviewField label="Status" value="Em andamento" span={5} />
+              <PreviewField label="Cliente" value="Construtora Ápice Ltda." span={7} />
+              <PreviewField label="Fase atual" value="Execução / cálculos" span={5} />
+            </PreviewSection>
+            <div className="mock-list">
+              <div className="mock-listrow"><span>Último andamento</span><strong>Publicado hoje</strong></div>
+              <div className="mock-listrow"><span>Próximo prazo</span><strong>em 2 dias</strong></div>
+              <div className="mock-listrow"><span>Partes e docs</span><strong>Sincronizados</strong></div>
+            </div>
+          </>
+        )}
+
+        {showcase === 3 && (
+          <>
+            <div className="mock-tabs">
+              <span className="mock-tab mock-tab-on">Requerimento</span>
+              <span className="mock-tab">Petição</span>
+              <span className="mock-tab">Assinatura</span>
+            </div>
+            <PreviewSection title="Documento">
+              <PreviewField label="Modelo" value="BPC/LOAS inicial" span={6} />
+              <PreviewField label="Cliente" value="Maria S. Oliveira" span={6} />
+              <PreviewField label="Origem" value="Dados puxados do cadastro e processo" span={12} />
+            </PreviewSection>
+            <div className="mock-note">Blocos dinâmicos, campos preenchíveis e envio para assinatura sem sair do fluxo.</div>
+          </>
+        )}
+
+        {showcase === 4 && (
+          <>
+            <PreviewSection title="Arquivo">
+              <PreviewField label="Pasta destino" value="Clientes / João Santos / Documentos" span={8} />
+              <PreviewField label="Visibilidade" value="Equipe interna" span={4} />
+              <PreviewField label="Arquivo" value="Contrato_Honorarios.pdf" span={8} />
+              <PreviewField label="Tamanho" value="1,2 MB" span={4} />
+            </PreviewSection>
+            <div className="mock-list">
+              <div className="mock-listrow"><span>Versão</span><strong>v3 atual</strong></div>
+              <div className="mock-listrow"><span>Última alteração</span><strong>há 12 min</strong></div>
+            </div>
+          </>
+        )}
+
+        {showcase === 5 && (
+          <>
+            <div className="mock-kpis">
+              <div className="mock-kpi"><strong>2</strong><span>Pendentes</span></div>
+              <div className="mock-kpi mock-kpi-green"><strong>5</strong><span>Assinados</span></div>
+              <div className="mock-kpi mock-kpi-red"><strong>1</strong><span>Expirado</span></div>
+            </div>
+            <PreviewSection title="Envio">
+              <PreviewField label="Documento" value="Contrato de honorários" span={7} />
+              <PreviewField label="Assinantes" value="2 pessoas" span={5} />
+              <PreviewField label="Validade" value="Expira em 7 dias" span={5} />
+              <PreviewField label="Ordem de assinatura" value="Sequencial" span={7} />
+            </PreviewSection>
+          </>
+        )}
+
+        {showcase === 6 && (
+          <>
+            <div className="mock-summary">
+              <span className="mock-summarydot" />
+              <span>Resumo</span>
+              <strong>R$ 14.800,00</strong>
+              <span className="mock-sep">·</span>
+              <span>6 parcelas</span>
+            </div>
+            <PreviewSection title="Financeiro">
+              <PreviewField label="Cliente" value="João P. Santos" span={7} />
+              <PreviewField label="Tipo" value="Honorários fixos" span={5} />
+              <PreviewField label="Descrição" value="Execução de sentença previdenciária" span={12} />
+              <PreviewField label="Entrada" value="R$ 2.500,00" span={4} />
+              <PreviewField label="Parcelamento" value="5x de R$ 2.460,00" span={5} />
+              <PreviewField label="1º vencimento" value="10/07/2026" span={3} />
+            </PreviewSection>
+          </>
+        )}
+      </div>
+
+      <div className="mock-footer">
+        <button type="button" className="mock-btn mock-btn-muted">Cancelar</button>
+        <button type="button" className="mock-btn mock-btn-primary">
+          {showcase === 5 ? 'Enviar' : 'Salvar'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // ── Tipos compartilhados ──────────────────────────────────────────────────────
 
 type SvcStatus = 'checking' | 'online' | 'offline';
@@ -788,7 +960,7 @@ export const PortalLogin: React.FC = () => {
 
   // ────────────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', width: '100%', background: '#f8f7f5', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }} className="flex-col md:flex-row">
+    <div style={{ display: 'flex', minHeight: '100vh', width: '100%', background: '#f8f7f5', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }} className="login-shell flex-col md:flex-row">
 
       {/* ── Efeito de abertura: keyframes + barra de carregamento no topo ── */}
       <style>{`
@@ -810,7 +982,7 @@ export const PortalLogin: React.FC = () => {
           display: block; opacity: 0; will-change: transform, opacity;
           animation: chipIn 0.6s cubic-bezier(0.22,0.61,0.36,1) var(--chip-in,0s) both;
         }
-        /* showcase do produto — moldura de navegador + gráfico + tabela + carrossel */
+        /* showcase do produto — moldura de navegador + preview fiel de modais */
         .show-browser {
           width: 100%; border-radius: 14px; overflow: hidden; background: #fff;
           border: 1px solid rgba(0,0,0,0.06);
@@ -824,22 +996,81 @@ export const PortalLogin: React.FC = () => {
         .show-apptitle { font-size: 14px; font-weight: 700; color: #2a2320; letter-spacing: -0.01em; }
         .show-live { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #c56a1a; }
         .show-livedot { width: 6px; height: 6px; border-radius: 50%; background: #ea6a1e; box-shadow: 0 0 0 3px rgba(234,106,30,0.16); }
-        .show-card { background: #fff; border: 1px solid #efeae2; border-radius: 12px; padding: 14px; }
-        .show-cardhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-        .show-cardtitle { font-size: 12px; font-weight: 700; color: #3a332c; }
-        .show-chip { font-size: 10px; font-weight: 700; color: #9a8f82; background: #f3efe8; border-radius: 5px; padding: 2px 7px; }
-        .show-line { stroke-dasharray: 1100; animation: showDraw 1.6s cubic-bezier(0.22,0.61,0.36,1) 0.45s both; }
-        @keyframes showDraw { from { stroke-dashoffset: 1100; } to { stroke-dashoffset: 0; } }
-        .show-tip { position: absolute; top: 18px; right: 16px; background: #fff; border: 1px solid #ececec; border-radius: 9px; padding: 8px 11px; box-shadow: 0 14px 28px -12px rgba(0,0,0,0.28); display: flex; flex-direction: column; gap: 2px; }
-        .show-tiplabel { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #a49a8d; }
-        .show-tipval { font-size: 11.5px; font-weight: 600; color: #2a2320; }
-        .show-tipval strong { color: #d1521a; }
-        .show-row { display: grid; grid-template-columns: 0.9fr 1.2fr 0.7fr; gap: 10px; align-items: center; padding: 9px 14px; font-size: 11.5px; border-top: 1px solid #f2ede6; }
-        .show-rowhead { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: #a49a8d; border-top: none; padding-top: 11px; padding-bottom: 7px; }
         .show-fade { animation: showFade 0.55s cubic-bezier(0.22,0.61,0.36,1) both; }
         @keyframes showFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
         .show-dotbtn { width: 22px; height: 4px; border-radius: 999px; border: none; cursor: pointer; padding: 0; background: rgba(255,255,255,0.22); transition: background 0.35s ease, width 0.35s ease; }
         .show-dotbtn[data-on="true"] { width: 34px; background: linear-gradient(90deg, #f59e0b, #ea6a1e); }
+        .mock-modal { background: #fff; border: 1px solid #e7e5df; box-shadow: 0 18px 38px -26px rgba(15,23,42,0.35); }
+        .mock-accent { height: 6px; width: 100%; background: #f59e0b; }
+        .mock-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #e7e5df; }
+        .mock-eyebrow { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .2em; color: #94a3b8; }
+        .mock-title { margin-top: 2px; font-size: 13px; font-weight: 600; color: #0f172a; }
+        .mock-close { color: #94a3b8; font-size: 18px; line-height: 1; }
+        .mock-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; background: #fff; }
+        .mock-section { display: flex; flex-direction: column; gap: 8px; }
+        .mock-sectionhead { padding-bottom: 5px; border-bottom: 1px solid #f1f5f9; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: #64748b; }
+        .mock-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; }
+        .mock-label { margin-bottom: 4px; font-size: 10px; font-weight: 500; color: #64748b; }
+        .mock-input { min-height: 30px; border: 1px solid #cbd5e1; background: #fff; padding: 7px 9px; font-size: 10.5px; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mock-note { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; border: 1px solid #fde68a; background: #fffbeb; padding: 8px 9px; font-size: 10.5px; color: #92400e; }
+        .mock-sidegrid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 8px; }
+        .mock-badge { display: inline-flex; align-items: center; border-radius: 999px; background: #f1f5f9; padding: 3px 7px; font-size: 9px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .05em; }
+        .mock-badge-amber { background: #fff7ed; color: #c2410c; }
+        .mock-list { border: 1px solid #e2e8f0; background: #fff; }
+        .mock-listrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 9px; font-size: 10.5px; color: #475569; }
+        .mock-listrow + .mock-listrow { border-top: 1px solid #f1f5f9; }
+        .mock-listrow strong { color: #0f172a; font-weight: 600; }
+        .mock-tabs { display: flex; gap: 6px; }
+        .mock-tab { border-radius: 999px; background: #f1f5f9; padding: 4px 8px; font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+        .mock-tab-on { background: #ea6a1e; color: #fff; }
+        .mock-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+        .mock-kpi { background: #fff7ed; padding: 9px 8px; text-align: center; }
+        .mock-kpi strong { display: block; font-size: 16px; line-height: 1; color: #c2410c; }
+        .mock-kpi span { display: block; margin-top: 3px; font-size: 9px; font-weight: 700; color: #c2410c; opacity: .78; text-transform: uppercase; letter-spacing: .04em; }
+        .mock-kpi-green { background: #ecfdf5; }
+        .mock-kpi-green strong, .mock-kpi-green span { color: #047857; }
+        .mock-kpi-red { background: #fef2f2; }
+        .mock-kpi-red strong, .mock-kpi-red span { color: #b91c1c; }
+        .mock-summary { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; border: 1px solid #fde68a; background: #fffbeb; padding: 7px 9px; font-size: 10px; color: #92400e; }
+        .mock-summary strong { color: #78350f; font-size: 10.5px; }
+        .mock-summarydot { width: 6px; height: 6px; border-radius: 999px; background: #f59e0b; }
+        .mock-sep { color: #f59e0b; }
+        .mock-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid #f1f5f9; background: #f8fafc; }
+        .mock-btn { border: 0; padding: 7px 12px; font-size: 10.5px; font-weight: 600; cursor: default; }
+        .mock-btn-muted { background: transparent; color: #64748b; }
+        .mock-btn-primary { background: #f97316; color: #fff; }
+
+        @media (min-width: 768px) {
+          .login-shell { height: 100dvh; overflow: hidden; }
+          .login-aside { padding: clamp(20px, 2.6vw, 42px) clamp(24px, 3vw, 48px); }
+          .login-showcase { max-width: 580px; margin-top: clamp(10px, 1.5vh, 18px); justify-content: center; }
+          .login-showcase-meta { margin-top: clamp(12px, 1.8vh, 18px) !important; min-height: 0 !important; }
+          .login-footer-meta { padding-top: 14px !important; }
+          .login-main { min-height: 0 !important; height: 100dvh; padding: clamp(18px, 2.4vw, 34px) clamp(16px, 2.2vw, 34px) clamp(14px, 1.8vw, 24px) !important; overflow: hidden; }
+          .login-main-inner { justify-content: center !important; padding-top: 0 !important; min-height: 0; }
+          #login-card { max-width: 400px !important; }
+          .show-browser { transform: scale(0.92); transform-origin: top left; width: 108.695%; }
+          .show-screen { padding: 12px; }
+          .show-appbar { margin-bottom: 8px; }
+          .mock-header { padding: 8px 12px; }
+          .mock-body { padding: 10px 12px; gap: 8px; }
+          .mock-section { gap: 6px; }
+          .mock-input { min-height: 26px; padding: 5px 8px; font-size: 10px; }
+          .mock-listrow { padding: 6px 8px; font-size: 10px; }
+          .mock-note, .mock-summary { padding: 6px 8px; font-size: 10px; }
+          .mock-kpi { padding: 7px 6px; }
+          .mock-kpi strong { font-size: 14px; }
+          .mock-footer { padding: 8px 12px; }
+        }
+
+        @media (min-width: 768px) and (max-height: 900px) {
+          .login-aside { padding-top: 16px; padding-bottom: 16px; }
+          .login-showcase { max-width: 545px; }
+          .show-browser { transform: scale(0.86); width: 116.279%; }
+          .login-showcase-meta h2 { font-size: clamp(19px, 1.7vw, 24px) !important; }
+          .login-showcase-meta p { margin-top: 8px !important; font-size: 13px !important; line-height: 1.45 !important; }
+          .login-footer-meta { padding-top: 10px !important; }
+        }
 
         /* ── Brilho interno passando pelo logo J (sheen diagonal em loop com pausa) ── */
         @keyframes logoShine {
@@ -875,7 +1106,7 @@ export const PortalLogin: React.FC = () => {
       {/* ── PAINEL DE MARCA (editorial, escuro) — oculto no mobile ── */}
       <aside
         ref={asideRef}
-        className="hidden md:flex"
+        className="login-aside hidden md:flex"
         style={{
           position: 'relative', overflow: 'hidden', flex: '0 0 56%', minWidth: 0,
           flexDirection: 'column', justifyContent: 'flex-start', padding: 'clamp(36px, 4.5vw, 72px)', color: '#f4ede2',
@@ -901,7 +1132,7 @@ export const PortalLogin: React.FC = () => {
         </div>
 
         {/* showcase do produto — mockup em moldura de navegador + carrossel */}
-        <div className="login-anim" style={{ position: 'relative', zIndex: 2, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', maxWidth: 620, marginTop: 'clamp(20px, 3vh, 40px)', animationDelay: '0.26s' }}>
+        <div className="login-showcase login-anim" style={{ position: 'relative', zIndex: 2, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', maxWidth: 620, marginTop: 'clamp(20px, 3vh, 40px)', animationDelay: '0.26s' }}>
 
           {/* moldura de navegador */}
           <div className="show-browser">
@@ -917,202 +1148,12 @@ export const PortalLogin: React.FC = () => {
                 <span className="show-apptitle">{SHOWCASE[showcase].module}</span>
                 <span className="show-live"><span className="show-livedot" /> ao vivo</span>
               </div>
-
-              {/* ── Slide 0: Prazos & Andamentos ── */}
-              {showcase === 0 && (<>
-                <div className="show-card" style={{ position: 'relative' }}>
-                  <div className="show-cardhead">
-                    <span className="show-cardtitle">Prazos por mês</span>
-                    <span className="show-chip">2025</span>
-                  </div>
-                  <svg viewBox="0 0 520 176" preserveAspectRatio="none" style={{ width: '100%', height: 120, display: 'block' }}>
-                    <defs>
-                      <linearGradient id="showArea" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.34" />
-                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
-                      </linearGradient>
-                    </defs>
-                    {[44, 88, 132].map((y) => (
-                      <line key={y} x1="0" y1={y} x2="520" y2={y} stroke="#efeae2" strokeWidth="1" />
-                    ))}
-                    <path d="M0,132 L52,120 L104,128 L156,96 L208,104 L260,74 L312,86 L364,58 L416,66 L468,40 L520,52 L520,176 L0,176 Z" fill="url(#showArea)" />
-                    <path className="show-line" d="M0,132 L52,120 L104,128 L156,96 L208,104 L260,74 L312,86 L364,58 L416,66 L468,40 L520,52" fill="none" stroke="#ea6a1e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                    <circle cx="364" cy="58" r="4.5" fill="#fff" stroke="#ea6a1e" strokeWidth="2.5" />
-                  </svg>
-                  <div className="show-tip">
-                    <span className="show-tiplabel">Setembro</span>
-                    <span className="show-tipval">28 prazos · <strong>4 fatais</strong></span>
-                  </div>
-                </div>
-                <div className="show-card" style={{ marginTop: 10, padding: 0, overflow: 'hidden' }}>
-                  <div className="show-row show-rowhead"><span>Processo</span><span>Cliente</span><span style={{ textAlign: 'right' }}>Vence</span></div>
-                  {[
-                    { p: '1002345-67', c: 'Maria Oliveira', d: 'em 2 dias', warn: true },
-                    { p: '0456123-70', c: 'Construtora Ápice', d: 'em 5 dias', warn: false },
-                    { p: '2231908-18', c: 'João P. Santos', d: 'em 8 dias', warn: false },
-                  ].map((r) => (
-                    <div key={r.p} className="show-row">
-                      <span style={{ fontVariantNumeric: 'tabular-nums', color: '#5a534c' }}>{r.p}</span>
-                      <span style={{ color: '#2a2320', fontWeight: 600 }}>{r.c}</span>
-                      <span style={{ textAlign: 'right', fontWeight: 700, color: r.warn ? '#d1521a' : '#6a625a' }}>{r.d}</span>
-                    </div>
-                  ))}
-                </div>
-              </>)}
-
-              {/* ── Slide 1: Clientes ── */}
-              {showcase === 1 && (<>
-                <div style={{ background: '#f3f0eb', borderRadius: 8, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, fontSize: 11, color: '#8a8177' }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                  Buscar cliente, CPF ou CNPJ…
-                </div>
-                {[
-                  { name: 'Maria S. Oliveira', doc: '812.***.**8', procs: 12, ini: 'MS', hi: true },
-                  { name: 'Construtora Ápice Ltda.', doc: 'CNPJ 12.***/0001', procs: 3, ini: 'CA', hi: false },
-                  { name: 'João P. Santos', doc: '074.***.**1', procs: 8, ini: 'JP', hi: false },
-                  { name: 'Roberta C. Lima', doc: '531.***.**7', procs: 5, ini: 'RL', hi: false },
-                ].map((c, i) => (
-                  <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 0', borderTop: i === 0 ? 'none' : '1px solid #f2ede6' }}>
-                    <div style={{ width: 30, height: 30, borderRadius: '50%', background: c.hi ? '#ea6a1e' : '#e8e3d8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: c.hi ? '#fff' : '#6a625a', flexShrink: 0 }}>{c.ini}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 11.5, fontWeight: 600, color: '#2a2320', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
-                      <div style={{ fontSize: 10, color: '#9a8f82' }}>{c.doc}</div>
-                    </div>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: '#6a625a', background: '#f3efe8', borderRadius: 5, padding: '2px 7px', flexShrink: 0 }}>{c.procs} proc.</span>
-                  </div>
-                ))}
-              </>)}
-
-              {/* ── Slide 2: Processos ── */}
-              {showcase === 2 && (<>
-                <div style={{ display: 'flex', gap: 5, marginBottom: 10, flexWrap: 'wrap' }}>
-                  {[['Em andamento', true], ['Aguardando', false], ['Arquivado', false]].map(([s, on]) => (
-                    <span key={String(s)} style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 999, padding: '3px 9px', background: on ? '#ea6a1e' : '#f3efe8', color: on ? '#fff' : '#8a8177' }}>{String(s)}</span>
-                  ))}
-                </div>
-                <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', color: '#a49a8d', display: 'grid', gridTemplateColumns: '0.9fr 1fr 0.75fr', gap: 8, padding: '6px 0' }}>
-                  <span>Número</span><span>Cliente</span><span>Situação</span>
-                </div>
-                {[
-                  { num: '1002345-67.2023', client: 'Maria Oliveira', st: 'Em andamento', color: '#22c55e' },
-                  { num: '0456123-70.2022', client: 'Construtora Ápice', st: 'Aguardando', color: '#f59e0b' },
-                  { num: '2231908-18.2024', client: 'João P. Santos', st: 'Em andamento', color: '#22c55e' },
-                  { num: '0987654-32.2021', client: 'Roberta C. Lima', st: 'Arquivado', color: '#94a3b8' },
-                ].map((p) => (
-                  <div key={p.num} style={{ display: 'grid', gridTemplateColumns: '0.9fr 1fr 0.75fr', gap: 8, padding: '7px 0', borderTop: '1px solid #f2ede6', alignItems: 'center' }}>
-                    <span style={{ fontVariantNumeric: 'tabular-nums', color: '#5a534c', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.num}</span>
-                    <span style={{ color: '#2a2320', fontWeight: 600, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.client}</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10 }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
-                      <span style={{ color: '#6a625a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.st}</span>
-                    </span>
-                  </div>
-                ))}
-              </>)}
-
-              {/* ── Slide 3: Petições & Req. INSS ── */}
-              {showcase === 3 && (<>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#3a332c' }}>Documentos recentes</span>
-                  <span style={{ fontSize: 9.5, fontWeight: 700, background: '#ea6a1e', color: '#fff', borderRadius: 5, padding: '2px 9px', cursor: 'default' }}>+ Novo</span>
-                </div>
-                {[
-                  { icon: '📄', title: 'Contestação — Proc. 1002345', tag: 'Petição', st: 'Rascunho', sb: '#f3efe8', tc: '#8a8177' },
-                  { icon: '📋', title: 'Req. INSS BPC/LOAS — Maria S.', tag: 'Req. INSS', st: 'Pronto', sb: '#d1fae5', tc: '#059669' },
-                  { icon: '📄', title: 'Recurso Ordinário — Const. Ápice', tag: 'Petição', st: 'Revisão', sb: '#fef3c7', tc: '#d97706' },
-                  { icon: '📋', title: 'Req. Auxílio-Doença — João S.', tag: 'Req. INSS', st: 'Rascunho', sb: '#f3efe8', tc: '#8a8177' },
-                ].map((d) => (
-                  <div key={d.title} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: '1px solid #f2ede6' }}>
-                    <span style={{ fontSize: 14, flexShrink: 0 }}>{d.icon}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#2a2320', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div>
-                      <span style={{ fontSize: 9, fontWeight: 700, color: '#9a8f82', background: '#f3efe8', borderRadius: 4, padding: '1px 5px' }}>{d.tag}</span>
-                    </div>
-                    <span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 5, padding: '2px 7px', background: d.sb, color: d.tc, flexShrink: 0 }}>{d.st}</span>
-                  </div>
-                ))}
-              </>)}
-
-              {/* ── Slide 4: Cloud & Documentos ── */}
-              {showcase === 4 && (<>
-                <div style={{ background: '#f3f0eb', borderRadius: 8, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, fontSize: 11, color: '#8a8177' }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                  Buscar arquivos e pastas…
-                </div>
-                {[
-                  { indent: 0, icon: '📁', name: 'Clientes', isFolder: true },
-                  { indent: 1, icon: '📂', name: 'Maria Souza', isFolder: true },
-                  { indent: 2, icon: '📄', name: 'RG.pdf', size: '340 KB' },
-                  { indent: 2, icon: '📄', name: 'Procuração.pdf', size: '1.2 MB' },
-                  { indent: 1, icon: '📂', name: 'João Santos', isFolder: true },
-                  { indent: 2, icon: '📄', name: 'Contrato_Hon.pdf', size: '88 KB' },
-                  { indent: 0, icon: '📁', name: 'Processos', isFolder: true },
-                ].map((f, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 0', paddingLeft: f.indent * 14, borderTop: i > 0 ? '1px solid #f7f3ee' : 'none' }}>
-                    <span style={{ fontSize: 13, flexShrink: 0 }}>{f.icon}</span>
-                    <span style={{ fontSize: 11, color: f.isFolder ? '#2a2320' : '#5a534c', fontWeight: f.isFolder ? 600 : 400, flex: 1 }}>{f.name}</span>
-                    {!f.isFolder && 'size' in f && <span style={{ fontSize: 9.5, color: '#a49a8d', flexShrink: 0 }}>{(f as any).size}</span>}
-                  </div>
-                ))}
-              </>)}
-
-              {/* ── Slide 5: Assinaturas Digitais ── */}
-              {showcase === 5 && (<>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 7, marginBottom: 10 }}>
-                  {([['Pendentes', '2', '#fef3c7', '#d97706'], ['Assinados', '5', '#d1fae5', '#059669'], ['Expirados', '1', '#fee2e2', '#dc2626']] as const).map(([l, n, bg, tc]) => (
-                    <div key={l} style={{ background: bg, borderRadius: 8, padding: '8px 6px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: tc, lineHeight: 1 }}>{n}</div>
-                      <div style={{ fontSize: 9, fontWeight: 600, color: tc, opacity: 0.75, marginTop: 2 }}>{l}</div>
-                    </div>
-                  ))}
-                </div>
-                {[
-                  { doc: 'Contrato de Honorários', client: 'Maria Oliveira', st: 'Pendente', prog: '1 de 2', sb: '#fef3c7', tc: '#d97706' },
-                  { doc: 'Procuração ad judicia', client: 'João P. Santos', st: 'Assinado', prog: '2 de 2', sb: '#d1fae5', tc: '#059669' },
-                  { doc: 'Termo de Confidencialidade', client: 'Construtora Ápice', st: 'Expirado', prog: '0 de 1', sb: '#fee2e2', tc: '#dc2626' },
-                ].map((s) => (
-                  <div key={s.doc} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderTop: '1px solid #f2ede6' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#2a2320', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.doc}</div>
-                      <div style={{ fontSize: 10, color: '#9a8f82' }}>{s.client} · {s.prog}</div>
-                    </div>
-                    <span style={{ fontSize: 9.5, fontWeight: 700, borderRadius: 5, padding: '2px 7px', background: s.sb, color: s.tc, flexShrink: 0 }}>{s.st}</span>
-                  </div>
-                ))}
-              </>)}
-
-              {/* ── Slide 6: Financeiro ── */}
-              {showcase === 6 && (<>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                  {([['Honorários (Jul)', 'R$ 14.800', '+18%', '#d1fae5', '#059669'], ['Pendente', 'R$ 5.600', '3 faturas', '#fef3c7', '#d97706']] as const).map(([l, v, s, bg, tc]) => (
-                    <div key={l} style={{ background: bg, borderRadius: 8, padding: '9px 10px' }}>
-                      <div style={{ fontSize: 9, fontWeight: 600, color: tc, opacity: 0.75, marginBottom: 2 }}>{l}</div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: tc, lineHeight: 1 }}>{v}</div>
-                      <div style={{ fontSize: 9.5, fontWeight: 600, color: tc, opacity: 0.65, marginTop: 2 }}>{s}</div>
-                    </div>
-                  ))}
-                </div>
-                <div className="show-card" style={{ padding: '10px 12px' }}>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, color: '#3a332c', marginBottom: 8 }}>Receita mensal — 2025</div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 60 }}>
-                    {[42, 58, 50, 72, 64, 88, 76].map((h, i) => (
-                      <div key={i} style={{ flex: 1, borderRadius: '3px 3px 0 0', background: i === 5 ? '#ea6a1e' : '#e8e3d8', height: `${h}%`, position: 'relative', transition: 'height .4s ease' }}>
-                        {i === 5 && <div style={{ position: 'absolute', top: -16, left: '50%', transform: 'translateX(-50%)', fontSize: 8, fontWeight: 700, color: '#ea6a1e', whiteSpace: 'nowrap' }}>Jul</div>}
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5 }}>
-                    {['Jan','Fev','Mar','Abr','Mai','Jun','Jul'].map((m) => (
-                      <span key={m} style={{ fontSize: 8, color: '#a49a8d', flex: 1, textAlign: 'center' }}>{m}</span>
-                    ))}
-                  </div>
-                </div>
-              </>)}
+              <ShowcasePreview showcase={showcase} />
             </div>
           </div>
 
           {/* legenda + carrossel */}
-          <div style={{ marginTop: 'clamp(20px, 3vh, 34px)', minHeight: 96 }}>
+          <div className="login-showcase-meta" style={{ marginTop: 'clamp(20px, 3vh, 34px)', minHeight: 96 }}>
             <div key={showcase} className="show-fade">
               <h2 style={{ fontFamily: BRAND_SERIF, fontWeight: 500, fontSize: 'clamp(21px, 2vw, 27px)', lineHeight: 1.15, letterSpacing: '-0.01em', color: '#f7f1e8' }}>
                 {SHOWCASE[showcase].title}
@@ -1131,7 +1172,7 @@ export const PortalLogin: React.FC = () => {
         </div>
 
         {/* footer meta — estado real da conexão com o backend (Supabase) */}
-        <div className="login-anim" style={{ position: 'relative', zIndex: 2, marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 22, borderTop: '1px solid rgba(255,255,255,0.10)', animationDelay: '0.4s' }}>
+        <div className="login-footer-meta login-anim" style={{ position: 'relative', zIndex: 2, marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 22, borderTop: '1px solid rgba(255,255,255,0.10)', animationDelay: '0.4s' }}>
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 500, letterSpacing: '0.24em', textTransform: 'uppercase' }}>© {new Date().getFullYear()} jurius.com.br</span>
           <span
             title={svc === 'online'
@@ -1149,7 +1190,7 @@ export const PortalLogin: React.FC = () => {
       </aside>
 
       {/* ── PAINEL DO FORMULÁRIO ── */}
-      <main className="min-h-screen md:h-auto" style={{ position: 'relative', flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', padding: 'clamp(28px, 4vw, 56px) clamp(18px, 3vw, 44px) clamp(20px, 2.5vw, 32px)' }}>
+      <main className="login-main min-h-screen md:h-auto" style={{ position: 'relative', flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', padding: 'clamp(28px, 4vw, 56px) clamp(18px, 3vw, 44px) clamp(20px, 2.5vw, 32px)' }}>
 
         {/* backdrop decorativo — SÓ mobile (no desktop o painel de marca já cumpre esse papel).
             Eco da identidade: brilho âmbar no topo + grade tênue, para o formulário não
@@ -1172,7 +1213,7 @@ export const PortalLogin: React.FC = () => {
             'radial-gradient(480px 380px at 10% 100%, rgba(242,122,35,0.035), transparent 70%)',
         }} />
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: 'clamp(52px, 8vw, 108px)', position: 'relative', zIndex: 1, width: '100%' }}>
+        <div className="login-main-inner" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: 'clamp(52px, 8vw, 108px)', position: 'relative', zIndex: 1, width: '100%' }}>
         <div id="login-card" tabIndex={-1}
           className="login-anim relative z-10 w-full bg-white md:bg-transparent border border-slate-200 md:border-0 rounded-xl md:rounded-none overflow-hidden md:overflow-visible p-7 sm:p-8 md:p-0 shadow-[0_10px_30px_-6px_rgba(15,23,42,0.10)] md:shadow-none"
           style={{ maxWidth: 420, animationDelay: '0.34s' }}>
