@@ -991,7 +991,7 @@ export const PortalLogin: React.FC = () => {
         .show-bar { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; background: #f1ede6; border-bottom: 1px solid rgba(0,0,0,0.05); }
         .show-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
         .show-url { margin-left: 10px; flex: 1; max-width: 280px; height: 20px; border-radius: 6px; background: #e5e0d7; color: #8a8177; font-size: 10.5px; font-weight: 500; display: flex; align-items: center; padding: 0 10px; }
-        .show-screen { padding: 16px; background: #faf8f5; }
+        .show-screen { padding: 16px; background: #faf8f5; min-height: 430px; display: flex; flex-direction: column; }
         .show-appbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
         .show-apptitle { font-size: 14px; font-weight: 700; color: #2a2320; letter-spacing: -0.01em; }
         .show-live { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #c56a1a; }
@@ -1000,13 +1000,13 @@ export const PortalLogin: React.FC = () => {
         @keyframes showFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
         .show-dotbtn { width: 22px; height: 4px; border-radius: 999px; border: none; cursor: pointer; padding: 0; background: rgba(255,255,255,0.22); transition: background 0.35s ease, width 0.35s ease; }
         .show-dotbtn[data-on="true"] { width: 34px; background: linear-gradient(90deg, #f59e0b, #ea6a1e); }
-        .mock-modal { background: #fff; border: 1px solid #e7e5df; box-shadow: 0 18px 38px -26px rgba(15,23,42,0.35); }
+        .mock-modal { background: #fff; border: 1px solid #e7e5df; box-shadow: 0 18px 38px -26px rgba(15,23,42,0.35); min-height: 100%; display: flex; flex-direction: column; }
         .mock-accent { height: 6px; width: 100%; background: #f59e0b; }
         .mock-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #e7e5df; }
         .mock-eyebrow { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .2em; color: #94a3b8; }
         .mock-title { margin-top: 2px; font-size: 13px; font-weight: 600; color: #0f172a; }
         .mock-close { color: #94a3b8; font-size: 18px; line-height: 1; }
-        .mock-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; background: #fff; }
+        .mock-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; background: #fff; flex: 1 1 auto; }
         .mock-section { display: flex; flex-direction: column; gap: 8px; }
         .mock-sectionhead { padding-bottom: 5px; border-bottom: 1px solid #f1f5f9; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: #64748b; }
         .mock-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; }
@@ -1050,7 +1050,7 @@ export const PortalLogin: React.FC = () => {
           .login-main-inner { justify-content: center !important; padding-top: 0 !important; min-height: 0; }
           #login-card { max-width: 400px !important; }
           .show-browser { transform: scale(0.92); transform-origin: top left; width: 108.695%; }
-          .show-screen { padding: 12px; }
+          .show-screen { padding: 12px; min-height: 392px; }
           .show-appbar { margin-bottom: 8px; }
           .mock-header { padding: 8px 12px; }
           .mock-body { padding: 10px 12px; gap: 8px; }
@@ -1067,6 +1067,7 @@ export const PortalLogin: React.FC = () => {
           .login-aside { padding-top: 16px; padding-bottom: 16px; }
           .login-showcase { max-width: 545px; }
           .show-browser { transform: scale(0.86); width: 116.279%; }
+          .show-screen { min-height: 368px; }
           .login-showcase-meta h2 { font-size: clamp(19px, 1.7vw, 24px) !important; }
           .login-showcase-meta p { margin-top: 8px !important; font-size: 13px !important; line-height: 1.45 !important; }
           .login-footer-meta { padding-top: 10px !important; }

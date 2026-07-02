@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.287': { name: 'Cafe Showcase Sem Distorcao', emoji: '[art]' },
   '1.10.286': { name: 'Cafe Rodape Sem Quebra', emoji: '[art]' },
   '1.10.285': { name: 'Cafe Login Sem Scroll', emoji: '[art]' },
   '1.10.284': { name: 'Cafe Login Editorial', emoji: '[art]' },
@@ -937,6 +938,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.287',
+    date: '02/07/2026',
+    summary: 'A vitrine do login do portal passou a manter a mesma moldura visual entre os slides, sem variar a altura aparente conforme o conteúdo interno de cada módulo.',
+    modules: [
+      { moduleId: 'portal', changes: [
+        { type: 'fix' as const, title: 'Preview dos modulos ganhou altura consistente entre os slides', description: 'A area interna da moldura do navegador foi estabilizada e o mock de cada modulo passou a ocupar toda a altura disponivel, evitando distorcao visual entre exemplos mais altos e mais curtos.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.286',
     date: '02/07/2026',
