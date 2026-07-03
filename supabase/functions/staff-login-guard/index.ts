@@ -1,22 +1,14 @@
-// Lockout PROGRESSIVO por IP para o login do escritório (staff), que usa o GoTrue
-// diretamente no navegador (supabase.auth.signInWithPassword).
+// Lockout progressivo por conta para o login do escritorio (staff).
 //
-// Após 6 falhas o IP é bloqueado por um tempo que escala a cada reincidência:
-// 5min, 15min, 30min, 1h, 3h, 4h, 6h, 8h, 12h e máximo 24h. Um login bem-sucedido
-// zera o contador/nível. Camada de defesa em profundidade — como o GoTrue é chamado
-// no cliente, isto bloqueia o abuso pela interface e dá feedback (contador regressivo).
+// A cada 6 falhas, a conta recebe bloqueio temporario progressivo:
+// 5min, 15min, 30min, 1h, 3h, 4h, 6h, 8h, 12h e maximo 24h.
+// Depois de 3 rodadas completas de bloqueio temporario, a proxima rodada
+// suspende a conta ate um administrador liberar.
 //
 // O cliente deve:
-//   1) chamar { action: 'check' } ANTES do signIn — se blocked, não tentar;
-//   2) chamar { action: 'fail' } após um login que FALHOU (registra a tentativa);
-//   3) chamar { action: 'reset' } após um login BEM-SUCEDIDO.
-//
-// Sempre responde HTTP 200 com { blocked, retry_after_seconds, attempts_remaining }
-// (exceto erro interno) para o supabase.functions.invoke ler o corpo sem tratar como erro.
-//
-// Autossuficiente (sem imports relativos). Deploy: verify_jwt = false (pré-autenticação).
-// Usa SERVICE_ROLE internamente. Depende da migration
-// 20260703233000_staff_login_ip_progressive_block.sql.
+//   1) chamar { action: 'check' } antes do signIn;
+//   2) chamar { action: 'fail' } apos um login que falhou;
+//   3) chamar { action: 'reset' } apos um login bem-sucedido.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2'
@@ -27,10 +19,24 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-const SCOPE = 'staff-login'
+const SCOPE = 'staff-login-account'
+const ADMIN_UNLOCK_SCOPE = 'staff-login-admin-unlock'
 const MAX_ATTEMPTS = 6
-// Escada de bloqueio em segundos: 5min, 15min, 30min, 1h, 3h, 4h, 6h, 8h, 12h, 24h.
+const SUSPEND_AFTER_ROUNDS = 3
 const BLOCK_LADDER = [300, 900, 1800, 3600, 10800, 14400, 21600, 28800, 43200, 86400]
+const ADMIN_UNLOCK_MAX_ATTEMPTS = 5
+const ADMIN_UNLOCK_BLOCK_LADDER = [60, 300, 900, 1800, 3600]
+
+type GuardResponse = {
+  blocked: boolean
+  suspended?: boolean
+  retry_after_seconds?: number
+  attempts_remaining?: number
+  ok?: boolean
+  error?: string
+  message?: string
+  locked_until?: string
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -39,22 +45,72 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function pickClientIp(req: Request): string | null {
-  const names = ['cf-connecting-ip', 'x-real-ip', 'x-client-ip', 'fly-client-ip', 'x-forwarded-for']
-  for (const name of names) {
-    const value = req.headers.get(name)
-    if (value) {
-      const first = value.split(',').map((p) => p.trim()).find(Boolean)
-      if (first) return first
-    }
+function formatRetryWait(seconds?: number): string {
+  const safe = Math.max(1, Math.ceil(seconds ?? 60))
+  if (safe >= 3600) {
+    const h = Math.floor(safe / 3600)
+    const m = Math.ceil((safe % 3600) / 60)
+    return m > 0 ? `${h}h${m > 0 ? ` ${m}min` : ''}` : `${h}h`
   }
-  return null
+  if (safe >= 60) {
+    const m = Math.ceil(safe / 60)
+    return `${m} minuto${m > 1 ? 's' : ''}`
+  }
+  return `${safe} segundo${safe > 1 ? 's' : ''}`
 }
 
 async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input)
   const hashBuffer = await crypto.subtle.digest('SHA-256', data)
   return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+}
+
+async function suspendAccount(supabase: ReturnType<typeof createClient>, email: string): Promise<void> {
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('user_id, is_active')
+    .ilike('email', email)
+    .maybeSingle()
+
+  if (profileError || !profile?.user_id) {
+    throw profileError ?? new Error('Conta nao encontrada para suspensao.')
+  }
+
+  if (profile.is_active !== false) {
+    const { error: updateProfileError } = await supabase
+      .from('profiles')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('user_id', profile.user_id)
+    if (updateProfileError) throw updateProfileError
+  }
+
+  const { error: authError } = await supabase.auth.admin.updateUserById(profile.user_id, {
+    ban_duration: '876000h',
+  })
+  if (authError) throw authError
+}
+
+async function activateAccount(supabase: ReturnType<typeof createClient>, email: string): Promise<void> {
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('user_id')
+    .ilike('email', email)
+    .maybeSingle()
+
+  if (profileError || !profile?.user_id) {
+    throw profileError ?? new Error('Conta nao encontrada para reativacao.')
+  }
+
+  const { error: updateProfileError } = await supabase
+    .from('profiles')
+    .update({ is_active: true, updated_at: new Date().toISOString() })
+    .eq('user_id', profile.user_id)
+  if (updateProfileError) throw updateProfileError
+
+  const { error: authError } = await supabase.auth.admin.updateUserById(profile.user_id, {
+    ban_duration: 'none',
+  })
+  if (authError) throw authError
 }
 
 Deno.serve(async (req: Request) => {
@@ -64,61 +120,136 @@ Deno.serve(async (req: Request) => {
 
   try {
     if (req.method !== 'POST') {
-      return jsonResponse({ blocked: false, error: 'Método não suportado' }, 405)
+      return jsonResponse({ blocked: false, error: 'Metodo nao suportado' }, 405)
     }
 
-    const body = await req.json().catch(() => ({})) as { action?: string }
+    const body = await req.json().catch(() => ({})) as { action?: string; email?: string; pin?: string }
     const action = String(body.action || '').trim()
+    const email = String(body.email || '').trim().toLowerCase()
+    const pin = String(body.pin || '').trim()
     if (!action) {
-      return jsonResponse({ blocked: false, error: 'Ação obrigatória' }, 400)
+      return jsonResponse({ blocked: false, error: 'Acao obrigatoria' }, 400)
+    }
+    if (!email) {
+      return jsonResponse({ blocked: false, error: 'Email obrigatorio' }, 400)
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     if (!supabaseUrl || !serviceRoleKey) {
-      // Fail-open: sem credenciais de serviço não travamos o login.
-      return jsonResponse({ blocked: false, error: 'Serviço indisponível' }, 200)
+      return jsonResponse({ blocked: false, error: 'Servico indisponivel' }, 200)
     }
 
-    const ip = pickClientIp(req)
-    if (!ip) {
-      // Sem IP identificável não há como bloquear por IP — fail-open.
-      return jsonResponse({ blocked: false, retry_after_seconds: 0 }, 200)
-    }
-    const ipHash = await sha256Hex(`${SCOPE}:ip:${ip}`)
-    const supabase = createClient(supabaseUrl, serviceRoleKey)
+    const accountHash = await sha256Hex(`${SCOPE}:account:${email}`)
+    const adminUnlockHash = await sha256Hex(`${ADMIN_UNLOCK_SCOPE}:account:${email}`)
+    const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
 
     if (action === 'check') {
-      const { data, error } = await supabase.rpc('staff_login_ip_status', { p_ip_hash: ipHash })
+      const { data, error } = await supabase.rpc('staff_login_account_status', { p_account_hash: accountHash })
       if (error) throw error
-      const r = (data || {}) as { blocked?: boolean; retry_after_seconds?: number }
-      return jsonResponse({ blocked: r.blocked === true, retry_after_seconds: r.retry_after_seconds ?? 0 })
+      const r = (data || {}) as GuardResponse
+      return jsonResponse({
+        blocked: r.blocked === true,
+        suspended: r.suspended === true,
+        retry_after_seconds: r.retry_after_seconds ?? 0,
+      })
     }
 
     if (action === 'fail') {
-      const { data, error } = await supabase.rpc('staff_login_ip_register_failure', {
-        p_ip_hash: ipHash,
+      const { data, error } = await supabase.rpc('staff_login_account_register_failure', {
+        p_account_hash: accountHash,
         p_max_attempts: MAX_ATTEMPTS,
         p_ladder: BLOCK_LADDER,
+        p_suspend_after_rounds: SUSPEND_AFTER_ROUNDS,
       })
       if (error) throw error
-      const r = (data || {}) as { blocked?: boolean; retry_after_seconds?: number; attempts_remaining?: number }
+      const r = (data || {}) as GuardResponse
+      if (r.suspended === true) {
+        await suspendAccount(supabase, email)
+      }
       return jsonResponse({
         blocked: r.blocked === true,
+        suspended: r.suspended === true,
         retry_after_seconds: r.retry_after_seconds ?? 0,
         attempts_remaining: r.attempts_remaining ?? 0,
       })
     }
 
     if (action === 'reset') {
-      const { error } = await supabase.rpc('staff_login_ip_reset', { p_ip_hash: ipHash })
+      const { error } = await supabase.rpc('staff_login_account_reset', { p_account_hash: accountHash })
       if (error) throw error
-      return jsonResponse({ blocked: false, ok: true })
+      return jsonResponse({ blocked: false, suspended: false, ok: true })
     }
 
-    return jsonResponse({ blocked: false, error: 'Ação inválida' }, 400)
+    if (action === 'unlock_with_pin') {
+      const { data: unlockStatus, error: unlockStatusError } = await supabase.rpc('staff_login_account_status', {
+        p_account_hash: adminUnlockHash,
+      })
+      if (unlockStatusError) throw unlockStatusError
+
+      const unlockGuard = (unlockStatus || {}) as GuardResponse
+      if (unlockGuard.blocked === true && (unlockGuard.retry_after_seconds ?? 0) > 0) {
+        return jsonResponse({
+          ok: false,
+          blocked: false,
+          suspended: true,
+          error: 'unlock_rate_limited',
+          retry_after_seconds: unlockGuard.retry_after_seconds ?? 0,
+          message: `Muitas tentativas de desbloqueio por PIN. Aguarde ${formatRetryWait(unlockGuard.retry_after_seconds)} para tentar novamente.`,
+        })
+      }
+
+      const { data, error } = await supabase.rpc('staff_login_admin_unlock_with_pin', {
+        p_email: email,
+        p_pin: pin,
+      })
+      if (error) throw error
+      const r = (data || {}) as GuardResponse & { user_id?: string }
+      if (r.ok === true) {
+        const { error: unlockResetError } = await supabase.rpc('staff_login_account_reset', { p_account_hash: adminUnlockHash })
+        if (unlockResetError) throw unlockResetError
+        await activateAccount(supabase, email)
+        const { error: resetError } = await supabase.rpc('staff_login_account_reset', { p_account_hash: accountHash })
+        if (resetError) throw resetError
+        return jsonResponse({ ok: true, blocked: false, suspended: false })
+      }
+
+      if (r.error === 'wrong_pin') {
+        const { data: unlockFail, error: unlockFailError } = await supabase.rpc('staff_login_account_register_failure', {
+          p_account_hash: adminUnlockHash,
+          p_max_attempts: ADMIN_UNLOCK_MAX_ATTEMPTS,
+          p_ladder: ADMIN_UNLOCK_BLOCK_LADDER,
+          p_suspend_after_rounds: 999,
+        })
+        if (unlockFailError) throw unlockFailError
+
+        const unlockFailResult = (unlockFail || {}) as GuardResponse
+        if (unlockFailResult.blocked === true && (unlockFailResult.retry_after_seconds ?? 0) > 0) {
+          return jsonResponse({
+            ok: false,
+            blocked: false,
+            suspended: true,
+            error: 'unlock_rate_limited',
+            retry_after_seconds: unlockFailResult.retry_after_seconds ?? 0,
+            message: `Muitas tentativas de desbloqueio por PIN. Aguarde ${formatRetryWait(unlockFailResult.retry_after_seconds)} para tentar novamente.`,
+          })
+        }
+      }
+
+      return jsonResponse({
+        ok: false,
+        blocked: false,
+        suspended: true,
+        error: r.error ?? 'unlock_failed',
+        message: r.message ?? 'Nao foi possivel validar o PIN.',
+        locked_until: r.locked_until ?? null,
+        retry_after_seconds: r.retry_after_seconds ?? null,
+        attempts_remaining: r.attempts_remaining ?? null,
+      })
+    }
+
+    return jsonResponse({ blocked: false, error: 'Acao invalida' }, 400)
   } catch (err) {
-    // Fail-open: nunca bloquear o login por falha interna do guard.
     console.error('[staff-login-guard] erro:', err)
     return jsonResponse({ blocked: false, error: 'Falha ao avaliar limite de tentativas' }, 200)
   }

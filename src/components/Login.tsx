@@ -81,15 +81,20 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
   const [identifierRaw, setIdentifierRaw] = useState('');
   const [identifierProfileName, setIdentifierProfileName] = useState<string | null>(null);
   const [identifierProfileAvatar, setIdentifierProfileAvatar] = useState<string | null>(null);
+  const [identifierProfileRole, setIdentifierProfileRole] = useState<string | null>(null);
   const [identifierLoading, setIdentifierLoading] = useState(false);
   const [testimonialIndex, setTestimonialIndex] = useState(0);
+  const [unlockPin, setUnlockPin] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockMessage, setUnlockMessage] = useState<string | null>(null);
 
-  // Bloqueio progressivo por IP (anti-força-bruta) — contador regressivo ao vivo.
-  const { checkStaffLoginBlock } = useAuth();
+  // Bloqueio progressivo por conta com contador regressivo ao vivo.
+  const { checkStaffLoginBlock, unlockStaffLoginWithPin } = useAuth();
   const [blockUntil, setBlockUntil] = useState<number | null>(null);
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const blockRemainingSec = blockUntil ? Math.max(0, Math.ceil((blockUntil - nowTs) / 1000)) : 0;
   const isBlocked = blockRemainingSec > 0;
+  const canSelfUnlock = String(identifierProfileRole || '').toLowerCase() === 'administrador';
 
   const formatCountdown = useCallback((secs: number) => {
     const s = Math.max(0, secs);
@@ -114,13 +119,18 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     return () => clearInterval(id);
   }, [blockUntil]);
 
-  // Ao confirmar o identificador (passo da senha), verifica se o IP já está bloqueado.
+  // Ao confirmar o identificador (passo da senha), verifica se a conta já está temporariamente bloqueada.
   useEffect(() => {
     if (!identifierConfirmed) return;
     let cancelled = false;
     (async () => {
       try {
         const r = await checkStaffLoginBlock(email);
+        if (!cancelled && r.suspended) {
+          setIsBanned(true);
+          setError(null);
+          return;
+        }
         if (!cancelled && r.blocked && r.retryAfterSeconds > 0) {
           setBlockUntil(Date.now() + r.retryAfterSeconds * 1000);
           setNowTs(Date.now());
@@ -233,13 +243,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
         }
         const { data, error } = await supabase
           .from('profiles')
-          .select('name, avatar_url, email')
+          .select('name, avatar_url, email, role')
           .ilike('email', trimmed);
 
         if (error) {
           console.error('Erro ao buscar perfil para login:', error.message);
           setIdentifierProfileName(null);
           setIdentifierProfileAvatar(null);
+          setIdentifierProfileRole(null);
           return { found: false };
         }
 
@@ -247,6 +258,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
         if (!profile) {
           setIdentifierProfileName(null);
           setIdentifierProfileAvatar(null);
+          setIdentifierProfileRole(null);
           return { found: false };
         }
 
@@ -257,6 +269,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
 
         setIdentifierProfileName(profile.name ?? null);
         setIdentifierProfileAvatar(profile.avatar_url ?? null);
+        setIdentifierProfileRole(profile.role ?? null);
         return { found: true };
       }
 
@@ -284,26 +297,28 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
           const maskedCpf = formatCpf(numericId);
           const { data: profileByMaskedCpf, error: profileByMaskedCpfError } = await supabase
             .from('profiles')
-            .select('name, avatar_url, email')
+            .select('name, avatar_url, email, role')
             .eq('cpf', maskedCpf)
             .maybeSingle();
 
           if (!profileByMaskedCpfError && profileByMaskedCpf?.email) {
             setIdentifierProfileName(profileByMaskedCpf.name ?? profileByMaskedCpf.email);
             setIdentifierProfileAvatar(profileByMaskedCpf.avatar_url ?? null);
+            setIdentifierProfileRole(profileByMaskedCpf.role ?? null);
             setEmail(profileByMaskedCpf.email);
             return { found: true };
           }
 
           const { data: profileByRawCpf, error: profileByRawCpfError } = await supabase
             .from('profiles')
-            .select('name, avatar_url, email')
+            .select('name, avatar_url, email, role')
             .eq('cpf', numericId)
             .maybeSingle();
 
           if (!profileByRawCpfError && profileByRawCpf?.email) {
             setIdentifierProfileName(profileByRawCpf.name ?? profileByRawCpf.email);
             setIdentifierProfileAvatar(profileByRawCpf.avatar_url ?? null);
+            setIdentifierProfileRole(profileByRawCpf.role ?? null);
             setEmail(profileByRawCpf.email);
             return { found: true };
           }
@@ -317,12 +332,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
         if (!client) {
           setIdentifierProfileName(null);
           setIdentifierProfileAvatar(null);
+          setIdentifierProfileRole(null);
           return { found: false };
         }
 
         if (!client.email) {
           setIdentifierProfileName(client.full_name || null);
           setIdentifierProfileAvatar(null);
+          setIdentifierProfileRole(null);
           return {
             found: false,
             message: 'CPF encontrado, mas este cadastro não possui e-mail. Cadastre um e-mail para este CPF (ou vincule o usuário no sistema) para conseguir entrar.',
@@ -332,17 +349,21 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
         // Usamos o nome do cliente e o e-mail associado como identidade de login
         setIdentifierProfileName(client.full_name || client.email);
         setIdentifierProfileAvatar(null);
+        setIdentifierProfileRole(null);
         setEmail(client.email);
 
         // Opcionalmente, podemos tentar buscar avatar no profiles usando o e-mail do cliente
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('avatar_url')
+          .select('avatar_url, role')
           .ilike('email', client.email);
 
         const profileFromClientEmail = profileData && profileData.length > 0 ? profileData[0] : null;
         if (profileFromClientEmail?.avatar_url) {
           setIdentifierProfileAvatar(profileFromClientEmail.avatar_url);
+        }
+        if (profileFromClientEmail?.role) {
+          setIdentifierProfileRole(profileFromClientEmail.role);
         }
 
         return { found: true };
@@ -350,12 +371,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
         console.error('Erro ao buscar cliente por CPF/CNPJ para login:', clientError);
         setIdentifierProfileName(null);
         setIdentifierProfileAvatar(null);
+        setIdentifierProfileRole(null);
         return { found: false };
       }
     } catch (e) {
       console.error('Erro inesperado ao buscar identificador para login:', e);
       setIdentifierProfileName(null);
       setIdentifierProfileAvatar(null);
+      setIdentifierProfileRole(null);
       return { found: false };
     } finally {
       setIdentifierLoading(false);
@@ -372,6 +395,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
       }
       setError(null);
       setResetMessage(null);
+      setUnlockMessage(null);
 
       // Verifica se existe perfil para este identificador
       const result = await loadIdentifierProfile(email.trim());
@@ -386,21 +410,27 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     }
 
     // Etapa 2: login com senha
-    if (isBlocked) return; // IP bloqueado: nem tenta enquanto o timer não zera
+    if (isBlocked) return; // conta bloqueada: nem tenta enquanto o timer não zera
     setError(null);
     setResetMessage(null);
+    setUnlockMessage(null);
     setLoading(true);
 
     try {
       await onLogin(email, password);
     } catch (err: any) {
-      // Lockout anti-força-bruta: inicia o contador regressivo e trava o formulário.
+      // Lockout progressivo: inicia o contador regressivo e trava o formulário.
       if (err?.code === 'staff_login_blocked') {
         const secs = Number(err?.retryAfterSeconds) || 60;
         setBlockUntil(Date.now() + secs * 1000);
         setNowTs(Date.now());
         setError(null);
         setIsBanned(false);
+        return;
+      }
+      if (err?.code === 'staff_login_suspended') {
+        setIsBanned(true);
+        setError(null);
         return;
       }
       const msg = translateAuthError(err?.message);
@@ -433,6 +463,32 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
       setError(translateAuthError(err?.message));
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleUnlockWithPin = async () => {
+    if (!email.trim() || unlockPin.trim().length !== 6) {
+      setUnlockMessage('Informe o PIN de seguranca com 6 digitos.');
+      return;
+    }
+
+    try {
+      setUnlocking(true);
+      setUnlockMessage(null);
+      const result = await unlockStaffLoginWithPin(email.trim(), unlockPin.trim());
+      if (result.ok) {
+        setIsBanned(false);
+        setUnlockPin('');
+        setUnlockMessage('Conta liberada. Faca login novamente com sua senha.');
+        return;
+      }
+      if (result.error === 'wrong_pin' && typeof result.attempts_remaining === 'number') {
+        setUnlockMessage(`PIN incorreto. Restam ${result.attempts_remaining} tentativa(s).`);
+        return;
+      }
+      setUnlockMessage(result.message || 'Nao foi possivel validar o PIN para desbloqueio.');
+    } finally {
+      setUnlocking(false);
     }
   };
 
@@ -547,6 +603,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                     type="button"
                     onClick={() => {
                       setIdentifierConfirmed(false);
+                      setIdentifierProfileRole(null);
                       setPassword('');
                     }}
                     className="text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors"
@@ -570,7 +627,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
-                      onChange={(e) => { setPassword(e.target.value); setIsBanned(false); }}
+                      onChange={(e) => { setPassword(e.target.value); }}
                       disabled={isBlocked}
                       className="block w-full rounded-xl border border-[#e7e4de] bg-white text-slate-900 pl-11 pr-12 py-3.5 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 text-sm placeholder-slate-400 transition-all duration-200 hover:border-[#d9d5cd] shadow-[0_1px_2px_rgba(33,28,24,0.04)] disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed disabled:hover:border-[#e7e4de]"
                       placeholder={isBlocked ? 'Acesso temporariamente bloqueado' : 'Digite sua senha'}
@@ -627,17 +684,44 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                   <Ban className="w-6 h-6 text-orange-600" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-orange-900">Ops! Seu acesso foi revogado.</p>
+                  <p className="text-sm font-semibold text-orange-900">Conta suspensa para login.</p>
                   <p className="text-sm text-orange-700 mt-1">
-                    Sua conta foi desativada pelo administrador do escritório.
-                    <br />
-                    Entre em contato para reativar o acesso.
+                    {canSelfUnlock
+                      ? 'O acesso foi suspenso após repetidas tentativas de login. Se você for administrador, valide seu PIN para liberar a conta agora.'
+                      : 'Sua conta foi desativada pelo administrador do escritório. Entre em contato para reativar o acesso.'}
                   </p>
                 </div>
+                {canSelfUnlock && (
+                  <div className="w-full max-w-sm rounded-xl border border-orange-200 bg-white/80 p-3 text-left">
+                    <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-orange-700">
+                      PIN do Administrador
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={unlockPin}
+                        onChange={(e) => setUnlockPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        className="flex-1 rounded-xl border border-orange-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10"
+                        placeholder="000000"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleUnlockWithPin}
+                        disabled={unlocking || unlockPin.length !== 6}
+                        className="rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {unlocking ? 'Validando...' : 'Desbloquear'}
+                      </button>
+                    </div>
+                    {unlockMessage && <p className="mt-2 text-xs font-medium text-orange-800">{unlockMessage}</p>}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Bloqueio progressivo por IP com contador regressivo ao vivo */}
+            {/* Bloqueio progressivo da conta com contador regressivo ao vivo */}
             {isBlocked && (
               <div className="flex items-start gap-3 p-4 bg-orange-50 border border-orange-200 rounded-xl">
                 <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
@@ -675,7 +759,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
             {/* Botão de submit */}
             <button
               type="submit"
-              disabled={loading || identifierLoading || isBlocked || (identifierConfirmed && !password)}
+              disabled={loading || unlocking || identifierLoading || isBlocked || isBanned || (identifierConfirmed && !password)}
               className="w-full flex justify-center items-center py-4 px-4 rounded-xl text-sm font-semibold text-white bg-[#16110d] hover:bg-black focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-all duration-300 active:scale-[0.985] group mt-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_10px_30px_-12px_rgba(242,122,35,0.45),inset_0_1px_0_rgba(255,255,255,0.08)]"
             >
               {isBlocked ? (

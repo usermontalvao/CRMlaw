@@ -82,6 +82,29 @@ const friendlyAuthError = (raw: string): string => {
   return raw || 'Não foi possível entrar. Tente novamente.';
 };
 
+type StaffLoginGuardResult = { blocked: boolean; suspended?: boolean; retry_after_seconds?: number };
+
+async function callStaffLoginGuard(action: 'check' | 'fail' | 'reset' | 'unlock_with_pin', email: string, pin?: string): Promise<StaffLoginGuardResult & { ok?: boolean; error?: string; message?: string; locked_until?: string | null; attempts_remaining?: number | null }> {
+  try {
+    const { data, error } = await supabase.functions.invoke('staff-login-guard', {
+      body: { action, email: email.trim(), pin: pin?.trim() || undefined },
+    });
+    if (error) return { blocked: false };
+    return (data as StaffLoginGuardResult) ?? { blocked: false };
+  } catch {
+    return { blocked: false };
+  }
+}
+
+const formatRetryCountdown = (secs: number): string => {
+  const safe = Math.max(0, Math.ceil(secs));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}min`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
 // Região do servidor Supabase para o indicador de conexão.
 // NUNCA expomos o project-ref/host na UI pública — apenas a região (dado não sensível)
 // e a latência medida. A região vem de VITE_SUPABASE_REGION (configurável); o default
@@ -152,19 +175,21 @@ const ErrorMsg: React.FC<{ msg: string }> = ({ msg }) => (
   </div>
 );
 
-const BannedMsg: React.FC = () => (
+const BannedMsg: React.FC<{ title?: string; body?: React.ReactNode; children?: React.ReactNode }> = ({
+  title = 'Acesso Revogado',
+  body = <>Sua conta foi desativada pelo administrador do escritório.<br />Entre em contato para reativar o acesso.</>,
+  children,
+}) => (
   <div className="flex flex-col items-center gap-4 rounded-lg border border-orange-200 bg-gradient-to-b from-orange-50 to-white px-6 py-6 text-center"
     style={{ animation: 'staffProfileIn 0.35s ease both' }}>
     <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-100 shadow-sm shadow-orange-200">
       <Ban className="h-7 w-7 text-orange-600" />
     </div>
     <div>
-      <p className="text-[15px] font-bold text-slate-900">Acesso Revogado</p>
-      <p className="mt-1.5 text-[13px] leading-snug text-slate-500">
-        Sua conta foi desativada pelo administrador do escritório.
-        <br />Entre em contato para reativar o acesso.
-      </p>
+      <p className="text-[15px] font-bold text-slate-900">{title}</p>
+      <p className="mt-1.5 text-[13px] leading-snug text-slate-500">{body}</p>
     </div>
+    {children}
   </div>
 );
 
@@ -546,6 +571,11 @@ export const PortalLogin: React.FC = () => {
   const [staffError, setStaffError]               = useState<string | null>(null);
   const [staffBanned, setStaffBanned]             = useState(false);
   const [avatarError, setAvatarError]             = useState(false);
+  const [staffBlockUntil, setStaffBlockUntil]     = useState<number | null>(null);
+  const [staffNowTs, setStaffNowTs]               = useState<number>(() => Date.now());
+  const [staffUnlockPin, setStaffUnlockPin]       = useState('');
+  const [staffUnlocking, setStaffUnlocking]       = useState(false);
+  const [staffUnlockMsg, setStaffUnlockMsg]       = useState<string | null>(null);
   // Após o 1º login bem-sucedido, pergunta se quer salvar o acesso rápido neste dispositivo
   const [askSaveQuick, setAskSaveQuick]           = useState(false);
 
@@ -558,6 +588,12 @@ export const PortalLogin: React.FC = () => {
   const cpfOk   = rawCPF.length === 11;
   const pin     = digits.join('');
   const pinOk   = pin.length === 4;
+  const staffBlockRemainingSec = staffBlockUntil ? Math.max(0, Math.ceil((staffBlockUntil - staffNowTs) / 1000)) : 0;
+  const staffBlocked = staffBlockRemainingSec > 0;
+  const staffBlockMessage = staffBlocked
+    ? `Muitas tentativas de login. Tente novamente em ${formatRetryCountdown(staffBlockRemainingSec)}.`
+    : null;
+  const staffCanSelfUnlock = String(profileRole || '').toLowerCase() === 'administrador';
 
   useEffect(() => {
     if (clientStep === 'cpf') setTimeout(() => cpfRef.current?.focus(), 80);
@@ -568,6 +604,36 @@ export const PortalLogin: React.FC = () => {
     if (staffStep === 'identifier') setTimeout(() => identRef.current?.focus(), 80);
     if (staffStep === 'password') setTimeout(() => pwRef.current?.focus(), 80);
   }, [staffStep]);
+
+  useEffect(() => {
+    if (!staffBlockUntil) return;
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      setStaffNowTs(now);
+      if (now >= staffBlockUntil) {
+        setStaffBlockUntil(null);
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [staffBlockUntil]);
+
+  useEffect(() => {
+    if (staffStep !== 'password' || !staffEmail) return;
+    let cancelled = false;
+    (async () => {
+      const result = await callStaffLoginGuard('check', staffEmail);
+      if (!cancelled && result.suspended) {
+        setStaffBanned(true);
+        setStaffError(null);
+        return;
+      }
+      if (!cancelled && result.blocked && (result.retry_after_seconds ?? 0) > 0) {
+        setStaffBlockUntil(Date.now() + (result.retry_after_seconds ?? 0) * 1000);
+        setStaffNowTs(Date.now());
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [staffStep, staffEmail]);
 
   // ── Client handlers ───────────────────────────────────────────────────────
 
@@ -616,6 +682,7 @@ export const PortalLogin: React.FC = () => {
     setIdentifierLoading(true);
     setStaffError(null);
     setStaffBanned(false);
+    setStaffUnlockMsg(null);
     try {
       const trimmed = id.trim();
       // Identificação pré-login via RPC security definer (não expõe profiles/clients
@@ -633,11 +700,18 @@ export const PortalLogin: React.FC = () => {
         setStaffError('Usuário não encontrado. Verifique o dado informado.');
         return false;
       }
-      if (p.is_active === false) { setStaffBanned(true); return false; }
       setProfileName(p.name ?? p.email ?? trimmed);
       setProfileAvatar(p.avatar_url ?? null);
       setProfileRole(p.role ?? null);
       setStaffEmail(p.email ?? trimmed);
+      if (p.is_active === false) {
+        if (String(p.role || '').toLowerCase() !== 'administrador') {
+          setStaffBanned(true);
+          return false;
+        }
+        setStaffBanned(true);
+        setStaffError(null);
+      }
       return true;
     } finally { setIdentifierLoading(false); }
   }, []);
@@ -651,10 +725,40 @@ export const PortalLogin: React.FC = () => {
 
   const handleStaffLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStaffError(null); setStaffLoading(true);
+    if (staffBlocked) return;
+    setStaffError(null); setStaffUnlockMsg(null); setStaffLoading(true);
     try {
+      const pre = await callStaffLoginGuard('check', staffEmail);
+      if (pre.suspended) {
+        setStaffBanned(true);
+        setStaffError(null);
+        return;
+      }
+      if (pre.blocked) {
+        const secs = Math.max(1, Math.ceil(pre.retry_after_seconds ?? 60));
+        setStaffBlockUntil(Date.now() + secs * 1000);
+        setStaffNowTs(Date.now());
+        return;
+      }
       const { error } = await supabase.auth.signInWithPassword({ email: staffEmail, password: staffPw });
-      if (error) throw error;
+      if (error) {
+        const after = await callStaffLoginGuard('fail', staffEmail);
+        if (after.suspended) {
+          setStaffBanned(true);
+          setStaffError(null);
+          return;
+        }
+        if (after.blocked) {
+          const secs = Math.max(1, Math.ceil(after.retry_after_seconds ?? 60));
+          setStaffBlockUntil(Date.now() + secs * 1000);
+          setStaffNowTs(Date.now());
+          setStaffError(null);
+          setStaffBanned(false);
+          return;
+        }
+        throw error;
+      }
+      void callStaffLoginGuard('reset', staffEmail);
       if (accounts.some(a => a.email === staffEmail)) {
         // conta já lembrada (o usuário voltou pelo card) → renova o prazo e segue
         saveRememberedStaff({ name: profileName, avatar: profileAvatar, email: staffEmail, role: profileRole });
@@ -676,7 +780,65 @@ export const PortalLogin: React.FC = () => {
     finally { setStaffLoading(false); }
   };
 
-  const goBackStaff = () => { setStaffStep('identifier'); setStaffError(null); setStaffBanned(false); setStaffPw(''); setProfileName(null); setProfileAvatar(null); setProfileRole(null); };
+  const handleStaffUnlockWithPin = async () => {
+    if (!staffEmail.trim() || staffUnlockPin.trim().length !== 6) {
+      setStaffUnlockMsg('Informe o PIN do administrador com 6 dígitos.');
+      return;
+    }
+
+    try {
+      setStaffUnlocking(true);
+      setStaffUnlockMsg(null);
+      const result = await callStaffLoginGuard('unlock_with_pin', staffEmail, staffUnlockPin);
+      if (result.ok) {
+        setStaffBanned(false);
+        setStaffUnlockPin('');
+        setStaffUnlockMsg('Conta liberada. Agora você pode entrar com sua senha.');
+        return;
+      }
+      if (result.error === 'wrong_pin' && typeof result.attempts_remaining === 'number') {
+        setStaffUnlockMsg(`PIN incorreto. Restam ${result.attempts_remaining} tentativa(s).`);
+        return;
+      }
+      setStaffUnlockMsg(result.message || 'Não foi possível validar o PIN para desbloqueio.');
+    } finally {
+      setStaffUnlocking(false);
+    }
+  };
+
+  const staffUnlockNode = (
+    <div className="w-full max-w-sm rounded-xl border border-orange-200 bg-white/85 p-3 text-left">
+      <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-orange-700">
+        PIN do Administrador
+      </label>
+      <div className="flex gap-2">
+        <input
+          type="password"
+          inputMode="numeric"
+          maxLength={6}
+          value={staffUnlockPin}
+          onChange={(e) => setStaffUnlockPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          className="flex-1 rounded-xl border border-orange-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10"
+          placeholder="000000"
+        />
+        <button
+          type="button"
+          onClick={handleStaffUnlockWithPin}
+          disabled={staffUnlocking || staffUnlockPin.length !== 6}
+          className="rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {staffUnlocking ? 'Validando...' : 'Desbloquear'}
+        </button>
+      </div>
+      {staffUnlockMsg && <p className="mt-2 text-xs font-medium text-orange-800">{staffUnlockMsg}</p>}
+    </div>
+  );
+
+  const goBackStaff = () => {
+    setStaffStep('identifier'); setStaffError(null); setStaffBanned(false); setStaffPw(''); setProfileName(null); setProfileAvatar(null); setProfileRole(null);
+    setStaffBlockUntil(null); setStaffNowTs(Date.now());
+    setStaffUnlockPin(''); setStaffUnlockMsg(null);
+  };
 
   // "Acessar outra conta": vai ao passo de identificação SEM apagar as contas já salvas
   const switchStaffAccount = () => {
@@ -690,6 +852,8 @@ export const PortalLogin: React.FC = () => {
     setProfileName(acc.name); setProfileAvatar(acc.avatar); setProfileRole(acc.role);
     setStaffEmail(acc.email); setAvatarError(false);
     setStaffPw(''); setStaffError(null); setStaffBanned(false);
+    setStaffBlockUntil(null); setStaffNowTs(Date.now());
+    setStaffUnlockPin(''); setStaffUnlockMsg(null);
     setStaffStep('password');
   };
 
@@ -828,7 +992,12 @@ export const PortalLogin: React.FC = () => {
                   }}
                   inputMode="text" autoComplete="username" placeholder="" style={inputStyle} />
 
-                {staffBanned && <div style={{ marginTop: 16 }}><BannedMsg /></div>}
+                {staffBanned && <div style={{ marginTop: 16 }}><BannedMsg
+                  title={staffCanSelfUnlock ? 'Conta suspensa para login' : 'Acesso Revogado'}
+                  body={staffCanSelfUnlock
+                    ? <>O acesso foi suspenso após repetidas tentativas de login.<br />Se você for administrador, pode liberar a conta aqui com seu PIN.</>
+                    : <>Sua conta foi desativada pelo administrador do escritório.<br />Entre em contato para reativar o acesso.</>}
+                >{staffCanSelfUnlock ? staffUnlockNode : null}</BannedMsg></div>}
                 {staffError && !staffBanned && <div style={{ marginTop: 16 }}><ErrorMsg msg={staffError} /></div>}
 
                 <button type="submit" className="jbtn" disabled={!identifier.trim()} style={primaryBtnStyle}>
@@ -934,12 +1103,12 @@ export const PortalLogin: React.FC = () => {
               <div style={{ marginTop: 30 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#3A352E', marginBottom: 9 }}>Senha</label>
                 <div style={{ position: 'relative' }}>
-                  <input ref={pwRef} className="jfield" type={showPw ? 'text' : 'password'} value={staffPw} disabled={staffLoading}
-                    onChange={(e) => { setStaffPw(e.target.value); setStaffError(null); setStaffBanned(false); }}
+                  <input ref={pwRef} className="jfield" type={showPw ? 'text' : 'password'} value={staffPw} disabled={staffLoading || staffBlocked || staffBanned}
+                    onChange={(e) => { setStaffPw(e.target.value); if (!staffBlocked) setStaffError(null); }}
                     onKeyDown={(e) => setCapsOn(e.getModifierState('CapsLock'))}
                     onKeyUp={(e) => setCapsOn(e.getModifierState('CapsLock'))}
                     onBlur={() => setCapsOn(false)}
-                    placeholder="Digite sua senha" autoComplete="current-password" style={{ ...inputStyle, letterSpacing: '.5px', paddingRight: 52 }} />
+                    placeholder={staffBlocked ? 'Aguarde para tentar novamente' : 'Digite sua senha'} autoComplete="current-password" style={{ ...inputStyle, letterSpacing: '.5px', paddingRight: 52, opacity: staffBlocked ? 0.72 : 1 }} />
                   <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1}
                     aria-label={showPw ? 'Ocultar senha' : 'Mostrar senha'} title={showPw ? 'Ocultar senha' : 'Mostrar senha'}
                     className="jlink"
@@ -954,16 +1123,45 @@ export const PortalLogin: React.FC = () => {
                   </button>
                 </div>
 
-                {capsOn && (
-                  <p style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '10px 0 0', fontSize: 12, fontWeight: 600, color: '#C2872B' }}>
+                <div style={{ position: 'relative', marginTop: 14 }}>
+                  <p
+                    aria-live="polite"
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 10px',
+                      borderRadius: 999,
+                      background: '#FFF7ED',
+                      border: '1px solid #FED7AA',
+                      boxShadow: '0 10px 24px -18px rgba(194,135,43,0.55)',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: '#C2872B',
+                      opacity: capsOn ? 1 : 0,
+                      transform: capsOn ? 'translateY(0)' : 'translateY(-4px)',
+                      pointerEvents: 'none',
+                      transition: 'opacity .18s ease, transform .18s ease',
+                      zIndex: 2,
+                    }}
+                  >
                     <AlertCircle className="h-3.5 w-3.5" /> Caps Lock está ativado
                   </p>
-                )}
-                {staffBanned && <div style={{ marginTop: 14 }}><BannedMsg /></div>}
-                {staffError && !staffBanned && <div style={{ marginTop: 14 }}><ErrorMsg msg={staffError} /></div>}
+                  {staffBanned && <BannedMsg
+                    title={staffCanSelfUnlock ? 'Conta suspensa para login' : 'Acesso Revogado'}
+                    body={staffCanSelfUnlock
+                      ? <>O acesso foi suspenso após repetidas tentativas de login.<br />Se você for administrador, pode liberar a conta aqui com seu PIN.</>
+                      : <>Sua conta foi desativada pelo administrador do escritório.<br />Entre em contato para reativar o acesso.</>}
+                  >{staffCanSelfUnlock ? staffUnlockNode : null}</BannedMsg>}
+                  {staffBlockMessage && !staffBanned && <ErrorMsg msg={staffBlockMessage} />}
+                  {staffError && !staffBanned && !staffBlockMessage && <ErrorMsg msg={staffError} />}
+                </div>
 
-                <button type="submit" className="jbtn" disabled={staffLoading || !staffPw} style={primaryBtnStyle}>
-                  {staffLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Entrando…</> : <>Entrar <ArrowRight className="h-4 w-4" /></>}
+                <button type="submit" className="jbtn" disabled={staffLoading || staffUnlocking || staffBlocked || staffBanned || !staffPw} style={primaryBtnStyle}>
+                  {staffLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Entrando…</> : staffBlocked ? <>Tente em {formatRetryCountdown(staffBlockRemainingSec)}</> : <>Entrar <ArrowRight className="h-4 w-4" /></>}
                 </button>
               </div>
               {Footer}
@@ -1463,7 +1661,12 @@ export const PortalLogin: React.FC = () => {
                         className="w-full px-4 py-3.5 bg-white border border-[#e7e4de] rounded-xl focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all text-base font-medium text-slate-900 placeholder:text-slate-400 hover:border-[#d9d5cd] shadow-[0_1px_2px_rgba(33,28,24,0.04)]"
                       />
                     </div>
-                    {staffBanned && <BannedMsg />}
+                    {staffBanned && <BannedMsg
+                      title={staffCanSelfUnlock ? 'Conta suspensa para login' : 'Acesso Revogado'}
+                      body={staffCanSelfUnlock
+                        ? <>O acesso foi suspenso após repetidas tentativas de login.<br />Se você for administrador, pode liberar a conta aqui com seu PIN.</>
+                        : <>Sua conta foi desativada pelo administrador do escritório.<br />Entre em contato para reativar o acesso.</>}
+                    >{staffCanSelfUnlock ? staffUnlockNode : null}</BannedMsg>}
                     {staffError && !staffBanned && <ErrorMsg msg={staffError} />}
                     <button type="submit" disabled={identifierLoading || !identifier.trim()}
                       className="w-full py-3.5 rounded-xl font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:hover:brightness-100"
@@ -1593,35 +1796,46 @@ export const PortalLogin: React.FC = () => {
                       <label className="block text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Senha</label>
                       <div className="relative">
                         <input ref={pwRef} type={showPw ? 'text' : 'password'} value={staffPw}
-                          onChange={(e) => { setStaffPw(e.target.value); setStaffError(null); setStaffBanned(false); }}
+                          onChange={(e) => { setStaffPw(e.target.value); if (!staffBlocked) setStaffError(null); }}
                           onKeyDown={(e) => setCapsOn(e.getModifierState('CapsLock'))}
                           onKeyUp={(e) => setCapsOn(e.getModifierState('CapsLock'))}
                           onBlur={() => setCapsOn(false)}
-                          placeholder="••••••••" autoComplete="current-password" disabled={staffLoading}
+                          placeholder={staffBlocked ? 'Aguarde para tentar novamente' : '••••••••'} autoComplete="current-password" disabled={staffLoading || staffBlocked || staffBanned}
                           className="w-full px-4 py-3.5 bg-white border border-[#e7e4de] rounded-xl focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 outline-none transition-all pr-12 text-base font-medium text-slate-900 hover:border-[#d9d5cd] shadow-[0_1px_2px_rgba(33,28,24,0.04)]"
+                          style={{ opacity: staffBlocked ? 0.72 : 1 }}
                         />
                         <button type="button" onClick={() => setShowPw(v => !v)} tabIndex={-1}
                           className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition">
                           {showPw ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                         </button>
                       </div>
-                      {capsOn && (
-                        <p className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-600">
+                      <div className="relative mt-3.5">
+                        <p
+                          aria-live="polite"
+                          className="absolute left-0 top-0 z-[2] flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[12px] font-semibold text-amber-600 shadow-[0_10px_24px_-18px_rgba(194,135,43,0.55)] transition-all"
+                          style={{ opacity: capsOn ? 1 : 0, transform: capsOn ? 'translateY(0)' : 'translateY(-4px)', pointerEvents: 'none' }}
+                        >
                           <AlertCircle className="h-3.5 w-3.5" /> Caps Lock está ativado
                         </p>
-                      )}
+                        {staffBanned && <BannedMsg
+                          title={staffCanSelfUnlock ? 'Conta suspensa para login' : 'Acesso Revogado'}
+                          body={staffCanSelfUnlock
+                            ? <>O acesso foi suspenso após repetidas tentativas de login.<br />Se você for administrador, pode liberar a conta aqui com seu PIN.</>
+                            : <>Sua conta foi desativada pelo administrador do escritório.<br />Entre em contato para reativar o acesso.</>}
+                        >{staffCanSelfUnlock ? staffUnlockNode : null}</BannedMsg>}
+                        {staffBlockMessage && !staffBanned && <ErrorMsg msg={staffBlockMessage} />}
+                        {staffError && !staffBanned && !staffBlockMessage && <ErrorMsg msg={staffError} />}
+                      </div>
                     </div>
-                    {staffBanned && <BannedMsg />}
-                    {staffError && !staffBanned && <ErrorMsg msg={staffError} />}
-                    <button type="submit" disabled={staffLoading || !staffPw}
+                    <button type="submit" disabled={staffLoading || staffUnlocking || staffBlocked || staffBanned || !staffPw}
                       style={{
                         animation: 'staffProfileIn 0.4s ease 0.4s both',
-                        ...(staffLoading || !staffPw
+                        ...(staffLoading || staffBlocked || !staffPw
                           ? { background: '#eceae4', color: '#a8a199', boxShadow: 'none' }
                           : { background: 'linear-gradient(135deg,#FB8C3E,#EA5310)', color: '#fff', boxShadow: '0 12px 24px -12px rgba(234,83,16,0.5)' }),
                       }}
                       className="w-full py-3.5 rounded-xl font-bold text-base hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:hover:brightness-100">
-                      {staffLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Autenticando...</> : <><Shield className="h-5 w-5" /> Acessar Sistema</>}
+                      {staffLoading ? <><Loader2 className="h-5 w-5 animate-spin" /> Autenticando...</> : staffBlocked ? <>Tente em {formatRetryCountdown(staffBlockRemainingSec)}</> : <><Shield className="h-5 w-5" /> Acessar Sistema</>}
                     </button>
                   </form>
                 )}

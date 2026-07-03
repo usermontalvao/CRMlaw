@@ -3,17 +3,27 @@ import { supabase } from '../config/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 
 // ── Anti-força-bruta do login staff (defesa em profundidade) ─────────────────
-// Chama a Edge Function `staff-login-guard`. Fail-open: qualquer erro (inclusive
-// função ainda não deployada) NÃO bloqueia o login.
-type StaffLoginGuardResult = { blocked: boolean; retry_after_seconds?: number };
+// Chama a Edge Function `staff-login-guard`. Fail-open: qualquer erro
+// (inclusive função ainda não deployada) NÃO bloqueia o login.
+type StaffLoginGuardResult = {
+  blocked: boolean;
+  suspended?: boolean;
+  retry_after_seconds?: number;
+  ok?: boolean;
+  error?: string;
+  message?: string;
+  locked_until?: string | null;
+  attempts_remaining?: number | null;
+};
 
 async function callStaffLoginGuard(
-  action: 'check' | 'fail' | 'reset',
+  action: 'check' | 'fail' | 'reset' | 'unlock_with_pin',
   email: string,
+  pin?: string,
 ): Promise<StaffLoginGuardResult> {
   try {
     const { data, error } = await supabase.functions.invoke('staff-login-guard', {
-      body: { action, email },
+      body: { action, email, pin: pin?.trim() || undefined },
     });
     if (error) return { blocked: false };
     return (data as StaffLoginGuardResult) ?? { blocked: false };
@@ -41,12 +51,23 @@ function makeStaffLoginBlockedError(retryAfterSeconds?: number): Error {
   return err;
 }
 
-// Consulta se o IP atual está bloqueado (sem registrar tentativa).
+function makeStaffLoginSuspendedError(): Error {
+  const err = new Error('Conta suspensa após repetidas tentativas de login. Entre em contato com o administrador.');
+  const e = err as Error & { code?: string };
+  e.code = 'staff_login_suspended';
+  return err;
+}
+
+// Consulta se a conta atual está bloqueada ou suspensa (sem registrar tentativa).
 async function checkStaffLoginBlock(
   email: string,
-): Promise<{ blocked: boolean; retryAfterSeconds: number }> {
+): Promise<{ blocked: boolean; suspended: boolean; retryAfterSeconds: number }> {
   const r = await callStaffLoginGuard('check', email.trim());
-  return { blocked: r.blocked === true, retryAfterSeconds: r.retry_after_seconds ?? 0 };
+  return {
+    blocked: r.blocked === true,
+    suspended: r.suspended === true,
+    retryAfterSeconds: r.retry_after_seconds ?? 0,
+  };
 }
 
 interface AuthContextType {
@@ -54,7 +75,8 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  checkStaffLoginBlock: (email: string) => Promise<{ blocked: boolean; retryAfterSeconds: number }>;
+  checkStaffLoginBlock: (email: string) => Promise<{ blocked: boolean; suspended: boolean; retryAfterSeconds: number }>;
+  unlockStaffLoginWithPin: (email: string, pin: string) => Promise<StaffLoginGuardResult>;
   signOut: (opts?: { redirect?: boolean }) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   sessionWarning: boolean;
@@ -170,8 +192,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signIn = async (email: string, password: string) => {
     const normalizedEmail = email.trim();
 
-    // 1) Já está bloqueado? (não incrementa o contador)
+    // 1) Já está bloqueado ou suspenso? (não incrementa o contador)
     const pre = await callStaffLoginGuard('check', normalizedEmail);
+    if (pre.suspended) {
+      throw makeStaffLoginSuspendedError();
+    }
     if (pre.blocked) {
       throw makeStaffLoginBlockedError(pre.retry_after_seconds);
     }
@@ -185,6 +210,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) {
       // 3) Registra a falha; se cruzou o limite, já informa o bloqueio nesta resposta
       const after = await callStaffLoginGuard('fail', normalizedEmail);
+      if (after.suspended) {
+        throw makeStaffLoginSuspendedError();
+      }
       if (after.blocked) {
         throw makeStaffLoginBlockedError(after.retry_after_seconds);
       }
@@ -222,6 +250,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSessionWarning(false);
   };
 
+  const unlockStaffLoginWithPin = async (email: string, pin: string): Promise<StaffLoginGuardResult> =>
+    callStaffLoginGuard('unlock_with_pin', email.trim(), pin);
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -229,6 +260,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loading,
       signIn,
       checkStaffLoginBlock,
+      unlockStaffLoginWithPin,
       signOut,
       resetPassword,
       sessionWarning,

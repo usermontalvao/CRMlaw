@@ -7,6 +7,12 @@ const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+async function sha256Hex(input: string): Promise<string> {
+  const data = new TextEncoder().encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -80,6 +86,21 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const { data: targetProfile, error: targetProfileError } = await supabaseAdmin
+      .from("profiles")
+      .select("email")
+      .eq("user_id", targetUserId)
+      .maybeSingle();
+
+    if (targetProfileError) {
+      return new Response(JSON.stringify({ error: targetProfileError.message }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const normalizedEmail = String(targetProfile?.email || "").trim().toLowerCase();
+
     // Update profile is_active
     const { error: profileError } = await supabaseAdmin
       .from("profiles")
@@ -110,6 +131,11 @@ Deno.serve(async (req: Request) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    if (activate && normalizedEmail) {
+      const accountHash = await sha256Hex(`staff-login-account:account:${normalizedEmail}`);
+      await supabaseAdmin.rpc("staff_login_account_reset", { p_account_hash: accountHash });
     }
 
     return new Response(JSON.stringify({ ok: true }), {

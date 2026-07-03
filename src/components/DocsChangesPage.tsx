@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.294': { name: 'Cafe Suspensao Progressiva com PIN Blindado', emoji: '[shield]' },
   '1.10.293': { name: 'Cafe Bloqueio Progressivo com Timer', emoji: '[lock]' },
   '1.10.292': { name: 'Cafe Card de Telefone Refinado', emoji: '[art]' },
   '1.10.291': { name: 'Cafe Blindado Anti-Forca-Bruta', emoji: '[shield]' },
@@ -944,6 +945,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.294',
+    date: '03/07/2026',
+    summary: 'O login de colaborador passou a bloquear por conta com escalada progressiva, suspender o acesso apos reincidencias e permitir auto desbloqueio de administrador com PIN protegido por rate limit proprio.',
+    modules: [
+      { moduleId: 'core', changes: [
+        { type: 'security' as const, title: 'Bloqueio progressivo por conta com suspensao apos reincidencias', description: 'As tentativas erradas de senha agora sao contadas por conta do colaborador. A cada 6 falhas o sistema aplica bloqueio temporario progressivo e, apos 3 rodadas completas, suspende a conta ate liberacao.' },
+        { type: 'security' as const, title: 'Administrador pode desbloquear a propria conta com PIN na tela', description: 'Quando uma conta de administrador fica suspensa por excesso de tentativas, a propria tela de login oferece desbloqueio por PIN, sem depender de outro usuario para reativar o acesso.' },
+        { type: 'security' as const, title: 'PIN de desbloqueio do admin ganhou rate limit separado', description: 'O fluxo de PIN agora tem limitador proprio para impedir forca-bruta no auto desbloqueio, com janelas progressivas de espera e reset automatico apos validacao correta.' },
+      ]},
+      { moduleId: 'portal', changes: [
+        { type: 'improvement' as const, title: 'Portal e login interno passaram a refletir bloqueio e suspensao no proprio formulario', description: 'As telas exibem melhor o estado de bloqueio temporario, suspendem a tentativa enquanto o timer nao zera e mostram o fluxo de PIN apenas para administradores suspensos.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.293',
     date: '03/07/2026',
