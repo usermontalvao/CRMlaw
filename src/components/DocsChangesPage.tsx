@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.292': { name: 'Cafe Card de Telefone Refinado', emoji: '[art]' },
   '1.10.291': { name: 'Cafe Blindado Anti-Forca-Bruta', emoji: '[shield]' },
   '1.10.290': { name: 'Cafe Peticao com Barra Profissional', emoji: '[memo]' },
   '1.10.289': { name: 'Cafe Peticao com Texto Integro', emoji: '[memo]' },
@@ -942,6 +943,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.292',
+    date: '03/07/2026',
+    summary: 'O card de telefone cadastrado na tela de acesso do cliente foi refinado para um visual mais profissional e alinhado ao restante do login.',
+    modules: [
+      { moduleId: 'portal', changes: [
+        { type: 'improvement' as const, title: 'Card de telefone cadastrado com visual refinado', description: 'O bloco que mostra o telefone cadastrado no login do cliente trocou o emoji por um icone dedicado, ajustou a tipografia e passou a combinar com os campos do formulario, para uma aparencia mais profissional.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.291',
     date: '03/07/2026',

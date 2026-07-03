@@ -1,7 +1,7 @@
 ﻿import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Loader2, AlertCircle, ArrowLeft, ArrowRight,
-  Eye, EyeOff, Lock, Shield, Ban, ChevronRight, CheckCircle, X,
+  Eye, EyeOff, Lock, Shield, Ban, ChevronRight, CheckCircle, X, Smartphone,
 } from 'lucide-react';
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { supabase } from '../../config/supabase';
@@ -1367,11 +1367,13 @@ export const PortalLogin: React.FC = () => {
                       <h2 className="text-[22px] font-semibold text-[#211c18] mt-2 tracking-tight" style={{ fontFamily: BRAND_SERIF }}>Confirme seu acesso</h2>
                     </div>
                     {phoneHint && (
-                      <div className="flex items-center gap-3 rounded-lg bg-orange-50/60 px-3.5 py-3 border border-orange-100">
-                        <span className="text-lg">📱</span>
-                        <div>
-                          <p className="text-[11px] text-slate-500 font-semibold">Telefone cadastrado</p>
-                          <p className="text-sm font-bold text-slate-800 tracking-wider">{phoneHint}</p>
+                      <div className="flex items-center gap-3 rounded-xl bg-white px-3.5 py-2.5 border border-[#e7e4de] shadow-[0_1px_2px_rgba(33,28,24,0.04)]">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-500 ring-1 ring-inset ring-orange-100">
+                          <Smartphone className="h-[18px] w-[18px]" strokeWidth={2.1} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Telefone cadastrado</p>
+                          <p className="text-[15px] font-semibold text-[#211c18] tabular-nums tracking-tight">{phoneHint}</p>
                         </div>
                       </div>
                     )}
