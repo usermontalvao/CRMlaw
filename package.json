@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.10.289",
+  "version": "1.10.290",
   "main": "dist/index.js",
   "scripts": {
     "start": "vite",
@@ -51,6 +51,7 @@
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
     "cors": "^2.8.5",
+    "dictionary-pt-br": "^2.0.1",
     "docx": "^9.5.1",
     "docx-preview": "^0.3.7",
     "docxtemplater": "^3.66.5",
@@ -61,6 +62,7 @@
     "form-data": "^4.0.4",
     "framer-motion": "^12.23.24",
     "html2canvas": "^1.4.1",
+    "hunspell-asm": "^4.0.2",
     "jspdf": "^3.0.4",
     "lucide-react": "^0.544.0",
     "mammoth": "^1.11.0",

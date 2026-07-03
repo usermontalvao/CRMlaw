@@ -1,11 +1,6 @@
 ﻿// Editor de PetiçÃµes Trabalhistas - Syncfusion DocumentEditor v4
 // MÃ³dulo isolado - pode ser removido sem afetar outros mÃ³dulos
 
-declare global {
-  interface Window {
-    __autoSaving?: boolean;
-  }
-}
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { renderAsync } from 'docx-preview';
@@ -20,7 +15,6 @@ import {
   Search,
   FolderOpen,
   Star,
-  AlertCircle,
   Loader2,
   ChevronDown,
   ChevronRight,
@@ -49,6 +43,8 @@ import {
   BarChart3,
   Filter,
   ChevronsUpDown,
+  CloudOff,
+  RefreshCw,
 } from 'lucide-react';
 import PetitionRibbon from './PetitionRibbon';
 import { saveAs } from 'file-saver';
@@ -71,6 +67,7 @@ import type { Client } from '../types/client.types';
 import type { CloudFile } from '../types/cloud.types';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { useToastContext } from '../contexts/ToastContext';
 import { supabase } from '../config/supabase';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 
@@ -87,7 +84,8 @@ const useDebouncedValue = <T,>(value: T, delayMs: number): T => {
 
 const repairLikelyMojibake = (value: string) => {
   const input = String(value ?? '');
-  if (!input || !/[ÃÂâ�]/.test(input)) return input;
+  const likelyMojibakePattern = /(?:Ã[\u0080-\u00FF]|Â[\u0080-\u00FF]|â[\u0080-\u00FF]{1,2}|�)/;
+  if (!input || !likelyMojibakePattern.test(input)) return input;
 
   try {
     const bytes = Uint8Array.from(Array.from(input, (char) => char.charCodeAt(0) & 0xff));
@@ -148,6 +146,24 @@ const sanitizeClientRecord = (client: Client): Client => ({
   phone: client.phone ? sanitizeText(client.phone) : client.phone,
   email: client.email ? sanitizeText(client.email) : client.email,
 });
+
+const sanitizePetitionTitleText = (value: unknown, fallback = '') => {
+  const repaired = sanitizeText(value);
+  const cleaned = repaired
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+    .replace(/\uFFFD+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s().,_\-&]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return cleaned || fallback;
+};
+
+const getSanitizedDocumentName = (fileName?: string, fallback = 'Documento importado') => {
+  const cleanName = String(fileName || fallback).replace(/\.[^.]+$/, '');
+  const sanitized = sanitizePetitionTitleText(cleanName).trim();
+  return sanitized || fallback;
+};
 
 const loadDocxWithFallback = async (
   editor: SyncfusionEditorRef,
@@ -623,6 +639,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 }) => {
   const { user } = useAuth();
   const { confirmDelete, notifyDeleted } = useDeleteConfirm();
+  const { success: toastSuccess, error: toastError } = useToastContext();
 
   const formatUserDisplayName = (raw: string) => {
     const trimmed = raw.trim();
@@ -662,7 +679,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [savingDoc, setSavingDoc] = useState(false);
   const [formattingWithAI, setFormattingWithAI] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [documentImportLoading, setDocumentImportLoading] = useState(false);
 
   // Sidebar
@@ -761,14 +777,45 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       return true;
     }
   });
+  // Conexao real com o servidor (Supabase). navigator.onLine so sabe da rede local;
+  // aqui confirmamos que o banco que salva a peticao esta respondendo de fato.
+  const [serverReachable, setServerReachable] = useState(true);
+  const [checkingServer, setCheckingServer] = useState(false);
+  const [settingDefaultTemplate, setSettingDefaultTemplate] = useState(false);
 
   useEffect(() => {
     if (!petitionTitle) return;
-    const fixedTitle = repairLikelyMojibake(petitionTitle);
+    const fixedTitle = sanitizePetitionTitleText(petitionTitle);
     if (fixedTitle !== petitionTitle) {
       setPetitionTitle(fixedTitle);
     }
   }, [petitionTitle]);
+
+  // Confirma ativamente que o servidor (banco) responde. Retorna true/false.
+  const checkServerConnection = useCallback(async () => {
+    const online = (() => {
+      try {
+        return typeof navigator !== 'undefined' ? navigator.onLine : true;
+      } catch {
+        return true;
+      }
+    })();
+    if (!online) {
+      setServerReachable(false);
+      return false;
+    }
+    setCheckingServer(true);
+    try {
+      const ok = await petitionEditorService.pingServer();
+      setServerReachable(ok);
+      return ok;
+    } catch {
+      setServerReachable(false);
+      return false;
+    } finally {
+      setCheckingServer(false);
+    }
+  }, []);
 
   const handleRetryConnection = useCallback(() => {
     const next = (() => {
@@ -779,7 +826,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       }
     })();
     setIsOnline(next);
-  }, []);
+    void checkServerConnection();
+  }, [checkServerConnection]);
   const [openingPetitionId, setOpeningPetitionId] = useState<string | null>(null);
   const [pendingPetitionLoadKey, setPendingPetitionLoadKey] = useState(0);
   const editorRef = useRef<SyncfusionEditorRef>(null);
@@ -792,18 +840,12 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const blockViewDocxContainerRef = useRef<HTMLDivElement | null>(null);
   const contentChangeSeqRef = useRef(0);
   const defaultTemplateAutoAppliedRef = useRef(false);
-  const autoSaveTimerRef = useRef<number | null>(null);
   const autoCreateInFlightRef = useRef(false);
   const savePetitionActionRef = useRef<(() => Promise<void>) | null>(null);
   const selectedClientIdRef = useRef<string | null>(null);
   const hasUnsavedChangesRef = useRef(false);
-  const savingRef = useRef(false);
   const isOnlineRef = useRef(true);
-  const autoSaveInFlightRef = useRef(false);
-  const autoSaveCountdownRef = useRef<number | null>(null);
-  const nextAutoSaveShownRef = useRef<number | null>(null);
-  const instantSaveTimerRef = useRef<number | null>(null);
-  const lastInstantSaveAtRef = useRef(0);
+  const serverReachableRef = useRef(true);
   const realtimeRefreshTimerRef = useRef<number | null>(null);
 
   // PetiçÃµes salvas
@@ -817,7 +859,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
   const [relativeTimeTick, setRelativeTimeTick] = useState(0);
-  const [nextAutoSaveIn, setNextAutoSaveIn] = useState<number | null>(null);
 
   useEffect(() => {
     settingsService.getPetitionEditorModuleConfig().then(cfg => {
@@ -878,12 +919,12 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   }, [hasUnsavedChanges]);
 
   useEffect(() => {
-    savingRef.current = savingDoc;
-  }, [savingDoc]);
-
-  useEffect(() => {
     isOnlineRef.current = isOnline;
   }, [isOnline]);
+
+  useEffect(() => {
+    serverReachableRef.current = serverReachable;
+  }, [serverReachable]);
 
   useEffect(() => {
     const update = () => {
@@ -913,49 +954,51 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     };
   }, []);
 
+  // Verificacao ativa da conexao com o servidor a cada 1 minuto enquanto o editor esta aberto.
+  // Detecta queda do banco/servidor mesmo quando a internet local continua "online".
   useEffect(() => {
-    const tryBackgroundSave = () => {
-      if (!isOnlineRef.current) return;
-      if (isLoadingPetitionRef.current) return;
-      if (!hasUnsavedChangesRef.current) return;
-      if (!selectedClientIdRef.current) return;
-      if (savingRef.current || autoSaveInFlightRef.current) return;
-
-      const action = savePetitionActionRef.current;
-      if (!action) return;
-
-      autoSaveInFlightRef.current = true;
-      (window as any).__autoSaving = true;
-      Promise.resolve(action()).finally(() => {
-        (window as any).__autoSaving = false;
-        autoSaveInFlightRef.current = false;
-      });
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
+      void checkServerConnection();
     };
+    tick(); // checagem imediata ao abrir
+    const id = window.setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [checkServerConnection]);
 
+  // Ao recuperar a internet, revalida o servidor imediatamente (nao espera o proximo ciclo).
+  useEffect(() => {
+    if (isOnline) {
+      void checkServerConnection();
+    } else {
+      setServerReachable(false);
+    }
+  }, [isOnline, checkServerConnection]);
+
+  // Toast ao restabelecer a conexao (transicao desconectado -> conectado).
+  const wasConnectedRef = useRef(true);
+  useEffect(() => {
+    const connected = isOnline && serverReachable;
+    if (connected && !wasConnectedRef.current) {
+      toastSuccess('Conexao com o servidor restabelecida');
+    }
+    wasConnectedRef.current = connected;
+  }, [isOnline, serverReachable]);
+
+  useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (!hasUnsavedChangesRef.current) return;
       e.preventDefault();
       e.returnValue = '';
     };
 
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        tryBackgroundSave();
-      }
-    };
-
-    const onPageHide = () => {
-      tryBackgroundSave();
-    };
-
     window.addEventListener('beforeunload', onBeforeUnload);
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('pagehide', onPageHide);
-
     return () => {
       window.removeEventListener('beforeunload', onBeforeUnload);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('pagehide', onPageHide);
     };
   }, []);
 
@@ -1003,74 +1046,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       supabase.removeChannel(channel);
     };
   }, [user?.id, isCloudImportMode]);
-
-  useEffect(() => {
-    if (autoSaveTimerRef.current) return;
-
-    autoSaveTimerRef.current = window.setInterval(() => {
-      if (!isOnlineRef.current) {
-        autoSaveCountdownRef.current = null;
-        if (nextAutoSaveShownRef.current !== null) {
-          nextAutoSaveShownRef.current = null;
-          setNextAutoSaveIn(null);
-        }
-        return;
-      }
-
-      const clientId = selectedClientIdRef.current;
-      const dirty = hasUnsavedChangesRef.current;
-
-      if (!clientId || !dirty) {
-        autoSaveCountdownRef.current = null;
-        if (nextAutoSaveShownRef.current !== null) {
-          nextAutoSaveShownRef.current = null;
-          setNextAutoSaveIn(null);
-        }
-        return;
-      }
-
-      if (autoSaveCountdownRef.current === null) {
-        autoSaveCountdownRef.current = 30;
-      } else {
-        autoSaveCountdownRef.current = Math.max(0, autoSaveCountdownRef.current - 1);
-      }
-
-      const remaining = autoSaveCountdownRef.current;
-      if (nextAutoSaveShownRef.current !== remaining) {
-        nextAutoSaveShownRef.current = remaining;
-        setNextAutoSaveIn(remaining);
-      }
-
-      if (remaining <= 0) {
-        if (savingRef.current || autoSaveInFlightRef.current) return;
-
-        const action = savePetitionActionRef.current;
-        if (!action) {
-          autoSaveCountdownRef.current = 30;
-          return;
-        }
-
-        autoSaveInFlightRef.current = true;
-        (window as any).__autoSaving = true;
-
-        Promise.resolve(action())
-          .catch(() => {})
-          .finally(() => {
-            (window as any).__autoSaving = false;
-            autoSaveInFlightRef.current = false;
-            autoSaveCountdownRef.current = hasUnsavedChangesRef.current ? 30 : null;
-            nextAutoSaveShownRef.current = null;
-          });
-      }
-    }, 1000);
-
-    return () => {
-      if (autoSaveTimerRef.current) {
-        window.clearInterval(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-    };
-  }, []);
 
   const formatRelativeTime = (dateString?: string | null): string => {
     if (!dateString) return '-';
@@ -1238,6 +1213,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   // Modelo Word importado
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const defaultTemplateInputRef = useRef<HTMLInputElement>(null);
   const [hasDefaultTemplate, setHasDefaultTemplate] = useState(false);
   const [defaultTemplateName, setDefaultTemplateName] = useState<string | null>(null);
   const defaultTemplateMemoryRef = useRef<{ name: string; dataBase64: string } | null>(null);
@@ -1252,9 +1228,13 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [aiEditInstruction, setAiEditInstruction] = useState('');
   const [aiEditSelectedText, setAiEditSelectedText] = useState('');
 
+  useEffect(() => {
+    if (!error) return;
+    toastError(error);
+  }, [error, toastError]);
+
   const openBlockModal = (block?: PetitionBlock) => {
     setError(null);
-    setSuccess(null);
     setSelectionToCreateBlock(null);
     blockModalInitDoneRef.current = false;
     setBlockStandardTypeLoading(false);
@@ -1321,7 +1301,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   const openLegalAreaModal = (area?: LegalArea) => {
     setError(null);
-    setSuccess(null);
     if (area) {
       setEditingLegalArea(area);
       setLegalAreaFormData({
@@ -1520,7 +1499,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   const openCreateBlockFromSelection = (selectedText: string, selectedSfdt: string) => {
     setError(null);
-    setSuccess(null);
     setEditingBlock(null);
     setUpdateExistingBlockMode(false);
     setUpdateExistingBlockId('');
@@ -2095,8 +2073,7 @@ Regras:
 
   // Helper para mostrar mensagem de sucesso temporÃ¡ria
   const showSuccessMessage = (msg: string) => {
-    setSuccess(msg);
-    window.setTimeout(() => setSuccess((current) => (current === msg ? null : current)), 5000);
+    toastSuccess(msg);
   };
 
   useEffect(() => {
@@ -2133,15 +2110,15 @@ Regras:
       if (initialClientId) {
         return;
       }
-      if (!window.__autoSaving) setError('Selecione um cliente antes de salvar a peticao');
+      setError('Selecione um cliente antes de salvar a peticao');
       return;
     }
     if (!isOnlineRef.current) {
-      if (!window.__autoSaving) setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
+      setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       return;
     }
     if (isLoadingPetitionRef.current) {
-      if (!window.__autoSaving) setError('Aguarde o carregamento do documento antes de salvar');
+      setError('Aguarde o carregamento do documento antes de salvar');
       return;
     }
     if (savingDoc) return;
@@ -2159,7 +2136,7 @@ Regras:
       const sfdt = await editor.getSfdt();
       if (!sfdt) throw new Error('Nao foi possivel obter o conteudo do documento');
 
-      const title = petitionTitle.trim() || 'Sem titulo';
+      const title = sanitizePetitionTitleText(petitionTitle, 'Sem titulo');
       const clientId = selectedClient?.id || null;
       const clientName = selectedClient?.full_name || null;
 
@@ -2211,10 +2188,7 @@ Regras:
 
       setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
       setLastSaved(new Date());
-      // NÃ£o mostrar mensagem de sucesso em salvamento automÃ¡tico (apenas em salvamento manual)
-      if (!window.__autoSaving) {
-        showSuccessMessage('Documento salvo com sucesso');
-      }
+      showSuccessMessage('Documento salvo com sucesso');
     } catch (err) {
       console.error('Erro ao salvar:', err);
       setError(err instanceof Error ? err.message : 'Erro ao salvar documento');
@@ -2250,7 +2224,6 @@ Regras:
       } catch (err) {
         console.error('Erro ao buscar peticao completa:', err);
         setError('Erro ao carregar documento');
-        window.__autoSaving = false;
         isLoadingPetitionRef.current = false;
         setOpeningPetitionId(null);
         return;
@@ -2275,9 +2248,6 @@ Regras:
 
     setHasUnsavedChanges(false);
 
-    // Bloquear autosave durante load (evita salvar documento vazio)
-    window.__autoSaving = true;
-
     const editor = editorRef.current;
     if (editor && petitionToLoad.content) {
       try {
@@ -2288,7 +2258,6 @@ Regras:
         console.error('Erro ao carregar conteudo:', err);
         setError('Erro ao carregar documento');
       } finally {
-        window.__autoSaving = false;
         isLoadingPetitionRef.current = false;
         setOpeningPetitionId(null);
       }
@@ -2322,7 +2291,6 @@ Regras:
         console.error('Erro ao carregar conteudo:', err);
         setError('Erro ao carregar documento');
       } finally {
-        window.__autoSaving = false;
         isLoadingPetitionRef.current = false;
         setOpeningPetitionId(null);
       }
@@ -2413,20 +2381,21 @@ Regras:
 
       try {
         const dataBase64 = arrayBufferToBase64(arrayBuffer);
-        defaultTemplateMemoryRef.current = { name: file.name, dataBase64 };
+        const normalizedFileName = sanitizeText(file.name);
+        defaultTemplateMemoryRef.current = { name: normalizedFileName, dataBase64 };
         setHasDefaultTemplate(true);
-        setDefaultTemplateName(file.name);
+        setDefaultTemplateName(normalizedFileName);
 
         // Salvar no Supabase
         try {
-          await petitionEditorService.saveDefaultTemplate(file.name, dataBase64);
+          await petitionEditorService.saveDefaultTemplate(normalizedFileName, dataBase64);
         } catch (dbErr) {
           console.error('Erro ao salvar modelo padrao no banco:', dbErr);
           // Fallback para localStorage se falhar
           try {
             window.localStorage.setItem(
               DEFAULT_TEMPLATE_STORAGE_KEY,
-              JSON.stringify({ name: file.name, dataBase64 })
+              JSON.stringify({ name: normalizedFileName, dataBase64 })
             );
           } catch (storageErr) {
             console.error('Erro ao salvar Documento padrao no storage:', storageErr);
@@ -2450,6 +2419,125 @@ Regras:
         fileInputRef.current.value = '';
       }
     }
+  };
+
+  // Define o documento aberto no editor como o modelo padrao do usuario.
+  const setCurrentDocAsDefaultTemplate = async () => {
+    const editor = editorRef.current;
+    if (!editor) {
+      setError('Editor nao disponivel');
+      return;
+    }
+    try {
+      if (typeof editor.hasContent === 'function' && !editor.hasContent()) {
+        setError('O documento esta vazio: nada para definir como padrao.');
+        return;
+      }
+    } catch {
+      // se nao der para checar, segue o fluxo
+    }
+
+    setSettingDefaultTemplate(true);
+    try {
+      const rawName = petitionTitle.trim() || 'Documento Padrao';
+      const fileName = sanitizeText(
+        rawName.toLowerCase().endsWith('.docx') ? rawName : `${rawName}.docx`
+      );
+      const blob = await editor.exportDocx(fileName);
+      const arrayBuffer = await blob.arrayBuffer();
+      const dataBase64 = arrayBufferToBase64(arrayBuffer);
+
+      defaultTemplateMemoryRef.current = { name: fileName, dataBase64 };
+      setHasDefaultTemplate(true);
+      setDefaultTemplateName(fileName);
+
+      try {
+        await petitionEditorService.saveDefaultTemplate(fileName, dataBase64);
+      } catch (dbErr) {
+        console.error('Erro ao salvar documento padrao no banco:', dbErr);
+        try {
+          window.localStorage.setItem(
+            DEFAULT_TEMPLATE_STORAGE_KEY,
+            JSON.stringify({ name: fileName, dataBase64 })
+          );
+        } catch (storageErr) {
+          console.error('Erro ao salvar documento padrao no storage:', storageErr);
+          setError('Nao foi possivel salvar o documento padrao (armazenamento cheio).');
+          return;
+        }
+      }
+      showSuccessMessage('Documento atual definido como padrao');
+    } catch (err) {
+      console.error('Erro ao definir documento padrao:', err);
+      setError('Erro ao definir documento padrao');
+    } finally {
+      setSettingDefaultTemplate(false);
+    }
+  };
+
+  // Sobe um arquivo .docx e o define como modelo padrao (sem precisar abrir o editor).
+  const handleUploadDefaultTemplate = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.docx')) {
+      setError('Selecione um arquivo .docx para o documento padrao.');
+      if (defaultTemplateInputRef.current) defaultTemplateInputRef.current.value = '';
+      return;
+    }
+
+    setSettingDefaultTemplate(true);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const dataBase64 = arrayBufferToBase64(arrayBuffer);
+      const name = sanitizeText(file.name);
+
+      defaultTemplateMemoryRef.current = { name, dataBase64 };
+      defaultTemplateAutoAppliedRef.current = false;
+      setHasDefaultTemplate(true);
+      setDefaultTemplateName(name);
+
+      try {
+        await petitionEditorService.saveDefaultTemplate(name, dataBase64);
+      } catch (dbErr) {
+        console.error('Erro ao salvar documento padrao no banco:', dbErr);
+        try {
+          window.localStorage.setItem(
+            DEFAULT_TEMPLATE_STORAGE_KEY,
+            JSON.stringify({ name, dataBase64 })
+          );
+        } catch (storageErr) {
+          console.error('Erro ao salvar documento padrao no storage:', storageErr);
+          setError('Nao foi possivel salvar o documento padrao (armazenamento cheio).');
+          return;
+        }
+      }
+      showSuccessMessage('Documento padrao definido');
+    } catch (err) {
+      console.error('Erro ao subir documento padrao:', err);
+      setError('Erro ao subir documento padrao');
+    } finally {
+      setSettingDefaultTemplate(false);
+      if (defaultTemplateInputRef.current) defaultTemplateInputRef.current.value = '';
+    }
+  };
+
+  // Remove o modelo padrao do usuario.
+  const clearDefaultTemplate = async () => {
+    defaultTemplateMemoryRef.current = null;
+    setHasDefaultTemplate(false);
+    setDefaultTemplateName(null);
+    defaultTemplateAutoAppliedRef.current = true; // evita reaplicacao automatica
+    try {
+      await petitionEditorService.saveDefaultTemplate('', '');
+    } catch (err) {
+      console.error('Erro ao remover documento padrao no banco:', err);
+    }
+    try {
+      window.localStorage.removeItem(DEFAULT_TEMPLATE_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    showSuccessMessage('Documento padrao removido');
   };
 
   // Inserir bloco no editor
@@ -2551,66 +2639,6 @@ Regras:
     }
     contentChangeSeqRef.current += 1;
     setHasUnsavedChanges(true);
-
-    autoSaveCountdownRef.current = 30;
-    nextAutoSaveShownRef.current = 30;
-    setNextAutoSaveIn(30);
-
-    if (!selectedClientIdRef.current) return;
-
-    if (instantSaveTimerRef.current) {
-      window.clearTimeout(instantSaveTimerRef.current);
-      instantSaveTimerRef.current = null;
-    }
-
-    instantSaveTimerRef.current = window.setTimeout(() => {
-      if (isLoadingPetitionRef.current) return;
-      if (!isOnlineRef.current) return;
-      if (!hasUnsavedChangesRef.current) return;
-      if (!selectedClientIdRef.current) return;
-      if (savingRef.current || autoSaveInFlightRef.current) return;
-
-      const MIN_INTERVAL_MS = 15000;
-      const now = Date.now();
-      const elapsed = now - lastInstantSaveAtRef.current;
-      if (elapsed < MIN_INTERVAL_MS) {
-        const remaining = MIN_INTERVAL_MS - elapsed;
-        if (instantSaveTimerRef.current) {
-          window.clearTimeout(instantSaveTimerRef.current);
-          instantSaveTimerRef.current = null;
-        }
-        instantSaveTimerRef.current = window.setTimeout(() => {
-          if (isLoadingPetitionRef.current) return;
-          if (!isOnlineRef.current) return;
-          if (!hasUnsavedChangesRef.current) return;
-          if (!selectedClientIdRef.current) return;
-          if (savingRef.current || autoSaveInFlightRef.current) return;
-
-          const action = savePetitionActionRef.current;
-          if (!action) return;
-
-          lastInstantSaveAtRef.current = Date.now();
-          autoSaveInFlightRef.current = true;
-          (window as any).__autoSaving = true;
-          Promise.resolve(action()).finally(() => {
-            (window as any).__autoSaving = false;
-            autoSaveInFlightRef.current = false;
-          });
-        }, remaining);
-        return;
-      }
-
-      const action = savePetitionActionRef.current;
-      if (!action) return;
-
-      lastInstantSaveAtRef.current = now;
-      autoSaveInFlightRef.current = true;
-      (window as any).__autoSaving = true;
-      Promise.resolve(action()).finally(() => {
-        (window as any).__autoSaving = false;
-        autoSaveInFlightRef.current = false;
-      });
-    }, 800);
   };
 
   // Salvar bloco (criar ou atualizar)
@@ -2920,10 +2948,9 @@ Regras:
       captureAndApplyDocFontSoon(editor);
       setShowStartScreen(false);
       setHasUnsavedChanges(true);
-      showSuccessMessage('Documento importado. As alteracoes ficam em rascunho e serao salvas automaticamente no editor.');
+      showSuccessMessage('Documento importado. As alteracoes ficam em rascunho ate voce salvar manualmente.');
       if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
-        const cleanName = String(fileName || 'Documento importado').replace(/\.[^.]+$/, '');
-        setPetitionTitle(cleanName || 'Documento importado');
+        setPetitionTitle(getSanitizedDocumentName(fileName));
       }
     } catch (err) {
       console.error('Erro ao importar documento inicial:', err);
@@ -2961,8 +2988,7 @@ Regras:
       setHasUnsavedChanges(true);
       showSuccessMessage('Documento importado com sucesso.');
       if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
-        const cleanName = String(fileName || 'Documento importado').replace(/\.[^.]+$/, '');
-        setPetitionTitle(cleanName || 'Documento importado');
+        setPetitionTitle(getSanitizedDocumentName(fileName));
       }
     } catch (err: any) {
       console.error('Erro ao importar documento inicial por URL:', err);
@@ -3854,6 +3880,13 @@ Regras:
     return parts.join(', ');
   };
 
+  const selectClientForPetition = (client: Client) => {
+    const normalizedClient = sanitizeClientRecord(client);
+    setSelectedClient(normalizedClient);
+    setSidebarTab('clients');
+    setHasUnsavedChanges(true);
+  };
+
   // Inserir qualificaçÃ£o do cliente
   const insertClientQualification = (client: Client) => {
     if (!isOnlineRef.current) {
@@ -3875,8 +3908,7 @@ Regras:
     editor.setBold(false);
     editor.insertText(rest);
     setHasUnsavedChanges(true);
-    showSuccessMessage('DAS QUESTOES INICIAIS inseridas');
-    window.setTimeout(() => savePetitionActionRef.current?.(), 300);
+    showSuccessMessage('Qualificacao do cliente inserida no documento');
     window.setTimeout(() => {
       const ed = editorRef.current;
       if (ed) {
@@ -3949,7 +3981,6 @@ Regras:
       setHasUnsavedChanges(true);
       setShowAiEditModal(false);
       showSuccessMessage('Trecho editado com IA');
-      window.setTimeout(() => savePetitionActionRef.current?.(), 500);
     } catch (err) {
       console.error('Erro ao editar trecho com IA:', err);
       setError(err instanceof Error ? err.message : 'Erro ao editar trecho com IA');
@@ -4020,39 +4051,59 @@ Regras:
                   <div className="mt-2.5 text-[13px] font-medium text-slate-700 group-hover:text-[#2b579a] transition-colors">Documento em branco</div>
                 </button>
 
-                <button
-                  onClick={() => {
-                    // Abrir o editor primeiro para garantir que o Syncfusion esteja montado
-                    if (isLoadingPetitionRef.current) return;
-                    isLoadingPetitionRef.current = true;
-                    window.__autoSaving = true;
-                    newPetition();
-                    setShowStartScreen(false);
-                    window.setTimeout(() => {
-                      void Promise.resolve(loadDefaultTemplate()).finally(() => {
-                        window.__autoSaving = false;
-                        isLoadingPetitionRef.current = false;
-                      });
-                    }, 200);
-                  }}
-                  disabled={!hasDefaultTemplate}
-                  className="group w-[168px] text-left disabled:opacity-50"
-                  title={hasDefaultTemplate ? `Carregar documento padrao${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum documento padrao definido'}
-                >
-                  <div className="relative h-[152px] rounded-md border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center transition group-hover:border-[#2b579a] group-hover:shadow-md group-disabled:border-slate-200 group-disabled:shadow-none">
-                    <div className="w-[98px] h-[126px] bg-white border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                      <div className="h-2 shrink-0 bg-[#2b579a]/80" />
-                      <div className="p-2.5 space-y-1.5">
-                        <div className="h-1 rounded bg-slate-200" />
-                        <div className="h-1 rounded bg-slate-200 w-4/5" />
-                        <div className="h-1 rounded bg-slate-200" />
-                        <div className="h-1 rounded bg-slate-200 w-2/3" />
-                        <div className="h-1 rounded bg-slate-200 w-5/6" />
+                <div className="relative w-[168px]">
+                  {/* Configurar: subir modelo padrao (.docx) */}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); defaultTemplateInputRef.current?.click(); }}
+                    disabled={settingDefaultTemplate}
+                    className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-white/95 backdrop-blur border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:text-[#2b579a] hover:border-[#2b579a] transition-colors disabled:opacity-60"
+                    title="Configurar: subir modelo padrão (.docx)"
+                  >
+                    {settingDefaultTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Settings className="w-3.5 h-3.5" />}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      // Abrir o editor primeiro para garantir que o Syncfusion esteja montado
+                      if (isLoadingPetitionRef.current) return;
+                      isLoadingPetitionRef.current = true;
+                      newPetition();
+                      setShowStartScreen(false);
+                      window.setTimeout(() => {
+                        void Promise.resolve(loadDefaultTemplate()).finally(() => {
+                          isLoadingPetitionRef.current = false;
+                        });
+                      }, 200);
+                    }}
+                    disabled={!hasDefaultTemplate}
+                    className="group w-full text-left disabled:opacity-50"
+                    title={hasDefaultTemplate ? `Carregar documento padrao${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum documento padrao definido — use a engrenagem para subir um modelo'}
+                  >
+                    <div className="relative h-[152px] rounded-md border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center transition group-hover:border-[#2b579a] group-hover:shadow-md group-disabled:border-slate-200 group-disabled:shadow-none">
+                      <div className="w-[98px] h-[126px] bg-white border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                        <div className="h-2 shrink-0 bg-[#2b579a]/80" />
+                        <div className="p-2.5 space-y-1.5">
+                          <div className="h-1 rounded bg-slate-200" />
+                          <div className="h-1 rounded bg-slate-200 w-4/5" />
+                          <div className="h-1 rounded bg-slate-200" />
+                          <div className="h-1 rounded bg-slate-200 w-2/3" />
+                          <div className="h-1 rounded bg-slate-200 w-5/6" />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="mt-2.5 text-[13px] font-medium text-slate-700 group-hover:text-[#2b579a] transition-colors">Documento padrao</div>
-                </button>
+                    <div className="mt-2.5 text-[13px] font-medium text-slate-700 group-hover:text-[#2b579a] transition-colors">Documento padrao</div>
+                  </button>
+
+                  {/* Input oculto para subir o modelo padrao (disponivel ja na tela inicial) */}
+                  <input
+                    ref={defaultTemplateInputRef}
+                    type="file"
+                    accept=".docx"
+                    className="hidden"
+                    onChange={handleUploadDefaultTemplate}
+                  />
+                </div>
 
                 <button
                   onClick={() => {
@@ -4070,6 +4121,31 @@ Regras:
                   </div>
                   <div className="mt-2.5 text-[13px] font-medium text-slate-700 group-hover:text-[#2b579a] transition-colors">Importar arquivo</div>
                 </button>
+              </div>
+
+              {/* Status do documento padrao */}
+              <div className="mt-4 flex items-center gap-2 text-[12px] flex-wrap">
+                {hasDefaultTemplate ? (
+                  <>
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-200 px-2.5 py-1 text-slate-700">
+                      <FileText className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="font-medium">Documento padrão:</span>
+                      <span className="max-w-[220px] truncate">{defaultTemplateName || 'definido'}</span>
+                    </span>
+                    <button
+                      onClick={clearDefaultTemplate}
+                      className="inline-flex items-center gap-1 text-slate-400 hover:text-red-600 font-medium transition-colors"
+                      title="Remover documento padrão"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Remover
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-slate-400">
+                    Nenhum documento padrão definido. Clique na <span className="font-medium text-slate-500">engrenagem</span> do card “Documento padrão” para subir um modelo, ou em <span className="font-medium text-slate-500">“Definir padrão”</span> na barra do editor.
+                  </span>
+                )}
               </div>
             </div>
 
@@ -4183,67 +4259,69 @@ Regras:
   const ribbonTopContent = (
     <>
       <div className="pet-top-group is-left">
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="p-1.5 hover:bg-slate-100 rounded transition-colors"
-          title={sidebarOpen ? 'Ocultar painel' : 'Mostrar painel'}
-        >
-          {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
-        </button>
-
-        <div className="flex items-center rounded-lg border border-[#e7e5df] bg-slate-50 p-0.5">
+        <div className="pet-top-cluster">
           <button
-            type="button"
-            onClick={() => setActiveWorkspace('editor')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-              activeWorkspace === 'editor'
-                ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="pet-top-icon-btn"
+            title={sidebarOpen ? 'Ocultar painel' : 'Mostrar painel'}
           >
-            Editor
+            {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
           </button>
-          {blocksEnabled && (
+
+          <div className="flex items-center rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
             <button
               type="button"
-              onClick={() => setActiveWorkspace('blocks')}
+              onClick={() => setActiveWorkspace('editor')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                activeWorkspace === 'blocks'
+                activeWorkspace === 'editor'
                   ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
                   : 'text-slate-600 hover:text-slate-800'
               }`}
             >
-              Blocos
+              Editor
             </button>
-          )}
+            {blocksEnabled && (
+              <button
+                type="button"
+                onClick={() => setActiveWorkspace('blocks')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                  activeWorkspace === 'blocks'
+                    ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                Blocos
+              </button>
+            )}
+          </div>
+
+          <button
+            onClick={() => {
+              if (hasUnsavedChanges) {
+                const what = [
+                  petitionTitle ? `Documento: "${petitionTitle}"` : '',
+                  selectedClient?.full_name ? `Cliente: ${selectedClient.full_name}` : '',
+                ]
+                  .filter(Boolean)
+                  .join('\n');
+                const msg = `Ha alteracoes nao salvas.${what ? `\n\n${what}` : ''}\n\nDeseja voltar para a tela inicial mesmo assim?`;
+                if (!confirm(msg)) return;
+              }
+              setShowStartScreen(true);
+            }}
+            className="pet-top-icon-btn"
+            title="Voltar para a tela inicial"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
         </div>
 
-        <button
-          onClick={() => {
-            if (hasUnsavedChanges) {
-              const what = [
-                petitionTitle ? `Documento: "${petitionTitle}"` : '',
-                selectedClient?.full_name ? `Cliente: ${selectedClient.full_name}` : '',
-              ]
-                .filter(Boolean)
-                .join('\n');
-              const msg = `Ha alteracoes nao salvas.${what ? `\n\n${what}` : ''}\n\nDeseja voltar para a tela inicial mesmo assim?`;
-              if (!confirm(msg)) return;
-            }
-            setShowStartScreen(true);
-          }}
-          className="p-1.5 hover:bg-amber-100 rounded transition-colors text-slate-500 hover:text-amber-600"
-          title="Voltar para a tela inicial"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-
-        <div className="pet-top-grow min-w-0">
+        <div className="pet-top-title-shell pet-top-grow min-w-0">
           <input
             type="text"
             value={petitionTitle}
-            onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); window.setTimeout(() => savePetition(), 0); }}
-            className="pet-top-title-input px-2 py-1 text-sm font-semibold border border-transparent hover:border-[#e7e5df] focus:border-amber-400 rounded focus:outline-none w-full"
+            onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); }}
+            className="pet-top-title-input px-3 py-2 text-sm font-semibold border border-transparent bg-transparent hover:border-[#e7e5df] focus:border-amber-400 rounded-xl focus:outline-none w-full"
             placeholder={"T\u00edtulo da peti\u00e7\u00e3o..."}
           />
         </div>
@@ -4251,7 +4329,7 @@ Regras:
 
       <div className="pet-top-group is-center">
         {legalAreas.length > 0 && (
-          <div className="flex items-center gap-1 pet-top-grow justify-center">
+          <div className="pet-top-filter-shell pet-top-grow">
           <select
             value={selectedStandardTypeId ? `type:${selectedStandardTypeId}` : `area:${selectedLegalAreaId || ''}`}
             onChange={(e) => {
@@ -4307,7 +4385,7 @@ Regras:
                 setPetitionTitle(`Nova Peticao ${sanitizeText(area.name)}`);
               }
             }}
-            className="pet-top-select px-2 py-1 text-xs border border-[#e7e5df] rounded bg-white hover:border-amber-400 focus:border-amber-400 focus:outline-none"
+            className="pet-top-select px-3 py-2 text-xs border border-[#e7e5df] rounded-xl bg-white hover:border-amber-400 focus:border-amber-400 focus:outline-none"
             style={{ borderLeftColor: selectedLegalArea?.color || '#e2e8f0', borderLeftWidth: '3px' }}
           >
             {legalAreas.map((area) => (
@@ -4323,14 +4401,14 @@ Regras:
           </select>
           <button
             onClick={() => openLegalAreaModal()}
-            className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+            className="pet-top-icon-btn is-soft"
             title={"Gerenciar \u00e1reas jur\u00eddicas"}
           >
             <Settings className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => openStandardTypeModal()}
-            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+            className="pet-top-icon-btn is-soft"
             title={"Gerenciar modelos (peti\u00e7\u00f5es padr\u00e3o)"}
           >
             <FileText className="w-3.5 h-3.5" />
@@ -4351,10 +4429,22 @@ Regras:
 
       <div className="pet-top-group is-right">
         {selectedClient && (
-          <div className="pet-top-shrink flex items-center gap-1.5 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs max-w-[120px] sm:max-w-[180px] lg:max-w-[260px]">
+          <div className="pet-top-client-chip pet-top-shrink">
             <User className="w-3.5 h-3.5 text-amber-600 shrink-0" />
             <span className="text-amber-700 font-medium truncate">{selectedClient.full_name}</span>
-            <button onClick={() => { setSelectedClient(null); window.setTimeout(() => savePetition(), 0); }} className="text-amber-500 hover:text-amber-700 shrink-0">
+            <button
+              onClick={() => insertClientQualification(selectedClient)}
+              className="pet-top-icon-btn is-chip"
+              title="Inserir qualificacao do cliente no documento"
+              aria-label="Inserir qualificacao do cliente no documento"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => { setSelectedClient(null); setHasUnsavedChanges(true); }}
+              className="pet-top-icon-btn is-chip"
+              title="Remover cliente vinculado"
+            >
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -4362,67 +4452,64 @@ Regras:
 
         {lastSaved && (
           <>
-            <div className="flex sm:hidden items-center rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-400 whitespace-nowrap">
+            <div className="pet-top-meta-chip flex sm:hidden items-center whitespace-nowrap">
               <span title={lastSaved.toLocaleString('pt-BR')}>Agora</span>
             </div>
-            <div className="pet-top-shrink hidden sm:flex lg:hidden items-center gap-1 rounded-md bg-slate-50 px-2 py-1 text-[11px] text-slate-400 tabular-nums whitespace-nowrap">
+            <div className="pet-top-meta-chip pet-top-shrink hidden sm:flex lg:hidden items-center gap-1 tabular-nums whitespace-nowrap">
               <Clock className="w-3.5 h-3.5 shrink-0" />
               <span title={lastSaved.toLocaleString('pt-BR')}>{formatRelativeTime(lastSaved.toISOString())}</span>
             </div>
-            <div className="pet-top-shrink hidden lg:flex items-center gap-1.5 rounded-md bg-slate-50 px-2.5 py-1 text-xs text-slate-400 min-w-[170px] justify-end tabular-nums whitespace-nowrap">
+            <div className="pet-top-meta-chip pet-top-shrink hidden lg:flex items-center gap-1.5 min-w-[170px] justify-end tabular-nums whitespace-nowrap">
               <Clock className="w-3.5 h-3.5 shrink-0" />
               <span title={lastSaved.toLocaleString('pt-BR')}>Atualizado {formatRelativeTime(lastSaved.toISOString())}</span>
             </div>
           </>
         )}
 
-        <button
-          onClick={() => newPetition({ keepClient: true })}
-          className="hidden sm:flex px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors items-center gap-1"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Novo
-        </button>
-        <button
-          onClick={savePetition}
-          disabled={savingDoc}
-          className="px-3 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors flex items-center gap-1 disabled:opacity-50"
-        >
-          {savingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-          <span className="hidden sm:inline">Salvar</span>
-        </button>
-        <button
-          onClick={exportToWord}
-          className="hidden sm:flex px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors items-center gap-1"
-        >
-          <Download className="w-3.5 h-3.5" />
-          Word
-        </button>
+        <div className="pet-top-actionbar">
+          <button
+            onClick={() => newPetition({ keepClient: true })}
+            className="pet-top-text-btn hidden sm:flex"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Novo
+          </button>
+          <button
+            onClick={savePetition}
+            disabled={savingDoc}
+            className="pet-top-primary-btn"
+          >
+            {savingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">Salvar</span>
+          </button>
+          <button
+            onClick={exportToWord}
+            className="pet-top-text-btn hidden md:flex"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Word
+          </button>
+          <button
+            onClick={loadDefaultTemplate}
+            disabled={!hasDefaultTemplate}
+            className="pet-top-text-btn hidden lg:flex disabled:opacity-50 disabled:hover:bg-transparent"
+            title={hasDefaultTemplate ? `Carregar modelo padrão${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum modelo padrão definido'}
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            {"Padrão"}
+          </button>
+          <button
+            onClick={setCurrentDocAsDefaultTemplate}
+            disabled={settingDefaultTemplate}
+            className="pet-top-text-btn hidden lg:flex disabled:opacity-50 disabled:hover:bg-transparent"
+            title="Definir o documento aberto como modelo padrão"
+          >
+            {settingDefaultTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Star className="w-3.5 h-3.5" />}
+            Definir padrão
+          </button>
+        </div>
 
-        <div className="hidden sm:block h-4 w-px bg-slate-200 mx-1" />
-
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="hidden sm:flex px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors items-center gap-1"
-          title="Importar modelo Word"
-        >
-          <FileUp className="w-3.5 h-3.5" />
-          Modelo
-        </button>
-
-        <button
-          onClick={loadDefaultTemplate}
-          disabled={!hasDefaultTemplate}
-          className="hidden sm:flex px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded transition-colors items-center gap-1 disabled:opacity-50 disabled:hover:bg-transparent"
-          title={hasDefaultTemplate ? `Carregar modelo padrão${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum modelo padrão definido'}
-        >
-          <FolderOpen className="w-3.5 h-3.5" />
-          {"Padrão"}
-        </button>
-
-        <div className="hidden sm:block h-4 w-px bg-slate-200 mx-1" />
-
-        <div className="flex items-center gap-1">
+        <div className="pet-top-cluster is-utility">
         <button
           onClick={() => {
             if (isFloatingWidget) {
@@ -4431,7 +4518,7 @@ Regras:
             }
             setIsMinimized(true);
           }}
-          className="p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-500 hover:text-slate-700"
+          className="pet-top-icon-btn"
           title="Minimizar"
         >
           <Minimize2 className="w-4 h-4" />
@@ -4439,7 +4526,7 @@ Regras:
         {!isFloatingWidget && (
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-500 hover:text-slate-700"
+            className="pet-top-icon-btn"
             title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -4463,7 +4550,7 @@ Regras:
               setIsMinimized(true);
             }
           }}
-          className="p-1.5 hover:bg-red-50 rounded transition-colors text-slate-500 hover:text-red-600"
+          className="pet-top-icon-btn is-danger"
           title="Fechar editor"
         >
           <XCircle className="w-4 h-4" />
@@ -4475,16 +4562,6 @@ Regras:
 
   return (
     <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} relative flex flex-col overflow-hidden bg-[#f5f6f8]`}>
-      {success && (
-        <div className="mx-3 mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2 text-sm text-emerald-700">
-          <CheckCircle2 className="w-4 h-4" />
-          {success}
-          <button onClick={() => setSuccess(null)} className="ml-auto">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
       {documentImportLoading && (
         <div className="absolute inset-0 z-[140] flex items-center justify-center bg-slate-950/35 backdrop-blur-sm">
           <div className="w-full max-w-md mx-4 rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-black/10 p-6">
@@ -4501,17 +4578,6 @@ Regras:
               <div className="h-full w-1/2 rounded-full bg-amber-500 animate-pulse" />
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Mensagens */}
-      {error && (
-        <div className="mx-3 mt-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-sm text-red-700">
-          <AlertCircle className="w-4 h-4" />
-          {error}
-          <button onClick={() => setError(null)} className="ml-auto">
-            <X className="w-4 h-4" />
-          </button>
         </div>
       )}
 
@@ -4734,14 +4800,6 @@ Regras:
             </footer>
           </main>
         </aside>
-      )}
-
-      {/* Desativado para nÃ£o ocupar espaço no topo */}
-      {false && success && (
-        <div className="mx-3 mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2 text-sm text-emerald-700">
-          <Star className="w-4 h-4" />
-          {success}
-        </div>
       )}
 
       {/* ConteÃºdo Principal */}
@@ -5613,7 +5671,7 @@ Regras:
                         className={`group cursor-pointer border-b border-[#ece5d9] px-3 py-3 transition-colors ${
                           selectedClient?.id === client.id ? 'bg-[#fff4df]' : 'hover:bg-[#f8f2e8]'
                         }`}
-                        onClick={() => insertClientQualification(client)}
+                        onClick={() => selectClientForPetition(client)}
                       >
                         <div className="flex items-center gap-2">
                           <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
@@ -5623,6 +5681,17 @@ Regras:
                             <p className="truncate text-[13px] font-medium text-slate-700">{client.full_name}</p>
                             <p className="text-[10px] text-slate-400">{client.cpf_cnpj}</p>
                           </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              insertClientQualification(client);
+                            }}
+                            className="rounded-md border border-amber-200 bg-white px-2 py-1 text-[10px] font-semibold text-amber-700 opacity-0 shadow-sm transition group-hover:opacity-100 hover:bg-amber-50"
+                            title="Inserir qualificacao no documento"
+                          >
+                            Inserir
+                          </button>
                           {selectedClient?.id === client.id && (
                             <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">Selecionado</span>
                           )}
@@ -5655,6 +5724,54 @@ Regras:
           className="syncfusion-editor-wrapper relative flex-1 min-w-0 flex flex-col overflow-hidden"
           style={{ flex: '1 1 0%', minWidth: 0, width: '100%' }}
         >
+          {/* Banner de conexao: internet caiu ou servidor inacessivel */}
+          {(!isOnline || !serverReachable) && (
+            <div className="absolute top-0 inset-x-0 z-[55] p-3 pointer-events-none">
+              <div className="pointer-events-auto mx-auto max-w-3xl overflow-hidden rounded-2xl border border-amber-200/80 bg-[#fffdf7] shadow-[0_18px_45px_rgba(180,120,10,0.20)] animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400" />
+                <div className="flex items-start gap-3 p-4">
+                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <CloudOff className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-600">Conexao instavel</span>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        {checkingServer ? 'Verificando...' : 'Offline'}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-sm font-bold text-slate-900">
+                      {!isOnline ? 'Voce esta sem internet' : 'Sem conexao com o servidor'}
+                    </div>
+                    <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">
+                      Suas alteracoes podem <span className="font-semibold">nao estar sendo salvas</span>. Baixe uma copia em Word agora para nao perder nada — assim que a conexao voltar, o salvamento normaliza.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={exportToWord}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-bold rounded-xl transition-all shadow-md petition-btn-orange"
+                      >
+                        <Download className="w-4 h-4" />
+                        Baixar em Word
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRetryConnection}
+                        disabled={checkingServer}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-bold rounded-xl transition-all shadow-sm petition-btn-slate disabled:opacity-60"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${checkingServer ? 'animate-spin' : ''}`} />
+                        {checkingServer ? 'Verificando...' : 'Tentar reconectar'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Overlay de formataçÃ£o com IA */}
           {formattingWithAI && (
             <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -5725,48 +5842,6 @@ Regras:
             onRequestFormatQualification={handleFormatQualification}
           />
 
-          {!isOnline && (
-            <div className="absolute inset-0 z-[50] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
-              <div className="w-full max-w-md mx-4 bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-[0_24px_60px_rgba(15,23,42,0.25)] overflow-hidden">
-                <div className="h-1 w-full bg-amber-500" />
-                <div className="p-5">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-orange-100 flex items-center justify-center flex-shrink-0">
-                      <AlertCircle className="w-5 h-5 text-orange-700" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Sem conexao</div>
-                      <div className="mt-1 text-base font-bold text-slate-900">Voce esta offline</div>
-                      <p className="mt-2 text-sm text-slate-600 leading-relaxed">
-                        O Peticionamento Ã© <span className="font-semibold">100% online</span> e precisa de conexao com o banco.
-                        Reconecte para continuar editando e salvando.
-                      </p>
-                      <p className="mt-2 text-[12px] text-slate-500">
-                        Dica: verifique sua internet/VPN e tente novamente.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={handleRetryConnection}
-                      className="flex-1 px-4 py-2.5 text-sm font-bold rounded-xl transition-all shadow-md petition-btn-orange"
-                    >
-                      Verificar conexao
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => window.location.reload()}
-                      className="px-4 py-2.5 text-sm font-bold rounded-xl transition-all shadow-md petition-btn-slate"
-                    >
-                      Recarregar
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         </div>

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.290': { name: 'Cafe Peticao com Barra Profissional', emoji: '[memo]' },
   '1.10.289': { name: 'Cafe Peticao com Texto Integro', emoji: '[memo]' },
   '1.10.288': { name: 'Cafe Showcase com Troca Suave', emoji: '[art]' },
   '1.10.287': { name: 'Cafe Showcase Sem Distorcao', emoji: '[art]' },
@@ -940,6 +941,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.290',
+    date: '02/07/2026',
+    summary: 'O editor de peticoes passou a separar melhor selecao de cliente e insercao de qualificacao, trocar avisos em faixa por toasts flutuantes e reorganizar a barra superior para uma experiencia mais profissional.',
+    modules: [
+      { moduleId: 'peticoes', changes: [
+        { type: 'fix' as const, title: 'Selecao de cliente deixou de disparar insercao indevida no documento', description: 'O clique na lista de clientes agora apenas vincula o cliente a peticao, enquanto a insercao da qualificacao ficou explicita em acoes dedicadas, evitando notificacoes e edicoes inesperadas.' },
+        { type: 'improvement' as const, title: 'Avisos do editor migraram para toasts flutuantes', description: 'As mensagens de sucesso e erro que ocupavam faixa no topo do editor passaram a usar o sistema global de toast, reduzindo degradacao visual durante a edicao.' },
+        { type: 'improvement' as const, title: 'Barra superior do peticionamento foi reorganizada', description: 'Titulo, filtro de area, cliente vinculado e acoes principais ganharam agrupamentos mais claros, hierarquia visual melhor e layout mais limpo para uso continuo.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.289',
     date: '02/07/2026',
