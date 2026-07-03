@@ -157,6 +157,64 @@ const normalizePastedParagraphs = (value: string) => {
     .trim();
 };
 
+const normalizePlainTextOnly = (value: string) =>
+  String(value || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+const stripOfficeMarkup = (html: string): string => {
+  const raw = String(html || '').trim();
+  if (!raw || typeof DOMParser === 'undefined') return raw;
+
+  try {
+    const doc = new DOMParser().parseFromString(raw, 'text/html');
+    const body = doc.body;
+    if (!body) return raw;
+
+    body.querySelectorAll('script,style,xml,meta,link,o\\:p').forEach((node) => node.remove());
+
+    const walker = doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT);
+    const comments: Comment[] = [];
+    while (walker.nextNode()) comments.push(walker.currentNode as Comment);
+    comments.forEach((node) => node.remove());
+
+    body.querySelectorAll<HTMLElement>('*').forEach((el) => {
+      Array.from(el.attributes).forEach((attr) => {
+        const attrName = attr.name.toLowerCase();
+        if (
+          attrName === 'style' ||
+          attrName === 'class' ||
+          attrName === 'lang' ||
+          attrName.startsWith('mso-') ||
+          attrName.startsWith('xmlns') ||
+          attrName.startsWith('data-')
+        ) {
+          el.removeAttribute(attr.name);
+        }
+      });
+
+      if (el.tagName.toLowerCase() === 'span' && !el.attributes.length) {
+        const parent = el.parentNode;
+        if (!parent) return;
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+        parent.removeChild(el);
+      }
+    });
+
+    return body.innerHTML || raw;
+  } catch {
+    return raw;
+  }
+};
+
 const extractStructuredTextFromHtml = (html: string): string => {
   const raw = String(html || '').trim();
   if (!raw || typeof DOMParser === 'undefined') return '';
@@ -706,6 +764,10 @@ export interface SyncfusionEditorRef {
   copySelection: () => boolean;
   // Paste from clipboard at current cursor (best-effort)
   paste: () => boolean;
+  pasteWithSourceFormatting: () => Promise<boolean>;
+  pasteWithMergedFormatting: () => Promise<boolean>;
+  pasteAsPlainText: () => Promise<boolean>;
+  pasteCleanedFromWord: () => Promise<boolean>;
   // Select all and copy (best-effort)
   copyAll: () => boolean;
   // Get SFDT of current selection (fragment)
@@ -716,6 +778,8 @@ export interface SyncfusionEditorRef {
   applyMinimalMargins: () => void;
   // Replace all occurrences of a text (best-effort, preserves formatting)
   replaceAll: (searchText: string, replaceText: string) => boolean;
+  // Transform the current selection text case preserving formatting when possible
+  transformSelectionCase: (mode: 'sentence' | 'lower' | 'upper' | 'title' | 'toggle') => boolean;
   // Force editor to refresh its layout and repaint
   refresh: () => void;
   // Get the underlying Syncfusion DocumentEditor instance (for the custom ribbon)
@@ -753,6 +817,7 @@ interface SyncfusionEditorProps {
   layoutType?: 'Pages' | 'Continuous';
   removeMargins?: boolean;
   readOnly?: boolean;
+  currentUserName?: string;
 }
 
 const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
@@ -777,6 +842,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       layoutType = 'Pages',
       removeMargins = false,
       readOnly = false,
+      currentUserName,
     },
     ref
   ) => {
@@ -786,8 +852,72 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const pendingActionsRef = useRef<(() => void)[]>([]);
     const lastContextMenuPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
     const scannerRef = useRef<{ trigger: () => void; cancel: () => void } | null>(null);
+    const forcedPasteModeRef = useRef<'smart' | 'source' | 'merge' | 'text' | 'clean' | null>(null);
     const [isCreated, setIsCreated] = useState(false);
     const [scanResult, setScanResult] = useState<ScanResult>({ issues: [], totalOccurrences: 0 });
+
+    const toSentenceCase = (value: string) => {
+      const lower = value.toLocaleLowerCase('pt-BR');
+      return lower.replace(/(^|[.!?]\s+)([\p{L}])/gu, (match, prefix: string, char: string) => `${prefix}${char.toLocaleUpperCase('pt-BR')}`);
+    };
+
+    const toTitleCase = (value: string) =>
+      value
+        .toLocaleLowerCase('pt-BR')
+        .replace(/\b([\p{L}][\p{L}'’-]*)/gu, (word: string) => word.charAt(0).toLocaleUpperCase('pt-BR') + word.slice(1));
+
+    const toToggleCase = (value: string) =>
+      Array.from(value).map((char) => {
+        const lower = char.toLocaleLowerCase('pt-BR');
+        const upper = char.toLocaleUpperCase('pt-BR');
+        if (char === lower && char !== upper) return upper;
+        if (char === upper && char !== lower) return lower;
+        return char;
+      }).join('');
+
+    const transformCaseValue = (value: string, mode: 'sentence' | 'lower' | 'upper' | 'title' | 'toggle') => {
+      switch (mode) {
+        case 'sentence':
+          return toSentenceCase(value);
+        case 'lower':
+          return value.toLocaleLowerCase('pt-BR');
+        case 'upper':
+          return value.toLocaleUpperCase('pt-BR');
+        case 'title':
+          return toTitleCase(value);
+        case 'toggle':
+          return toToggleCase(value);
+        default:
+          return value;
+      }
+    };
+
+    const transformSfdtTextNodes = (node: unknown, mode: 'sentence' | 'lower' | 'upper' | 'title' | 'toggle'): boolean => {
+      let changed = false;
+      if (!node) return false;
+      if (Array.isArray(node)) {
+        node.forEach((item) => {
+          if (transformSfdtTextNodes(item, mode)) changed = true;
+        });
+        return changed;
+      }
+      if (typeof node !== 'object') return false;
+
+      Object.entries(node as Record<string, unknown>).forEach(([key, value]) => {
+        const normalizedKey = key.toLowerCase();
+        if ((normalizedKey === 'text' || normalizedKey === 'txt' || normalizedKey === 't' || normalizedKey === 'tlp') && typeof value === 'string') {
+          const next = transformCaseValue(value, mode);
+          if (next !== value) {
+            (node as Record<string, unknown>)[key] = next;
+            changed = true;
+          }
+          return;
+        }
+        if (transformSfdtTextNodes(value, mode)) changed = true;
+      });
+
+      return changed;
+    };
 
     // Captura posição do clique direito para reposicionar o menu após filtrar itens.
     useEffect(() => {
@@ -826,6 +956,129 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         } catch {
           // ignore
         }
+      }
+    };
+
+    const insertTextWithInheritedFormatting = (ed: any, text: string): boolean => {
+      const payload = String(text || '');
+      if (!payload.trim() || !ed?.editor || typeof ed.editor.insertText !== 'function') return false;
+
+      try {
+        ed.focusIn?.();
+        const sel: any = ed.selection;
+        const cf: any = sel?.characterFormat;
+        const pf: any = sel?.paragraphFormat;
+        const inherit = {
+          fontFamily: cf?.fontFamily,
+          fontSize: cf?.fontSize,
+          bold: cf?.bold,
+          italic: cf?.italic,
+          underline: cf?.underline,
+          fontColor: cf?.fontColor,
+          textAlignment: pf?.textAlignment,
+          firstLineIndent: pf?.firstLineIndent,
+          leftIndent: pf?.leftIndent,
+          rightIndent: pf?.rightIndent,
+          lineSpacing: pf?.lineSpacing,
+          lineSpacingType: pf?.lineSpacingType,
+          beforeSpacing: pf?.beforeSpacing,
+          afterSpacing: pf?.afterSpacing,
+        };
+        const startOffset = String(sel?.startOffset || '');
+
+        try { ed.editorHistory?.beginUndoAction?.(); } catch { // ignore
+        }
+        ed.editor.insertText(payload);
+
+        const endOffset = String(sel?.endOffset || '');
+        if (sel && startOffset && endOffset && startOffset !== endOffset) {
+          sel.select(startOffset, endOffset);
+          const scf: any = sel.characterFormat;
+          const spf: any = sel.paragraphFormat;
+          if (scf) {
+            if (typeof inherit.fontFamily === 'string' && inherit.fontFamily) scf.fontFamily = inherit.fontFamily;
+            if (typeof inherit.fontSize === 'number' && inherit.fontSize > 0) scf.fontSize = inherit.fontSize;
+            if (typeof inherit.bold === 'boolean') scf.bold = inherit.bold;
+            if (typeof inherit.italic === 'boolean') scf.italic = inherit.italic;
+            if (typeof inherit.underline === 'string') scf.underline = inherit.underline;
+            if (typeof inherit.fontColor === 'string' && inherit.fontColor) scf.fontColor = inherit.fontColor;
+          }
+          if (spf) {
+            if (typeof inherit.textAlignment === 'string' && inherit.textAlignment) spf.textAlignment = inherit.textAlignment;
+            if (typeof inherit.firstLineIndent === 'number') spf.firstLineIndent = inherit.firstLineIndent;
+            if (typeof inherit.leftIndent === 'number') spf.leftIndent = inherit.leftIndent;
+            if (typeof inherit.rightIndent === 'number') spf.rightIndent = inherit.rightIndent;
+            if (typeof inherit.lineSpacingType === 'string' && inherit.lineSpacingType) spf.lineSpacingType = inherit.lineSpacingType;
+            if (typeof inherit.lineSpacing === 'number' && inherit.lineSpacing > 0) spf.lineSpacing = inherit.lineSpacing;
+            if (typeof inherit.beforeSpacing === 'number') spf.beforeSpacing = inherit.beforeSpacing;
+            if (typeof inherit.afterSpacing === 'number') spf.afterSpacing = inherit.afterSpacing;
+          }
+          sel.select(endOffset, endOffset);
+        }
+        try { ed.editorHistory?.endUndoAction?.(); } catch { // ignore
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const pasteFromClipboardWithMode = async (mode: 'source' | 'merge' | 'text' | 'clean'): Promise<boolean> => {
+      const ed: any = containerRef.current?.documentEditor as any;
+      if (!ed) return false;
+
+      let html = '';
+      let plainText = '';
+
+      try {
+        plainText = await navigator.clipboard.readText();
+      } catch {
+        plainText = '';
+      }
+
+      try {
+        if (typeof navigator.clipboard.read === 'function') {
+          const items = await navigator.clipboard.read();
+          for (const item of items) {
+            if (!html && item.types.includes('text/html')) {
+              const blob = await item.getType('text/html');
+              html = await blob.text();
+            }
+            if (!plainText && item.types.includes('text/plain')) {
+              const blob = await item.getType('text/plain');
+              plainText = await blob.text();
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        if (mode === 'source') {
+          const payload = String(html || '').trim();
+          if (payload && typeof ed.editor?.paste === 'function') {
+            ed.focusIn?.();
+            ed.editor.paste(payload);
+            return true;
+          }
+          return insertTextWithInheritedFormatting(ed, normalizePastedParagraphs(plainText));
+        }
+
+        if (mode === 'text') {
+          return insertTextWithInheritedFormatting(ed, normalizePlainTextOnly(plainText));
+        }
+
+        if (mode === 'clean') {
+          const cleanedHtml = stripOfficeMarkup(html);
+          const cleanedText = extractStructuredTextFromHtml(cleanedHtml) || normalizePastedParagraphs(plainText);
+          return insertTextWithInheritedFormatting(ed, cleanedText);
+        }
+
+        const mergedText = normalizePastedParagraphs(plainText) || extractStructuredTextFromHtml(html);
+        return insertTextWithInheritedFormatting(ed, mergedText);
+      } catch {
+        return false;
       }
     };
 
@@ -1207,6 +1460,14 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         }
       },
 
+      pasteWithSourceFormatting: async () => pasteFromClipboardWithMode('source'),
+
+      pasteWithMergedFormatting: async () => pasteFromClipboardWithMode('merge'),
+
+      pasteAsPlainText: async () => pasteFromClipboardWithMode('text'),
+
+      pasteCleanedFromWord: async () => pasteFromClipboardWithMode('clean'),
+
       copyAll: () => {
         const editor: any = containerRef.current?.documentEditor as any;
         const selection: any = editor?.selection;
@@ -1329,6 +1590,41 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         }
       },
 
+      transformSelectionCase: (mode: 'sentence' | 'lower' | 'upper' | 'title' | 'toggle') => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        const selection: any = editor?.selection;
+        if (!editor || !selection) return false;
+
+        try {
+          const selectedText = String(selection.text || '');
+          if (!selectedText.trim()) return false;
+
+          const selectionSfdt = String(selection.sfdt || '').trim();
+          if (selectionSfdt) {
+            try {
+              const parsed = JSON.parse(selectionSfdt);
+              const changed = transformSfdtTextNodes(parsed, mode);
+              if (changed && editor.editor && typeof editor.editor.insertSfdt === 'function') {
+                editor.editor.insertSfdt(JSON.stringify(parsed));
+                return true;
+              }
+            } catch {
+              // fallback below
+            }
+          }
+
+          const nextText = transformCaseValue(selectedText, mode);
+          if (nextText === selectedText) return false;
+          if (editor.editor && typeof editor.editor.insertText === 'function') {
+            editor.editor.insertText(nextText);
+            return true;
+          }
+          return false;
+        } catch {
+          return false;
+        }
+      },
+
       refresh: () => {
         const editor: any = containerRef.current?.documentEditor as any;
         if (!editor) return;
@@ -1419,6 +1715,17 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         }
       },
     }));
+
+    useEffect(() => {
+      const editor: any = containerRef.current?.documentEditor as any;
+      if (!editor) return;
+      try {
+        const nextName = typeof currentUserName === 'string' && currentUserName.trim() ? currentUserName.trim() : 'Usuário';
+        editor.currentUser = nextName;
+      } catch {
+        // ignore
+      }
+    }, [currentUserName]);
 
     const handleContentChange = () => {
       onContentChange?.();
@@ -1675,6 +1982,9 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         const editor: any = containerRef.current?.documentEditor as any;
         applySyncfusionServiceUrl(editor);
         editor?.openBlank?.();
+        if (editor && typeof currentUserName === 'string' && currentUserName.trim()) {
+          editor.currentUser = currentUserName.trim();
+        }
 
         // Configurar corretor ortográfico (Hunspell pt-BR local — o serviço
         // web de demo não tem dicionário português e marcava tudo errado)
@@ -1729,6 +2039,140 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             // ignore
           }
         };
+
+    /* const insertTextWithInheritedFormatting = (ed: any, text: string): boolean => {
+      const payload = String(text || '');
+      if (!payload.trim() || !ed?.editor || typeof ed.editor.insertText !== 'function') return false;
+
+      try {
+        ed.focusIn?.();
+        const sel: any = ed.selection;
+        const cf: any = sel?.characterFormat;
+        const pf: any = sel?.paragraphFormat;
+        const inherit = {
+          fontFamily: cf?.fontFamily,
+          fontSize: cf?.fontSize,
+          bold: cf?.bold,
+          italic: cf?.italic,
+          underline: cf?.underline,
+          fontColor: cf?.fontColor,
+          textAlignment: pf?.textAlignment,
+          firstLineIndent: pf?.firstLineIndent,
+          leftIndent: pf?.leftIndent,
+          rightIndent: pf?.rightIndent,
+          lineSpacing: pf?.lineSpacing,
+          lineSpacingType: pf?.lineSpacingType,
+          beforeSpacing: pf?.beforeSpacing,
+          afterSpacing: pf?.afterSpacing,
+        };
+        const startOffset = String(sel?.startOffset || '');
+
+        try { ed.editorHistory?.beginUndoAction?.(); } catch { // ignore
+        }
+        ed.editor.insertText(payload);
+
+        const endOffset = String(sel?.endOffset || '');
+        if (sel && startOffset && endOffset && startOffset !== endOffset) {
+          sel.select(startOffset, endOffset);
+          const scf: any = sel.characterFormat;
+          const spf: any = sel.paragraphFormat;
+          if (scf) {
+            if (typeof inherit.fontFamily === 'string' && inherit.fontFamily) scf.fontFamily = inherit.fontFamily;
+            if (typeof inherit.fontSize === 'number' && inherit.fontSize > 0) scf.fontSize = inherit.fontSize;
+            if (typeof inherit.bold === 'boolean') scf.bold = inherit.bold;
+            if (typeof inherit.italic === 'boolean') scf.italic = inherit.italic;
+            if (typeof inherit.underline === 'string') scf.underline = inherit.underline;
+            if (typeof inherit.fontColor === 'string' && inherit.fontColor) scf.fontColor = inherit.fontColor;
+          }
+          if (spf) {
+            if (typeof inherit.textAlignment === 'string' && inherit.textAlignment) spf.textAlignment = inherit.textAlignment;
+            if (typeof inherit.firstLineIndent === 'number') spf.firstLineIndent = inherit.firstLineIndent;
+            if (typeof inherit.leftIndent === 'number') spf.leftIndent = inherit.leftIndent;
+            if (typeof inherit.rightIndent === 'number') spf.rightIndent = inherit.rightIndent;
+            if (typeof inherit.lineSpacingType === 'string' && inherit.lineSpacingType) spf.lineSpacingType = inherit.lineSpacingType;
+            if (typeof inherit.lineSpacing === 'number' && inherit.lineSpacing > 0) spf.lineSpacing = inherit.lineSpacing;
+            if (typeof inherit.beforeSpacing === 'number') spf.beforeSpacing = inherit.beforeSpacing;
+            if (typeof inherit.afterSpacing === 'number') spf.afterSpacing = inherit.afterSpacing;
+          }
+          sel.select(endOffset, endOffset);
+        }
+        try { ed.editorHistory?.endUndoAction?.(); } catch { // ignore
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const pasteFromClipboardWithMode = async (mode: 'source' | 'merge' | 'text' | 'clean'): Promise<boolean> => {
+      const ed: any = containerRef.current?.documentEditor as any;
+      if (!ed) return false;
+
+      let html = '';
+      let plainText = '';
+
+      try {
+        plainText = await navigator.clipboard.readText();
+      } catch {
+        plainText = '';
+      }
+
+      try {
+        if (typeof navigator.clipboard.read === 'function') {
+          const items = await navigator.clipboard.read();
+          for (const item of items) {
+            if (!html && item.types.includes('text/html')) {
+              const blob = await item.getType('text/html');
+              html = await blob.text();
+            }
+            if (!plainText && item.types.includes('text/plain')) {
+              const blob = await item.getType('text/plain');
+              plainText = await blob.text();
+            }
+          }
+        }
+      } catch {
+        // ignore and fall back to readText
+      }
+
+      try {
+        if (mode === 'source') {
+          const payload = String(html || '').trim();
+          if (payload && typeof ed.editor?.paste === 'function') {
+            ed.focusIn?.();
+            ed.editor.paste(payload);
+            return true;
+          }
+          return insertTextWithInheritedFormatting(ed, normalizePastedParagraphs(plainText));
+        }
+
+        if (mode === 'text') {
+          return insertTextWithInheritedFormatting(ed, normalizePlainTextOnly(plainText));
+        }
+
+        if (mode === 'clean') {
+          const cleanedHtml = stripOfficeMarkup(html);
+          const cleanedText = extractStructuredTextFromHtml(cleanedHtml) || normalizePastedParagraphs(plainText);
+          return insertTextWithInheritedFormatting(ed, cleanedText);
+        }
+
+        const mergedText = normalizePastedParagraphs(plainText) || extractStructuredTextFromHtml(html);
+        return insertTextWithInheritedFormatting(ed, mergedText);
+      } catch {
+        return false;
+      }
+    };
+
+    useEffect(() => {
+      const editor: any = containerRef.current?.documentEditor as any;
+      if (!editor) return;
+      try {
+        const nextName = typeof currentUserName === 'string' && currentUserName.trim() ? currentUserName.trim() : 'Usuário';
+        editor.currentUser = nextName;
+      } catch {
+        // ignore
+      }
+    }, [currentUserName]); */
         [0, 60, 150, 350, 700].forEach((ms) =>
           window.setTimeout(() => window.requestAnimationFrame(forceResize), ms),
         );
@@ -2155,8 +2599,27 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       if (!editableDiv || typeof nativeOnPaste !== 'function') return;
 
       let lastInternalCopy = '';
-      let keepSourceUntil = 0;
       const normalizeForCompare = (t: string) => t.replace(/\s+/g, ' ').trim();
+      const shouldKeepRichFormatting = (html: string, clipboard?: DataTransfer | null) => {
+        const rawHtml = String(html || '').trim();
+        if (!rawHtml) return false;
+
+        const types = Array.from(clipboard?.types || []).map((t) => String(t).toLowerCase());
+        if (types.includes('text/rtf') || types.includes('application/rtf')) return true;
+
+        const normalized = rawHtml.toLowerCase();
+        return (
+          normalized.includes('mso-') ||
+          normalized.includes('urn:schemas-microsoft-com') ||
+          normalized.includes('office:word') ||
+          normalized.includes('<style') ||
+          normalized.includes('<table') ||
+          normalized.includes('<ul') ||
+          normalized.includes('<ol') ||
+          normalized.includes('<img') ||
+          /<(span|p|div|font)[^>]*style=/.test(normalized)
+        );
+      };
 
       const handleCopy = () => {
         try {
@@ -2169,7 +2632,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       const handleKeyDown = (e: KeyboardEvent) => {
         // Ctrl+Shift+V = colar mantendo a formatação de origem (pipeline nativo)
         if (e.ctrlKey && e.shiftKey && String(e.key).toLowerCase() === 'v') {
-          keepSourceUntil = Date.now() + 1500;
+          forcedPasteModeRef.current = 'text';
         }
       };
 
@@ -2188,19 +2651,61 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           return;
         }
 
-        if (Date.now() < keepSourceUntil) {
-          keepSourceUntil = 0;
+        const clipboard = event.clipboardData;
+        const html = clipboard?.getData('text/html') || '';
+        const plainText = clipboard?.getData('text/plain') || '';
+        const forcedPasteMode = forcedPasteModeRef.current;
+        forcedPasteModeRef.current = null;
+
+        if (forcedPasteMode === 'source') {
           runNative();
           return;
         }
 
-        const clipboard = event.clipboardData;
-        const html = clipboard?.getData('text/html') || '';
-        const plainText = clipboard?.getData('text/plain') || '';
+        if (forcedPasteMode === 'text') {
+          const text = normalizePlainTextOnly(plainText);
+          if (!text.trim()) {
+            runNative();
+            return;
+          }
+          event.preventDefault();
+          insertTextWithInheritedFormatting(ed, text);
+          return;
+        }
+
+        if (forcedPasteMode === 'merge') {
+          const text = normalizePastedParagraphs(plainText) || extractStructuredTextFromHtml(html);
+          if (!text.trim()) {
+            runNative();
+            return;
+          }
+          event.preventDefault();
+          insertTextWithInheritedFormatting(ed, text);
+          return;
+        }
+
+        if (forcedPasteMode === 'clean') {
+          const cleanedHtml = stripOfficeMarkup(html);
+          const text = extractStructuredTextFromHtml(cleanedHtml) || normalizePastedParagraphs(plainText);
+          if (!text.trim()) {
+            runNative();
+            return;
+          }
+          event.preventDefault();
+          insertTextWithInheritedFormatting(ed, text);
+          return;
+        }
 
         // Conteúdo copiado do próprio editor: colagem nativa preserva a
         // formatação original do documento com fidelidade total.
         if (plainText && lastInternalCopy && normalizeForCompare(plainText) === lastInternalCopy) {
+          runNative();
+          return;
+        }
+
+        // Conteúdo rico do Word/RTF/HTML formatado deve seguir o pipeline nativo
+        // do Syncfusion para preservar estilo, listas, tabelas e demais marcas.
+        if (shouldKeepRichFormatting(html, clipboard)) {
           runNative();
           return;
         }

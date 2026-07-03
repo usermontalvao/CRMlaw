@@ -421,6 +421,7 @@ const DEFAULT_FONT_STORAGE_KEY = 'petition-editor-default-font-v1';
 const SELECTED_LEGAL_AREA_STORAGE_KEY = 'petition-editor-selected-legal-area-v1';
 const SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX = 'petition-editor-selected-standard-type-v1:';
 const BLOCK_FILTER_SCOPE_STORAGE_KEY = 'petition-editor-block-filter-scope-v1';
+const PETITION_LOCAL_DRAFT_STORAGE_KEY_PREFIX = 'petition-editor-local-draft-v2:';
 
 // CSS para o editor - Layout responsivo para 100% zoom
 const EDITOR_STYLES = `
@@ -622,6 +623,16 @@ interface PetitionEditorModuleProps {
   onRequestMinimize?: () => void;
 }
 
+type LocalPetitionDraft = {
+  title: string;
+  content: string;
+  currentPetitionId: string | null;
+  clientId: string | null;
+  legalAreaId: string | null;
+  standardTypeId: string | null;
+  updatedAt: string;
+};
+
 let lastHandledInitialDocumentRequestId: string | null = null;
 
 const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
@@ -788,6 +799,10 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [reconnectFailed, setReconnectFailed] = useState(false);
   const reconnectFailedTimerRef = useRef<number | null>(null);
   const [settingDefaultTemplate, setSettingDefaultTemplate] = useState(false);
+  const [pendingOfflineSync, setPendingOfflineSync] = useState(false);
+  const [localDraftUpdatedAt, setLocalDraftUpdatedAt] = useState<string | null>(null);
+  const [restorableLocalDraft, setRestorableLocalDraft] = useState<LocalPetitionDraft | null>(null);
+  const pendingOfflineSyncRef = useRef(false);
 
   useEffect(() => {
     if (!petitionTitle) return;
@@ -884,6 +899,10 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const isOnlineRef = useRef(true);
   const serverReachableRef = useRef(true);
   const realtimeRefreshTimerRef = useRef<number | null>(null);
+  const localDraftStorageKey = useMemo(
+    () => `${PETITION_LOCAL_DRAFT_STORAGE_KEY_PREFIX}${user?.id || 'anon'}`,
+    [user?.id],
+  );
 
   // PetiçÃµes salvas
   const [savedPetitions, setSavedPetitions] = useState<SavedPetition[]>([]);
@@ -964,6 +983,55 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   }, [serverReachable]);
 
   useEffect(() => {
+    pendingOfflineSyncRef.current = pendingOfflineSync;
+  }, [pendingOfflineSync]);
+
+  const clearLocalDraft = useCallback(() => {
+    try {
+      window.localStorage.removeItem(localDraftStorageKey);
+    } catch {
+      // ignore
+    }
+    setLocalDraftUpdatedAt(null);
+    setRestorableLocalDraft(null);
+    setPendingOfflineSync(false);
+  }, [localDraftStorageKey]);
+
+  const loadLocalDraftFromStorage = useCallback((): LocalPetitionDraft | null => {
+    try {
+      const raw = window.localStorage.getItem(localDraftStorageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as LocalPetitionDraft;
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (!String(parsed.content || '').trim()) return null;
+      return {
+        title: String(parsed.title || ''),
+        content: String(parsed.content || ''),
+        currentPetitionId: parsed.currentPetitionId || null,
+        clientId: parsed.clientId || null,
+        legalAreaId: parsed.legalAreaId || null,
+        standardTypeId: parsed.standardTypeId || null,
+        updatedAt: String(parsed.updatedAt || new Date().toISOString()),
+      };
+    } catch {
+      return null;
+    }
+  }, [localDraftStorageKey]);
+
+  const writeLocalDraft = useCallback(
+    (draft: LocalPetitionDraft) => {
+      try {
+        window.localStorage.setItem(localDraftStorageKey, JSON.stringify(draft));
+      } catch {
+        // ignore
+      }
+      setLocalDraftUpdatedAt(draft.updatedAt);
+      setRestorableLocalDraft(draft);
+    },
+    [localDraftStorageKey],
+  );
+
+  useEffect(() => {
     const update = () => {
       const next = (() => {
         try {
@@ -1038,6 +1106,14 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       window.removeEventListener('beforeunload', onBeforeUnload);
     };
   }, []);
+
+  useEffect(() => {
+    const draft = loadLocalDraftFromStorage();
+    if (!draft) return;
+    setRestorableLocalDraft(draft);
+    setLocalDraftUpdatedAt(draft.updatedAt);
+    setPendingOfflineSync(true);
+  }, [loadLocalDraftFromStorage]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -2151,6 +2227,7 @@ Regras:
       return;
     }
     if (!isOnlineRef.current) {
+      setPendingOfflineSync(true);
       setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       return;
     }
@@ -2225,6 +2302,7 @@ Regras:
 
       setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
       setLastSaved(new Date());
+      clearLocalDraft();
       showSuccessMessage('Documento salvo com sucesso');
     } catch (err) {
       console.error('Erro ao salvar:', err);
@@ -2239,6 +2317,95 @@ Regras:
   useEffect(() => {
     savePetitionActionRef.current = savePetition;
   }, [savePetition]);
+
+  const restoreLocalDraft = useCallback(async () => {
+    const draft = loadLocalDraftFromStorage();
+    if (!draft) {
+      setError('Nenhuma cópia local encontrada para restaurar.');
+      return;
+    }
+
+    if (hasUnsavedChangesRef.current) {
+      const proceed = window.confirm('Existem alterações atuais não salvas. Deseja substituí-las pela última cópia local?');
+      if (!proceed) return;
+    }
+
+    if (draft.clientId) {
+      const client = clients.find((item) => item.id === draft.clientId) || null;
+      if (client) setSelectedClient(client);
+    }
+    if (draft.legalAreaId) setSelectedLegalAreaId(draft.legalAreaId);
+    setSelectedStandardTypeId(draft.standardTypeId || null);
+    currentPetitionIdRef.current = draft.currentPetitionId || null;
+    setCurrentPetitionId(draft.currentPetitionId || null);
+    setPetitionTitle(draft.title || getDefaultPetitionTitle());
+
+    const editor = editorRef.current;
+    if (editor) {
+      await Promise.resolve(editor.loadSfdt(draft.content));
+      editor.focus();
+    }
+
+    setHasUnsavedChanges(true);
+    setPendingOfflineSync(true);
+    setLocalDraftUpdatedAt(draft.updatedAt);
+    setRestorableLocalDraft(draft);
+    showSuccessMessage('Última cópia local restaurada');
+  }, [clients, getDefaultPetitionTitle, loadLocalDraftFromStorage]);
+
+  useEffect(() => {
+    if (!editorReady) return;
+    if (!hasUnsavedChanges) return;
+
+    const timer = window.setTimeout(() => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const content = editor.getSfdt();
+      if (!String(content || '').trim()) return;
+
+      const draft: LocalPetitionDraft = {
+        title: petitionTitle || getDefaultPetitionTitle(),
+        content,
+        currentPetitionId: currentPetitionIdRef.current ?? currentPetitionId ?? null,
+        clientId: selectedClient?.id ?? null,
+        legalAreaId: selectedLegalAreaId ?? null,
+        standardTypeId: selectedStandardTypeId ?? null,
+        updatedAt: new Date().toISOString(),
+      };
+
+      writeLocalDraft(draft);
+      if (!isOnlineRef.current || !serverReachableRef.current) {
+        setPendingOfflineSync(true);
+      }
+    }, 1800);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    currentPetitionId,
+    editorReady,
+    getDefaultPetitionTitle,
+    hasUnsavedChanges,
+    petitionTitle,
+    selectedClient?.id,
+    selectedLegalAreaId,
+    selectedStandardTypeId,
+    writeLocalDraft,
+  ]);
+
+  useEffect(() => {
+    if (!editorReady) return;
+    if (!pendingOfflineSync) return;
+    if (!hasUnsavedChangesRef.current) return;
+    if (!isOnline || !serverReachable) return;
+    if (!selectedClientIdRef.current) return;
+    if (saveInFlightRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      void savePetitionActionRef.current?.();
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [editorReady, isOnline, pendingOfflineSync, serverReachable]);
 
   // PetiçÃ£o pendente para carregar apÃ³s o editor estar pronto
   const pendingPetitionRef = useRef<SavedPetition | null>(null);
@@ -2417,30 +2584,8 @@ Regras:
       captureAndApplyDocFontSoon(editor);
 
       try {
-        const dataBase64 = arrayBufferToBase64(arrayBuffer);
-        const normalizedFileName = sanitizeText(file.name);
-        defaultTemplateMemoryRef.current = { name: normalizedFileName, dataBase64 };
-        setHasDefaultTemplate(true);
-        setDefaultTemplateName(normalizedFileName);
-
-        // Salvar no Supabase
-        try {
-          await petitionEditorService.saveDefaultTemplate(normalizedFileName, dataBase64);
-        } catch (dbErr) {
-          console.error('Erro ao salvar modelo padrao no banco:', dbErr);
-          // Fallback para localStorage se falhar
-          try {
-            window.localStorage.setItem(
-              DEFAULT_TEMPLATE_STORAGE_KEY,
-              JSON.stringify({ name: normalizedFileName, dataBase64 })
-            );
-          } catch (storageErr) {
-            console.error('Erro ao salvar Documento padrao no storage:', storageErr);
-            setError('Nao foi possivel salvar o Documento padrao no navegador (armazenamento cheio).');
-          }
-        }
-      } catch {
-        // ignore
+        // Importar um documento no editor NAO deve alterar o modelo padrao global.
+        // O modelo padrao so muda pelos fluxos explicitos de configuracao.
       } finally {
         // Limpar input para permitir reimportar o mesmo arquivo
         if (fileInputRef.current) {
@@ -2670,12 +2815,20 @@ Regras:
   // Handler de mudança de conteudo do editor
   const handleContentChange = () => {
     if (isLoadingPetitionRef.current) return;
+    // Marcar o documento como alterado antes de qualquer validação de conectividade.
+    // Se a conexão cair no meio da edição, o navegador ainda precisa bloquear a saída.
+    contentChangeSeqRef.current += 1;
+    setHasUnsavedChanges(true);
     if (!isOnlineRef.current) {
+      setPendingOfflineSync(true);
       setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
       return;
     }
-    contentChangeSeqRef.current += 1;
-    setHasUnsavedChanges(true);
+    if (!serverReachableRef.current) {
+      setPendingOfflineSync(true);
+      setError('Sem conexao com o servidor. Reconecte antes de continuar para nao perder alteracoes.');
+      return;
+    }
   };
 
   // Salvar bloco (criar ou atualizar)
@@ -3169,9 +3322,135 @@ Regras:
   // Atalho Ctrl+S para salvar
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tagName = String(target?.tagName || '').toLowerCase();
+      const isInsideSyncEditor =
+        Boolean(target?.closest('.e-de-ctn')) ||
+        Boolean(target?.closest('[contenteditable="true"]')) ||
+        Boolean(target?.closest('.e-documenteditorcontainer'));
+      const isTypingInFormControl =
+        tagName === 'input' ||
+        tagName === 'textarea' ||
+        tagName === 'select' ||
+        Boolean(target?.isContentEditable && !target.closest('.e-de-ctn'));
+      const editor = editorRef.current;
+      const syncEditor = editor?.getEditor?.();
+
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && isInsideSyncEditor) {
+        const lowerKey = e.key.toLowerCase();
+        if (lowerKey === 'b') {
+          e.preventDefault();
+          syncEditor?.editor?.toggleBold?.();
+          editor?.focus?.();
+          return;
+        }
+        if (lowerKey === 'i') {
+          e.preventDefault();
+          syncEditor?.editor?.toggleItalic?.();
+          editor?.focus?.();
+          return;
+        }
+        if (lowerKey === 'u') {
+          e.preventDefault();
+          syncEditor?.editor?.toggleUnderline?.();
+          editor?.focus?.();
+          return;
+        }
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.altKey && !e.shiftKey && isInsideSyncEditor) {
+        const lowerKey = e.key.toLowerCase();
+        if (lowerKey === 'n') {
+          e.preventDefault();
+          syncEditor?.editor?.toggleBold?.();
+          editor?.focus?.();
+          return;
+        }
+        if (lowerKey === 's') {
+          e.preventDefault();
+          syncEditor?.editor?.toggleUnderline?.();
+          editor?.focus?.();
+          return;
+        }
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         savePetitionActionRef.current?.();
+        return;
+      }
+
+      if (isTypingInFormControl) return;
+
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        syncEditor?.showOptionsPane?.();
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        syncEditor?.showOptionsPane?.();
+        return;
+      }
+
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        syncEditor?.editor?.insertComment?.('');
+        editor?.focus?.();
+        return;
+      }
+
+      if (e.shiftKey && e.key === 'F3') {
+        e.preventDefault();
+        editor?.transformSelectionCase?.('toggle');
+        return;
+      }
+
+      if (e.ctrlKey && e.altKey && ['1', '2', '3'].includes(e.key)) {
+        e.preventDefault();
+        const styleName =
+          e.key === '1' ? 'Heading 1' :
+          e.key === '2' ? 'Heading 2' :
+          'Heading 3';
+        syncEditor?.editor?.applyStyle?.(styleName, true);
+        editor?.focus?.();
+        return;
+      }
+
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        syncEditor?.editor?.applyStyle?.('Normal', true);
+        editor?.focus?.();
+        return;
+      }
+
+      if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        void editor?.pasteCleanedFromWord?.();
+        return;
+      }
+
+      if (e.ctrlKey && e.altKey && (e.key === '+' || e.key === '=')) {
+        e.preventDefault();
+        if (syncEditor && typeof syncEditor.zoomFactor === 'number') {
+          syncEditor.zoomFactor = Math.min(5, syncEditor.zoomFactor + 0.1);
+        }
+        return;
+      }
+
+      if (e.ctrlKey && e.altKey && e.key === '-') {
+        e.preventDefault();
+        if (syncEditor && typeof syncEditor.zoomFactor === 'number') {
+          syncEditor.zoomFactor = Math.max(0.5, syncEditor.zoomFactor - 0.1);
+        }
+        return;
+      }
+
+      if (e.ctrlKey && e.altKey && e.key === '0') {
+        e.preventDefault();
+        if (syncEditor) syncEditor.zoomFactor = 1;
+        return;
       }
 
       // Alt+Space abre modal de busca de bloco (atalho)
@@ -4503,6 +4782,18 @@ Regras:
           </>
         )}
 
+        {localDraftUpdatedAt && (
+          <button
+            type="button"
+            onClick={() => { void restoreLocalDraft(); }}
+            className="pet-top-meta-chip pet-top-shrink hidden lg:inline-flex items-center gap-1.5"
+            title={`Última cópia local: ${new Date(localDraftUpdatedAt).toLocaleString('pt-BR')}`}
+          >
+            <CloudOff className="w-3.5 h-3.5 shrink-0" />
+            <span>Restaurar cópia local</span>
+          </button>
+        )}
+
         <div className="pet-top-actionbar">
           <button
             onClick={() => newPetition({ keepClient: true })}
@@ -5784,6 +6075,11 @@ Regras:
                     <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">
                       Suas alteracoes podem <span className="font-semibold">nao estar sendo salvas</span>. Baixe uma copia em Word agora para nao perder nada — assim que a conexao voltar, o salvamento normaliza.
                     </p>
+                    {localDraftUpdatedAt && (
+                      <p className="mt-2 text-[12.5px] font-medium text-amber-700">
+                        Cópia local temporária salva em {new Date(localDraftUpdatedAt).toLocaleString('pt-BR')}.
+                      </p>
+                    )}
                     {reconnectFailed && (
                       <p className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-red-600 animate-in fade-in slide-in-from-left-1 duration-200">
                         <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
@@ -5808,6 +6104,16 @@ Regras:
                         <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
                         {isRetrying ? 'Reconectando...' : 'Tentar reconectar'}
                       </button>
+                      {restorableLocalDraft && (
+                        <button
+                          type="button"
+                          onClick={() => { void restoreLocalDraft(); }}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-bold rounded-xl transition-all shadow-sm petition-btn-slate"
+                        >
+                          <Clock className="w-4 h-4" />
+                          Restaurar cópia local
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -5854,7 +6160,8 @@ Regras:
             ref={editorRef}
             id="petition-main-editor"
             height="100%"
-            readOnly={!isOnline}
+            currentUserName={userDisplayName}
+            readOnly={!isOnline || !serverReachable}
             enableToolbar={false}
             showPropertiesPane={false}
             showNavigationPane={false}
@@ -5897,6 +6204,7 @@ Regras:
           ref={blockConvertEditorRef}
           id="petition-block-converter"
           height="1px"
+          currentUserName={userDisplayName}
           readOnly
           enableToolbar={false}
           showPropertiesPane={false}
@@ -6871,6 +7179,7 @@ Regras:
                 ref={blockEditorRef}
                 id="petition-block-editor"
                 height="100%"
+                currentUserName={userDisplayName}
                 showPropertiesPane
                 enableToolbar
                 enableCustomContextMenu

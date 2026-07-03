@@ -6,6 +6,33 @@ export type ThemePreference = 'light' | 'dark' | 'system';
 export type SidebarMode = 'compact' | 'normal';
 
 export type ProfileBadge = 'advogado' | 'administrador' | 'estagiario' | 'secretario' | null;
+export interface PetitionRibbonCustomStyle {
+  id: string;
+  name: string;
+  fontFamily: string;
+  fontSize: number;
+  fontColor: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  textAlignment: '' | 'Left' | 'Center' | 'Right' | 'Justify';
+  leftIndent: number;
+  rightIndent: number;
+  firstLineIndent: number;
+  beforeSpacing: number;
+  afterSpacing: number;
+  lineSpacing: number;
+  lineSpacingType: string;
+  tabStops: Array<{
+    position: number;
+    deletePosition: number;
+    tabJustification: string;
+    tabLeader: string;
+  }>;
+  listMode: 'none' | 'bullet' | 'number';
+  listText: string;
+  numberFormat: string;
+}
 
 export interface Profile {
   id: string;
@@ -26,6 +53,7 @@ export interface Profile {
   presence_status?: PresenceStatus;
   theme_preference?: ThemePreference;
   sidebar_mode?: SidebarMode;
+  petition_ribbon_custom_styles?: PetitionRibbonCustomStyle[] | null;
   last_seen_at?: string | null;
   updated_at: string;
   created_at: string;
@@ -46,6 +74,25 @@ export interface UpdateProfileInput {
 
 class ProfileService {
   private tableName = 'profiles';
+  private ribbonStylesColumn = 'petition_ribbon_custom_styles';
+
+  private isMissingRibbonStylesColumn(error: any): boolean {
+    const msg = String(error?.message || '').toLowerCase();
+    const details = String(error?.details || '').toLowerCase();
+    return (
+      msg.includes(this.ribbonStylesColumn) ||
+      details.includes(this.ribbonStylesColumn) ||
+      (String(error?.code || '').toUpperCase() === 'PGRST204' && (msg.includes('column') || details.includes('column')))
+    );
+  }
+
+  private async requireUserId(): Promise<string> {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw new Error(error.message);
+    const userId = data.user?.id;
+    if (!userId) throw new Error('Usuário não autenticado');
+    return userId;
+  }
 
   async getProfile(userId: string): Promise<Profile | null> {
     const { data, error } = await supabase
@@ -149,6 +196,41 @@ class ProfileService {
       .eq('user_id', userId);
 
     if (error) throw new Error(error.message);
+  }
+
+  async getMyPetitionRibbonCustomStyles(): Promise<PetitionRibbonCustomStyle[] | null> {
+    const userId = await this.requireUserId();
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select(this.ribbonStylesColumn)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      if (this.isMissingRibbonStylesColumn(error)) return null;
+      throw new Error(error.message);
+    }
+
+    const styles = (data as any)?.[this.ribbonStylesColumn];
+    return Array.isArray(styles) ? (styles as PetitionRibbonCustomStyle[]) : null;
+  }
+
+  async updateMyPetitionRibbonCustomStyles(styles: PetitionRibbonCustomStyle[]): Promise<boolean> {
+    const userId = await this.requireUserId();
+    const { error } = await supabase
+      .from(this.tableName)
+      .update({
+        [this.ribbonStylesColumn]: styles,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+
+    if (error) {
+      if (this.isMissingRibbonStylesColumn(error)) return false;
+      throw new Error(error.message);
+    }
+
+    return true;
   }
 
   async setPresenceStatus(userId: string, status: PresenceStatus): Promise<void> {

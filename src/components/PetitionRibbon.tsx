@@ -50,6 +50,7 @@ import {
   History,
 } from 'lucide-react';
 import type { SyncfusionEditorRef } from './SyncfusionEditor';
+import { profileService, type PetitionRibbonCustomStyle } from '../services/profile.service';
 
 type RibbonTab = 'inicio' | 'inserir' | 'layout' | 'revisao' | 'exibir';
 
@@ -81,33 +82,7 @@ const EMPTY_FMT: FmtState = {
   styleName: 'Normal',
 };
 
-interface CustomStylePreset {
-  id: string;
-  name: string;
-  fontFamily: string;
-  fontSize: number;
-  fontColor: string;
-  bold: boolean;
-  italic: boolean;
-  underline: boolean;
-  textAlignment: '' | 'Left' | 'Center' | 'Right' | 'Justify';
-  leftIndent: number;
-  rightIndent: number;
-  firstLineIndent: number;
-  beforeSpacing: number;
-  afterSpacing: number;
-  lineSpacing: number;
-  lineSpacingType: string;
-  tabStops: Array<{
-    position: number;
-    deletePosition: number;
-    tabJustification: string;
-    tabLeader: string;
-  }>;
-  listMode: 'none' | 'bullet' | 'number';
-  listText: string;
-  numberFormat: string;
-}
+type CustomStylePreset = PetitionRibbonCustomStyle;
 
 const FONT_FAMILIES = [
   'Times New Roman',
@@ -208,9 +183,22 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
   const [hoverReveal, setHoverReveal] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
+  const [pasteMenuOpen, setPasteMenuOpen] = useState(false);
+  const [caseMenuOpen, setCaseMenuOpen] = useState(false);
+  const [pageNumberMenuOpen, setPageNumberMenuOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [replaceSearch, setReplaceSearch] = useState('');
+  const [replaceValue, setReplaceValue] = useState('');
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [tableGridOpen, setTableGridOpen] = useState(false);
   const [tableHover, setTableHover] = useState({ r: 0, c: 0 });
+  const [showRevisions, setShowRevisions] = useState(true);
+  const [showHiddenMarks, setShowHiddenMarks] = useState(false);
+  const [showBookmarks, setShowBookmarks] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<'Pages' | 'Continuous'>('Pages');
+  const [isProtected, setIsProtected] = useState(false);
+  const [formatPainterPreset, setFormatPainterPreset] = useState<CustomStylePreset | null>(null);
+  const [formatPainterArmed, setFormatPainterArmed] = useState(false);
   const [customStyles, setCustomStyles] = useState<CustomStylePreset[]>(() => {
     try {
       const raw = window.localStorage.getItem(CUSTOM_STYLES_STORAGE_KEY);
@@ -222,6 +210,8 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
   });
   const lastColorRef = useRef('#dc2626');
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const customStylesHydratedRef = useRef(false);
+  const customStylesSavedRef = useRef<string>('');
   const isBodyVisible = !isCollapsed || hoverReveal;
 
   useEffect(() => {
@@ -233,11 +223,63 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     if (!isCollapsed) setHoverReveal(false);
   }, [isCollapsed]);
   useEffect(() => {
+    let cancelled = false;
+    const loadCustomStyles = async () => {
+      let fallbackLocal: CustomStylePreset[] = [];
+      try {
+        const raw = window.localStorage.getItem(CUSTOM_STYLES_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        fallbackLocal = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        fallbackLocal = [];
+      }
+
+      try {
+        const remoteStyles = await profileService.getMyPetitionRibbonCustomStyles();
+        const nextStyles = Array.isArray(remoteStyles) ? remoteStyles : fallbackLocal;
+        if (!cancelled) {
+          setCustomStyles(nextStyles);
+          customStylesSavedRef.current = JSON.stringify(nextStyles);
+        }
+      } catch {
+        if (!cancelled) {
+          setCustomStyles(fallbackLocal);
+          customStylesSavedRef.current = JSON.stringify(fallbackLocal);
+        }
+      } finally {
+        if (!cancelled) customStylesHydratedRef.current = true;
+      }
+    };
+
+    void loadCustomStyles();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
     try {
       window.localStorage.setItem(CUSTOM_STYLES_STORAGE_KEY, JSON.stringify(customStyles));
     } catch {
       // ignore
     }
+    if (!customStylesHydratedRef.current) return;
+    const serialized = JSON.stringify(customStyles);
+    if (serialized === customStylesSavedRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      profileService
+        .updateMyPetitionRibbonCustomStyles(customStyles)
+        .then((saved) => {
+          if (saved) {
+            customStylesSavedRef.current = serialized;
+          }
+        })
+        .catch(() => {
+          // keep local fallback if sync fails
+        });
+    }, 500);
+
+    return () => window.clearTimeout(timer);
   }, [customStyles]);
   useEffect(() => {
     try {
@@ -278,6 +320,22 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
       if (typeof ed.zoomFactor === 'number') {
         setZoom(Math.round(ed.zoomFactor * 100));
       }
+      if (typeof ed.enableTrackChanges === 'boolean') {
+        setTrackChanges(ed.enableTrackChanges);
+      }
+      if (typeof ed.showRevisions === 'boolean') {
+        setShowRevisions(ed.showRevisions);
+      }
+      if (typeof ed.showHiddenMarks === 'boolean') {
+        setShowHiddenMarks(ed.showHiddenMarks);
+      }
+      if (typeof ed.showBookmarks === 'boolean') {
+        setShowBookmarks(ed.showBookmarks);
+      }
+      if (ed.layoutType === 'Pages' || ed.layoutType === 'Continuous') {
+        setLayoutMode(ed.layoutType);
+      }
+      setIsProtected(Boolean(String(ed.restrictEditing || '').trim()));
     } catch {
       // ignore
     }
@@ -368,6 +426,16 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     run((ed) => {
       if (ed.selection?.characterFormat) ed.selection.characterFormat.highlightColor = value;
     });
+  const applySelectionCase = useCallback(
+    (mode: 'sentence' | 'lower' | 'upper' | 'title' | 'toggle') => {
+      const changed = editorRef.current?.transformSelectionCase?.(mode);
+      if (changed) {
+        syncFmt();
+      }
+      setCaseMenuOpen(false);
+    },
+    [editorRef, syncFmt],
+  );
   const setAlign = (v: FmtState['alignment']) =>
     run((ed) => {
       if (ed.selection?.paragraphFormat) ed.selection.paragraphFormat.textAlignment = v;
@@ -376,43 +444,49 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     run((ed) => {
       ed.editor?.applyStyle?.(name, true);
     });
+  const captureSelectionStylePreset = useCallback(
+    (nameFallback: string) => {
+      const ed = getEd();
+      const pf = ed?.selection?.paragraphFormat;
+      const listLevel = pf?.listFormat?.listLevel;
+      const listText = typeof pf?.listText === 'string' ? pf.listText : '';
+      const numberFormat = typeof listLevel?.numberFormat === 'string' ? listLevel.numberFormat : '';
+      const listMode: CustomStylePreset['listMode'] =
+        listText
+          ? numberFormat && numberFormat.includes('%')
+            ? 'number'
+            : 'bullet'
+          : 'none';
+      return {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: nameFallback,
+        fontFamily: fmt.fontFamily || 'Calibri',
+        fontSize: typeof fmt.fontSize === 'number' && fmt.fontSize > 0 ? fmt.fontSize : 11,
+        fontColor: fmt.fontColor || '#000000',
+        bold: fmt.bold,
+        italic: fmt.italic,
+        underline: fmt.underline,
+        textAlignment: fmt.alignment,
+        leftIndent: typeof pf?.leftIndent === 'number' ? pf.leftIndent : 0,
+        rightIndent: typeof pf?.rightIndent === 'number' ? pf.rightIndent : 0,
+        firstLineIndent: typeof pf?.firstLineIndent === 'number' ? pf.firstLineIndent : 0,
+        beforeSpacing: typeof pf?.beforeSpacing === 'number' ? pf.beforeSpacing : 0,
+        afterSpacing: typeof pf?.afterSpacing === 'number' ? pf.afterSpacing : 0,
+        lineSpacing: typeof pf?.lineSpacing === 'number' && pf.lineSpacing > 0 ? pf.lineSpacing : 1,
+        lineSpacingType: typeof pf?.lineSpacingType === 'string' && pf.lineSpacingType ? pf.lineSpacingType : 'Multiple',
+        tabStops: normalizeTabStops(ed?.editorModule?.getTabsInSelection?.() ?? pf?.tabs),
+        listMode,
+        listText,
+        numberFormat,
+      } satisfies CustomStylePreset;
+    },
+    [fmt, getEd],
+  );
   const captureCurrentStyle = () => {
     const name = window.prompt('Nome do estilo personalizado:', '');
     if (!name?.trim()) return;
     const trimmed = name.trim();
-    const ed = getEd();
-    const pf = ed?.selection?.paragraphFormat;
-    const listLevel = pf?.listFormat?.listLevel;
-    const listText = typeof pf?.listText === 'string' ? pf.listText : '';
-    const numberFormat = typeof listLevel?.numberFormat === 'string' ? listLevel.numberFormat : '';
-    const listMode: CustomStylePreset['listMode'] =
-      listText
-        ? numberFormat && numberFormat.includes('%')
-          ? 'number'
-          : 'bullet'
-        : 'none';
-    const nextStyle: CustomStylePreset = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: trimmed,
-      fontFamily: fmt.fontFamily || 'Calibri',
-      fontSize: typeof fmt.fontSize === 'number' && fmt.fontSize > 0 ? fmt.fontSize : 11,
-      fontColor: fmt.fontColor || '#000000',
-      bold: fmt.bold,
-      italic: fmt.italic,
-      underline: fmt.underline,
-      textAlignment: fmt.alignment,
-      leftIndent: typeof pf?.leftIndent === 'number' ? pf.leftIndent : 0,
-      rightIndent: typeof pf?.rightIndent === 'number' ? pf.rightIndent : 0,
-      firstLineIndent: typeof pf?.firstLineIndent === 'number' ? pf.firstLineIndent : 0,
-      beforeSpacing: typeof pf?.beforeSpacing === 'number' ? pf.beforeSpacing : 0,
-      afterSpacing: typeof pf?.afterSpacing === 'number' ? pf.afterSpacing : 0,
-      lineSpacing: typeof pf?.lineSpacing === 'number' && pf.lineSpacing > 0 ? pf.lineSpacing : 1,
-      lineSpacingType: typeof pf?.lineSpacingType === 'string' && pf.lineSpacingType ? pf.lineSpacingType : 'Multiple',
-      tabStops: normalizeTabStops(ed?.editorModule?.getTabsInSelection?.() ?? pf?.tabs),
-      listMode,
-      listText,
-      numberFormat,
-    };
+    const nextStyle = captureSelectionStylePreset(trimmed);
     setCustomStyles((prev) => {
       const withoutSameName = prev.filter((item) => item.name.toLowerCase() !== trimmed.toLowerCase());
       return [...withoutSameName, nextStyle];
@@ -461,6 +535,37 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
         ed.editor?.applyNumbering?.(style.numberFormat || '%1.', 'Arabic');
       }
     });
+  const toggleFormatPainter = () => {
+    if (formatPainterArmed && formatPainterPreset) {
+      applyCustomStyle(formatPainterPreset);
+      setFormatPainterArmed(false);
+      setFormatPainterPreset(null);
+      return;
+    }
+    const preset = captureSelectionStylePreset('Pincel de formatação');
+    setFormatPainterPreset(preset);
+    setFormatPainterArmed(true);
+    window.alert('Formato capturado. Selecione o texto de destino e clique no pincel novamente para aplicar.');
+  };
+  const runPasteMode = async (mode: 'source' | 'merge' | 'text' | 'clean') => {
+    try {
+      let ok = false;
+      if (mode === 'source') ok = (await editorRef.current?.pasteWithSourceFormatting?.()) ?? false;
+      else if (mode === 'merge') ok = (await editorRef.current?.pasteWithMergedFormatting?.()) ?? false;
+      else if (mode === 'text') ok = (await editorRef.current?.pasteAsPlainText?.()) ?? false;
+      else ok = (await editorRef.current?.pasteCleanedFromWord?.()) ?? false;
+
+      if (!ok) {
+        window.alert('Não foi possível colar com esse modo. Verifique a permissão da área de transferência.');
+      }
+    } catch {
+      window.alert('Não foi possível acessar a área de transferência neste navegador.');
+    } finally {
+      setPasteMenuOpen(false);
+      window.setTimeout(() => editorRef.current?.focus?.(), 0);
+      syncFmt();
+    }
+  };
   const removeCustomStyle = (id: string) => {
     setCustomStyles((prev) => prev.filter((item) => item.id !== id));
   };
@@ -485,6 +590,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
       if (isInList(ed)) ed.editor?.clearList?.();
       else ed.editor?.applyNumbering?.('%1.', 'Arabic');
     });
+  const openListDialog = () => runAndReturnHome((ed) => ed.showListDialog?.());
 
   // ---- InserÃ§Ãµes ----
   const insertTableGrid = (rows: number, cols: number) => {
@@ -528,10 +634,15 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
   };
   const goToHeader = () => runAndReturnHome((ed) => ed.selection?.goToHeader?.());
   const goToFooter = () => runAndReturnHome((ed) => ed.selection?.goToFooter?.());
-  const insertPageNumber = () =>
+  const insertPageNumberAt = (region: 'header' | 'footer', align: 'Left' | 'Center' | 'Right') =>
     runAndReturnHome((ed) => {
-      ed.selection?.goToFooter?.();
+      if (region === 'header') ed.selection?.goToHeader?.();
+      else ed.selection?.goToFooter?.();
+      if (ed.selection?.paragraphFormat) {
+        ed.selection.paragraphFormat.textAlignment = align;
+      }
       ed.editor?.insertPageNumber?.();
+      setPageNumberMenuOpen(false);
     });
 
   // ---- Layout ----
@@ -596,6 +707,20 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     const runner = returnHome ? runAndReturnHome : run;
     runner((ed) => ed.showOptionsPane?.());
   };
+  const replaceAll = () => {
+    const search = replaceSearch.trim();
+    if (!search) {
+      window.alert('Informe o texto que deseja localizar.');
+      return;
+    }
+    const changed = editorRef.current?.replaceAll?.(search, replaceValue) ?? false;
+    if (!changed) {
+      window.alert('Não foi possível substituir no editor atual.');
+      return;
+    }
+    setReplaceOpen(false);
+    returnToHomeTab();
+  };
   const printDoc = () => {
     try {
       editorRef.current?.printDocument?.();
@@ -612,6 +737,80 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
       // ignore
     }
     returnToHomeTab();
+  };
+  const toggleShowRevisions = () => {
+    const next = !showRevisions;
+    setShowRevisions(next);
+    runAndReturnHome((ed) => {
+      if (typeof ed.showRevisions === 'boolean') {
+        ed.showRevisions = next;
+      }
+      ed.viewer?.showRevisions?.(next);
+    }, false);
+  };
+  const acceptAllRevisions = () =>
+    runAndReturnHome((ed) => {
+      ed.revisions?.acceptAll?.();
+    });
+  const rejectAllRevisions = () =>
+    runAndReturnHome((ed) => {
+      ed.revisions?.rejectAll?.();
+    });
+  const navigateRevision = (direction: 'previous' | 'next') =>
+    run((ed) => {
+      if (direction === 'previous') ed.selection?.navigatePreviousRevision?.();
+      else ed.selection?.navigateNextRevision?.();
+    }, false);
+  const toggleHiddenMarks = () => {
+    const next = !showHiddenMarks;
+    setShowHiddenMarks(next);
+    runAndReturnHome((ed) => {
+      ed.showHiddenMarks = next;
+    }, false);
+  };
+  const toggleBookmarks = () => {
+    const next = !showBookmarks;
+    setShowBookmarks(next);
+    runAndReturnHome((ed) => {
+      ed.showBookmarks = next;
+    }, false);
+  };
+  const setEditorLayoutMode = (mode: 'Pages' | 'Continuous') => {
+    setLayoutMode(mode);
+    runAndReturnHome((ed) => {
+      ed.layoutType = mode;
+      ed.resize?.();
+    }, false);
+  };
+  const toggleRestrictEditing = async () => {
+    const ed = getEd();
+    if (!ed?.editor) return;
+    try {
+      const active = Boolean(String(ed.restrictEditing || '').trim());
+      if (active) {
+        const password = window.prompt('Digite a senha para liberar a edição:', '');
+        if (password === null) return;
+        if (typeof ed.editor.stopProtectionAsync === 'function') {
+          await ed.editor.stopProtectionAsync(password);
+        } else {
+          ed.editor.stopProtection?.(password);
+        }
+        setIsProtected(false);
+      } else {
+        const password = window.prompt('Defina uma senha para restringir a edição:', '');
+        if (!password) return;
+        if (typeof ed.editor.enforceProtectionAsync === 'function') {
+          await ed.editor.enforceProtectionAsync(password, 'ReadOnly');
+        } else {
+          ed.editor.enforceProtection?.(password, 'ReadOnly');
+        }
+        setIsProtected(true);
+      }
+      syncFmt();
+      returnToHomeTab();
+    } catch {
+      window.alert('Não foi possível alterar a proteção do documento.');
+    }
   };
   const setZoomFactor = (pct: number) =>
     runAndReturnHome((ed) => {
@@ -637,22 +836,30 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     }
     returnToHomeTab();
   };
+  const applyColumnsPreset = (columns: number) =>
+    runAndReturnHome((ed) => {
+      ed.editor?.applyColumnFormat?.(Math.max(1, columns), true);
+    });
 
   // Fecha popovers/menus ao clicar fora
   useEffect(() => {
-    if (!colorOpen && !highlightOpen && !fileMenuOpen && !tableGridOpen) return;
+    if (!colorOpen && !highlightOpen && !pasteMenuOpen && !caseMenuOpen && !pageNumberMenuOpen && !replaceOpen && !fileMenuOpen && !tableGridOpen) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
       if (!t.closest?.('[data-ribbon-popover]')) {
         setColorOpen(false);
         setHighlightOpen(false);
+        setPasteMenuOpen(false);
+        setCaseMenuOpen(false);
+        setPageNumberMenuOpen(false);
+        setReplaceOpen(false);
         setFileMenuOpen(false);
         setTableGridOpen(false);
       }
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
-  }, [colorOpen, highlightOpen, fileMenuOpen, tableGridOpen]);
+  }, [colorOpen, highlightOpen, pasteMenuOpen, caseMenuOpen, pageNumberMenuOpen, replaceOpen, fileMenuOpen, tableGridOpen]);
 
   return (
     <div
@@ -666,6 +873,10 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
           setHoverReveal(false);
           setColorOpen(false);
           setHighlightOpen(false);
+          setPasteMenuOpen(false);
+          setCaseMenuOpen(false);
+          setPageNumberMenuOpen(false);
+          setReplaceOpen(false);
           setFileMenuOpen(false);
           setTableGridOpen(false);
         }
@@ -758,16 +969,53 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
 
             {/* Área de transferência */}
             <RibbonGroup label={"Área de Transferência"} className="is-clipboard" bodyClassName="is-inline">
-              <Btn title="Colar" onClick={() => run((ed) => ed.editor?.paste?.())}>
-                <ClipboardPaste size={18} />
-                <span className="lbl">Colar</span>
-              </Btn>
+              <div className="pet-split-btn" data-ribbon-popover>
+                <Btn title="Colar" onClick={() => run((ed) => ed.editor?.paste?.())}>
+                  <ClipboardPaste size={18} />
+                  <span className="lbl">Colar</span>
+                </Btn>
+                <button
+                  type="button"
+                  className="pet-iconbtn"
+                  title="Opções de colagem"
+                  onClick={() => {
+                    if (isCollapsed) setHoverReveal(true);
+                    setPasteMenuOpen((v) => !v);
+                    setColorOpen(false);
+                    setHighlightOpen(false);
+                  }}
+                  style={{ minWidth: 30 }}
+                >
+                  <ChevronDown size={14} />
+                </button>
+                {pasteMenuOpen && (
+                  <div className="pet-popover" data-ribbon-popover style={{ width: 250, padding: 6 }}>
+                    <div className="pet-menu-list">
+                      <button type="button" className="pet-file-item" onClick={() => void runPasteMode('source')}>
+                        Manter formatação original
+                      </button>
+                      <button type="button" className="pet-file-item" onClick={() => void runPasteMode('merge')}>
+                        Mesclar com a formatação atual
+                      </button>
+                      <button type="button" className="pet-file-item" onClick={() => void runPasteMode('text')}>
+                        Colar somente texto
+                      </button>
+                      <button type="button" className="pet-file-item" onClick={() => void runPasteMode('clean')}>
+                        Limpar estilos problemáticos do Word
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="pet-stack">
                 <Btn small title="Recortar" onClick={() => run((ed) => ed.editor?.cut?.())}>
                   <Scissors size={14} /> <span>Recortar</span>
                 </Btn>
                 <Btn small title="Copiar" onClick={() => run((ed) => ed.selection?.copy?.())}>
                   <Copy size={14} /> <span>Copiar</span>
+                </Btn>
+                <Btn small title="Pincel de formatação" onClick={toggleFormatPainter}>
+                  <span style={formatPainterArmed ? { color: '#b5611f', fontWeight: 700 } : undefined}>Pincel</span>
                 </Btn>
               </div>
             </RibbonGroup>
@@ -811,6 +1059,43 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <IconBtn title="Diminuir fonte" onClick={() => bumpFont(-1)}>
                   <span className="pet-aminus">A-</span>
                 </IconBtn>
+                <div className="pet-split-btn" data-ribbon-popover>
+                  <button
+                    type="button"
+                    className="pet-iconbtn"
+                    title="Alterar maiúsculas e minúsculas"
+                    onClick={() => {
+                      if (isCollapsed) setHoverReveal(true);
+                      setCaseMenuOpen((v) => !v);
+                      setColorOpen(false);
+                      setHighlightOpen(false);
+                    }}
+                    style={{ minWidth: 36, fontWeight: 600, letterSpacing: '-0.02em' }}
+                  >
+                    Aa
+                  </button>
+                  {caseMenuOpen && (
+                    <div className="pet-popover" data-ribbon-popover style={{ width: 220, padding: 6 }}>
+                      <div className="pet-menu-list">
+                        <button type="button" className="pet-file-item" onClick={() => applySelectionCase('sentence')}>
+                          Primeira letra da frase em maiúscula
+                        </button>
+                        <button type="button" className="pet-file-item" onClick={() => applySelectionCase('lower')}>
+                          minúscula
+                        </button>
+                        <button type="button" className="pet-file-item" onClick={() => applySelectionCase('upper')}>
+                          MAIÚSCULAS
+                        </button>
+                        <button type="button" className="pet-file-item" onClick={() => applySelectionCase('title')}>
+                          Colocar Cada Palavra em Maiúscula
+                        </button>
+                        <button type="button" className="pet-file-item" onClick={() => applySelectionCase('toggle')}>
+                          aLTERNAR mAIÚSC./mINÚSC.
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="pet-row">
                 <IconBtn title="Negrito" active={fmt.bold} onClick={() => run((ed) => ed.editor?.toggleBold?.())}>
@@ -954,6 +1239,9 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <IconBtn title="Numeracao (alterna)" onClick={toggleNumbering}>
                   <ListOrdered size={15} />
                 </IconBtn>
+                <IconBtn title="Lista multinível" onClick={openListDialog}>
+                  <span style={{ fontSize: 12, fontWeight: 700 }}>1.1</span>
+                </IconBtn>
                 <span className="pet-vsep" />
                 <IconBtn title="Diminuir recuo" onClick={() => run((ed) => ed.editor?.decreaseIndent?.())}>
                   <Outdent size={15} />
@@ -1071,6 +1359,46 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <Btn small title="Localizar / Substituir" onClick={openFind}>
                   <Search size={14} /> <span>Localizar</span>
                 </Btn>
+                <div className="pet-split-btn" data-ribbon-popover>
+                  <Btn
+                    small
+                    title="Substituir texto"
+                    onClick={() => {
+                      if (isCollapsed) setHoverReveal(true);
+                      setReplaceOpen((v) => !v);
+                    }}
+                  >
+                    <span>Substituir</span>
+                  </Btn>
+                  {replaceOpen && (
+                    <div className="pet-popover" data-ribbon-popover style={{ width: 260 }}>
+                      <div className="pet-replace-pop">
+                        <input
+                          type="text"
+                          className="pet-input"
+                          value={replaceSearch}
+                          onChange={(e) => setReplaceSearch(e.target.value)}
+                          placeholder="Localizar"
+                        />
+                        <input
+                          type="text"
+                          className="pet-input"
+                          value={replaceValue}
+                          onChange={(e) => setReplaceValue(e.target.value)}
+                          placeholder="Substituir por"
+                        />
+                        <div className="pet-flow-row">
+                          <Btn small title="Abrir localizar" onClick={() => openFind()}>
+                            <span>Localizar</span>
+                          </Btn>
+                          <Btn small title="Substituir tudo" onClick={replaceAll}>
+                            <span>Substituir Tudo</span>
+                          </Btn>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <Btn small title="Selecionar tudo" onClick={() => run((ed) => ed.selection?.selectAll?.())}>
                   <span style={{ width: 14, textAlign: 'center' }}>+</span> <span>Selecionar</span>
                 </Btn>
@@ -1138,10 +1466,42 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <PanelBottom size={18} />
                 <span className="lbl">{"Rodapé"}</span>
               </Btn>
-              <Btn title={"Número de página"} onClick={insertPageNumber}>
-                <Hash size={18} />
-                <span className="lbl">{"Nº Página"}</span>
-              </Btn>
+              <div className="pet-split-btn" data-ribbon-popover>
+                <Btn
+                  title={"Número de página"}
+                  onClick={() => {
+                    if (isCollapsed) setHoverReveal(true);
+                    setPageNumberMenuOpen((v) => !v);
+                  }}
+                >
+                  <Hash size={18} />
+                  <span className="lbl">{"Nº Página"}</span>
+                </Btn>
+                {pageNumberMenuOpen && (
+                  <div className="pet-popover" data-ribbon-popover style={{ width: 240 }}>
+                    <div className="pet-replace-pop">
+                      <button type="button" className="pet-file-item" onClick={() => insertPageNumberAt('header', 'Left')}>
+                        Topo à esquerda
+                      </button>
+                      <button type="button" className="pet-file-item" onClick={() => insertPageNumberAt('header', 'Center')}>
+                        Topo centralizado
+                      </button>
+                      <button type="button" className="pet-file-item" onClick={() => insertPageNumberAt('header', 'Right')}>
+                        Topo à direita
+                      </button>
+                      <button type="button" className="pet-file-item" onClick={() => insertPageNumberAt('footer', 'Left')}>
+                        Rodapé à esquerda
+                      </button>
+                      <button type="button" className="pet-file-item" onClick={() => insertPageNumberAt('footer', 'Center')}>
+                        Rodapé centralizado
+                      </button>
+                      <button type="button" className="pet-file-item" onClick={() => insertPageNumberAt('footer', 'Right')}>
+                        Rodapé à direita
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </RibbonGroup>
             <RibbonGroup label={"Páginas"}>
               <Btn title={"Quebra de página (Ctrl+Enter)"} onClick={insertPageBreak}>
@@ -1161,6 +1521,10 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
               <Btn title={"Inserir nota de rodapé"} onClick={insertFootnote}>
                 <StickyNote size={18} />
                 <span className="lbl">{"Nota Rodapé"}</span>
+              </Btn>
+              <Btn title={"Inserir nota de fim"} onClick={() => runAndReturnHome((ed) => ed.editor?.insertEndnote?.())}>
+                <StickyNote size={18} />
+                <span className="lbl">{"Nota de Fim"}</span>
               </Btn>
             </RibbonGroup>
           </>
@@ -1207,6 +1571,9 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <Btn small title="Aumentar recuo" onClick={() => run((ed) => ed.editor?.increaseIndent?.())}>
                   <Indent size={14} /> <span>Aumentar recuo</span>
                 </Btn>
+                <Btn small title="Bordas do parágrafo / tabela" onClick={() => runAndReturnHome((ed) => ed.showBordersAndShadingDialog?.())}>
+                  <span>Bordas</span>
+                </Btn>
               </div>
               <select
                 className="pet-select"
@@ -1240,6 +1607,22 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 </Btn>
               </div>
             </RibbonGroup>
+            <RibbonGroup label={"Colunas"}>
+              <div className="pet-flow-row">
+                <Btn small title="Uma coluna" onClick={() => applyColumnsPreset(1)}>
+                  <span>1</span>
+                </Btn>
+                <Btn small title="Duas colunas" onClick={() => applyColumnsPreset(2)}>
+                  <span>2</span>
+                </Btn>
+                <Btn small title="Três colunas" onClick={() => applyColumnsPreset(3)}>
+                  <span>3</span>
+                </Btn>
+                <Btn small title="Mais opções de colunas" onClick={() => runAndReturnHome((ed) => ed.showColumnsDialog?.())}>
+                  <span>Mais</span>
+                </Btn>
+              </div>
+            </RibbonGroup>
           </>
         )}
 
@@ -1265,6 +1648,41 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 </span>
               </Btn>
             </RibbonGroup>
+            <RibbonGroup label={"Marcações"} className="is-slim" bodyClassName="is-inline is-center">
+              <div className="pet-stack">
+                <label className="pet-check" title="Mostrar ou ocultar marcações de revisão">
+                  <input type="checkbox" checked={showRevisions} onChange={toggleShowRevisions} />
+                  <span>Mostrar</span>
+                </label>
+                <div className="pet-flow-row">
+                  <Btn small title="Revisão anterior" onClick={() => navigateRevision('previous')}>
+                    <span>Anterior</span>
+                  </Btn>
+                  <Btn small title="Próxima revisão" onClick={() => navigateRevision('next')}>
+                    <span>Próxima</span>
+                  </Btn>
+                </div>
+              </div>
+            </RibbonGroup>
+            <RibbonGroup label={"Aceitar / Rejeitar"} className="is-slim" bodyClassName="is-inline is-center">
+              <div className="pet-stack">
+                <Btn small title="Aceitar todas as alterações" onClick={acceptAllRevisions}>
+                  <span>Aceitar Tudo</span>
+                </Btn>
+                <Btn small title="Rejeitar todas as alterações" onClick={rejectAllRevisions}>
+                  <span>Rejeitar Tudo</span>
+                </Btn>
+              </div>
+            </RibbonGroup>
+            <RibbonGroup label={"Proteção"} className="is-slim" bodyClassName="is-inline is-center">
+              <div className="pet-stack">
+                <Btn small title="Restringir ou liberar edição com senha" onClick={() => void toggleRestrictEditing()}>
+                  <span style={isProtected ? { color: '#b5611f', fontWeight: 700 } : undefined}>
+                    {isProtected ? 'Liberar Edição' : 'Restringir Edição'}
+                  </span>
+                </Btn>
+              </div>
+            </RibbonGroup>
             <RibbonGroup label="Localizar">
               <Btn title="Localizar / Substituir" onClick={() => openFind(true)}>
                 <Search size={18} />
@@ -1280,6 +1698,14 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
               <label className="pet-check" title={"Mostrar régua"}>
                 <input type="checkbox" checked={showRuler} onChange={toggleRuler} />
                 <span>{"Régua"}</span>
+              </label>
+              <label className="pet-check" title="Mostrar marcas ocultas, parágrafos e quebras">
+                <input type="checkbox" checked={showHiddenMarks} onChange={toggleHiddenMarks} />
+                <span>Marcas</span>
+              </label>
+              <label className="pet-check" title="Mostrar indicadores (bookmarks)">
+                <input type="checkbox" checked={showBookmarks} onChange={toggleBookmarks} />
+                <span>Indicadores</span>
               </label>
               <label className="pet-check" title={"Painel de navegação (títulos)"}>
                 <input type="checkbox" checked={showNavPane} onChange={toggleNavPane} />
@@ -1298,6 +1724,16 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <span>Ocultar faixa automaticamente</span>
               </label>
             </RibbonGroup>
+            <RibbonGroup label="Modo">
+              <div className="pet-flow-row">
+                <Btn small title="Modo de páginas" onClick={() => setEditorLayoutMode('Pages')}>
+                  <span style={layoutMode === 'Pages' ? { color: '#b5611f', fontWeight: 700 } : undefined}>Páginas</span>
+                </Btn>
+                <Btn small title="Modo contínuo" onClick={() => setEditorLayoutMode('Continuous')}>
+                  <span style={layoutMode === 'Continuous' ? { color: '#b5611f', fontWeight: 700 } : undefined}>Contínuo</span>
+                </Btn>
+              </div>
+            </RibbonGroup>
             <RibbonGroup label="Zoom">
               <div className="pet-row" style={{ gap: 4 }}>
                 <IconBtn title="Diminuir zoom" onClick={() => setZoomFactor(Math.max(50, zoom - 10))}>
@@ -1310,6 +1746,12 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <span className="pet-vsep" />
                 <Btn small title="100%" onClick={() => setZoomFactor(100)}>
                   <span>100%</span>
+                </Btn>
+                <Btn small title="Ajustar largura" onClick={() => runAndReturnHome((ed) => ed.fitPage?.('FitPageWidth'), false)}>
+                  <span>Largura</span>
+                </Btn>
+                <Btn small title="Página inteira" onClick={() => runAndReturnHome((ed) => ed.fitPage?.('FitOnePage'), false)}>
+                  <span>Página</span>
                 </Btn>
               </div>
             </RibbonGroup>
@@ -1425,6 +1867,9 @@ const RIBBON_CSS = `
 .pet-file-menu{position:absolute;top:30px;left:0;z-index:9999;min-width:210px;background:#fff;border:1px solid #e2e0da;border-radius:8px;box-shadow:0 14px 36px rgba(60,50,30,.24);padding:5px;}
 .pet-file-item{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#3a3a38;cursor:pointer;text-align:left;}
 .pet-file-item:hover{background:#f3efe8;}
+.pet-replace-pop{display:flex;flex-direction:column;gap:8px;}
+.pet-input{width:100%;height:32px;padding:0 10px;border:1px solid #ddd7cd;border-radius:8px;background:#fff;font-size:12px;color:#334155;outline:none;}
+.pet-input:focus{border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.12);}
 .pet-file-sep{height:1px;background:#eee9e1;margin:4px 2px;}
 .pet-split-btn{position:relative;display:flex;z-index:6;}
 .pet-tablegrid{top:calc(100% + 6px) !important;left:0;right:auto;min-width:max-content;}

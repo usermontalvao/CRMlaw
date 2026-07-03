@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.296': { name: 'Cafe Editor Resiliente e Atalhos Blindados', emoji: '[memo]' },
   '1.10.295': { name: 'Cafe Editor com Corretor Local', emoji: '[memo]' },
   '1.10.294': { name: 'Cafe Suspensao Progressiva com PIN Blindado', emoji: '[shield]' },
   '1.10.293': { name: 'Cafe Bloqueio Progressivo com Timer', emoji: '[lock]' },
@@ -946,6 +947,22 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.296',
+    date: '03/07/2026',
+    summary: 'O editor de peticoes ganhou resiliencia offline com copia local restauravel, colagem profissional inspirada no Word, preferencias de faixa salvas por usuario e atalhos remapeados para nao disputar com o navegador.',
+    modules: [
+      { moduleId: 'documents', changes: [
+        { type: 'feature' as const, title: 'Editor passou a manter copia local restauravel durante quedas de internet', description: 'O modulo agora salva um rascunho temporario no navegador enquanto o usuario edita, mostra estado offline, permite restaurar a ultima copia local e tenta sincronizar novamente quando a conexao volta.' },
+        { type: 'improvement' as const, title: 'Colagem ganhou modos profissionais inspirados no Word', description: 'A barra do editor passou a oferecer opcoes para manter formatacao, mesclar com a formatacao atual, colar so texto e limpar estilos problemáticos trazidos do Word, reduzindo sujeira visual ao importar conteudo.' },
+        { type: 'improvement' as const, title: 'Atalhos de formatacao foram remapeados para evitar conflito com o navegador', description: 'Os atalhos do editor foram ajustados para usar combinacoes compativeis com a web, preservando produtividade sem acionar comandos nativos do browser como abrir nova janela ou sobrescrever comportamento global.' },
+        { type: 'improvement' as const, title: 'Preferencias da faixa do editor passaram a seguir o usuario', description: 'Configuracoes de estilo e preferencia do ribbon deixaram de ficar presas ao dispositivo atual e passaram a ser carregadas pelo perfil do usuario, permitindo reaproveitar o mesmo ambiente em qualquer computador.' },
+      ]},
+      { moduleId: 'core', changes: [
+        { type: 'improvement' as const, title: 'Migration adicionou suporte persistente para preferencias do editor no perfil', description: 'A base recebeu uma migration dedicada para guardar preferencias visuais do ribbon no cadastro do usuario, abrindo caminho para uma experiencia consistente entre sessoes e dispositivos.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.295',
     date: '03/07/2026',
