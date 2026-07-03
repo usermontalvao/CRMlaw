@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Scale, Shield, Sparkles, Rocket, User, Lock, ArrowRight, Ban,
-  Users, Target, Briefcase, Calendar, Bell, PiggyBank, Library, Newspaper, FileText, PenTool, MessageSquare, Cloud,
+  Users, Target, Briefcase, Calendar, Bell, PiggyBank, Library, Newspaper, FileText, PenTool, MessageSquare, Cloud, Clock,
 } from 'lucide-react';
 import { supabase } from '../config/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { clientService } from '../services/client.service';
 import { BrandLogo } from './ui';
 import { BRAND_SERIF } from '../constants/brand';
@@ -82,6 +83,52 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
   const [identifierProfileAvatar, setIdentifierProfileAvatar] = useState<string | null>(null);
   const [identifierLoading, setIdentifierLoading] = useState(false);
   const [testimonialIndex, setTestimonialIndex] = useState(0);
+
+  // Bloqueio progressivo por IP (anti-força-bruta) — contador regressivo ao vivo.
+  const { checkStaffLoginBlock } = useAuth();
+  const [blockUntil, setBlockUntil] = useState<number | null>(null);
+  const [nowTs, setNowTs] = useState<number>(() => Date.now());
+  const blockRemainingSec = blockUntil ? Math.max(0, Math.ceil((blockUntil - nowTs) / 1000)) : 0;
+  const isBlocked = blockRemainingSec > 0;
+
+  const formatCountdown = useCallback((secs: number) => {
+    const s = Math.max(0, secs);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) return `${h}h ${String(m).padStart(2, '0')}min`;
+    return `${m}:${String(sec).padStart(2, '0')}`;
+  }, []);
+
+  // Tique de 1s enquanto houver bloqueio ativo; ao zerar, libera o formulário.
+  useEffect(() => {
+    if (!blockUntil) return;
+    const id = setInterval(() => {
+      const t = Date.now();
+      setNowTs(t);
+      if (t >= blockUntil) {
+        setBlockUntil(null);
+        setError(null);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [blockUntil]);
+
+  // Ao confirmar o identificador (passo da senha), verifica se o IP já está bloqueado.
+  useEffect(() => {
+    if (!identifierConfirmed) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await checkStaffLoginBlock(email);
+        if (!cancelled && r.blocked && r.retryAfterSeconds > 0) {
+          setBlockUntil(Date.now() + r.retryAfterSeconds * 1000);
+          setNowTs(Date.now());
+        }
+      } catch { /* fail-open: não bloqueia por erro */ }
+    })();
+    return () => { cancelled = true; };
+  }, [identifierConfirmed, email, checkStaffLoginBlock]);
 
   const testimonials = useMemo(
     () => [
@@ -339,6 +386,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     }
 
     // Etapa 2: login com senha
+    if (isBlocked) return; // IP bloqueado: nem tenta enquanto o timer não zera
     setError(null);
     setResetMessage(null);
     setLoading(true);
@@ -346,9 +394,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     try {
       await onLogin(email, password);
     } catch (err: any) {
-      // Lockout anti-força-bruta: mensagem já vem pronta e localizada.
+      // Lockout anti-força-bruta: inicia o contador regressivo e trava o formulário.
       if (err?.code === 'staff_login_blocked') {
-        setError(err.message);
+        const secs = Number(err?.retryAfterSeconds) || 60;
+        setBlockUntil(Date.now() + secs * 1000);
+        setNowTs(Date.now());
+        setError(null);
         setIsBanned(false);
         return;
       }
@@ -520,8 +571,9 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => { setPassword(e.target.value); setIsBanned(false); }}
-                      className="block w-full rounded-xl border border-[#e7e4de] bg-white text-slate-900 pl-11 pr-12 py-3.5 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 text-sm placeholder-slate-400 transition-all duration-200 hover:border-[#d9d5cd] shadow-[0_1px_2px_rgba(33,28,24,0.04)]"
-                      placeholder="Digite sua senha"
+                      disabled={isBlocked}
+                      className="block w-full rounded-xl border border-[#e7e4de] bg-white text-slate-900 pl-11 pr-12 py-3.5 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 text-sm placeholder-slate-400 transition-all duration-200 hover:border-[#d9d5cd] shadow-[0_1px_2px_rgba(33,28,24,0.04)] disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed disabled:hover:border-[#e7e4de]"
+                      placeholder={isBlocked ? 'Acesso temporariamente bloqueado' : 'Digite sua senha'}
                       required
                       autoFocus
                     />
@@ -585,8 +637,24 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
               </div>
             )}
 
+            {/* Bloqueio progressivo por IP com contador regressivo ao vivo */}
+            {isBlocked && (
+              <div className="flex items-start gap-3 p-4 bg-orange-50 border border-orange-200 rounded-xl">
+                <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                  <Clock className="w-[18px] h-[18px] text-orange-600" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-orange-900">Acesso temporariamente bloqueado</p>
+                  <p className="text-sm text-orange-700 mt-0.5">
+                    Muitas tentativas de login. Você pode tentar novamente em{' '}
+                    <span className="font-bold tabular-nums text-orange-900">{formatCountdown(blockRemainingSec)}</span>.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Mensagem de erro */}
-            {error && !isBanned && (
+            {error && !isBanned && !isBlocked && (
               <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-xl">
                 <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                 <div>
@@ -607,10 +675,15 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
             {/* Botão de submit */}
             <button
               type="submit"
-              disabled={loading || identifierLoading || (identifierConfirmed && !password)}
+              disabled={loading || identifierLoading || isBlocked || (identifierConfirmed && !password)}
               className="w-full flex justify-center items-center py-4 px-4 rounded-xl text-sm font-semibold text-white bg-[#16110d] hover:bg-black focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-all duration-300 active:scale-[0.985] group mt-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_10px_30px_-12px_rgba(242,122,35,0.45),inset_0_1px_0_rgba(255,255,255,0.08)]"
             >
-              {loading ? (
+              {isBlocked ? (
+                <>
+                  <Clock className="w-4 h-4 mr-2" />
+                  Aguarde {formatCountdown(blockRemainingSec)}
+                </>
+              ) : loading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin mr-2" />
                   Entrando...

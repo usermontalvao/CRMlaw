@@ -35,8 +35,18 @@ function makeStaffLoginBlockedError(retryAfterSeconds?: number): Error {
   const err = new Error(
     `Muitas tentativas de login. Tente novamente em ${formatRetryWait(retryAfterSeconds)}.`,
   );
-  (err as Error & { code?: string }).code = 'staff_login_blocked';
+  const e = err as Error & { code?: string; retryAfterSeconds?: number };
+  e.code = 'staff_login_blocked';
+  e.retryAfterSeconds = Math.max(1, Math.ceil(retryAfterSeconds ?? 60));
   return err;
+}
+
+// Consulta se o IP atual está bloqueado (sem registrar tentativa).
+async function checkStaffLoginBlock(
+  email: string,
+): Promise<{ blocked: boolean; retryAfterSeconds: number }> {
+  const r = await callStaffLoginGuard('check', email.trim());
+  return { blocked: r.blocked === true, retryAfterSeconds: r.retry_after_seconds ?? 0 };
 }
 
 interface AuthContextType {
@@ -44,6 +54,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  checkStaffLoginBlock: (email: string) => Promise<{ blocked: boolean; retryAfterSeconds: number }>;
   signOut: (opts?: { redirect?: boolean }) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   sessionWarning: boolean;
@@ -217,6 +228,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       session,
       loading,
       signIn,
+      checkStaffLoginBlock,
       signOut,
       resetPassword,
       sessionWarning,

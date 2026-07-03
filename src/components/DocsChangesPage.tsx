@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.293': { name: 'Cafe Bloqueio Progressivo com Timer', emoji: '[lock]' },
   '1.10.292': { name: 'Cafe Card de Telefone Refinado', emoji: '[art]' },
   '1.10.291': { name: 'Cafe Blindado Anti-Forca-Bruta', emoji: '[shield]' },
   '1.10.290': { name: 'Cafe Peticao com Barra Profissional', emoji: '[memo]' },
@@ -943,6 +944,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.293',
+    date: '03/07/2026',
+    summary: 'O login do escritorio ganhou bloqueio progressivo por IP contra forca-bruta: apos 6 tentativas erradas o acesso e bloqueado por um tempo que aumenta a cada reincidencia (5min, 15min, 30min, 1h ... ate 24h), com contador regressivo na tela e o campo de senha desabilitado durante o bloqueio.',
+    modules: [
+      { moduleId: 'core', changes: [
+        { type: 'improvement' as const, title: 'Bloqueio progressivo por IP no login com contador regressivo', description: 'Depois de 6 senhas erradas seguidas do mesmo IP, o login trava por um tempo que escala a cada reincidencia (5min, 15, 30, 1h, 3h, 4h, 6h, 8h, 12h e no maximo 24h). Enquanto bloqueado, o campo de senha fica desabilitado e a tela mostra quanto falta para tentar de novo; um login correto zera a contagem.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.292',
     date: '03/07/2026',
