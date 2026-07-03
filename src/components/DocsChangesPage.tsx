@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.291': { name: 'Cafe Blindado Anti-Forca-Bruta', emoji: '[shield]' },
   '1.10.290': { name: 'Cafe Peticao com Barra Profissional', emoji: '[memo]' },
   '1.10.289': { name: 'Cafe Peticao com Texto Integro', emoji: '[memo]' },
   '1.10.288': { name: 'Cafe Showcase com Troca Suave', emoji: '[art]' },
@@ -941,6 +942,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.291',
+    date: '03/07/2026',
+    summary: 'Reforco de seguranca contra invasao e forca-bruta: os acessos sensiveis (login do portal, codigos de assinatura por email/SMS e o login do escritorio) passaram a limitar tentativas em sequencia e bloquear temporariamente apos excesso.',
+    modules: [
+      { moduleId: 'core', changes: [
+        { type: 'improvement' as const, title: 'Limite de tentativas anti-forca-bruta nos acessos sensiveis', description: 'Login do portal e o envio/validacao de codigos de assinatura por email e SMS passaram a contar tentativas por IP, documento e identidade, bloqueando temporariamente quem excede o limite para dificultar quebra de senha e abuso.' },
+        { type: 'improvement' as const, title: 'Bloqueio de tentativas repetidas no login do escritorio', description: 'O login de colaborador passou a travar temporariamente apos varias senhas erradas seguidas do mesmo email ou origem, exibindo o tempo de espera; um login correto zera a contagem.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.290',
     date: '02/07/2026',

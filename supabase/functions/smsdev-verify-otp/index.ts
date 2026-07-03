@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { enforceSecurityRateLimit } from '../_shared/security-rate-limit.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -67,6 +68,18 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    const rateLimited = await enforceSecurityRateLimit(
+      supabase,
+      req,
+      'signature-phone-otp-verify',
+      [
+        { bucketType: 'ip', limit: 12, windowSeconds: 10 * 60, blockSeconds: 15 * 60 },
+        { bucketType: 'token', value: token, limit: 8, windowSeconds: 10 * 60, blockSeconds: 10 * 60 },
+      ],
+      'Muitas tentativas de validação em sequência. Aguarde alguns minutos e solicite um novo código se necessário.',
+    )
+    if (rateLimited) return rateLimited
 
     const { data: otpRows, error: otpError } = await supabase
       .from('signature_phone_otps')

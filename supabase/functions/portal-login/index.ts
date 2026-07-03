@@ -22,6 +22,7 @@
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { enforceSecurityRateLimit } from "../_shared/security-rate-limit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -82,6 +83,18 @@ Deno.serve(async (req: Request) => {
     if (password.length !== 4) {
       return jsonResponse({ success: false, error: "Senha inválida. Digite os 4 últimos dígitos do seu telefone." }, 400);
     }
+
+    const rateLimited = await enforceSecurityRateLimit(
+      admin,
+      req,
+      "portal-login",
+      [
+        { bucketType: "ip", limit: 20, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
+        { bucketType: "cpf", value: cpf, limit: 8, windowSeconds: 10 * 60, blockSeconds: 60 * 60 },
+      ],
+      "Muitas tentativas de acesso em sequência. Aguarde alguns minutos antes de tentar novamente.",
+    );
+    if (rateLimited) return rateLimited;
 
     // Anti-brute-force: bloqueia o CPF após 10 tentativas falhas, por 24h.
     const { data: lock } = await admin.rpc("portal_login_is_locked", { p_cpf: cpf });

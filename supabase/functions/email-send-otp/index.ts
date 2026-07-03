@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { enforceSecurityRateLimit } from '../_shared/security-rate-limit.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -108,6 +109,19 @@ Deno.serve(async (req: Request) => {
     if (signer.status !== 'pending') {
       return jsonResponse({ success: false, error: 'Este documento já foi assinado ou não está disponível' })
     }
+
+    const rateLimited = await enforceSecurityRateLimit(
+      supabase,
+      req,
+      'signature-email-otp-send',
+      [
+        { bucketType: 'ip', limit: 6, windowSeconds: 15 * 60, blockSeconds: 15 * 60 },
+        { bucketType: 'token', value: token, limit: 3, windowSeconds: 10 * 60, blockSeconds: 10 * 60 },
+        { bucketType: 'email', value: email, limit: 3, windowSeconds: 10 * 60, blockSeconds: 10 * 60 },
+      ],
+      'Muitas solicitações de código em sequência. Aguarde alguns minutos antes de solicitar novamente.',
+    )
+    if (rateLimited) return rateLimited
 
     const { data: lastOtp } = await supabase
       .from('signature_email_otps')

@@ -2,6 +2,43 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../config/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 
+// ── Anti-força-bruta do login staff (defesa em profundidade) ─────────────────
+// Chama a Edge Function `staff-login-guard`. Fail-open: qualquer erro (inclusive
+// função ainda não deployada) NÃO bloqueia o login.
+type StaffLoginGuardResult = { blocked: boolean; retry_after_seconds?: number };
+
+async function callStaffLoginGuard(
+  action: 'check' | 'fail' | 'reset',
+  email: string,
+): Promise<StaffLoginGuardResult> {
+  try {
+    const { data, error } = await supabase.functions.invoke('staff-login-guard', {
+      body: { action, email },
+    });
+    if (error) return { blocked: false };
+    return (data as StaffLoginGuardResult) ?? { blocked: false };
+  } catch {
+    return { blocked: false };
+  }
+}
+
+function formatRetryWait(seconds?: number): string {
+  const s = Math.max(1, Math.ceil(seconds ?? 60));
+  if (s >= 60) {
+    const m = Math.ceil(s / 60);
+    return `${m} minuto${m > 1 ? 's' : ''}`;
+  }
+  return `${s} segundo${s > 1 ? 's' : ''}`;
+}
+
+function makeStaffLoginBlockedError(retryAfterSeconds?: number): Error {
+  const err = new Error(
+    `Muitas tentativas de login. Tente novamente em ${formatRetryWait(retryAfterSeconds)}.`,
+  );
+  (err as Error & { code?: string }).code = 'staff_login_blocked';
+  return err;
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -120,16 +157,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user?.id]);
 
   const signIn = async (email: string, password: string) => {
+    const normalizedEmail = email.trim();
+
+    // 1) Já está bloqueado? (não incrementa o contador)
+    const pre = await callStaffLoginGuard('check', normalizedEmail);
+    if (pre.blocked) {
+      throw makeStaffLoginBlockedError(pre.retry_after_seconds);
+    }
+
+    // 2) Tenta autenticar no GoTrue
     const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+      email: normalizedEmail,
       password,
     });
 
-    if (error) throw error;
+    if (error) {
+      // 3) Registra a falha; se cruzou o limite, já informa o bloqueio nesta resposta
+      const after = await callStaffLoginGuard('fail', normalizedEmail);
+      if (after.blocked) {
+        throw makeStaffLoginBlockedError(after.retry_after_seconds);
+      }
+      throw error;
+    }
 
     setSession(data.session);
     setUser(data.user);
     setSessionWarning(false);
+
+    // 4) Sucesso: zera o contador do e-mail (fire-and-forget, não atrasa o login)
+    void callStaffLoginGuard('reset', normalizedEmail);
   };
 
   const signOut = async (opts?: { redirect?: boolean }) => {

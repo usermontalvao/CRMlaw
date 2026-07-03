@@ -346,6 +346,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
     try {
       await onLogin(email, password);
     } catch (err: any) {
+      // Lockout anti-força-bruta: mensagem já vem pronta e localizada.
+      if (err?.code === 'staff_login_blocked') {
+        setError(err.message);
+        setIsBanned(false);
+        return;
+      }
       const msg = translateAuthError(err?.message);
       if (msg === '__BANNED__') {
         setIsBanned(true);
