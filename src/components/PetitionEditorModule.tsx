@@ -45,6 +45,7 @@ import {
   ChevronsUpDown,
   CloudOff,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import PetitionRibbon from './PetitionRibbon';
 import { saveAs } from 'file-saver';
@@ -781,6 +782,11 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // aqui confirmamos que o banco que salva a peticao esta respondendo de fato.
   const [serverReachable, setServerReachable] = useState(true);
   const [checkingServer, setCheckingServer] = useState(false);
+  // Estado dedicado ao clique manual em "Tentar reconectar" (independe do ping automatico de 60s).
+  const [isRetrying, setIsRetrying] = useState(false);
+  // Sinaliza que a ultima tentativa manual falhou -> dispara feedback (shake + mensagem).
+  const [reconnectFailed, setReconnectFailed] = useState(false);
+  const reconnectFailedTimerRef = useRef<number | null>(null);
   const [settingDefaultTemplate, setSettingDefaultTemplate] = useState(false);
 
   useEffect(() => {
@@ -817,7 +823,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     }
   }, []);
 
-  const handleRetryConnection = useCallback(() => {
+  const handleRetryConnection = useCallback(async () => {
+    if (isRetrying) return;
     const next = (() => {
       try {
         return typeof navigator !== 'undefined' ? navigator.onLine : true;
@@ -826,8 +833,38 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       }
     })();
     setIsOnline(next);
-    void checkServerConnection();
-  }, [checkServerConnection]);
+    setReconnectFailed(false);
+    if (reconnectFailedTimerRef.current) {
+      window.clearTimeout(reconnectFailedTimerRef.current);
+      reconnectFailedTimerRef.current = null;
+    }
+    setIsRetrying(true);
+    const startedAt = Date.now();
+    let ok = false;
+    try {
+      ok = await checkServerConnection();
+    } finally {
+      // Garante que a animacao seja perceptivel mesmo quando o ping responde instantaneamente.
+      const elapsed = Date.now() - startedAt;
+      const MIN_SPIN_MS = 700;
+      if (elapsed < MIN_SPIN_MS) {
+        await new Promise((r) => window.setTimeout(r, MIN_SPIN_MS - elapsed));
+      }
+      setIsRetrying(false);
+    }
+    if (!ok) {
+      // Ainda offline: feedback visivel (shake + aviso), auto-limpa depois.
+      setReconnectFailed(true);
+      reconnectFailedTimerRef.current = window.setTimeout(() => {
+        setReconnectFailed(false);
+        reconnectFailedTimerRef.current = null;
+      }, 3200);
+    }
+  }, [checkServerConnection, isRetrying]);
+
+  useEffect(() => () => {
+    if (reconnectFailedTimerRef.current) window.clearTimeout(reconnectFailedTimerRef.current);
+  }, []);
   const [openingPetitionId, setOpeningPetitionId] = useState<string | null>(null);
   const [pendingPetitionLoadKey, setPendingPetitionLoadKey] = useState(0);
   const editorRef = useRef<SyncfusionEditorRef>(null);
@@ -5727,8 +5764,8 @@ Regras:
           {/* Banner de conexao: internet caiu ou servidor inacessivel */}
           {(!isOnline || !serverReachable) && (
             <div className="absolute top-0 inset-x-0 z-[55] p-3 pointer-events-none">
-              <div className="pointer-events-auto mx-auto max-w-3xl overflow-hidden rounded-2xl border border-amber-200/80 bg-[#fffdf7] shadow-[0_18px_45px_rgba(180,120,10,0.20)] animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400" />
+              <div className={`pointer-events-auto mx-auto max-w-3xl overflow-hidden rounded-2xl border bg-[#fffdf7] shadow-[0_18px_45px_rgba(180,120,10,0.20)] animate-in fade-in slide-in-from-top-2 duration-300 ${reconnectFailed ? 'border-red-300/80 petition-shake' : 'border-amber-200/80'}`}>
+                <div className={`h-1 w-full bg-gradient-to-r ${reconnectFailed ? 'from-red-400 via-red-500 to-red-400' : 'from-amber-400 via-orange-500 to-amber-400'} ${(checkingServer || isRetrying) ? 'petition-progress-stripes' : ''}`} />
                 <div className="flex items-start gap-3 p-4">
                   <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-sm">
                     <CloudOff className="w-5 h-5 text-white" />
@@ -5737,8 +5774,8 @@ Regras:
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-600">Conexao instavel</span>
                       <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        {checkingServer ? 'Verificando...' : 'Offline'}
+                        <span className={`w-1.5 h-1.5 rounded-full bg-amber-500 ${(checkingServer || isRetrying) ? 'animate-ping' : 'animate-pulse'}`} />
+                        {(checkingServer || isRetrying) ? 'Verificando...' : 'Offline'}
                       </span>
                     </div>
                     <div className="mt-0.5 text-sm font-bold text-slate-900">
@@ -5747,6 +5784,12 @@ Regras:
                     <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">
                       Suas alteracoes podem <span className="font-semibold">nao estar sendo salvas</span>. Baixe uma copia em Word agora para nao perder nada — assim que a conexao voltar, o salvamento normaliza.
                     </p>
+                    {reconnectFailed && (
+                      <p className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-red-600 animate-in fade-in slide-in-from-left-1 duration-200">
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                        Ainda sem conexao. Verifique sua internet e tente novamente.
+                      </p>
+                    )}
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -5759,11 +5802,11 @@ Regras:
                       <button
                         type="button"
                         onClick={handleRetryConnection}
-                        disabled={checkingServer}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-bold rounded-xl transition-all shadow-sm petition-btn-slate disabled:opacity-60"
+                        disabled={isRetrying}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-bold rounded-xl transition-all shadow-sm petition-btn-slate disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        <RefreshCw className={`w-4 h-4 ${checkingServer ? 'animate-spin' : ''}`} />
-                        {checkingServer ? 'Verificando...' : 'Tentar reconectar'}
+                        <RefreshCw className={`w-4 h-4 ${isRetrying ? 'animate-spin' : ''}`} />
+                        {isRetrying ? 'Reconectando...' : 'Tentar reconectar'}
                       </button>
                     </div>
                   </div>
@@ -6884,7 +6927,32 @@ const petitionModalStyles = `
   .petition-btn-slate:hover { background-color: #e2e8f0 !important; }
   .petition-btn-red { background-color: #dc2626 !important; color: #ffffff !important; }
   .petition-btn-red:hover { background-color: #b91c1c !important; }
-  
+
+  /* Feedback do banner de conexao: shake ao falhar a reconexao */
+  @keyframes petitionShake {
+    0%, 100% { transform: translateX(0); }
+    15% { transform: translateX(-7px); }
+    30% { transform: translateX(6px); }
+    45% { transform: translateX(-5px); }
+    60% { transform: translateX(4px); }
+    75% { transform: translateX(-2px); }
+  }
+  .petition-shake { animation: petitionShake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+
+  /* Barra superior "viva" enquanto tenta reconectar */
+  @keyframes petitionStripes {
+    from { background-position: 0 0; }
+    to { background-position: 28px 0; }
+  }
+  .petition-progress-stripes {
+    background-image: linear-gradient(115deg, rgba(255,255,255,0.55) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.55) 50%, rgba(255,255,255,0.55) 75%, transparent 75%);
+    background-size: 28px 28px;
+    animation: petitionStripes 0.7s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .petition-shake, .petition-progress-stripes { animation: none !important; }
+  }
+
   /* Garantir que o painel do modal nÃ£o seja sequestrado */
   main#company-lookup-modal,
   main#block-search-modal,

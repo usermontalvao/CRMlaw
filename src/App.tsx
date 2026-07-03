@@ -99,7 +99,12 @@ const ChatFloatingWidget = lazy(() => import('./components/ChatFloatingWidget'))
 import { usePresence } from './hooks/usePresence';
 import { useWhatsAppNotifications } from './hooks/useWhatsAppNotifications';
 import { useAuth } from './contexts/AuthContext';
-import { events, SYSTEM_EVENTS } from './utils/events';
+import {
+  events,
+  SYSTEM_EVENTS,
+  PETITION_EDITOR_WIDGET_STATE_EVENT,
+  PETITION_EDITOR_WIDGET_STATE_STORAGE_KEY,
+} from './utils/events';
 import { useTheme } from './contexts/ThemeContext';
 import { useSidebarMode } from './contexts/SidebarModeContext';
 import { CacheProvider } from './contexts/CacheContext';
@@ -1134,6 +1139,28 @@ const MainApp: React.FC = () => {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // Editor de Petições aberto/minimizado? Se sim, NÃO substituímos a tela pela
+  // página offline global — o editor tem seu próprio banner de conexão com opção
+  // de baixar em Word, e desmontá-lo perderia o trabalho não salvo.
+  const [petitionEditorActive, setPetitionEditorActive] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(PETITION_EDITOR_WIDGET_STATE_STORAGE_KEY);
+      if (!saved) return false;
+      const parsed = JSON.parse(saved) as { state?: string };
+      return parsed?.state === 'open' || parsed?.state === 'minimized';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    const onWidgetState = (e: Event) => {
+      const detail = (e as CustomEvent<{ state?: string }>).detail;
+      setPetitionEditorActive(detail?.state === 'open' || detail?.state === 'minimized');
+    };
+    window.addEventListener(PETITION_EDITOR_WIDGET_STATE_EVENT, onWidgetState as EventListener);
+    return () => window.removeEventListener(PETITION_EDITOR_WIDGET_STATE_EVENT, onWidgetState as EventListener);
+  }, []);
   const { user, loading: authLoading, signIn, signOut, resetPassword, isAccountBlocked } = useAuth();
   const [minLoadingElapsed, setMinLoadingElapsed] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
@@ -2061,8 +2088,10 @@ useEffect(() => {
     return <Login onLogin={handleLogin} onResetPassword={resetPassword} />;
   }
 
-  // Mostrar página offline se sem conexão
-  if (!isOnline) {
+  // Mostrar página offline se sem conexão — exceto quando o Editor de Petições
+  // está aberto/minimizado: nesse caso mantemos o app montado para o editor
+  // exibir seu próprio banner (com "Baixar em Word") e não perder o trabalho.
+  if (!isOnline && !petitionEditorActive) {
     return <OfflinePage />;
   }
 

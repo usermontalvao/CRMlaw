@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.295': { name: 'Cafe Editor com Corretor Local', emoji: '[memo]' },
   '1.10.294': { name: 'Cafe Suspensao Progressiva com PIN Blindado', emoji: '[shield]' },
   '1.10.293': { name: 'Cafe Bloqueio Progressivo com Timer', emoji: '[lock]' },
   '1.10.292': { name: 'Cafe Card de Telefone Refinado', emoji: '[art]' },
@@ -945,6 +946,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.295',
+    date: '03/07/2026',
+    summary: 'O editor de peticoes ganhou corretor ortografico local em pt-BR, o fluxo do editor foi refinado e a base recebeu documentacao tecnica detalhada do modulo WhatsApp e da proposta de builder visual.',
+    modules: [
+      { moduleId: 'documents', changes: [
+        { type: 'improvement' as const, title: 'Corretor ortografico pt-BR passou a rodar localmente no editor', description: 'O editor deixou de depender do spell check remoto generico e passou a usar dicionario Hunspell local em portugues do Brasil, com suporte a palavras adicionadas pelo usuario e melhor estabilidade durante a digitacao e o scroll.' },
+        { type: 'improvement' as const, title: 'Fluxo de edicao de peticoes foi afinado', description: 'Foram aplicados ajustes nos componentes do editor, widget e service de peticao para deixar o comportamento mais consistente, com melhor integracao entre a interface, o autosave e o processamento associado.' },
+      ]},
+      { moduleId: 'whatsapp', changes: [
+        { type: 'improvement' as const, title: 'Documentacao tecnica do modulo WhatsApp foi consolidada', description: 'Entraram dois documentos novos com analise do estado atual do modulo e uma proposta estruturada para um builder visual de workflows, servindo como base de produto e implementacao.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.294',
     date: '03/07/2026',

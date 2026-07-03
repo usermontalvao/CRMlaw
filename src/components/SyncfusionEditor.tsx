@@ -21,6 +21,7 @@ import {
   autoFixIssues,
   type ScanResult,
 } from './editor-issues-scanner';
+import { attachLocalSpellChecker } from './local-spell-checker';
 
 // Prune entradas expiradas na inicialização do módulo
 pruneExpiredEntries();
@@ -129,6 +130,127 @@ const applySyncfusionServiceUrl = (editor: any) => {
     editor.serviceUrl = SYNCFUSION_SERVICE_URL;
   } catch {
     // ignore
+  }
+};
+
+const normalizeExternalPastedText = (value: string) =>
+  String(value || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\t+/g, ' ')
+    .replace(/[ ]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+const normalizePastedParagraphs = (value: string) => {
+  const normalized = normalizeExternalPastedText(value);
+  if (!normalized) return '';
+
+  // Cada quebra de linha vira um parágrafo real (insertText trata '\n' como
+  // parágrafo). Não fundir linhas: previsibilidade > heurística de "des-quebrar".
+  return normalized
+    .split('\n')
+    .map((line) => line.trim().replace(/[ ]{2,}/g, ' '))
+    .join('\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+};
+
+const extractStructuredTextFromHtml = (html: string): string => {
+  const raw = String(html || '').trim();
+  if (!raw || typeof DOMParser === 'undefined') return '';
+
+  try {
+    const doc = new DOMParser().parseFromString(raw, 'text/html');
+    const body = doc.body;
+    if (!body) return '';
+
+    const lines: string[] = [];
+    const listStack: Array<{ type: 'ul' | 'ol'; index: number }> = [];
+
+    const appendLine = (value: string, forceBreak = false) => {
+      const text = normalizeExternalPastedText(value);
+      if (!text) {
+        if (forceBreak && lines.length && lines[lines.length - 1] !== '') lines.push('');
+        return;
+      }
+      lines.push(text);
+    };
+
+    const walk = (node: Node): string => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent || '';
+      }
+
+      if (node.nodeType !== Node.ELEMENT_NODE) return '';
+      const el = node as HTMLElement;
+      const tag = el.tagName.toLowerCase();
+
+      if (tag === 'br') {
+        return '\n';
+      }
+
+      if (tag === 'ul' || tag === 'ol') {
+        listStack.push({ type: tag as 'ul' | 'ol', index: 0 });
+        Array.from(el.children).forEach((child) => {
+          if (child.tagName.toLowerCase() === 'li') walk(child);
+        });
+        listStack.pop();
+        appendLine('', true);
+        return '';
+      }
+
+      if (tag === 'li') {
+        const currentList = listStack[listStack.length - 1];
+        if (currentList?.type === 'ol') currentList.index += 1;
+        const prefix = currentList?.type === 'ol' ? `${currentList.index}. ` : '• ';
+        const indent = '  '.repeat(Math.max(0, listStack.length - 1));
+
+        const childText: string = Array.from(el.childNodes)
+          .map((child) => walk(child))
+          .join('')
+          .replace(/\n+/g, ' ')
+          .replace(/[ ]{2,}/g, ' ')
+          .trim();
+
+        appendLine(`${indent}${prefix}${childText}`);
+
+        Array.from(el.children).forEach((child) => {
+          const childTag = child.tagName.toLowerCase();
+          if (childTag === 'ul' || childTag === 'ol') walk(child);
+        });
+        return '';
+      }
+
+      const childText: string = Array.from(el.childNodes).map((child) => walk(child)).join('');
+      if (['p', 'div', 'section', 'article', 'header', 'footer', 'blockquote', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
+        appendLine(childText, true);
+        return '';
+      }
+
+      if (tag === 'table') {
+        Array.from(el.querySelectorAll('tr')).forEach((row) => {
+          const cols = Array.from(row.querySelectorAll('th,td'))
+            .map((cell) => normalizeExternalPastedText(cell.textContent || ''))
+            .filter(Boolean);
+          appendLine(cols.join(' | '));
+        });
+        appendLine('', true);
+        return '';
+      }
+
+      return childText;
+    };
+
+    Array.from(body.childNodes).forEach((child) => {
+      const text = walk(child);
+      if (text) appendLine(text, true);
+    });
+
+    return normalizePastedParagraphs(lines.join('\n'));
+  } catch {
+    return '';
   }
 };
 
@@ -1554,12 +1676,17 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         applySyncfusionServiceUrl(editor);
         editor?.openBlank?.();
 
-        // Configurar corretor ortográfico
+        // Configurar corretor ortográfico (Hunspell pt-BR local — o serviço
+        // web de demo não tem dicionário português e marcava tudo errado)
         try {
           if (editor?.spellChecker) {
             editor.spellChecker.languageID = 1046; // Português (Brasil)
             editor.spellChecker.allowSpellCheckAndSuggestion = true;
             editor.spellChecker.doOptimizedSpellCheck = true;
+            // Peças jurídicas têm muitas siglas/cabeçalhos em caixa alta (TST,
+            // CLT, RECLAMATÓRIA…) — não marcar palavras 100% maiúsculas.
+            editor.spellChecker.ignoreUppercase = true;
+            attachLocalSpellChecker(editor);
           }
         } catch {
           // ignore se spell checker não disponível
@@ -2015,6 +2142,156 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         document.body.style.userSelect = '';
       };
     }, [showPropertiesPane]);
+
+    useEffect(() => {
+      if (readOnly || !isCreated) return;
+      const editor: any = containerRef.current?.documentEditor as any;
+      const documentHelper: any = editor?.documentHelper;
+      // O Syncfusion anexa o alvo de input (editableDiv) em document.body — ou dentro
+      // de um iframe —, NUNCA dentro do container do editor. Um listener no wrapper
+      // não recebe o evento de paste; ele precisa ir no próprio editableDiv.
+      const editableDiv: HTMLElement | null = documentHelper?.editableDiv ?? null;
+      const nativeOnPaste: ((e: ClipboardEvent) => void) | undefined = documentHelper?.onPaste;
+      if (!editableDiv || typeof nativeOnPaste !== 'function') return;
+
+      let lastInternalCopy = '';
+      let keepSourceUntil = 0;
+      const normalizeForCompare = (t: string) => t.replace(/\s+/g, ' ').trim();
+
+      const handleCopy = () => {
+        try {
+          lastInternalCopy = normalizeForCompare(String(editor?.selection?.text || ''));
+        } catch {
+          lastInternalCopy = '';
+        }
+      };
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        // Ctrl+Shift+V = colar mantendo a formatação de origem (pipeline nativo)
+        if (e.ctrlKey && e.shiftKey && String(e.key).toLowerCase() === 'v') {
+          keepSourceUntil = Date.now() + 1500;
+        }
+      };
+
+      const handlePaste = (event: ClipboardEvent) => {
+        const ed: any = containerRef.current?.documentEditor as any;
+        const runNative = () => {
+          try {
+            nativeOnPaste.call(documentHelper, event);
+          } catch {
+            // ignore
+          }
+        };
+
+        if (!ed?.editor || typeof ed.editor.insertText !== 'function') {
+          runNative();
+          return;
+        }
+
+        if (Date.now() < keepSourceUntil) {
+          keepSourceUntil = 0;
+          runNative();
+          return;
+        }
+
+        const clipboard = event.clipboardData;
+        const html = clipboard?.getData('text/html') || '';
+        const plainText = clipboard?.getData('text/plain') || '';
+
+        // Conteúdo copiado do próprio editor: colagem nativa preserva a
+        // formatação original do documento com fidelidade total.
+        if (plainText && lastInternalCopy && normalizeForCompare(plainText) === lastInternalCopy) {
+          runNative();
+          return;
+        }
+
+        const text = extractStructuredTextFromHtml(html) || normalizePastedParagraphs(plainText);
+        if (!text.trim()) {
+          runNative();
+          return;
+        }
+
+        // Conteúdo externo: inserir herdando fonte/tamanho/alinhamento/espaçamento
+        // do ponto atual do cursor, com parágrafos reais.
+        event.preventDefault();
+        try {
+          ed.focusIn?.();
+          const sel: any = ed.selection;
+          const cf: any = sel?.characterFormat;
+          const pf: any = sel?.paragraphFormat;
+          // Captura a formatação vigente no cursor ANTES de inserir — o insertText
+          // multi-parágrafo do Syncfusion não a propaga de forma consistente para
+          // os parágrafos criados pelos '\n'.
+          const inherit = {
+            fontFamily: cf?.fontFamily,
+            fontSize: cf?.fontSize,
+            bold: cf?.bold,
+            italic: cf?.italic,
+            underline: cf?.underline,
+            fontColor: cf?.fontColor,
+            textAlignment: pf?.textAlignment,
+            firstLineIndent: pf?.firstLineIndent,
+            leftIndent: pf?.leftIndent,
+            rightIndent: pf?.rightIndent,
+            lineSpacing: pf?.lineSpacing,
+            lineSpacingType: pf?.lineSpacingType,
+            beforeSpacing: pf?.beforeSpacing,
+            afterSpacing: pf?.afterSpacing,
+          };
+          const startOffset = String(sel?.startOffset || '');
+
+          try { ed.editorHistory?.beginUndoAction?.(); } catch { /* ignore */ }
+          ed.editor.insertText(text);
+
+          // Reaplica a formatação do cursor em todo o intervalo inserido para
+          // garantir uniformidade entre os parágrafos colados.
+          const endOffset = String(sel?.endOffset || '');
+          if (sel && startOffset && endOffset && startOffset !== endOffset) {
+            sel.select(startOffset, endOffset);
+            const scf: any = sel.characterFormat;
+            const spf: any = sel.paragraphFormat;
+            if (scf) {
+              if (typeof inherit.fontFamily === 'string' && inherit.fontFamily) scf.fontFamily = inherit.fontFamily;
+              if (typeof inherit.fontSize === 'number' && inherit.fontSize > 0) scf.fontSize = inherit.fontSize;
+              if (typeof inherit.bold === 'boolean') scf.bold = inherit.bold;
+              if (typeof inherit.italic === 'boolean') scf.italic = inherit.italic;
+              if (typeof inherit.underline === 'string') scf.underline = inherit.underline;
+              if (typeof inherit.fontColor === 'string' && inherit.fontColor) scf.fontColor = inherit.fontColor;
+            }
+            if (spf) {
+              if (typeof inherit.textAlignment === 'string' && inherit.textAlignment) spf.textAlignment = inherit.textAlignment;
+              if (typeof inherit.firstLineIndent === 'number') spf.firstLineIndent = inherit.firstLineIndent;
+              if (typeof inherit.leftIndent === 'number') spf.leftIndent = inherit.leftIndent;
+              if (typeof inherit.rightIndent === 'number') spf.rightIndent = inherit.rightIndent;
+              if (typeof inherit.lineSpacingType === 'string' && inherit.lineSpacingType) spf.lineSpacingType = inherit.lineSpacingType;
+              if (typeof inherit.lineSpacing === 'number' && inherit.lineSpacing > 0) spf.lineSpacing = inherit.lineSpacing;
+              if (typeof inherit.beforeSpacing === 'number') spf.beforeSpacing = inherit.beforeSpacing;
+              if (typeof inherit.afterSpacing === 'number') spf.afterSpacing = inherit.afterSpacing;
+            }
+            sel.select(endOffset, endOffset);
+          }
+          try { ed.editorHistory?.endUndoAction?.(); } catch { /* ignore */ }
+        } catch {
+          // ignore
+        }
+      };
+
+      // O handler nativo foi registrado primeiro no mesmo elemento e rodaria antes
+      // do nosso — removê-lo e delegar via runNative() apenas quando apropriado.
+      editableDiv.removeEventListener('paste', nativeOnPaste as EventListener);
+      editableDiv.addEventListener('paste', handlePaste);
+      editableDiv.addEventListener('copy', handleCopy);
+      editableDiv.addEventListener('cut', handleCopy);
+      editableDiv.addEventListener('keydown', handleKeyDown, true);
+
+      return () => {
+        editableDiv.removeEventListener('paste', handlePaste);
+        editableDiv.removeEventListener('copy', handleCopy);
+        editableDiv.removeEventListener('cut', handleCopy);
+        editableDiv.removeEventListener('keydown', handleKeyDown, true);
+        editableDiv.addEventListener('paste', nativeOnPaste as EventListener);
+      };
+    }, [readOnly, isCreated]);
 
     return (
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>

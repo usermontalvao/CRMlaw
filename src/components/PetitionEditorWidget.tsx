@@ -7,16 +7,18 @@
 import React, { useEffect, useState, useCallback, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, FileText, Maximize2 } from 'lucide-react';
-import { events, SYSTEM_EVENTS } from '../utils/events';
+import {
+  events,
+  SYSTEM_EVENTS,
+  PETITION_EDITOR_WIDGET_STATE_EVENT,
+  PETITION_EDITOR_WIDGET_STATE_STORAGE_KEY as WIDGET_STATE_KEY,
+} from '../utils/events';
 import type { Client } from '../types/client.types';
 
 const PetitionEditorModule = lazy(() => import('./PetitionEditorModule'));
 
 // Storage keys
-const WIDGET_STATE_KEY = 'petition-editor-widget-state';
 const WIDGET_CLIENT_KEY = 'petition-editor-widget-client';
-
-const PETITION_EDITOR_WIDGET_STATE_EVENT = 'crm:petition_editor_widget_state';
 
 export interface PetitionEditorOpenPayload {
   clientId?: string;

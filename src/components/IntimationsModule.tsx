@@ -1440,7 +1440,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     if (['error', 'failed'].some((tag) => normalized.includes(tag))) {
       return 'bg-red-100 text-red-700';
     }
-    if (['running', 'processing'].some((tag) => normalized.includes(tag))) {
+    if (['running', 'processing', 'partial'].some((tag) => normalized.includes(tag))) {
       return 'bg-amber-100 text-amber-700';
     }
     return 'bg-slate-100 text-slate-600';

@@ -109,6 +109,7 @@ serve(async (req) => {
 
     let totalSaved = 0
     let totalFound = 0
+    let apiErrors = 0
     let errorMessage = null
 
     try {
@@ -156,15 +157,18 @@ serve(async (req) => {
             pagina: '1'
           })
 
-          const response = await fetch(`${DJEN_BASE_URL}/comunicacao?${params}`)
+          const res = await fetchDjenWithRetry(`${DJEN_BASE_URL}/comunicacao?${params}`)
 
-          if (response.ok) {
-            const data = await response.json()
+          if (res.ok) {
+            const data = res.data
             if (data.items && data.items.length > 0) {
               totalFound += data.items.length
               const result = await saveCommunications(supabaseClient, data.items, processes || [])
               totalSaved += result.saved
             }
+          } else {
+            apiErrors++
+            console.warn(`   ⚠️ Falha na API DJEN (advogado ${profile.lawyer_full_name}): ${res.error}`)
           }
 
           await new Promise(resolve => setTimeout(resolve, 1000))
@@ -197,14 +201,17 @@ serve(async (req) => {
             dataDisponibilizacaoFim: getDateToday(),
             meio: 'D', itensPorPagina: '100', pagina: '1'
           })
-          const response = await fetch(`${DJEN_BASE_URL}/comunicacao?${params}`)
-          if (response.ok) {
-            const data = await response.json()
+          const res = await fetchDjenWithRetry(`${DJEN_BASE_URL}/comunicacao?${params}`)
+          if (res.ok) {
+            const data = res.data
             if (data.items?.length > 0) {
               totalFound += data.items.length
               const result = await saveCommunications(supabaseClient, data.items, processes)
               totalSaved += result.saved
             }
+          } else {
+            apiErrors++
+            console.warn(`   ⚠️ Falha na API DJEN (processo ${processNumber.substring(0, 7)}...): ${res.error}`)
           }
           await new Promise(r => setTimeout(r, 500))
         }
@@ -245,9 +252,9 @@ serve(async (req) => {
               dataDisponibilizacaoFim: windowEnd.toISOString().split('T')[0],
               meio: 'D', itensPorPagina: '100', pagina: '1'
             })
-            const response = await fetch(`${DJEN_BASE_URL}/comunicacao?${params}`)
-            if (response.ok) {
-              const data = await response.json()
+            const res = await fetchDjenWithRetry(`${DJEN_BASE_URL}/comunicacao?${params}`)
+            if (res.ok) {
+              const data = res.data
               if (data.items?.length > 0) {
                 totalFound += data.items.length
                 const result = await saveCommunications(supabaseClient, data.items, processes)
@@ -255,6 +262,9 @@ serve(async (req) => {
                 foundAny = true
                 console.log(`      ✅ ${data.items.length} publ. em ${inicio.toISOString().split('T')[0]}~${windowEnd.toISOString().split('T')[0]}`)
               }
+            } else {
+              apiErrors++
+              console.warn(`      ⚠️ Falha na API DJEN (janela ${inicio.toISOString().split('T')[0]}~${windowEnd.toISOString().split('T')[0]}): ${res.error}`)
             }
             windowEnd = new Date(windowStart)
             windowEnd.setDate(windowEnd.getDate() - 1)
@@ -271,8 +281,13 @@ serve(async (req) => {
     }
 
     const syncEndTime = new Date().toISOString()
-    const finalStatus = errorMessage ? 'error' : 'success'
-    const finalSuccess = !errorMessage
+    // Falhas de API (5xx/timeout do PJe) NÃO podem virar "sucesso, 0 encontradas":
+    // isso mascarava dias inteiros sem sincronizar. Marcamos como 'partial'.
+    const apiErrorNote = apiErrors > 0
+      ? `${apiErrors} consulta(s) à API do DJEN falharam (instabilidade do PJe) — sincronização parcial, será retentada no próximo ciclo.`
+      : null
+    const finalStatus = errorMessage ? 'error' : (apiErrors > 0 ? 'partial' : 'success')
+    const finalSuccess = !errorMessage && apiErrors === 0
 
     if (syncLog) {
       await supabaseClient
@@ -286,8 +301,11 @@ serve(async (req) => {
           synced_at: syncEndTime,
           date_range_start: dateRangeStart,
           date_range_end: dateRangeEnd,
-          error_message: errorMessage,
-          message: errorMessage || `Sincronização concluída: ${totalSaved} intimações salvas de ${totalFound} encontradas`
+          error_message: errorMessage || apiErrorNote,
+          message: errorMessage
+            || (apiErrorNote
+              ? `Parcial: ${totalSaved} salvas de ${totalFound} encontradas. ${apiErrorNote}`
+              : `Sincronização concluída: ${totalSaved} intimações salvas de ${totalFound} encontradas`)
         })
         .eq('id', syncLog.id)
     }
@@ -295,6 +313,7 @@ serve(async (req) => {
     console.log(`\n📈 [${executionId}] RESULTADO SINCRONIZAÇÃO:`)
     console.log(`   📥 Encontradas: ${totalFound}`)
     console.log(`   💾 Salvas: ${totalSaved}`)
+    console.log(`   ⚠️ Falhas de API: ${apiErrors}`)
     console.log(`   ⏱️ Status: ${finalStatus}`)
 
     let totalAnalyzed = 0
@@ -351,9 +370,9 @@ serve(async (req) => {
 
     if (cronLogId) {
       await supabaseClient.from('cron_job_logs').update({
-        status: 'success',
+        status: errorMessage ? 'error' : (apiErrors > 0 ? 'partial' : 'success'),
         finished_at: new Date().toISOString(),
-        result: { found: totalFound, saved: totalSaved, analyzed: totalAnalyzed, notified: totalNotified },
+        result: { found: totalFound, saved: totalSaved, analyzed: totalAnalyzed, notified: totalNotified, api_errors: apiErrors },
       }).eq('id', cronLogId)
     }
 
@@ -364,6 +383,7 @@ serve(async (req) => {
         stats: {
           found: totalFound,
           saved: totalSaved,
+          api_errors: apiErrors,
           analyzed: totalAnalyzed,
           notified: totalNotified,
           analysis_error: analysisError,
@@ -395,6 +415,63 @@ function getDateDaysAgo(days: number): string {
   const date = new Date()
   date.setDate(date.getDate() - days)
   return date.toISOString().split('T')[0]
+}
+
+/**
+ * A API pública do DJEN (comunicaapi.pje.jus.br) é instável: retorna 5xx e
+ * chega a travar (timeout), especialmente sob chamadas repetidas do mesmo IP
+ * (a edge do Supabase usa IP compartilhado). Antes, `if (response.ok)` sem
+ * retry engolia essas falhas em silêncio e o sync virava "sucesso, 0 encontradas",
+ * mascarando dias inteiros sem intimações. Aqui fazemos retry com backoff
+ * exponencial + timeout por request; o chamador conta falhas em `apiErrors`.
+ */
+type DjenFetchResult = { ok: true; data: any } | { ok: false; error: string }
+
+async function fetchDjenWithRetry(
+  url: string,
+  opts: { retries?: number; timeoutMs?: number } = {}
+): Promise<DjenFetchResult> {
+  const retries = opts.retries ?? 3
+  // 12s por tentativa: resposta saudável do DJEN chega em 1-3s. Com backoff
+  // (1s+2s), o pior caso de uma chamada 100% falha é ~39s — cabe na folga entre
+  // o EXEC_BUDGET_MS (120s) e o timeout HTTP da função (150s).
+  const timeoutMs = opts.timeoutMs ?? 12_000
+  let lastError = 'desconhecido'
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'CRM-Advocacia/DJEN-Sync (contato: pedro@advcuiaba.com)',
+          'Accept': 'application/json',
+        },
+      })
+      clearTimeout(timer)
+
+      if (response.ok) {
+        return { ok: true, data: await response.json() }
+      }
+
+      lastError = `HTTP ${response.status}`
+      // 4xx (exceto 429) é erro de requisição — repetir não ajuda
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        return { ok: false, error: lastError }
+      }
+    } catch (e: any) {
+      clearTimeout(timer)
+      lastError = e?.name === 'AbortError' ? `timeout ${timeoutMs}ms` : (e?.message || String(e))
+    }
+
+    if (attempt < retries) {
+      const backoff = 1000 * Math.pow(2, attempt - 1) // 1s, 2s, 4s...
+      await new Promise(r => setTimeout(r, backoff))
+    }
+  }
+
+  return { ok: false, error: `${lastError} (após ${retries} tentativas)` }
 }
 
 async function saveCommunications(supabase: any, communications: any[], processes: any[]): Promise<{ saved: number, processesUpdated: string[] }> {

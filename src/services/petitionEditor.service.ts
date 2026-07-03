@@ -173,19 +173,53 @@ class PetitionEditorService {
   async saveDefaultFont(fontFamily: string | null, fontSize: number | null): Promise<void> {
     const userId = await this.requireUserId();
 
-    const { error } = await supabase.from('petition_default_templates').upsert(
-      {
-        user_id: userId,
-        name: '',
-        data_base64: '',
+    // IMPORTANTE: nao usar upsert com name/data_base64 aqui. O upsert sobrescreveria
+    // essas colunas com string vazia no conflito, APAGANDO o documento padrao ja salvo.
+    // Atualizamos somente as colunas de fonte, preservando o template.
+    const { data: updated, error: updateError } = await supabase
+      .from('petition_default_templates')
+      .update({
         default_font_family: fontFamily,
         default_font_size: fontSize,
         updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' }
-    );
+      })
+      .eq('user_id', userId)
+      .select('user_id');
 
-    if (error) throw error;
+    if (updateError) throw updateError;
+    if (updated && updated.length > 0) return;
+
+    // Ainda nao existe linha para o usuario: cria uma so com a fonte (sem template).
+    const { error: insertError } = await supabase.from('petition_default_templates').insert({
+      user_id: userId,
+      name: '',
+      data_base64: '',
+      default_font_family: fontFamily,
+      default_font_size: fontSize,
+    });
+
+    if (insertError) throw insertError;
+  }
+
+  /**
+   * Verifica se o servidor (Supabase) esta acessivel com uma consulta leve (HEAD/count).
+   * Usado pelo editor para detectar perda de conexao com o banco periodicamente,
+   * ja que navigator.onLine so sabe da placa de rede, nao se o backend responde.
+   */
+  async pingServer(timeoutMs = 8000): Promise<boolean> {
+    try {
+      const query = supabase
+        .from('petition_default_templates')
+        .select('user_id', { head: true, count: 'exact' })
+        .limit(1);
+      const timeout = new Promise<{ error: unknown }>((resolve) =>
+        setTimeout(() => resolve({ error: new Error('timeout') }), timeoutMs)
+      );
+      const result = (await Promise.race([query, timeout])) as { error: unknown };
+      return !result?.error;
+    } catch {
+      return false;
+    }
   }
 
   async getDefaultTemplate(): Promise<{ name: string; dataBase64: string; fontFamily?: string | null; fontSize?: number | null } | null> {

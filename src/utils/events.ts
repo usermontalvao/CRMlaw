@@ -80,3 +80,11 @@ export const SYSTEM_EVENTS = {
   // Admin alterou quais módulos aparecem no menu lateral
   MODULES_CONFIG_UPDATED: 'modules_config_updated',
 };
+
+// Nome do window CustomEvent e chave de storage do estado do Editor de Peticoes
+// flutuante. Centralizados aqui para o App saber que o editor esta aberto e NAO
+// substituir toda a tela pela pagina offline global (o editor tem seu proprio
+// banner de conexao com opcao de baixar em Word — trocar tudo desmontaria o
+// editor e perderia o trabalho nao salvo).
+export const PETITION_EDITOR_WIDGET_STATE_EVENT = 'crm:petition_editor_widget_state';
+export const PETITION_EDITOR_WIDGET_STATE_STORAGE_KEY = 'petition-editor-widget-state';
