@@ -77,6 +77,14 @@ Deno.serve(async (req: Request) => {
       .select('signed_document_path, signature_image_path, facial_image_path, document_image_path')
       .eq('signature_request_id', requestId);
 
+    // Modelo per_document: os PDFs assinados individuais ficam em
+    // signature_request_documents (não em signature_signers). Sem isto, o
+    // signatário recebia 403 ao abrir/baixar cada documento do kit.
+    const { data: requestDocs } = await supabase
+      .from('signature_request_documents')
+      .select('signed_file_path, source_file_path')
+      .eq('signature_request_id', requestId);
+
     // 2) conjunto de arquivos que pertencem a esta solicitação.
     // Inclui o documento, anexos, PDFs assinados E as imagens de evidência
     // (assinatura manuscrita / selfie facial / foto do documento) — tanto no
@@ -95,6 +103,10 @@ Deno.serve(async (req: Request) => {
       addPath((s as any).signature_image_path);
       addPath((s as any).facial_image_path);
       addPath((s as any).document_image_path);
+    }
+    for (const d of requestDocs ?? []) {
+      addPath((d as any).signed_file_path);
+      addPath((d as any).source_file_path);
     }
 
     const belongsToRequest =

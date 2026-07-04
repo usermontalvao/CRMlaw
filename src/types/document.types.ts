@@ -36,6 +36,11 @@ export interface DocumentTemplate {
   signature_field_config?: SignatureFieldConfigValue;
   // NOVO: Múltiplos arquivos por template
   files?: TemplateFile[];
+  // Modelo de assinatura escolhido para este kit (VERSIONADO):
+  // 'consolidated' (legado/default) = 1 PDF assinado único; 'per_document' = 1 PDF
+  // assinado por arquivo. É carimbado em signature_requests.signature_model na criação
+  // do envelope pela edge template-fill.
+  signature_model?: 'consolidated' | 'per_document' | null;
   created_at: string;
   updated_at: string;
 }

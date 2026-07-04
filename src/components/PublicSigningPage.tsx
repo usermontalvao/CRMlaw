@@ -995,6 +995,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   // Signed document viewer
   const [signedDocumentUrl, setSignedDocumentUrl] = useState<string | null>(null);
+  // Modelo per_document: resultado individual por arquivo do kit (principal + anexos),
+  // cada um com seu código de verificação e PDF assinado próprios.
+  const [signedDocuments, setSignedDocuments] = useState<
+    { documentKey: string; displayName: string; verificationCode: string; url: string | null }[]
+  >([]);
   const [downloadingAlreadySigned, setDownloadingAlreadySigned] = useState(false);
   // Visualizador interno (iframe) do PDF assinado — não expõe a URL do Supabase.
   const [signedViewerUrl, setSignedViewerUrl] = useState<string | null>(null);
@@ -1690,10 +1695,188 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     return host;
   };
 
+  /**
+   * Modelo per_document: gera 1 PDF assinado POR ARQUIVO do kit (principal + cada
+   * anexo), cada um com código de verificação, hash e arquivo próprios, e persiste
+   * cada documento via RPC one-shot. Retorna a URL do PDF do documento principal
+   * (para manter a continuidade da UI). O caminho consolidado (legado) fica intacto
+   * em generateSignedDocumentForSigner.
+   */
+  const generatePerDocumentSignedForSigner = async (
+    currentRequest: SignatureRequest,
+    currentSigner: Signer,
+  ): Promise<string | null> => {
+    console.log('[PER-DOC] Fluxo per_document iniciado para o envelope:', currentRequest.id);
+
+    // Lista de documentos do kit: principal (document_key='main') + anexos ('attachment-<i>').
+    type DocUnit = {
+      documentKey: string;
+      documentType: 'main' | 'attachment';
+      displayName: string;
+      isDocx: boolean;
+      sourceUrl: string | null;   // URL para render/geração
+      sourcePath: string | null;  // path original (hash de integridade)
+      sortOrder: number;
+    };
+
+    const units: DocUnit[] = [];
+    const mainPath = currentRequest.document_path || null;
+    const mainIsDocx = /\.(docx?|doc)$/i.test(mainPath || '');
+    let mainUrl = pdfUrl;
+    if (!mainUrl && mainPath) mainUrl = await signatureService.getPublicFileUrl(token, mainPath);
+    units.push({
+      documentKey: 'main',
+      documentType: 'main',
+      displayName: currentRequest.document_name || 'Documento principal',
+      isDocx: mainIsDocx,
+      sourceUrl: mainUrl,
+      sourcePath: mainPath,
+      sortOrder: 0,
+    });
+    attachments.forEach((att, i) => {
+      const lower = (att.name || '').toLowerCase();
+      units.push({
+        documentKey: `attachment-${i}`,
+        documentType: 'attachment',
+        displayName: att.name || `Anexo ${i + 1}`,
+        isDocx: lower.endsWith('.docx') || lower.endsWith('.doc'),
+        sourceUrl: att.url || null,
+        sourcePath: currentRequest.attachment_paths?.[i] ?? att.url ?? null,
+        sortOrder: i + 1,
+      });
+    });
+    console.log('[PER-DOC] Documentos do kit:', units.map((u) => u.documentKey));
+
+    const results: { documentKey: string; displayName: string; verificationCode: string; url: string | null }[] = [];
+    const persistFailures: string[] = [];
+    let mainSignedUrl: string | null = null;
+
+    for (const unit of units) {
+      if (!unit.sourceUrl) {
+        console.warn('[PER-DOC] Sem URL de origem para', unit.documentKey, '- pulando');
+        continue;
+      }
+      // Código de verificação PRÓPRIO deste documento (estampado no rodapé/QR do PDF).
+      const verificationCode = signatureService.generateVerificationHash();
+      const verificationUrl = `${window.location.origin}/#/verificar/${verificationCode}`;
+      const perDocument = {
+        documentKey: unit.documentKey,
+        verificationCode,
+        verificationUrl,
+        integritySources: [unit.sourcePath || unit.sourceUrl].filter(Boolean) as string[],
+      };
+      console.log('[PER-DOC] Gerando', unit.documentKey, 'código:', verificationCode, 'docx:', unit.isDocx);
+
+      let filePath: string;
+      let sha256: string;
+      let integritySha256: string | null = null;
+      let pageCount = 0;
+      const cleanupHosts: HTMLElement[] = [];
+      try {
+        if (unit.isDocx) {
+          const host = await renderDocxOffscreen(unit.sourceUrl, 'docx-offscreen-style-per-document');
+          cleanupHosts.push(host);
+          const out = await pdfSignatureService.saveSignedDocxAsPdf({
+            request: currentRequest,
+            signer: currentSigner,
+            creator,
+            docxContainer: host,
+            fieldsOverride: signatureFields,
+            perDocument,
+          });
+          filePath = out.filePath; sha256 = out.sha256; integritySha256 = out.integritySha256; pageCount = out.pageCount;
+        } else {
+          const out = await pdfSignatureService.saveSignedPdfToStorage({
+            request: currentRequest,
+            signer: currentSigner,
+            originalPdfUrl: unit.sourceUrl,
+            creator,
+            fieldsOverride: signatureFields,
+            perDocument,
+          });
+          filePath = out.filePath; sha256 = out.sha256; integritySha256 = out.integritySha256; pageCount = out.pageCount;
+        }
+      } finally {
+        for (const el of cleanupHosts) { try { el.remove(); } catch { /* noop */ } }
+      }
+
+      // Persistência por documento (código/hash/arquivo próprios). A RPC aplica
+      // last-signer-wins: cada signatário grava sua versão (que inclui todas as
+      // assinaturas já existentes) e o último a assinar prevalece. Falha REAL de
+      // persistência NÃO pode ser silenciosa (requisito jurídico) — coletamos
+      // para lançar um erro explícito ao final.
+      try {
+        await signatureService.attachSignedDocumentPublic(token, {
+          document_key: unit.documentKey,
+          document_type: unit.documentType,
+          display_name: unit.displayName,
+          source_file_path: unit.sourcePath,
+          signed_file_path: filePath,
+          verification_code: verificationCode,
+          signed_pdf_sha256: sha256,
+          document_hash: integritySha256,
+          page_count: pageCount,
+          sort_order: unit.sortOrder,
+        });
+      } catch (persistErr) {
+        console.error('[PER-DOC] Persistência falhou para', unit.documentKey, persistErr);
+        persistFailures.push(unit.displayName);
+        continue; // tenta os demais, mas o fluxo NÃO será tratado como sucesso
+      }
+
+      const signedUrl = await signatureService.getPublicFileUrl(token, filePath);
+      results.push({ documentKey: unit.documentKey, displayName: unit.displayName, verificationCode, url: signedUrl });
+      if (unit.documentKey === 'main') mainSignedUrl = signedUrl;
+    }
+
+    // Falha de persistência de QUALQUER documento é erro explícito (não mascarar).
+    if (persistFailures.length > 0) {
+      const err = new Error(
+        `Falha ao salvar o(s) documento(s) assinado(s): ${persistFailures.join(', ')}.`,
+      ) as Error & { __perDocPersistFailure?: boolean };
+      err.__perDocPersistFailure = true;
+      throw err;
+    }
+
+    // O envelope agrupa vários documentos finais independentes. Só apresentamos os
+    // artefatos finais (com seus códigos de verificação) quando TODOS os
+    // signatários assinaram — antes disso os códigos/versões ainda podem mudar
+    // (last-signer-wins), então mostrá-los seria enganoso.
+    let envelopeComplete = false;
+    try {
+      const bundle = await signatureService.getPublicSigningBundle(token);
+      envelopeComplete = bundle?.request?.status === 'signed';
+    } catch (e) {
+      console.warn('[PER-DOC] Não foi possível confirmar conclusão do envelope:', e);
+    }
+
+    if (envelopeComplete) {
+      setSignedDocuments(results);
+      const focusUrl = mainSignedUrl ?? results[0]?.url ?? null;
+      if (focusUrl) setSignedDocumentUrl(focusUrl);
+      console.log('[PER-DOC] Envelope concluído. Documentos assinados finais:', results.length);
+      return focusUrl;
+    }
+
+    // Ainda faltam signatários: assinatura registrada, mas o pacote final não está
+    // pronto. Não expõe códigos/versões intermediárias.
+    setSignedDocuments([]);
+    console.log('[PER-DOC] Assinatura registrada; aguardando demais signatários antes de finalizar o pacote.');
+    return null;
+  };
+
   const generateSignedDocumentForSigner = async (
     currentRequest: SignatureRequest,
     currentSigner: Signer,
   ): Promise<string | null> => {
+    // Modelo VERSIONADO: 'per_document' gera 1 PDF por arquivo; caso contrário
+    // ('consolidated'/legado/ausente) segue o fluxo consolidado abaixo, INTACTO.
+    if (currentRequest.signature_model === 'per_document') {
+      console.log('[PER-DOC] signature_model=per_document → geração individual por arquivo');
+      return await generatePerDocumentSignedForSigner(currentRequest, currentSigner);
+    }
+    console.log('[ASSINATURA] signature_model=consolidated (legado) → PDF único consolidado');
+
     let signedPdfPath: string;
     let signedPdfSha256: string | null = null;
     let signedIntegritySha256: string | null = null;
@@ -2385,10 +2568,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       // Inclui: documento principal + anexos PDF + relatório com selfie no final
       if (request) {
         try {
+          if (request.signature_model === 'per_document') {
+            // Modelo VERSIONADO: gera 1 PDF assinado por arquivo do kit (principal +
+            // cada anexo), cada um com código/hash/arquivo próprios. Legado intacto no else.
+            console.log('[PER-DOC] handleSign → geração individual por arquivo (principal + anexos)');
+            await generatePerDocumentSignedForSigner(request, result);
+          } else {
           let signedPdfPath: string;
           let signedPdfSha256: string | null = null;
           let signedIntegritySha256: string | null = null;
-          
+
           // Coletar URLs dos anexos PDF para compilar
           const attachmentPdfItems = attachments
             .map((a, i) => ({ a, i }))
@@ -2579,9 +2768,20 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           } catch {
             // Não bloquear
           }
-        } catch (pdfErr) {
+          } // fim do else (fluxo consolidado/legado)
+        } catch (pdfErr: any) {
           console.error('Erro ao salvar PDF assinado:', pdfErr);
-          // Não bloquear o fluxo se falhar
+          // Modelo per_document: falha REAL de persistência do documento individual
+          // é requisito jurídico — NÃO pode virar sucesso visual. Propaga para o
+          // catch externo (step='error') com mensagem explícita.
+          if (pdfErr?.__perDocPersistFailure) {
+            throw new Error(
+              (pdfErr?.message ? `${pdfErr.message} ` : '') +
+                'Sua assinatura foi registrada, mas o documento assinado não pôde ser salvo. Recarregue a página e tente novamente; se persistir, contate o suporte.',
+            );
+          }
+          // Fluxo consolidado (legado): PDF compilado pode ser regenerado depois
+          // no backoffice — não bloquear o fluxo se falhar.
         }
       }
       
@@ -2893,6 +3093,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       );
     }
 
+    const isPerDocumentModel = request?.signature_model === 'per_document';
+    const primarySignedDocument =
+      signedDocuments.find((doc) => doc.documentKey === 'main') ??
+      signedDocuments[0] ??
+      null;
+    const displayedVerificationCode = (
+      isPerDocumentModel
+        ? primarySignedDocument?.verificationCode
+        : signer?.verification_hash
+    )?.trim() || '';
+    const verificationCodeLabel =
+      isPerDocumentModel && signedDocuments.length > 1
+        ? 'Código do documento principal'
+        : 'Código de autenticação';
+
     if (showReport && request && signer) {
       return (
         <SignatureReport
@@ -2906,7 +3121,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
     const handleCopyVerificationCode = async () => {
       try {
-        const code = (signer?.verification_hash || '').trim();
+        const code = displayedVerificationCode;
         if (!code) return;
         await navigator.clipboard.writeText(code);
         toast.success('Código copiado.');
@@ -2926,7 +3141,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       }
     };
 
-    const verificationUrl = signer?.verification_hash ? `${window.location.origin}/#/verificar/${signer.verification_hash}` : null;
+    const verificationUrl = displayedVerificationCode ? `${window.location.origin}/#/verificar/${displayedVerificationCode}` : null;
     const termsUrl = buildPublicSignatureTermsUrl();
 
     return (
@@ -2970,15 +3185,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   </div>
 
                   {/* Código de autenticação */}
-                  {signer?.verification_hash && (
+                  {displayedVerificationCode && (
                     <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400">Código de autenticação</span>
+                        <span className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400">{verificationCodeLabel}</span>
                         <button type="button" onClick={handleCopyVerificationCode} className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-orange-600 hover:text-orange-700">
                           <Copy className="w-3 h-3" />Copiar
                         </button>
                       </div>
-                      <div className="font-mono text-[13px] font-semibold tracking-wider text-slate-800 break-all mt-1">{signer.verification_hash}</div>
+                      <div className="font-mono text-[13px] font-semibold tracking-wider text-slate-800 break-all mt-1">{displayedVerificationCode}</div>
                       {verificationUrl && (
                         <a href={verificationUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 hover:text-orange-600">
                           <ExternalLink className="w-3 h-3" />Verificar autenticidade
@@ -3097,7 +3312,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         />
       );
     }
-    
+
+    const isPerDocumentModel = request?.signature_model === 'per_document';
+    const primarySignedDocument =
+      signedDocuments.find((doc) => doc.documentKey === 'main') ??
+      signedDocuments[0] ??
+      null;
+    const displayedVerificationCode = (
+      isPerDocumentModel
+        ? primarySignedDocument?.verificationCode
+        : signer?.verification_hash
+    )?.trim() || '';
+    const verificationCodeLabel =
+      isPerDocumentModel && signedDocuments.length > 1
+        ? 'Código do documento principal'
+        : 'Código de autenticação';
+
     // Abre o documento assinado no visualizador interno (iframe), sem expor a URL do Supabase.
     const handleDownload = () => openSignedDocumentViewer(setDownloading);
 
@@ -3225,15 +3455,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               <p className="text-[13px] text-slate-500 mt-1">Guarde o código abaixo para validar quando quiser.</p>
 
               {/* Código de autenticação */}
-              {signer?.verification_hash && (
+              {displayedVerificationCode && (
                 <div className="mt-4 rounded-xl px-4 py-3 bg-slate-50 border border-slate-200">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-                      Código de autenticação
+                      {verificationCodeLabel}
                     </span>
                     <button
                       onClick={async () => {
-                        try { await navigator.clipboard.writeText(signer.verification_hash || ''); toast.success('Código copiado.'); }
+                        try { await navigator.clipboard.writeText(displayedVerificationCode || ''); toast.success('Código copiado.'); }
                         catch { /* ignore */ }
                       }}
                       className="flex items-center gap-1 text-[10.5px] font-semibold text-orange-600 hover:text-orange-700 transition-colors"
@@ -3242,7 +3472,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     </button>
                   </div>
                   <div className="font-mono text-[14px] font-bold tracking-[0.08em] text-slate-800 break-all">
-                    {signer.verification_hash}
+                    {displayedVerificationCode}
                   </div>
                 </div>
               )}
@@ -3288,12 +3518,42 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 </div>
               </div>
 
+              {/* Modelo per_document: 1 PDF assinado por arquivo do kit, cada um com
+                  seu próprio código de verificação e download individual. */}
+              {signedDocuments.length > 0 && (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 mb-2">
+                    Documentos assinados ({signedDocuments.length})
+                  </div>
+                  <div className="space-y-2">
+                    {signedDocuments.map((doc) => (
+                      <div key={doc.documentKey} className="rounded-lg bg-white border border-slate-200 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-[13px] font-semibold text-slate-800 truncate">{doc.displayName}</div>
+                            <div className="font-mono text-[11px] text-slate-500 break-all">{doc.verificationCode}</div>
+                          </div>
+                          {doc.url && (
+                            <button
+                              onClick={() => { try { window.open(doc.url!, '_blank', 'noopener'); } catch { /* ignore */ } }}
+                              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all active:scale-[0.98]"
+                            >
+                              <Download className="w-3.5 h-3.5" /> Abrir
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Rodapé */}
               <div className="mt-auto pt-4 md:pt-6 flex items-start gap-2">
                 <Shield className="w-3.5 h-3.5 flex-shrink-0 mt-px text-slate-300" />
                 <p className="text-[10.5px] leading-relaxed text-slate-400">
                   Uma cópia ficará disponível para download.
-                  {signer?.verification_hash && <> Verifique a autenticidade a qualquer momento pelo código acima.</>}
+                  {displayedVerificationCode && <>{signedDocuments.length > 0 ? ' Verifique a autenticidade pelos códigos dos documentos acima.' : ' Verifique a autenticidade a qualquer momento pelo código acima.'}</>}
                 </p>
               </div>
             </div>

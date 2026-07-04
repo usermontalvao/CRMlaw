@@ -5,6 +5,7 @@ import type {
   SignatureRequestWithSigners,
   Signer,
   SignatureField,
+  SignatureRequestDocument,
   CreateSignatureRequestDTO,
   CreateSignerDTO,
   SignDocumentDTO,
@@ -26,9 +27,17 @@ const STORAGE_BUCKET = 'document-templates';
 export const SYSTEM_ISSUER_LABEL = 'Jurius CRM';
 
 /** Resultado da verificação pública por hash. */
+/** Documento final de um envelope no modelo per_document (para a verificação pública). */
+export interface VerifiedDocument {
+  verification_code: string;
+  display_name?: string | null;
+  document_type: 'main' | 'attachment';
+  sort_order?: number | null;
+}
+
 export type VerifyResult =
-  | { status: 'valid';   signer: Signer; request: SignatureRequest }
-  | { status: 'blocked'; reason?: string | null; signer?: Signer; request?: SignatureRequest }
+  | { status: 'valid';   signer: Signer; request: SignatureRequest; documents?: VerifiedDocument[] }
+  | { status: 'blocked'; reason?: string | null; signer?: Signer; request?: SignatureRequest; documents?: VerifiedDocument[] }
   | null;
 
 class SignatureService {
@@ -726,6 +735,78 @@ class SignatureService {
     if (error) console.warn('Não foi possível anexar PDF assinado (acesso público):', error);
   }
 
+  // ==================== DOCUMENTOS DO ENVELOPE (modelo per_document) ====================
+
+  /**
+   * Fluxo PÚBLICO (modelo per_document): persiste o PDF assinado INDIVIDUAL de um
+   * arquivo do kit (principal ou anexo) via RPC one-shot restrita por public_token.
+   * Cada documento tem seu próprio código de verificação, hash e arquivo. Não toca no
+   * fluxo consolidado (legado), que continua usando attachSignedPdfPublic.
+   */
+  async attachSignedDocumentPublic(
+    token: string,
+    params: {
+      document_key: string;
+      document_type: 'main' | 'attachment';
+      display_name?: string | null;
+      source_file_path?: string | null;
+      signed_file_path: string;
+      verification_code: string;
+      signed_pdf_sha256?: string | null;
+      document_hash?: string | null;
+      page_count?: number | null;
+      sort_order?: number | null;
+    },
+  ): Promise<void> {
+    const { error } = await supabase.rpc('public_attach_signed_document', {
+      p_token: token,
+      p_document_key: params.document_key,
+      p_document_type: params.document_type,
+      p_display_name: params.display_name ?? null,
+      p_source_file_path: params.source_file_path ?? null,
+      p_signed_path: params.signed_file_path,
+      p_verification_code: params.verification_code,
+      p_sha256: params.signed_pdf_sha256 ?? null,
+      p_document_hash: params.document_hash ?? null,
+      p_page_count: params.page_count ?? null,
+      p_sort_order: params.sort_order ?? 0,
+    });
+    // Persistência do documento individual é requisito jurídico: NÃO pode falhar
+    // silenciosamente. A RPC retorna void (sem erro) mesmo quando aplica a trava
+    // last-signer-wins (replay/recência) — só há `error` em falha real de banco.
+    if (error) {
+      console.error('[PER-DOC] Falha ao anexar documento assinado (público):', error);
+      throw new Error(error.message || 'Falha ao persistir o documento assinado.');
+    }
+  }
+
+  /** Fluxo PÚBLICO: lista os documentos assinados individuais do envelope (por token). */
+  async getPublicRequestDocuments(token: string): Promise<SignatureRequestDocument[]> {
+    if (!token) return [];
+    const { data, error } = await supabase.rpc('public_signing_request_documents', { p_token: token });
+    if (error) {
+      console.warn('[PER-DOC] Falha ao listar documentos do envelope (público):', error);
+      return [];
+    }
+    return (data ?? []) as SignatureRequestDocument[];
+  }
+
+  /** Fluxo INTERNO (office-staff): lista os documentos assinados individuais de um envelope. */
+  async listRequestDocuments(requestId: string): Promise<SignatureRequestDocument[]> {
+    if (!requestId) return [];
+    const { data, error } = await supabase
+      .from('signature_request_documents')
+      .select('*')
+      .eq('signature_request_id', requestId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) {
+      console.warn('[PER-DOC] Falha ao listar documentos do envelope (interno):', error);
+      return [];
+    }
+    return (data ?? []) as SignatureRequestDocument[];
+  }
+
   async addSigner(requestId: string, signer: CreateSignerDTO): Promise<Signer> {
     const { data, error } = await supabase
       .from(this.signersTable)
@@ -1402,11 +1483,14 @@ class SignatureService {
     const status = (data as any).status as string;
     const signer = (data as any).signer ? ((data as any).signer as Signer) : undefined;
     const request = (data as any).request ? ((data as any).request as SignatureRequest) : undefined;
+    const documents = Array.isArray((data as any).documents)
+      ? ((data as any).documents as VerifiedDocument[])
+      : undefined;
 
     if (status === 'blocked') {
-      return { status: 'blocked', reason: (data as any).reason ?? null, signer, request };
+      return { status: 'blocked', reason: (data as any).reason ?? null, signer, request, documents };
     }
-    return { status: 'valid', signer: signer as any, request: request as any };
+    return { status: 'valid', signer: signer as any, request: request as any, documents };
   }
 
   generateVerificationHash(): string {

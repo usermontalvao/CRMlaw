@@ -61,6 +61,18 @@ Deno.serve(async (req: Request) => {
       requestId = (reqRow as any)?.id ?? requestId;
     }
 
+    // Fallback (modelo per_document): código de verificação de um documento individual
+    // do envelope → arquivo assinado próprio. Aditivo; não afeta os hashes legados.
+    if (!signedPath) {
+      const { data: docRow } = await supabase
+        .from('signature_request_documents')
+        .select('signature_request_id, signed_file_path')
+        .filter('verification_code', 'ilike', code)
+        .maybeSingle();
+      signedPath = (docRow as any)?.signed_file_path ?? null;
+      requestId = (docRow as any)?.signature_request_id ?? requestId;
+    }
+
     if (!signedPath || !requestId) return jsonResponse({ error: 'Documento não encontrado' }, 404);
 
     // 2) recusa documentos bloqueados/revogados

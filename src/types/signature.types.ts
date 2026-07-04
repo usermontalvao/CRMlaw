@@ -49,6 +49,39 @@ export interface SignatureRequest {
   // Ordem de assinatura: 'parallel' (default) qualquer um a qualquer momento;
   // 'sequential' cada signatário só assina após os de order menor terem assinado.
   signing_order?: 'parallel' | 'sequential' | null;
+  // Modelo de assinatura do envelope (VERSIONADO):
+  // 'consolidated' (legado/default) = 1 PDF assinado único (principal + anexos + relatório);
+  // 'per_document' = 1 PDF assinado por arquivo (principal e cada anexo), cada um com
+  // hash, código de verificação e arquivo próprios em signature_request_documents.
+  signature_model?: 'consolidated' | 'per_document' | null;
+  // Identificador do ENVELOPE (agrupador do pacote) no modelo per_document. É
+  // SEPARADO do verification_code de cada documento e NÃO substitui a validação
+  // por arquivo — serve apenas para rastrear/listar o pacote completo.
+  envelope_verification_code?: string | null;
+}
+
+/**
+ * Documento REAL de um envelope (kit) no modelo `per_document`. Cada arquivo do kit
+ * (principal + cada anexo) vira uma unidade independente de assinatura final com sua
+ * própria identidade de verificação. Tabela: signature_request_documents.
+ */
+export interface SignatureRequestDocument {
+  id: string;
+  signature_request_id: string;
+  signer_id?: string | null;
+  document_type: 'main' | 'attachment';
+  document_key: string; // 'main' | 'attachment-<i>' (casa com SignatureField.document_id)
+  display_name?: string | null;
+  source_file_path?: string | null;
+  signed_file_path?: string | null; // artefato final assinado individual
+  verification_code?: string | null; // código de verificação próprio
+  signed_pdf_sha256?: string | null; // hash do PDF assinado individual
+  document_hash?: string | null; // integrity sha do arquivo original individual
+  page_count?: number | null;
+  sort_order: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Signer {

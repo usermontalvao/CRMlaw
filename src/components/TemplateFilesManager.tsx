@@ -33,7 +33,27 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   const [editingMain, setEditingMain] = useState(false);
   const [downloadingMain, setDownloadingMain] = useState(false);
   const [updatingMain, setUpdatingMain] = useState(false);
+  const [updatingModel, setUpdatingModel] = useState(false);
   const mainFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const perDocument = localTemplate.signature_model === 'per_document';
+
+  const handleToggleSignatureModel = async () => {
+    const next = perDocument ? 'consolidated' : 'per_document';
+    // Otimista: reflete na UI e persiste; reverte em caso de erro.
+    setLocalTemplate((prev) => ({ ...prev, signature_model: next }));
+    try {
+      setUpdatingModel(true);
+      setError(null);
+      await documentTemplateService.updateSignatureModel(template.id, next);
+      onUpdate();
+    } catch (err) {
+      setLocalTemplate((prev) => ({ ...prev, signature_model: perDocument ? 'per_document' : 'consolidated' }));
+      setError(err instanceof Error ? err.message : 'Erro ao alterar o modelo de assinatura');
+    } finally {
+      setUpdatingModel(false);
+    }
+  };
 
   const loadFiles = useCallback(async () => {
     try {
@@ -517,6 +537,31 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
               ))}
             </div>
           )}
+        </div>
+
+        {/* Modelo de assinatura do kit (VERSIONADO) */}
+        <div className="px-6 pt-4 border-t border-[#e7e5df] bg-[#f8f7f5]">
+          <div className="flex items-start justify-between gap-4 rounded-xl border border-[#e7e5df] bg-white px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-800">Assinatura individual por arquivo</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {perDocument
+                  ? 'Cada arquivo do kit gera um PDF assinado próprio, com hash e código de verificação individuais.'
+                  : 'Modelo padrão: o kit gera um único PDF assinado consolidado (principal + anexos).'}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={perDocument}
+              onClick={handleToggleSignatureModel}
+              disabled={updatingModel}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${perDocument ? 'bg-emerald-500' : 'bg-slate-300'}`}
+              title="Alternar modelo de assinatura"
+            >
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${perDocument ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
         </div>
 
         <div className="px-6 py-4 border-t border-[#e7e5df] flex justify-between items-center gap-4 bg-[#f8f7f5]">

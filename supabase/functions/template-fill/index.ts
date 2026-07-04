@@ -440,6 +440,9 @@ Deno.serve(async (req) => {
 
     // Processar anexos do template (template_files) e salvar em attachment_paths
     const attachmentPaths: string[] = [];
+    // Config de assinatura (designer) de cada anexo, indexada na MESMA ordem de
+    // attachment_paths → vira document_id 'attachment-<index>' em signature_fields.
+    const attachmentConfigs: { index: number; cfg: any }[] = [];
     try {
       const attachmentsToProcess = (Array.isArray(templateFiles) ? templateFiles : [])
         .filter((f: any) => {
@@ -514,11 +517,19 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        attachmentConfigs.push({ index: attachmentPaths.length, cfg: (attach as any)?.signature_field_config ?? null });
         attachmentPaths.push(outAttachPath);
       }
     } catch (e) {
       console.warn('Erro ao processar anexos do template:', e);
     }
+
+    // Modelo VERSIONADO: o kit define signature_model ('consolidated' legado |
+    // 'per_document'). Carimbamos no envelope para o fluxo público saber gerar 1 PDF
+    // consolidado (legado) ou 1 PDF assinado por arquivo. Default seguro: 'consolidated'.
+    const signatureModel = ((template as any)?.signature_model === 'per_document')
+      ? 'per_document'
+      : 'consolidated';
 
     const { data: request, error: reqError } = await admin
       .from('signature_requests')
@@ -530,6 +541,7 @@ Deno.serve(async (req) => {
         client_id: clientId,
         client_name: signerName,
         auth_method: 'signature_only',
+        signature_model: signatureModel,
         expires_at: submitBody.expires_at ?? null,
         created_by: link.created_by,
       })
@@ -560,27 +572,35 @@ Deno.serve(async (req) => {
     }
 
     try {
-      const signatureConfig = (mainFile as any)?.signature_field_config ?? (template as any)?.signature_field_config;
-      const configArray = Array.isArray(signatureConfig)
-        ? signatureConfig
-        : signatureConfig
-          ? [signatureConfig]
-          : [];
+      // Converte a config do designer (page/width_percent/height_percent) em linhas
+      // de signature_fields. CORREÇÃO: a coluna é `page_number` (não `page`) — antes
+      // o insert falhava inteiro e NENHUM campo manual era persistido (posição caía no
+      // fallback da última página). Vale para os fluxos consolidado e per_document.
+      const buildFields = (cfg: any, documentId: string) => {
+        const arr = Array.isArray(cfg) ? cfg : (cfg ? [cfg] : []);
+        return arr
+          .filter((c: any) => c !== null && typeof c === 'object')
+          .map((c: any) => ({
+            signature_request_id: request.id,
+            signer_id: createdSigner.id,
+            field_type: 'signature',
+            page_number: c.page || c.page_number || 1,
+            x_percent: c.x_percent || 0,
+            y_percent: c.y_percent || 0,
+            w_percent: c.width_percent || c.w_percent || 20,
+            h_percent: c.height_percent || c.h_percent || 8,
+            required: true,
+            document_id: documentId,
+          }));
+      };
 
-      const fieldsToInsert = configArray
-        .filter((c: any) => c !== null && typeof c === 'object')
-        .map((c: any) => ({
-          signature_request_id: request.id,
-          signer_id: createdSigner.id,
-          field_type: 'signature',
-          page: c.page || 1,
-          x_percent: c.x_percent || 0,
-          y_percent: c.y_percent || 0,
-          w_percent: c.width_percent || c.w_percent || 20,
-          h_percent: c.height_percent || c.h_percent || 8,
-          required: true,
-          document_id: 'main',
-        }));
+      const mainConfig = (mainFile as any)?.signature_field_config ?? (template as any)?.signature_field_config;
+      // Campos do principal ('main') + campos de CADA anexo ('attachment-<index>'),
+      // casando com o document_id usado no designer e na geração do PDF.
+      const fieldsToInsert = [
+        ...buildFields(mainConfig, 'main'),
+        ...attachmentConfigs.flatMap((a) => buildFields(a.cfg, `attachment-${a.index}`)),
+      ];
 
       if (fieldsToInsert.length > 0) {
         const { error: fieldsError } = await admin.from('signature_fields').insert(fieldsToInsert);

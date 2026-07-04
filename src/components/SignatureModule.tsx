@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import JSZip from 'jszip';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { renderAsync } from 'docx-preview';
 import {
@@ -32,7 +33,7 @@ import FacialCapture from './FacialCapture';
 import { filterGeneratedDocumentsByFolder, filterSignatureRequests } from '../utils/signatureFilters';
 import type {
   SignatureRequest, SignatureRequestWithSigners, Signer, CreateSignatureRequestDTO,
-  SignerAuthMethod, SignatureFieldType, SignatureAuditLog,
+  SignerAuthMethod, SignatureFieldType, SignatureAuditLog, SignatureRequestDocument,
 } from '../types/signature.types';
 import SignatureCanvas from './SignatureCanvas';
 import SignatureReport from './SignatureReport';
@@ -373,6 +374,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const [createdRequest, setCreatedRequest] = useState<SignatureRequestWithSigners | null>(null);
   const [detailsRequest, setDetailsRequest] = useState<SignatureRequestWithSigners | null>(null);
+  // Modelo per_document: documentos assinados individuais do envelope em foco (detalhes).
+  const [detailsDocuments, setDetailsDocuments] = useState<SignatureRequestDocument[]>([]);
   const [reportTarget, setReportTarget] = useState<{ request: SignatureRequestWithSigners; signer: Signer } | null>(null);
   const [waEditOpen, setWaEditOpen] = useState<string | null>(null);
   const [waEditMsg, setWaEditMsg] = useState<Record<string, string>>({});
@@ -383,6 +386,27 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     setCreateProcessLoading(false);
     setCopyToCloudLoading(false);
   }, [detailsRequest?.id]);
+
+  // Carrega os documentos assinados individuais quando o envelope em foco usa o
+  // modelo per_document (1 PDF por arquivo). Envelopes consolidados (legado) não
+  // consultam a nova tabela.
+  useEffect(() => {
+    let active = true;
+    const id = detailsRequest?.id;
+    if (!id || (detailsRequest as any)?.signature_model !== 'per_document') {
+      setDetailsDocuments([]);
+      return;
+    }
+    (async () => {
+      try {
+        const docs = await signatureService.listRequestDocuments(id);
+        if (active) setDetailsDocuments(docs);
+      } catch {
+        if (active) setDetailsDocuments([]);
+      }
+    })();
+    return () => { active = false; };
+  }, [detailsRequest?.id, (detailsRequest as any)?.signature_model]);
 
   const [signModalOpen, setSignModalOpen] = useState(false);
   const [signingSigner, setSigningSigner] = useState<Signer | null>(null);
@@ -396,6 +420,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [auditLog, setAuditLog] = useState<SignatureAuditLog[]>([]);
   const [auditLogLoading, setAuditLogLoading] = useState(false);
   const [viewDocLoading, setViewDocLoading] = useState(false);
+  const [downloadZipLoading, setDownloadZipLoading] = useState(false);
   const [signerImages, setSignerImages] = useState<Record<string, { facial?: string; signature?: string }>>({});
   const [deleteLoading, setDeleteLoading] = useState(false);
 
@@ -2828,13 +2853,40 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   };
 
   const handleDownloadDocument = async (request: SignatureRequestWithSigners) => {
+    // Modelo per_document: o artefato legal são os PDFs assinados INDIVIDUAIS em
+    // signature_request_documents — NÃO o signed_document_path do signatário
+    // (que é do fluxo consolidated). Baixa o(s) documento(s) final(is) do envelope.
+    if ((request as any).signature_model === 'per_document') {
+      try {
+        const docs = await signatureService.listRequestDocuments(request.id);
+        const signedDocs = docs.filter((d) => d.signed_file_path);
+        if (signedDocs.length === 0) {
+          toast.error('Nenhum documento assinado disponível ainda.');
+          return;
+        }
+        if (signedDocs.length === 1) {
+          const only = signedDocs[0];
+          const url = await pdfSignatureService.getSignedPdfUrl(only.signed_file_path!);
+          if (!url) { toast.error('Não foi possível acessar o PDF assinado.'); return; }
+          await downloadOriginalPdf(url, `${only.display_name || only.document_key}_assinado.pdf`);
+          return;
+        }
+        // Vários documentos finais → baixa tudo em ZIP (coerente com a seção).
+        await handleDownloadAllSignedAsZip(request);
+      } catch (e: any) {
+        console.error('[DOWNLOAD per_document]', e);
+        toast.error(e?.message || 'Erro ao baixar documentos assinados.');
+      }
+      return;
+    }
+
     if (!request.document_path) {
       toast.error('Documento não disponível para download');
       return;
     }
     try {
       toast.info('Preparando download...');
-      
+
       // Buscar dados atualizados do request com signers do banco
       const freshRequest = await signatureService.getRequestWithSigners(request.id);
       if (!freshRequest) {
@@ -3110,6 +3162,22 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     return response.blob();
   };
 
+  const sanitizeDownloadName = (value: string, fallback: string) => {
+    const normalized = (value || '').trim().replace(/[\\/:*?"<>|]+/g, '_');
+    return normalized || fallback;
+  };
+
+  const triggerBlobDownload = (blob: Blob, fileName: string) => {
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 5000);
+  };
+
   const ensureCloudFolderByName = async (name: string, parentId: string | null, clientId?: string | null) => {
     const folders = await cloudService.listFolders(parentId);
     const normalizedName = (name || '').trim().toLocaleLowerCase('pt-BR');
@@ -3204,6 +3272,61 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     throw new Error('O PDF assinado ainda não foi gerado. Faça o download do documento assinado uma vez para gerar o PDF e tente novamente.');
   };
 
+  const handleDownloadAllSignedAsZip = async (request: SignatureRequestWithSigners) => {
+    try {
+      setDownloadZipLoading(true);
+      toast.info('Aguarde... montando ZIP...');
+
+      const docs = await signatureService.listRequestDocuments(request.id);
+      const signedDocs = docs.filter((doc) => doc.signed_file_path);
+
+      if (signedDocs.length === 0) {
+        toast.error('Nenhum PDF assinado foi encontrado para baixar em ZIP.');
+        return;
+      }
+
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+      const uniqueName = (rawName: string) => {
+        const dot = rawName.lastIndexOf('.');
+        const base = dot > 0 ? rawName.slice(0, dot) : rawName;
+        const ext = dot > 0 ? rawName.slice(dot) : '';
+        let candidate = rawName;
+        let index = 2;
+        while (usedNames.has(candidate)) {
+          candidate = `${base} (${index})${ext}`;
+          index += 1;
+        }
+        usedNames.add(candidate);
+        return candidate;
+      };
+
+      for (const [index, doc] of signedDocs.entries()) {
+        const signedUrl = await pdfSignatureService.getSignedPdfUrl(doc.signed_file_path!);
+        if (!signedUrl) {
+          throw new Error(`NÃ£o foi possÃ­vel acessar o PDF assinado de ${doc.display_name || doc.document_key}.`);
+        }
+
+        const blob = await fetchBlobFromUrl(signedUrl);
+        const fileName = sanitizeDownloadName(
+          `${doc.display_name || doc.document_key || `documento-${index + 1}`}_assinado.pdf`,
+          `documento-${index + 1}_assinado.pdf`,
+        );
+        zip.file(uniqueName(fileName), blob);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const zipName = sanitizeDownloadName(`${request.document_name || 'documentos-assinados'}.zip`, 'documentos-assinados.zip');
+      triggerBlobDownload(zipBlob, zipName);
+      toast.success(`ZIP com ${signedDocs.length} documento(s) iniciado.`);
+    } catch (error: any) {
+      console.error('[DOWNLOAD ZIP] Erro ao montar ZIP:', error);
+      toast.error(error.message || 'Erro ao montar ZIP dos documentos assinados.');
+    } finally {
+      setDownloadZipLoading(false);
+    }
+  };
+
   const handleCopySignedDocumentToCloud = async (request: SignatureRequestWithSigners) => {
     if (!request.client_id) {
       toast.error('Vincule um cliente para criar a pasta no Cloud.');
@@ -3212,11 +3335,34 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
     try {
       setCopyToCloudLoading(true);
-      const { blob, fileName } = await resolveSignedDocumentBlob(request);
       const { nonProtocolFolder, locationLabel } = await resolveCloudTargetFolder(request);
 
-      const file = new File([blob], fileName, { type: blob.type || 'application/pdf' });
-      await cloudService.uploadFiles(nonProtocolFolder.id, [file], request.client_id);
+      // Modelo per_document: envia CADA documento assinado individual (fonte de
+      // verdade em signature_request_documents), não um único PDF consolidado.
+      let files: File[];
+      if ((request as any).signature_model === 'per_document') {
+        const docs = await signatureService.listRequestDocuments(request.id);
+        const signedDocs = docs.filter((d) => d.signed_file_path);
+        if (signedDocs.length === 0) {
+          throw new Error('Ainda não há documentos assinados para copiar.');
+        }
+        files = [];
+        for (const doc of signedDocs) {
+          const url = await pdfSignatureService.getSignedPdfUrl(doc.signed_file_path!);
+          if (!url) throw new Error(`Não foi possível acessar o PDF assinado de ${doc.display_name || doc.document_key}.`);
+          const b = await fetchBlobFromUrl(url);
+          const name = sanitizeDownloadName(
+            `${doc.display_name || doc.document_key}_assinado.pdf`,
+            `${doc.document_key}_assinado.pdf`,
+          );
+          files.push(new File([b], name, { type: b.type || 'application/pdf' }));
+        }
+      } else {
+        const { blob, fileName } = await resolveSignedDocumentBlob(request);
+        files = [new File([blob], fileName, { type: blob.type || 'application/pdf' })];
+      }
+
+      await cloudService.uploadFiles(nonProtocolFolder.id, files, request.client_id);
       events.emit(SYSTEM_EVENTS.CLOUD_CHANGED, {
         action: 'signed_document_copied',
         folderId: nonProtocolFolder.id,
@@ -5666,14 +5812,31 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       onClick={async () => {
                         try {
                           setViewDocLoading(true);
-                          
+
+                          // Modelo per_document: abre o documento PRINCIPAL assinado
+                          // individual (signature_request_documents). A lista completa
+                          // com cada documento fica na seção "Documentos assinados".
+                          if ((detailsRequest as any).signature_model === 'per_document') {
+                            const docs = await signatureService.listRequestDocuments(detailsRequest.id);
+                            const signedDocs = docs.filter((d) => d.signed_file_path);
+                            const target = signedDocs.find((d) => d.document_type === 'main') || signedDocs[0];
+                            if (!target) {
+                              toast.error('Nenhum documento assinado disponível ainda.');
+                              return;
+                            }
+                            const url = await pdfSignatureService.getSignedPdfUrl(target.signed_file_path!);
+                            if (url) window.open(url, '_blank');
+                            else toast.error('Não foi possível abrir o PDF assinado');
+                            return;
+                          }
+
                           // Buscar dados atualizados do banco
                           const freshRequest = await signatureService.getRequestWithSigners(detailsRequest.id);
                           if (!freshRequest) {
                             toast.error('Erro ao carregar dados do documento');
                             return;
                           }
-                          
+
                           const signedSigner = [...freshRequest.signers]
                             .filter(s => s.status === 'signed')
                             .sort((a, b) => new Date(b.signed_at || 0).getTime() - new Date(a.signed_at || 0).getTime())[0];
@@ -5874,7 +6037,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       {viewDocLoading ? (
                         <><Loader2 className="w-3.5 h-3.5 animate-spin" />Abrindo...</>
                       ) : (
-                        <><Eye className="w-3.5 h-3.5" />{detailsRequest.signers.some(s => s.status === 'signed') ? 'Ver assinado' : 'Visualizar'}</>
+                        <><Eye className="w-3.5 h-3.5" />{detailsRequest.signers.some(s => s.status === 'signed') ? ((detailsRequest as any).signature_model === 'per_document' ? 'Ver principal' : 'Ver assinado') : 'Visualizar'}</>
                       )}
                     </button>
                   )}
@@ -6075,6 +6238,71 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   .filter(s => s.status === 'signed')
                   .sort((a, b) => new Date(b.signed_at || 0).getTime() - new Date(a.signed_at || 0).getTime())[0];
                 const signedPath = signedSigner?.signed_document_path || null;
+
+                // Modelo per_document: lista os PDFs assinados INDIVIDUAIS do envelope,
+                // cada um com seu código de verificação e download próprio.
+                if ((detailsRequest as any).signature_model === 'per_document' && allSigned && detailsDocuments.length > 0) {
+                  const openDoc = async (path: string | null | undefined, name: string, download: boolean) => {
+                    if (!path) { toast.error('PDF assinado indisponível'); return; }
+                    try {
+                      const url = await pdfSignatureService.getSignedPdfUrl(path);
+                      if (!url) { toast.error('Não foi possível abrir o PDF assinado'); return; }
+                      if (download) await downloadOriginalPdf(url, `${name}_assinado.pdf`);
+                      else window.open(url, '_blank');
+                    } catch { toast.error('Erro'); }
+                  };
+                  return (
+                    <section>
+                      <div className="mb-1.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Documentos assinados ({detailsDocuments.length})</p>
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
+                            <FileSignature style={{ width: 9, height: 9 }} />Envelope · validação por arquivo
+                          </span>
+                        </div>
+                        {detailsDocuments.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadAllSignedAsZip(detailsRequest)}
+                            disabled={downloadZipLoading}
+                            className="inline-flex items-center gap-1 rounded-md border border-cyan-200 bg-cyan-50 px-2 py-1 text-[11px] font-semibold text-cyan-800 transition hover:bg-cyan-100 disabled:opacity-70 disabled:cursor-wait"
+                          >
+                            {downloadZipLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                            {downloadZipLoading ? 'Montando ZIP...' : 'Baixar tudo em ZIP'}
+                          </button>
+                        )}
+                      </div>
+                      {(detailsRequest as any).envelope_verification_code && (
+                        <p className="mb-1.5 font-mono text-[10px] text-slate-400">
+                          Envelope: {(detailsRequest as any).envelope_verification_code}
+                        </p>
+                      )}
+                      <div className="space-y-1">
+                        {detailsDocuments.map((doc) => (
+                          <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                            <div style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 6, background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <FileSignature style={{ width: 13, height: 13, color: '#16a34a' }} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontSize: 12, fontWeight: 600, color: '#334155', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.display_name || doc.document_key}</p>
+                              <p style={{ fontSize: 10, color: '#16a34a', margin: 0, fontWeight: 600 }}>
+                                {doc.document_type === 'main' ? 'Principal' : 'Anexo'} · {doc.verification_code || 's/ código'}
+                              </p>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                              <button type="button" onClick={() => openDoc(doc.signed_file_path, doc.display_name || doc.document_key, false)} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#64748b', background: '#ffffff', border: '1px solid #e2e8f0', cursor: 'pointer' }}>
+                                <Eye style={{ width: 11, height: 11 }} />Ver
+                              </button>
+                              <button type="button" onClick={() => openDoc(doc.signed_file_path, doc.display_name || doc.document_key, true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#ea580c', background: '#fff7ed', border: '1px solid #fed7aa', cursor: 'pointer' }}>
+                                <Download style={{ width: 11, height: 11 }} />Baixar
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  );
+                }
 
                 if (allSigned && signedPath) {
                   const openSigned = async (download: boolean) => {

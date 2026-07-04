@@ -8,6 +8,24 @@ import { SYSTEM_ISSUER_LABEL } from './signature.service';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 import type { Signer, SignatureRequest, SignatureField } from '../types/signature.types';
 
+/**
+ * Escopo do modelo `per_document` (VERSIONADO): quando presente, a geração produz
+ * o PDF assinado de UM ÚNICO arquivo do kit (principal OU um anexo) com identidade
+ * de verificação PRÓPRIA — código, URL/QR e hash de integridade individuais. É o que
+ * permite "1 PDF assinado por arquivo" sem tocar no caminho consolidado (legado):
+ * quando `perDocument` é undefined, tudo funciona exatamente como antes.
+ */
+export interface PerDocumentScope {
+  /** 'main' | 'attachment-<i>' — casa com signature_fields.document_id. */
+  documentKey: string;
+  /** Código de verificação próprio do documento (estampado no rodapé/QR). */
+  verificationCode: string;
+  /** URL pública de verificação com o código próprio (…/#/verificar/<code>). */
+  verificationUrl: string;
+  /** Paths/URLs do arquivo ORIGINAL para o hash de integridade individual. */
+  integritySources?: string[];
+}
+
 interface SignedPdfOptions {
   request: SignatureRequest;
   signer: Signer;
@@ -21,6 +39,11 @@ interface SignedPdfOptions {
    * e fazia a assinatura cair no fallback (posição padrão na última página).
    */
   fieldsOverride?: SignatureField[];
+  /**
+   * Modelo `per_document`: gera o PDF de UM arquivo com verificação própria.
+   * Ausente ⇒ comportamento consolidado (legado) inalterado.
+   */
+  perDocument?: PerDocumentScope;
 }
 
 type EmbeddedImage = any;
@@ -494,12 +517,14 @@ class PdfSignatureService {
     variant?: 'card' | 'strip';
     /** Quando true o fundo do strip é totalmente opaco (espaço reservado, nada por baixo) */
     opaqueStrip?: boolean;
+    /** Modelo per_document: código de verificação PRÓPRIO do documento (sobrepõe o do signatário). */
+    verificationCode?: string;
   }) {
-    const { page, pageWidth, pageHeight, signer, verificationUrl, qrImage, helvetica, helveticaBold, integritySha256, variant, opaqueStrip } = params;
+    const { page, pageWidth, pageHeight, signer, verificationUrl, qrImage, helvetica, helveticaBold, integritySha256, variant, opaqueStrip, verificationCode } = params;
     void pageHeight;
 
     const integrityFull = this.formatIntegrityHash(integritySha256, false);
-    const code = (signer.verification_hash || '').toUpperCase() || 'N/A';
+    const code = (verificationCode || signer.verification_hash || '').toUpperCase() || 'N/A';
     const mode: 'card' | 'strip' = variant ?? 'strip';
 
     if (mode === 'strip') {
@@ -1429,8 +1454,11 @@ class PdfSignatureService {
     currentHistPage.drawText(`Documento ${request.id}  ·  Jurius`, { x: lm, y: 65, size: 6, font: helvetica, color: silver });
   }
 
-  async generateSignedPdf(options: SignedPdfOptions): Promise<{ bytes: Uint8Array; integritySha256: string }> {
-    const { request, signer, originalPdfUrl, creator, attachmentPdfItems } = options;
+  async generateSignedPdf(options: SignedPdfOptions): Promise<{ bytes: Uint8Array; integritySha256: string; pageCount: number }> {
+    const { request, signer, originalPdfUrl, creator, attachmentPdfItems, perDocument } = options;
+    if (perDocument) {
+      console.log('[PER-DOC] generateSignedPdf (PDF) documento único:', perDocument.documentKey, 'código:', perDocument.verificationCode);
+    }
 
     console.log('[PDF] Gerando PDF assinado para:', signer.name);
     console.log('[PDF] signature_image_path:', signer.signature_image_path);
@@ -1441,7 +1469,12 @@ class PdfSignatureService {
     const integrityChunks: Uint8Array[] = [new Uint8Array(originalPdfBytes)];
     const pdfDoc = await PDFDocument.load(originalPdfBytes);
 
-    const documentOffsets: Record<string, number> = { main: 0 };
+    // No modelo per_document a única fonte é o próprio arquivo (principal OU um anexo);
+    // mapeamos o offset 0 tanto para 'main' quanto para a chave do documento em escopo,
+    // para que os campos (com document_id = documentKey) caiam na página correta.
+    const documentOffsets: Record<string, number> = perDocument
+      ? { main: 0, [perDocument.documentKey]: 0 }
+      : { main: 0 };
     let nextOffset = pdfDoc.getPageCount();
     
     // Adicionar anexos PDF ao documento (antes do relatÃ³rio)
@@ -1475,13 +1508,18 @@ class PdfSignatureService {
     const facialImage = await this.loadStorageImage(pdfDoc, signer.facial_image_path);
     console.log('[PDF] Imagens carregadas - assinatura:', !!signatureImage, 'facial:', !!facialImage);
 
-    const verificationUrl = signer.verification_hash
-      ? `${window.location.origin}/#/verificar/${signer.verification_hash}`
-      : null;
+    // Identidade de verificação: no per_document usa o código PRÓPRIO do documento;
+    // no consolidado (legado) usa o verification_hash do signatário, como antes.
+    const verificationUrl = perDocument
+      ? perDocument.verificationUrl
+      : (signer.verification_hash
+        ? `${window.location.origin}/#/verificar/${signer.verification_hash}`
+        : null);
 
     const qrImage = verificationUrl ? await this.buildQrPng(pdfDoc, verificationUrl) : null;
 
-    // Hash de integridade (do(s) arquivo(s) original(is), antes de assinar)
+    // Hash de integridade (do(s) arquivo(s) original(is), antes de assinar). No
+    // per_document, integrityChunks já contém apenas a fonte única deste documento.
     const integritySha256 = await this.sha256Hex(this.concatBytes(integrityChunks));
 
     // Load fields and place signature on marked location(s).
@@ -1656,10 +1694,11 @@ class PdfSignatureService {
         // Páginas de conteúdo têm espaço reservado → fundo branco puro.
         // Páginas do relatório mantêm overlay semitransparente (layout próprio).
         opaqueStrip: i < contentPageCount,
+        verificationCode: perDocument?.verificationCode,
       });
     }
 
-    return { bytes: await pdfDoc.save(), integritySha256 };
+    return { bytes: await pdfDoc.save(), integritySha256, pageCount: contentPageCount };
   }
 
   /**
@@ -1745,15 +1784,21 @@ class PdfSignatureService {
   /**
    * Gera e salva o PDF assinado no bucket 'assinados', retornando o path
    */
-  async saveSignedPdfToStorage(options: SignedPdfOptions): Promise<{ filePath: string; sha256: string; integritySha256: string | null }> {
-    const { bytes: pdfBytes, integritySha256 } = await this.generateSignedPdf(options);
+  async saveSignedPdfToStorage(options: SignedPdfOptions): Promise<{ filePath: string; sha256: string; integritySha256: string | null; pageCount: number }> {
+    const { bytes: pdfBytes, integritySha256, pageCount } = await this.generateSignedPdf(options);
     const sha256 = await this.sha256Hex(pdfBytes);
 
-    const fileName = `signed_${options.signer.id}_${Date.now()}.pdf`;
+    // No per_document o nome inclui a chave do documento para não colidir entre os
+    // vários arquivos do MESMO signatário gerados no mesmo instante.
+    const keyPart = options.perDocument ? `${options.perDocument.documentKey}_` : '';
+    const fileName = `signed_${keyPart}${options.signer.id}_${Date.now()}.pdf`;
     const filePath = `${options.request.id}/${fileName}`;
 
     await this.persistSignedPdf(filePath, pdfBytes, 'PDF assinado');
-    return { filePath, sha256, integritySha256 };
+    if (options.perDocument) {
+      console.log('[PER-DOC] PDF individual salvo:', filePath, 'sha256:', sha256, 'páginas:', pageCount);
+    }
+    return { filePath, sha256, integritySha256, pageCount };
   }
   /**
    * Gera e salva PDF completo para documentos DOCX
@@ -1767,9 +1812,17 @@ class PdfSignatureService {
     attachmentDocxItems?: { documentId: string; container: HTMLElement }[];
     attachmentPdfItems?: { documentId: string; url: string }[];
     fieldsOverride?: SignatureField[];
-  }): Promise<{ filePath: string; sha256: string; integritySha256: string | null }> {
-    const { request, signer, creator, docxContainer, attachmentDocxItems, attachmentPdfItems, fieldsOverride } = options;
-    
+    /** Modelo per_document: gera o PDF de UM arquivo (o docxContainer) com verificação própria. */
+    perDocument?: PerDocumentScope;
+  }): Promise<{ filePath: string; sha256: string; integritySha256: string | null; pageCount: number }> {
+    const { request, signer, creator, docxContainer, attachmentDocxItems, attachmentPdfItems, fieldsOverride, perDocument } = options;
+    // No per_document a chave do documento em escopo é a do arquivo único (o docxContainer),
+    // usada para casar signature_fields.document_id e detectar placeholders desse arquivo.
+    const scopeDocumentId = perDocument?.documentKey ?? 'main';
+    if (perDocument) {
+      console.log('[PER-DOC] saveSignedDocxAsPdf documento único:', scopeDocumentId, 'código:', perDocument.verificationCode);
+    }
+
     console.log('[PDF] Convertendo DOCX para PDF...');
     
     const pdfDoc = await PDFDocument.create();
@@ -1824,24 +1877,31 @@ class PdfSignatureService {
     const integrityChunks: Uint8Array[] = [];
 
     const integrityPromises: Promise<Uint8Array | null>[] = [];
-    if (request.document_path) integrityPromises.push(this.fetchBytesFromPathOrUrl(request.document_path));
-    if (Array.isArray((request as any).attachment_paths)) {
-      const paths = ((request as any).attachment_paths as string[]).filter(Boolean);
-      for (const p of paths) integrityPromises.push(this.fetchBytesFromPathOrUrl(p));
-    }
-    if (attachmentPdfItems && attachmentPdfItems.length > 0) {
-      for (const a of attachmentPdfItems) {
-        integrityPromises.push(
-          (async () => {
-            try {
-              const res = await fetch(a.url);
-              if (!res.ok) return null;
-              return new Uint8Array(await res.arrayBuffer());
-            } catch {
-              return null;
-            }
-          })()
-        );
+    if (perDocument) {
+      // Integridade individual: apenas o arquivo original deste documento em escopo.
+      for (const src of (perDocument.integritySources ?? [])) {
+        if (src) integrityPromises.push(this.fetchBytesFromPathOrUrl(src));
+      }
+    } else {
+      if (request.document_path) integrityPromises.push(this.fetchBytesFromPathOrUrl(request.document_path));
+      if (Array.isArray((request as any).attachment_paths)) {
+        const paths = ((request as any).attachment_paths as string[]).filter(Boolean);
+        for (const p of paths) integrityPromises.push(this.fetchBytesFromPathOrUrl(p));
+      }
+      if (attachmentPdfItems && attachmentPdfItems.length > 0) {
+        for (const a of attachmentPdfItems) {
+          integrityPromises.push(
+            (async () => {
+              try {
+                const res = await fetch(a.url);
+                if (!res.ok) return null;
+                return new Uint8Array(await res.arrayBuffer());
+              } catch {
+                return null;
+              }
+            })()
+          );
+        }
       }
     }
 
@@ -1853,10 +1913,13 @@ class PdfSignatureService {
       integrityChunks.push(new TextEncoder().encode(`${request.id}:${signer.id}:${request.document_name || ''}`));
     }
     const integritySha256 = await this.sha256Hex(this.concatBytes(integrityChunks));
-    
-    const verificationUrl = signer.verification_hash
-      ? `${window.location.origin}/#/verificar/${signer.verification_hash}`
-      : null;
+
+    // per_document → identidade própria do documento; consolidado → hash do signatário.
+    const verificationUrl = perDocument
+      ? perDocument.verificationUrl
+      : (signer.verification_hash
+        ? `${window.location.origin}/#/verificar/${signer.verification_hash}`
+        : null);
 
     let qrImageForFooter: EmbeddedImage | null = null;
     if (verificationUrl) {
@@ -2189,6 +2252,7 @@ class PdfSignatureService {
               integritySha256,
               variant: 'strip',
               opaqueStrip: true, // espaço reservado → fundo branco puro
+              verificationCode: perDocument?.verificationCode,
             });
 
             for (const asset of docxSignerDrawAssets) {
@@ -2337,16 +2401,19 @@ class PdfSignatureService {
 
     // Encontrar as páginas do DOCX
     // O docx-preview pode gerar páginas como <section> ou <article> dependendo do documento.
-    await convertDocxContainer({ container: docxContainer, documentId: 'main' });
-    
-    // Fallback: só adicionar assinatura automática se realmente não houver campos para o documento principal
+    // No consolidado o container principal é 'main'; no per_document é o arquivo em escopo
+    // (principal OU um anexo), para que campos manuais e placeholders casem por document_id.
+    await convertDocxContainer({ container: docxContainer, documentId: scopeDocumentId });
+
+    // Fallback: só adicionar assinatura automática se realmente não houver campos para
+    // o documento em escopo (nem manual, nem placeholder aplicável).
     const hasMainSignatureField = fields.some((f: any) =>
       f.field_type === 'signature' &&
       (f.signer_id == null || f.signer_id === signer.id) &&
-      ((f.document_id || 'main') === 'main')
+      ((f.document_id || 'main') === scopeDocumentId)
     );
 
-    if (signatureImage && !hasMainSignatureField && !placeholderDetectedByDocument['main']) {
+    if (signatureImage && !hasMainSignatureField && !placeholderDetectedByDocument[scopeDocumentId]) {
       console.log('[PDF] Nenhum campo marcado - adicionando assinatura na última página');
       const lastPage = pdfDoc.getPages()[pdfDoc.getPageCount() - 1];
       if (lastPage) {
@@ -2522,17 +2589,24 @@ class PdfSignatureService {
         docHash: '',
         integritySha256,
         variant: 'strip',
+        verificationCode: perDocument?.verificationCode,
       });
     }
 
     const pdfBytes = await pdfDoc.save();
     const sha256 = await this.sha256Hex(pdfBytes);
 
-    const fileName = `signed_${signer.id}_${Date.now()}.pdf`;
+    const keyPart = perDocument ? `${perDocument.documentKey}_` : '';
+    const fileName = `signed_${keyPart}${signer.id}_${Date.now()}.pdf`;
     const filePath = `${request.id}/${fileName}`;
 
     await this.persistSignedPdf(filePath, pdfBytes, 'PDF do DOCX');
-    return { filePath, sha256, integritySha256 };
+    // Nº de páginas de CONTEÚDO deste documento (exclui as páginas do relatório).
+    const pageCount = pagesWithFooterCard.size;
+    if (perDocument) {
+      console.log('[PER-DOC] DOCX individual salvo:', filePath, 'sha256:', sha256, 'páginas:', pageCount);
+    }
+    return { filePath, sha256, integritySha256, pageCount };
   }
 
   /**

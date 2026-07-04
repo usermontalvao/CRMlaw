@@ -306,6 +306,26 @@ class DocumentTemplateService {
     return data;
   }
 
+  /**
+   * Define o modelo de assinatura do kit (VERSIONADO): 'consolidated' (legado, 1 PDF
+   * único) ou 'per_document' (1 PDF assinado por arquivo). É lido pela edge template-fill
+   * e carimbado em signature_requests.signature_model na criação do envelope.
+   */
+  async updateSignatureModel(
+    templateId: string,
+    model: 'consolidated' | 'per_document'
+  ): Promise<DocumentTemplate> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({ signature_model: model })
+      .eq('id', templateId)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
   // ========== MÉTODOS PARA MÚLTIPLOS ARQUIVOS POR TEMPLATE ==========
 
   // Listar arquivos de um template

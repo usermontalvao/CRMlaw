@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.298': { name: 'Cafe Kit Assinado com Verificacao por Arquivo', emoji: '[signature]' },
   '1.10.297': { name: 'Cafe Tema Persistente e Templates Afinados', emoji: '[palette]' },
   '1.10.296': { name: 'Cafe Editor Resiliente e Atalhos Blindados', emoji: '[memo]' },
   '1.10.295': { name: 'Cafe Editor com Corretor Local', emoji: '[memo]' },
@@ -948,6 +949,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.298',
+    date: '04/07/2026',
+    summary: 'O modulo de assinatura passou a tratar kits com documentos independentes, com verificacao publica por arquivo, hash de integridade individual e ajustes visuais no validador e no comprovante de sucesso.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'feature' as const, title: 'Fluxo per_document passou a gerar e persistir PDFs assinados por arquivo', description: 'O kit agora pode concluir a assinatura emitindo um PDF final por documento, com codigo de verificacao proprio, hash individual e persistencia dedicada para principal e anexos.' },
+        { type: 'improvement' as const, title: 'Comprovante de sucesso passou a priorizar o codigo do documento assinado', description: 'As telas posteriores a assinatura foram ajustadas para exibir e copiar o codigo correto do documento principal no modelo per_document, evitando confusao com o codigo do signatario ou do envelope.' },
+        { type: 'fix' as const, title: 'Verificacao publica foi refinada para lidar com envelope e documento individual', description: 'O fluxo publico recebeu migrations, RPCs e ajustes de interface para exibir hash, protocolo, lista de documentos assinados e estados de validacao com melhor consistencia.' },
+      ]},
+      { moduleId: 'documentos', changes: [
+        { type: 'improvement' as const, title: 'Templates e arquivos passaram a respeitar o modelo de assinatura por arquivo', description: 'Os metadados do template e o preenchimento de documentos passaram a propagar o modo per_document para manter o comportamento do kit consistente do preparo ate a validacao.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Novas migrations suportam modelo per_document, multisigner e verificacao publica ampliada', description: 'A base recebeu evolucoes estruturais para documentos reais do envelope, codigo do envelope, hash de integridade, protocolo exposto e retorno contextual dos artefatos finais na verificacao publica.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.297',
     date: '03/07/2026',
