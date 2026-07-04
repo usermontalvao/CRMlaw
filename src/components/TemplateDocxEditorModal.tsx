@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Loader2, Save, AlertCircle, FileText, FolderOpen, ArrowLeft } from 'lucide-react';
+import { X, Loader2, Save, AlertCircle, FileText, FolderOpen, ArrowLeft, Moon, Sun } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import PetitionRibbon from './PetitionRibbon';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
+import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
 
 interface TemplateDocxEditorModalProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
 }) => {
   const editorRef = useRef<SyncfusionEditorRef>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { darkMode, toggleDarkMode } = usePetitionEditorTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +140,156 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
     return () => document.removeEventListener('keydown', handleEsc);
   }, [handleClose, isOpen, saving]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    let style = document.getElementById('template-docx-editor-dark-styles') as HTMLStyleElement | null;
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'template-docx-editor-dark-styles';
+      document.head.appendChild(style);
+    }
+    style.innerHTML = `
+      body.petition-dark #template-docx-editor-shell {
+        background: #1b1b1b !important;
+        color: #e5e7eb !important;
+      }
+      body.petition-dark #template-docx-editor-shell .template-docx-error {
+        background: #3a1f1f !important;
+        border-color: #7f1d1d !important;
+        color: #fecaca !important;
+      }
+      body.petition-dark #template-docx-editor-shell .template-docx-loading {
+        background: rgba(27, 27, 27, 0.84) !important;
+      }
+      body.petition-dark #template-docx-editor-shell .template-docx-loading-text {
+        color: #d1d5db !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper {
+        background: #1b1b1b !important;
+      }
+      body.petition-dark #template-docx-editor-shell .e-documenteditorcontainer,
+      body.petition-dark #template-docx-editor-shell .e-de-ctnr,
+      body.petition-dark #template-docx-editor-shell .e-de-ctnr-container,
+      body.petition-dark #template-docx-editor-shell .e-de-ctnr-inner,
+      body.petition-dark #template-docx-editor-shell .e-de-ctnr-viewer,
+      body.petition-dark #template-docx-editor-shell .e-de-viewer-container {
+        background: #1b1b1b !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-documenteditorcontainer,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr-container,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr-viewer,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr-inner {
+        background: #1b1b1b !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-tool-ctnr-properties-pane,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr-properties-pane,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ribbon-simplified-ctnr-properties-pane,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ribbon-classic-ctnr-properties-pane {
+        background: #1f1f1f !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctn,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-background {
+        background: #252525 !important;
+      }
+      body.petition-dark #template-docx-editor-shell .e-de-ctn,
+      body.petition-dark #template-docx-editor-shell .e-de-background,
+      body.petition-dark #template-docx-editor-shell div[id$="_pageContainer"] {
+        background: #252525 !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctn::-webkit-scrollbar-track,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr::-webkit-scrollbar-track,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-scrollbar::-webkit-scrollbar-track {
+        background: #1f1f1f !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctn::-webkit-scrollbar-thumb,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr::-webkit-scrollbar-thumb,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-scrollbar::-webkit-scrollbar-thumb {
+        background: #4a4a4a !important;
+        border-radius: 999px !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-background canvas {
+        filter: invert(0.92) hue-rotate(180deg);
+      }
+      body.petition-dark #template-docx-editor-shell .e-de-background canvas {
+        filter: invert(0.92) hue-rotate(180deg);
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-blink-cursor,
+      body.petition-dark #template-docx-editor-shell .e-de-blink-cursor {
+        background: #ffffff !important;
+        border-left: 2px solid #ffffff !important;
+        box-shadow: 0 0 0 1px rgba(255,255,255,0.18), 0 0 8px rgba(255,255,255,0.55) !important;
+        opacity: 1 !important;
+        width: 2px !important;
+        min-width: 2px !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-status-bar,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr-status-bar,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-statusbar,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr-statusbar,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr-statusbar-div,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-status-bar input,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-status-bar button,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-status-bar .e-btn,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ctnr-pagenumber,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-statusbar-zoom,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-statusbar-spellcheck {
+        background: #2b2b2b !important;
+        color: #d0d6df !important;
+        border-color: #3d3d3d !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-pane,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-pane-rtl,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-property-pane,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-op,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-op-header,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-op-dlg-footer {
+        background: #2b2b2b !important;
+        color: #e5e7eb !important;
+        border-color: #3d3d3d !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-op input {
+        background: #333333 !important;
+        color: #e5e7eb !important;
+        border-color: #4a4a4a !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ruler-margin,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ruler-markIndicator {
+        background: #1a1a1a !important;
+        border-color: #2f2f2f !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-hRuler,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-vRuler {
+        background: #4a4a4a !important;
+        border-color: #6a6a6a !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper div[id$="_hRuler"],
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper div[id$="_vRuler"],
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper div[id$="_markIndicator"],
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-hRuler,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-vRuler,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-hruler,
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-vruler {
+        filter: invert(0.9) hue-rotate(180deg);
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ruler-tick {
+        stroke: #d6d6d6 !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-ruler-tick-label {
+        fill: rgba(255, 255, 255, 0.88) !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-contextmenu-wrapper .e-menu-parent,
+      body.petition-dark #template-docx-editor-shell .e-contextmenu-wrapper .e-menu-parent {
+        background: #2f2f2f !important;
+        border-color: #454545 !important;
+      }
+      body.petition-dark #template-docx-editor-shell .syncfusion-editor-wrapper .e-de-contextmenu-wrapper .e-menu-item,
+      body.petition-dark #template-docx-editor-shell .e-contextmenu-wrapper .e-menu-item {
+        color: #e5e7eb !important;
+      }
+    `;
+  }, []);
+
   const topContent = useMemo(
     () => (
       <>
@@ -173,6 +325,18 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
         <div className="pet-top-group is-right">
           <button
             type="button"
+            onClick={() => {
+              void toggleDarkMode();
+            }}
+            disabled={saving || loading}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+            title={darkMode ? 'Desativar modo escuro' : 'Ativar modo escuro'}
+          >
+            {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            <span>{darkMode ? 'Modo claro' : 'Modo escuro'}</span>
+          </button>
+          <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={saving || loading}
             className="inline-flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
@@ -202,13 +366,16 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
         </div>
       </>
     ),
-    [badge, fileName, handleClose, handleSave, loading, saving]
+    [badge, darkMode, fileName, handleClose, handleSave, loading, saving, toggleDarkMode]
   );
 
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[90] flex flex-col bg-[#f8f7f5]">
+    <div
+      id="template-docx-editor-shell"
+      className={`fixed inset-0 z-[90] flex flex-col ${darkMode ? 'bg-[#1b1b1b]' : 'bg-[#f8f7f5]'}`}
+    >
       <input
         ref={fileInputRef}
         type="file"
@@ -221,6 +388,10 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
         editorRef={editorRef}
         ready={editorReady}
         topContent={topContent}
+        darkMode={darkMode}
+        onToggleDarkMode={() => {
+          void toggleDarkMode();
+        }}
         onNew={handleNewDocument}
         onOpen={() => fileInputRef.current?.click()}
         onSave={() => {
@@ -232,7 +403,7 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
       />
 
       {error ? (
-        <div className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
+        <div className="template-docx-error mx-4 mt-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3">
           <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
           <span className="text-sm text-red-700">{error}</span>
         </div>
@@ -240,10 +411,10 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {loading ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#f8f7f5]/80">
+          <div className="template-docx-loading absolute inset-0 z-10 flex items-center justify-center bg-[#f8f7f5]/80">
             <div className="flex flex-col items-center gap-2">
               <Loader2 className="h-7 w-7 animate-spin text-amber-600" />
-              <span className="text-sm text-slate-600">Carregando documento...</span>
+              <span className="template-docx-loading-text text-sm text-slate-600">Carregando documento...</span>
             </div>
           </div>
         ) : null}

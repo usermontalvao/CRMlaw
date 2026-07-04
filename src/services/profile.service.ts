@@ -3,6 +3,7 @@ import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 export type PresenceStatus = 'online' | 'away' | 'offline';
 export type ThemePreference = 'light' | 'dark' | 'system';
+export type PetitionEditorThemePreference = 'light' | 'dark';
 export type SidebarMode = 'compact' | 'normal';
 
 export type ProfileBadge = 'advogado' | 'administrador' | 'estagiario' | 'secretario' | null;
@@ -52,6 +53,7 @@ export interface Profile {
   joined_at?: string | null;
   presence_status?: PresenceStatus;
   theme_preference?: ThemePreference;
+  petition_editor_theme_preference?: PetitionEditorThemePreference | null;
   sidebar_mode?: SidebarMode;
   petition_ribbon_custom_styles?: PetitionRibbonCustomStyle[] | null;
   last_seen_at?: string | null;
@@ -70,11 +72,13 @@ export interface UpdateProfileInput {
   bio?: string | null;
   avatar_url?: string | null;
   theme_preference?: ThemePreference;
+  petition_editor_theme_preference?: PetitionEditorThemePreference | null;
 }
 
 class ProfileService {
   private tableName = 'profiles';
   private ribbonStylesColumn = 'petition_ribbon_custom_styles';
+  private petitionEditorThemeColumn = 'petition_editor_theme_preference';
 
   private isMissingRibbonStylesColumn(error: any): boolean {
     const msg = String(error?.message || '').toLowerCase();
@@ -82,6 +86,16 @@ class ProfileService {
     return (
       msg.includes(this.ribbonStylesColumn) ||
       details.includes(this.ribbonStylesColumn) ||
+      (String(error?.code || '').toUpperCase() === 'PGRST204' && (msg.includes('column') || details.includes('column')))
+    );
+  }
+
+  private isMissingPetitionEditorThemeColumn(error: any): boolean {
+    const msg = String(error?.message || '').toLowerCase();
+    const details = String(error?.details || '').toLowerCase();
+    return (
+      msg.includes(this.petitionEditorThemeColumn) ||
+      details.includes(this.petitionEditorThemeColumn) ||
       (String(error?.code || '').toUpperCase() === 'PGRST204' && (msg.includes('column') || details.includes('column')))
     );
   }
@@ -196,6 +210,41 @@ class ProfileService {
       .eq('user_id', userId);
 
     if (error) throw new Error(error.message);
+  }
+
+  async getMyPetitionEditorThemePreference(): Promise<PetitionEditorThemePreference | null> {
+    const userId = await this.requireUserId();
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select(this.petitionEditorThemeColumn)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      if (this.isMissingPetitionEditorThemeColumn(error)) return null;
+      throw new Error(error.message);
+    }
+
+    const value = (data as any)?.[this.petitionEditorThemeColumn];
+    return value === 'dark' || value === 'light' ? (value as PetitionEditorThemePreference) : null;
+  }
+
+  async updateMyPetitionEditorThemePreference(theme: PetitionEditorThemePreference): Promise<boolean> {
+    const userId = await this.requireUserId();
+    const { error } = await supabase
+      .from(this.tableName)
+      .update({
+        [this.petitionEditorThemeColumn]: theme,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+
+    if (error) {
+      if (this.isMissingPetitionEditorThemeColumn(error)) return false;
+      throw new Error(error.message);
+    }
+
+    return true;
   }
 
   async getMyPetitionRibbonCustomStyles(): Promise<PetitionRibbonCustomStyle[] | null> {

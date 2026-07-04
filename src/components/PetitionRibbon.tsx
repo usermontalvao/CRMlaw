@@ -48,6 +48,8 @@ import {
   StickyNote,
   MessageSquarePlus,
   History,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import type { SyncfusionEditorRef } from './SyncfusionEditor';
 import { profileService, type PetitionRibbonCustomStyle } from '../services/profile.service';
@@ -156,12 +158,17 @@ interface PetitionRibbonProps {
   onOpen?: () => void;
   onSave?: () => void;
   onExportDocx?: () => void;
+  /** Modo escuro: estado controlado pelo modulo (fonte unica de verdade). */
+  darkMode?: boolean;
+  onToggleDarkMode?: () => void;
 }
 
 const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
   editorRef,
   ready,
   topContent,
+  darkMode = false,
+  onToggleDarkMode,
   onNew,
   onOpen,
   onSave,
@@ -288,6 +295,19 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
       // ignore
     }
   }, [editorRef, showRuler]);
+  // Garante que o CSS da faixa (incluindo o tema escuro) esteja aplicado e
+  // atualizado sempre que o editor montar. A injeção no topo do módulo pode
+  // não re-executar sob HMR/Fast Refresh, então reforçamos aqui.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    let el = document.getElementById('petition-ribbon-styles');
+    if (!el) {
+      el = document.createElement('style');
+      el.id = 'petition-ribbon-styles';
+      document.head.appendChild(el);
+    }
+    el.innerHTML = RIBBON_CSS;
+  }, []);
 
   const getEd = useCallback((): any => {
     try {
@@ -816,6 +836,10 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     runAndReturnHome((ed) => {
       ed.zoomFactor = pct / 100;
     }, false);
+  const toggleDarkMode = () => {
+    onToggleDarkMode?.();
+    returnToHomeTab();
+  };
   const toggleRuler = () => {
     const next = !showRuler;
     setShowRulerState(next);
@@ -1734,6 +1758,20 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 </Btn>
               </div>
             </RibbonGroup>
+            <RibbonGroup label="Tema">
+              <div className="pet-flow-row">
+                <Btn
+                  small
+                  title={darkMode ? 'Voltar ao modo claro' : 'Modo escuro (igual ao Word)'}
+                  onClick={toggleDarkMode}
+                >
+                  {darkMode ? <Sun size={15} /> : <Moon size={15} />}
+                  <span style={darkMode ? { color: '#ff9d57', fontWeight: 700 } : undefined}>
+                    {darkMode ? 'Modo claro' : 'Modo escuro'}
+                  </span>
+                </Btn>
+              </div>
+            </RibbonGroup>
             <RibbonGroup label="Zoom">
               <div className="pet-row" style={{ gap: 4 }}>
                 <IconBtn title="Diminuir zoom" onClick={() => setZoomFactor(Math.max(50, zoom - 10))}>
@@ -1986,6 +2024,53 @@ const RIBBON_CSS = `
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="revisao"],
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="exibir"]{min-height:50px;max-height:72px;}
 
+/* ===== Modo escuro da faixa (ativado por body.petition-dark) ===== */
+body.petition-dark .pet-ribbon{background:#2b2b2b;border-bottom-color:#3d3d3d;color:#dcdcdc;}
+body.petition-dark .pet-ribbon-topslot{background:linear-gradient(180deg,#333333,#2b2b2b);border-bottom-color:#3d3d3d;}
+body.petition-dark .pet-ribbon-tabs{background:#2b2b2b;}
+body.petition-dark .pet-ribbon-tab{color:#c2c2c2;}
+body.petition-dark .pet-ribbon-tab:hover{background:#3a3a3a;}
+body.petition-dark .pet-ribbon-tab.is-active{background:#1f1f1f;color:#ff9d57;}
+body.petition-dark .pet-ribbon-body{background:#1f1f1f;border-top-color:#3d3d3d;}
+body.petition-dark .pet-ribbon.is-collapsed.is-revealed{background:#2b2b2b;border-bottom-color:#3d3d3d;}
+body.petition-dark .pet-ribbon.is-collapsed .pet-ribbon-peek{background:linear-gradient(to bottom,rgba(192,83,31,.28),rgba(192,83,31,.06));border-bottom-color:rgba(192,83,31,.3);}
+body.petition-dark .pet-group{border-right-color:#3a3a3a;}
+body.petition-dark .pet-group-label{color:#8f8f8f;}
+body.petition-dark .pet-iconbtn,body.petition-dark .pet-btn-lg,body.petition-dark .pet-btn-sm{color:#dcdcdc;}
+body.petition-dark .pet-iconbtn:hover,body.petition-dark .pet-btn-lg:hover,body.petition-dark .pet-btn-sm:hover{background:#3a3a3a;border-color:#4a4a4a;}
+body.petition-dark .pet-iconbtn.is-active{background:#4a3a2a;color:#ff9d57;}
+body.petition-dark .pet-vsep{background:#3f3f3f;}
+body.petition-dark .pet-select{background:#333333;border-color:#4a4a4a;color:#e6e6e6;}
+body.petition-dark .pet-select:hover{border-color:#c0531f;}
+body.petition-dark .pet-select option{background:#333333;color:#e6e6e6;}
+body.petition-dark .pet-split{background:#333333;border-color:#4a4a4a;box-shadow:none;}
+body.petition-dark .pet-split .pet-iconbtn:hover{background:#3f3f3f;}
+body.petition-dark .pet-split-caret{border-left-color:#4a4a4a;color:#b5b5b5;}
+body.petition-dark .pet-popover,body.petition-dark .pet-file-menu{background:#2f2f2f;border-color:#454545;box-shadow:0 12px 32px rgba(0,0,0,.5);}
+body.petition-dark .pet-file-item{color:#dcdcdc;}
+body.petition-dark .pet-file-item:hover{background:#3a3a3a;}
+body.petition-dark .pet-file-sep{background:#454545;}
+body.petition-dark .pet-input{background:#333333;border-color:#4a4a4a;color:#e6e6e6;}
+body.petition-dark .pet-style{background:#333333;border-color:#454545;color:#e6e6e6;}
+body.petition-dark .pet-style-custom{background:#38322a;}
+body.petition-dark .pet-check{color:#cfcfcf;}
+body.petition-dark .pet-zoom{color:#cfcfcf;}
+body.petition-dark .pet-tablegrid-cell{background:#333333;border-color:#4a4a4a;}
+body.petition-dark .pet-tablegrid-cell.on{background:#5a3a20;border-color:#c0531f;}
+body.petition-dark .pet-ribbon{background:#2b2b2b;border-bottom-color:#3d3d3d;color:#e5e7eb;}
+body.petition-dark .pet-ribbon-topslot{background:linear-gradient(180deg,#333333 0%,#2b2b2b 100%);border-bottom-color:#3d3d3d;}
+body.petition-dark .pet-top-cluster,body.petition-dark .pet-top-title-shell,body.petition-dark .pet-top-filter-shell,body.petition-dark .pet-top-actionbar{background:#333333;border-color:#454545;box-shadow:inset 0 1px 0 rgba(255,255,255,.03);}
+body.petition-dark .pet-top-title-input,body.petition-dark .pet-top-select{background:transparent;color:#eef2f7;}
+body.petition-dark .pet-top-title-input::placeholder{color:#9ca3af;}
+body.petition-dark .pet-top-icon-btn{color:#d0d6df;}
+body.petition-dark .pet-top-icon-btn:hover{background:#3a3a3a;color:#ffb26b;}
+body.petition-dark .pet-top-text-btn{color:#d8dee6;}
+body.petition-dark .pet-top-text-btn:hover{background:#3a3a3a;color:#ffb26b;}
+body.petition-dark .pet-top-primary-btn{background:#f59e0b;box-shadow:0 10px 20px rgba(245,158,11,.18);}
+body.petition-dark .pet-top-primary-btn:hover{background:#ea8a00;}
+body.petition-dark .pet-top-meta-chip{background:#333333;border-color:#454545;color:#c5ced9;box-shadow:none;}
+body.petition-dark .pet-top-client-chip{background:linear-gradient(180deg,#4f3f22 0%,#403318 100%);border-color:#7f652f;color:#f5e7bf;box-shadow:none;}
+
 @media (max-width:639px){
   .pet-ribbon-topslot{padding:4px 8px;}
   .pet-ribbon-topslot-inner{gap:6px;flex-wrap:nowrap;}
@@ -2009,11 +2094,16 @@ const RIBBON_CSS = `
 }
 `;
 
-if (typeof document !== 'undefined' && !document.getElementById('petition-ribbon-styles')) {
-  const el = document.createElement('style');
-  el.id = 'petition-ribbon-styles';
+if (typeof document !== 'undefined') {
+  let el = document.getElementById('petition-ribbon-styles');
+  if (!el) {
+    el = document.createElement('style');
+    el.id = 'petition-ribbon-styles';
+    document.head.appendChild(el);
+  }
+  // Sempre atualiza o conteúdo (idempotente) para refletir mudanças no CSS
+  // mesmo com o <style> já presente (HMR / re-render).
   el.innerHTML = RIBBON_CSS;
-  document.head.appendChild(el);
 }
 
 export default PetitionRibbon;

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2, FileText, Loader2, GripVertical, PenTool, Upload, AlertCircle, FileDown, Pencil } from 'lucide-react';
+import { X, Trash2, FileText, Loader2, GripVertical, PenTool, Upload, AlertCircle, FileDown, Pencil } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import SignaturePositionDesigner from './SignaturePositionDesigner';
@@ -20,6 +20,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   template,
   onUpdate,
 }) => {
+  const [localTemplate, setLocalTemplate] = useState<DocumentTemplate>(template);
   const [files, setFiles] = useState<TemplateFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -31,6 +32,8 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   const [editingFile, setEditingFile] = useState<TemplateFile | null>(null);
   const [editingMain, setEditingMain] = useState(false);
   const [downloadingMain, setDownloadingMain] = useState(false);
+  const [updatingMain, setUpdatingMain] = useState(false);
+  const mainFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadFiles = useCallback(async () => {
     try {
@@ -44,6 +47,10 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
       setLoading(false);
     }
   }, [template.id]);
+
+  useEffect(() => {
+    setLocalTemplate(template);
+  }, [template]);
 
   useEffect(() => {
     if (isOpen) {
@@ -77,8 +84,8 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
     try {
       setDownloadingMain(true);
       setError(null);
-      const blob = await documentTemplateService.downloadTemplateFile(template);
-      saveAs(blob, template.file_name || `${template.name}.docx`);
+      const blob = await documentTemplateService.downloadTemplateFile(localTemplate);
+      saveAs(blob, localTemplate.file_name || `${localTemplate.name}.docx`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao baixar documento principal');
     } finally {
@@ -182,16 +189,74 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const handleMainFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+
+    if (!selectedFile.name.match(/\.(doc|docx)$/i)) {
+      setError('Apenas arquivos .doc ou .docx são permitidos para o principal');
+      e.target.value = '';
+      return;
+    }
+
+    try {
+      setUpdatingMain(true);
+      setError(null);
+      const updated = await documentTemplateService.updateTemplateWithFile(
+        localTemplate,
+        {},
+        selectedFile,
+      );
+      setLocalTemplate(updated);
+      onUpdate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao substituir documento principal');
+    } finally {
+      setUpdatingMain(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveMain = async () => {
+    if (!localTemplate.file_path) return;
+    if (!confirm('Deseja remover o documento principal deste template?')) return;
+
+    try {
+      setUpdatingMain(true);
+      setError(null);
+      const updated = await documentTemplateService.removeTemplateMainFile(localTemplate.id);
+      setLocalTemplate(updated);
+      onUpdate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao remover documento principal');
+    } finally {
+      setUpdatingMain(false);
+    }
+  };
+
+  const totalDocuments = (localTemplate.file_path ? 1 : 0) + files.length;
+
   if (!isOpen) return null;
 
   return createPortal(
     <>
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-100/80 backdrop-blur-sm" onClick={onClose}>
-      <div className="!bg-[#f8f7f5] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#e7e5df]">
-          <div>
+      <div className="!bg-[#f8f7f5] rounded-2xl shadow-2xl w-full max-w-3xl max-h-[82vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-6 py-4 border-b border-[#e7e5df]">
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold text-slate-900">Gerenciar Documentos</h2>
-            <p className="text-sm text-slate-600">{template.name}</p>
+            <p className="text-sm text-slate-600 truncate">{localTemplate.name}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+                {localTemplate.file_path ? '1 principal' : 'Sem principal'}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                {files.length} anexo{files.length === 1 ? '' : 's'}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                {totalDocuments} documento{totalDocuments === 1 ? '' : 's'}
+              </span>
+            </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition">
             <X className="w-5 h-5 text-slate-500" />
@@ -199,6 +264,13 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-6">
+          <input
+            ref={mainFileInputRef}
+            type="file"
+            accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onChange={handleMainFileSelected}
+            className="hidden"
+          />
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-red-600" />
@@ -207,7 +279,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
           )}
 
           {/* ── Documento principal (contrato) ── */}
-          {template.file_path && (
+          {localTemplate.file_path && (
             <div className="mb-6">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Principal</p>
               <div className="flex items-center gap-3 p-3 bg-indigo-50/40 rounded-lg border border-indigo-200">
@@ -216,10 +288,10 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-slate-700 truncate">
-                    {template.file_name || `${template.name}.docx`}
+                    {localTemplate.file_name || `${localTemplate.name}.docx`}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {typeof template.file_size === 'number' ? formatFileSize(template.file_size) : 'Documento de assinatura'}
+                    {typeof localTemplate.file_size === 'number' ? formatFileSize(localTemplate.file_size) : 'Documento de assinatura'}
                   </p>
                 </div>
                 <span className="px-2 py-1 text-[11px] font-semibold rounded-full border bg-indigo-50 text-indigo-700 border-indigo-200 whitespace-nowrap">
@@ -228,7 +300,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                 <div className="flex items-center gap-1">
                   <button
                     onClick={handleDownloadMain}
-                    disabled={downloadingMain}
+                    disabled={downloadingMain || updatingMain}
                     className="p-2 hover:bg-slate-200 rounded-lg transition disabled:opacity-50"
                     title="Baixar documento principal"
                   >
@@ -240,19 +312,79 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                   </button>
                   <button
                     onClick={() => setEditingMain(true)}
-                    className="p-2 hover:bg-amber-100 rounded-lg transition"
+                    disabled={updatingMain}
+                    className="p-2 hover:bg-amber-100 rounded-lg transition disabled:opacity-50"
                     title="Editar documento principal"
                   >
                     <Pencil className="w-4 h-4 text-amber-600" />
+                  </button>
+                  <button
+                    onClick={() => mainFileInputRef.current?.click()}
+                    disabled={updatingMain}
+                    className="p-2 hover:bg-blue-100 rounded-lg transition disabled:opacity-50"
+                    title="Substituir documento principal"
+                  >
+                    {updatingMain ? (
+                      <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 text-blue-600" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setDesignerFileId('main')}
+                    disabled={updatingMain}
+                    className="p-2 hover:bg-emerald-100 rounded-lg transition disabled:opacity-50"
+                    title="Configurar posi??o da assinatura"
+                  >
+                    <PenTool className="w-4 h-4 text-emerald-600" />
+                  </button>
+                  <button
+                    onClick={handleRemoveMain}
+                    disabled={updatingMain}
+                    className="p-2 hover:bg-red-100 rounded-lg transition disabled:opacity-50"
+                    title="Remover documento principal"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-600" />
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Anexos</p>
-          <div className="mb-6">
-            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-amber-500 hover:bg-amber-50/50 transition">
+          {!localTemplate.file_path && (
+            <div className="mb-6">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Principal</p>
+              <button
+                type="button"
+                onClick={() => mainFileInputRef.current?.click()}
+                disabled={updatingMain}
+                className="flex w-full items-center gap-4 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-50/40 px-5 py-4 text-left hover:border-indigo-300 hover:bg-indigo-50/70 transition disabled:opacity-50"
+              >
+                <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-100">
+                  {updatingMain ? (
+                    <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
+                  ) : (
+                    <Upload className="w-6 h-6 text-indigo-600" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-slate-800">Adicionar documento principal</span>
+                  <span className="mt-1 block text-xs text-slate-500">O template possui apenas um principal. Documentos extras ficam em anexos.</span>
+                </div>
+              </button>
+            </div>
+          )}
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Anexos</p>
+              <p className="mt-1 text-sm text-slate-500">Adicione e organize os documentos complementares.</p>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+              {files.length} item{files.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="mb-4">
+            <label className="flex w-full cursor-pointer items-center gap-4 rounded-xl border-2 border-dashed border-slate-300 bg-white/70 px-5 py-4 hover:border-amber-500 hover:bg-amber-50/50 transition">
               <input
                 type="file"
                 accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -262,24 +394,30 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                 disabled={uploading}
               />
               {uploading ? (
-                <div className="flex flex-col items-center gap-2">
-                  <Loader2 className="w-6 h-6 text-amber-600 animate-spin" />
-                  <span className="text-sm text-slate-600">
-                    Enviando {uploadProgress.current} de {uploadProgress.total} arquivo(s)...
-                  </span>
-                  <div className="w-48 h-2 bg-slate-200 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-amber-500 transition-all duration-300"
-                      style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
-                    />
+                <div className="flex w-full items-center gap-4">
+                  <Loader2 className="w-6 h-6 flex-shrink-0 text-amber-600 animate-spin" />
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-slate-700">
+                      Enviando {uploadProgress.current} de {uploadProgress.total} arquivo(s)...
+                    </span>
+                    <div className="mt-2 h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-amber-500 transition-all duration-300"
+                        style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
               ) : (
-                <>
-                  <Upload className="w-8 h-8 text-slate-400 mb-2" />
-                  <span className="text-sm text-slate-700">Clique ou arraste arquivos .docx</span>
-                  <span className="text-xs text-slate-500 mt-1">Você pode selecionar múltiplos arquivos</span>
-                </>
+                <div className="flex w-full items-center gap-4">
+                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                    <Upload className="w-6 h-6 text-slate-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-slate-700">Clique ou arraste arquivos .docx</span>
+                    <span className="mt-1 block text-xs text-slate-500">Você pode selecionar múltiplos arquivos e reordenar depois.</span>
+                  </div>
+                </div>
               )}
             </label>
           </div>
@@ -290,7 +428,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
               <span className="ml-2 text-slate-600">Carregando...</span>
             </div>
           ) : files.length === 0 ? (
-            <div className="text-center py-10">
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 px-6 py-8 text-center">
               <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
               <p className="text-slate-600">Nenhum anexo adicionado</p>
               <p className="text-sm text-slate-500 mt-1">
@@ -381,7 +519,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-[#e7e5df] flex justify-between items-center">
+        <div className="px-6 py-4 border-t border-[#e7e5df] flex justify-between items-center gap-4 bg-[#f8f7f5]">
           <p className="text-xs text-slate-500">
             Todos os documentos terão assinatura e página de autenticidade
           </p>
@@ -397,9 +535,21 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
     <SignaturePositionDesigner
       isOpen={!!designerFileId}
       onClose={() => { setDesignerFileId(null); loadFiles(); onUpdate(); }}
-      template={template}
+      template={localTemplate}
       initialFileId={designerFileId}
-      onSave={() => { loadFiles(); onUpdate(); }}
+      onSave={(config) => {
+        if (!designerFileId || designerFileId === 'main') {
+          setLocalTemplate((prev) => ({ ...prev, signature_field_config: config }));
+        } else {
+          setFiles((prev) => prev.map((file) => (
+            file.id === designerFileId
+              ? { ...file, signature_field_config: config }
+              : file
+          )));
+        }
+        loadFiles();
+        onUpdate();
+      }}
     />
     {editingFile && (
       <TemplateDocxEditorModal
@@ -416,10 +566,10 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
       <TemplateDocxEditorModal
         isOpen={editingMain}
         onClose={() => setEditingMain(false)}
-        fileName={template.file_name || `${template.name}.docx`}
+        fileName={localTemplate.file_name || `${localTemplate.name}.docx`}
         badge="Principal"
-        load={() => documentTemplateService.downloadTemplateFile(template)}
-        save={(blob) => documentTemplateService.replaceTemplateContent(template, blob).then(() => undefined)}
+        load={() => documentTemplateService.downloadTemplateFile(localTemplate)}
+        save={(blob) => documentTemplateService.replaceTemplateContent(localTemplate, blob).then(() => undefined)}
         onSaved={() => { onUpdate(); }}
       />
     )}

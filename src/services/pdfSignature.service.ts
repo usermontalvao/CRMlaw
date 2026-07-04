@@ -2047,6 +2047,56 @@ class PdfSignatureService {
       console.log('[PDF] Páginas a processar:', pages.length, 'para', documentId);
       const pagesBeforeConvert = pdfDoc.getPageCount();
 
+      // ── Traduzir campos MANUAIS: grade fixa do designer → sections reais ──────
+      // O SignaturePositionDesigner numera as páginas numa grade FIXA de
+      // A4_HEIGHT_PX (1123px) sobre o empilhamento contínuo do docx-preview
+      // (breakPages:true) e guarda page_number + y_percent relativos a essa grade.
+      // O docx-preview, porém, gera uma <section> por página REAL (altura variável,
+      // quebras explícitas de página/seção). Logo, "page_number === índice-da-section"
+      // NÃO vale quando há quebras ou páginas com altura ≠ 1123px — o campo era
+      // descartado (assinatura sumia) ou caía na página/altura errada e o fluxo
+      // recorria ao fallback do rodapé. Aqui medimos a geometria real empilhada — o
+      // MESMO layout que o designer exibiu — e mapeamos cada campo manual para a
+      // section correta + y% interno. Placeholders automáticos ([[ASSINATURA]]) NÃO
+      // entram aqui: continuam detectados/posicionados relativos à própria section.
+      const manualFieldPlacement = new Map<any, { sectionIdx: number; yPct: number; hPct: number }>();
+      const docManualFields = fields.filter((f: any) =>
+        f.field_type === 'signature' &&
+        (f.document_id || 'main') === documentId &&
+        !(typeof f.id === 'string' && f.id.startsWith('auto-'))
+      );
+      const hasManualFieldForDoc = docManualFields.length > 0;
+      if (hasManualFieldForDoc && pages.length > 0) {
+        const wrapperTop = (docxWrapper as HTMLElement).getBoundingClientRect().top;
+        const geom = pages.map((sec) => {
+          const r = sec.getBoundingClientRect();
+          return { top: r.top - wrapperTop, height: Math.max(1, r.height) };
+        });
+        const stackEnd = geom[geom.length - 1].top + geom[geom.length - 1].height;
+        for (const f of docManualFields as any[]) {
+          const page = Math.max(1, f.page_number ?? 1);
+          const absYTop = (page - 1 + (f.y_percent || 0) / 100) * A4_HEIGHT_PX;
+          const absH = ((f.h_percent || 0) / 100) * A4_HEIGHT_PX;
+          let s = geom.findIndex((g) => absYTop >= g.top && absYTop < g.top + g.height);
+          if (s === -1) {
+            if (absYTop < 0) s = 0;
+            else if (absYTop >= stackEnd) s = geom.length - 1;
+            else {
+              // topo caiu num gap entre páginas → section cujo início é mais próximo
+              s = 0;
+              let best = Infinity;
+              geom.forEach((g, i) => { const d = Math.abs(absYTop - g.top); if (d < best) { best = d; s = i; } });
+            }
+          }
+          const g = geom[s];
+          const localY = absYTop - g.top;
+          const yPct = Math.max(0, Math.min(100, (localY / g.height) * 100));
+          const hPct = Math.max(1, Math.min(100, (absH / g.height) * 100));
+          manualFieldPlacement.set(f, { sectionIdx: s, yPct, hPct });
+          console.log(`[PDF] Campo manual mapeado (${documentId}): page_designer=${page} → section=${s + 1}/${geom.length}, yPct=${yPct.toFixed(1)}`);
+        }
+      }
+
       for (let sectionIdx = 0; sectionIdx < pages.length; sectionIdx++) {
         const section = pages[sectionIdx];
         const originalStyles = {
@@ -2072,12 +2122,12 @@ class PdfSignatureService {
         await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
         try {
-          // Detectar placeholders ANTES do html2canvas (e ocultar o texto)
-          const hasFieldsForThisDocPage = fields.some((f: any) =>
-            (f.document_id || 'main') === documentId && Math.max(1, (f.page_number ?? 1)) === (sectionIdx + 1)
-          );
-
-          if (!hasFieldsForThisDocPage) {
+          // Detectar placeholders ANTES do html2canvas (e ocultar o texto).
+          // Regra: se o documento tem QUALQUER campo manual, os campos manuais têm
+          // precedência e o placeholder automático ([[ASSINATURA]]) é ignorado para
+          // este documento (evita assinatura duplicada). Se não há campo manual, o
+          // comportamento por placeholder segue intacto.
+          if (!hasManualFieldForDoc) {
             const signerOrder = (signer as any)?.order ?? 1;
             const detected = detectSignaturePlaceholdersInElement({
               scopeEl: section,
@@ -2152,72 +2202,55 @@ class PdfSignatureService {
               for (const field of docFields as any[]) {
                 const fieldX = drawX + (field.x_percent / 100) * drawWPt;
                 const fieldW = (field.w_percent / 100) * drawWPt;
+                const isAuto = typeof field.id === 'string' && field.id.startsWith('auto-');
 
-                if (typeof sliceStartPt === 'number' && typeof fullScaledHeightPt === 'number') {
-                  const isAuto = typeof field.id === 'string' && field.id.startsWith('auto-');
-                  const manualSlicePage = Math.max(1, (field.page_number ?? 1));
-
-                  let fieldYTopFull: number;
-                  let fieldHFull: number;
-                  if (isSingleSection && !isAuto) {
-                    // Documento de section única: o docx-preview renderiza como bloco
-                    // contínuo, mas o designer posicionou o campo numa GRADE de páginas
-                    // A4 virtuais (page_number + y_percent relativo à página). Antes a
-                    // posição era calculada como y_percent × altura-total, o que ignorava
-                    // a página escolhida (colapsando todas as páginas numa só). Aqui
-                    // reconstruímos a posição absoluta com o MESMO modelo do designer,
-                    // de modo que a assinatura caia exatamente na página em que foi posta.
-                    const a4PageHeightPt = drawWPt * (A4_HEIGHT_PX / A4_WIDTH_PX);
-                    fieldYTopFull = (manualSlicePage - 1 + field.y_percent / 100) * a4PageHeightPt;
-                    fieldHFull = (field.h_percent / 100) * a4PageHeightPt;
-                  } else {
-                    // Múltiplas sections (cada section = 1 página real) ou placeholder
-                    // auto-detectado: a posição é relativa à altura real da section.
-                    if (!isAuto && !isSingleSection && manualSlicePage !== pageNumberForFields) continue;
-                    fieldYTopFull = (field.y_percent / 100) * fullScaledHeightPt;
-                    fieldHFull = (field.h_percent / 100) * fullScaledHeightPt;
-                  }
-
-                  const sliceEndPt = sliceStartPt + drawHPt;
-                  if (fieldYTopFull + fieldHFull < sliceStartPt || fieldYTopFull > sliceEndPt) continue;
-
-                  const yInSlice = fieldYTopFull - sliceStartPt;
-                  const y = drawY + (drawHPt - yInSlice - fieldHFull) + (isAuto ? PLACEHOLDER_Y_OFFSET_PT : 0);
-
-                  drawSignatureField({
-                    pdfPage,
-                    pageW: pdfPageWidth,
-                    pageH: pdfPageHeight,
-                    x: fieldX,
-                    y,
-                    w: fieldW,
-                    h: fieldHFull,
-                    minY: contentBottomY,
-                    maxY: contentTopY,
-                    signatureImage: asset.signature,
-                  });
-                } else {
-                  // Em multi-section cada page = 1 section; em section única só há 1
-                  // página A4, então não descartamos o campo por page_number aqui.
+                // Coordenadas Y do campo relativas à ALTURA REAL desta section.
+                // - MANUAL: já traduzido da grade fixa do designer para (section + y%
+                //   interno) em manualFieldPlacement — corrige o descasamento de
+                //   numeração de páginas designer×docx-preview.
+                // - AUTO (placeholder): detectado relativo a esta section.
+                let yPercentInSection: number;
+                let hPercentInSection: number;
+                if (isAuto) {
+                  // Placeholder pertence à section em que foi detectado (page_number
+                  // = índice da section). Em section única não há o que descartar.
                   if (!isSingleSection && Math.max(1, (field.page_number ?? 1)) !== pageNumberForFields) continue;
-                  const fieldYTop = (field.y_percent / 100) * drawHPt;
-                  const fieldH = (field.h_percent / 100) * drawHPt;
-                  const isAuto = typeof field.id === 'string' && field.id.startsWith('auto-');
-                  const y = drawY + (drawHPt - fieldYTop - fieldH) + (isAuto ? PLACEHOLDER_Y_OFFSET_PT : 0);
-
-                  drawSignatureField({
-                    pdfPage,
-                    pageW: pdfPageWidth,
-                    pageH: pdfPageHeight,
-                    x: fieldX,
-                    y,
-                    w: fieldW,
-                    h: fieldH,
-                    minY: contentBottomY,
-                    maxY: contentTopY,
-                    signatureImage: asset.signature,
-                  });
+                  yPercentInSection = field.y_percent;
+                  hPercentInSection = field.h_percent;
+                } else {
+                  const placement = manualFieldPlacement.get(field);
+                  if (!placement || placement.sectionIdx !== sectionIdx) continue;
+                  yPercentInSection = placement.yPct;
+                  hPercentInSection = placement.hPct;
                 }
+
+                // Altura de referência da section: no modo fatiado é a altura total
+                // escalada da section; no modo página-única é a própria fatia (drawHPt).
+                const refHeightPt = typeof fullScaledHeightPt === 'number' ? fullScaledHeightPt : drawHPt;
+                const fieldYTopFull = (yPercentInSection / 100) * refHeightPt;
+                const fieldHFull = (hPercentInSection / 100) * refHeightPt;
+
+                // Recorte por fatia (páginas A4 de uma section alta). No modo
+                // página-única, sliceStartPt indefinido ⇒ 0 e a fatia é a página toda.
+                const effectiveSliceStartPt = typeof sliceStartPt === 'number' ? sliceStartPt : 0;
+                const sliceEndPt = effectiveSliceStartPt + drawHPt;
+                if (fieldYTopFull + fieldHFull < effectiveSliceStartPt || fieldYTopFull > sliceEndPt) continue;
+
+                const yInSlice = fieldYTopFull - effectiveSliceStartPt;
+                const y = drawY + (drawHPt - yInSlice - fieldHFull) + (isAuto ? PLACEHOLDER_Y_OFFSET_PT : 0);
+
+                drawSignatureField({
+                  pdfPage,
+                  pageW: pdfPageWidth,
+                  pageH: pdfPageHeight,
+                  x: fieldX,
+                  y,
+                  w: fieldW,
+                  h: fieldHFull,
+                  minY: contentBottomY,
+                  maxY: contentTopY,
+                  signatureImage: asset.signature,
+                });
               }
             }
           };
@@ -2325,19 +2358,12 @@ class PdfSignatureService {
         const sigY = FOOTER_RESERVED_H + 20;
         lastPage.drawImage(signatureImage, { x: sigX, y: sigY, width: sigW, height: sigH });
         
-        // Adicionar linha e texto de assinatura
+        // Adicionar linha de assinatura
         lastPage.drawLine({
           start: { x: sigX - 20, y: sigY - 5 },
           end: { x: sigX + sigW + 20, y: sigY - 5 },
           thickness: 1,
           color: rgb(0.3, 0.3, 0.3),
-        });
-        lastPage.drawText(signer.name, {
-          x: sigX,
-          y: sigY - 20,
-          size: 10,
-          font: helvetica,
-          color: rgb(0.2, 0.2, 0.2),
         });
       }
     }
@@ -2385,13 +2411,6 @@ class PdfSignatureService {
               end: { x: sigX + sigW + 20, y: sigY - 5 },
               thickness: 1,
               color: rgb(0.3, 0.3, 0.3),
-            });
-            lastPage.drawText(signer.name, {
-              x: sigX,
-              y: sigY - 20,
-              size: 10,
-              font: helvetica,
-              color: rgb(0.2, 0.2, 0.2),
             });
           }
         } else if (

@@ -17,7 +17,6 @@ import {
   Copy,
   Search,
   Settings,
-  Eye,
   Pencil,
   Upload as UploadIcon,
   PenTool,
@@ -40,10 +39,10 @@ import { signatureService } from '../services/signature.service';
 import { settingsService } from '../services/settings.service';
 import { supabase } from '../config/supabase';
 import { buildPublicFillUrl, buildPublicPermalinkUrl, buildPublicSigningUrl } from '../utils/publicAppUrl';
+import { signatureFieldsService } from '../services/signatureFields.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
-import SignaturePositionDesigner from './SignaturePositionDesigner';
 import TemplateFilesManager from './TemplateFilesManager';
 import CustomFieldsManager from './CustomFieldsManager';
 import StandardPetitionsModule from './StandardPetitionsModule';
@@ -288,10 +287,6 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const jsPdfLoaderRef = useRef<Promise<any> | null>(null);
-
-  // Estados para designer de posição de assinatura
-  const [signatureDesignerOpen, setSignatureDesignerOpen] = useState(false);
-  const [signatureDesignerTemplate, setSignatureDesignerTemplate] = useState<DocumentTemplate | null>(null);
 
   // Estados para gerenciador de múltiplos arquivos
   const [filesManagerOpen, setFilesManagerOpen] = useState(false);
@@ -1079,28 +1074,59 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   };
 
   const handleDownloadTemplate = async (template: DocumentTemplate) => {
-    if (!template.file_path && !template.content) {
-      setTemplateActionError('Template não possui conteúdo disponível para download.');
-      return;
-    }
-
     try {
       setTemplateActionError(null);
       setDownloadingTemplateId(template.id);
 
+      const templateFiles = await documentTemplateService.listTemplateFiles(template.id);
+      if (!template.file_path && !template.content && templateFiles.length === 0) {
+        setTemplateActionError('Template n?o possui arquivos dispon?veis para download.');
+        return;
+      }
+
+      const zip = new PizZip();
+      const usedNames = new Set<string>();
+      const reserveFileName = (rawName: string) => {
+        const trimmed = rawName.trim();
+        const fallback = trimmed || 'arquivo';
+        const dotIndex = fallback.lastIndexOf('.');
+        const hasExtension = dotIndex > 0 && dotIndex < fallback.length - 1;
+        const baseName = hasExtension ? fallback.slice(0, dotIndex) : fallback;
+        const extension = hasExtension ? fallback.slice(dotIndex) : '';
+
+        let candidate = fallback;
+        let counter = 2;
+        while (usedNames.has(candidate.toLowerCase())) {
+          candidate = `${baseName} (${counter})${extension}`;
+          counter += 1;
+        }
+
+        usedNames.add(candidate.toLowerCase());
+        return candidate;
+      };
+
       if (template.file_path) {
         const file = await documentTemplateService.downloadTemplateFile(template);
-        const fileName = template.file_name || `${template.name}.docx`;
-        saveAs(file, fileName);
-      } else {
+        zip.file(reserveFileName(template.file_name || `${template.name}.docx`), await file.arrayBuffer());
+      } else if (template.content) {
         const content = sanitizeText(template.content || '');
         const blob = await createDocxFromContent(content);
         const fileName = `${removeDiacritics(template.name).replace(/\s+/g, '-') || 'template'}.docx`;
-        saveAs(blob, fileName);
+        zip.file(reserveFileName(fileName), await blob.arrayBuffer());
       }
+
+      for (const templateFile of templateFiles) {
+        const fileBlob = await documentTemplateService.downloadTemplateFileById(templateFile.id);
+        const fileName = templateFile.file_name || `anexo-${templateFile.order + 1}.docx`;
+        zip.file(reserveFileName(fileName), await fileBlob.arrayBuffer());
+      }
+
+      const zipBlob = zip.generate({ type: 'blob', mimeType: 'application/zip' });
+      const archiveName = `${removeDiacritics(template.name).replace(/\s+/g, '-') || 'template'}.zip`;
+      saveAs(zipBlob, archiveName);
     } catch (err: any) {
       console.error(err);
-      setTemplateActionError(err.message || 'Não foi possível baixar este template.');
+      setTemplateActionError(err.message || 'N?o foi poss?vel baixar este template.');
     } finally {
       setDownloadingTemplateId(null);
     }
@@ -1436,6 +1462,47 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       });
       
       const signerToken = signatureRequest.signers[0]?.public_token;
+
+      const manualSignatureFields = [
+        ...(selectedTemplate.signature_field_config
+          ? (Array.isArray(selectedTemplate.signature_field_config)
+              ? selectedTemplate.signature_field_config
+              : [selectedTemplate.signature_field_config]
+            )
+              .filter((field) => field !== null)
+              .map((field) => ({
+                document_id: 'main',
+                signer_id: signatureRequest.signers[0]?.id ?? null,
+                field_type: 'signature' as const,
+                page_number: field.page || 1,
+                x_percent: field.x_percent || 0,
+                y_percent: field.y_percent || 0,
+                w_percent: field.width_percent || 25,
+                h_percent: field.height_percent || 8,
+              }))
+          : []),
+        ...templateFiles.flatMap((templateFile, index) => {
+          const config = templateFile.signature_field_config;
+          const configArray = config
+            ? (Array.isArray(config) ? config : [config]).filter((field) => field !== null)
+            : [];
+
+          return configArray.map((field) => ({
+            document_id: `attachment-${index}`,
+            signer_id: signatureRequest.signers[0]?.id ?? null,
+            field_type: 'signature' as const,
+            page_number: field.page || 1,
+            x_percent: field.x_percent || 0,
+            y_percent: field.y_percent || 0,
+            w_percent: field.width_percent || 25,
+            h_percent: field.height_percent || 8,
+          }));
+        }),
+      ];
+
+      if (manualSignatureFields.length > 0) {
+        await signatureFieldsService.upsertFields(signatureRequest.id, manualSignatureFields);
+      }
       
       if (!signerToken) {
         throw new Error('Erro ao gerar link de assinatura');
@@ -2179,12 +2246,15 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                         Link
                       </button>
                       <button
-                        onClick={() => handlePreviewTemplate(template)}
+                        onClick={() => {
+                          setFilesManagerTemplate(template);
+                          setFilesManagerOpen(true);
+                        }}
                         className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-200"
-                        title="Visualizar template"
+                        title="Documento principal e anexos"
                       >
-                        <Eye className="h-3.5 w-3.5" />
-                        Ver
+                        <FileText className="h-3.5 w-3.5" />
+                        Documentos
                       </button>
                       <button
                         onClick={() => handleDownloadTemplate(template)}
@@ -2224,19 +2294,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                           setFilesManagerTemplate(template);
                           setFilesManagerOpen(true);
                         }}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100"
-                        title="Documento principal e anexos"
-                      >
-                        <FileText className="h-3 w-3" />
-                        Documentos
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSignatureDesignerTemplate(template);
-                          setSignatureDesignerOpen(true);
-                        }}
                         className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-emerald-600 transition hover:bg-emerald-50"
-                        title="Posicionar campos de assinatura"
+                        title="Configurar assinaturas do principal e dos anexos"
                       >
                         <PenTool className="h-3 w-3" />
                         Assinatura
@@ -2593,26 +2652,6 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         </form>
       </ModalBody>
     </Modal>
-
-    {/* Designer de posição de assinatura */}
-    {signatureDesignerTemplate && (
-      <SignaturePositionDesigner
-        isOpen={signatureDesignerOpen}
-        onClose={() => {
-          setSignatureDesignerOpen(false);
-          setSignatureDesignerTemplate(null);
-        }}
-        template={signatureDesignerTemplate}
-        onSave={(config) => {
-          // Atualizar template na lista local
-          setTemplates(prev => prev.map(t => 
-            t.id === signatureDesignerTemplate.id 
-              ? { ...t, signature_field_config: config }
-              : t
-          ));
-        }}
-      />
-    )}
 
     {/* Gerenciador de múltiplos arquivos por template */}
     {filesManagerTemplate && (

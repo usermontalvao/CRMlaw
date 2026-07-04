@@ -475,6 +475,34 @@ class DocumentTemplateService {
     return data;
   }
 
+  async removeTemplateMainFile(templateId: string): Promise<DocumentTemplate> {
+    const existing = await this.getTemplate(templateId);
+    if (!existing) {
+      throw new Error('Template não encontrado.');
+    }
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({
+        file_path: null,
+        file_name: null,
+        mime_type: null,
+        file_size: null,
+        signature_field_config: null,
+      })
+      .eq('id', templateId)
+      .select()
+      .single();
+
+    if (error) throw new Error(error.message);
+
+    if (existing.file_path) {
+      await supabase.storage.from(STORAGE_BUCKET).remove([existing.file_path]);
+    }
+
+    return data;
+  }
+
   // Sobrescrever o conteúdo de um arquivo de template (edição no editor Syncfusion).
   // Mantém o mesmo file_path/registro — apenas substitui o binário e o tamanho.
   async replaceTemplateFileContent(fileId: string, blob: Blob, fileName?: string): Promise<TemplateFile> {

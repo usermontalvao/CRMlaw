@@ -15,6 +15,8 @@ import {
   Search,
   FolderOpen,
   Star,
+  Moon,
+  Sun,
   Loader2,
   ChevronDown,
   ChevronRight,
@@ -71,6 +73,7 @@ import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { supabase } from '../config/supabase';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
+import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
 
 const useDebouncedValue = <T,>(value: T, delayMs: number): T => {
   const [debounced, setDebounced] = useState(value);
@@ -422,7 +425,6 @@ const SELECTED_LEGAL_AREA_STORAGE_KEY = 'petition-editor-selected-legal-area-v1'
 const SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX = 'petition-editor-selected-standard-type-v1:';
 const BLOCK_FILTER_SCOPE_STORAGE_KEY = 'petition-editor-block-filter-scope-v1';
 const PETITION_LOCAL_DRAFT_STORAGE_KEY_PREFIX = 'petition-editor-local-draft-v2:';
-
 // CSS para o editor - Layout responsivo para 100% zoom
 const EDITOR_STYLES = `
   /* ========== ESTRUTURA PRINCIPAL ========== */
@@ -597,15 +599,198 @@ const EDITOR_STYLES = `
   .context-menu-item:hover {
     background: #fef3c7;
   }
+
+  /* ========== MODO ESCURO (body.petition-dark) ========== */
+  /* Chrome do editor: fundos, painel de propriedades, régua e status bar. */
+  body.petition-dark .syncfusion-editor-wrapper { background: #1b1b1b; }
+  body.petition-dark .syncfusion-editor-wrapper .e-de-tool-ctnr-properties-pane,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ctnr-properties-pane,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ribbon-simplified-ctnr-properties-pane,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ribbon-classic-ctnr-properties-pane {
+    background: #1f1f1f !important;
+  }
+  /* NÃO aplicar filter no .e-de-ctn: ele é o container rolável e abriga
+     overlays (menu de contexto, status bar). Um filter ali cria novo
+     containing block, prendendo/recortando o menu de contexto e
+     re-invertendo a status bar. Invertemos apenas a folha, abaixo. */
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ctn {
+    background: #252525 !important;
+  }
+
+  /* Folha: nesta versão do Syncfusion NÃO existe .e-de-page-container no
+     DOM — o container real é .e-de-background, e as páginas (fundo branco
+     + texto) são PINTADAS em dois <canvas> filhos dele (conteúdo e
+     seleção), verificado no fonte do pacote. Invertemos os canvas: página
+     branca vira escura, texto preto vira claro. Os vãos entre páginas são
+     transparentes no canvas e mostram o div escuro atrás. Filtro apenas
+     de tela; export/impressão saem normais. */
+  body.petition-dark .syncfusion-editor-wrapper .e-de-background {
+    background: #252525 !important;
+  }
+  body.petition-dark .syncfusion-editor-wrapper .e-de-background canvas {
+    filter: invert(0.92) hue-rotate(180deg);
+  }
+  /* Cursor de digitação visível sobre a folha escura. */
+  body.petition-dark .syncfusion-editor-wrapper .e-de-blink-cursor {
+    background: #ffffff !important;
+    border-left: 2px solid #ffffff !important;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.18), 0 0 8px rgba(255,255,255,0.55) !important;
+    opacity: 1 !important;
+    width: 2px !important;
+    min-width: 2px !important;
+  }
+
+  /* Status bar: filhos (input de página, Spelling, zoom) também escuros. */
+  body.petition-dark .syncfusion-editor-wrapper .e-de-status-bar input,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-status-bar button,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-status-bar .e-btn,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ctnr-pagenumber,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-statusbar-zoom,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-statusbar-spellcheck {
+    background: #333333 !important;
+    color: #e5e7eb !important;
+    border-color: #4a4a4a !important;
+  }
+
+  /* Menu de contexto do Syncfusion (portado para fora do editor). */
+  body.petition-dark .e-de-contextmenu-wrapper .e-menu-parent,
+  body.petition-dark .e-contextmenu-wrapper .e-menu-parent {
+    background: #2f2f2f !important;
+    border-color: #454545 !important;
+  }
+  body.petition-dark .e-de-contextmenu-wrapper .e-menu-item,
+  body.petition-dark .e-contextmenu-wrapper .e-menu-item {
+    color: #e5e7eb !important;
+  }
+  body.petition-dark .e-de-contextmenu-wrapper .e-menu-item.e-focused,
+  body.petition-dark .e-contextmenu-wrapper .e-menu-item.e-focused,
+  body.petition-dark .e-de-contextmenu-wrapper .e-menu-item:hover,
+  body.petition-dark .e-contextmenu-wrapper .e-menu-item:hover {
+    background: #3a3a3a !important;
+  }
+  body.petition-dark .e-de-contextmenu-wrapper .e-separator,
+  body.petition-dark .e-contextmenu-wrapper .e-separator {
+    border-bottom-color: #454545 !important;
+  }
+
+  /* Painel Localizar/Substituir (options pane). */
+  body.petition-dark .syncfusion-editor-wrapper .e-de-op,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-op-header,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-op-dlg-footer {
+    background: #2b2b2b !important;
+    color: #e5e7eb !important;
+    border-color: #3d3d3d !important;
+  }
+  body.petition-dark .syncfusion-editor-wrapper .e-de-op input {
+    background: #333333 !important;
+    color: #e5e7eb !important;
+    border-color: #4a4a4a !important;
+  }
+  body.petition-dark .syncfusion-editor-wrapper .e-de-pane,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-pane-rtl,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-property-pane {
+    background: #2b2b2b !important;
+    border-left-color: #3d3d3d !important;
+    color: #e5e7eb !important;
+  }
+  /* Réguas: os containers usam ID (…_hRuler/…_vRuler), não classe —
+     verificado no fonte do pacote. Ticks/números são desenhados escuros,
+     então inverter é a forma de mantê-los legíveis em fundo escuro. */
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ruler-margin,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ruler-markIndicator {
+    background: #1a1a1a !important;
+    border-color: #2f2f2f !important;
+  }
+  body.petition-dark .syncfusion-editor-wrapper .e-de-hRuler,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-vRuler {
+    background: #4a4a4a !important;
+    border-color: #6a6a6a !important;
+  }
+  body.petition-dark .syncfusion-editor-wrapper div[id$="_hRuler"],
+  body.petition-dark .syncfusion-editor-wrapper div[id$="_vRuler"],
+  body.petition-dark .syncfusion-editor-wrapper div[id$="_markIndicator"],
+  body.petition-dark .syncfusion-editor-wrapper .e-de-hRuler,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-vRuler,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-hruler,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-vruler {
+    filter: invert(0.9) hue-rotate(180deg);
+  }
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ruler-tick {
+    stroke: #d6d6d6 !important;
+  }
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ruler-tick-label {
+    fill: rgba(255, 255, 255, 0.88) !important;
+  }
+  body.petition-dark .syncfusion-editor-wrapper .e-de-status-bar,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ctnr-status-bar,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-statusbar,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ctnr-statusbar,
+  body.petition-dark .syncfusion-editor-wrapper .e-de-ctnr-statusbar-div {
+    background: #2b2b2b !important;
+    color: #d0d6df !important;
+  }
+
+
+  /* Fundo geral da área de edição. */
+  body.petition-dark .petition-editor-root { background: #1b1b1b !important; }
+
+  /* Painel lateral (Blocos / Clientes). As classes do Tailwind com cores
+     fixas são alvejadas por seletor de atributo (~=), evitando escape. */
+  body.petition-dark .petition-sidebar {
+    background: #242424 !important;
+    border-right-color: #3a3a3a !important;
+    box-shadow: none !important;
+  }
+  body.petition-dark .petition-sidebar [class~="bg-[#f7f3ec]"],
+  body.petition-dark .petition-sidebar [class~="bg-[#f3eee5]"],
+  body.petition-dark .petition-sidebar [class~="bg-[#fbfaf8]"],
+  body.petition-dark .petition-sidebar [class~="bg-[#f8f4ee]"],
+  body.petition-dark .petition-sidebar [class~="bg-[#f7f1e7]"] { background-color: #2b2b2b !important; }
+  body.petition-dark .petition-sidebar [class~="bg-white"] { background-color: #333333 !important; }
+  body.petition-dark .petition-sidebar [class~="border-[#ddd7cd]"],
+  body.petition-dark .petition-sidebar [class~="border-[#e6dfd3]"] { border-color: #3d3d3d !important; }
+  body.petition-dark .petition-sidebar [class~="text-slate-700"],
+  body.petition-dark .petition-sidebar [class~="text-slate-600"],
+  body.petition-dark .petition-sidebar [class~="text-slate-500"] { color: #d5d9e1 !important; }
+  body.petition-dark .petition-sidebar [class~="text-slate-400"] { color: #909090 !important; }
+  body.petition-dark .petition-sidebar input,
+  body.petition-dark .petition-sidebar select,
+  body.petition-dark .petition-sidebar textarea {
+    background-color: #333333 !important;
+    color: #eef2f7 !important;
+    border-color: #4a4a4a !important;
+  }
+  /* Pega-tudo: qualquer bg arbitrário do Tailwind (bg-[#...]) na lateral
+     vira escuro; os acentos laranja são restaurados logo abaixo (regras
+     posteriores de mesma especificidade vencem). */
+  body.petition-dark .petition-sidebar [class*="bg-["] { background-color: #262626 !important; }
+  body.petition-dark .petition-sidebar [class*="border-[#"] { border-color: #3d3d3d !important; }
+  body.petition-dark .petition-sidebar [class*="hover:bg-"]:hover { background-color: #343434 !important; }
+  body.petition-dark .petition-sidebar [class*="bg-[#fff4df]"] { background-color: #4b3f28 !important; } /* cliente selecionado */
+  body.petition-dark .petition-sidebar [class*="bg-[#ff9f0a]"] { background-color: #ff9f0a !important; } /* botão + (novo bloco) */
+  body.petition-dark .petition-sidebar [class*="bg-[#2f6fa8]"] { background-color: #2f6fa8 !important; }
+  body.petition-dark .petition-sidebar [class~="bg-amber-100"] { background-color: #544225 !important; }
+  body.petition-dark .petition-sidebar [class~="text-amber-700"] { color: #f8c968 !important; }
+  body.petition-dark .petition-sidebar [class~="text-slate-800"],
+  body.petition-dark .petition-sidebar [class~="text-slate-900"] { color: #eef2f7 !important; }
+  body.petition-dark .petition-sidebar [class~="shadow-sm"],
+  body.petition-dark .petition-sidebar [class*="shadow-["] { box-shadow: none !important; }
+  /* Splitter da lateral (fica fora do .petition-sidebar) */
+  body.petition-dark .petition-editor-root [class~="bg-slate-200"] { background-color: #3a3a3a !important; }
 `;
 
 // Injeta os estilos estruturais do editor (flex do wrapper, container Syncfusion, etc.).
 // Sem isto o .syncfusion-editor-wrapper nÃ£o recebe flex:1 e colapsa para a largura mÃ­nima do conteudo.
-if (typeof document !== 'undefined' && !document.getElementById('petition-editor-structural-styles')) {
-  const styleEl = document.createElement('style');
-  styleEl.id = 'petition-editor-structural-styles';
+if (typeof document !== 'undefined') {
+  let styleEl = document.getElementById('petition-editor-structural-styles');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'petition-editor-structural-styles';
+    document.head.appendChild(styleEl);
+  }
+  // Sempre atualiza o conteúdo (idempotente) para que mudanças no CSS
+  // sejam refletidas mesmo com o <style> já presente (HMR / re-render).
   styleEl.innerHTML = EDITOR_STYLES;
-  document.head.appendChild(styleEl);
 }
 
 interface PetitionEditorModuleProps {
@@ -2173,6 +2358,24 @@ Regras:
   const [isFullscreen, setIsFullscreen] = useState(true);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showStartScreen, setShowStartScreen] = useState<boolean>(() => isFloatingWidget && !initialPetitionId && !initialDocumentBase64 && !initialDocumentUrl);
+
+  // Modo escuro do editor (estilo Word). Fonte unica de verdade: alterna a
+  // classe `petition-dark` no <body> (cobre a faixa, o chrome do Syncfusion e
+  // popups portados) e inverte a folha apenas na exibicao. Persistido em
+  // localStorage e removido do <body> ao desmontar para nao afetar o CRM.
+  const { darkMode, toggleDarkMode } = usePetitionEditorTheme();
+  // Reforça a aplicação dos estilos estruturais/escuros na montagem (a injeção
+  // no topo do módulo pode não re-executar sob HMR/Fast Refresh).
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    let styleEl = document.getElementById('petition-editor-structural-styles');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'petition-editor-structural-styles';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.innerHTML = EDITOR_STYLES;
+  }, []);
 
   const applyInitialClientIfNeeded = useCallback(() => {
     if (!initialClientId) return null;
@@ -4584,11 +4787,11 @@ Regras:
             {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
           </button>
 
-          <div className="flex items-center rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+          <div className="petition-workspace-toggle flex items-center rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
             <button
               type="button"
               onClick={() => setActiveWorkspace('editor')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+              className={`petition-workspace-toggle-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                 activeWorkspace === 'editor'
                   ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
                   : 'text-slate-600 hover:text-slate-800'
@@ -4597,13 +4800,13 @@ Regras:
               Editor
             </button>
             {blocksEnabled && (
-              <button
-                type="button"
-                onClick={() => setActiveWorkspace('blocks')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                  activeWorkspace === 'blocks'
-                    ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-800'
+                <button
+                  type="button"
+                  onClick={() => setActiveWorkspace('blocks')}
+                  className={`petition-workspace-toggle-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                    activeWorkspace === 'blocks'
+                      ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-800'
                 }`}
               >
                 Blocos
@@ -4827,13 +5030,12 @@ Regras:
             {"Padrão"}
           </button>
           <button
-            onClick={setCurrentDocAsDefaultTemplate}
-            disabled={settingDefaultTemplate}
-            className="pet-top-text-btn hidden lg:flex disabled:opacity-50 disabled:hover:bg-transparent"
-            title="Definir o documento aberto como modelo padrão"
+            onClick={toggleDarkMode}
+            className="pet-top-text-btn flex"
+            title={darkMode ? 'Voltar ao modo claro' : 'Modo escuro (igual ao Word)'}
           >
-            {settingDefaultTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Star className="w-3.5 h-3.5" />}
-            Definir padrão
+            {darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">{darkMode ? 'Modo claro' : 'Modo escuro'}</span>
           </button>
         </div>
 
@@ -4889,7 +5091,7 @@ Regras:
   );
 
   return (
-    <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} relative flex flex-col overflow-hidden bg-[#f5f6f8]`}>
+    <div className={`petition-editor-root ${isFloatingWidget ? 'h-full' : 'h-screen'} relative flex flex-col overflow-hidden bg-[#f5f6f8]`}>
       {documentImportLoading && (
         <div className="absolute inset-0 z-[140] flex items-center justify-center bg-slate-950/35 backdrop-blur-sm">
           <div className="w-full max-w-md mx-4 rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-black/10 p-6">
@@ -5689,6 +5891,8 @@ Regras:
         editorRef={editorRef}
         ready={editorReady}
         topContent={ribbonTopContent}
+        darkMode={darkMode}
+        onToggleDarkMode={toggleDarkMode}
         onNew={() => { editorRef.current?.clear?.(); setHasUnsavedChanges(true); }}
         onOpen={() => fileInputRef.current?.click()}
         onSave={() => { void savePetition(); }}
@@ -5704,7 +5908,7 @@ Regras:
           />
         )}
         {sidebarOpen && (
-          <div className="fixed sm:relative inset-y-0 left-0 z-[31] sm:z-[20] flex flex-col flex-shrink-0 border-r border-[#ddd7cd] bg-[#f7f3ec] shadow-[inset_-1px_0_0_rgba(255,255,255,0.65)]" style={{ width: Math.min(sidebarWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : sidebarWidth) }}>
+          <div className="petition-sidebar fixed sm:relative inset-y-0 left-0 z-[31] sm:z-[20] flex flex-col flex-shrink-0 border-r border-[#ddd7cd] bg-[#f7f3ec] shadow-[inset_-1px_0_0_rgba(255,255,255,0.65)]" style={{ width: Math.min(sidebarWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : sidebarWidth) }}>
             {/* Tabs */}
             <div className="flex items-end gap-1 border-b border-[#ddd7cd] bg-[#f3eee5] px-2 pt-2">
               <button
@@ -6329,12 +6533,12 @@ Regras:
             <div className="px-5 sm:px-6 py-5">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[12px] font-medium text-slate-500">Escopo</div>
-                <div className="inline-flex items-center p-0.5 rounded-lg border border-slate-200 bg-slate-50">
+                <div className="petition-scope-toggle inline-flex items-center p-0.5 rounded-lg border border-slate-200 bg-slate-50">
                   {selectedStandardTypeId && (
                     <button
                       type="button"
                       onClick={() => setBlockSearchScope('type')}
-                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
+                      className={`petition-scope-toggle-btn px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
                         blockSearchScope === 'type'
                           ? 'bg-amber-500 text-white shadow-sm'
                           : 'text-slate-600 hover:bg-white'
@@ -6347,7 +6551,7 @@ Regras:
                   <button
                     type="button"
                     onClick={() => setBlockSearchScope('area')}
-                    className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
+                    className={`petition-scope-toggle-btn px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
                       blockSearchScope === 'area'
                         ? 'bg-amber-500 text-white shadow-sm'
                         : 'text-slate-600 hover:bg-white'
@@ -6359,7 +6563,7 @@ Regras:
                   <button
                     type="button"
                     onClick={() => setBlockSearchScope('global')}
-                    className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
+                    className={`petition-scope-toggle-btn px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
                       blockSearchScope === 'global'
                         ? 'bg-slate-700 text-white shadow-sm'
                         : 'text-slate-600 hover:bg-white'
@@ -7268,6 +7472,151 @@ const petitionModalStyles = `
   main#block-editor-modal {
     background-color: #ffffff !important;
     color: #0f172a !important;
+  }
+
+  body.petition-dark .petition-workspace-toggle {
+    background: #2d2d2d !important;
+    border-color: #444444 !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.03) !important;
+  }
+  body.petition-dark .petition-workspace-toggle-btn {
+    color: #c9d2df !important;
+  }
+  body.petition-dark .petition-workspace-toggle-btn:hover {
+    background: #3a3a3a !important;
+    color: #eef2f7 !important;
+  }
+  body.petition-dark .petition-workspace-toggle-btn.bg-\[\#f8f7f5\] {
+    background: #f3f4f6 !important;
+    color: #c05621 !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.25) !important;
+  }
+
+  body.petition-dark main#company-lookup-modal,
+  body.petition-dark main#block-search-modal,
+  body.petition-dark main#petition-categories-modal,
+  body.petition-dark main#legal-area-modal,
+  body.petition-dark aside#petition-lookup-backdrop > main,
+  body.petition-dark aside#petition-search-backdrop > main,
+  body.petition-dark aside#petition-categories-backdrop > main,
+  body.petition-dark aside#legal-area-backdrop > main,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main {
+    background: #2b2b2b !important;
+    color: #e5e7eb !important;
+    border-color: #434343 !important;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.45) !important;
+  }
+  body.petition-dark main#company-lookup-modal header,
+  body.petition-dark main#block-search-modal header,
+  body.petition-dark main#petition-categories-modal header,
+  body.petition-dark main#legal-area-modal header,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main header,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main header {
+    background: #2f2f2f !important;
+    border-bottom-color: #434343 !important;
+  }
+  body.petition-dark main#company-lookup-modal .text-slate-900,
+  body.petition-dark main#block-search-modal .text-slate-900,
+  body.petition-dark main#petition-categories-modal .text-slate-900,
+  body.petition-dark main#legal-area-modal .text-slate-900,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main .text-slate-900,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main .text-slate-900 {
+    color: #f3f4f6 !important;
+  }
+  body.petition-dark main#company-lookup-modal .text-slate-800,
+  body.petition-dark main#company-lookup-modal .text-slate-700,
+  body.petition-dark main#block-search-modal .text-slate-800,
+  body.petition-dark main#block-search-modal .text-slate-700,
+  body.petition-dark main#petition-categories-modal .text-slate-800,
+  body.petition-dark main#petition-categories-modal .text-slate-700,
+  body.petition-dark main#legal-area-modal .text-slate-800,
+  body.petition-dark main#legal-area-modal .text-slate-700,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main .text-slate-800,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main .text-slate-700,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main .text-slate-800,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main .text-slate-700 {
+    color: #d6d9df !important;
+  }
+  body.petition-dark main#company-lookup-modal .text-slate-600,
+  body.petition-dark main#company-lookup-modal .text-slate-500,
+  body.petition-dark main#block-search-modal .text-slate-600,
+  body.petition-dark main#block-search-modal .text-slate-500,
+  body.petition-dark main#petition-categories-modal .text-slate-600,
+  body.petition-dark main#petition-categories-modal .text-slate-500,
+  body.petition-dark main#legal-area-modal .text-slate-600,
+  body.petition-dark main#legal-area-modal .text-slate-500,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main .text-slate-600,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main .text-slate-500,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main .text-slate-600,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main .text-slate-500 {
+    color: #aeb6c3 !important;
+  }
+  body.petition-dark main#company-lookup-modal [class*="bg-white"],
+  body.petition-dark main#block-search-modal [class*="bg-white"],
+  body.petition-dark main#petition-categories-modal [class*="bg-white"],
+  body.petition-dark main#legal-area-modal [class*="bg-white"],
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main [class*="bg-white"],
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main [class*="bg-white"] {
+    background-color: #313131 !important;
+    border-color: #454545 !important;
+  }
+  body.petition-dark main#company-lookup-modal [class*="bg-slate-50"],
+  body.petition-dark main#company-lookup-modal [class*="bg-slate-100"],
+  body.petition-dark main#block-search-modal [class*="bg-slate-50"],
+  body.petition-dark main#block-search-modal [class*="bg-slate-100"],
+  body.petition-dark main#petition-categories-modal [class*="bg-slate-50"],
+  body.petition-dark main#petition-categories-modal [class*="bg-slate-100"],
+  body.petition-dark main#legal-area-modal [class*="bg-slate-50"],
+  body.petition-dark main#legal-area-modal [class*="bg-slate-100"],
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main [class*="bg-slate-50"],
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main [class*="bg-slate-100"],
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main [class*="bg-slate-50"],
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main [class*="bg-slate-100"] {
+    background-color: #353535 !important;
+    border-color: #454545 !important;
+  }
+  body.petition-dark main#company-lookup-modal input,
+  body.petition-dark main#company-lookup-modal textarea,
+  body.petition-dark main#company-lookup-modal select,
+  body.petition-dark main#block-search-modal input,
+  body.petition-dark main#block-search-modal textarea,
+  body.petition-dark main#block-search-modal select,
+  body.petition-dark main#petition-categories-modal input,
+  body.petition-dark main#petition-categories-modal textarea,
+  body.petition-dark main#petition-categories-modal select,
+  body.petition-dark main#legal-area-modal input,
+  body.petition-dark main#legal-area-modal textarea,
+  body.petition-dark main#legal-area-modal select,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main input,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main textarea,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main select,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main input,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main textarea,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main select {
+    background: #363636 !important;
+    color: #eef2f7 !important;
+    border-color: #555555 !important;
+  }
+  body.petition-dark .petition-scope-toggle {
+    background: #383838 !important;
+    border-color: #4b4b4b !important;
+  }
+  body.petition-dark .petition-scope-toggle-btn {
+    color: #c7cfda !important;
+  }
+  body.petition-dark .petition-scope-toggle-btn:hover {
+    background: #424242 !important;
+    color: #f3f4f6 !important;
+  }
+  body.petition-dark main#block-search-modal .border-slate-200,
+  body.petition-dark main#block-search-modal .border-slate-100,
+  body.petition-dark main#company-lookup-modal .border-slate-200,
+  body.petition-dark main#petition-categories-modal .border-slate-200,
+  body.petition-dark main#legal-area-modal .border-slate-200,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[110\\]"] > main .border-slate-200,
+  body.petition-dark aside[class*="fixed"][class*="z-\\[120\\]"] > main .border-slate-200 {
+    border-color: #454545 !important;
   }
 
   /* docx-preview (view do bloco) - restaurar espaçamento de parÃ¡grafos e quebras */

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.297': { name: 'Cafe Tema Persistente e Templates Afinados', emoji: '[palette]' },
   '1.10.296': { name: 'Cafe Editor Resiliente e Atalhos Blindados', emoji: '[memo]' },
   '1.10.295': { name: 'Cafe Editor com Corretor Local', emoji: '[memo]' },
   '1.10.294': { name: 'Cafe Suspensao Progressiva com PIN Blindado', emoji: '[shield]' },
@@ -947,6 +948,24 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.297',
+    date: '03/07/2026',
+    summary: 'O editor de peticoes passou a persistir preferencias visuais por perfil e o fluxo de templates/documentos recebeu ajustes de consistencia para gerenciamento e assinatura.',
+    modules: [
+      { moduleId: 'peticoes', changes: [
+        { type: 'improvement' as const, title: 'Tema e preferencias do editor passaram a persistir por usuario', description: 'O editor ganhou um hook dedicado para carregar e salvar preferencia visual no perfil do usuario, mantendo a experiencia consistente entre sessoes e dispositivos.' },
+        { type: 'improvement' as const, title: 'Faixa e comportamento do editor foram harmonizados', description: 'Os componentes do editor e da ribbon foram ajustados em conjunto para aplicar o estado visual de forma mais previsivel e reduzir inconsistencias de interface.' },
+      ]},
+      { moduleId: 'documentos', changes: [
+        { type: 'improvement' as const, title: 'Gerenciamento de templates e arquivos de documentos foi refinado', description: 'O fluxo de templates recebeu ajustes de interface e de servicos para manter principal, anexos e configuracoes associados com mais consistencia durante a edicao.' },
+        { type: 'fix' as const, title: 'Renderizacao de assinatura em PDF recebeu correcoes de apoio', description: 'O servico de assinatura PDF foi alinhado com os ajustes recentes do modulo de documentos para melhorar a previsibilidade do processamento e da saida assinada.' },
+      ]},
+      { moduleId: 'sistema', changes: [
+        { type: 'improvement' as const, title: 'Migration adicionou preferencia persistente de tema do editor no perfil', description: 'A base passou a registrar a preferencia visual do editor diretamente no perfil do usuario para suportar restauracao automatica do contexto de trabalho.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.296',
     date: '03/07/2026',
