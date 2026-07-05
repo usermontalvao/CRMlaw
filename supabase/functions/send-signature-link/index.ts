@@ -44,7 +44,7 @@ function buildHtml(p: {
   const docTitle = p.isPerDocument
     ? `&#128218; ${p.documentName}${p.documentCount > 0 ? ` <span style="font-family:Arial,sans-serif;font-size:12px;color:#475569;font-weight:600;">&middot; ${p.documentCount} documento${p.documentCount === 1 ? '' : 's'}</span>` : ''}`
     : `&#128196; ${p.documentName}${p.hasPdf ? ' <span style="font-family:Arial,sans-serif;font-size:12px;color:#16a34a;font-weight:600;">&middot; em anexo</span>' : ''}`
-  const verificationLabel = p.isPerDocument ? 'Codigo do envelope' : 'Codigo de verificacao'
+  const verificationLabel = 'Protocolo do envelope'
   const verificationHelp = p.isPerDocument
     ? `Acesse <a href="${p.origin}/#/verificar" style="color:#EC5A1E;font-weight:600;">${p.origin}/#/verificar</a> para consultar o envelope e os documentos vinculados.`
     : `Acesse <a href="${p.origin}/#/verificar" style="color:#EC5A1E;font-weight:600;">${p.origin}/#/verificar</a> para verificar a autenticidade.`
@@ -124,7 +124,7 @@ function buildHtml(p: {
           <tr><td colspan="2" style="height:1px;background:#F4DCC7;padding:0;font-size:0;line-height:0;">&nbsp;</td></tr>
           <tr><td colspan="2" style="padding-top:16px;">
             <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#B0834F;text-transform:uppercase;margin-bottom:7px;">${verificationLabel}</div>
-            <div style="font-family:'Courier New',Courier,monospace;font-size:18px;font-weight:900;color:#16213A;letter-spacing:0.1em;">${p.verificationCode}</div>
+            <div style="font-family:'Courier New',Courier,monospace;font-size:15px;font-weight:900;color:#16213A;letter-spacing:0.04em;word-break:break-all;">${p.verificationCode}</div>
             <div style="margin-top:6px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#54607A;">${verificationHelp}</div>
           </td></tr>
         </table>
@@ -222,9 +222,10 @@ Deno.serve(async (req: Request) => {
         continue
       }
 
-      const verificationCode = isPerDocument
-        ? String(req_.envelope_verification_code ?? '')
-        : String(signer.verification_hash ?? '')
+      // Protocolo do envelope = signature_requests.id — o MESMO valor carimbado no
+      // rodapé do PDF assinado e exibido nas telas públicas. Unifica "código" e
+      // "protocolo" num único identificador (aceito por public_verify_by_hash).
+      const verificationCode = String(req_.id ?? '')
       const verifyLink = verificationCode ? `${origin}/#/verificar/${verificationCode}` : `${origin}/#/verificar`
 
       let pdfBase64: string | null = null
@@ -275,8 +276,8 @@ Deno.serve(async (req: Request) => {
         ? `Ola, ${signer.name}.\n\nSeu pacote "${req_.document_name}" foi assinado. Este envelope reune ${requestDocuments.length} documento(s).`
         : `Ola, ${signer.name}.\n\nSeu documento "${req_.document_name}" foi assinado.`
       const textVerification = isPerDocument
-        ? `Consulte o envelope e os documentos vinculados em: ${verifyLink}\nCodigo do envelope: ${verificationCode}`
-        : `Verifique: ${verifyLink}\nCodigo: ${verificationCode}`
+        ? `Consulte o envelope e os documentos vinculados em: ${verifyLink}\nProtocolo do envelope: ${verificationCode}`
+        : `Verifique: ${verifyLink}\nProtocolo do envelope: ${verificationCode}`
 
       const emailBody: any = {
         from: `${FROM_NAME} <${FROM_EMAIL}>`,

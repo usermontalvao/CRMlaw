@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrandLogo } from './ui';
-import { BRAND_SERIF } from '../constants/brand';
+import { BRAND_SERIF, BRAND_WORDMARK, BRAND_DOT_ON_DARK } from '../constants/brand';
 import { createPortal } from 'react-dom';
 import { AlertCircle, Camera, Check, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, Eye, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
@@ -10,7 +10,7 @@ import { buildWhatsappUrl } from '../utils/whatsapp';
 import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT, SELFIE_PROFILE_CONSENT_VERSION, SELFIE_PROFILE_CONSENT_LABEL, parseSignatureTermsText } from '../constants/signatureTerms';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
-import type { SignDocumentDTO, SignatureAuditLog, SignatureField, Signer, SignatureRequest } from '../types/signature.types';
+import type { SignDocumentDTO, SignatureAuditLog, SignatureField, SignatureRequestDocument, Signer, SignatureRequest } from '../types/signature.types';
 import SignatureReport from './SignatureReport';
 import { renderAsync } from 'docx-preview';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -2060,6 +2060,150 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     }
   };
 
+  // Abre uma URL de documento assinado no visualizador interno (iframe) via blob:,
+  // sem expor a URL do Supabase. Usado pelos documentos individuais do envelope.
+  const openUrlInSignedViewer = async (url: string | null | undefined) => {
+    if (!url) {
+      toast.error('Documento indisponível no momento. Tente novamente em alguns segundos.');
+      return;
+    }
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      setSignedViewerUrl(URL.createObjectURL(blob));
+    } catch {
+      setSignedViewerUrl(url);
+    }
+  };
+
+  const loadEnvelopeSignedDocuments = async (currentRequest: SignatureRequest): Promise<
+    { documentKey: string; displayName: string; verificationCode: string; url: string | null }[]
+  > => {
+    if (currentRequest.signature_model !== 'per_document') return [];
+
+    const docs = await signatureService.getPublicRequestDocuments(token);
+    const resolved = await Promise.all(
+      docs.map(async (doc: SignatureRequestDocument) => ({
+        documentKey: doc.document_key,
+        displayName: doc.display_name?.trim() || 'Documento assinado',
+        verificationCode: doc.verification_code?.trim() || '',
+        url: doc.signed_file_path
+          ? await signatureService.getPublicFileUrl(token, doc.signed_file_path)
+          : null,
+        sortOrder: doc.sort_order ?? 0,
+      })),
+    );
+
+    return resolved
+      .filter((doc) => doc.verificationCode)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(({ sortOrder: _sortOrder, ...doc }) => doc);
+  };
+
+  const getEnvelopeDisplayCode = (currentRequest: SignatureRequest | null, currentSigner: Signer | null) => {
+    if (currentRequest?.signature_model === 'per_document') {
+      // Protocolo do envelope = o mesmo valor carimbado no rodapé do PDF assinado
+      // (pdfSignature.service usa `protocol: request.id`) e aceito pela verificação
+      // pública (public_verify_by_hash, ramo do UUID). O `id` está sempre presente
+      // no bundle carregado na abertura da página; o `envelope_verification_code`
+      // curto só é gerado na finalização, então serve apenas como alias/fallback.
+      return (currentRequest.id || currentRequest.envelope_verification_code || '').trim();
+    }
+    return (currentSigner?.verification_hash || '').trim();
+  };
+
+  const getShareableSignedDocuments = async (currentRequest: SignatureRequest, currentSigner: Signer) => {
+    if (currentRequest.signature_model === 'per_document') {
+      const docs = signedDocuments.length > 0 ? signedDocuments : await loadEnvelopeSignedDocuments(currentRequest);
+      if (signedDocuments.length === 0 && docs.length > 0) {
+        setSignedDocuments(docs);
+      }
+      return docs.filter((doc) => !!doc.url);
+    }
+
+    const url = await waitForSignedDocumentUrl();
+    if (!url) return [];
+
+    const baseName = (currentRequest.document_name || 'documento_assinado')
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+      .trim()
+      .slice(0, 80);
+
+    return [{
+      documentKey: 'main',
+      displayName: `${baseName || 'documento_assinado'}.pdf`,
+      verificationCode: currentSigner.verification_hash?.trim() || '',
+      url,
+    }];
+  };
+
+  const handleShareSignedDocuments = async (currentRequest: SignatureRequest, currentSigner: Signer) => {
+    try {
+      const docs = await getShareableSignedDocuments(currentRequest, currentSigner);
+      if (docs.length === 0) {
+        toast.error('Os documentos assinados ainda estÃ£o sendo finalizados.');
+        return;
+      }
+
+      const shareTitle = currentRequest.signature_model === 'per_document'
+        ? 'Documentos assinados'
+        : 'Documento assinado';
+      const shareText = currentRequest.signature_model === 'per_document'
+        ? `Envelope assinado: "${currentRequest.document_name}"`
+        : `Documento assinado: "${currentRequest.document_name}"`;
+
+      if (typeof navigator.share === 'function') {
+        try {
+          const files = await Promise.all(
+            docs.map(async (doc, index) => {
+              const response = await fetch(doc.url!);
+              if (!response.ok) {
+                throw new Error(`Falha ao baixar PDF: ${response.status}`);
+              }
+              const blob = await response.blob();
+              const safeBaseName = (doc.displayName || `documento_${index + 1}`)
+                .replace(/\.[^/.]+$/, '')
+                .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+                .trim()
+                .slice(0, 80);
+              const fileName = `${safeBaseName || `documento_${index + 1}`}.pdf`;
+              return new File([blob], fileName, { type: blob.type || 'application/pdf' });
+            }),
+          );
+
+          const canShareFiles =
+            files.length > 0 &&
+            typeof (navigator as any).canShare === 'function' &&
+            (navigator as any).canShare({ files });
+
+          if (canShareFiles) {
+            await navigator.share({
+              title: shareTitle,
+              text: shareText,
+              files,
+            } as any);
+            return;
+          }
+        } catch (e) {
+          console.log('Falha ao compartilhar arquivos, usando links como fallback:', e);
+        }
+
+        await navigator.share({
+          title: shareTitle,
+          text: `${shareText}\n\n${docs.map((doc) => `${doc.displayName}: ${doc.url}`).join('\n')}`,
+        });
+        return;
+      }
+
+      await navigator.clipboard.writeText(docs.map((doc) => `${doc.displayName}: ${doc.url}`).join('\n'));
+      toast.success(docs.length > 1 ? 'Links dos documentos copiados.' : 'Link do documento assinado copiado.');
+    } catch (e) {
+      console.log('Compartilhamento cancelado/erro:', e);
+    }
+  };
+
   const closeSignedViewer = () => {
     setSignedViewerUrl((prev) => {
       if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
@@ -2219,6 +2363,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         });
 
         await Promise.all(workers);
+      }
+
+      if (data.request.signature_model === 'per_document' && data.signer.status === 'signed') {
+        try {
+          const docs = await loadEnvelopeSignedDocuments(data.request);
+          setSignedDocuments(docs);
+          const primaryDoc = docs.find((doc) => doc.documentKey === 'main') ?? docs[0] ?? null;
+          if (primaryDoc?.url) {
+            setSignedDocumentUrl(primaryDoc.url);
+          }
+        } catch (e) {
+          console.warn('[PER-DOC] NÃ£o foi possÃ­vel carregar documentos finais do envelope:', e);
+          setSignedDocuments([]);
+        }
+      } else {
+        setSignedDocuments([]);
       }
 
       if (data.signer.status === 'signed') {
@@ -2986,6 +3146,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     : null;
 
   if (step === 'loading') {
+
+
     return (
       <>
         {loadingPortal}
@@ -3112,6 +3274,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         ? 'Código do documento principal'
         : 'Código de autenticação';
 
+    const envelopeDisplayCode = getEnvelopeDisplayCode(request, signer);
+    const envelopeCodeLabel = 'Protocolo do envelope';
+
     if (showReport && request && signer) {
       return (
         <SignatureReport
@@ -3125,7 +3290,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
     const handleCopyVerificationCode = async () => {
       try {
-        const code = displayedVerificationCode;
+        const code = envelopeDisplayCode;
         if (!code) return;
         await navigator.clipboard.writeText(code);
         toast.success('Código copiado.');
@@ -3145,7 +3310,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       }
     };
 
-    const verificationUrl = displayedVerificationCode ? `${window.location.origin}/#/verificar/${displayedVerificationCode}` : null;
+    const verificationUrl = envelopeDisplayCode ? `${window.location.origin}/#/verificar/${envelopeDisplayCode}` : null;
     const termsUrl = buildPublicSignatureTermsUrl();
 
     return (
@@ -3189,15 +3354,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   </div>
 
                   {/* Código de autenticação */}
-                  {displayedVerificationCode && (
+                  {envelopeDisplayCode && (
                     <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400">{verificationCodeLabel}</span>
+                        <span className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400">{envelopeCodeLabel}</span>
                         <button type="button" onClick={handleCopyVerificationCode} className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-orange-600 hover:text-orange-700">
                           <Copy className="w-3 h-3" />Copiar
                         </button>
                       </div>
-                      <div className="font-mono text-[13px] font-semibold tracking-wider text-slate-800 break-all mt-1">{displayedVerificationCode}</div>
+                      <div className="font-mono text-[13px] font-semibold tracking-wider text-slate-800 break-all mt-1">{envelopeDisplayCode}</div>
                       {verificationUrl && (
                         <a href={verificationUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 hover:text-orange-600">
                           <ExternalLink className="w-3 h-3" />Verificar autenticidade
@@ -3216,9 +3381,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     {downloadingAlreadySigned ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
                     Abrir documento assinado
                   </button>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    <button type="button" onClick={() => setShowReport(true)} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition">
-                      <FileText className="w-3.5 h-3.5" />Ver relatório
+                  <div className={`mt-2 grid gap-2 ${signer?.public_token ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    <button type="button" onClick={() => handleShareSignedDocuments(request!, signer!)} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition">
+                      <Share2 className="w-3.5 h-3.5" />Compartilhar
                     </button>
                     {signer?.public_token && (
                       <button type="button" onClick={handleCopySignerToken} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition">
@@ -3230,7 +3395,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
                 <div className="px-5 sm:px-6 py-3 border-t border-slate-100 flex items-center gap-2">
                   <Lock className="w-3 h-3 text-slate-300 flex-shrink-0" />
-                  <p className="text-[10px] text-slate-400 leading-relaxed">Guarde o código de autenticação para conferência futura.</p>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">Guarde o protocolo do envelope para conferencia futura.</p>
                 </div>
               </div>
 
@@ -3332,233 +3497,201 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         ? 'Código do documento principal'
         : 'Código de autenticação';
 
+    const envelopeDisplayCode = getEnvelopeDisplayCode(request, signer);
+    const envelopeCodeLabel = 'Protocolo do envelope';
+
     // Abre o documento assinado no visualizador interno (iframe), sem expor a URL do Supabase.
     const handleDownload = () => openSignedDocumentViewer(setDownloading);
 
-    const handleShare = async () => {
-      if (!request || !signer) {
-        toast.error('Documento assinado indisponível para compartilhamento no momento.');
-        return;
-      }
-
-      try {
-        const url = await waitForSignedDocumentUrl();
-        if (!url) {
-          toast.error('O documento assinado ainda está sendo finalizado.');
-          return;
-        }
-
-        const baseName = (request.document_name || 'documento_assinado')
-          .replace(/\.[^/.]+$/, '')
-          .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
-          .trim()
-          .slice(0, 80);
-        const fileName = `${baseName || 'documento_assinado'}.pdf`;
-
-        const shareText = `Documento assinado: "${request.document_name}"`;
-
-        if (typeof navigator.share === 'function') {
-          try {
-            const response = await fetch(url);
-            if (!response.ok) {
-              throw new Error(`Falha ao baixar PDF: ${response.status}`);
-            }
-            const blob = await response.blob();
-            const file = new File([blob], fileName, { type: blob.type || 'application/pdf' });
-
-            const canShareFiles =
-              typeof (navigator as any).canShare === 'function' && (navigator as any).canShare({ files: [file] });
-
-            if (canShareFiles) {
-              await navigator.share({
-                title: 'Documento Assinado',
-                text: shareText,
-                files: [file],
-              } as any);
-              return;
-            }
-          } catch (e) {
-            console.log('Falha ao compartilhar arquivo, usando link como fallback:', e);
-          }
-
-          await navigator.share({
-            title: 'Documento Assinado',
-            text: shareText,
-            url,
-          });
-          return;
-        }
-
-        await navigator.clipboard.writeText(url);
-        toast.success('Link do documento assinado copiado.');
-      } catch (e) {
-        console.log('Compartilhamento cancelado/erro:', e);
-      }
-    };
+    const handleShare = async () => handleShareSignedDocuments(request!, signer!);
 
     return (
       <>
         {loadingPortal}
-        <div className="relative min-h-[100dvh] overflow-hidden flex items-center justify-center p-3 sm:p-6" style={{ background: '#eceae5' }}>
-          {/* Brilho âmbar de ambiente */}
-          <div aria-hidden="true" className="pointer-events-none fixed" style={{ left: '-8%', top: '-10%', width: 560, height: 560, zIndex: 0, background: 'radial-gradient(circle, rgba(249,115,22,0.08), transparent 65%)' }} />
+        <div
+          className="relative min-h-[100dvh] w-full overflow-y-auto flex items-center justify-center p-4 sm:p-8"
+          style={{
+            backgroundColor: '#0B1120',
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),' +
+              'linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),' +
+              'radial-gradient(760px 560px at 50% -12%, rgba(242,99,26,0.20), transparent 60%)',
+            backgroundSize: '48px 48px, 48px 48px, 100% 100%',
+          }}
+        >
+          {/* ══ CERTIFICADO — folha quadrada com marcas de registro ══ */}
+          <div className="relative z-10 w-full max-w-[460px] sm:max-w-[900px]">
 
-          {/* Cartão dividido em dois painéis */}
-          <div className="relative z-10 w-full max-w-3xl rounded-[28px] overflow-hidden flex flex-col md:flex-row" style={{ boxShadow: '0 30px 80px -30px rgba(15,23,42,0.35), 0 0 0 1px rgba(15,23,42,0.05)' }}>
+            {/* marcas de corte tipográficas nos 4 cantos */}
+            {[
+              '-left-[6px] -top-[6px] border-l-2 border-t-2',
+              '-right-[6px] -top-[6px] border-r-2 border-t-2',
+              '-left-[6px] -bottom-[6px] border-l-2 border-b-2',
+              '-right-[6px] -bottom-[6px] border-r-2 border-b-2',
+            ].map((corner) => (
+              <span key={corner} aria-hidden="true" className={`pointer-events-none absolute h-4 w-4 border-orange-400/70 ${corner}`} />
+            ))}
 
-            {/* ══ PAINEL DE MARCA (escuro, editorial) ══ */}
             <div
-              className="relative md:w-[44%] flex-shrink-0 flex flex-col justify-between gap-4 md:gap-0 p-5 sm:p-9 text-white overflow-hidden"
-              style={{
-                backgroundColor: '#0C1320',
-                backgroundImage: 'linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px),radial-gradient(520px 420px at 10% 105%, rgba(242,99,26,0.22), transparent 60%)',
-                backgroundSize: '64px 64px, 64px 64px, 100% 100%',
-              }}
+              className="relative flex flex-col overflow-hidden bg-white sm:flex-row"
+              style={{ boxShadow: '0 50px 100px -45px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.06)' }}
             >
-              {/* Monograma "J" ao fundo */}
-              <div aria-hidden="true" className="pointer-events-none select-none absolute" style={{ right: -42, bottom: -78, fontFamily: BRAND_SERIF, fontSize: 340, lineHeight: 1, fontWeight: 600, color: 'rgba(255,255,255,0.04)', zIndex: 0 }}>J</div>
+              {/* ══ PAINEL DE MARCA (escuro, editorial) ══ */}
+              <div
+                className="relative flex flex-col justify-between gap-6 p-6 text-white sm:w-[42%] sm:flex-shrink-0 sm:p-8"
+                style={{
+                  backgroundColor: '#0C1320',
+                  backgroundImage:
+                    'linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),' +
+                    'linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px),' +
+                    'radial-gradient(440px 380px at 6% 112%, rgba(242,99,26,0.28), transparent 60%)',
+                  backgroundSize: '56px 56px, 56px 56px, 100% 100%',
+                }}
+              >
+                {/* Monograma "J" ao fundo */}
+                <div aria-hidden="true" className="pointer-events-none absolute select-none" style={{ right: -34, bottom: -74, fontFamily: BRAND_SERIF, fontSize: 320, lineHeight: 1, fontWeight: 600, color: 'rgba(255,255,255,0.045)', zIndex: 0 }}>J</div>
 
-              {/* Logo */}
-              <div className="relative z-10 flex items-center gap-2.5">
-                <BrandLogo iconOnly size="sm" />
-                <div className="leading-none">
-                  <div className="font-bold text-[14px]">jurius<span style={{ color: '#8893a8' }}>.com.br</span></div>
-                  <div className="text-[9px] tracking-[0.22em] uppercase font-semibold mt-1" style={{ color: '#5e6a82' }}>Assinatura</div>
-                </div>
-              </div>
-
-              {/* Núcleo editorial */}
-              <div className="relative z-10">
-                <div className="w-11 h-11 md:w-14 md:h-14 rounded-2xl flex items-center justify-center mb-3 md:mb-5" style={{ background: 'rgba(16,185,129,0.14)', border: '1px solid rgba(16,185,129,0.35)' }}>
-                  <Check className="w-6 h-6 md:w-7 md:h-7" strokeWidth={3} style={{ color: '#34d399' }} />
-                </div>
-                <div className="mb-3 md:mb-[18px]" style={{ width: 30, height: 2, background: '#F2631A', opacity: 0.9 }} />
-                <h1 style={{ fontFamily: "'Newsreader', Georgia, 'Times New Roman', serif", fontWeight: 400, fontSize: 'clamp(26px,7vw,40px)', lineHeight: 1.08, letterSpacing: '-0.015em', color: '#F5F2EB' }}>
-                  Documento<br /><span style={{ fontStyle: 'italic', color: '#FF9259' }}>assinado</span>.
-                </h1>
-                <p className="hidden md:block text-[13px] leading-relaxed mt-4 max-w-[260px]" style={{ color: '#97a1b4' }}>
-                  Assinatura registrada e validada com sucesso, com trilha de auditoria completa.
-                </p>
-              </div>
-
-              {/* Meta do documento */}
-              <div className="relative z-10 pt-4 md:pt-5" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                <div className="text-[9px] font-bold uppercase tracking-[0.2em] mb-1.5" style={{ color: '#5e6a82' }}>Documento</div>
-                <div className="text-[13px] font-semibold text-white truncate">{request?.document_name}</div>
-                {signer?.signed_at && <div className="text-[11px] mt-0.5" style={{ color: '#8893a8' }}>{formatDate(signer.signed_at)}</div>}
-              </div>
-            </div>
-
-            {/* ══ PAINEL DE AÇÕES (claro) ══ */}
-            <div className="flex-1 min-w-0 bg-white p-5 sm:p-9 flex flex-col">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" style={{ boxShadow: '0 0 6px rgba(16,185,129,0.6)' }} />
-                <span className="text-[10px] font-bold tracking-[0.16em] uppercase text-emerald-600">Válido · Autêntico</span>
-              </div>
-              <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">Comprovante de assinatura</h2>
-              <p className="text-[13px] text-slate-500 mt-1">Guarde o código abaixo para validar quando quiser.</p>
-
-              {/* Código de autenticação */}
-              {displayedVerificationCode && (
-                <div className="mt-4 rounded-xl px-4 py-3 bg-slate-50 border border-slate-200">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-                      {verificationCodeLabel}
-                    </span>
-                    <button
-                      onClick={async () => {
-                        try { await navigator.clipboard.writeText(displayedVerificationCode || ''); toast.success('Código copiado.'); }
-                        catch { /* ignore */ }
-                      }}
-                      className="flex items-center gap-1 text-[10.5px] font-semibold text-orange-600 hover:text-orange-700 transition-colors"
-                    >
-                      <Copy className="w-3 h-3" /> Copiar
-                    </button>
-                  </div>
-                  <div className="font-mono text-[14px] font-bold tracking-[0.08em] text-slate-800 break-all">
-                    {displayedVerificationCode}
+                {/* Logo — wordmark oficial Jurius (Spectral, ponto laranja) + rótulo do produto */}
+                <div className="relative z-10 flex items-center gap-2.5">
+                  <BrandLogo iconOnly size="sm" />
+                  <div className="leading-none">
+                    <div style={{ fontFamily: BRAND_SERIF, fontWeight: 700, fontSize: 15, letterSpacing: '-0.012em', lineHeight: 1, color: '#FBF6F1' }}>
+                      {BRAND_WORDMARK.lead}
+                      <span style={{ color: BRAND_DOT_ON_DARK }}>{BRAND_WORDMARK.dot}</span>
+                      <span style={{ fontWeight: 400, color: '#8C7E72' }}>{BRAND_WORDMARK.tld}</span>
+                    </div>
+                    <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.24em]" style={{ color: '#5e6a82' }}>Assinatura</div>
                   </div>
                 </div>
-              )}
 
-              {/* Ações */}
-              <div className="mt-4 space-y-2.5">
-                {signer?.signed_document_path && (
-                  <button
-                    onClick={handleDownload}
-                    disabled={downloading}
-                    className="group w-full flex items-center justify-center gap-2.5 px-5 py-3.5 text-white rounded-xl font-bold text-[14.5px] transition-all disabled:opacity-70 active:scale-[0.98]"
-                    style={{
-                      background: 'linear-gradient(135deg, #FB8C3E 0%, #EA5310 100%)',
-                      boxShadow: '0 12px 26px -8px rgba(234,88,12,0.5)',
-                    }}
-                  >
-                    {downloading ? (
-                      <><Loader2 className="w-[18px] h-[18px] animate-spin" />Abrindo documento...</>
-                    ) : (
-                      <><Download className="w-[18px] h-[18px]" />Abrir documento assinado</>
-                    )}
-                  </button>
+                {/* Núcleo editorial */}
+                <div className="relative z-10">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center sm:h-14 sm:w-14" style={{ background: 'rgba(16,185,129,0.14)', border: '1px solid rgba(16,185,129,0.4)' }}>
+                    <Check className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={3} style={{ color: '#34d399' }} />
+                  </div>
+                  <div className="mb-4" style={{ width: 32, height: 2, background: '#F2631A' }} />
+                  <h1 style={{ fontFamily: BRAND_SERIF, fontWeight: 400, fontSize: 'clamp(28px,7vw,42px)', lineHeight: 1.06, letterSpacing: '-0.015em', color: '#F5F2EB' }}>
+                    Documento<br /><span style={{ fontStyle: 'italic', color: '#FF9259' }}>assinado</span>.
+                  </h1>
+                  <p className="mt-4 max-w-[260px] text-[12.5px] leading-relaxed" style={{ color: '#97a1b4' }}>
+                    Assinatura registrada e validada com sucesso, com trilha de auditoria completa.
+                  </p>
+                </div>
+
+                {/* Meta do documento */}
+                <div className="relative z-10 pt-5" style={{ borderTop: '1px solid rgba(255,255,255,0.09)' }}>
+                  <div className="mb-1.5 text-[9px] font-bold uppercase tracking-[0.22em]" style={{ color: '#5e6a82' }}>Documento</div>
+                  <div className="truncate text-[13px] font-semibold text-white">{request?.document_name}</div>
+                  {signer?.signed_at && <div className="mt-0.5 text-[11px]" style={{ color: '#8893a8' }}>{formatDate(signer.signed_at)}</div>}
+                </div>
+              </div>
+
+              {/* Perfuração / divisor pontilhado entre os painéis */}
+              <div aria-hidden="true" className="hidden w-px flex-shrink-0 sm:block" style={{ background: 'repeating-linear-gradient(to bottom, rgba(15,23,42,0.16) 0 6px, transparent 6px 12px)' }} />
+              <div aria-hidden="true" className="h-px w-full sm:hidden" style={{ background: 'repeating-linear-gradient(to right, rgba(15,23,42,0.16) 0 6px, transparent 6px 12px)' }} />
+
+              {/* ══ PAINEL DE AÇÕES (claro) ══ */}
+              <div className="flex min-w-0 flex-1 flex-col bg-white p-6 sm:p-8">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 bg-emerald-500" style={{ boxShadow: '0 0 6px rgba(16,185,129,0.6)' }} />
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-600">Válido · Autêntico</span>
+                </div>
+                <h2 className="text-[19px] font-extrabold tracking-tight text-slate-900 sm:text-xl">Comprovante de assinatura</h2>
+                <p className="mt-1 text-[13px] text-slate-500">Guarde o protocolo abaixo para validar quando quiser.</p>
+
+                {/* Protocolo do envelope — bloco "ticket" quadrado, borda picotada */}
+                {envelopeDisplayCode && (
+                  <div className="mt-5 border border-dashed border-slate-300 bg-slate-50">
+                    <div className="flex items-center justify-between border-b border-dashed border-slate-300 px-4 py-2">
+                      <span className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                        {envelopeCodeLabel}
+                      </span>
+                      <button
+                        onClick={async () => {
+                          try { await navigator.clipboard.writeText(envelopeDisplayCode || ''); toast.success('Protocolo copiado.'); }
+                          catch { /* ignore */ }
+                        }}
+                        className="flex items-center gap-1 text-[10.5px] font-semibold text-orange-600 transition-colors hover:text-orange-700"
+                      >
+                        <Copy className="h-3 w-3" /> Copiar
+                      </button>
+                    </div>
+                    <div className="break-all px-4 py-3 font-mono text-[14px] font-bold tracking-[0.08em] text-slate-800">
+                      {envelopeDisplayCode}
+                    </div>
+                  </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-2.5">
-                  <button
-                    onClick={() => setShowReport(true)}
-                    className="flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-[13px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all active:scale-[0.98]"
-                  >
-                    <FileText className="w-4 h-4 flex-shrink-0" />
-                    Ver relatório
-                  </button>
-
+                {/* Ações */}
+                <div className="mt-4 space-y-2.5">
                   {signer?.signed_document_path && (
                     <button
-                      onClick={handleShare}
-                      className="flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-[13px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all active:scale-[0.98]"
+                      onClick={handleDownload}
+                      disabled={downloading}
+                      className="group flex w-full items-center justify-center gap-2.5 px-5 py-3.5 text-[14.5px] font-bold text-white transition-all active:scale-[0.99] disabled:opacity-70"
+                      style={{
+                        background: 'linear-gradient(135deg, #FB8C3E 0%, #EA5310 100%)',
+                        boxShadow: '0 12px 26px -10px rgba(234,88,12,0.55)',
+                      }}
                     >
-                      <Share2 className="w-4 h-4 flex-shrink-0" />
-                      Compartilhar
+                      {downloading ? (
+                        <><Loader2 className="h-[18px] w-[18px] animate-spin" />Abrindo documento...</>
+                      ) : (
+                        <><Download className="h-[18px] w-[18px]" />Abrir documento assinado</>
+                      )}
                     </button>
                   )}
-                </div>
-              </div>
 
-              {/* Modelo per_document: 1 PDF assinado por arquivo do kit, cada um com
-                  seu próprio código de verificação e download individual. */}
-              {signedDocuments.length > 0 && (
-                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 mb-2">
-                    Documentos assinados ({signedDocuments.length})
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <button
+                      onClick={handleShare}
+                      className="flex items-center justify-center gap-2 border border-slate-300 bg-white px-3 py-3 text-[13px] font-semibold text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.99]"
+                    >
+                      <Share2 className="h-4 w-4 flex-shrink-0" />
+                      Compartilhar
+                    </button>
                   </div>
-                  <div className="space-y-2">
-                    {signedDocuments.map((doc) => (
-                      <div key={doc.documentKey} className="rounded-lg bg-white border border-slate-200 px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-[13px] font-semibold text-slate-800 truncate">{doc.displayName}</div>
-                            <div className="font-mono text-[11px] text-slate-500 break-all">{doc.verificationCode}</div>
+                </div>
+
+
+                {/* Modelo per_document: 1 PDF assinado por arquivo do kit. Cada "Abrir"
+                    exibe o documento no visualizador interno (iframe), sem expor a URL. */}
+                {signedDocuments.length > 0 && (
+                  <div className="mt-4 border border-slate-200 bg-slate-50/60">
+                    <div className="px-3 pb-2 pt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                      Documentos assinados ({signedDocuments.length})
+                    </div>
+                    <div className="space-y-2 px-3 pb-3">
+                      {signedDocuments.map((doc) => (
+                        <div key={doc.documentKey} className="border border-slate-200 bg-white px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-[13px] font-semibold text-slate-800">{doc.displayName}</div>
+                              <div className="break-all font-mono text-[11px] text-slate-500">{doc.verificationCode}</div>
+                            </div>
+                            {doc.url && (
+                              <button
+                                onClick={() => openUrlInSignedViewer(doc.url)}
+                                className="flex flex-shrink-0 items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.99]"
+                              >
+                                <Eye className="h-3.5 w-3.5" /> Abrir
+                              </button>
+                            )}
                           </div>
-                          {doc.url && (
-                            <button
-                              onClick={() => { try { window.open(doc.url!, '_blank', 'noopener'); } catch { /* ignore */ } }}
-                              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-all active:scale-[0.98]"
-                            >
-                              <Download className="w-3.5 h-3.5" /> Abrir
-                            </button>
-                          )}
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Rodapé */}
-              <div className="mt-auto pt-4 md:pt-6 flex items-start gap-2">
-                <Shield className="w-3.5 h-3.5 flex-shrink-0 mt-px text-slate-300" />
-                <p className="text-[10.5px] leading-relaxed text-slate-400">
-                  Uma cópia ficará disponível para download.
-                  {displayedVerificationCode && <>{signedDocuments.length > 0 ? ' Verifique a autenticidade pelos códigos dos documentos acima.' : ' Verifique a autenticidade a qualquer momento pelo código acima.'}</>}
-                </p>
+                {/* Rodapé */}
+                <div className="mt-auto flex items-start gap-2 pt-6">
+                  <Shield className="mt-px h-3.5 w-3.5 flex-shrink-0 text-slate-300" />
+                  <p className="text-[10.5px] leading-relaxed text-slate-400">
+                    Uma cópia ficará disponível para download.
+                    {envelopeDisplayCode && <>{signedDocuments.length > 0 ? ' Verifique a autenticidade dos documentos pelo protocolo do envelope e pelos códigos individuais acima.' : ' Verifique a autenticidade a qualquer momento pelo protocolo do envelope acima.'}</>}
+                  </p>
+                </div>
               </div>
             </div>
           </div>

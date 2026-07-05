@@ -37,7 +37,7 @@ const PublicVerificationPage: React.FC = () => {
   const [searched, setSearched] = useState(false);
   const autoVerifiedRef = useRef(false);
 
-  const [activeMode, setActiveMode] = useState<'code' | 'protocol' | 'file'>('code');
+  const [activeMode, setActiveMode] = useState<'code' | 'file'>('code');
   const [fileLoading, setFileLoading] = useState(false);
   const [fileHash, setFileHash] = useState<string>('');
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
@@ -289,17 +289,14 @@ const PublicVerificationPage: React.FC = () => {
               <section>
                 <h1 className="text-[1.45rem] font-black tracking-[-0.04em] text-slate-950 sm:text-[2.1rem]">Validar documento</h1>
                 <p className="mt-3 max-w-[560px] text-[14px] leading-8 text-slate-600 sm:mt-2 sm:text-[15px] sm:leading-6">
-                  {activeMode === 'protocol'
-                    ? 'Informe o protocolo do envelope para validar o kit inteiro — todos os documentos assinados são exibidos de uma vez.'
-                    : activeMode === 'file'
-                      ? 'Envie o PDF assinado: calculamos o SHA-256 do arquivo e comparamos com os registros persistidos.'
-                      : 'Cole o código exibido no rodapé do documento assinado para validar aquele arquivo específico.'}
+                  {activeMode === 'file'
+                    ? 'Envie o PDF assinado: calculamos o SHA-256 do arquivo e comparamos com os registros persistidos.'
+                    : 'Cole o código do documento ou o protocolo do envelope exibido no rodapé do documento assinado — validamos o arquivo específico ou o kit inteiro.'}
                 </p>
 
                 <div className="mt-5 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1 sm:mt-4">
                   {([
-                    { key: 'code', label: 'Código do documento' },
-                    { key: 'protocol', label: 'Protocolo do envelope' },
+                    { key: 'code', label: 'Código ou Protocolo' },
                     { key: 'file', label: 'Arquivo PDF' },
                   ] as const).map((tab) => (
                     <button
@@ -318,20 +315,18 @@ const PublicVerificationPage: React.FC = () => {
                   {activeMode !== 'file' ? (
                     <div>
                       <label className="mb-3 block text-[15px] font-bold text-slate-800 sm:mb-2 sm:text-sm">
-                        {activeMode === 'protocol' ? 'Protocolo do envelope' : 'Código do documento'}
+                        Código ou Protocolo
                       </label>
                       <input
                         type="text"
                         value={hash}
-                        onChange={(e) => setHash(activeMode === 'protocol' ? e.target.value.trim() : e.target.value.toUpperCase())}
+                        onChange={(e) => setHash(e.target.value.trim())}
                         onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
-                        placeholder={activeMode === 'protocol' ? 'Cole o protocolo do envelope aqui' : 'Cole o código do documento aqui'}
+                        placeholder="Cole o código do documento ou o protocolo do envelope"
                         className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-[16px] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-4 focus:ring-orange-100 sm:py-3 sm:text-base"
                       />
                       <p className="mt-2 text-sm text-slate-500">
-                        {activeMode === 'protocol'
-                          ? 'O protocolo é único por envelope (aparece como “Protocolo …” no certificado) e valida o kit inteiro — inclusive assinaturas antigas.'
-                          : 'Dica: o código também aparece no final da URL do documento.'}
+                        Aceita tanto o código de um documento específico quanto o protocolo do envelope (valida o kit inteiro). Ambos aparecem no rodapé do documento assinado e no final da URL.
                       </p>
                       <button
                         onClick={() => handleVerify()}
@@ -339,7 +334,7 @@ const PublicVerificationPage: React.FC = () => {
                         className="mt-5 inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-base font-bold text-white transition hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 sm:mt-4 sm:min-h-0 sm:w-auto sm:min-w-[168px] sm:py-2.5 sm:text-sm"
                       >
                         {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-                        {activeMode === 'protocol' ? 'Validar protocolo' : 'Validar código'}
+                        Validar
                       </button>
                     </div>
                   ) : (

@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.302': { name: 'Cafe Protocolo Publico e Verificacao Afinada', emoji: '[signature]' },
   '1.10.301': { name: 'Cafe Relatorio Rico e Trilha Completa', emoji: '[art]' },
   '1.10.300': { name: 'Cafe Certificado Sem Badge Verde', emoji: '[art]' },
   '1.10.299': { name: 'Cafe Checkpoint de Assinatura e Kit em Caixa Alta', emoji: '[signature]' },
@@ -952,6 +953,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.302',
+    date: '05/07/2026',
+    summary: 'A assinatura publica passou a exibir o protocolo real do envelope, o compartilhamento e a verificacao publica foram afinados para documentos individuais e a base recebeu migrations de apoio para backfill e validacao por hash.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'fix' as const, title: 'Comprovante publico passou a priorizar o protocolo real do envelope', description: 'A tela publica de assinatura deixou de mascarar o protocolo com o verification_hash do signatario nos envelopes per_document e passou a compartilhar o kit assinado com melhor consistencia.' },
+        { type: 'improvement' as const, title: 'Compartilhamento do envelope passou a considerar os documentos finais do kit', description: 'O fluxo publico reaproveita a lista de documentos assinados do envelope para montar o compartilhamento com todos os artefatos disponiveis, mantendo fallback seguro por links quando o navegador nao aceita multiplos arquivos.' },
+      ]},
+      { moduleId: 'seguranca', changes: [
+        { type: 'improvement' as const, title: 'Verificacao publica e migrations complementares foram consolidadas neste checkpoint', description: 'As pendencias em PublicVerificationPage, send-signature-link e nas migrations de verificacao/protocolo ficaram registradas na mesma versao para manter o historico operacional alinhado ao estado atual do repositorio.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.301',
     date: '05/07/2026',
