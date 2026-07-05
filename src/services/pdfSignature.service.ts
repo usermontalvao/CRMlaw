@@ -1520,12 +1520,8 @@ class PdfSignatureService {
       const detW = pageWidth - lm - detX;
       let detY = pageHeight - 148;
 
-      // Data section — no padrão do card do signatário: badge ASSINADO + lista com bullets
-      const badgeW2 = 74, badgeH2 = 17;
-      roundRect(page, detX, detY - 6, badgeW2, badgeH2, 8.5, { fill: emerald });
-      checkmark(page, detX + 13, detY + 2.5, 4.5, white, 1.4);
-      page.drawText('ASSINADO', { x: detX + 22, y: detY - 1, size: 7, font: helveticaBold, color: white });
-      detY -= 24;
+      // Data section — mantém apenas o título e a lista para evitar sobreposição visual.
+      detY -= 2;
 
       const deviceStrP2 = (() => {
         const parts = [uaP2.browser, uaP2.os, uaP2.device].filter(Boolean);

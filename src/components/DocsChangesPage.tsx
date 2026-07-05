@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.300': { name: 'Cafe Certificado Sem Badge Verde', emoji: '[art]' },
   '1.10.299': { name: 'Cafe Checkpoint de Assinatura e Kit em Caixa Alta', emoji: '[signature]' },
   '1.10.298': { name: 'Cafe Kit Assinado com Verificacao por Arquivo', emoji: '[signature]' },
   '1.10.297': { name: 'Cafe Tema Persistente e Templates Afinados', emoji: '[palette]' },
@@ -950,6 +951,17 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.300',
+    date: '04/07/2026',
+    summary: 'O certificado de assinatura teve o bloco do signatario limpo para remover o badge verde sobreposto e alinhar a previa visual com o PDF final.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'fix' as const, title: 'Badge verde sobreposto foi removido do bloco de dados do signatario', description: 'A segunda pagina do certificado PDF deixou de desenhar o selo verde antes do titulo de dados do signatario, evitando o retangulo desalinhado que aparecia no relatorio final.' },
+        { type: 'improvement' as const, title: 'Mockup do certificado foi alinhado ao visual final do PDF', description: 'A previa operacional passou a usar apenas o acento laranja no cabecalho da secao para refletir melhor o layout final do certificado gerado.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.299',
     date: '04/07/2026',

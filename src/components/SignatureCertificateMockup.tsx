@@ -202,7 +202,7 @@ const SignatureCertificateMockup: React.FC<MockupProps> = ({
 
                 <div>
                   <div className="flex items-center gap-2">
-                    <div style={{ width: 4, height: 16, background: '#16a34a' }} />
+                    <div style={{ width: 4, height: 16, background: '#ea580c' }} />
                     <span className="text-[13px] font-bold uppercase tracking-[0.04em] text-[#0f172a]">DADOS DO SIGNATÁRIO</span>
                   </div>
                   <div className="mt-4 grid gap-2">
