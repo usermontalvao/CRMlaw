@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.299': { name: 'Cafe Checkpoint de Assinatura e Kit em Caixa Alta', emoji: '[signature]' },
   '1.10.298': { name: 'Cafe Kit Assinado com Verificacao por Arquivo', emoji: '[signature]' },
   '1.10.297': { name: 'Cafe Tema Persistente e Templates Afinados', emoji: '[palette]' },
   '1.10.296': { name: 'Cafe Editor Resiliente e Atalhos Blindados', emoji: '[memo]' },
@@ -949,6 +950,19 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.299',
+    date: '04/07/2026',
+    summary: 'Checkpoint operacional com refinamentos no fluxo de assinatura e normalizacao automatica do campo de reu nos documentos e links publicos.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Checkpoint visual e estrutural do fluxo de assinatura', description: 'As alteracoes recentes de kit, certificado, envio e visualizacao foram consolidadas em uma revisao versionada para facilitar rastreio antes dos proximos ajustes finos no relatorio.' },
+      ]},
+      { moduleId: 'documentos', changes: [
+        { type: 'fix' as const, title: 'Campo de reu passou a ser normalizado automaticamente em caixa alta', description: 'O modulo interno e o formulario publico agora convertem o valor do placeholder de reu para maiusculas durante digitacao, carga de rascunho e envio final do preenchimento.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.298',
     date: '04/07/2026',

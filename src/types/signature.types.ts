@@ -146,6 +146,10 @@ export interface CreateSignatureRequestDTO {
   require_cpf?: boolean | null;
   allow_refusal?: boolean | null;
   signing_order?: 'parallel' | 'sequential' | null;
+  // Modelo do envelope. Quando ausente, o banco usa o default legado
+  // 'consolidated', então os fluxos que precisam respeitar o kit devem enviar
+  // explicitamente 'per_document'.
+  signature_model?: 'consolidated' | 'per_document' | null;
   signers: CreateSignerDTO[];
 }
 

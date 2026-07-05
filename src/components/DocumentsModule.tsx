@@ -67,6 +67,7 @@ const removeDiacritics = (value: string) =>
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const normalizeKey = (value: string) => removeDiacritics((value || '').trim()).toUpperCase();
+const normalizeDefendantValue = (value: string) => (value || '').toLocaleUpperCase('pt-BR');
 
 const formatDateLong = (date: Date) => {
   try {
@@ -782,7 +783,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     const primaryPhone = client.phone || client.mobile || '';
     registerPlaceholder('telefone', primaryPhone);
     registerPlaceholder('celular', primaryPhone);
-    registerPlaceholder('réu', shouldShowDefendantField ? defendantInput : '');
+    registerPlaceholder('réu', shouldShowDefendantField ? normalizeDefendantValue(defendantInput) : '');
     registerPlaceholder('data', formatDate(currentDate.toISOString()));
 
     Object.entries(templateExtraValues).forEach(([key, value]) => {
@@ -1451,6 +1452,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         client_id: selectedClient.id,
         client_name: selectedClient.full_name,
         auth_method: resolvedAuthMethod,
+        signature_model: selectedTemplate.signature_model === 'per_document' ? 'per_document' : 'consolidated',
         signers: [{
           name: selectedClient.full_name,
           email: selectedClient.email || '',
@@ -2012,7 +2014,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                       placeholder="Ex: Empresa XPTO Ltda"
                       value={defendantInput}
-                      onChange={(e) => setDefendantInput(e.target.value)}
+                      onChange={(e) => setDefendantInput(normalizeDefendantValue(e.target.value))}
                     />
                   </div>
                 )}

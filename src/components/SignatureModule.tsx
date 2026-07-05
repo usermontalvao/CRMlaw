@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import JSZip from 'jszip';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { renderAsync } from 'docx-preview';
@@ -37,6 +38,7 @@ import type {
 } from '../types/signature.types';
 import SignatureCanvas from './SignatureCanvas';
 import SignatureReport from './SignatureReport';
+import SignatureCertificateMockup from './SignatureCertificateMockup';
 import type { GeneratedDocument } from '../types/document.types';
 import type { CloudFile, CloudFolder } from '../types/cloud.types';
 import type { SignatureExplorerFolder, SignatureExplorerItem } from '../types/signatureExplorer.types';
@@ -359,6 +361,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [pdfViewMode, setPdfViewMode] = useState<'fit' | 'expanded' | 'manual'>('fit');
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfPreviewUrls, setPdfPreviewUrls] = useState<string[]>([]); // URLs para múltiplos PDFs
+  const [footerMockupLoading, setFooterMockupLoading] = useState(false);
+  const [certificateMockupOpen, setCertificateMockupOpen] = useState(false);
+  const certificateMockupWindowRef = useRef<Window | null>(null);
+  const certificateMockupRootRef = useRef<Root | null>(null);
   const [pdfNumPagesByDoc, setPdfNumPagesByDoc] = useState<Record<number, number>>({}); // Páginas por documento
 
   const [settings, setSettings] = useState<SignatureSettings>({
@@ -629,6 +635,17 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       if (el) {
         delete (el as any).__signatureModuleInstance;
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      certificateMockupRootRef.current?.unmount();
+      certificateMockupRootRef.current = null;
+      if (certificateMockupWindowRef.current && !certificateMockupWindowRef.current.closed) {
+        certificateMockupWindowRef.current.close();
+      }
+      certificateMockupWindowRef.current = null;
     };
   }, []);
 
@@ -2524,6 +2541,60 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     } catch (error: any) { toast.error(error.message || 'Erro'); } finally { setWizardLoading(false); }
   };
 
+  const handleOpenFooterMockup = async () => {
+    const popup = window.open('', 'jurius-certificate-mockup', 'width=1100,height=900,scrollbars=yes,resizable=yes');
+    if (!popup) {
+      setCertificateMockupOpen(true);
+      return;
+    }
+
+    popup.document.title = 'Mockup do Certificado';
+    popup.document.body.innerHTML = '<div id="signature-certificate-mockup-root"></div>';
+    popup.document.body.style.margin = '0';
+    popup.document.body.style.background = '#1f2937';
+
+    popup.document.head.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => node.remove());
+    document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+      popup.document.head.appendChild(node.cloneNode(true));
+    });
+
+    const rootEl = popup.document.getElementById('signature-certificate-mockup-root');
+    if (!rootEl) {
+      setCertificateMockupOpen(true);
+      return;
+    }
+
+    certificateMockupRootRef.current?.unmount();
+    const root = createRoot(rootEl);
+    certificateMockupRootRef.current = root;
+    certificateMockupWindowRef.current = popup;
+
+    root.render(
+      <SignatureCertificateMockup
+        open
+        standalone
+        onClose={() => popup.close()}
+        documentName={selectedDocumentName || 'KIT CONSUMIDOR - PEDRO RODRIGUES MONTALVAO NETO'}
+        signerName={signers[0]?.name || selectedClientName || 'PEDRO RODRIGUES MONTALVAO NETO'}
+        signerEmail={signers[0]?.email || 'pedro@advcuiaba.com'}
+        signerCpf={signers[0]?.cpf || '045.748.031-93'}
+        authMethodLabel={
+          settings.authMethod === 'signature_facial_document'
+            ? 'Google (pedro@advcuiaba.com) + verificaÃ§Ã£o facial + documento'
+            : settings.authMethod === 'signature_facial'
+              ? 'Google (pedro@advcuiaba.com) + verificaÃ§Ã£o facial'
+              : 'Google (pedro@advcuiaba.com)'
+        }
+      />
+    );
+
+    popup.addEventListener('beforeunload', () => {
+      certificateMockupRootRef.current?.unmount();
+      certificateMockupRootRef.current = null;
+      certificateMockupWindowRef.current = null;
+    }, { once: true });
+  };
+
   const openDetails = (req: SignatureRequest | SignatureRequestWithSigners) => {
     const token = ++detailsLoadTokenRef.current;
     detailsRequestIdRef.current = req.id;
@@ -4316,9 +4387,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               {[{ key: 'requireCpf', label: 'Exigir CPF do cliente', hint: 'O CPF informado na assinatura deve conferir com o CPF cadastrado do signatário.' }, { key: 'allowRefusal', label: 'Permitir recusa' }, { key: 'blockAfterDeadline', label: 'Bloquear após prazo' }].map(({ key, label, hint }) => <label key={key} className="flex items-center justify-between gap-3"><span className="text-sm">{label}{hint && <span className="block text-xs text-slate-400 font-normal">{hint}</span>}</span><button type="button" onClick={() => setSettings((s) => ({ ...s, [key]: !(s as any)[key] }))} className={`shrink-0 w-10 h-6 rounded-full ${(settings as any)[key] ? 'bg-orange-600' : 'bg-slate-300'}`}><div className={`w-4 h-4 bg-[#f8f7f5] rounded-full shadow transform ${(settings as any)[key] ? 'translate-x-5' : 'translate-x-1'}`} /></button></label>)}
             </div>
             {settings.blockAfterDeadline && <div className="pt-4"><label className="block text-sm font-medium mb-2">Data limite</label><input type="date" value={settings.expiresAt} onChange={(e) => setSettings((s) => ({ ...s, expiresAt: e.target.value }))} className="w-full px-3 py-2 border border-[#e7e5df] rounded-lg text-sm" /></div>}
+            <div className="pt-4 border-t">
+              <button type="button" onClick={handleOpenFooterMockup} disabled={footerMockupLoading} className="inline-flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
+                {footerMockupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                Ver mockup do certificado
+              </button>
+              <p className="mt-2 text-xs text-slate-500">Abre uma prévia visual das páginas finais do certificado sem precisar assinar nem gerar PDF.</p>
+            </div>
           </div></div></div>
         )}
-      </div>
+    </div>
     );
   }
 
@@ -6830,6 +6908,22 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           />
         </div>
       )}
+
+      <SignatureCertificateMockup
+        open={certificateMockupOpen}
+        onClose={() => setCertificateMockupOpen(false)}
+        documentName={selectedDocumentName || 'KIT CONSUMIDOR - PEDRO RODRIGUES MONTALVAO NETO'}
+        signerName={signers[0]?.name || selectedClientName || 'PEDRO RODRIGUES MONTALVAO NETO'}
+        signerEmail={signers[0]?.email || 'pedro@advcuiaba.com'}
+        signerCpf={signers[0]?.cpf || '045.748.031-93'}
+        authMethodLabel={
+          settings.authMethod === 'signature_facial_document'
+            ? 'Google (pedro@advcuiaba.com) + verificação facial + documento'
+            : settings.authMethod === 'signature_facial'
+              ? 'Google (pedro@advcuiaba.com) + verificação facial'
+              : 'Google (pedro@advcuiaba.com)'
+        }
+      />
     </div>
   );
 };

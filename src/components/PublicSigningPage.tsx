@@ -789,6 +789,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         margin: 0 !important;
         background: transparent !important;
         transform-origin: top center !important;
+        /* docx-preview trava a altura A4 (1123px) inline no wrapper → vão enorme
+           em páginas curtas. Colapsa para a altura real do conteúdo. */
+        min-height: 0 !important;
+        height: auto !important;
       }
       /* FORÇAR A4 FIXO (largura) para layout idêntico ao da criação */
       .docx-responsive .docx-wrapper > section,

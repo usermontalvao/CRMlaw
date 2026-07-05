@@ -125,6 +125,15 @@ const isStaff = hasSupabaseSession() || isDocRoute || isCronRoute || isPublicCrm
 async function renderRoot() {
   let rootElement: React.ReactNode;
 
+  // DEV-ONLY: harness do certificado de assinatura (?certpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('certpreview')) {
+    const { default: CertificatePreview } = await import('./dev/CertificatePreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <React.StrictMode><CertificatePreview /></React.StrictMode>,
+    );
+    return;
+  }
+
   if (isStaff) {
     const [
       { default: App },

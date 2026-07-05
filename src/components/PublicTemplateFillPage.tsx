@@ -39,6 +39,17 @@ const removeDiacritics = (value: string) =>
     .normalize('NFC');
 
 const normalizeKey = (value: string) => removeDiacritics((value || '').trim()).toUpperCase();
+const isDefendantKey = (value: string) => normalizeKey(value) === 'REU';
+const normalizeFieldValue = (placeholder: string, rawValue: string, fieldType?: FieldType) => {
+  if (isDefendantKey(placeholder)) return (rawValue || '').toLocaleUpperCase('pt-BR');
+  if (fieldType === 'cep') return formatCep(rawValue);
+  if (fieldType === 'cpf') return formatCpfCnpj(rawValue);
+  if (fieldType === 'phone') return formatPhoneBR(rawValue);
+  if (fieldType === 'name') return (rawValue || '').toUpperCase();
+  return rawValue;
+};
+const normalizeFieldValuesRecord = (record: Record<string, string>) =>
+  Object.fromEntries(Object.entries(record).map(([key, value]) => [key, normalizeFieldValue(key, value)]));
 
 const ADDRESS_KEYS = new Set(['CEP', 'ENDERECO', 'NUMERO', 'COMPLEMENTO', 'BAIRRO', 'CIDADE', 'ESTADO']);
 
@@ -311,7 +322,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
         setBundle(b);
         const d = readDraft(token);
         const prefill = b.prefill ?? {};
-        setValues({ ...prefill, ...(d?.values ?? {}) });
+        setValues(normalizeFieldValuesRecord({ ...prefill, ...(d?.values ?? {}) }));
         setSignerName(d?.signerName ?? '');
         setStepIndex(typeof d?.stepIndex === 'number' ? d.stepIndex : 0);
         setCepConfirmed(d?.cepConfirmed ?? null);
@@ -829,7 +840,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
       setError(null);
 
       const today = new Date().toLocaleDateString('pt-BR');
-      const payloadValues: Record<string, string> = { ...values };
+      const payloadValues: Record<string, string> = normalizeFieldValuesRecord({ ...values });
 
       const allPlaceholders = (bundle.templateCustomFields ?? []).map((tcf) => tcf.placeholder);
       const fillTargets = allPlaceholders.length > 0 ? allPlaceholders : placeholders;
@@ -1193,7 +1204,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                     type="text"
                     value={values[activeStep.field.placeholder] ?? ''}
                     onKeyDown={onKeyDownAdvance}
-                    onChange={(e) => setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: e.target.value }))}
+                    onChange={(e) => setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: normalizeFieldValue(activeStep.field.placeholder, e.target.value, activeStep.field.type) }))}
                     className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -1258,7 +1269,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                     type="text"
                     value={values[activeStep.field.placeholder] ?? ''}
                     onKeyDown={onKeyDownAdvance}
-                    onChange={(e) => setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: e.target.value }))}
+                    onChange={(e) => setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: normalizeFieldValue(activeStep.field.placeholder, e.target.value, activeStep.field.type) }))}
                     className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -1293,7 +1304,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                         activeInputRef.current = el;
                       }}
                       value={values[activeStep.field.placeholder] ?? ''}
-                      onChange={(e) => setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: e.target.value }))}
+                      onChange={(e) => setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: normalizeFieldValue(activeStep.field.placeholder, e.target.value, activeStep.field.type) }))}
                       className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
                       rows={3}
                     />
@@ -1306,7 +1317,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                             key={o.value}
                             type="button"
                             onClick={() => {
-                              setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: o.value }));
+                              setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: normalizeFieldValue(activeStep.field.placeholder, o.value, activeStep.field.type) }));
                               setStepError(null);
                               setStepIndex((prev) => Math.min(prev + 1, steps.length - 1));
                             }}
@@ -1326,19 +1337,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
                       value={values[activeStep.field.placeholder] ?? ''}
                       onKeyDown={onKeyDownAdvance}
                       onChange={(e) => {
-                        const isCep = activeStep.field.type === 'cep' || normalizeKey(activeStep.field.placeholder) === 'CEP';
-                        const isCpf = activeStep.field.type === 'cpf';
-                        const isPhone = activeStep.field.type === 'phone';
-                        const isName = activeStep.field.type === 'name';
-                        const nextValue = isCep
-                          ? formatCep(e.target.value)
-                          : isCpf
-                            ? formatCpfCnpj(e.target.value)
-                            : isPhone
-                              ? formatPhoneBR(e.target.value)
-                              : isName
-                                ? e.target.value.toUpperCase()
-                                : e.target.value;
+                        const nextValue = normalizeFieldValue(activeStep.field.placeholder, e.target.value, activeStep.field.type);
                         setValues((prev) => ({ ...prev, [activeStep.field.placeholder]: nextValue }));
                       }}
                       className="w-full px-3 py-2 border border-[#e7e5df] rounded text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"

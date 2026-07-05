@@ -1,6 +1,8 @@
 ﻿import { PDFDocument, PDFPage, rgb, StandardFonts, LineCapStyle, PDFString } from 'pdf-lib';
 import { getLogoBytes } from '../utils/logoBase64';
+import { degrees } from 'pdf-lib';
 import QRCode from 'qrcode';
+import { BRAND_SERIF, BRAND_DOT, BRAND_WORDMARK } from '../constants/brand';
 import html2canvas from 'html2canvas';
 import { supabase } from '../config/supabase';
 import { signatureFieldsService } from './signatureFields.service';
@@ -66,6 +68,10 @@ interface GeoInfo {
 
 class PdfSignatureService {
   private readonly storageBucketCache = new Map<string, string>();
+  private brandLogoPromise: Promise<HTMLImageElement | null> | null = null;
+  private wordmarkPngBytes: Uint8Array | null = null;
+  private wordmarkPngRatio = 4;
+  private readonly serifTextCache = new Map<string, { bytes: Uint8Array; ratio: number }>();
 
   /**
    * Resolver opcional para o fluxo PÚBLICO. Quando definido (ex.: pela
@@ -259,6 +265,39 @@ class PdfSignatureService {
     if (!truncate) return h;
     if (h.length <= 18) return h;
     return `${h.slice(0, 10)}…${h.slice(-8)}`;
+  }
+
+  private formatVerificationDisplay(url: string | null | undefined): string {
+    const raw = String(url || '').trim();
+    if (!raw) return 'verificar autenticidade';
+    try {
+      const parsed = new URL(raw);
+      const host = parsed.host.replace(/^www\./i, '');
+      return `${host}/#/verificar`;
+    } catch {
+      return raw.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    }
+  }
+
+  private drawElectronicWatermark(params: {
+    page: PDFPage;
+    pageWidth: number;
+    pageHeight: number;
+    font: any;
+  }) {
+    const { page, pageWidth, pageHeight, font } = params;
+    const text = 'ASSINADO ELETRONICAMENTE';
+    const size = 32;
+    const textWidth = font.widthOfTextAtSize(text, size);
+    page.drawText(text, {
+      x: (pageWidth - textWidth) / 2,
+      y: pageHeight * 0.46,
+      size,
+      font,
+      color: rgb(0.84, 0.87, 0.91),
+      opacity: 0.16,
+      rotate: degrees(32),
+    });
   }
 
   private parseGeolocation(value: string | null | undefined): GeoInfo {
@@ -478,11 +517,243 @@ class PdfSignatureService {
     });
   }
 
+  /**
+   * Renderiza o wordmark oficial "jurius.com.br" na fonte REAL da marca (Spectral,
+   * já carregada no index.html) via canvas e devolve PNG + proporção. Cache em bytes
+   * (independente do doc) para não re-renderizar a cada página. Fallback: null → o
+   * chamador desenha o texto em fonte genérica.
+   */
+  private async renderWordmarkPng(): Promise<{ bytes: Uint8Array; ratio: number } | null> {
+    try {
+      if (typeof document === 'undefined') return null;
+      const fontPx = 128;
+      const family = BRAND_SERIF; // 'Spectral', Georgia, serif
+      // Garante a webfont Spectral pronta antes de medir/desenhar (senão cai no serif).
+      try {
+        const fonts = (document as any).fonts;
+        if (fonts?.load) {
+          await Promise.all([fonts.load(`700 ${fontPx}px 'Spectral'`), fonts.load(`400 ${fontPx}px 'Spectral'`)]);
+          await fonts.ready;
+        }
+      } catch { /* usa fallback serif */ }
+
+      const lead = BRAND_WORDMARK.lead; // 'jurius'
+      const dot = BRAND_WORDMARK.dot;   // '.'
+      const tld = BRAND_WORDMARK.tld;   // 'com.br'
+      const leadFont = `700 ${fontPx}px ${family}`;
+      const tldFont = `400 ${fontPx}px ${family}`;
+
+      const measure = document.createElement('canvas').getContext('2d');
+      if (!measure) return null;
+      measure.font = leadFont;
+      const leadW = measure.measureText(lead).width;
+      const dotW = measure.measureText(dot).width;
+      measure.font = tldFont;
+      const tldW = measure.measureText(tld).width;
+
+      const padX = Math.round(fontPx * 0.06);
+      const padY = Math.round(fontPx * 0.14);
+      const kern = fontPx * 0.008;
+      const w = Math.ceil(padX * 2 + leadW + dotW + tldW + kern * 2);
+      const h = Math.ceil(fontPx * 1.02 + padY);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.textBaseline = 'alphabetic';
+      const baseY = Math.round(fontPx * 0.86 + padY / 2);
+      let cx = padX;
+      ctx.font = leadFont;
+      ctx.fillStyle = '#211C18'; // lead — near-black quente da marca
+      ctx.fillText(lead, cx, baseY);
+      cx += leadW + kern;
+      ctx.fillStyle = BRAND_DOT; // ponto laranja da marca (#E45C12)
+      ctx.fillText(dot, cx, baseY);
+      cx += dotW + kern;
+      ctx.font = tldFont;
+      ctx.fillStyle = '#A0958C'; // "com.br" mutado
+      ctx.fillText(tld, cx, baseY);
+
+      const bytes = await this.canvasToPngBytes(canvas);
+      return { bytes, ratio: w / h };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Wordmark oficial embutido no doc atual (bytes em cache). */
+  private async getBrandWordmarkImage(
+    pdfDoc: PDFDocument,
+  ): Promise<{ image: EmbeddedImage; ratio: number } | null> {
+    try {
+      if (!this.wordmarkPngBytes) {
+        const built = await this.renderWordmarkPng();
+        if (!built) return null;
+        this.wordmarkPngBytes = built.bytes;
+        this.wordmarkPngRatio = built.ratio;
+      }
+      const image = await pdfDoc.embedPng(this.wordmarkPngBytes);
+      return { image, ratio: this.wordmarkPngRatio };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Renderiza QUALQUER texto na fonte serifada da marca (Spectral) via canvas e
+   * devolve PNG + proporção (w/h). Usado para títulos do certificado (nome do
+   * documento, "Documento assinado", nome do signatário). Cache por texto+peso+cor.
+   */
+  private async renderSerifTextPng(
+    text: string,
+    opts: { weight?: number; color?: string } = {},
+  ): Promise<{ bytes: Uint8Array; ratio: number } | null> {
+    try {
+      if (typeof document === 'undefined' || !text) return null;
+      const weight = opts.weight ?? 600;
+      const color = opts.color ?? '#111827';
+      const key = `${weight}|${color}|${text}`;
+      const cached = this.serifTextCache.get(key);
+      if (cached) return cached;
+
+      const fontPx = 96;
+      const family = BRAND_SERIF;
+      try {
+        const fonts = (document as any).fonts;
+        if (fonts?.load) {
+          await fonts.load(`${weight} ${fontPx}px 'Spectral'`);
+          await fonts.ready;
+        }
+      } catch { /* fallback serif */ }
+
+      const font = `${weight} ${fontPx}px ${family}`;
+      const measureCtx = document.createElement('canvas').getContext('2d');
+      if (!measureCtx) return null;
+      measureCtx.font = font;
+      const m = measureCtx.measureText(text);
+      const asc = m.actualBoundingBoxAscent || fontPx * 0.78;
+      const desc = m.actualBoundingBoxDescent || fontPx * 0.24;
+      const padX = Math.round(fontPx * 0.03);
+      const padY = Math.round(fontPx * 0.1);
+      const w = Math.ceil(m.width + padX * 2);
+      const h = Math.ceil(asc + desc + padY * 2);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.font = font;
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = color;
+      ctx.fillText(text, padX, Math.round(asc + padY));
+
+      const bytes = await this.canvasToPngBytes(canvas);
+      const out = { bytes, ratio: w / h };
+      this.serifTextCache.set(key, out);
+      return out;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Texto serifado (Spectral) embutido no doc atual. */
+  private async getSerifTextImage(
+    pdfDoc: PDFDocument,
+    text: string,
+    opts: { weight?: number; color?: string } = {},
+  ): Promise<{ image: EmbeddedImage; ratio: number } | null> {
+    try {
+      const built = await this.renderSerifTextPng(text, opts);
+      if (!built) return null;
+      const image = await pdfDoc.embedPng(built.bytes);
+      return { image, ratio: built.ratio };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Carrega (uma única vez) a logo da marca para estampar no centro do QR. */
+  private loadBrandLogo(): Promise<HTMLImageElement | null> {
+    if (this.brandLogoPromise) return this.brandLogoPromise;
+    this.brandLogoPromise = new Promise((resolve) => {
+      try {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        const base = (import.meta as any).env?.BASE_URL || '/';
+        img.src = `${base}logo.png`;
+      } catch {
+        resolve(null);
+      }
+    });
+    return this.brandLogoPromise;
+  }
+
   private async buildQrPng(pdfDoc: PDFDocument, url: string): Promise<EmbeddedImage | null> {
     try {
-      const dataUrl = await QRCode.toDataURL(url, { width: 256, margin: 1 });
-      const base64 = dataUrl.split(',')[1];
-      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const size = 512;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+
+      // QR em tinta institucional (#111827) sobre branco. Correção 'H' (~30%)
+      // deixa margem folgada para o selo central da marca sem perder leitura.
+      await QRCode.toCanvas(canvas, url, {
+        width: size,
+        margin: 1,
+        errorCorrectionLevel: 'H',
+        color: { dark: '#111827', light: '#ffffff' },
+      });
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const roundRect = (rx: number, ry: number, rw: number, rh: number, rr: number) => {
+          const r = Math.max(0, Math.min(rr, rw / 2, rh / 2));
+          ctx.beginPath();
+          ctx.moveTo(rx + r, ry);
+          ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, r);
+          ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, r);
+          ctx.arcTo(rx, ry + rh, rx, ry, r);
+          ctx.arcTo(rx, ry, rx + rw, ry, r);
+          ctx.closePath();
+        };
+
+        // Selo central com a logo original + respiro branco (knockout) p/ leitura.
+        const seal = Math.round(size * 0.24);
+        const sx = (size - seal) / 2;
+        const sy = (size - seal) / 2;
+        const radius = 0; // selo central quadrado (sem cantos arredondados)
+        const pad = seal * 0.16;
+
+        roundRect(sx - pad, sy - pad, seal + pad * 2, seal + pad * 2, 0);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        const logo = await this.loadBrandLogo();
+        if (logo) {
+          // Logo da marca, recortada no quadrado do selo.
+          ctx.save();
+          roundRect(sx, sy, seal, seal, radius);
+          ctx.clip();
+          ctx.drawImage(logo, sx, sy, seal, seal);
+          ctx.restore();
+        } else {
+          // Fallback (logo indisponível): selo escuro com "J" serifado vazado.
+          roundRect(sx, sy, seal, seal, radius);
+          ctx.fillStyle = '#111827';
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `600 ${Math.round(seal * 0.7)}px Georgia, "Times New Roman", serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('J', size / 2, size / 2 + seal * 0.04);
+        }
+      }
+
+      const bytes = await this.canvasToPngBytes(canvas);
       return await pdfDoc.embedPng(bytes);
     } catch {
       return null;
@@ -512,6 +783,11 @@ class PdfSignatureService {
     qrImage?: EmbeddedImage | null;
     helvetica: any;
     helveticaBold: any;
+    /** Monoespaçada (Courier) para código/protocolo/hash — cai em helvetica se ausente. */
+    courier?: any;
+    courierBold?: any;
+    /** Wordmark oficial (Spectral) pré-renderizado como imagem — cai no texto se ausente. */
+    brandWordmark?: { image: EmbeddedImage; ratio: number } | null;
     docHash: string;
     integritySha256?: string | null;
     variant?: 'card' | 'strip';
@@ -519,123 +795,147 @@ class PdfSignatureService {
     opaqueStrip?: boolean;
     /** Modelo per_document: código de verificação PRÓPRIO do documento (sobrepõe o do signatário). */
     verificationCode?: string;
+    /** Protocolo do envelope (signature_requests.id) — carimbado no rodapé de TODAS as folhas. */
+    protocol?: string;
   }) {
-    const { page, pageWidth, pageHeight, signer, verificationUrl, qrImage, helvetica, helveticaBold, integritySha256, variant, opaqueStrip, verificationCode } = params;
+    const { page, pageWidth, pageHeight, signer, verificationUrl, qrImage, brandWordmark, helvetica, helveticaBold, integritySha256, variant, opaqueStrip, verificationCode, protocol } = params;
     void pageHeight;
+    const courier = params.courier ?? helvetica;
+    const courierBold = params.courierBold ?? helveticaBold;
 
     const integrityFull = this.formatIntegrityHash(integritySha256, false);
     const code = (verificationCode || signer.verification_hash || '').toUpperCase() || 'N/A';
+    const protocolStr = (protocol || '').trim();
     const mode: 'card' | 'strip' = variant ?? 'strip';
 
     if (mode === 'strip') {
-      const h = 62;
+      const h = 64;
       const x = 0;
       const y = 0;
       const w = pageWidth;
 
-      const stripWhite   = rgb(1, 1, 1);
-      const stripBorder  = rgb(0.88, 0.91, 0.94);
-      const stripDark    = rgb(0.09, 0.12, 0.18);
-      const stripSoft    = rgb(0.45, 0.50, 0.58);
-      const stripMuted   = rgb(0.55, 0.60, 0.68);   // rótulos
-      const stripValue   = rgb(0.20, 0.255, 0.333); // #334155 — código
-      const stripValueAlt = rgb(0.278, 0.333, 0.412); // #475569 — link/hash
-      const stripUnderline = rgb(0.80, 0.83, 0.88);
-      const stripOrange  = rgb(0.91, 0.32, 0.04);    // acento institucional apenas
+      // Paleta enxuta: uma tinta, um mutado, um rótulo, um fio — e o laranja como único acento.
+      const ink       = rgb(0.067, 0.094, 0.153); // #111827 — âncora
+      const inkValue  = rgb(0.13, 0.17, 0.24);     // valor em destaque (código)
+      const inkSoft   = rgb(0.34, 0.39, 0.47);     // valores técnicos
+      const label     = rgb(0.62, 0.66, 0.72);     // rótulos caps
+      const hair      = rgb(0.90, 0.92, 0.94);     // divisores
+      const hairSoft  = rgb(0.93, 0.95, 0.96);     // hairline interna
+      const topDivider = rgb(0.80, 0.83, 0.87);    // separador superior suave
+      const orange    = rgb(0.878, 0.380, 0.102);  // #E0611A — acento de marca
+      const white     = rgb(1, 1, 1);
 
-      // Local helpers (drawFooterStamp não tem acesso aos helpers de addReportPages)
-      const rr = (xx: number, topY: number, ww: number, hh: number, r: number, fill?: any, stroke?: any, sw = 0.7) => {
-        const rad = Math.max(0, Math.min(r, ww / 2, hh / 2));
-        page.drawSvgPath(
-          `M ${rad} 0 L ${ww - rad} 0 Q ${ww} 0 ${ww} ${rad} L ${ww} ${hh - rad} Q ${ww} ${hh} ${ww - rad} ${hh} L ${rad} ${hh} Q 0 ${hh} 0 ${hh - rad} L 0 ${rad} Q 0 0 ${rad} 0 Z`,
-          { x: xx, y: topY, color: fill, borderColor: stroke, borderWidth: stroke ? sw : 0 }
-        );
+      // Desenha texto com tracking (letter-spacing) — pdf-lib não tem nativo. Retorna o x final.
+      const drawTracked = (
+        text: string,
+        opts: { x: number; y: number; size: number; font: any; color: any; tracking: number },
+      ): number => {
+        let cx = opts.x;
+        for (const ch of text) {
+          page.drawText(ch, { x: cx, y: opts.y, size: opts.size, font: opts.font, color: opts.color });
+          cx += opts.font.widthOfTextAtSize(ch, opts.size) + opts.tracking;
+        }
+        return cx - opts.tracking;
       };
 
-      // Trunca texto para caber numa largura, com reticências (quebra controlada)
-      const fitText = (text: string, font: typeof helvetica, size: number, maxW: number): string => {
+      // Trunca com reticências para caber numa largura.
+      const fit = (text: string, font: any, size: number, maxW: number): string => {
         if (font.widthOfTextAtSize(text, size) <= maxW) return text;
         let t = text;
         while (t.length > 1 && font.widthOfTextAtSize(`${t}…`, size) > maxW) t = t.slice(0, -1);
         return `${t}…`;
       };
 
-      // Background + top accents
-      page.drawRectangle({ x, y, width: w, height: h, color: stripWhite, opacity: opaqueStrip ? 1 : 0.94 });
-      page.drawLine({ start: { x, y: y + h }, end: { x: x + w, y: y + h }, thickness: 0.6, color: stripBorder });
-      page.drawRectangle({ x, y: y + h - 2.5, width: w, height: 2.5, color: stripOrange });
+      const compactVerify = this.formatVerificationDisplay(verificationUrl);
 
-      // ── QR (right) com moldura arredondada ──
-      const qrSize = h - 18;
-      const qrX = x + w - qrSize - 16;
-      const qrY = y + (h - qrSize) / 2;
+      // Fundo + separador superior suave: hairline discreta com um fio laranja fininho de acento.
+      page.drawRectangle({ x, y, width: w, height: h, color: white, opacity: opaqueStrip ? 1 : 0.97 });
+      page.drawRectangle({ x, y: y + h - 0.8, width: w, height: 0.8, color: topDivider });
+      page.drawRectangle({ x, y: y + h - 1.3, width: w, height: 0.4, color: orange });
+
+      const marginL = 26;
+      const marginR = 16;
+      const tx = x + marginL;
+
+      // ── Zona de validação (direita): QR selado + coluna de texto ──
+      const qrSize = 44;
+      const qrX = x + w - marginR - qrSize;
+      const qrY = y + (h - 2) / 2 - qrSize / 2;
       if (qrImage) {
-        rr(qrX - 5, qrY + qrSize + 5, qrSize + 10, qrSize + 10, 4, stripWhite, stripBorder, 0.6);
         page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
       }
 
-      // ── Bloco "Validação instantânea" (à esquerda do QR) ──
-      const qrFrameLeft = qrX - 5;
-      const valLine1 = 'VALIDAÇÃO INSTANTÂNEA';
-      const valLine2 = 'Aponte a câmera para validar';
-      const valW1 = helveticaBold.widthOfTextAtSize(valLine1, 6);
-      const valW2 = helvetica.widthOfTextAtSize(valLine2, 5.5);
-      const valBlockW = Math.max(valW1, valW2);
-      const valRight = qrFrameLeft - 18;
-      const valLeft = valRight - valBlockW;
-      const valCx = valLeft + valBlockW / 2;
-      page.drawText(valLine1, { x: valCx - valW1 / 2, y: y + h / 2 + 2, size: 6, font: helveticaBold, color: stripOrange });
-      page.drawText(valLine2, { x: valCx - valW2 / 2, y: y + h / 2 - 7, size: 5.5, font: helvetica, color: stripSoft });
+      const valTextRight = qrX - 12;
+      const valTextX = qrX - 12 - 96;
+      const dividerX = valTextX - 16;
+      page.drawLine({ start: { x: dividerX, y: y + 10 }, end: { x: dividerX, y: y + h - 12 }, thickness: 0.5, color: hair });
 
-      // Divisória vertical antes do bloco de validação
-      const dividerX = valLeft - 18;
-      page.drawLine({ start: { x: dividerX, y: y + 11 }, end: { x: dividerX, y: y + h - 11 }, thickness: 0.5, color: stripBorder });
+      drawTracked('VALIDAÇÃO DIGITAL', { x: valTextX, y: y + h - 22, size: 5.6, font: helveticaBold, color: ink, tracking: 0.7 });
+      page.drawText(fit(compactVerify, courier, 5.4, valTextRight - valTextX), {
+        x: valTextX, y: y + h - 33, size: 5.4, font: courier, color: inkSoft,
+      });
+      page.drawText('Escaneie o QR Code para', { x: valTextX, y: y + 15, size: 4.9, font: helvetica, color: label });
+      page.drawText('verificar a autenticidade', { x: valTextX, y: y + 8.5, size: 4.9, font: helvetica, color: label });
 
-      const tx = x + 16;
-      const vx = tx + 50;                 // coluna de valores — respiro do rótulo
-      const valMaxW = dividerX - 12 - vx; // largura disponível p/ link e hash
+      const contentRight = dividerX - 18;
 
-      // Linha 1 — marca
-      page.drawText('JURIUS', { x: tx, y: y + h - 16, size: 8, font: helveticaBold, color: stripDark });
-      const jw = helveticaBold.widthOfTextAtSize('JURIUS', 8);
-      page.drawCircle({ x: tx + jw + 5, y: y + h - 13, size: 1.3, color: stripOrange });
-      page.drawText('ASSINATURA ELETRÔNICA', { x: tx + jw + 11, y: y + h - 15.5, size: 6, font: helveticaBold, color: stripSoft });
+      // ── Marca (esquerda) ──
+      const brandY = y + h - 20;
+      let brandDotEnd: number;
+      if (brandWordmark) {
+        // Wordmark oficial renderizado na fonte real da marca (Spectral).
+        const wmH = 12;
+        const wmW = wmH * brandWordmark.ratio;
+        page.drawImage(brandWordmark.image, { x: tx, y: brandY - 2.5, width: wmW, height: wmH });
+        brandDotEnd = tx + wmW;
+      } else {
+        // Fallback (fonte da marca indisponível): "jurius" + ponto laranja em fonte genérica.
+        const brandEnd = drawTracked('jurius', { x: tx, y: brandY, size: 13, font: helveticaBold, color: ink, tracking: 0.2 });
+        page.drawCircle({ x: brandEnd + 2.8, y: brandY + 1.4, size: 1.6, color: orange });
+        brandDotEnd = brandEnd + 2.8 + 1.6;
+      }
+      page.drawRectangle({ x: brandDotEnd + 8, y: brandY - 0.5, width: 0.5, height: 8.5, color: hair });
+      drawTracked('ASSINATURA ELETRÔNICA', { x: brandDotEnd + 14, y: brandY + 1.4, size: 5.6, font: helvetica, color: label, tracking: 1.4 });
 
-      // Separador
-      page.drawLine({ start: { x: tx, y: y + h - 24 }, end: { x: dividerX - 12, y: y + h - 24 }, thickness: 0.4, color: stripBorder });
+      // ── Grade rótulo-sobre-valor: código | protocolo ──
+      const gridLabelY = y + 27;
+      const gridValueY = y + 15;
 
-      // Linha 2 — código
-      const codeY = y + 27;
-      if (signer.verification_hash) {
-        page.drawText('CÓDIGO', { x: tx, y: codeY, size: 5.5, font: helveticaBold, color: stripMuted });
-        page.drawText(code, { x: vx, y: codeY, size: 7, font: helveticaBold, color: stripValue });
+      drawTracked('CÓDIGO DE VERIFICAÇÃO', { x: tx, y: gridLabelY, size: 5, font: helveticaBold, color: label, tracking: 0.9 });
+      if (code !== 'N/A') {
+        page.drawText(fit(code, courierBold, 12.5, contentRight - tx), {
+          x: tx, y: gridValueY, size: 12.5, font: courierBold, color: inkValue,
+        });
+      }
+      const codeW = code !== 'N/A' ? courierBold.widthOfTextAtSize(code, 12.5) : 90;
+
+      const col2X = tx + Math.max(codeW, 118) + 34;
+      if (protocolStr && col2X < contentRight - 40) {
+        drawTracked('PROTOCOLO', { x: col2X, y: gridLabelY, size: 5, font: helveticaBold, color: label, tracking: 0.9 });
+        page.drawText(fit(protocolStr, courier, 8.5, contentRight - col2X), {
+          x: col2X, y: gridValueY + 1, size: 8.5, font: courier, color: inkSoft,
+        });
       }
 
-      // Linha 3 — link de verificação (URL com o código) — cor neutra
-      const linkY = y + 16;
+      // ── SHA-256: faixa inferior separada por hairline ──
+      page.drawLine({ start: { x: tx, y: y + 10 }, end: { x: contentRight, y: y + 10 }, thickness: 0.5, color: hairSoft });
+      const shaLabelEnd = drawTracked('SHA-256', { x: tx, y: y + 3.5, size: 5, font: helveticaBold, color: label, tracking: 0.9 });
+      page.drawText(fit(integrityFull, courier, 5.4, contentRight - (shaLabelEnd + 8)), {
+        x: shaLabelEnd + 8, y: y + 3.4, size: 5.4, font: courier, color: inkSoft,
+      });
+
+      // Link clicável cobrindo toda a zona de validação (divisor → margem direita).
       if (verificationUrl) {
-        const urlDisplay = fitText(verificationUrl.replace(/^https?:\/\//, ''), helvetica, 5.5, valMaxW);
-        page.drawText('VERIFICAR', { x: tx, y: linkY, size: 5.5, font: helveticaBold, color: stripMuted });
-        page.drawText(urlDisplay, { x: vx, y: linkY, size: 5.5, font: helvetica, color: stripValueAlt });
-        // Sublinhado neutro + link clicável sobre a URL
-        const urlW = helvetica.widthOfTextAtSize(urlDisplay, 5.5);
-        page.drawLine({ start: { x: vx, y: linkY - 2 }, end: { x: vx + urlW, y: linkY - 2 }, thickness: 0.3, color: stripUnderline });
         try {
           const linkAnnot = (page.doc.context as any).obj({
             Type: 'Annot', Subtype: 'Link',
-            Rect: [vx, linkY - 2, vx + urlW, linkY + 6],
+            Rect: [dividerX, y + 6, x + w - marginR, y + h - 6],
             Border: [0, 0, 0],
             A: { Type: 'Action', S: 'URI', URI: PDFString.of(verificationUrl) },
           });
           page.node.addAnnot((page.doc.context as any).register(linkAnnot));
-        } catch { /* anotação de link é best-effort */ }
+        } catch { /* best-effort */ }
       }
-
-      // Linha 4 — SHA-256 completo — cor neutra
-      const shaY = y + 5;
-      page.drawText('SHA-256', { x: tx, y: shaY, size: 5.5, font: helveticaBold, color: stripMuted });
-      const shaDisplay = fitText(integrityFull, helvetica, 5, valMaxW);
-      page.drawText(shaDisplay, { x: vx, y: shaY, size: 5, font: helvetica, color: stripValueAlt });
 
       return;
     }
@@ -666,8 +966,8 @@ class PdfSignatureService {
       thickness: 0.6, color: cardBorder,
     });
 
-    // Thin orange top stripe (3px)
-    page.drawRectangle({ x: boxX, y: boxY + boxH - 3, width: boxW, height: 3, color: cardOrange });
+    // Separador superior suave: fio laranja fininho (não a faixa grossa de 3px).
+    page.drawRectangle({ x: boxX, y: boxY + boxH - 0.6, width: boxW, height: 0.6, color: cardOrange });
 
     // QR code — right side, vertically centered
     const qrSize = 62;
@@ -684,15 +984,23 @@ class PdfSignatureService {
     const textW = qrX - tx - 12;
     void textW;
 
-    // Brand + title line
-    page.drawText('JURIUS', {
-      x: tx, y: boxY + boxH - 19, size: 8, font: helveticaBold, color: cardDark,
-    });
+    // Brand + title line — wordmark oficial (Spectral) com fallback em texto.
+    const cardBrandY = boxY + boxH - 19;
+    let cardBrandEnd: number;
+    if (brandWordmark) {
+      const wmH = 11;
+      const wmW = wmH * brandWordmark.ratio;
+      page.drawImage(brandWordmark.image, { x: tx, y: cardBrandY - 2, width: wmW, height: wmH });
+      cardBrandEnd = tx + wmW;
+    } else {
+      page.drawText('jurius', { x: tx, y: cardBrandY, size: 9, font: helveticaBold, color: cardDark });
+      cardBrandEnd = tx + helveticaBold.widthOfTextAtSize('jurius', 9);
+    }
     page.drawText('·', {
-      x: tx + 34, y: boxY + boxH - 19, size: 8, font: helvetica, color: cardOrange,
+      x: cardBrandEnd + 6, y: cardBrandY, size: 8, font: helvetica, color: cardOrange,
     });
     page.drawText('Certificado de Assinatura Eletrônica', {
-      x: tx + 42, y: boxY + boxH - 19, size: 7.5, font: helvetica, color: cardSoft,
+      x: cardBrandEnd + 13, y: cardBrandY, size: 7.5, font: helvetica, color: cardSoft,
     });
 
     // Thin separator
@@ -704,19 +1012,31 @@ class PdfSignatureService {
 
     // Verification code row
     page.drawText('CODIGO:', {
-      x: tx, y: boxY + boxH - 39, size: 6, font: helvetica, color: cardMuted,
+      x: tx, y: boxY + boxH - 38, size: 6, font: helvetica, color: cardMuted,
     });
     page.drawText(code, {
-      x: tx + 50, y: boxY + boxH - 39, size: 7, font: helveticaBold, color: cardValue,
+      x: tx + 50, y: boxY + boxH - 38, size: 7, font: courierBold, color: cardValue,
     });
+
+    // Protocolo do envelope row
+    if (protocolStr) {
+      const cardProtoLabel = 'PROTOCOLO DO ENVELOPE:';
+      page.drawText(cardProtoLabel, {
+        x: tx, y: boxY + boxH - 50, size: 6, font: helvetica, color: cardMuted,
+      });
+      const protoDisplay = protocolStr.length > 74 ? `${protocolStr.slice(0, 71)}...` : protocolStr;
+      page.drawText(protoDisplay, {
+        x: tx + helvetica.widthOfTextAtSize(cardProtoLabel, 6) + 8, y: boxY + boxH - 50, size: 6, font: courier, color: cardValueAlt,
+      });
+    }
 
     // SHA-256 row — cor neutra
     const hashDisplay = integrityFull.length > 74 ? `${integrityFull.slice(0, 71)}...` : integrityFull;
     page.drawText('SHA-256:', {
-      x: tx, y: boxY + boxH - 52, size: 6, font: helvetica, color: cardMuted,
+      x: tx, y: boxY + boxH - 62, size: 6, font: helvetica, color: cardMuted,
     });
     page.drawText(hashDisplay, {
-      x: tx + 50, y: boxY + boxH - 52, size: 5.5, font: helvetica, color: cardValueAlt,
+      x: tx + 50, y: boxY + boxH - 62, size: 5.5, font: courier, color: cardValueAlt,
     });
 
     // Verification URL
@@ -747,6 +1067,9 @@ class PdfSignatureService {
 
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const courier = await pdfDoc.embedFont(StandardFonts.Courier);
+    const courierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
+    const brandWordmark = await this.getBrandWordmarkImage(pdfDoc);
     const logoImage = await pdfDoc.embedPng(await getLogoBytes()).catch(() => null);
     const lm = 50;
     const pageWidth = 595.28;
@@ -922,34 +1245,59 @@ class PdfSignatureService {
     };
 
     const createReportHeader = (page: PDFPage, title: string, subtitle?: string) => {
-      // Orange top accent
-      page.drawRectangle({ x: 0, y: pageHeight - 4, width: pageWidth, height: 4, color: orange });
+      // Acento superior laranja (suave)
+      page.drawRectangle({ x: 0, y: pageHeight - 2.5, width: pageWidth, height: 2.5, color: orange });
 
-      // Logo + page label
+      // Papel timbrado: ícone J + wordmark oficial (Spectral) — travados no mesmo eixo vertical
       const wmY = pageHeight - 32;
-      const logoSize = 22;
+      const logoSize = 20;
+      const lockCY = wmY - 5; // centro vertical do lockup (ícone + wordmark)
       if (logoImage) {
-        page.drawImage(logoImage, { x: lm, y: wmY - logoSize + 6, width: logoSize, height: logoSize });
+        page.drawImage(logoImage, { x: lm, y: lockCY - logoSize / 2, width: logoSize, height: logoSize });
       }
-      page.drawText(title.toUpperCase(), { x: lm + logoSize + 8, y: wmY + 1.5, size: 8, font: helveticaBold, color: txtSoft });
+      const brandX = lm + logoSize + 9;
+      if (brandWordmark) {
+        const bwH = 12;
+        page.drawImage(brandWordmark.image, { x: brandX, y: lockCY - bwH / 2, width: bwH * brandWordmark.ratio, height: bwH });
+      } else {
+        page.drawText('jurius', { x: brandX, y: lockCY - 4, size: 11, font: helveticaBold, color: navy });
+      }
 
-      // Date (right-aligned)
-      const dw = helvetica.widthOfTextAtSize(nowStr, 7.5);
-      page.drawText(nowStr, { x: pageWidth - lm - dw, y: wmY + 1.5, size: 7.5, font: helvetica, color: silver });
+      // Rótulo da página (eyebrow) + data — à direita
+      const eyebrow = title.toUpperCase();
+      const ebW = helveticaBold.widthOfTextAtSize(eyebrow, 7.5);
+      page.drawText(eyebrow, { x: pageWidth - lm - ebW, y: wmY + 3, size: 7.5, font: helveticaBold, color: txtSoft });
+      const dw = helvetica.widthOfTextAtSize(nowStr, 7);
+      page.drawText(nowStr, { x: pageWidth - lm - dw, y: wmY - 7, size: 7, font: helvetica, color: silver });
 
-      // Divider
+      // Divisória
       page.drawLine({ start: { x: lm, y: pageHeight - 46 }, end: { x: pageWidth - lm, y: pageHeight - 46 }, thickness: 0.6, color: border });
 
-      // Document name
-      const docName = request.document_name.length > 70 ? `${request.document_name.slice(0, 67)}...` : request.document_name;
-      page.drawText(docName, { x: lm, y: pageHeight - 68, size: 14, font: helveticaBold, color: navy });
+      // Nome do documento — sans profissional (Helvetica Bold)
+      {
+        const docName = request.document_name.length > 70 ? `${request.document_name.slice(0, 67)}...` : request.document_name;
+        page.drawText(docName, { x: lm, y: pageHeight - 68, size: 14, font: helveticaBold, color: navy });
+      }
 
-      // Subtitle / protocol
-      const protocolLine = subtitle ? subtitle : `Protocolo ${request.id}`;
-      page.drawText(protocolLine, { x: lm, y: pageHeight - 83, size: 8, font: helvetica, color: txtSoft });
+      // Subtítulo. Sem subtitle ⇒ grade "Código de verificação" (destaque) + "Protocolo" abaixo, ambos em mono.
+      if (subtitle) {
+        page.drawText(subtitle, { x: lm, y: pageHeight - 84, size: 8, font: helvetica, color: txtSoft });
+      } else {
+        const codeVal = (signer.verification_hash || '').toUpperCase();
+        let ry = pageHeight - 82;
+        if (codeVal) {
+          const cLabel = 'Código de verificação';
+          page.drawText(cLabel, { x: lm, y: ry, size: 6.5, font: helvetica, color: silver });
+          page.drawText(codeVal, { x: lm + helvetica.widthOfTextAtSize(cLabel, 6.5) + 8, y: ry - 0.5, size: 8.5, font: courierBold, color: txtDark });
+          ry -= 12;
+        }
+        const pLabel = 'Protocolo';
+        page.drawText(pLabel, { x: lm, y: ry, size: 6.5, font: helvetica, color: silver });
+        page.drawText(request.id, { x: lm + helvetica.widthOfTextAtSize(pLabel, 6.5) + 8, y: ry - 0.5, size: 7.5, font: courier, color: txtSoft });
+      }
 
-      // Section divider
-      page.drawLine({ start: { x: lm, y: pageHeight - 100 }, end: { x: pageWidth - lm, y: pageHeight - 100 }, thickness: 0.6, color: borderSoft });
+      // Divisória de seção
+      page.drawLine({ start: { x: lm, y: pageHeight - 104 }, end: { x: pageWidth - lm, y: pageHeight - 104 }, thickness: 0.6, color: borderSoft });
     };
 
     const buildAuthPoints = (item: Signer) => {
@@ -972,34 +1320,28 @@ class PdfSignatureService {
       return points;
     };
 
+    const REPORT_HEADER_CONTENT_GAP = 10;
+
     const page1 = pdfDoc.addPage([pageWidth, pageHeight]);
     const sigCount1 = signedRequestSigners.length;
-    createReportHeader(page1, 'CERTIFICADO DE ASSINATURA', `Protocolo ${request.id}`);
+    createReportHeader(page1, 'CERTIFICADO DE ASSINATURA');
 
-    // ── Hero: selo de validação ────────────────────────────────
-    const heroTop = pageHeight - 116;
+    // ── Hero: selo de validação (flat, sem caixa/barras) ───────
+    const heroTop = pageHeight - 116 - REPORT_HEADER_CONTENT_GAP;
     const heroH = 58;
-    roundRect(page1, lm, heroTop, contentW, heroH, 10, { fill: paper, stroke: border, strokeW: 0.8 });
-    roundRect(page1, lm, heroTop, 5, heroH, 2.5, { fill: orange });
 
-    const sealCX = lm + 46;
+    const sealCX = lm + 20;
     const sealCY = heroTop - heroH / 2;
-    circleDot(page1, sealCX, sealCY, 19, emeraldSoft);
-    circleDot(page1, sealCX, sealCY, 14.5, emerald);
-    checkmark(page1, sealCX, sealCY, 8, white, 2.2);
+    circleDot(page1, sealCX, sealCY, 15, emeraldSoft);
+    circleDot(page1, sealCX, sealCY, 11, emerald);
+    checkmark(page1, sealCX, sealCY, 6.5, white, 2);
 
-    page1.drawText('DOCUMENTO ASSINADO', { x: sealCX + 33, y: sealCY + 4, size: 12.5, font: helveticaBold, color: navy });
+    page1.drawText('Documento assinado', { x: sealCX + 26, y: sealCY + 2, size: 12.5, font: helveticaBold, color: navy });
     const heroSub = `${sigCount1} ${sigCount1 === 1 ? 'signatário' : 'signatários'}  ·  Emitido em ${nowStr}`;
-    page1.drawText(heroSub, { x: sealCX + 33, y: sealCY - 10, size: 7.5, font: helvetica, color: txtMid });
+    page1.drawText(heroSub, { x: sealCX + 26, y: sealCY - 10, size: 7.5, font: helvetica, color: txtMid });
 
-    // "VÁLIDO" pill (right)
-    const pillLabel = 'VÁLIDO';
-    const pillTW = helveticaBold.widthOfTextAtSize(pillLabel, 7.5);
-    const pillW = pillTW + 26;
-    const pillX = lm + contentW - pillW - 16;
-    roundRect(page1, pillX, sealCY + 9, pillW, 18, 9, { fill: emeraldSoft });
-    circleDot(page1, pillX + 11, sealCY, 2.2, emerald);
-    page1.drawText(pillLabel, { x: pillX + 18, y: sealCY - 2.5, size: 7.5, font: helveticaBold, color: emerald });
+    // Divisória fina sob o hero
+    page1.drawLine({ start: { x: lm, y: heroTop - heroH }, end: { x: pageWidth - lm, y: heroTop - heroH }, thickness: 0.6, color: borderSoft });
 
     // ── Section: ASSINATURAS ───────────────────────────────────
     const sectionY1 = heroTop - heroH - 24;
@@ -1024,13 +1366,12 @@ class PdfSignatureService {
       const cx = lm;
       const cardTop = yCards;
 
-      // Shadow + rounded body
-      roundRect(page1, cx + 1.5, cardTop - 1.5, cw, cardHeight, 9, { fill: rgb(0.90, 0.92, 0.95) });
+      // Card branco, flat (sem sombra), borda fina
       roundRect(page1, cx, cardTop, cw, cardHeight, 9, { fill: white, stroke: border, strokeW: 0.8 });
 
-      // Navy header band (rounded top corners)
+      // Cabeçalho minimalista: card branco + divisória fina (sem faixa navy)
       const hdrH = 34;
-      roundTopRect(page1, cx, cardTop, cw, hdrH, 9, navy);
+      page1.drawLine({ start: { x: cx + 14, y: cardTop - hdrH }, end: { x: cx + cw - 14, y: cardTop - hdrH }, thickness: 0.5, color: borderSoft });
 
       // ASSINADO badge with vector check
       const badgeX = cx + 14, badgeY = cardTop - hdrH + 8.5, badgeW = 76, badgeH = 17;
@@ -1038,11 +1379,11 @@ class PdfSignatureService {
       checkmark(page1, badgeX + 14, badgeY + badgeH / 2, 5, white, 1.5);
       page1.drawText('ASSINADO', { x: badgeX + 23, y: badgeY + 5, size: 7.5, font: helveticaBold, color: white });
 
-      // Name + role
-      const nameDisplay = item.name.length > 30 ? `${item.name.slice(0, 28)}...` : item.name;
-      page1.drawText(nameDisplay.toUpperCase(), { x: badgeX + badgeW + 12, y: cardTop - hdrH + 13, size: 11, font: helveticaBold, color: white });
+      // Name + role — sans profissional sobre card branco
+      const nameDisplay = item.name.length > 34 ? `${item.name.slice(0, 32)}...` : item.name;
+      page1.drawText(nameDisplay, { x: badgeX + badgeW + 12, y: cardTop - hdrH + 13, size: 11.5, font: helveticaBold, color: navy });
       const roleDisplay = item.role && item.role !== 'Assinar' ? item.role : 'Signatário';
-      page1.drawText(roleDisplay, { x: badgeX + badgeW + 12, y: cardTop - hdrH + 3, size: 7, font: helvetica, color: silver });
+      page1.drawText(roleDisplay, { x: badgeX + badgeW + 12, y: cardTop - hdrH + 2, size: 7, font: helvetica, color: txtSoft });
 
       // Body
       const bodyTop = cardTop - hdrH;
@@ -1094,7 +1435,7 @@ class PdfSignatureService {
       createReportHeader(page, 'BIOMETRIA & VERIFICAÇÃO', `Signatário: ${item.name}`);
 
       // ── Section label ─────────────────────────────────────────
-      const sectionLabelY = pageHeight - 128;
+      const sectionLabelY = pageHeight - 128 - REPORT_HEADER_CONTENT_GAP;
       page.drawRectangle({ x: lm, y: sectionLabelY - 1, width: 3, height: 12, color: orange });
       page.drawText('BIOMETRIA FACIAL', { x: lm + 10, y: sectionLabelY, size: 8.5, font: helveticaBold, color: txtDark });
       {
@@ -1113,13 +1454,21 @@ class PdfSignatureService {
       page.drawText(photoCaption, { x: photoX, y: photoY + photoH + 10, size: 6.5, font: helvetica, color: txtSoft });
 
       if (asset.facial) {
-        // Subtle drop shadow (rounded)
-        roundRect(page, photoX + 3, photoY + photoH - 3, photoW, photoH, 8, { fill: rgb(0.84, 0.87, 0.91) });
-        // White frame (rounded)
+        // Moldura branca flat (sem sombra)
         roundRect(page, photoX, photoY + photoH, photoW, photoH, 8, { fill: white, stroke: border, strokeW: 1.2 });
-        // Image inside frame
+        // Imagem em "contain": preserva o aspect ratio REAL da selfie (evita o
+        // rosto achatado/esticado que a moldura fixa 210x260 causava).
         const imgPad = 4;
-        page.drawImage(asset.facial, { x: photoX + imgPad, y: photoY + imgPad, width: photoW - imgPad * 2, height: photoH - imgPad * 2 });
+        const frameW = photoW - imgPad * 2;
+        const frameH = photoH - imgPad * 2;
+        const natW = (asset.facial as any).width || frameW;
+        const natH = (asset.facial as any).height || frameH;
+        const fitScale = Math.min(frameW / natW, frameH / natH);
+        const drawW = natW * fitScale;
+        const drawH = natH * fitScale;
+        const imgX = photoX + imgPad + (frameW - drawW) / 2;
+        const imgY = photoY + imgPad + (frameH - drawH) / 2;
+        page.drawImage(asset.facial, { x: imgX, y: imgY, width: drawW, height: drawH });
         // Corner crop marks (premium detail)
         cornerMarks(page, photoX + 9, photoY + 9, photoW - 18, photoH - 18, 11, rgb(1, 1, 1));
 
@@ -1135,7 +1484,7 @@ class PdfSignatureService {
         const dLineX2 = photoX + photoW - imgPad - 16;
         for (let cx = dLineX1; cx < dLineX2; cx += dashW + dashGap) {
           const ex = Math.min(cx + dashW, dLineX2);
-          page.drawLine({ start: { x: cx, y: dLineY1 }, end: { x: ex, y: dLineY1 }, thickness: 0.6, color: rgb(0.38, 0.38, 0.38), opacity: 0.22 });
+          page.drawLine({ start: { x: cx, y: dLineY1 }, end: { x: ex, y: dLineY1 }, thickness: 0.6, color: rgb(0.38, 0.38, 0.38), opacity: 0.3 });
         }
 
         // "CONFIDENTIAL" text centered
@@ -1144,7 +1493,7 @@ class PdfSignatureService {
         const confW = helveticaBold.widthOfTextAtSize(confText, confSize);
         page.drawText(confText, {
           x: wmCenterX - confW / 2, y: wmCenterY + 2,
-          size: confSize, font: helveticaBold, color: rgb(0.30, 0.30, 0.30), opacity: 0.28,
+          size: confSize, font: helveticaBold, color: rgb(0.30, 0.30, 0.30), opacity: 0.42,
         });
 
         // Date below text
@@ -1152,13 +1501,13 @@ class PdfSignatureService {
         const dtW = helvetica.widthOfTextAtSize(signedAtStr, dtSize);
         page.drawText(signedAtStr, {
           x: wmCenterX - dtW / 2, y: wmCenterY - 9,
-          size: dtSize, font: helvetica, color: rgb(0.30, 0.30, 0.30), opacity: 0.22,
+          size: dtSize, font: helvetica, color: rgb(0.30, 0.30, 0.30), opacity: 0.32,
         });
 
         // Dashed line below
         for (let cx = dLineX1; cx < dLineX2; cx += dashW + dashGap) {
           const ex = Math.min(cx + dashW, dLineX2);
-          page.drawLine({ start: { x: cx, y: dLineY2 }, end: { x: ex, y: dLineY2 }, thickness: 0.6, color: rgb(0.38, 0.38, 0.38), opacity: 0.22 });
+          page.drawLine({ start: { x: cx, y: dLineY2 }, end: { x: ex, y: dLineY2 }, thickness: 0.6, color: rgb(0.38, 0.38, 0.38), opacity: 0.3 });
         }
       } else {
         roundRect(page, photoX, photoY + photoH, photoW, photoH, 8, { fill: bgLight, stroke: border, strokeW: 1 });
@@ -1171,10 +1520,12 @@ class PdfSignatureService {
       const detW = pageWidth - lm - detX;
       let detY = pageHeight - 148;
 
-      // Data section label
-      page.drawRectangle({ x: detX, y: detY - 1, width: 3, height: 12, color: emerald });
-      page.drawText('DADOS DO SIGNATÁRIO', { x: detX + 10, y: detY, size: 8.5, font: helveticaBold, color: txtDark });
-      detY -= 18;
+      // Data section — no padrão do card do signatário: badge ASSINADO + lista com bullets
+      const badgeW2 = 74, badgeH2 = 17;
+      roundRect(page, detX, detY - 6, badgeW2, badgeH2, 8.5, { fill: emerald });
+      checkmark(page, detX + 13, detY + 2.5, 4.5, white, 1.4);
+      page.drawText('ASSINADO', { x: detX + 22, y: detY - 1, size: 7, font: helveticaBold, color: white });
+      detY -= 24;
 
       const deviceStrP2 = (() => {
         const parts = [uaP2.browser, uaP2.os, uaP2.device].filter(Boolean);
@@ -1209,25 +1560,28 @@ class PdfSignatureService {
         ['Assinado em', signedAtStr],
       ];
 
-      for (let fi = 0; fi < dataFieldsP2.length; fi++) {
+      page.drawText('DADOS DO SIGNATÁRIO', { x: detX, y: detY, size: 6.5, font: helveticaBold, color: txtSoft });
+      detY -= 16;
+
+      // Lista com bullets esmeralda (mesmo padrão dos FATORES DE AUTENTICAÇÃO do card)
+      const monoLabels = new Set(['CPF', 'Endereço IP', 'Localização', 'Assinado em']);
+      for (const [label, rawVal] of dataFieldsP2) {
         if (detY < photoY + 4) break;
-        const [label, rawVal] = dataFieldsP2[fi];
-        // Valor vazio ("—" ou em branco) → "Não informado" em tom suave (evita campo "vazio")
         const trimmed = String(rawVal || '').trim();
         const isEmpty = trimmed === '' || trimmed === '—' || trimmed === '-';
-        const value = isEmpty ? 'Não informado' : (rawVal.length > 42 ? `${rawVal.slice(0, 40)}...` : rawVal);
-        const rowH = 24;
-        if (fi % 2 === 0) {
-          roundRect(page, detX - 6, detY + 4, detW + 6, rowH, 4, { fill: bgLight });
-        }
-        page.drawText(label.toUpperCase(), { x: detX, y: detY - 3, size: 5.5, font: helveticaBold, color: txtSoft });
-        page.drawText(value, { x: detX, y: detY - 14, size: 7.5, font: helvetica, color: isEmpty ? silver : txtDark, maxWidth: detW });
-        detY -= rowH;
+        const value = isEmpty ? 'Não informado' : (rawVal.length > 40 ? `${rawVal.slice(0, 38)}…` : rawVal);
+        circleDot(page, detX + 2, detY + 2.5, 2, emerald);
+        const lbl = `${label}: `;
+        page.drawText(lbl, { x: detX + 10, y: detY, size: 7.5, font: helvetica, color: txtSoft });
+        const lw = helvetica.widthOfTextAtSize(lbl, 7.5);
+        const valFont = !isEmpty && monoLabels.has(label) ? courier : helveticaBold;
+        page.drawText(value, { x: detX + 10 + lw, y: detY, size: 7.5, font: valFont, color: isEmpty ? silver : txtDark });
+        detY -= 15;
       }
 
       // ── Certificate / integrity block — white, ZapSign-style ──
       const legalTopY  = photoY - 18;
-      const verBlockH  = 96;
+      const verBlockH  = 162;
       const verBlockW  = pageWidth - lm * 2;
       const verBlockY  = legalTopY - verBlockH;
 
@@ -1238,15 +1592,14 @@ class PdfSignatureService {
       const cbMuted  = rgb(0.62, 0.67, 0.74);
       const cbValue  = rgb(0.20, 0.255, 0.333); // #334155 — código
       const cbValueAlt = rgb(0.278, 0.333, 0.412); // #475569 — link/hash
-      const cbOrange = rgb(0.91, 0.32, 0.04);    // acento institucional apenas
 
-      // Rounded card with top orange accent
-      roundRect(page, lm, legalTopY, verBlockW, verBlockH, 9, { fill: cbWhite, stroke: cbBorder, strokeW: 0.8 });
-      roundTopRect(page, lm, legalTopY, verBlockW, 3, 9, cbOrange);
+      // Card branco sem bordas nem acento — apenas o preenchimento
+      roundRect(page, lm, legalTopY, verBlockW, verBlockH, 9, { fill: cbWhite });
+      void cbBorder;
 
-      // QR code — right side
-      const cbQrSize = 72;
-      const cbQrX    = lm + verBlockW - cbQrSize - 14;
+      // QR code — right side (grandão: quase encostando no fim do hash)
+      const cbQrSize = 150;
+      const cbQrX    = lm + verBlockW - cbQrSize - 12;
       const cbQrY    = verBlockY + (verBlockH - cbQrSize) / 2;
       if (asset.qr) {
         page.drawRectangle({ x: cbQrX - 3, y: cbQrY - 3, width: cbQrSize + 6, height: cbQrSize + 6, color: cbWhite });
@@ -1256,33 +1609,48 @@ class PdfSignatureService {
       const vtx = lm + 14;
 
       // Brand + title
-      page.drawText('JURIUS', { x: vtx, y: legalTopY - 18, size: 8, font: helveticaBold, color: cbDark });
-      page.drawText('·', { x: vtx + 34, y: legalTopY - 18, size: 8, font: helvetica, color: cbOrange });
-      page.drawText('Certificado de Assinatura Eletrônica', { x: vtx + 42, y: legalTopY - 18, size: 7.5, font: helvetica, color: cbSoft });
+      const cbBrandY = legalTopY - 18;
+      let cbBrandEnd: number;
+      if (brandWordmark) {
+        const wmH = 11;
+        const wmW = wmH * brandWordmark.ratio;
+        page.drawImage(brandWordmark.image, { x: vtx, y: cbBrandY - 2, width: wmW, height: wmH });
+        cbBrandEnd = vtx + wmW;
+      } else {
+        page.drawText('jurius', { x: vtx, y: cbBrandY, size: 9, font: helveticaBold, color: cbDark });
+        cbBrandEnd = vtx + helveticaBold.widthOfTextAtSize('jurius', 9);
+      }
+      page.drawText('·', { x: cbBrandEnd + 6, y: cbBrandY, size: 8, font: helvetica, color: cbMuted });
+      page.drawText('Certificado de Assinatura Eletrônica', { x: cbBrandEnd + 13, y: cbBrandY, size: 7.5, font: helvetica, color: cbSoft });
 
       // Thin separator
       page.drawLine({ start: { x: vtx, y: legalTopY - 26 }, end: { x: cbQrX - 8, y: legalTopY - 26 }, thickness: 0.4, color: cbBorder });
 
       // Code row
-      page.drawText('CÓDIGO:', { x: vtx, y: legalTopY - 38, size: 6, font: helvetica, color: cbMuted });
-      page.drawText((item.verification_hash || 'N/A').toUpperCase(), { x: vtx + 50, y: legalTopY - 38, size: 7.5, font: helveticaBold, color: cbValue });
+      page.drawText('CÓDIGO:', { x: vtx, y: legalTopY - 37, size: 6, font: helvetica, color: cbMuted });
+      page.drawText((item.verification_hash || 'N/A').toUpperCase(), { x: vtx + 56, y: legalTopY - 37, size: 7.5, font: courierBold, color: cbValue });
+
+      // Protocolo do envelope (identifica o kit/processo)
+      const cbProtoLabel = 'PROTOCOLO DO ENVELOPE:';
+      page.drawText(cbProtoLabel, { x: vtx, y: legalTopY - 49, size: 6, font: helvetica, color: cbMuted });
+      page.drawText(request.id, { x: vtx + helvetica.widthOfTextAtSize(cbProtoLabel, 6) + 8, y: legalTopY - 49, size: 6, font: courier, color: cbValueAlt });
 
       // SHA-256 — hash de integridade REAL (completo, 64 hex) — cor neutra
       const cbHash = this.formatIntegrityHash(integritySha256, false);
-      page.drawText('SHA-256:', { x: vtx, y: legalTopY - 52, size: 6, font: helvetica, color: cbMuted });
-      page.drawText(cbHash, { x: vtx + 50, y: legalTopY - 52, size: 5.5, font: helvetica, color: cbValueAlt });
+      page.drawText('SHA-256:', { x: vtx, y: legalTopY - 61, size: 6, font: helvetica, color: cbMuted });
+      page.drawText(cbHash, { x: vtx + 56, y: legalTopY - 61, size: 5.5, font: courier, color: cbValueAlt });
 
       // Separator
-      page.drawLine({ start: { x: vtx, y: legalTopY - 60 }, end: { x: cbQrX - 8, y: legalTopY - 60 }, thickness: 0.4, color: cbBorder });
+      page.drawLine({ start: { x: vtx, y: legalTopY - 69 }, end: { x: cbQrX - 8, y: legalTopY - 69 }, thickness: 0.4, color: cbBorder });
 
-      // Verification URL
+      // Verification URL — logo abaixo do separador (segue o conteúdo, não o rodapé)
       if (asset.verificationUrl) {
         const urlD = asset.verificationUrl.length > 80 ? `${asset.verificationUrl.slice(0, 77)}...` : asset.verificationUrl;
-        page.drawText(urlD, { x: vtx, y: verBlockY + 14, size: 5.5, font: helvetica, color: cbValueAlt });
+        page.drawText(urlD, { x: vtx, y: legalTopY - 80, size: 5.5, font: helvetica, color: cbValueAlt });
       }
 
       // Signer note
-      page.drawText(`Signatário: ${item.name}  ·  Documento: ${request.id}`, { x: vtx, y: verBlockY + 5, size: 5, font: helvetica, color: cbMuted });
+      page.drawText(`Signatário: ${item.name}`, { x: vtx, y: legalTopY - 90, size: 5, font: helvetica, color: cbMuted });
     }
 
     let currentHistPage = pdfDoc.addPage([pageWidth, pageHeight]);
@@ -1376,7 +1744,7 @@ class PdfSignatureService {
     history.sort((a, b) => a.sortAt - b.sortAt || a.order - b.order);
 
     const drawHistPageSetup = (page: PDFPage, isFirst: boolean) => {
-      const sectionY = pageHeight - 128;
+      const sectionY = pageHeight - 128 - REPORT_HEADER_CONTENT_GAP;
       page.drawRectangle({ x: lm, y: sectionY - 1, width: 3, height: 12, color: orange });
       const sectionLabel = isFirst ? 'REGISTRO DE EVENTOS' : 'REGISTRO DE EVENTOS (continuação)';
       page.drawText(sectionLabel, { x: lm + 10, y: sectionY, size: 8.5, font: helveticaBold, color: txtDark });
@@ -1386,7 +1754,7 @@ class PdfSignatureService {
 
     drawHistPageSetup(currentHistPage, true);
 
-    let y = pageHeight - 158;
+    let y = pageHeight - 158 - REPORT_HEADER_CONTENT_GAP;
     const timelineX = lm + 15; // vertical line x
     const eventGap = 11;
 
@@ -1402,7 +1770,7 @@ class PdfSignatureService {
         currentHistPage = pdfDoc.addPage([pageWidth, pageHeight]);
         createReportHeader(currentHistPage, 'TRILHA DE AUDITORIA');
         drawHistPageSetup(currentHistPage, false);
-        y = pageHeight - 158;
+        y = pageHeight - 158 - REPORT_HEADER_CONTENT_GAP;
         currentHistPage.drawLine({ start: { x: timelineX, y: y + 6 }, end: { x: timelineX, y: 102 }, thickness: 1.2, color: border });
         // Safety: skip oversized blocks that won't fit even on a blank page
         if (y - blockHeight < 92) continue;
@@ -1436,7 +1804,7 @@ class PdfSignatureService {
       const blbl = histItem.label.toUpperCase();
       const blblW = helveticaBold.widthOfTextAtSize(blbl, 6.5);
       currentHistPage.drawText(blbl, { x: cardX + 10 + (badgeW - blblW) / 2, y: cardTop - 17, size: 6.5, font: helveticaBold, color: white });
-      currentHistPage.drawText(histItem.when, { x: cardX + 10 + badgeW + 10, y: cardTop - 17, size: 7.5, font: helvetica, color: txtMid });
+      currentHistPage.drawText(histItem.when, { x: cardX + 10 + badgeW + 10, y: cardTop - 17, size: 7, font: courier, color: txtMid });
 
       // Detail lines
       let detailY = cardTop - 33;
@@ -1500,6 +1868,9 @@ class PdfSignatureService {
 
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const courier = await pdfDoc.embedFont(StandardFonts.Courier);
+    const courierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
+    const brandWordmark = await this.getBrandWordmarkImage(pdfDoc);
 
     // Images
     console.log('[PDF] Carregando imagem de assinatura...');
@@ -1679,6 +2050,14 @@ class PdfSignatureService {
     for (let i = 0; i < allPages.length; i++) {
       const p = allPages[i];
       const { width: w, height: h } = p.getSize();
+      if (i < contentPageCount) {
+        this.drawElectronicWatermark({
+          page: p,
+          pageWidth: w,
+          pageHeight: h,
+          font: helveticaBold,
+        });
+      }
       this.drawFooterStamp({
         page: p,
         pageWidth: w,
@@ -1688,6 +2067,9 @@ class PdfSignatureService {
         qrImage,
         helvetica,
         helveticaBold,
+        courier,
+        courierBold,
+        brandWordmark,
         docHash: '',
         integritySha256,
         variant: 'strip',
@@ -1695,6 +2077,7 @@ class PdfSignatureService {
         // Páginas do relatório mantêm overlay semitransparente (layout próprio).
         opaqueStrip: i < contentPageCount,
         verificationCode: perDocument?.verificationCode,
+        protocol: request.id,
       });
     }
 
@@ -1779,6 +2162,312 @@ class PdfSignatureService {
         URL.revokeObjectURL(url);
       }, 60000); // Manter o URL vÃ¡lido por 1 minuto
     }, 1000); // Pequeno delay para garantir que a visualizaÃ§Ã£o abra primeiro
+  }
+
+  async openFooterMockupPreview(params?: {
+    documentName?: string;
+    signerName?: string;
+    verificationCode?: string;
+    protocol?: string;
+    originalPdfUrl?: string | null;
+    docxContainer?: HTMLElement | null;
+  }): Promise<void> {
+    const documentName = String(params?.documentName || 'Contrato de Prestação de Serviços').trim();
+    const signerName = String(params?.signerName || 'Cliente').trim();
+    const verificationCode = String(params?.verificationCode || '2C39E5BA30B17D71').trim().toUpperCase();
+    const protocol = String(params?.protocol || '615af4b6-5334-44e6-af69-7f0a9f28222c').trim();
+    const verificationUrl = `${window.location.origin}/#/verificar/${verificationCode}`;
+    const mockSigner = {
+      id: 'mock-signer',
+      signature_request_id: 'mock-request',
+      name: signerName,
+      email: 'mock@example.com',
+      status: 'signed',
+      auth_method: 'signature_only',
+      verification_hash: verificationCode,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as Signer;
+
+    let pdfBytes: Uint8Array;
+    if (params?.docxContainer) {
+      pdfBytes = await this.buildFooterMockupFromDocx({
+        docxContainer: params.docxContainer,
+        signer: mockSigner,
+        verificationUrl,
+        verificationCode,
+        protocol,
+      });
+    } else if (params?.originalPdfUrl) {
+      pdfBytes = await this.buildFooterMockupFromPdf({
+        originalPdfUrl: params.originalPdfUrl,
+        signer: mockSigner,
+        verificationUrl,
+        verificationCode,
+        protocol,
+      });
+    } else {
+      pdfBytes = await this.buildStandaloneFooterMockup({
+        documentName,
+        signer: mockSigner,
+        verificationUrl,
+        verificationCode,
+        protocol,
+      });
+    }
+
+    // @ts-ignore runtime aceita Uint8Array
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  private async buildStandaloneFooterMockup(params: {
+    documentName: string;
+    signer: Signer;
+    verificationUrl: string;
+    verificationCode: string;
+    protocol: string;
+  }): Promise<Uint8Array> {
+    const { documentName, signer, verificationUrl, verificationCode, protocol } = params;
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595.28, 841.89]);
+    const pageWidth = page.getWidth();
+    const pageHeight = page.getHeight();
+
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const courier = await pdfDoc.embedFont(StandardFonts.Courier);
+    const courierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
+    const brandWordmark = await this.getBrandWordmarkImage(pdfDoc);
+
+    const fitMockTitle = (text: string, size: number, maxW: number) => {
+      if (helveticaBold.widthOfTextAtSize(text, size) <= maxW) return text;
+      let t = text;
+      while (t.length > 1 && helveticaBold.widthOfTextAtSize(`${t}…`, size) > maxW) t = t.slice(0, -1);
+      return `${t}…`;
+    };
+    const safeTitle = fitMockTitle(documentName, 14, pageWidth - 104);
+
+    let qrImage: EmbeddedImage | null = null;
+    try {
+      qrImage = await this.buildQrPng(pdfDoc, verificationUrl);
+    } catch (e) {
+      console.warn('[PDF] Erro ao gerar QR do mockup:', e);
+    }
+
+    page.drawText(safeTitle, {
+      x: 52,
+      y: pageHeight - 72,
+      size: 14,
+      font: helveticaBold,
+      color: rgb(0.12, 0.14, 0.18),
+    });
+    page.drawText(`Prévia visual do rodapé de assinatura para ${signer.name}`, {
+      x: 52,
+      y: pageHeight - 92,
+      size: 9.5,
+      font: helvetica,
+      color: rgb(0.38, 0.43, 0.50),
+    });
+    page.drawLine({
+      start: { x: 52, y: pageHeight - 110 },
+      end: { x: pageWidth - 52, y: pageHeight - 110 },
+      thickness: 0.6,
+      color: rgb(0.88, 0.91, 0.94),
+    });
+
+    this.drawFooterStamp({
+      page,
+      pageWidth,
+      pageHeight,
+      signer,
+      verificationUrl,
+      qrImage,
+      helvetica,
+      helveticaBold,
+      courier,
+      courierBold,
+      brandWordmark,
+      docHash: verificationCode,
+      integritySha256: '2B685B8CAC143D86AD84DD064FB4CEFFE20443A03D34042FD1C3AC1495EF5F8',
+      variant: 'strip',
+      verificationCode,
+      protocol,
+    });
+
+    return pdfDoc.save();
+  }
+
+  private async buildFooterMockupFromPdf(params: {
+    originalPdfUrl: string;
+    signer: Signer;
+    verificationUrl: string;
+    verificationCode: string;
+    protocol: string;
+  }): Promise<Uint8Array> {
+    const { originalPdfUrl, signer, verificationUrl, verificationCode, protocol } = params;
+    const originalBytes = new Uint8Array(await (await fetch(originalPdfUrl)).arrayBuffer());
+    const integritySha256 = await this.sha256Hex(originalBytes);
+    const pdfDoc = await PDFDocument.load(originalBytes);
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const courier = await pdfDoc.embedFont(StandardFonts.Courier);
+    const courierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
+    const brandWordmark = await this.getBrandWordmarkImage(pdfDoc);
+
+    let qrImage: EmbeddedImage | null = null;
+    try {
+      qrImage = await this.buildQrPng(pdfDoc, verificationUrl);
+    } catch (e) {
+      console.warn('[PDF] Erro ao gerar QR do mockup (PDF real):', e);
+    }
+
+    const pages = pdfDoc.getPages();
+    for (const p of pages) {
+      const { width: w, height: h } = p.getSize();
+      this.drawElectronicWatermark({
+        page: p,
+        pageWidth: w,
+        pageHeight: h,
+        font: helveticaBold,
+      });
+      this.drawFooterStamp({
+        page: p,
+        pageWidth: w,
+        pageHeight: h,
+        signer,
+        verificationUrl,
+        qrImage,
+        helvetica,
+        helveticaBold,
+        courier,
+        courierBold,
+        brandWordmark,
+        docHash: '',
+        integritySha256,
+        variant: 'strip',
+        verificationCode,
+        protocol,
+      });
+    }
+
+    return pdfDoc.save();
+  }
+
+  private async buildFooterMockupFromDocx(params: {
+    docxContainer: HTMLElement;
+    signer: Signer;
+    verificationUrl: string;
+    verificationCode: string;
+    protocol: string;
+  }): Promise<Uint8Array> {
+    const { docxContainer, signer, verificationUrl, verificationCode, protocol } = params;
+    const pdfDoc = await PDFDocument.create();
+    const pdfPageWidth = 595.28;
+    const pdfPageHeight = 841.89;
+    const A4_WIDTH_PX = 794;
+    const FOOTER_RESERVED_H = 64;
+    const CONTENT_MARGIN_X = 32;
+    const CONTENT_MARGIN_TOP = 28;
+    const contentTopY = pdfPageHeight - CONTENT_MARGIN_TOP;
+    const contentBottomY = FOOTER_RESERVED_H;
+    const contentHeightPt = contentTopY - contentBottomY;
+    const contentWidthPt = pdfPageWidth - (CONTENT_MARGIN_X * 2);
+
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const courier = await pdfDoc.embedFont(StandardFonts.Courier);
+    const courierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
+    const brandWordmark = await this.getBrandWordmarkImage(pdfDoc);
+
+    let qrImage: EmbeddedImage | null = null;
+    try {
+      qrImage = await this.buildQrPng(pdfDoc, verificationUrl);
+    } catch (e) {
+      console.warn('[PDF] Erro ao gerar QR do mockup (DOCX real):', e);
+    }
+
+    const docxWrapper = docxContainer.querySelector('.docx-wrapper') || docxContainer;
+    const sections = Array.from(docxWrapper.querySelectorAll('section, article, .docx')) as HTMLElement[];
+    const pages = sections.length > 0 ? sections : [docxWrapper as HTMLElement];
+    const integritySha256 = await this.sha256Hex(new TextEncoder().encode(docxWrapper.textContent || signer.name || 'mockup'));
+
+    for (const section of pages) {
+      const originalStyles = {
+        boxShadow: section.style.boxShadow,
+        width: section.style.width,
+        minWidth: section.style.minWidth,
+        maxWidth: section.style.maxWidth,
+        overflow: section.style.overflow,
+      };
+
+      section.style.boxShadow = 'none';
+      section.style.width = `${A4_WIDTH_PX}px`;
+      section.style.minWidth = `${A4_WIDTH_PX}px`;
+      section.style.maxWidth = `${A4_WIDTH_PX}px`;
+      section.style.overflow = 'hidden';
+
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+      try {
+        const canvas = await html2canvas(section, {
+          scale: 2.5,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          imageTimeout: 0,
+          windowWidth: A4_WIDTH_PX,
+        });
+
+        const scalePtPerPx = contentWidthPt / canvas.width;
+        const drawWPt = contentWidthPt;
+        const scaledHeightPt = canvas.height * scalePtPerPx;
+        const drawHPt = Math.min(contentHeightPt, scaledHeightPt);
+        const drawX = CONTENT_MARGIN_X;
+        const drawY = contentBottomY + (contentHeightPt - drawHPt);
+
+        const imgBytes = await this.canvasToPngBytes(canvas);
+        const image = await pdfDoc.embedPng(imgBytes);
+        const page = pdfDoc.addPage([pdfPageWidth, pdfPageHeight]);
+        page.drawImage(image, { x: drawX, y: drawY, width: drawWPt, height: drawHPt });
+
+        this.drawElectronicWatermark({
+          page,
+          pageWidth: pdfPageWidth,
+          pageHeight: pdfPageHeight,
+          font: helveticaBold,
+        });
+        this.drawFooterStamp({
+          page,
+          pageWidth: pdfPageWidth,
+          pageHeight: pdfPageHeight,
+          signer,
+          verificationUrl,
+          qrImage,
+          helvetica,
+          helveticaBold,
+          courier,
+          courierBold,
+          docHash: '',
+          integritySha256,
+          variant: 'strip',
+          opaqueStrip: true,
+          verificationCode,
+          protocol,
+        });
+      } finally {
+        section.style.boxShadow = originalStyles.boxShadow;
+        section.style.width = originalStyles.width;
+        section.style.minWidth = originalStyles.minWidth;
+        section.style.maxWidth = originalStyles.maxWidth;
+        section.style.overflow = originalStyles.overflow;
+      }
+    }
+
+    return pdfDoc.save();
   }
 
   /**
@@ -1873,6 +2562,9 @@ class PdfSignatureService {
 
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const courier = await pdfDoc.embedFont(StandardFonts.Courier);
+    const courierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
+    const brandWordmark = await this.getBrandWordmarkImage(pdfDoc);
 
     const integrityChunks: Uint8Array[] = [];
 
@@ -2206,7 +2898,9 @@ class PdfSignatureService {
           }
 
           const canvas = await html2canvas(section, {
-            scale: 1.5,
+            // 2.5x (~240 DPI) — texto nítido no PDF. 1.5x deixava o conteúdo
+            // "comprimido"/borrado. Embutido como PNG (lossless), sem recompressão.
+            scale: 2.5,
             useCORS: true,
             allowTaint: true,
             backgroundColor: '#ffffff',
@@ -2248,11 +2942,15 @@ class PdfSignatureService {
               qrImage: qrImageForFooter,
               helvetica,
               helveticaBold,
+              courier,
+              courierBold,
+              brandWordmark,
               docHash: '',
               integritySha256,
               variant: 'strip',
               opaqueStrip: true, // espaço reservado → fundo branco puro
               verificationCode: perDocument?.verificationCode,
+              protocol: request.id,
             });
 
             for (const asset of docxSignerDrawAssets) {
@@ -2577,6 +3275,14 @@ class PdfSignatureService {
       if (pagesWithFooterCard.has(i)) continue;
       const p = allPages[i];
       const { width: w, height: h } = p.getSize();
+      if (i < pagesWithFooterCard.size) {
+        this.drawElectronicWatermark({
+          page: p,
+          pageWidth: w,
+          pageHeight: h,
+          font: helveticaBold,
+        });
+      }
       this.drawFooterStamp({
         page: p,
         pageWidth: w,
@@ -2586,10 +3292,14 @@ class PdfSignatureService {
         qrImage: qrImageForFooter,
         helvetica,
         helveticaBold,
+        courier,
+        courierBold,
+        brandWordmark,
         docHash: '',
         integritySha256,
         variant: 'strip',
         verificationCode: perDocument?.verificationCode,
+        protocol: request.id,
       });
     }
 
