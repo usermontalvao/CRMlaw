@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.301': { name: 'Cafe Relatorio Rico e Trilha Completa', emoji: '[art]' },
   '1.10.300': { name: 'Cafe Certificado Sem Badge Verde', emoji: '[art]' },
   '1.10.299': { name: 'Cafe Checkpoint de Assinatura e Kit em Caixa Alta', emoji: '[signature]' },
   '1.10.298': { name: 'Cafe Kit Assinado com Verificacao por Arquivo', emoji: '[signature]' },
@@ -951,6 +952,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.301',
+    date: '05/07/2026',
+    summary: 'O relatorio de assinatura ganhou blocos visuais mais legiveis, localizacao clicavel no Maps sem mudar a cor do texto e uma trilha de auditoria mais completa e melhor ordenada.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Dados do signatario e fatores de autenticacao viraram blocos visuais padronizados', description: 'O relatorio em tela passou a exibir essas secoes com rotulo pequeno e valor em cards claros, incluindo nome, papel, contato, autenticacao e demais metadados em um formato mais legivel.' },
+        { type: 'improvement' as const, title: 'Localizacao do relatorio passou a abrir no Google Maps sem herdar link azul', description: 'As coordenadas no relatorio agora sao clicaveis para abrir o Maps em nova aba, mantendo a mesma cor do texto do bloco para preservar o visual do certificado.' },
+        { type: 'fix' as const, title: 'Trilha de auditoria foi ampliada e reordenada', description: 'O certificado passou a discriminar login, ativacao de localizacao, visualizacao, aceite dos termos e assinatura com textos mais explicitos, garantindo que visualizacao apareca antes de login/localizacao quando compartilham o mesmo timestamp.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.300',
     date: '04/07/2026',

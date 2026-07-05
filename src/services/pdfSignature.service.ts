@@ -1672,6 +1672,13 @@ class PdfSignatureService {
       const signerContact = displayContact ? ` (${displayContactLabel}: ${displayContact})` : '';
       const signerCpf = item.cpf ? `, CPF: ${item.cpf}` : '';
       const locationInfo = geo.coordinates ? ` localizado em ${geo.coordinates}${geo.address ? ` - ${geo.address}` : ''}` : '';
+      const loginSummary = item.auth_provider === 'phone'
+        ? `fez login por telefone${phone ? ` (${phone})` : ''}`
+        : item.auth_provider === 'email_link'
+          ? `fez login por e-mail${authEmail ? ` (${authEmail})` : ''}`
+          : item.auth_provider === 'google'
+            ? `fez login pelo Google${authEmail ? ` (${authEmail})` : ''}`
+            : `acessou o fluxo de assinatura`;
 
       // ── View events: use audit log to capture ALL visits (multiple opens) ──
       const viewAuditEntries = auditLogEntries.filter(
@@ -1690,6 +1697,22 @@ class PdfSignatureService {
             sortAt: ts?.getTime() ?? 0,
             order: 1,
           });
+          history.push({
+            label: 'Login',
+            when: this.formatManausDateTime(ve.created_at),
+            detail: `${item.name}${signerContact}${signerCpf} ${loginSummary}${ipInfo}.`,
+            sortAt: ts?.getTime() ?? 0,
+            order: 2,
+          });
+          if (geo.coordinates) {
+            history.push({
+              label: 'Localização',
+              when: this.formatManausDateTime(ve.created_at),
+              detail: `${item.name}${signerContact}${signerCpf} ativou a localização com coordenadas ${geo.coordinates}${geo.address ? ` (${geo.address})` : ''}.`,
+              sortAt: ts?.getTime() ?? 0,
+            order: 3,
+          });
+          }
         }
       } else if (item.viewed_at) {
         // Fallback for older records without audit log entries
@@ -1701,6 +1724,22 @@ class PdfSignatureService {
           sortAt: viewedAtDate?.getTime() ?? 0,
           order: 1,
         });
+        history.push({
+          label: 'Login',
+          when: this.formatManausDateTime(item.viewed_at),
+          detail: `${item.name}${signerContact}${signerCpf} ${loginSummary}${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}.`,
+          sortAt: viewedAtDate?.getTime() ?? 0,
+          order: 2,
+        });
+        if (geo.coordinates) {
+          history.push({
+            label: 'Localização',
+            when: this.formatManausDateTime(item.viewed_at),
+            detail: `${item.name}${signerContact}${signerCpf} ativou a localização com coordenadas ${geo.coordinates}${geo.address ? ` (${geo.address})` : ''}.`,
+            sortAt: viewedAtDate?.getTime() ?? 0,
+            order: 3,
+          });
+        }
       }
 
       const signedAtMs = item.signed_at ? (this.toDateValue(item.signed_at)?.getTime() ?? 0) : 0;
@@ -1715,7 +1754,7 @@ class PdfSignatureService {
           detail: `${item.name}${signerContact}${signerCpf} declarou ter lido e aceitado os Termos de Uso (versão ${termsVersion})${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}. Consulte em ${buildPublicSignatureTermsUrl(termsVersion)}`,
           // Trava: nunca depois da assinatura (mesmo se o timestamp gravado for igual/posterior).
           sortAt: signedAtMs ? Math.min(termsAtMs, signedAtMs) : termsAtMs,
-          order: 2,
+          order: 4,
         });
       }
 
@@ -1732,7 +1771,7 @@ class PdfSignatureService {
           when: this.formatManausDateTime(item.signed_at),
           detail: `${item.name}${signerContact}${signerCpf} assinou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}${authSummary ? `. ${authSummary}` : ''}`,
           sortAt: signedAtMs,
-          order: 3,
+          order: 5,
         });
       }
     }
