@@ -38,6 +38,7 @@ import type {
 } from '../types/signature.types';
 import SignatureCanvas from './SignatureCanvas';
 import SignatureReport from './SignatureReport';
+import ForensicDossier from './ForensicDossier';
 import SignatureCertificateMockup from './SignatureCertificateMockup';
 import type { GeneratedDocument } from '../types/document.types';
 import type { CloudFile, CloudFolder } from '../types/cloud.types';
@@ -383,6 +384,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   // Modelo per_document: documentos assinados individuais do envelope em foco (detalhes).
   const [detailsDocuments, setDetailsDocuments] = useState<SignatureRequestDocument[]>([]);
   const [reportTarget, setReportTarget] = useState<{ request: SignatureRequestWithSigners; signer: Signer } | null>(null);
+  const [dossierTarget, setDossierTarget] = useState<{ requestId: string; documentName?: string | null } | null>(null);
   const [waEditOpen, setWaEditOpen] = useState<string | null>(null);
   const [waEditMsg, setWaEditMsg] = useState<Record<string, string>>({});
 
@@ -6430,6 +6432,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                               <Shield style={{ width: 11, height: 11 }} />Relatório
                             </button>
                           )}
+                          {signedSigner && (
+                            <button type="button" onClick={() => setDossierTarget({ requestId: detailsRequest.id, documentName: detailsRequest.document_name })} title="Dossiê probatório completo para instruir processo" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', cursor: 'pointer' }}>
+                              <Shield style={{ width: 11, height: 11 }} />Dossiê probatório
+                            </button>
+                          )}
                           {(detailsRequest as any).blocked_at ? (
                             <button
                               type="button"
@@ -6921,6 +6928,17 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             signer={reportTarget.signer}
             creator={user?.email ? { name: user.email.split('@')[0] } : null}
             onClose={() => setReportTarget(null)}
+          />
+        </div>
+      )}
+
+      {/* Modal: Dossiê Probatório (relatório forense completo do envelope) */}
+      {dossierTarget && (
+        <div className="fixed inset-0 z-[200] overflow-y-auto" style={{ background: 'rgba(15,23,42,0.6)' }}>
+          <ForensicDossier
+            requestId={dossierTarget.requestId}
+            documentName={dossierTarget.documentName}
+            onClose={() => setDossierTarget(null)}
           />
         </div>
       )}

@@ -956,6 +956,16 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.307',
+    date: '06/07/2026',
+    summary: 'O dossie probatorio da assinatura ganhou uma tela imprimivel: com um clique no envelope assinado, gera-se um laudo completo em PDF pronto para instruir processo, com o veredito de integridade em destaque.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'feature' as const, title: 'Botao "Dossie probatorio" gera laudo imprimivel do envelope assinado', description: 'No detalhe de um documento assinado, um novo botao abre o dossie forense completo — envelope e protocolo, cada documento com seus hashes e codigo de verificacao, a prova do ato de cada signatario (IP, dispositivo, geolocalizacao, autenticacao, aceite e biometria), a trilha de auditoria encadeada e o veredito de integridade da cadeia recalculado na hora. A tela e imprimivel direto em PDF para anexar ao processo.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.306',
     date: '06/07/2026',
     summary: 'O CRM consolidou a leitura de e-mails com links externos, refinou o texto probatório do certificado de assinatura e passou a expor um dossiê forense interno do envelope assinado.',
