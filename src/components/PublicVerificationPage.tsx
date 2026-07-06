@@ -18,16 +18,14 @@ interface VerificationResult {
   message: string;
 }
 
-const maskName = (name: string): string => {
-  return (name || '').trim().split(/\s+/).map((word) =>
-    word.length <= 1 ? word : word[0] + '*'.repeat(word.length - 1)
-  ).join(' ');
-};
-
 const isInternalPlaceholderEmail = (email: string | null | undefined): boolean => {
   const e = String(email || '').trim().toLowerCase();
   if (!e) return false;
   return e.startsWith('public+') && e.endsWith('@crm.local');
+};
+
+const stripDocumentExtension = (name: string | null | undefined): string => {
+  return String(name || '').trim().replace(/\.(pdf|docx?|rtf|odt)$/i, '');
 };
 
 const PublicVerificationPage: React.FC = () => {
@@ -200,7 +198,7 @@ const PublicVerificationPage: React.FC = () => {
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `${(result?.request?.document_name || 'documento-assinado').replace(/[\\/:*?"<>|]+/g, '_')}.pdf`;
+      a.download = `${stripDocumentExtension(result?.request?.document_name || 'documento-assinado').replace(/[\\/:*?"<>|]+/g, '_')}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -226,7 +224,7 @@ const PublicVerificationPage: React.FC = () => {
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `${(name || 'documento-assinado').replace(/[\\/:*?"<>|]+/g, '_')}.pdf`;
+      a.download = `${stripDocumentExtension(name || 'documento-assinado').replace(/[\\/:*?"<>|]+/g, '_')}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -420,13 +418,13 @@ const PublicVerificationPage: React.FC = () => {
                         {result.request && (
                           <div>
                             <span className={labelCls}>Documento</span>
-                            <p className="text-base font-semibold text-slate-800">{result.request.document_name}</p>
+                            <p className="text-base font-semibold text-slate-800">{stripDocumentExtension(result.request.document_name)}</p>
                           </div>
                         )}
                         {result.signer && (
                           <div>
                             <span className={labelCls}>Signatário</span>
-                            <p className="text-base font-semibold text-slate-800">{maskName(result.signer.name)}</p>
+                            <p className="text-base font-semibold text-slate-800">{result.signer.name}</p>
                           </div>
                         )}
                         {result.signer?.signed_at && (
@@ -458,7 +456,7 @@ const PublicVerificationPage: React.FC = () => {
                     <div className="grid grid-cols-1 gap-x-8 gap-y-6 px-6 py-6 sm:px-8 md:grid-cols-2">
                       <div>
                         <span className={labelCls}>Nome do Documento</span>
-                        <p className="break-words text-base font-semibold leading-7 text-slate-800">{result.request.document_name}</p>
+                        <p className="break-words text-base font-semibold leading-7 text-slate-800">{stripDocumentExtension(result.request.document_name)}</p>
                       </div>
                       <div>
                         <span className={labelCls}>Data da Assinatura</span>
@@ -474,7 +472,7 @@ const PublicVerificationPage: React.FC = () => {
                       </div>
                       <div>
                         <span className={labelCls}>Signatário</span>
-                        <p className="text-base font-semibold text-slate-800">{maskName(result.signer.name)}</p>
+                        <p className="text-base font-semibold text-slate-800">{result.signer.name}</p>
                         {result.signer.email && !isInternalPlaceholderEmail(result.signer.email) && (
                           <p className="mt-1 text-sm text-slate-500">{result.signer.email}</p>
                         )}
@@ -492,33 +490,36 @@ const PublicVerificationPage: React.FC = () => {
                           Documentos assinados ({result.documents.length})
                         </p>
                         <div className="space-y-2">
-                          {result.documents.map((doc) => (
-                            <div key={doc.verification_code} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
+                          {result.documents.map((doc, index) => {
+                            const docCode = String(doc.verification_code || '').trim();
+                            const canOpenSignedDoc = !!docCode;
+                            return (
+                            <div key={docCode || `${doc.document_type}-${index}`} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
                               <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600 ring-1 ring-orange-100">
                                 <FileText className="h-4 w-4" />
                               </div>
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold text-slate-800">{doc.display_name || doc.verification_code}</p>
+                                <p className="truncate text-sm font-semibold text-slate-800">{stripDocumentExtension(doc.display_name) || docCode || `Documento ${index + 1}`}</p>
                                 <p className="font-mono text-[11px] text-slate-400">{doc.document_type === 'main' ? 'Principal' : 'Anexo'} · {doc.verification_code}</p>
                               </div>
                               <div className="flex flex-shrink-0 items-center gap-1.5">
                                 <button
-                                  onClick={() => openDocumentViewer(doc.verification_code)}
-                                  disabled={viewerLoading}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                                  onClick={() => canOpenSignedDoc ? openDocumentViewer(docCode) : undefined}
+                                  disabled={viewerLoading || !canOpenSignedDoc}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   <Eye className="h-3.5 w-3.5" />Ver
                                 </button>
                                 <button
-                                  onClick={() => downloadSignedByCode(doc.verification_code, doc.display_name || doc.verification_code)}
-                                  disabled={viewerLoading}
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-[13px] font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
+                                  onClick={() => canOpenSignedDoc ? downloadSignedByCode(docCode, stripDocumentExtension(doc.display_name) || docCode) : undefined}
+                                  disabled={viewerLoading || !canOpenSignedDoc}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-[13px] font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   <Download className="h-3.5 w-3.5" />Baixar
                                 </button>
                               </div>
                             </div>
-                          ))}
+                          )})}
                         </div>
                       </div>
                     ) : result.signer.signed_document_path && (

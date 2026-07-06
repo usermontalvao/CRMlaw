@@ -366,7 +366,9 @@ const LoadingScreen: React.FC<{ docName?: string; allDocNames?: string[]; signer
     return () => window.clearInterval(id);
   }, []);
 
-  const pct       = Math.min(96, (elapsed / 10) * 96);
+  // Curva assintótica: sobe rápido e desacelera perto de 99% sem nunca "congelar"
+  // num valor fixo (antes ficava preso em 96%), transmitindo progresso contínuo.
+  const pct       = Math.min(99, 100 * (1 - Math.exp(-elapsed / 4)));
   const firstName = resolvedName ? resolvedName.split(' ')[0] : '';
 
   return (
@@ -587,7 +589,8 @@ const SigningScreen: React.FC<{ docName?: string }> = ({ docName }) => {
     return () => window.clearInterval(id);
   }, []);
 
-  const pct = Math.min(96, (elapsed / 8) * 96);
+  // Curva assintótica (não "congela" num valor fixo enquanto o envio finaliza).
+  const pct = Math.min(99, 100 * (1 - Math.exp(-elapsed / 3.5)));
 
   return (
     <div className="min-h-[100dvh] flex flex-col select-none overflow-hidden" style={{ background: '#f8fafc' }}>
@@ -928,10 +931,17 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [zoom, setZoom] = useState(100);
   const [showReport, setShowReport] = useState(false);
 
+  // Prazo-limite de carregamento: se o render de um anexo DOCX não confirmar
+  // (docx-preview pode falhar/pendurar sem disparar onRendered), não travamos a
+  // página indefinidamente — após o prazo, seguimos com o documento principal.
+  const [loadDeadlineReached, setLoadDeadlineReached] = useState(false);
+
   // Página 100% carregada: step success + documento carregado + anexos DOCX todos renderizados
   const allAttachmentsRendered = attachments.length === 0 || attachments.every(a => !a.isDocx || a.rendered);
   const mainDocLoaded = isDocx ? (!docxLoading && docxRendered) : (!!pdfUrl && pdfFrameLoaded);
-  const isFullyLoaded = step === 'success' && !!signer && !!request && mainDocLoaded && allAttachmentsRendered;
+  const isFullyLoaded =
+    step === 'success' && !!signer && !!request && mainDocLoaded &&
+    (allAttachmentsRendered || loadDeadlineReached);
 
   const canOpenSignModal = isFullyLoaded;
 
@@ -970,6 +980,28 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
     };
   }, [isFullyLoaded, overlayVisible, overlayFading]);
+
+  // Prazo-limite: libera o requisito de "todos os anexos renderizados" após 18 s.
+  // Cobre o caso comum de um anexo DOCX que não confirma o render (overlay preso
+  // no ~96%). O documento principal continua sendo exigido para habilitar assinar.
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoadDeadlineReached(true), 18_000);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  // Failsafe absoluto: o overlay NUNCA deve prender a página. Se nem o documento
+  // principal confirmar o carregamento, liberamos a tela mesmo assim após 26 s —
+  // o conteúdo restante segue carregando por baixo (melhor que travar no 96%).
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setOverlayFading(true);
+      window.setTimeout(() => {
+        setOverlayVisible(false);
+        setOverlayFading(false);
+      }, 600);
+    }, 26_000);
+    return () => window.clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     if (!loading) return;
@@ -1768,6 +1800,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         verificationCode,
         verificationUrl,
         integritySources: [unit.sourcePath || unit.sourceUrl].filter(Boolean) as string[],
+        // Nome próprio deste arquivo — evita que o anexo herde o nome do envelope no relatório.
+        documentName: unit.displayName,
       };
       console.log('[PER-DOC] Gerando', unit.documentKey, 'código:', verificationCode, 'docx:', unit.isDocx);
 
@@ -2686,6 +2720,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       return;
     }
 
+    const expectedPerDocumentCount = 1 + attachments.length;
+
     try {
       setLoading(true);
       
@@ -2737,6 +2773,12 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             // cada anexo), cada um com código/hash/arquivo próprios. Legado intacto no else.
             console.log('[PER-DOC] handleSign → geração individual por arquivo (principal + anexos)');
             await generatePerDocumentSignedForSigner(request, result);
+            await signatureService.finalizePerDocumentSigningPublic(token, {
+              expectedDocumentCount: expectedPerDocumentCount,
+              origin: window.location.origin,
+              ipAddress,
+              userAgent,
+            });
           } else {
           let signedPdfPath: string;
           let signedPdfSha256: string | null = null;
@@ -2935,6 +2977,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           } // fim do else (fluxo consolidado/legado)
         } catch (pdfErr: any) {
           console.error('Erro ao salvar PDF assinado:', pdfErr);
+          if (request?.signature_model === 'per_document') {
+            await signatureService.reportPerDocumentFailurePublic(token, {
+              stage: 'generate_or_finalize',
+              error: pdfErr?.message || 'Falha ao concluir os documentos assinados',
+              expectedDocumentCount: expectedPerDocumentCount,
+              persistedCount: 0,
+              ipAddress,
+              userAgent,
+            });
+          }
           // Modelo per_document: falha REAL de persistência do documento individual
           // é requisito jurídico — NÃO pode virar sucesso visual. Propaga para o
           // catch externo (step='error') com mensagem explícita.
@@ -3666,7 +3718,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         <div key={doc.documentKey} className="border border-slate-200 bg-white px-3 py-2">
                           <div className="flex items-center justify-between gap-2">
                             <div className="min-w-0">
-                              <div className="truncate text-[13px] font-semibold text-slate-800">{doc.displayName}</div>
+                              <div className="truncate text-[13px] font-semibold text-slate-800">{doc.displayName.replace(/\.(pdf|docx?|rtf|odt)$/i, '')}</div>
                               <div className="break-all font-mono text-[11px] text-slate-500">{doc.verificationCode}</div>
                             </div>
                             {doc.url && (

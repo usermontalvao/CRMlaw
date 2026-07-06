@@ -9,6 +9,16 @@ const corsHeaders = {
 const FROM_EMAIL  = 'noreply@jurius.com.br'
 const FROM_NAME   = 'Jurius - Assinatura Digital'
 
+type EmailAttachment = {
+  filename: string
+  content: string
+}
+
+type EmailDocumentItem = {
+  name: string
+  verifyUrl: string
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 }
@@ -24,6 +34,78 @@ function fmtDate(iso: string) {
   })
 }
 
+function sanitizeAttachmentBaseName(name: string, fallback: string) {
+  const base = (name || fallback)
+    .replace(/\.[^/.]+$/, '')
+    .replace(/[^\w\s\-]/g, '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .slice(0, 60)
+  return base || fallback
+}
+
+function stripDocumentExtension(name: string) {
+  return String(name || '').trim().replace(/\.(pdf|docx?|rtf|odt)$/i, '')
+}
+
+async function buildStorageAttachment(
+  supabase: ReturnType<typeof createClient>,
+  path: string,
+  filename: string,
+): Promise<EmailAttachment | null> {
+  for (const bucket of ['assinados', 'generated-documents', 'document-templates']) {
+    try {
+      const { data: urlData } = await supabase.storage.from(bucket).createSignedUrl(path, 300)
+      if (!urlData?.signedUrl) continue
+      const pdfRes = await fetch(urlData.signedUrl)
+      if (!pdfRes.ok) continue
+      const buf = await pdfRes.arrayBuffer()
+      const bytes = new Uint8Array(buf)
+      let b64 = ''
+      for (let i = 0; i < bytes.length; i += 8192) {
+        b64 += btoa(String.fromCharCode(...bytes.subarray(i, Math.min(i + 8192, bytes.length))))
+      }
+      return { filename, content: b64 }
+    } catch {
+      // tenta o próximo bucket
+    }
+  }
+  return null
+}
+
+async function acquireEmailDispatchLock(
+  supabase: ReturnType<typeof createClient>,
+  requestId: string,
+  signerId: string,
+  kind: string,
+  email: string,
+): Promise<boolean> {
+  const { error } = await supabase.from('signature_email_dispatches').insert({
+    signature_request_id: requestId,
+    signer_id: signerId,
+    kind,
+    email,
+  })
+  if (!error) return true
+  const code = String((error as any)?.code ?? '')
+  if (code === '23505') return false
+  throw error
+}
+
+async function releaseEmailDispatchLock(
+  supabase: ReturnType<typeof createClient>,
+  requestId: string,
+  signerId: string,
+  kind: string,
+) {
+  await supabase
+    .from('signature_email_dispatches')
+    .delete()
+    .eq('signature_request_id', requestId)
+    .eq('signer_id', signerId)
+    .eq('kind', kind)
+}
+
 function buildHtml(p: {
   documentName: string
   signerName: string
@@ -35,20 +117,43 @@ function buildHtml(p: {
   hasPdf: boolean
   isPerDocument: boolean
   documentCount: number
+  documents: EmailDocumentItem[]
 }): string {
   const statusText = p.isPerDocument ? 'Documentos assinados' : 'Documento assinado'
   const heading = p.isPerDocument ? 'Seu pacote de documentos esta pronto' : 'Seu documento esta pronto'
   const intro = p.isPerDocument
-    ? `Ola, <strong style="color:#16213A;">${p.signerName}</strong>. Seu pacote foi assinado digitalmente e esta disponivel para acesso. Este envelope reune ${p.documentCount} documento${p.documentCount === 1 ? '' : 's'} para visualizacao e verificacao.`
+    ? `Ola, <strong style="color:#16213A;">${p.signerName}</strong>. Seu pacote foi assinado digitalmente e esta disponivel para acesso e verificacao. Este envelope reune <strong style="color:#16213A;">${p.documentCount} documento${p.documentCount === 1 ? '' : 's'}</strong> para visualizacao e consulta.`
     : `Ola, <strong style="color:#16213A;">${p.signerName}</strong>. Seu documento foi assinado digitalmente e esta disponivel para acesso e verificacao de autenticidade.`
   const docTitle = p.isPerDocument
-    ? `&#128218; ${p.documentName}${p.documentCount > 0 ? ` <span style="font-family:Arial,sans-serif;font-size:12px;color:#475569;font-weight:600;">&middot; ${p.documentCount} documento${p.documentCount === 1 ? '' : 's'}</span>` : ''}`
+    ? `&#128218; ${p.documentName}`
     : `&#128196; ${p.documentName}${p.hasPdf ? ' <span style="font-family:Arial,sans-serif;font-size:12px;color:#16a34a;font-weight:600;">&middot; em anexo</span>' : ''}`
   const verificationLabel = 'Protocolo do envelope'
   const verificationHelp = p.isPerDocument
     ? `Acesse <a href="${p.origin}/#/verificar" style="color:#EC5A1E;font-weight:600;">${p.origin}/#/verificar</a> para consultar o envelope e os documentos vinculados.`
     : `Acesse <a href="${p.origin}/#/verificar" style="color:#EC5A1E;font-weight:600;">${p.origin}/#/verificar</a> para verificar a autenticidade.`
-  const primaryCta = p.isPerDocument ? 'Ver documentos do envelope &rarr;' : 'Ver documento completo &rarr;'
+  const singleDocumentLink = p.documents.length === 1 ? p.documents[0]?.verifyUrl?.trim() || '' : ''
+  const primaryCta = singleDocumentLink
+    ? 'Ver documento assinado &rarr;'
+    : (p.isPerDocument ? 'Ver envelope completo &rarr;' : 'Ver documento completo &rarr;')
+  const primaryCtaLink = singleDocumentLink || (p.isPerDocument ? p.verifyLink : p.publicLink)
+  const documentsList = p.isPerDocument && p.documents.length > 0
+    ? `
+      <tr><td style="padding:12px 36px 4px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#F8F9FB;border:1px solid #E8EAF0;border-radius:12px;">
+          <tr><td style="padding:16px 18px 14px;">
+            <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;color:#64748B;text-transform:uppercase;margin-bottom:10px;">Documentos assinados (${p.documentCount})</div>
+            ${p.documents.map((doc) => `
+              <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#1E293B;padding:9px 0;border-top:1px solid #E5E7EB;">
+                <a href="${doc.verifyUrl}" style="color:#1E293B;text-decoration:none;font-weight:600;">&#8226; ${doc.name}</a>
+              </div>
+            `).join('')}
+            <div style="padding-top:12px;">
+              <a href="${p.verifyLink}" style="display:inline-block;text-decoration:none;color:#EC5A1E;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;">Consultar envelope completo &rarr;</a>
+            </div>
+          </td></tr>
+        </table>
+      </td></tr>`
+    : ''
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -138,10 +243,12 @@ function buildHtml(p: {
     </table>
   </td></tr>
 
+  ${documentsList}
+
   <tr><td style="padding:24px 36px 32px;text-align:center;">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
       <tr><td align="center" style="padding-bottom:10px;">
-        <a href="${p.publicLink}" style="display:inline-block;text-decoration:none;background:linear-gradient(150deg,#F5762B 0%,#E14E14 100%);color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;padding:14px 36px;border-radius:12px;">${primaryCta}</a>
+        <a href="${primaryCtaLink}" style="display:inline-block;text-decoration:none;background:linear-gradient(150deg,#F5762B 0%,#E14E14 100%);color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;padding:14px 36px;border-radius:12px;">${primaryCta}</a>
       </td></tr>
       <tr><td align="center">
         <a href="${p.verifyLink}" style="display:inline-block;text-decoration:none;background:#ffffff;color:#EC5A1E;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;padding:10px 24px;border-radius:10px;border:1.5px solid #FAD9C0;">Verificar autenticidade</a>
@@ -178,6 +285,7 @@ Deno.serve(async (req: Request) => {
     const requestId = String(payload?.request_id ?? '').trim()
     const signerId = String(payload?.signer_id ?? '').trim()
     const origin = String(payload?.origin ?? 'https://jurius.com.br').trim().replace(/\/$/, '')
+    const force = payload?.force === true
 
     if (!requestId) return json({ success: false, error: 'request_id obrigatorio' })
 
@@ -210,9 +318,47 @@ Deno.serve(async (req: Request) => {
         requestDocuments = docs ?? []
       }
     }
-
+    const attachmentCount = Array.isArray(req_.attachment_paths) ? req_.attachment_paths.length : 0
+    const expectedDocumentCount = isPerDocument ? 1 + attachmentCount : 1
+    const documentCount = isPerDocument
+      ? Math.max(requestDocuments.length, expectedDocumentCount)
+      : expectedDocumentCount
+    const requestDocumentNames = requestDocuments
+      .map((doc: any) => String(doc?.display_name ?? '').trim())
+      .filter(Boolean)
+    const fallbackDocumentNames = [
+      String(req_.document_name ?? 'Documento principal').trim(),
+      ...((Array.isArray(req_.attachment_paths) ? req_.attachment_paths : [])
+        .map((path: string) => String(path).split('/').pop()?.trim() ?? '')
+        .filter(Boolean)),
+    ]
     const sent: string[] = []
     const failed: { email: string; error: string }[] = []
+
+    const verificationCode = String(
+      (isPerDocument ? req_.envelope_verification_code : null) || req_.id || ''
+    )
+    const verifyLink = verificationCode ? `${origin}/#/verificar/${verificationCode}` : `${origin}/#/verificar`
+    const documents: EmailDocumentItem[] = isPerDocument
+      ? (
+          requestDocuments.length > 0
+            ? requestDocuments
+                .map((doc: any) => {
+                  const name = String(doc?.display_name ?? '').trim()
+                  const code = String(doc?.verification_code ?? '').trim()
+                  if (!name) return null
+                  return {
+                    name: stripDocumentExtension(name) || name,
+                    verifyUrl: code ? `${origin}/#/verificar/${code}` : verifyLink,
+                  }
+                })
+                .filter(Boolean) as EmailDocumentItem[]
+            : (requestDocumentNames.length > 0 ? requestDocumentNames : fallbackDocumentNames).map((name) => ({
+                name: stripDocumentExtension(name) || name,
+                verifyUrl: verifyLink,
+              }))
+        )
+      : [{ name: stripDocumentExtension(String(req_.document_name ?? 'Documento').trim()) || String(req_.document_name ?? 'Documento').trim(), verifyUrl: verifyLink }]
 
     for (const signer of signedOnes) {
       const email = (signer.auth_email || (signer.auth_provider === 'phone' ? null : signer.email) || signer.email)?.trim()?.toLowerCase()
@@ -222,39 +368,44 @@ Deno.serve(async (req: Request) => {
         continue
       }
 
+      const dispatchKind = 'signed_link_completion'
+      let lockAcquired = false
+      if (!force) {
+        lockAcquired = await acquireEmailDispatchLock(supabase, requestId, String(signer.id), dispatchKind, email)
+        if (!lockAcquired) {
+          console.log('Email dedup skip ->', email, dispatchKind)
+          continue
+        }
+      }
+
       // Protocolo do envelope = signature_requests.id — o MESMO valor carimbado no
       // rodapé do PDF assinado e exibido nas telas públicas. Unifica "código" e
       // "protocolo" num único identificador (aceito por public_verify_by_hash).
-      const verificationCode = String(req_.id ?? '')
-      const verifyLink = verificationCode ? `${origin}/#/verificar/${verificationCode}` : `${origin}/#/verificar`
-
-      let pdfBase64: string | null = null
-      let pdfFilename = 'documento_assinado.pdf'
+      const emailAttachments: EmailAttachment[] = []
       if (!isPerDocument && signer.signed_document_path) {
         try {
-          for (const bucket of ['assinados', 'generated-documents', 'document-templates']) {
-            try {
-              const { data: urlData } = await supabase.storage.from(bucket).createSignedUrl(signer.signed_document_path, 300)
-              if (!urlData?.signedUrl) continue
-              const pdfRes = await fetch(urlData.signedUrl)
-              if (!pdfRes.ok) continue
-              const buf = await pdfRes.arrayBuffer()
-              const bytes = new Uint8Array(buf)
-              let b64 = ''
-              for (let i = 0; i < bytes.length; i += 8192) {
-                b64 += btoa(String.fromCharCode(...bytes.subarray(i, Math.min(i + 8192, bytes.length))))
-              }
-              pdfBase64 = b64
-              pdfFilename = (req_.document_name ?? 'documento')
-                .replace(/[^\w\s\-]/g, '')
-                .trim()
-                .replace(/\s+/g, '_')
-                .slice(0, 60) + '_assinado.pdf'
-              break
-            } catch {}
+          const pdfFilename = `${sanitizeAttachmentBaseName(req_.document_name ?? 'documento', 'documento')}_assinado.pdf`
+          const attachment = await buildStorageAttachment(supabase, signer.signed_document_path, pdfFilename)
+          if (attachment) {
+            emailAttachments.push(attachment)
           }
         } catch (e) {
           console.error('PDF fetch error:', e)
+        }
+      }
+      if (isPerDocument && requestDocuments.length > 0) {
+        for (const [index, doc] of requestDocuments.entries()) {
+          if (!doc?.signed_file_path) continue
+          try {
+            const fallbackName = index === 0 ? 'documento_principal' : `documento_${index + 1}`
+            const pdfFilename = `${sanitizeAttachmentBaseName(doc.display_name ?? fallbackName, fallbackName)}_assinado.pdf`
+            const attachment = await buildStorageAttachment(supabase, doc.signed_file_path, pdfFilename)
+            if (attachment) {
+              emailAttachments.push(attachment)
+            }
+          } catch (e) {
+            console.error('Envelope PDF fetch error:', doc?.signed_file_path, e)
+          }
         }
       }
 
@@ -266,15 +417,22 @@ Deno.serve(async (req: Request) => {
         verifyLink,
         verificationCode,
         origin,
-        hasPdf: !!pdfBase64,
+        hasPdf: emailAttachments.length > 0,
         isPerDocument,
-        documentCount: requestDocuments.length,
+        documentCount,
+        documents,
       })
 
+      const singleDocumentAccessLink = documents.length === 1
+        ? String(documents[0]?.verifyUrl ?? '').trim()
+        : ''
       const subjectPrefix = isPerDocument ? 'Documentos assinados' : 'Documento assinado'
       const textHeader = isPerDocument
-        ? `Ola, ${signer.name}.\n\nSeu pacote "${req_.document_name}" foi assinado. Este envelope reune ${requestDocuments.length} documento(s).`
+        ? `Ola, ${signer.name}.\n\nSeu pacote "${req_.document_name}" foi assinado.`
         : `Ola, ${signer.name}.\n\nSeu documento "${req_.document_name}" foi assinado.`
+      const textDocuments = isPerDocument && documents.length > 0
+        ? `\n\nDocumentos assinados (${documentCount}):\n- ${documents.map((doc) => `${doc.name} (${doc.verifyUrl})`).join('\n- ')}`
+        : ''
       const textVerification = isPerDocument
         ? `Consulte o envelope e os documentos vinculados em: ${verifyLink}\nProtocolo do envelope: ${verificationCode}`
         : `Verifique: ${verifyLink}\nProtocolo do envelope: ${verificationCode}`
@@ -284,9 +442,9 @@ Deno.serve(async (req: Request) => {
         to: [email],
         subject: `${subjectPrefix}: ${req_.document_name}`,
         html,
-        text: `${textHeader}\n\nAcesse: ${publicLink}\n${textVerification}\n\nJURIUS - Assinatura Digital`,
+        text: `${textHeader}${textDocuments}\n\nAcesse: ${singleDocumentAccessLink || publicLink}\n${textVerification}\n\nJURIUS - Assinatura Digital`,
       }
-      if (pdfBase64) emailBody.attachments = [{ filename: pdfFilename, content: pdfBase64 }]
+      if (emailAttachments.length > 0) emailBody.attachments = emailAttachments
 
       try {
         const res = await fetch('https://api.resend.com/emails', {
@@ -297,8 +455,11 @@ Deno.serve(async (req: Request) => {
         const rj = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(rj?.message ?? `Resend error ${res.status}`)
         sent.push(email)
-        console.log('Resend OK ->', email, pdfBase64 ? '+PDF' : 'sem PDF')
+        console.log('Resend OK ->', email, emailAttachments.length > 0 ? `+${emailAttachments.length} PDF(s)` : 'sem PDF')
       } catch (err: any) {
+        if (lockAcquired) {
+          await releaseEmailDispatchLock(supabase, requestId, String(signer.id), dispatchKind)
+        }
         console.error('Resend FAIL ->', email, err)
         failed.push({ email, error: err?.message ?? 'Erro' })
       }

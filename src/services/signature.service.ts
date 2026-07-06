@@ -29,7 +29,7 @@ export const SYSTEM_ISSUER_LABEL = 'Jurius CRM';
 /** Resultado da verificação pública por hash. */
 /** Documento final de um envelope no modelo per_document (para a verificação pública). */
 export interface VerifiedDocument {
-  verification_code: string;
+  verification_code?: string | null;
   display_name?: string | null;
   document_type: 'main' | 'attachment';
   sort_order?: number | null;
@@ -926,6 +926,70 @@ class SignatureService {
     return data.signer as Signer;
   }
 
+  async finalizePerDocumentSigningPublic(
+    publicToken: string,
+    params: {
+      expectedDocumentCount: number;
+      origin?: string;
+      ipAddress?: string;
+      userAgent?: string;
+    },
+  ): Promise<{ finalized: boolean; reason?: string; persistedCount: number; expectedDocumentCount: number }> {
+    const { data, error } = await supabase.functions.invoke('public-sign-document', {
+      body: {
+        action: 'finalize_per_document',
+        token: publicToken,
+        expected_document_count: params.expectedDocumentCount,
+        origin: params.origin,
+        ip_address: params.ipAddress,
+        user_agent: params.userAgent,
+      },
+    });
+
+    if (error) {
+      const serverMessage = await this.extractEdgeErrorMessage(error);
+      throw new Error(serverMessage || error.message || 'Erro ao finalizar o envelope assinado');
+    }
+    if (!data?.success) {
+      throw new Error(data?.error || 'Erro ao finalizar o envelope assinado');
+    }
+
+    return {
+      finalized: data.finalized === true,
+      reason: data.reason || undefined,
+      persistedCount: Number(data.persisted_count ?? 0),
+      expectedDocumentCount: Number(data.expected_document_count ?? params.expectedDocumentCount),
+    };
+  }
+
+  async reportPerDocumentFailurePublic(
+    publicToken: string,
+    params: {
+      stage: string;
+      error: string;
+      expectedDocumentCount?: number;
+      persistedCount?: number;
+      ipAddress?: string;
+      userAgent?: string;
+    },
+  ): Promise<void> {
+    const { error } = await supabase.functions.invoke('public-sign-document', {
+      body: {
+        action: 'report_per_document_failure',
+        token: publicToken,
+        stage: params.stage,
+        error: params.error,
+        expected_document_count: params.expectedDocumentCount ?? null,
+        persisted_count: params.persistedCount ?? null,
+        ip_address: params.ipAddress,
+        user_agent: params.userAgent,
+      },
+    });
+    if (error) {
+      console.warn('[PER-DOC] Falha ao registrar auditoria pública de finalização:', error);
+    }
+  }
+
   /** Extrai a mensagem de erro do corpo JSON de uma resposta não-2xx de Edge Function. */
   private async extractEdgeErrorMessage(error: any): Promise<string | null> {
     try {
@@ -1524,10 +1588,13 @@ class SignatureService {
   /**
    * Envia o link público do documento assinado para o e-mail dos signatários.
    */
-  async sendSignatureLinkEmail(requestId: string): Promise<{ sent: string[]; failed: { email: string; error: string }[] }> {
+  async sendSignatureLinkEmail(
+    requestId: string,
+    force = false,
+  ): Promise<{ sent: string[]; failed: { email: string; error: string }[] }> {
     const origin = 'https://jurius.com.br';
     const { data, error } = await supabase.functions.invoke('send-signature-link', {
-      body: { request_id: requestId, origin },
+      body: { request_id: requestId, origin, force },
     });
     if (error) throw new Error(error.message ?? 'Erro ao enviar e-mail');
     if (!data?.success && data?.sent?.length === 0) throw new Error(data?.failed?.[0]?.error ?? 'Falha no envio');

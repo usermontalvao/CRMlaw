@@ -212,7 +212,7 @@ export interface SignatureAuditLog {
   id: string;
   signature_request_id: string;
   signer_id?: string | null;
-  action: 'created' | 'sent' | 'viewed' | 'signed' | 'cancelled' | 'expired' | 'reminder_sent' | 'refused';
+  action: 'created' | 'sent' | 'viewed' | 'signed' | 'cancelled' | 'expired' | 'reminder_sent' | 'refused' | 'finalized' | 'finalization_failed';
   description: string;
   ip_address?: string | null;
   user_agent?: string | null;

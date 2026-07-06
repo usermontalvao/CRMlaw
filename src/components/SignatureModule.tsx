@@ -5843,15 +5843,29 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         size="lg"
         zIndex={50}
         headerActions={detailsRequest ? (
-          detailsRequest.signers.every(s => s.status === 'signed') ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wide" style={{ border: '1px solid #bbf7d0' }}>
-              <CheckCircle className="w-3 h-3" />Concluído
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wide" style={{ border: '1px solid #fde68a' }}>
-              <Clock className="w-3 h-3" />{detailsRequest.signers.filter(s => s.status === 'pending').length} pendente(s)
-            </span>
-          )
+          <div className="flex items-center gap-2">
+            {detailsRequest.signers.every(s => s.status === 'signed') ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-wide" style={{ border: '1px solid #bbf7d0' }}>
+                <CheckCircle className="w-3 h-3" />Concluído
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wide" style={{ border: '1px solid #fde68a' }}>
+                <Clock className="w-3 h-3" />{detailsRequest.signers.filter(s => s.status === 'pending').length} pendente(s)
+              </span>
+            )}
+            {(detailsRequest as any).signature_model === 'per_document' && (
+              <button
+                onClick={() => handleDeleteRequest(detailsRequest.id)}
+                title="Excluir"
+                className="flex items-center justify-center w-7 h-7 rounded-lg transition"
+                style={{ background: '#fff1f2', color: '#e11d48', border: '1px solid #fecdd3' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#ffe4e6')}
+                onMouseLeave={e => (e.currentTarget.style.background = '#fff1f2')}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         ) : undefined}
       >
         {detailsRequest && (<>
@@ -5883,6 +5897,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
               {/* ── Ações principais ── */}
               <div className="px-5 py-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
+                {(detailsRequest as any).signature_model !== 'per_document' && (
                 <div className="flex gap-2.5">
                   {detailsRequest.document_path && (
                     <button
@@ -6131,7 +6146,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                   </button>
                   <button
                     onClick={() => handleDeleteRequest(detailsRequest.id)}
-                    className="flex items-center justify-center px-3 py-2.5 rounded-xl text-sm transition"
+                    className="flex items-center justify-center px-3 py-2.5 rounded-xl text-sm transition ml-auto"
                     style={{ background: '#fff1f2', color: '#e11d48', border: '1px solid #fecdd3' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#ffe4e6')}
                     onMouseLeave={e => (e.currentTarget.style.background = '#fff1f2')}
@@ -6139,9 +6154,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
+                )}
 
                 {detailsRequest.signers.every((s) => s.status === 'signed') && (
-                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid #f1f5f9' }}>
+                  <div className={(detailsRequest as any).signature_model === 'per_document' ? '' : 'mt-3 pt-3'} style={(detailsRequest as any).signature_model === 'per_document' ? undefined : { borderTop: '1px solid #f1f5f9' }}>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                       <button
                         disabled={openProcessLoading}
@@ -6210,7 +6226,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           onClick={async () => {
                             try {
                               setSendEmailLoading(true);
-                              const { sent, failed } = await signatureService.sendSignatureLinkEmail(detailsRequest.id);
+                              const { sent, failed } = await signatureService.sendSignatureLinkEmail(detailsRequest.id, true);
                               if (sent.length > 0) {
                                 toast.success(`E-mail enviado para ${sent.length} signatário(s)!`);
                               }

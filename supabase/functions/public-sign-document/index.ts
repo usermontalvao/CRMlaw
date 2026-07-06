@@ -84,6 +84,53 @@ async function uploadBase64Image(supabase: ReturnType<typeof createClient>, base
   return filePath;
 }
 
+async function sendCompletionEmail(input: {
+  requestId: string;
+  signerId: string;
+  origin: string;
+  skip?: boolean;
+}): Promise<void> {
+  if (input.skip) return;
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+  if (!supabaseUrl || !anonKey) return;
+  await fetch(`${supabaseUrl}/functions/v1/send-signature-link`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anonKey}` },
+    body: JSON.stringify({
+      request_id: input.requestId,
+      signer_id: input.signerId,
+      origin: input.origin,
+    }),
+  });
+}
+
+async function createCompletionNotification(input: {
+  supabase: ReturnType<typeof createClient>;
+  request: any;
+  signer: any;
+  totalSigners: number;
+}): Promise<void> {
+  if (!input.request?.created_by) return;
+  await input.supabase.from('user_notifications').insert({
+    user_id: input.request.created_by,
+    title: '✅ Documento Totalmente Assinado!',
+    message: `"${input.request.document_name}" foi assinado por todos (${input.totalSigners}/${input.totalSigners})`,
+    type: 'process_updated',
+    read: false,
+    created_at: new Date().toISOString(),
+    metadata: {
+      signature_type: 'completed',
+      signer_name: input.signer?.name,
+      signer_email: input.signer?.email,
+      document_name: input.request.document_name,
+      signed_count: input.totalSigners,
+      total_signers: input.totalSigners,
+      request_id: input.request.id,
+    },
+  });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders });
   try {
@@ -101,21 +148,17 @@ Deno.serve(async (req: Request) => {
 
     if (!payload || typeof payload !== 'object') return jsonResponse({ success: false, error: 'Invalid payload' }, 400);
 
+    const action = String(payload?.action ?? 'sign').trim();
     const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, ip_address, user_agent, terms_accepted, terms_version, allow_signature_selfie_for_profile, selfie_profile_consent_version } = payload;
 
     if (!token) return jsonResponse({ success: false, error: 'Token is required' }, 400);
-    if (!signature_image) return jsonResponse({ success: false, error: 'Signature image is required' }, 400);
-    // Aceite dos Termos de Uso (LGPD) e obrigatorio para assinar. Backstop do servidor.
-    if (terms_accepted !== true) return jsonResponse({ success: false, error: 'E necessario aceitar os Termos de Uso para assinar.' }, 400);
-
     const { data: signer, error: signerError } = await supabase.from('signature_signers').select('*').eq('public_token', token).maybeSingle();
     if (signerError || !signer) return jsonResponse({ success: false, error: 'Signer not found' }, 404);
-    if (signer.status !== 'pending') return jsonResponse({ success: false, error: 'Document already signed or cancelled' }, 400);
 
     // P0: validar estado de ciclo de vida da solicitacao antes de permitir assinatura
     const { data: request0, error: request0Error } = await supabase
       .from('signature_requests')
-      .select('id, status, deleted_at, archived_at, blocked_at, expires_at, require_cpf, signing_order, auth_method')
+      .select('id, status, deleted_at, archived_at, blocked_at, expires_at, require_cpf, signing_order, auth_method, signature_model, attachment_paths, document_name, client_name, process_number, signed_at, created_by, updated_at, envelope_verification_code')
       .eq('id', signer.signature_request_id)
       .maybeSingle();
     if (request0Error || !request0) return jsonResponse({ success: false, error: 'Solicitacao nao encontrada' }, 404);
@@ -128,6 +171,144 @@ Deno.serve(async (req: Request) => {
     if (request0.expires_at && new Date(request0.expires_at).getTime() < Date.now()) {
       return jsonResponse({ success: false, error: 'O prazo para assinatura deste documento expirou.' }, 403);
     }
+
+    if (action === 'finalize_per_document') {
+      if (request0.signature_model !== 'per_document') {
+        return jsonResponse({ success: false, error: 'Solicitacao nao usa o modelo per_document.' }, 400);
+      }
+      if (signer.status !== 'signed') {
+        return jsonResponse({ success: false, error: 'O signatario ainda nao concluiu a assinatura.' }, 409);
+      }
+
+      const origin = String(payload?.origin ?? 'https://jurius.com.br').trim().replace(/\/$/, '') || 'https://jurius.com.br';
+      const expectedDocumentCount = Math.max(
+        1,
+        Number(payload?.expected_document_count ?? 1 + (Array.isArray(request0.attachment_paths) ? request0.attachment_paths.length : 0)),
+      );
+
+      const [{ data: docs }, { data: allSigners }] = await Promise.all([
+        supabase
+          .from('signature_request_documents')
+          .select('id, signed_file_path')
+          .eq('signature_request_id', signer.signature_request_id)
+          .not('signed_file_path', 'is', null),
+        supabase
+          .from('signature_signers')
+          .select('id, status')
+          .eq('signature_request_id', signer.signature_request_id),
+      ]);
+
+      const persistedCount = docs?.length ?? 0;
+      const allSigned = !!allSigners?.length && allSigners.every((item: any) => item.status === 'signed');
+
+      if (!allSigned) {
+        return jsonResponse({ success: true, finalized: false, reason: 'awaiting_signers', persisted_count: persistedCount, expected_document_count: expectedDocumentCount }, 200);
+      }
+
+      if (persistedCount < expectedDocumentCount) {
+        await supabase.from('signature_audit_log').insert({
+          signature_request_id: signer.signature_request_id,
+          signer_id: signer.id,
+          action: 'finalization_failed',
+          description: `Finalizacao per_document bloqueada: esperados ${expectedDocumentCount} documento(s), persistidos ${persistedCount}.`,
+          ip_address: ip_address || null,
+          user_agent: user_agent || null,
+        });
+        return jsonResponse({
+          success: false,
+          error: `Finalizacao incompleta: esperados ${expectedDocumentCount} documento(s), persistidos ${persistedCount}.`,
+          code: 'PER_DOCUMENT_PERSISTENCE_INCOMPLETE',
+          persisted_count: persistedCount,
+          expected_document_count: expectedDocumentCount,
+        }, 409);
+      }
+
+      const wasAlreadySigned = request0.status === 'signed';
+      if (!wasAlreadySigned) {
+        await supabase
+          .from('signature_requests')
+          .update({
+            status: 'signed',
+            signed_at: new Date().toISOString(),
+            envelope_verification_code: request0.envelope_verification_code || generateVerificationHash(),
+          })
+          .eq('id', signer.signature_request_id);
+
+        await supabase.from('signature_audit_log').insert({
+          signature_request_id: signer.signature_request_id,
+          signer_id: signer.id,
+          action: 'finalized',
+          description: `Envelope finalizado com ${persistedCount} documento(s) persistido(s).`,
+          ip_address: ip_address || null,
+          user_agent: user_agent || null,
+        });
+
+        const { data: request } = await supabase
+          .from('signature_requests')
+          .select('id,created_by,document_name,client_id,client_name,process_id,process_number,requirement_id,requirement_number,status,signed_at,created_at,updated_at,envelope_verification_code')
+          .eq('id', signer.signature_request_id)
+          .single();
+
+        if (request) {
+          await createCompletionNotification({
+            supabase,
+            request,
+            signer,
+            totalSigners: allSigners.length,
+          });
+          await dispatchSignatureCompletedWebhook({
+            request,
+            signer: {
+              id: signer.id,
+              signature_request_id: signer.signature_request_id,
+              name: signer.name,
+              email: signer.email,
+              cpf: signer.cpf,
+              phone: signer.phone,
+              status: signer.status,
+              signed_at: signer.signed_at,
+              verification_hash: signer.verification_hash,
+              auth_provider: signer.auth_provider,
+            },
+            totalSigners: allSigners.length,
+          });
+        }
+
+        await sendCompletionEmail({
+          requestId: signer.signature_request_id,
+          signerId: signer.id,
+          origin,
+        });
+      }
+
+      return jsonResponse({
+        success: true,
+        finalized: true,
+        persisted_count: persistedCount,
+        expected_document_count: expectedDocumentCount,
+      });
+    }
+
+    if (action === 'report_per_document_failure') {
+      const stage = String(payload?.stage ?? 'unknown').trim() || 'unknown';
+      const errorMessage = String(payload?.error ?? 'Falha desconhecida').trim();
+      const expectedDocumentCount = Number(payload?.expected_document_count ?? 0);
+      const persistedCount = Number(payload?.persisted_count ?? 0);
+      await supabase.from('signature_audit_log').insert({
+        signature_request_id: signer.signature_request_id,
+        signer_id: signer.id,
+        action: 'finalization_failed',
+        description: `Falha na conclusao per_document (${stage}). Persistidos ${persistedCount}/${expectedDocumentCount}. Erro: ${errorMessage}`.slice(0, 1000),
+        ip_address: ip_address || null,
+        user_agent: user_agent || null,
+      });
+      return jsonResponse({ success: true, logged: true });
+    }
+
+    if (!signature_image) return jsonResponse({ success: false, error: 'Signature image is required' }, 400);
+    if (signer.status !== 'pending') return jsonResponse({ success: false, error: 'Document already signed or cancelled' }, 400);
+    // Aceite dos Termos de Uso (LGPD) e obrigatorio para assinar. Backstop do servidor.
+    if (terms_accepted !== true) return jsonResponse({ success: false, error: 'E necessario aceitar os Termos de Uso para assinar.' }, 400);
 
     // Ordem sequencial: o signatario so pode assinar quando todos os de "order"
     // menor ja tiverem assinado. Backstop de seguranca do servidor — a pagina
@@ -206,28 +387,28 @@ Deno.serve(async (req: Request) => {
       await supabase.from('signature_audit_log').insert({ signature_request_id: signer.signature_request_id, signer_id: signer.id, action: 'signed', description: `Documento assinado por ${signer_name||signer.name}`, ip_address: ip_address||null, user_agent: user_agent||null });
     } catch {}
 
-    // Send confirmation email (non-blocking)
+    // No modelo per_document, o e-mail precisa esperar a persistência dos PDFs
+    // finais do envelope. O disparo fica no cliente após essa etapa.
     try {
-      const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-      if (supabaseUrl && anonKey) {
-        fetch(`${supabaseUrl}/functions/v1/send-signature-link`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anonKey}` },
-          body: JSON.stringify({ request_id: updatedSigner.signature_request_id, signer_id: updatedSigner.id, origin: 'https://jurius.com.br' }),
-        }).catch((e: unknown) => console.error('Email error:', e))
-        console.log('📧 Email disparado para', updatedSigner.id)
+      if (request0.signature_model !== 'per_document') {
+        await sendCompletionEmail({
+          requestId: updatedSigner.signature_request_id,
+          signerId: updatedSigner.id,
+          origin: 'https://jurius.com.br',
+        });
+        console.log('📧 Email disparado para', updatedSigner.id);
       }
-    } catch {}
+    } catch (e) {
+      console.error('Email error:', e);
+    }
 
     // Check all signed
     try {
       const { data: allSigners } = await supabase.from('signature_signers').select('status').eq('signature_request_id', signer.signature_request_id);
-      if (allSigners?.length && allSigners.every((s: any) => s.status === 'signed')) {
+      if (request0.signature_model !== 'per_document' && allSigners?.length && allSigners.every((s: any) => s.status === 'signed')) {
         await supabase.from('signature_requests').update({ status: 'signed', signed_at: new Date().toISOString() }).eq('id', signer.signature_request_id);
         const { data: request } = await supabase.from('signature_requests').select('id,created_by,document_name,client_id,client_name,process_id,process_number,requirement_id,requirement_number,status,signed_at,created_at,updated_at').eq('id', signer.signature_request_id).single();
-        if (request?.created_by) {
-          await supabase.from('user_notifications').insert({ user_id: request.created_by, title: '✅ Documento Totalmente Assinado!', message: `"${request.document_name}" foi assinado por todos (${allSigners.length}/${allSigners.length})`, type: 'process_updated', read: false, created_at: new Date().toISOString(), metadata: { signature_type: 'completed', signer_name: signer_name||signer.name, signer_email: signer.email, document_name: request.document_name, signed_count: allSigners.length, total_signers: allSigners.length, request_id: signer.signature_request_id } });
-        }
+        if (request) await createCompletionNotification({ supabase, request, signer, totalSigners: allSigners.length });
         if (request) await dispatchSignatureCompletedWebhook({ request, signer: { id: updatedSigner.id, signature_request_id: updatedSigner.signature_request_id, name: updatedSigner.name, email: updatedSigner.email, cpf: updatedSigner.cpf, phone: updatedSigner.phone, status: updatedSigner.status, signed_at: updatedSigner.signed_at, verification_hash: updatedSigner.verification_hash, auth_provider: updatedSigner.auth_provider }, totalSigners: allSigners.length });
       }
     } catch (e) { console.error('Status update error:', e); }

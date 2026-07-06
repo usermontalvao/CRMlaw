@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.303': { name: 'Cafe Envelope Blindado e Auditoria Coesa', emoji: '[signature]' },
   '1.10.302': { name: 'Cafe Protocolo Publico e Verificacao Afinada', emoji: '[signature]' },
   '1.10.301': { name: 'Cafe Relatorio Rico e Trilha Completa', emoji: '[art]' },
   '1.10.300': { name: 'Cafe Certificado Sem Badge Verde', emoji: '[art]' },
@@ -953,6 +954,21 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.303',
+    date: '06/07/2026',
+    summary: 'O fluxo publico de assinatura foi blindado contra finalizacao prematura, os emails passaram a refletir melhor os documentos do kit e o certificado ganhou texto de autenticacao mais coeso com Google e verificacao facial por IA.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'security' as const, title: 'Envelope per_document so finaliza depois da persistencia real dos arquivos', description: 'O backend passou a validar a quantidade esperada de documentos assinados, registrar falhas explicitas de finalizacao e impedir o envio do email antes de a geracao final concluir de forma consistente.' },
+        { type: 'improvement' as const, title: 'Emails e verificacao publica ficaram mais coerentes para kit e documentos individuais', description: 'A comunicacao final passou a listar os documentos assinados sem extensao quando aplicavel, apontar os links individuais para o codigo de verificacao do documento e manter a consulta por protocolo do envelope com fallback seguro para kits antigos.' },
+        { type: 'fix' as const, title: 'Registro de eventos do certificado foi simplificado para autenticacao via Google', description: 'A trilha de auditoria do certificado trocou o texto de login detalhado por eventos de autenticacao mais limpos, incluindo o complemento de verificacao facial por IA quando houver selfie no fluxo.' },
+      ]},
+      { moduleId: 'seguranca', changes: [
+        { type: 'improvement' as const, title: 'Migrations e deduplicacao operacional consolidaram o endurecimento do fluxo publico', description: 'As migrations desta entrega cobrem dedupe de envio de email, fallback de verificacao por hash, novos eventos de auditoria e finalizacao automatica ao anexar todos os documentos assinados.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.302',
     date: '05/07/2026',

@@ -26,6 +26,12 @@ export interface PerDocumentScope {
   verificationUrl: string;
   /** Paths/URLs do arquivo ORIGINAL para o hash de integridade individual. */
   integritySources?: string[];
+  /**
+   * Nome PRÓPRIO deste documento (display_name do arquivo em escopo) — usado no
+   * cabeçalho do relatório. Sem isto, cada anexo herdaria o nome do envelope
+   * (ex.: "KIT CONSUMIDOR …"). Ausente ⇒ cai no request.document_name.
+   */
+  documentName?: string;
 }
 
 interface SignedPdfOptions {
@@ -1062,8 +1068,10 @@ class PdfSignatureService {
     qrImage?: EmbeddedImage | null;
     verificationUrl?: string | null;
     integritySha256?: string | null;
+    /** Modelo per_document: nome PRÓPRIO do documento p/ o cabeçalho (senão usa request.document_name). */
+    documentName?: string | null;
   }) {
-    const { pdfDoc, request, signer, creator, signatureImage, facialImage, qrImage, verificationUrl, integritySha256 } = params;
+    const { pdfDoc, request, signer, creator, signatureImage, facialImage, qrImage, verificationUrl, integritySha256, documentName } = params;
 
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -1273,9 +1281,12 @@ class PdfSignatureService {
       // Divisória
       page.drawLine({ start: { x: lm, y: pageHeight - 46 }, end: { x: pageWidth - lm, y: pageHeight - 46 }, thickness: 0.6, color: border });
 
-      // Nome do documento — sans profissional (Helvetica Bold)
+      // Nome do documento — sans profissional (Helvetica Bold).
+      // No modelo per_document usa o nome PRÓPRIO do arquivo (documentName); sem
+      // ele, cai no nome do envelope. Sempre sem a extensão (.docx/.pdf/…).
       {
-        const docName = request.document_name.length > 70 ? `${request.document_name.slice(0, 67)}...` : request.document_name;
+        const rawName = String(documentName || request.document_name || '').replace(/\.(pdf|docx?|rtf|odt)$/i, '').trim();
+        const docName = rawName.length > 70 ? `${rawName.slice(0, 67)}...` : rawName;
         page.drawText(docName, { x: lm, y: pageHeight - 68, size: 14, font: helveticaBold, color: navy });
       }
 
@@ -1662,6 +1673,19 @@ class PdfSignatureService {
     const creatorName = creator?.name || SYSTEM_ISSUER_LABEL;
     history.push({ label: 'Criado', when: createdAtStr, detail: `Documento emitido por ${creatorName}.`, sortAt: createdAtDate.getTime(), order: 0 });
 
+    const buildTimelineAuthSummary = (item: Signer) => {
+      const base =
+        item.auth_provider === 'phone'
+          ? 'Autenticação via Telefone'
+          : item.auth_provider === 'email_link'
+            ? 'Autenticação via Link por E-mail'
+            : item.auth_provider === 'google'
+              ? 'Autenticação via Google'
+              : 'Autenticação no fluxo de assinatura';
+
+      return item.facial_image_path ? `${base} + verificação facial por IA` : base;
+    };
+
     for (const item of signedRequestSigners) {
       const geo = this.parseGeolocation(item.signer_geolocation);
       const authEmail = String(item.auth_email || '').trim();
@@ -1672,13 +1696,7 @@ class PdfSignatureService {
       const signerContact = displayContact ? ` (${displayContactLabel}: ${displayContact})` : '';
       const signerCpf = item.cpf ? `, CPF: ${item.cpf}` : '';
       const locationInfo = geo.coordinates ? ` localizado em ${geo.coordinates}${geo.address ? ` - ${geo.address}` : ''}` : '';
-      const loginSummary = item.auth_provider === 'phone'
-        ? `fez login por telefone${phone ? ` (${phone})` : ''}`
-        : item.auth_provider === 'email_link'
-          ? `fez login por e-mail${authEmail ? ` (${authEmail})` : ''}`
-          : item.auth_provider === 'google'
-            ? `fez login pelo Google${authEmail ? ` (${authEmail})` : ''}`
-            : `acessou o fluxo de assinatura`;
+      const authTimelineSummary = buildTimelineAuthSummary(item);
 
       // ── View events: use audit log to capture ALL visits (multiple opens) ──
       const viewAuditEntries = auditLogEntries.filter(
@@ -1698,9 +1716,9 @@ class PdfSignatureService {
             order: 1,
           });
           history.push({
-            label: 'Login',
+            label: 'Autenticação',
             when: this.formatManausDateTime(ve.created_at),
-            detail: `${item.name}${signerContact}${signerCpf} ${loginSummary}${ipInfo}.`,
+            detail: `${item.name}${signerCpf}. ${authTimelineSummary}${ipInfo ? `${ipInfo}.` : '.'}`,
             sortAt: ts?.getTime() ?? 0,
             order: 2,
           });
@@ -1725,9 +1743,9 @@ class PdfSignatureService {
           order: 1,
         });
         history.push({
-          label: 'Login',
+          label: 'Autenticação',
           when: this.formatManausDateTime(item.viewed_at),
-          detail: `${item.name}${signerContact}${signerCpf} ${loginSummary}${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}.`,
+          detail: `${item.name}${signerCpf}. ${authTimelineSummary}${item.signer_ip ? ` por meio do IP ${item.signer_ip}.` : '.'}`,
           sortAt: viewedAtDate?.getTime() ?? 0,
           order: 2,
         });
@@ -1759,17 +1777,10 @@ class PdfSignatureService {
       }
 
       if (item.signed_at) {
-        const authSummary = item.auth_provider === 'phone'
-          ? `Autenticação via Telefone (${String(item.phone || '').replace(/\D/g, '') || 'não informado'})`
-          : item.auth_provider === 'email_link'
-            ? `Autenticação via Link por E-mail (${item.auth_email || 'não informado'})`
-            : item.auth_provider === 'google'
-              ? `Autenticação via Google (${item.auth_email || 'não informado'})`
-              : '';
         history.push({
           label: 'Assinado',
           when: this.formatManausDateTime(item.signed_at),
-          detail: `${item.name}${signerContact}${signerCpf} assinou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}${authSummary ? `. ${authSummary}` : ''}`,
+          detail: `${item.name}${signerContact}${signerCpf} assinou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}. ${buildTimelineAuthSummary(item)}`,
           sortAt: signedAtMs,
           order: 5,
         });
@@ -2078,6 +2089,7 @@ class PdfSignatureService {
       qrImage,
       verificationUrl,
       integritySha256,
+      documentName: perDocument?.documentName,
     });
 
     // Rodapé com hash de integridade em TODAS as páginas (documento + anexos + relatório)
@@ -3303,6 +3315,7 @@ class PdfSignatureService {
       qrImage,
       verificationUrl,
       integritySha256,
+      documentName: perDocument?.documentName,
     });
 
     const allPages = pdfDoc.getPages();
