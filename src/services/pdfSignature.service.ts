@@ -74,7 +74,6 @@ interface GeoInfo {
 
 class PdfSignatureService {
   private readonly storageBucketCache = new Map<string, string>();
-  private brandLogoPromise: Promise<HTMLImageElement | null> | null = null;
   private wordmarkPngBytes: Uint8Array | null = null;
   private wordmarkPngRatio = 4;
   private readonly serifTextCache = new Map<string, { bytes: Uint8Array; ratio: number }>();
@@ -681,23 +680,6 @@ class PdfSignatureService {
     }
   }
 
-  /** Carrega (uma única vez) a logo da marca para estampar no centro do QR. */
-  private loadBrandLogo(): Promise<HTMLImageElement | null> {
-    if (this.brandLogoPromise) return this.brandLogoPromise;
-    this.brandLogoPromise = new Promise((resolve) => {
-      try {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => resolve(null);
-        const base = (import.meta as any).env?.BASE_URL || '/';
-        img.src = `${base}logo.png`;
-      } catch {
-        resolve(null);
-      }
-    });
-    return this.brandLogoPromise;
-  }
-
   private async buildQrPng(pdfDoc: PDFDocument, url: string): Promise<EmbeddedImage | null> {
     try {
       const size = 512;
@@ -705,59 +687,13 @@ class PdfSignatureService {
       canvas.width = size;
       canvas.height = size;
 
-      // QR em tinta institucional (#111827) sobre branco. Correção 'H' (~30%)
-      // deixa margem folgada para o selo central da marca sem perder leitura.
+      // QR limpo, sem logo central, para maximizar legibilidade nos relatórios.
       await QRCode.toCanvas(canvas, url, {
         width: size,
         margin: 1,
         errorCorrectionLevel: 'H',
         color: { dark: '#111827', light: '#ffffff' },
       });
-
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const roundRect = (rx: number, ry: number, rw: number, rh: number, rr: number) => {
-          const r = Math.max(0, Math.min(rr, rw / 2, rh / 2));
-          ctx.beginPath();
-          ctx.moveTo(rx + r, ry);
-          ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, r);
-          ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, r);
-          ctx.arcTo(rx, ry + rh, rx, ry, r);
-          ctx.arcTo(rx, ry, rx + rw, ry, r);
-          ctx.closePath();
-        };
-
-        // Selo central com a logo original + respiro branco (knockout) p/ leitura.
-        const seal = Math.round(size * 0.24);
-        const sx = (size - seal) / 2;
-        const sy = (size - seal) / 2;
-        const radius = 0; // selo central quadrado (sem cantos arredondados)
-        const pad = seal * 0.16;
-
-        roundRect(sx - pad, sy - pad, seal + pad * 2, seal + pad * 2, 0);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-
-        const logo = await this.loadBrandLogo();
-        if (logo) {
-          // Logo da marca, recortada no quadrado do selo.
-          ctx.save();
-          roundRect(sx, sy, seal, seal, radius);
-          ctx.clip();
-          ctx.drawImage(logo, sx, sy, seal, seal);
-          ctx.restore();
-        } else {
-          // Fallback (logo indisponível): selo escuro com "J" serifado vazado.
-          roundRect(sx, sy, seal, seal, radius);
-          ctx.fillStyle = '#111827';
-          ctx.fill();
-          ctx.fillStyle = '#ffffff';
-          ctx.font = `600 ${Math.round(seal * 0.7)}px Georgia, "Times New Roman", serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText('J', size / 2, size / 2 + seal * 0.04);
-        }
-      }
 
       const bytes = await this.canvasToPngBytes(canvas);
       return await pdfDoc.embedPng(bytes);
@@ -1663,7 +1599,10 @@ class PdfSignatureService {
     let currentHistPage = pdfDoc.addPage([pageWidth, pageHeight]);
     createReportHeader(currentHistPage, 'TRILHA DE AUDITORIA');
     const createdAtDate = this.toDateValue(request.created_at) ?? new Date();
-    const createdAtStr = this.formatManausDateTime(createdAtDate);
+    // Horários da trilha COM segundos: eventos próximos (ex.: termos e assinatura
+    // no mesmo minuto) precisam do segundo para evidenciar a diferença/ordem.
+    const fmtWhen = (v: string | Date | null | undefined) => this.formatManausDateTime(v, { withSeconds: true });
+    const createdAtStr = fmtWhen(createdAtDate);
     // `order` = prioridade lógica para desempate quando o horário é idêntico
     // (ex.: aceite dos Termos e Assinatura no mesmo segundo): Termos antes de Assinado.
     type HistoryItem = { label: string; when: string; detail: string; sortAt: number; order: number };
@@ -1710,14 +1649,14 @@ class PdfSignatureService {
           const ipInfo = ve.ip_address ? ` por meio do IP ${ve.ip_address}` : '';
           history.push({
             label: 'Visualizado',
-            when: this.formatManausDateTime(ve.created_at),
+            when: fmtWhen(ve.created_at),
             detail: `${item.name}${signerContact}${signerCpf} abriu o documento${ipInfo}`,
             sortAt: ts?.getTime() ?? 0,
             order: 1,
           });
           history.push({
             label: 'Autenticação',
-            when: this.formatManausDateTime(ve.created_at),
+            when: fmtWhen(ve.created_at),
             detail: `${item.name}${signerCpf}. ${authTimelineSummary}${ipInfo ? `${ipInfo}.` : '.'}`,
             sortAt: ts?.getTime() ?? 0,
             order: 2,
@@ -1725,7 +1664,7 @@ class PdfSignatureService {
           if (geo.coordinates) {
             history.push({
               label: 'Localização',
-              when: this.formatManausDateTime(ve.created_at),
+              when: fmtWhen(ve.created_at),
               detail: `${item.name}${signerContact}${signerCpf} ativou a localização com coordenadas ${geo.coordinates}${geo.address ? ` (${geo.address})` : ''}.`,
               sortAt: ts?.getTime() ?? 0,
             order: 3,
@@ -1737,14 +1676,14 @@ class PdfSignatureService {
         const viewedAtDate = this.toDateValue(item.viewed_at);
         history.push({
           label: 'Visualizado',
-          when: this.formatManausDateTime(item.viewed_at),
+          when: fmtWhen(item.viewed_at),
           detail: `${item.name}${signerContact}${signerCpf} visualizou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}`,
           sortAt: viewedAtDate?.getTime() ?? 0,
           order: 1,
         });
         history.push({
           label: 'Autenticação',
-          when: this.formatManausDateTime(item.viewed_at),
+          when: fmtWhen(item.viewed_at),
           detail: `${item.name}${signerCpf}. ${authTimelineSummary}${item.signer_ip ? ` por meio do IP ${item.signer_ip}.` : '.'}`,
           sortAt: viewedAtDate?.getTime() ?? 0,
           order: 2,
@@ -1752,12 +1691,27 @@ class PdfSignatureService {
         if (geo.coordinates) {
           history.push({
             label: 'Localização',
-            when: this.formatManausDateTime(item.viewed_at),
+            when: fmtWhen(item.viewed_at),
             detail: `${item.name}${signerContact}${signerCpf} ativou a localização com coordenadas ${geo.coordinates}${geo.address ? ` (${geo.address})` : ''}.`,
             sortAt: viewedAtDate?.getTime() ?? 0,
             order: 3,
           });
         }
+      }
+
+      // Biometria facial (selfie): registra explicitamente o consentimento de
+      // câmera + a captura da selfie usada na verificação facial por IA. Não há
+      // coluna própria de captura, então ancoramos no horário da autenticação
+      // (ordem 2.5 = logo após "Autenticação", antes de "Localização").
+      if (item.facial_image_path) {
+        const facialWhenRaw = viewAuditEntries[0]?.created_at ?? item.viewed_at ?? item.signed_at ?? null;
+        history.push({
+          label: 'Biometria facial',
+          when: fmtWhen(facialWhenRaw),
+          detail: `${item.name}${signerContact}${signerCpf} concedeu acesso à câmera e teve a selfie capturada para verificação facial por IA.`,
+          sortAt: this.toDateValue(facialWhenRaw)?.getTime() ?? 0,
+          order: 2.5,
+        });
       }
 
       const signedAtMs = item.signed_at ? (this.toDateValue(item.signed_at)?.getTime() ?? 0) : 0;
@@ -1768,7 +1722,7 @@ class PdfSignatureService {
         const termsVersion = String(item.terms_version || 'v1');
         history.push({
           label: 'Termos',
-          when: this.formatManausDateTime(item.terms_accepted_at),
+          when: fmtWhen(item.terms_accepted_at),
           detail: `${item.name}${signerContact}${signerCpf} declarou ter lido e aceitado os Termos de Uso (versão ${termsVersion})${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}. Consulte em ${buildPublicSignatureTermsUrl(termsVersion)}`,
           // Trava: nunca depois da assinatura (mesmo se o timestamp gravado for igual/posterior).
           sortAt: signedAtMs ? Math.min(termsAtMs, signedAtMs) : termsAtMs,
@@ -1779,7 +1733,7 @@ class PdfSignatureService {
       if (item.signed_at) {
         history.push({
           label: 'Assinado',
-          when: this.formatManausDateTime(item.signed_at),
+          when: fmtWhen(item.signed_at),
           detail: `${item.name}${signerContact}${signerCpf} assinou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}. ${buildTimelineAuthSummary(item)}`,
           sortAt: signedAtMs,
           order: 5,

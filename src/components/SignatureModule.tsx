@@ -6158,7 +6158,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
                 {detailsRequest.signers.every((s) => s.status === 'signed') && (
                   <div className={(detailsRequest as any).signature_model === 'per_document' ? '' : 'mt-3 pt-3'} style={(detailsRequest as any).signature_model === 'per_document' ? undefined : { borderTop: '1px solid #f1f5f9' }}>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                    <div className="flex flex-nowrap items-center gap-x-3 overflow-x-auto scrollbar-hide">
                       <button
                         disabled={openProcessLoading}
                         onClick={async () => {
@@ -6178,7 +6178,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             setOpenProcessLoading(false);
                           }
                         }}
-                        className="group flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors disabled:opacity-60"
+                        className="group flex items-center gap-1.5 text-[13px] text-slate-500 hover:text-orange-600 transition-colors whitespace-nowrap flex-shrink-0 disabled:opacity-60"
                       >
                         {openProcessLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : detailsRequest.process_id ? <ExternalLink className="w-3.5 h-3.5" /> : showCreateProcess ? <EyeOff className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
                         <span className="group-hover:underline underline-offset-2">
@@ -6195,7 +6195,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           setDetailsRequest(null);
                           navigateTo('requerimentos', { mode: 'create', prefill: { client_id: detailsRequest.client_id, beneficiary: detailsRequest.client_name || undefined, cpf, signature_id: detailsRequest.id } } as any);
                         }}
-                        className="group flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors"
+                        className="group flex items-center gap-1.5 text-[13px] text-slate-500 hover:text-orange-600 transition-colors whitespace-nowrap flex-shrink-0"
                       >
                         <FileText className="w-3.5 h-3.5" />
                         <span className="group-hover:underline underline-offset-2">Requerimento</span>
@@ -6203,7 +6203,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       <button
                         disabled={copyToCloudLoading}
                         onClick={() => handleCopySignedDocumentToCloud(detailsRequest)}
-                        className="group flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors disabled:opacity-60"
+                        className="group flex items-center gap-1.5 text-[13px] text-slate-500 hover:text-orange-600 transition-colors whitespace-nowrap flex-shrink-0 disabled:opacity-60"
                       >
                         {copyToCloudLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderOpen className="w-3.5 h-3.5" />}
                         <span className="group-hover:underline underline-offset-2">{copyToCloudLoading ? 'Copiando...' : 'Criar pasta'}</span>
@@ -6214,7 +6214,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                             const url = `${window.location.origin}/#/documento/${detailsRequest.public_token}`;
                             navigator.clipboard.writeText(url).then(() => toast.success('Link público copiado!'));
                           }}
-                          className="group flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors"
+                          className="group flex items-center gap-1.5 text-[13px] text-slate-500 hover:text-orange-600 transition-colors whitespace-nowrap flex-shrink-0"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                           <span className="group-hover:underline underline-offset-2">Página pública</span>
@@ -6239,7 +6239,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                               setSendEmailLoading(false);
                             }
                           }}
-                          className="group flex items-center gap-1.5 text-sm text-slate-500 hover:text-orange-600 transition-colors disabled:opacity-50"
+                          className="group flex items-center gap-1.5 text-[13px] text-slate-500 hover:text-orange-600 transition-colors whitespace-nowrap flex-shrink-0 disabled:opacity-50"
                         >
                           {sendEmailLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
                           <span className="group-hover:underline underline-offset-2">{sendEmailLoading ? 'Enviando...' : 'Enviar ao cliente'}</span>

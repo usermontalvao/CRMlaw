@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.304': { name: 'Cafe QR Limpo e Acoes Compactas', emoji: '[signature]' },
   '1.10.303': { name: 'Cafe Envelope Blindado e Auditoria Coesa', emoji: '[signature]' },
   '1.10.302': { name: 'Cafe Protocolo Publico e Verificacao Afinada', emoji: '[signature]' },
   '1.10.301': { name: 'Cafe Relatorio Rico e Trilha Completa', emoji: '[art]' },
@@ -954,6 +955,18 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.304',
+    date: '06/07/2026',
+    summary: 'Os relatórios de assinatura passaram a usar QR limpo sem logo central, a trilha mostra horários com segundos e o detalhe administrativo ficou mais compacto nas ações finais do documento assinado.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'fix' as const, title: 'QR dos relatórios e certificados ficou limpo, sem logo no centro', description: 'O gerador de PDF do módulo de assinatura deixou de aplicar selo e fallback com a letra J dentro do QR code, priorizando legibilidade máxima na validação dos documentos.' },
+        { type: 'improvement' as const, title: 'Trilha de auditoria do certificado passou a exibir segundos e biometria facial explicitamente', description: 'Os horários do registro de eventos agora mostram segundos para diferenciar ações muito próximas, e a captura de selfie para verificação facial por IA ganhou um evento próprio no histórico do certificado.' },
+        { type: 'improvement' as const, title: 'Ações do detalhe administrativo ficaram em linha única com rolagem horizontal segura', description: 'No modal de detalhes da assinatura concluída, os atalhos como processo, requerimento, nuvem, página pública e envio ao cliente passaram a usar uma faixa compacta sem quebra visual entre botões.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.303',
     date: '06/07/2026',
