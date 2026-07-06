@@ -1624,10 +1624,9 @@ class PdfSignatureService {
             : item.auth_provider === 'google'
               ? 'Autenticação via Google'
               : 'Autenticação no fluxo de assinatura';
-      const withFacial = item.facial_image_path ? `${base} + verificação facial` : base;
       return item.auth_provider === 'google' && item.auth_google_sub
-        ? `${withFacial}. Google ID: ${item.auth_google_sub}`
-        : withFacial;
+        ? `${base}. Google ID: ${item.auth_google_sub}`
+        : base;
     };
 
     for (const item of signedRequestSigners) {
@@ -1655,7 +1654,7 @@ class PdfSignatureService {
           history.push({
             label: 'Visualizado',
             when: fmtWhen(ve.created_at),
-            detail: `${item.name}${signerContact}${signerCpf} abriu o documento${ipInfo}`,
+            detail: `${item.name}${signerCpf} abriu o documento${ipInfo}`,
             sortAt: ts?.getTime() ?? 0,
             order: 1,
           });
@@ -1682,7 +1681,7 @@ class PdfSignatureService {
         history.push({
           label: 'Visualizado',
           when: fmtWhen(item.viewed_at),
-          detail: `${item.name}${signerContact}${signerCpf} visualizou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}`,
+          detail: `${item.name}${signerCpf} visualizou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}`,
           sortAt: viewedAtDate?.getTime() ?? 0,
           order: 1,
         });

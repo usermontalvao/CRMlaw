@@ -29,14 +29,13 @@ const buildSignerEvents = (s: any): SignerEvent[] => {
     : s.auth_provider === 'email_link' ? 'Autenticação via Link por E-mail'
     : s.auth_provider === 'google' ? 'Autenticação via Google'
     : 'Autenticação no fluxo de assinatura';
-  const withFacial = s.has_facial_biometrics ? `${base} + verificação facial` : base;
-  const authSummary = (s.auth_provider === 'google' && s.auth_google_sub) ? `${withFacial}. Google ID: ${s.auth_google_sub}` : withFacial;
+  const authSummary = (s.auth_provider === 'google' && s.auth_google_sub) ? `${base}. Google ID: ${s.auth_google_sub}` : base;
 
   const viewedAt = s.viewed_at || s.opened_at;
   const signedMs = s.signed_at ? ms(s.signed_at) : 0;
   const events: SignerEvent[] = [];
   if (viewedAt) {
-    events.push({ label: 'Visualizado', at: viewedAt, sortAt: ms(viewedAt), order: 1, detail: `${name}${contact}${cpf} abriu o documento${ipInfo}.` });
+    events.push({ label: 'Visualizado', at: viewedAt, sortAt: ms(viewedAt), order: 1, detail: `${name}${cpf} abriu o documento${ipInfo}.` });
     events.push({ label: 'Autenticação', at: viewedAt, sortAt: ms(viewedAt), order: 2, detail: `${name}${cpf}. ${authSummary}${ipInfo ? `${ipInfo}.` : '.'}` });
     if (s.has_facial_biometrics) events.push({ label: 'Biometria facial', at: viewedAt, sortAt: ms(viewedAt), order: 2.5, detail: `${name}${contact}${cpf} concedeu acesso à câmera e teve a selfie capturada para verificação facial.` });
     if (hasGeo) events.push({ label: 'Localização', at: viewedAt, sortAt: ms(viewedAt), order: 3, detail: `${name}${contact}${cpf} ativou a localização com coordenadas ${geo}.` });

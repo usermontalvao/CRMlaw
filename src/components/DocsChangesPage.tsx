@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.309': { name: 'Cafe Trilha Cronologica Coesa', emoji: '[signature]' },
   '1.10.308': { name: 'Cafe Laudo Seco e Disparo Blindado', emoji: '[signature]' },
   '1.10.304': { name: 'Cafe QR Limpo e Acoes Compactas', emoji: '[signature]' },
   '1.10.303': { name: 'Cafe Envelope Blindado e Auditoria Coesa', emoji: '[signature]' },
@@ -956,6 +957,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.309',
+    date: '06/07/2026',
+    summary: 'A trilha probatória da assinatura foi ajustada para respeitar a cronologia real dos eventos no PDF e no laudo, sem expor contato no simples visualizado nem antecipar a biometria facial na etapa de autenticação.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Trilha de eventos sem contato indevido no visualizado',
+            description: 'Os eventos "Visualizado" do PDF e do laudo agora exibem apenas nome, CPF e IP, sem inferir e-mail ou telefone antes da etapa correta do fluxo de autenticação.',
+          },
+          {
+            type: 'fix',
+            title: 'Autenticação não antecipa biometria facial',
+            description: 'Os textos de "Autenticação" passaram a mencionar apenas o método efetivo de autenticação e o Google ID quando existir. A biometria facial permanece registrada somente no evento específico dela.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.308',
     date: '06/07/2026',
