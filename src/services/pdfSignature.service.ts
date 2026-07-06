@@ -1624,8 +1624,10 @@ class PdfSignatureService {
             : item.auth_provider === 'google'
               ? 'Autenticação via Google'
               : 'Autenticação no fluxo de assinatura';
-
-      return item.facial_image_path ? `${base} + verificação facial por IA` : base;
+      const withFacial = item.facial_image_path ? `${base} + verificação facial` : base;
+      return item.auth_provider === 'google' && item.auth_google_sub
+        ? `${withFacial}. Google ID: ${item.auth_google_sub}`
+        : withFacial;
     };
 
     for (const item of signedRequestSigners) {
@@ -1703,7 +1705,7 @@ class PdfSignatureService {
       }
 
       // Biometria facial (selfie): registra explicitamente o consentimento de
-      // câmera + a captura da selfie usada na verificação facial por IA. Não há
+      // câmera + a captura da selfie usada na verificação facial. Não há
       // coluna própria de captura, então ancoramos no horário da autenticação
       // (ordem 2.5 = logo após "Autenticação", antes de "Localização").
       if (item.facial_image_path) {
@@ -1711,7 +1713,7 @@ class PdfSignatureService {
         history.push({
           label: 'Biometria facial',
           when: fmtWhen(facialWhenRaw),
-          detail: `${item.name}${signerContact}${signerCpf} concedeu acesso à câmera e teve a selfie capturada para verificação facial por IA.`,
+          detail: `${item.name}${signerContact}${signerCpf} concedeu acesso à câmera e teve a selfie capturada para verificação facial.`,
           sortAt: this.toDateValue(facialWhenRaw)?.getTime() ?? 0,
           order: 2.5,
         });

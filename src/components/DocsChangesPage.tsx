@@ -956,6 +956,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.306',
+    date: '06/07/2026',
+    summary: 'O CRM consolidou a leitura de e-mails com links externos, refinou o texto probatório do certificado de assinatura e passou a expor um dossiê forense interno do envelope assinado.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Dossie forense do envelope ficou disponivel no servico interno', description: 'O modulo passou a expor uma consulta RPC dedicada para montar o relatorio probatorio completo do envelope, incluindo hashes, autenticacao, biometria, trilha encadeada e veredito de integridade.' },
+        { type: 'fix' as const, title: 'Certificado deixou de mencionar IA na verificacao facial e passou a exibir o Google ID', description: 'Os textos do registro de eventos agora falam apenas em verificacao facial e, quando a autenticacao vier do Google, incluem o identificador Google do signatario no resumo probatorio.' },
+      ]},
+      { moduleId: 'email', changes: [
+        { type: 'fix' as const, title: 'Links do corpo do e-mail passaram a abrir fora do modulo', description: 'A leitura HTML do modulo de e-mail passou a forcar links em nova aba com isolamento seguro, evitando que URLs externas substituam a navegacao interna do CRM.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.305',
     date: '06/07/2026',
     summary: 'A assinatura ganhou uma camada de auditoria a prova de adulteracao e a finalizacao do envelope passou a ser controlada e verificada pelo servidor, reforcando o valor probatorio dos documentos assinados.',

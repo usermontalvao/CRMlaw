@@ -791,6 +791,23 @@ class SignatureService {
     return (data ?? []) as SignatureRequestDocument[];
   }
 
+  /**
+   * Dossiê probatório completo de um envelope (uso INTERNO, office-staff ou criador).
+   * Monta no servidor: envelope + documentos (com hashes) + signatários (prova do ato:
+   * IP, dispositivo, geolocalização, autenticação, aceite, biometria, carimbos) +
+   * trilha de auditoria encadeada + VEREDITO de integridade da cadeia. É o material
+   * para juntar num processo e comprovar a licitude da assinatura.
+   */
+  async getForensicReport(requestId: string): Promise<any | null> {
+    if (!requestId) return null;
+    const { data, error } = await supabase.rpc('signature_forensic_report', { p_request_id: requestId });
+    if (error) {
+      console.error('[FORENSE] Falha ao gerar dossiê probatório:', error);
+      throw new Error(error.message || 'Falha ao gerar o relatório forense.');
+    }
+    return data ?? null;
+  }
+
   /** Fluxo INTERNO (office-staff): lista os documentos assinados individuais de um envelope. */
   async listRequestDocuments(requestId: string): Promise<SignatureRequestDocument[]> {
     if (!requestId) return [];
