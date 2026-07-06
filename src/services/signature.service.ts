@@ -926,6 +926,87 @@ class SignatureService {
     return data.signer as Signer;
   }
 
+  /**
+   * FASE 1 (server-side): aciona o orquestrador `finalize-signature-envelope`, que
+   * relê os PDFs do Storage, RECALCULA o SHA-256 no servidor (A1), detecta
+   * sobrescrita (A4) e é a ÚNICA autoridade que flipa o envelope e dispara e-mail.
+   * Idempotente. Retorna a forma compatível com o finalize legado.
+   */
+  async finalizeEnvelopeServerSide(
+    publicToken: string,
+    params: { expectedDocumentCount: number; origin?: string; ipAddress?: string; userAgent?: string },
+  ): Promise<{ finalized: boolean; reason?: string; persistedCount: number; expectedDocumentCount: number; jobId?: string }> {
+    const { data, error } = await supabase.functions.invoke('finalize-signature-envelope', {
+      body: {
+        token: publicToken,
+        origin: params.origin,
+        ip_address: params.ipAddress,
+        user_agent: params.userAgent,
+      },
+    });
+    if (error) {
+      const serverMessage = await this.extractEdgeErrorMessage(error);
+      throw new Error(serverMessage || error.message || 'Erro ao finalizar o envelope assinado');
+    }
+    if (data && data.success === false) {
+      throw new Error(data.error || 'Erro ao finalizar o envelope assinado');
+    }
+    return {
+      finalized: data?.finalized === true,
+      reason: data?.reason || undefined,
+      persistedCount: Number(data?.persisted ?? 0),
+      expectedDocumentCount: Number(data?.expected ?? params.expectedDocumentCount),
+      jobId: data?.job_id,
+    };
+  }
+
+  /** FASE 2: status do job de finalização para o polling do frontend público (token-scoped). */
+  async getFinalizationStatusPublic(publicToken: string): Promise<{
+    requestStatus: string | null; jobStatus: string; stage: string | null; progress: number;
+    expected: number | null; persisted: number | null; finalized: boolean; error: string | null;
+  } | null> {
+    if (!publicToken) return null;
+    const { data, error } = await supabase.rpc('public_signature_finalization_status', { p_token: publicToken });
+    if (error || !data) return null;
+    return {
+      requestStatus: (data as any).request_status ?? null,
+      jobStatus: (data as any).job_status ?? 'none',
+      stage: (data as any).stage ?? null,
+      progress: Number((data as any).progress ?? 0),
+      expected: (data as any).expected ?? null,
+      persisted: (data as any).persisted ?? null,
+      finalized: (data as any).finalized === true,
+      error: (data as any).error ?? null,
+    };
+  }
+
+  /**
+   * FASE 2: aguarda a finalização REAL do envelope no servidor via polling do job,
+   * emitindo progresso por etapas. Usado quando o orquestrador ainda não retornou
+   * `finalized` (ex.: lock em outro worker, aguardando persistência). Nunca lança
+   * por timeout — devolve o último estado conhecido para o chamador decidir.
+   */
+  async waitForFinalizationPublic(
+    publicToken: string,
+    opts?: { timeoutMs?: number; intervalMs?: number; onProgress?: (p: { stage: string | null; progress: number }) => void },
+  ): Promise<{ finalized: boolean; failed: boolean; error: string | null; stage: string | null; progress: number }> {
+    const timeoutMs = opts?.timeoutMs ?? 30_000;
+    const intervalMs = opts?.intervalMs ?? 2_000;
+    const deadline = Date.now() + timeoutMs;
+    let last = { finalized: false, failed: false, error: null as string | null, stage: null as string | null, progress: 0 };
+    while (Date.now() < deadline) {
+      const s = await this.getFinalizationStatusPublic(publicToken);
+      if (s) {
+        last = { finalized: s.finalized, failed: s.jobStatus === 'failed', error: s.error, stage: s.stage, progress: s.progress };
+        opts?.onProgress?.({ stage: s.stage, progress: s.progress });
+        if (s.finalized) return last;
+        if (s.jobStatus === 'failed') return last;
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    return last;
+  }
+
   async finalizePerDocumentSigningPublic(
     publicToken: string,
     params: {
@@ -935,6 +1016,19 @@ class SignatureService {
       userAgent?: string;
     },
   ): Promise<{ finalized: boolean; reason?: string; persistedCount: number; expectedDocumentCount: number }> {
+    // Prefere o orquestrador server-side (autoridade sobre hash/finalização, A1/A4).
+    // Fallback gracioso para o caminho legado se a função nova ainda não estiver
+    // deployada — garante deploy incremental sem quebrar produção.
+    try {
+      const res = await this.finalizeEnvelopeServerSide(publicToken, params);
+      return { finalized: res.finalized, reason: res.reason, persistedCount: res.persistedCount, expectedDocumentCount: res.expectedDocumentCount };
+    } catch (e) {
+      const msg = (e as Error)?.message || '';
+      const notDeployed = /not\s*found|404|Failed to send a request|Function not found/i.test(msg);
+      if (!notDeployed) throw e;
+      console.warn('[FINALIZE] orquestrador server-side indisponível; usando caminho legado.', msg);
+    }
+
     const { data, error } = await supabase.functions.invoke('public-sign-document', {
       body: {
         action: 'finalize_per_document',

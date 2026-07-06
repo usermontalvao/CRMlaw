@@ -154,9 +154,12 @@ class PdfSignatureService {
 
     // @ts-ignore - Uint8Array é aceito em runtime
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    // A4 (write-once): artefato assinado NUNCA sobrescreve. O filePath já é único
+    // por instante (Date.now()); upsert:false impede substituição silenciosa de um
+    // PDF assinado no mesmo caminho — requisito forense de imutabilidade.
     const { error } = await supabase.storage
       .from('assinados')
-      .upload(filePath, blob, { contentType: 'application/pdf', upsert: true });
+      .upload(filePath, blob, { contentType: 'application/pdf', upsert: false });
     if (error) {
       console.error(`[PDF] Erro ao salvar ${errorLabel}:`, error);
       throw new Error(`Erro ao salvar ${errorLabel}: ${error.message}`);

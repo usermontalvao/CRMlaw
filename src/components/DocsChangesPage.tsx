@@ -956,6 +956,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.305',
+    date: '06/07/2026',
+    summary: 'A assinatura ganhou uma camada de auditoria a prova de adulteracao e a finalizacao do envelope passou a ser controlada e verificada pelo servidor, reforcando o valor probatorio dos documentos assinados.',
+    modules: [
+      { moduleId: 'seguranca', changes: [
+        { type: 'security' as const, title: 'Trilha de auditoria da assinatura ficou inviolavel e permanente', description: 'O registro de eventos passou a ser append-only (nao pode ser editado nem apagado, nem pelo backend) e encadeado por hash por envelope, de modo que qualquer alteracao no historico se torna detectavel. O log tambem sobrevive a exclusao do documento, com os dados-chave congelados na propria linha.' },
+        { type: 'security' as const, title: 'Integridade dos PDFs assinados passou a ser calculada pelo servidor', description: 'O hash de cada documento assinado deixou de depender do navegador e passa a ser recalculado no servidor a partir do arquivo armazenado, com deteccao de sobrescrita. Os arquivos assinados tornaram-se imutaveis (nunca sobrescrevem o mesmo caminho).' },
+      ]},
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Finalizacao do envelope passou a ser orquestrada e verificada no servidor', description: 'A conclusao da assinatura agora e controlada por um motor de finalizacao idempotente e retomavel, que so marca o envelope como assinado e dispara o email apos confirmar a persistencia integral de todos os documentos. O fluxo per_document e a consulta publica por protocolo e por codigo individual seguem inalterados.' },
+      ]},
+    ],
+  },
+  {
     version: '1.10.304',
     date: '06/07/2026',
     summary: 'Os relatórios de assinatura passaram a usar QR limpo sem logo central, a trilha mostra horários com segundos e o detalhe administrativo ficou mais compacto nas ações finais do documento assinado.',
