@@ -71,6 +71,7 @@ BEGIN
              'auth_method', s.auth_method,
              'auth_provider', s.auth_provider,
              'auth_email', s.auth_email,
+             'auth_google_sub', s.auth_google_sub,
              'ip_address', s.signer_ip,
              'user_agent', s.signer_user_agent,
              'geolocation', s.signer_geolocation,
@@ -81,6 +82,9 @@ BEGIN
              'terms_accepted_at', s.terms_accepted_at,
              'terms_version', s.terms_version,
              'signer_verification_hash', s.verification_hash,
+             'signature_image_path', s.signature_image_path,
+             'facial_image_path', s.facial_image_path,
+             'document_image_path', s.document_image_path,
              'signed_pdf_sha256', s.signed_pdf_sha256,
              'integrity_sha256', s.integrity_sha256,
              'presented_document_sha256', s.presented_document_sha256,
@@ -120,7 +124,7 @@ BEGIN
       'kind', 'forensic_dossier',
       'version', 1,
       'generated_at', now(),
-      'methodology', 'Assinatura eletronica (Lei 14.063/2020 / MP 2.200-2). Integridade por SHA-256 e trilha de auditoria append-only encadeada por hash. Cada documento e verificavel por seu codigo individual; a integridade da cadeia e recalculada no servidor no momento da emissao deste relatorio.'
+      'methodology', 'A integridade de cada documento é aferida por função de hash criptográfica SHA-256 e por trilha de auditoria do tipo append-only encadeada por hash (cada registro incorpora o hash do registro anterior, tornando a adulteração detectável). Cada documento é verificável de forma independente por seu código individual, e a integridade da cadeia é recalculada no servidor no momento da emissão deste laudo.'
     ),
     'envelope', jsonb_build_object(
       'id', v_req.id,

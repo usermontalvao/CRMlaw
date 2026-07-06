@@ -92,17 +92,24 @@ async function sendCompletionEmail(input: {
 }): Promise<void> {
   if (input.skip) return;
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-  if (!supabaseUrl || !anonKey) return;
-  await fetch(`${supabaseUrl}/functions/v1/send-signature-link`, {
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+  if (!supabaseUrl || !serviceRoleKey) return;
+  const res = await fetch(`${supabaseUrl}/functions/v1/send-signature-link`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${anonKey}` },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-signature-internal-key': serviceRoleKey,
+    },
     body: JSON.stringify({
       request_id: input.requestId,
       signer_id: input.signerId,
       origin: input.origin,
     }),
   });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`send-signature-link falhou (${res.status}): ${body || 'sem corpo'}`);
+  }
 }
 
 async function createCompletionNotification(input: {

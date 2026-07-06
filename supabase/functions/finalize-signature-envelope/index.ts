@@ -201,11 +201,18 @@ Deno.serve(async (req: Request) => {
         // tem dedupe próprio (migration signature_email_dispatch_dedupe), reforçando "sem duplo e-mail".
         try {
           const firstSigner = signers[0]?.id ?? signerId;
-          await fetch(`${supabaseUrl}/functions/v1/send-signature-link`, {
+          const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-signature-link`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY') ?? ''}` },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-signature-internal-key': serviceRoleKey,
+            },
             body: JSON.stringify({ request_id: requestId, signer_id: firstSigner, origin }),
           });
+          if (!emailRes.ok) {
+            const emailBody = await emailRes.text().catch(() => '');
+            throw new Error(`send-signature-link falhou (${emailRes.status}): ${emailBody || 'sem corpo'}`);
+          }
         } catch (e) { console.error('email dispatch error', e); }
 
         // Webhook opcional.

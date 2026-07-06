@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.308': { name: 'Cafe Laudo Seco e Disparo Blindado', emoji: '[signature]' },
   '1.10.304': { name: 'Cafe QR Limpo e Acoes Compactas', emoji: '[signature]' },
   '1.10.303': { name: 'Cafe Envelope Blindado e Auditoria Coesa', emoji: '[signature]' },
   '1.10.302': { name: 'Cafe Protocolo Publico e Verificacao Afinada', emoji: '[signature]' },
@@ -955,6 +956,20 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.308',
+    date: '06/07/2026',
+    summary: 'O fluxo de assinatura consolidou o disparo interno de e-mails e o dossie probatorio foi refeito para um formato mais seco, com conferencia de integridade por arquivo e evidencias do signatario.',
+    modules: [
+      { moduleId: 'assinaturas', changes: [
+        { type: 'improvement' as const, title: 'Dossie probatorio foi refeito em formato de laudo tecnico seco', description: 'A tela do dossie deixou de ter aparencia de dashboard e passou a apresentar um documento mais formal, com secoes lineares, verificacao publica do envelope, foto e assinatura do signatario e conferencia de integridade do PDF salvo.' },
+        { type: 'fix' as const, title: 'Conferencia de integridade do dossie foi estabilizada', description: 'A leitura das evidencias e dos PDFs assinados passou a evitar loops de renderizacao e a validar a existencia do arquivo antes de pedir URL assinada ao Storage, reduzindo erros 400 e falhas no carregamento do relatorio.' },
+      ]},
+      { moduleId: 'email', changes: [
+        { type: 'security' as const, title: 'Disparo interno do e-mail de assinatura passou a falhar de forma explicita', description: 'As functions do fechamento do envelope e da assinatura publica passaram a chamar o envio de e-mail com autenticacao interna dedicada e checagem de resposta, impedindo silencios quando o envio falhar.' },
+      ]},
+    ],
+  },
   {
     version: '1.10.307',
     date: '06/07/2026',
