@@ -2976,34 +2976,40 @@ function MessageView({ m, single, defaultOpen, featured = false }: { m: EmailMes
  * imagens embutidas (cid:/data:). Guarda o src original em data-blk para o
  * "Exibir imagens" reconstituir. Cobre <img src/srcset>, style inline e <style>.
  */
-function neutralizeRemoteImages(html: string): { html: string; blocked: number } {
+function prepareEmailHtml(html: string, allowRemoteImages = false): { html: string; blocked: number } {
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const isRemote = (u: string) => /^\s*https?:\/\//i.test(u);
     let blocked = 0;
+    doc.querySelectorAll('a[href]').forEach((anchor) => {
+      anchor.setAttribute('target', '_blank');
+      anchor.setAttribute('rel', 'noopener noreferrer');
+    });
     doc.querySelectorAll('img').forEach((img) => {
       const src = img.getAttribute('src') || '';
-      if (isRemote(src)) {
+      if (!allowRemoteImages && isRemote(src)) {
         img.setAttribute('data-blk', src);
         img.removeAttribute('src');
         img.removeAttribute('srcset');
         blocked++;
       }
     });
-    doc.querySelectorAll<HTMLElement>('[style*="url("]').forEach((el) => {
-      const st = el.getAttribute('style') || '';
-      if (/url\(\s*['"]?\s*https?:/i.test(st)) {
-        el.setAttribute('style', st.replace(/url\(\s*['"]?\s*https?:[^)]*\)/gi, 'none'));
-        blocked++;
-      }
-    });
-    doc.querySelectorAll('style').forEach((s) => {
-      const css = s.textContent || '';
-      if (/url\(\s*['"]?\s*https?:/i.test(css)) {
-        s.textContent = css.replace(/url\(\s*['"]?\s*https?:[^)]*\)/gi, 'none');
-        blocked++;
-      }
-    });
+    if (!allowRemoteImages) {
+      doc.querySelectorAll<HTMLElement>('[style*="url("]').forEach((el) => {
+        const st = el.getAttribute('style') || '';
+        if (/url\(\s*['"]?\s*https?:/i.test(st)) {
+          el.setAttribute('style', st.replace(/url\(\s*['"]?\s*https?:[^)]*\)/gi, 'none'));
+          blocked++;
+        }
+      });
+      doc.querySelectorAll('style').forEach((s) => {
+        const css = s.textContent || '';
+        if (/url\(\s*['"]?\s*https?:/i.test(css)) {
+          s.textContent = css.replace(/url\(\s*['"]?\s*https?:[^)]*\)/gi, 'none');
+          blocked++;
+        }
+      });
+    }
     return { html: '<!doctype html>' + doc.documentElement.outerHTML, blocked };
   } catch {
     return { html, blocked: 0 };
@@ -3027,8 +3033,9 @@ function EmailHtmlFrame({ html, msgId }: { html: string; msgId?: string }) {
     if (msgId) rememberShownImages(msgId);
     setShowImages(true);
   }, [msgId]);
-  const processed = useMemo(() => neutralizeRemoteImages(html), [html]);
-  const effectiveHtml = showImages ? html : processed.html;
+  const processedBlocked = useMemo(() => prepareEmailHtml(html, false), [html]);
+  const processedFull = useMemo(() => prepareEmailHtml(html, true), [html]);
+  const effectiveHtml = showImages ? processedFull.html : processedBlocked.html;
 
   const measure = useCallback(() => {
     const doc = ref.current?.contentDocument;
@@ -3046,6 +3053,16 @@ function EmailHtmlFrame({ html, msgId }: { html: string; msgId?: string }) {
       if (frame?.__emailSelectAllHandler) {
         doc.removeEventListener('keydown', frame.__emailSelectAllHandler);
       }
+      doc.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((anchor) => {
+        anchor.setAttribute('target', '_blank');
+        anchor.setAttribute('rel', 'noopener noreferrer');
+        anchor.addEventListener('click', (event) => {
+          const href = anchor.getAttribute('href');
+          if (!href) return;
+          event.preventDefault();
+          window.open(href, '_blank', 'noopener,noreferrer');
+        });
+      });
       const forwardSelectAllShortcut = (event: KeyboardEvent) => {
         if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'a') return;
         event.preventDefault();
@@ -3068,7 +3085,7 @@ function EmailHtmlFrame({ html, msgId }: { html: string; msgId?: string }) {
 
   return (
     <>
-      {!showImages && processed.blocked > 0 && (
+      {!showImages && processedBlocked.blocked > 0 && (
         <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
           <ImageOff className="h-4 w-4 flex-none" />
           <span>Imagens remotas bloqueadas para proteger sua privacidade.</span>

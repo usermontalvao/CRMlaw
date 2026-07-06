@@ -2773,12 +2773,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             // cada anexo), cada um com código/hash/arquivo próprios. Legado intacto no else.
             console.log('[PER-DOC] handleSign → geração individual por arquivo (principal + anexos)');
             await generatePerDocumentSignedForSigner(request, result);
-            await signatureService.finalizePerDocumentSigningPublic(token, {
+            const finalizeRes = await signatureService.finalizePerDocumentSigningPublic(token, {
               expectedDocumentCount: expectedPerDocumentCount,
               origin: window.location.origin,
               ipAddress,
               userAgent,
             });
+            // Fase 2: o orquestrador server-side é a autoridade de finalização. Se ele
+            // ainda não confirmou (lock em outro worker / aguardando persistência),
+            // aguardamos a confirmação REAL via polling do job antes de seguir — nunca
+            // tratamos como concluído sem o servidor ter finalizado o envelope.
+            if (finalizeRes && finalizeRes.finalized !== true && !finalizeRes.reason) {
+              const waited = await signatureService.waitForFinalizationPublic(token, { timeoutMs: 30000 });
+              if (waited.failed) {
+                throw new Error(waited.error || 'Falha na finalização do envelope no servidor.');
+              }
+            }
           } else {
           let signedPdfPath: string;
           let signedPdfSha256: string | null = null;

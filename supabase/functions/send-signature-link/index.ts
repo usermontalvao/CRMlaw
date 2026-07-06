@@ -3,7 +3,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-signature-internal-key',
 }
 
 const FROM_EMAIL  = 'noreply@jurius.com.br'
@@ -271,8 +271,23 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    if (!supabaseUrl || !serviceRoleKey) return json({ success: false, error: 'Supabase env nao configurado' })
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    if (!supabaseUrl || !serviceRoleKey || !anonKey) return json({ success: false, error: 'Supabase env nao configurado' }, 500)
     const supabase = createClient(supabaseUrl, serviceRoleKey)
+    const internalKey = req.headers.get('x-signature-internal-key') ?? ''
+    const isInternalCall = internalKey.length > 0 && internalKey === serviceRoleKey
+
+    if (!isInternalCall) {
+      const authHeader = req.headers.get('Authorization') ?? ''
+      if (!authHeader) return json({ success: false, error: 'Nao autorizado' }, 401)
+      const authClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      })
+      const { data: authData, error: authError } = await authClient.auth.getUser()
+      if (authError || !authData?.user) {
+        return json({ success: false, error: 'Nao autorizado' }, 401)
+      }
+    }
 
     let resendKey = Deno.env.get('RESEND_API_KEY') ?? ''
     if (!resendKey) {

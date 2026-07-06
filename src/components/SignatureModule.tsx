@@ -38,6 +38,7 @@ import type {
 } from '../types/signature.types';
 import SignatureCanvas from './SignatureCanvas';
 import SignatureReport from './SignatureReport';
+import ForensicDossier from './ForensicDossier';
 import SignatureCertificateMockup from './SignatureCertificateMockup';
 import type { GeneratedDocument } from '../types/document.types';
 import type { CloudFile, CloudFolder } from '../types/cloud.types';
@@ -383,6 +384,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   // Modelo per_document: documentos assinados individuais do envelope em foco (detalhes).
   const [detailsDocuments, setDetailsDocuments] = useState<SignatureRequestDocument[]>([]);
   const [reportTarget, setReportTarget] = useState<{ request: SignatureRequestWithSigners; signer: Signer } | null>(null);
+  const [dossierTarget, setDossierTarget] = useState<{ requestId: string; documentName?: string | null } | null>(null);
   const [waEditOpen, setWaEditOpen] = useState<string | null>(null);
   const [waEditMsg, setWaEditMsg] = useState<Record<string, string>>({});
 
@@ -6245,6 +6247,17 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           <span className="group-hover:underline underline-offset-2">{sendEmailLoading ? 'Enviando...' : 'Enviar ao cliente'}</span>
                         </button>
                       )}
+                      {detailsRequest.signers.some(s => s.status === 'signed') && (
+                        <button
+                          type="button"
+                          onClick={() => setDossierTarget({ requestId: detailsRequest.id, documentName: detailsRequest.document_name })}
+                          className="group flex items-center gap-1.5 text-[13px] text-slate-500 hover:text-orange-600 transition-colors whitespace-nowrap flex-shrink-0"
+                          title="Abrir dossiê probatório completo"
+                        >
+                          <Shield className="w-3.5 h-3.5" />
+                          <span className="group-hover:underline underline-offset-2">Dossiê probatório</span>
+                        </button>
+                      )}
                     </div>
 
                     {showCreateProcess && !detailsRequest.process_id && (
@@ -6428,6 +6441,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           {signedSigner && (
                             <button type="button" onClick={() => setReportTarget({ request: detailsRequest, signer: signedSigner })} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#64748b', background: '#ffffff', border: '1px solid #e2e8f0', cursor: 'pointer' }}>
                               <Shield style={{ width: 11, height: 11 }} />Relatório
+                            </button>
+                          )}
+                          {signedSigner && (
+                            <button type="button" onClick={() => setDossierTarget({ requestId: detailsRequest.id, documentName: detailsRequest.document_name })} title="Dossiê probatório completo para instruir processo" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 500, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', cursor: 'pointer' }}>
+                              <Shield style={{ width: 11, height: 11 }} />Dossiê probatório
                             </button>
                           )}
                           {(detailsRequest as any).blocked_at ? (
@@ -6708,7 +6726,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {isSigned && signer.verification_hash && (
                           <div className="px-3 py-2 bg-white border-t border-emerald-100 flex items-center justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="text-[10px] text-slate-400 uppercase tracking-wide">Hash</p>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wide">Código de verificação</p>
                               <p className="text-[11px] font-mono text-slate-500 truncate">{signer.verification_hash}</p>
                             </div>
                             <a href={`${window.location.origin}/#/verificar/${signer.verification_hash}`} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[11px] font-semibold hover:bg-emerald-100 transition border border-emerald-200">
@@ -6921,6 +6939,17 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             signer={reportTarget.signer}
             creator={user?.email ? { name: user.email.split('@')[0] } : null}
             onClose={() => setReportTarget(null)}
+          />
+        </div>
+      )}
+
+      {/* Modal: Dossiê Probatório (relatório forense completo do envelope) */}
+      {dossierTarget && (
+        <div className="fixed inset-0 z-[200] overflow-y-auto" style={{ background: 'rgba(15,23,42,0.6)' }}>
+          <ForensicDossier
+            requestId={dossierTarget.requestId}
+            documentName={dossierTarget.documentName}
+            onClose={() => setDossierTarget(null)}
           />
         </div>
       )}
