@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.312': { name: 'Cafe Agenda Coesa e Login Direto', emoji: '[palette]' },
   '1.10.309': { name: 'Cafe Trilha Cronologica Coesa', emoji: '[signature]' },
   '1.10.308': { name: 'Cafe Laudo Seco e Disparo Blindado', emoji: '[signature]' },
   '1.10.304': { name: 'Cafe QR Limpo e Acoes Compactas', emoji: '[signature]' },
@@ -957,6 +958,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.312',
+    date: '07/07/2026',
+    summary: 'A agenda ganhou uma paleta mais coerente por tipo, melhor leitura de prioridade e prazo, e a expiração de sessão interna voltou a cair direto no login do CRM em vez do portal público.',
+    modules: [
+      {
+        moduleId: 'calendar',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Paleta semântica e leitura mais clara na agenda',
+            description: 'Os tipos do calendário foram reequilibrados para cores fixas e mais distinguíveis, com reforço visual de prioridade sem disputar com a cor do tipo. Prazos ganharam badge de dias restantes e o atalho flutuante foi reposicionado para não colidir com o widget de mensagens.',
+          },
+        ],
+      },
+      {
+        moduleId: 'settings',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Sessão expirada do staff retorna ao login interno',
+            description: 'Quando o Supabase encerra a sessão administrativa, o bootstrap da aplicação passa a reconhecer o aviso local de expiração e renderiza o fluxo interno do CRM, evitando cair na vitrine pública do portal.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.311',
     date: '07/07/2026',

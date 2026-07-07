@@ -37,13 +37,13 @@ const DEFAULT_DURATIONS: Record<string, number> = {
 };
 
 const TYPE_STYLES: Record<EventType, { active: string; idle: string }> = {
-  meeting:     { active: 'bg-emerald-500 text-white border-emerald-500', idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-emerald-400 hover:text-emerald-600' },
-  deadline:    { active: 'bg-indigo-500  text-white border-indigo-500',  idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-indigo-400 hover:text-indigo-600' },
+  meeting:     { active: 'bg-teal-500    text-white border-teal-500',    idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-teal-400 hover:text-teal-600' },
+  deadline:    { active: 'bg-blue-500    text-white border-blue-500',    idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-blue-400 hover:text-blue-600' },
   hearing:     { active: 'bg-red-500     text-white border-red-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-red-400 hover:text-red-600' },
   pericia:     { active: 'bg-purple-500  text-white border-purple-500',  idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-purple-400 hover:text-purple-600' },
-  payment:     { active: 'bg-sky-500     text-white border-sky-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-sky-400 hover:text-sky-600' },
+  payment:     { active: 'bg-emerald-500 text-white border-emerald-500', idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-emerald-400 hover:text-emerald-600' },
   requirement: { active: 'bg-orange-500  text-white border-orange-500',  idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-orange-400 hover:text-orange-600' },
-  personal:    { active: 'bg-fuchsia-500 text-white border-fuchsia-500', idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-fuchsia-400 hover:text-fuchsia-600' },
+  personal:    { active: 'bg-slate-500   text-white border-slate-500',   idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-slate-400 hover:text-slate-600' },
 };
 
 const ALL_TYPES: EventType[] = ['meeting', 'deadline', 'hearing', 'pericia', 'payment', 'requirement', 'personal'];
@@ -644,12 +644,12 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                 {isPersonal ? (
                   <div>
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="w-5 h-5 rounded-full bg-fuchsia-100 flex items-center justify-center shrink-0">
-                        <Users className="w-3 h-3 text-fuchsia-600" />
+                      <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                        <Users className="w-3 h-3 text-slate-500" />
                       </div>
                       <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Compartilhar com alguém?</p>
                       {form.shared_with_ids.length > 0 && (
-                        <span className="text-[10px] font-semibold text-fuchsia-600 bg-fuchsia-50 px-1.5 py-0.5 rounded-full">
+                        <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full">
                           {form.shared_with_ids.length} pessoa(s)
                         </span>
                       )}
@@ -667,7 +667,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                               : [...form.shared_with_ids, memberId]
                             )}
                             className="relative group transition-transform hover:scale-110 focus:outline-none">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden transition-all ${isShared ? 'ring-[3px] ring-fuchsia-500 ring-offset-1' : 'ring-1 ring-slate-200 opacity-60 group-hover:opacity-100'}`}
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden transition-all ${isShared ? 'ring-[3px] ring-slate-500 ring-offset-1' : 'ring-1 ring-slate-200 opacity-60 group-hover:opacity-100'}`}
                               style={{ background: `hsl(${hue}, 50%, ${isShared ? '85%' : '93%'})`, color: `hsl(${hue}, 45%, 30%)` }}>
                               {initials}
                               {(member as any).avatar_url && (
@@ -677,7 +677,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                               )}
                             </div>
                             {isShared && (
-                              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-fuchsia-500 border-2 border-white flex items-center justify-center">
+                              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-slate-500 border-2 border-white flex items-center justify-center">
                                 <Check className="w-1.5 h-1.5 text-white" strokeWidth={3} />
                               </div>
                             )}

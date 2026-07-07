@@ -3709,11 +3709,11 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
             <label className={labelStyle}>Tipo de Compromisso</label>
             <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
               {([
-                { value: 'meeting',     label: 'Reunião',    active: 'bg-emerald-500 text-white border-emerald-500', idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-emerald-400 hover:text-emerald-600' },
+                { value: 'meeting',     label: 'Reunião',    active: 'bg-teal-500 text-white border-teal-500',       idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-teal-400 hover:text-teal-600' },
                 { value: 'hearing',     label: 'Audiência',  active: 'bg-red-500 text-white border-red-500',         idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-red-400 hover:text-red-600' },
-                { value: 'deadline',    label: 'Prazo',      active: 'bg-indigo-500 text-white border-indigo-500',   idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-indigo-400 hover:text-indigo-600' },
+                { value: 'deadline',    label: 'Prazo',      active: 'bg-blue-500 text-white border-blue-500',       idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-blue-400 hover:text-blue-600' },
                 { value: 'requirement', label: 'Diligência', active: 'bg-orange-500 text-white border-orange-500',   idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-orange-400 hover:text-orange-600' },
-                { value: 'payment',     label: 'Pagamento',  active: 'bg-sky-500 text-white border-sky-500',         idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-sky-400 hover:text-sky-600' },
+                { value: 'payment',     label: 'Pagamento',  active: 'bg-emerald-500 text-white border-emerald-500', idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-emerald-400 hover:text-emerald-600' },
                 { value: 'pericia',     label: 'Perícia',    active: 'bg-purple-500 text-white border-purple-500',   idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-purple-400 hover:text-purple-600' },
               ] as const).map(({ value, label, active, idle }) => (
                 <button

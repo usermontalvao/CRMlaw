@@ -75,15 +75,24 @@ function hasSupabaseSession(): boolean {
   return false;
 }
 
+function hasStaffSessionExpiredNotice(): boolean {
+  try {
+    return sessionStorage.getItem('auth_notice') === 'session_expired';
+  } catch {}
+  return false;
+}
+
 // -- Roteamento de entrada --------------------------------------------------
 // Estrat�gia: tudo roda em "/" � sem rotas de servidor adicionais.
 //   � Sess�o Supabase ativa          ? CRM (App)
 //   � Hash #/documento/TOKEN         ? CRM (viewer p�blico)
 //   � Hash #/cron/djen               ? CRM (endpoint cron)
-//   � Qualquer outra situa��o        ? Portal do Cliente (PortalApp)
+//   � Sessão expirada do staff       ? CRM interno (login)
+//   � Qualquer outra situação        ? Portal do Cliente (PortalApp)
 const currentHash = window.location.hash;
 const currentPath = window.location.pathname;
 const isPublicSignature = isPublicSignatureRoute(currentHash, currentPath);
+const isStaffSessionExpired = hasStaffSessionExpiredNotice();
 
 if (isPublicSignature) {
   disablePwaForPublicSignatureRoute();
@@ -120,7 +129,7 @@ const isPublicCrmRoute =
   currentHash.includes('/docs') ||
   currentPath.includes('/docs');
 
-const isStaff = hasSupabaseSession() || isDocRoute || isCronRoute || isPublicCrmRoute;
+const isStaff = hasSupabaseSession() || isStaffSessionExpired || isDocRoute || isCronRoute || isPublicCrmRoute;
 
 async function renderRoot() {
   let rootElement: React.ReactNode;

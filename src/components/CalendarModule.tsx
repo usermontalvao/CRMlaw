@@ -6,7 +6,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
 import ptLocale from '@fullcalendar/core/locales/pt-br';
 import type { EventContentArg, EventInput } from '@fullcalendar/core';
-import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign, Lock, Globe, ShieldCheck, AlertTriangle, HelpCircle, UserCheck } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, X, Filter, FileSpreadsheet, FileText, Plus, History, Users, Briefcase, Phone, MessageCircle, MapPin, ArrowUpRight, User, LayoutList, Printer, ChevronDown, ChevronRight, Check, Search, Link, DollarSign, Lock, Globe, ShieldCheck, AlertTriangle, HelpCircle, UserCheck, Clock } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { brandMarkHTML, BRAND_SERIF } from '../constants/brand';
 import { getLogoDataUrl } from '../utils/logoBase64';
@@ -55,14 +55,16 @@ const EVENT_TYPE_LABELS: Record<EventType, string> = {
 };
 
 // Cores canônicas por tipo — usadas na legenda de filtros e nos chips do formulário
+// Semântica fixa: audiência=vermelho, prazo=azul, financeiro=verde, requerimento=laranja,
+// perícia=roxo, reunião=teal, pessoal=cinza (neutro). Prioridade é tratada à parte (ver .calendar-event--priority-*).
 const EVENT_TYPE_COLORS: Record<EventType, { badge: string; checkbox: string }> = {
-  deadline:    { badge: 'text-indigo-700 bg-indigo-100 border-indigo-500',   checkbox: 'text-indigo-600 focus:ring-indigo-500' },
-  hearing:     { badge: 'text-red-700 bg-red-100 border-red-500',             checkbox: 'text-red-600 focus:ring-red-500' },
-  requirement: { badge: 'text-orange-700 bg-orange-100 border-orange-500',   checkbox: 'text-orange-600 focus:ring-orange-500' },
-  payment:     { badge: 'text-sky-700 bg-sky-100 border-sky-500',             checkbox: 'text-sky-600 focus:ring-sky-500' },
-  pericia:     { badge: 'text-purple-700 bg-purple-100 border-purple-500',   checkbox: 'text-purple-600 focus:ring-purple-500' },
-  meeting:     { badge: 'text-emerald-700 bg-emerald-100 border-emerald-500', checkbox: 'text-emerald-600 focus:ring-emerald-500' },
-  personal:    { badge: 'text-fuchsia-700 bg-fuchsia-100 border-fuchsia-500', checkbox: 'text-fuchsia-600 focus:ring-fuchsia-500' },
+  deadline:    { badge: 'text-blue-700 bg-blue-50 border-blue-500',        checkbox: 'text-blue-600 focus:ring-blue-500' },
+  hearing:     { badge: 'text-red-700 bg-red-50 border-red-500',          checkbox: 'text-red-600 focus:ring-red-500' },
+  requirement: { badge: 'text-orange-800 bg-orange-50 border-orange-700', checkbox: 'text-orange-700 focus:ring-orange-600' },
+  payment:     { badge: 'text-emerald-700 bg-emerald-50 border-emerald-500', checkbox: 'text-emerald-600 focus:ring-emerald-500' },
+  pericia:     { badge: 'text-purple-700 bg-purple-50 border-purple-500', checkbox: 'text-purple-600 focus:ring-purple-500' },
+  meeting:     { badge: 'text-teal-700 bg-teal-50 border-teal-500',       checkbox: 'text-teal-600 focus:ring-teal-500' },
+  personal:    { badge: 'text-slate-700 bg-slate-200 border-slate-500',   checkbox: 'text-slate-600 focus:ring-slate-500' },
 };
 
 type DeletionLogEntry = {
@@ -903,7 +905,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const calendarSyncTick = useSyncTick('calendar');
+  const calendarSyncTick = useSyncTick(['calendar', 'deadlines']);
 
   useEffect(() => {
     loadData();
@@ -1427,15 +1429,15 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
       // Monta linhas a partir do cronogramaByDay (já filtrado por período + "apenas meus")
       const TYPE_COLORS_RGB: Record<string, [number, number, number]> = {
-        'Prazo':        [ 67,  56, 202],
-        'Audiência':    [185,  28,  28],
-        'Reunião':      [  4, 120,  87],
-        'Recebimento':  [  3, 105, 161],
-        'Pagamento':    [  3, 105, 161],
-        'Perícia':      [126,  34, 206],
-        'Requerimento': [194,  65,  12],
-        'Exigência':    [194,  65,  12],
-        'Pessoal':      [134,  25, 143],
+        'Prazo':        [ 29,  78, 216],  // blue-700
+        'Audiência':    [185,  28,  28],  // red-700
+        'Reunião':      [ 15, 118, 110],  // teal-700
+        'Recebimento':  [  4, 120,  87],  // emerald-700
+        'Pagamento':    [  4, 120,  87],  // emerald-700
+        'Perícia':      [126,  34, 206],  // purple-700
+        'Requerimento': [154,  52,  18],  // orange-800
+        'Exigência':    [154,  52,  18],  // orange-800
+        'Pessoal':      [ 51,  65,  85],  // slate-700
       };
 
       const rows: string[][] = [];
@@ -2322,14 +2324,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
         // Cores idênticas ao EVENT_TYPE_COLORS do calendário (Tailwind exato)
         const TYPE_COLORS: Record<string, [number, number, number]> = {
-          'Prazo':       [ 67,  56, 202],  // indigo-700
+          'Prazo':       [ 29,  78, 216],  // blue-700
           'Audiência':   [185,  28,  28],  // red-700
-          'Reunião':     [  4, 120,  87],  // emerald-700
-          'Recebimento': [  3, 105, 161],  // sky-700
-          'Pagamento':   [  3, 105, 161],  // sky-700
+          'Reunião':     [ 15, 118, 110],  // teal-700
+          'Recebimento': [  4, 120,  87],  // emerald-700
+          'Pagamento':   [  4, 120,  87],  // emerald-700
           'Perícia':     [126,  34, 206],  // purple-700
-          'Exigência':   [194,  65,  12],  // orange-700
-          'Pessoal':     [134,  25, 143],  // fuchsia-700
+          'Exigência':   [154,  52,  18],  // orange-800
+          'Pessoal':     [ 51,  65,  85],  // slate-700
         };
 
         const drawWatermark = () => {
@@ -2599,6 +2601,27 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
     const hasRealTime = Boolean(timeText && timeText.trim().length > 0);
 
+    // Segundo canal visual do grupo "Prazo": contagem de dias até o vencimento.
+    // Como os prazos são allDay (sem hasRealTime), este badge ocupa o mesmo
+    // espaço que o horário ocuparia em outros tipos — não adiciona ruído extra,
+    // e o número varia por evento, quebrando a leitura uniforme de "tudo azul".
+    let daysUntilDue: number | null = null;
+    if (type === 'deadline' && event.start) {
+      const due = new Date(event.start as Date);
+      due.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      daysUntilDue = Math.round((due.getTime() - today.getTime()) / 86400000);
+    }
+    const dueLabel = daysUntilDue === null ? '' :
+      daysUntilDue < 0 ? `${Math.abs(daysUntilDue)}d atrás` :
+      daysUntilDue === 0 ? 'hoje' :
+      `${daysUntilDue}d`;
+    const dueTitle = daysUntilDue === null ? '' :
+      daysUntilDue < 0 ? `Vencido há ${Math.abs(daysUntilDue)} dia(s)` :
+      daysUntilDue === 0 ? 'Vence hoje' :
+      `Vence em ${daysUntilDue} dia(s)`;
+
     const dotColor =
       djenStatus === 'confirmed'        ? '#16a34a' :
       djenStatus === 'confirmed_manual' ? '#16a34a' :
@@ -2633,6 +2656,15 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           />
         )}
         {hasRealTime && <span className="calendar-chip__time">{timeText}</span>}
+        {daysUntilDue !== null && (
+          <span
+            className={`calendar-chip__due${daysUntilDue < 0 ? ' calendar-chip__due--overdue' : ''}`}
+            title={dueTitle}
+          >
+            <Clock className="calendar-chip__due-icon" />
+            {dueLabel}
+          </span>
+        )}
         <span className="calendar-chip__title" title={event.title}>
           {event.title}
         </span>
@@ -2878,25 +2910,25 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       {legendExpanded && (
         <div className="bg-slate-50 border-x border-[#e7e5df] p-2 sm:p-4">
           <h4 className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 sm:mb-3">Filtrar por Tipo</h4>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {Object.keys(viewFilters)
               .filter(key => !inactiveEventTypeKeys.has(key))
               .map(key => {
                 const canonical = EVENT_TYPE_COLORS[key as EventType];
                 const hex = eventTypeHexColors[key];
                 const badgeClass = canonical
-                  ? `text-xs sm:text-sm font-medium px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 ${canonical.badge}`
-                  : 'text-xs sm:text-sm font-medium px-1.5 sm:px-2 py-0.5 sm:py-1 rounded border-l-2 sm:border-l-4 text-slate-700 bg-slate-100 border-slate-500';
+                  ? `text-[11px] sm:text-xs font-medium px-1.5 py-0.5 rounded border-l-2 whitespace-nowrap ${canonical.badge}`
+                  : 'text-[11px] sm:text-xs font-medium px-1.5 py-0.5 rounded border-l-2 whitespace-nowrap text-slate-700 bg-slate-100 border-slate-500';
                 const badgeStyle = !canonical && hex
                   ? { borderLeftColor: hex, background: hex + '22', color: '#374151' }
                   : undefined;
                 return (
-                  <label key={key} className="flex items-center gap-1.5 sm:gap-2 cursor-pointer group">
+                  <label key={key} className="flex items-center gap-1.5 cursor-pointer group shrink-0">
                     <input
                       type="checkbox"
                       checked={!!viewFilters[key as EventType]}
                       onChange={() => setViewFilters(prev => ({ ...prev, [key]: !prev[key as EventType] }))}
-                      className={`w-3.5 h-3.5 sm:w-4 sm:h-4 rounded border-slate-300 ${canonical?.checkbox ?? 'text-slate-600 focus:ring-slate-500'}`}
+                      className={`w-3.5 h-3.5 rounded border-slate-300 ${canonical?.checkbox ?? 'text-slate-600 focus:ring-slate-500'}`}
                     />
                     <span className={badgeClass} style={badgeStyle}>
                       {eventTypeLabels[key] ?? key}
@@ -3054,22 +3086,22 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               const dayLabel = dayDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
 
               const TYPE_COLORS: Record<string, string> = {
-                deadline: 'bg-indigo-100 text-indigo-700 border-indigo-200',
-                hearing:  'bg-red-100 text-red-700 border-red-200',
-                requirement: 'bg-orange-100 text-orange-700 border-orange-200',
-                payment:  'bg-sky-100 text-sky-700 border-sky-200',
-                meeting:  'bg-emerald-100 text-emerald-700 border-emerald-200',
-                pericia:  'bg-purple-100 text-purple-700 border-purple-200',
-                personal: 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200',
+                deadline: 'bg-blue-50 text-blue-700 border-blue-200',
+                hearing:  'bg-red-50 text-red-700 border-red-200',
+                requirement: 'bg-orange-50 text-orange-800 border-orange-300',
+                payment:  'bg-emerald-50 text-emerald-700 border-emerald-200',
+                meeting:  'bg-teal-50 text-teal-700 border-teal-200',
+                pericia:  'bg-purple-50 text-purple-700 border-purple-200',
+                personal: 'bg-slate-200 text-slate-700 border-slate-300',
               };
               const TYPE_BORDER: Record<string, string> = {
-                deadline: 'border-l-indigo-500',
+                deadline: 'border-l-blue-500',
                 hearing:  'border-l-red-500',
-                requirement: 'border-l-orange-500',
-                payment:  'border-l-sky-500',
-                meeting:  'border-l-emerald-500',
+                requirement: 'border-l-orange-700',
+                payment:  'border-l-emerald-500',
+                meeting:  'border-l-teal-500',
                 pericia:  'border-l-purple-500',
-                personal: 'border-l-fuchsia-500',
+                personal: 'border-l-slate-500',
               };
               const TYPE_LABELS_LOCAL: Record<string, string> = {
                 deadline: 'Prazo', hearing: 'Audiência', requirement: 'Exigência',
@@ -3234,7 +3266,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       {/* Botão Flutuante para Novo Compromisso */}
       <button
         onClick={() => openEventForm()}
-        className="fixed bottom-4 right-4 sm:bottom-8 sm:right-8 w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-110 z-40 flex items-center justify-center group"
+        className="fixed bottom-[88px] right-4 sm:right-8 w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-full shadow-2xl hover:shadow-3xl transition-all duration-300 hover:scale-110 z-40 flex items-center justify-center group"
         title="Criar novo compromisso"
       >
         <CalendarIcon className="w-5 h-5 sm:w-6 sm:h-6 group-hover:scale-110 transition-transform" />
@@ -3256,13 +3288,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           <div className="flex flex-wrap items-center gap-1.5 mt-1">
             {selectedEvent.extendedProps.type && (
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
-                selectedEvent.extendedProps.type === 'deadline'    ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                selectedEvent.extendedProps.type === 'deadline'    ? 'bg-blue-50 text-blue-700 border-blue-200' :
                 selectedEvent.extendedProps.type === 'hearing'     ? 'bg-red-50 text-red-700 border-red-200' :
-                selectedEvent.extendedProps.type === 'requirement' ? 'bg-orange-50 text-orange-700 border-orange-200' :
-                selectedEvent.extendedProps.type === 'payment'     ? 'bg-sky-50 text-sky-700 border-sky-200' :
-                selectedEvent.extendedProps.type === 'meeting'     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                selectedEvent.extendedProps.type === 'requirement' ? 'bg-orange-50 text-orange-800 border-orange-300' :
+                selectedEvent.extendedProps.type === 'payment'     ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                selectedEvent.extendedProps.type === 'meeting'     ? 'bg-teal-50 text-teal-700 border-teal-200' :
                 selectedEvent.extendedProps.type === 'pericia'     ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                selectedEvent.extendedProps.type === 'personal'    ? 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200' :
+                selectedEvent.extendedProps.type === 'personal'    ? 'bg-slate-200 text-slate-700 border-slate-300' :
                 'bg-slate-100 text-slate-600 border-[#e7e5df]'
               }`}>
                 {eventTypeLabels[selectedEvent.extendedProps.type as EventType] ?? selectedEvent.extendedProps.type}
@@ -3443,8 +3475,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               {selectedEvent.extendedProps.priority && (
                 <div className="flex items-center gap-2">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${
-                    selectedEvent.extendedProps.priority === 'alta' ? 'bg-red-500' :
-                    selectedEvent.extendedProps.priority === 'média' || selectedEvent.extendedProps.priority === 'media' ? 'bg-amber-500' :
+                    selectedEvent.extendedProps.priority === 'urgente' ? 'bg-red-600' :
+                    selectedEvent.extendedProps.priority === 'alta' ? 'bg-amber-500' :
+                    selectedEvent.extendedProps.priority === 'baixa' ? 'bg-slate-300' :
                     'bg-slate-400'
                   }`} />
                   <div>
@@ -3938,13 +3971,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   </label>
                   <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
                     {([
-                      { value: 'meeting',     active: 'bg-emerald-500 text-white border-emerald-500',   idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-emerald-400 hover:text-emerald-600' },
-                      { value: 'deadline',    active: 'bg-indigo-500 text-white border-indigo-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-indigo-400 hover:text-indigo-600' },
+                      { value: 'meeting',     active: 'bg-teal-500 text-white border-teal-500',         idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-teal-400 hover:text-teal-600' },
+                      { value: 'deadline',    active: 'bg-blue-500 text-white border-blue-500',         idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-blue-400 hover:text-blue-600' },
                       { value: 'hearing',     active: 'bg-red-500 text-white border-red-500',           idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-red-400 hover:text-red-600' },
                       { value: 'pericia',     active: 'bg-purple-500 text-white border-purple-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-purple-400 hover:text-purple-600' },
-                      { value: 'payment',     active: 'bg-sky-500 text-white border-sky-500',           idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-sky-400 hover:text-sky-600' },
+                      { value: 'payment',     active: 'bg-emerald-500 text-white border-emerald-500',   idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-emerald-400 hover:text-emerald-600' },
                       { value: 'requirement', active: 'bg-orange-500 text-white border-orange-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-orange-400 hover:text-orange-600' },
-                      { value: 'personal',    active: 'bg-fuchsia-500 text-white border-fuchsia-500',   idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-fuchsia-400 hover:text-fuchsia-600' },
+                      { value: 'personal',    active: 'bg-slate-500 text-white border-slate-500',       idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-slate-400 hover:text-slate-600' },
                     ] as const).filter(({ value }) => !inactiveEventTypeKeys.has(value)).map(({ value, active, idle }) => (
                       <button
                         key={value}
@@ -4265,14 +4298,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     /* Pessoal: sempre privado, pergunta só quem compartilhar */
                     <div>
                       <div className="flex items-center gap-2 mb-3">
-                        <div className="w-5 h-5 rounded-full bg-fuchsia-100 flex items-center justify-center shrink-0">
-                          <Users className="w-3 h-3 text-fuchsia-600" />
+                        <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+                          <Users className="w-3 h-3 text-slate-500" />
                         </div>
                         <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
                           Compartilhar com alguém?
                         </p>
                         {newEventForm.shared_with_ids.length > 0 && (
-                          <span className="text-[10px] font-semibold text-fuchsia-600 bg-fuchsia-50 px-1.5 py-0.5 rounded-full">
+                          <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full">
                             {newEventForm.shared_with_ids.length} pessoa(s)
                           </span>
                         )}
@@ -4309,7 +4342,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                               >
                                 <div
                                   className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs overflow-hidden transition-all ${
-                                    isShared ? 'ring-[3px] ring-fuchsia-500 ring-offset-1' : 'ring-1 ring-slate-200 opacity-60 group-hover:opacity-100'
+                                    isShared ? 'ring-[3px] ring-slate-500 ring-offset-1' : 'ring-1 ring-slate-200 opacity-60 group-hover:opacity-100'
                                   }`}
                                   style={{
                                     background: `hsl(${hue}, 50%, ${isShared ? '85%' : '93%'})`,
@@ -4325,7 +4358,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                                   )}
                                 </div>
                                 {isShared && (
-                                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-fuchsia-500 border-2 border-white flex items-center justify-center">
+                                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-slate-500 border-2 border-white flex items-center justify-center">
                                     <Check className="w-1.5 h-1.5 text-white" strokeWidth={3} />
                                   </div>
                                 )}
@@ -4672,6 +4705,37 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         .dark .calendar-chip__time {
           background: rgba(255, 255, 255, 0.12);
         }
+        .calendar-chip__due {
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          font-size: 0.62rem;
+          font-weight: 700;
+          letter-spacing: 0.01em;
+          font-variant-numeric: tabular-nums;
+          padding: 0.05rem 0.3rem;
+          border-radius: 4px;
+          background: rgba(37, 99, 235, 0.14);
+          color: #1d4ed8;
+          flex-shrink: 0;
+        }
+        .calendar-chip__due-icon {
+          width: 9px;
+          height: 9px;
+          flex-shrink: 0;
+        }
+        .calendar-chip__due--overdue {
+          background: rgba(220, 38, 38, 0.16);
+          color: #b91c1c;
+        }
+        .dark .calendar-chip__due {
+          background: rgba(147, 197, 253, 0.18);
+          color: #93c5fd;
+        }
+        .dark .calendar-chip__due--overdue {
+          background: rgba(248, 113, 113, 0.22);
+          color: #fca5a5;
+        }
         .calendar-chip__title {
           flex: 1;
           line-height: 1.3;
@@ -4680,87 +4744,49 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           text-overflow: ellipsis;
           font-weight: 600;
         }
+        /* Tipo = cor (fixo). Prioridade = acento visual complementar, nunca uma cor concorrente
+           (ver .calendar-event--priority-* mais abaixo, aplicado ao wrapper do FullCalendar). */
         .calendar-chip--deadline {
-          background: #e0e7ff;
-          color: #4338ca;
-          border-color: #6366f1;
+          background: #eff6ff;
+          color: #1d4ed8;
+          border-color: #3b82f6;
         }
-        .calendar-chip--deadline.calendar-event--priority-urgent {
+        .calendar-chip--hearing {
           background: #fef2f2;
           color: #b91c1c;
           border-color: #ef4444;
         }
-        .calendar-chip--deadline.calendar-event--priority-high {
-          background: #fef3c7;
-          color: #b45309;
-          border-color: #f59e0b;
-        }
-        .calendar-chip--deadline.calendar-event--priority-medium {
-          background: #e0e7ff;
-          color: #4338ca;
-          border-color: #6366f1;
-        }
-        .calendar-chip--deadline.calendar-event--priority-low {
-          background: #f1f5f9;
-          color: #475569;
-          border-color: #94a3b8;
-        }
-        .calendar-chip--hearing {
-          background: #fee2e2;
-          color: #b91c1c;
-          border-color: #ef4444;
-        }
         .calendar-chip--payment {
-          background: #e0f2fe;
-          color: #0369a1;
-          border-color: #0ea5e9;
-        }
-        .calendar-chip--pericia {
-          background: #f3e8ff;
-          color: #7c3aed;
-          border-color: #a855f7;
-        }
-        .calendar-chip--meeting {
-          background: #d1fae5;
+          background: #ecfdf5;
           color: #047857;
           border-color: #10b981;
         }
+        .calendar-chip--pericia {
+          background: #faf5ff;
+          color: #7e22ce;
+          border-color: #a855f7;
+        }
+        .calendar-chip--meeting {
+          background: #f0fdfa;
+          color: #0f766e;
+          border-color: #14b8a6;
+        }
         .calendar-chip--requirement {
-          background: #ffedd5;
-          color: #c2410c;
-          border-color: #f97316;
+          background: #fff7ed;
+          color: #9a3412;
+          border-color: #c2410c;
         }
         .calendar-chip--personal {
-          background: #fae8ff;
-          color: #a21caf;
-          border-color: #d946ef;
+          background: #e2e8f0;
+          color: #334155;
+          border-color: #64748b;
         }
 
         /* Dark mode styles for calendar chips */
         .dark .calendar-chip--deadline {
-          background: #1e1b4b;
-          color: #a5b4fc;
-          border-color: #6366f1;
-        }
-        .dark .calendar-chip--deadline.calendar-event--priority-urgent {
-          background: #450a0a;
-          color: #fca5a5;
-          border-color: #ef4444;
-        }
-        .dark .calendar-chip--deadline.calendar-event--priority-high {
-          background: #451a03;
-          color: #fcd34d;
-          border-color: #f59e0b;
-        }
-        .dark .calendar-chip--deadline.calendar-event--priority-medium {
-          background: #1e1b4b;
-          color: #a5b4fc;
-          border-color: #6366f1;
-        }
-        .dark .calendar-chip--deadline.calendar-event--priority-low {
-          background: #0f172a;
-          color: #cbd5e1;
-          border-color: #64748b;
+          background: #172554;
+          color: #93c5fd;
+          border-color: #3b82f6;
         }
         .dark .calendar-chip--hearing {
           background: #450a0a;
@@ -4768,9 +4794,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           border-color: #ef4444;
         }
         .dark .calendar-chip--payment {
-          background: #0c4a6e;
-          color: #7dd3fc;
-          border-color: #0ea5e9;
+          background: #022c22;
+          color: #6ee7b7;
+          border-color: #10b981;
         }
         .dark .calendar-chip--pericia {
           background: #3b0764;
@@ -4778,19 +4804,62 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           border-color: #a855f7;
         }
         .dark .calendar-chip--meeting {
-          background: #064e3b;
-          color: #6ee7b7;
-          border-color: #10b981;
+          background: #042f2e;
+          color: #5eead4;
+          border-color: #14b8a6;
         }
         .dark .calendar-chip--requirement {
           background: #431407;
-          color: #fed7aa;
-          border-color: #f97316;
+          color: #fdba74;
+          border-color: #c2410c;
         }
         .dark .calendar-chip--personal {
-          background: #4a044e;
-          color: #f0abfc;
-          border-color: #d946ef;
+          background: #1e293b;
+          color: #e2e8f0;
+          border-color: #94a3b8;
+        }
+
+        /* Prioridade — nunca troca a cor do tipo. Apenas acentua: espessura da borda,
+           ponto de urgência e atenuação para baixa prioridade. Aplicado via seletor
+           descendente porque o FullCalendar coloca calendar-event--priority-* no wrapper
+           (.fc-event) e .calendar-chip é um filho interno renderizado por eventContent. */
+        .calendar-event--priority-urgent .calendar-chip {
+          border-left-width: 5px;
+          font-weight: 700;
+          box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.35), 0 1px 2px rgba(15, 23, 42, 0.06);
+        }
+        .calendar-event--priority-urgent .calendar-chip::after {
+          content: '';
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #dc2626;
+          flex-shrink: 0;
+          margin-left: 0.3rem;
+        }
+        .calendar-event--priority-high .calendar-chip {
+          border-left-width: 4px;
+        }
+        .calendar-event--priority-high .calendar-chip::after {
+          content: '';
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #f59e0b;
+          flex-shrink: 0;
+          margin-left: 0.3rem;
+        }
+        .calendar-event--priority-low .calendar-chip {
+          opacity: 0.72;
+        }
+        .dark .calendar-event--priority-urgent .calendar-chip {
+          box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+        .dark .calendar-event--priority-urgent .calendar-chip::after {
+          background: #f87171;
+        }
+        .dark .calendar-event--priority-high .calendar-chip::after {
+          background: #fbbf24;
         }
         .calendar-container .fc-list-event-title {
           font-weight: 600;
@@ -4824,25 +4893,25 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           box-shadow: 0 6px 18px -12px rgba(15, 23, 42, 0.7);
         }
         .calendar-legend-chip--deadline {
-          background: linear-gradient(135deg, #0ea5e9, #2563eb);
+          background: linear-gradient(135deg, #3b82f6, #2563eb);
         }
         .calendar-legend-chip--hearing {
-          background: linear-gradient(135deg, #f43f5e, #ef4444);
+          background: linear-gradient(135deg, #ef4444, #dc2626);
         }
         .calendar-legend-chip--requirement {
-          background: linear-gradient(135deg, #f59e0b, #f97316);
+          background: linear-gradient(135deg, #ea580c, #c2410c);
         }
         .calendar-legend-chip--payment {
-          background: linear-gradient(135deg, #06b6d4, #3b82f6);
+          background: linear-gradient(135deg, #10b981, #059669);
         }
         .calendar-legend-chip--pericia {
-          background: linear-gradient(135deg, #a855f7, #7c3aed);
+          background: linear-gradient(135deg, #a855f7, #9333ea);
         }
         .calendar-legend-chip--meeting {
-          background: linear-gradient(135deg, #34d399, #059669);
+          background: linear-gradient(135deg, #14b8a6, #0d9488);
         }
         .calendar-legend-chip--personal {
-          background: linear-gradient(135deg, #e879f9, #a21caf);
+          background: linear-gradient(135deg, #64748b, #475569);
         }
         .export-filter {
           display: inline-flex;
