@@ -958,6 +958,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.310',
+    date: '07/07/2026',
+    summary: 'O rodapé de validação dos PDFs assinados voltou a ficar ancorado no fundo físico real da página e o modelo por documento deixou de estampar assinaturas de um arquivo nos demais arquivos do kit.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Rodapé de validação ancorado no fundo real da página',
+            description: 'A reserva da faixa do rodapé passou a estender a página para baixo (MediaBox) em vez de transladar o conteúdo. Isso elimina o banner "flutuando" acima do fim da página com faixa branca abaixo, causado pelo carimbo ser desenhado dentro da transformação de conteúdo do pdf-lib.',
+          },
+          {
+            type: 'fix',
+            title: 'Assinaturas não vazam mais entre documentos do kit',
+            description: 'No modelo por documento, cada PDF passou a receber somente os campos de assinatura do próprio arquivo. Campos de anexos não presentes no PDF em geração eram estampados na página 1 do documento principal, empilhando assinaturas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.309',
     date: '06/07/2026',
     summary: 'A trilha probatória da assinatura foi ajustada para respeitar a cronologia real dos eventos no PDF e no laudo, sem expor contato no simples visualizado nem antecipar a biometria facial na etapa de autenticação.',

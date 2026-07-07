@@ -355,12 +355,12 @@ class PdfSignatureService {
     return parsed;
   }
 
-  private formatManausDateTime(value: string | Date | null | undefined, options?: { withSeconds?: boolean }): string {
+  private formatCuiabaDateTime(value: string | Date | null | undefined, options?: { withSeconds?: boolean }): string {
     const date = this.toDateValue(value);
     if (!date) return 'Nao informado';
 
     return new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Manaus',
+      timeZone: 'America/Cuiaba',
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -755,9 +755,14 @@ class PdfSignatureService {
 
     if (mode === 'strip') {
       const h = 64;
-      const x = 0;
-      const y = 0;
-      const w = pageWidth;
+      // Âncora no fundo FÍSICO da página: origem do MediaBox — que NÃO é 0 nas
+      // páginas que passaram por reserveFooterStripOnContentPages (fundo = -84)
+      // nem em PDFs de origem com MediaBox deslocado. y=0 fixo era o banner
+      // flutuando no meio da página com faixa branca abaixo.
+      const mb = page.getMediaBox();
+      const x = mb.x as number;
+      const y = mb.y as number;
+      const w = mb.width as number;
 
       // Paleta enxuta: uma tinta, um mutado, um rótulo, um fio — e o laranja como único acento.
       const ink       = rgb(0.067, 0.094, 0.153); // #111827 — âncora
@@ -888,9 +893,11 @@ class PdfSignatureService {
     // ── CARD MODE ──────────────────────────────────────────────────────
     // ZapSign-inspired: white background, thin lines, text left, QR right
     const boxH = 88;
-    const boxX = 0;
-    const boxY = 0;
-    const boxW = pageWidth;
+    // Mesma âncora física do strip: origem real do MediaBox, não 0 fixo.
+    const mbCard = page.getMediaBox();
+    const boxX = mbCard.x as number;
+    const boxY = mbCard.y as number;
+    const boxW = mbCard.width as number;
 
     const cardWhite  = rgb(1, 1, 1);
     const cardBorder = rgb(0.86, 0.89, 0.93);   // #dbe2ee
@@ -997,6 +1004,29 @@ class PdfSignatureService {
       });
     }
   }
+
+  private reserveFooterStripOnContentPages(pdfDoc: PDFDocument, pageCount: number, footerReservedHeight = 84): void {
+    for (let i = 0; i < pageCount; i++) {
+      const page = pdfDoc.getPage(i);
+      // Abre a faixa do rodapé estendendo a página PARA BAIXO (MediaBox), sem
+      // tocar no conteúdo. NUNCA usar translateContent/scaleContent aqui: o
+      // pdf-lib embrulha o content stream EM CACHE dentro do q…cm…Q do wrap, e
+      // todo draw feito DEPOIS (rodapé/marca d'água) é appendado nesse MESMO
+      // stream — ou seja, dentro da transformação. Era isso que fazia o banner
+      // "flutuar" acima do fundo com faixa branca abaixo. Estendendo o MediaBox,
+      // conteúdo e assinaturas já desenhadas permanecem nas coordenadas originais
+      // e o rodapé ancora na origem real da página (getMediaBox().y).
+      const mb = page.getMediaBox();
+      page.setMediaBox(mb.x, mb.y - footerReservedHeight, mb.width, mb.height + footerReservedHeight);
+      // CropBox (se existir) delimita a área EXIBIDA pelos viewers — precisa
+      // acompanhar a extensão, senão a faixa nova fica cortada e o rodapé some.
+      if ((page.node as any).CropBox?.()) {
+        const cb = page.getCropBox();
+        page.setCropBox(cb.x, cb.y - footerReservedHeight, cb.width, cb.height + footerReservedHeight);
+      }
+    }
+  }
+
   private async addReportPages(params: {
     pdfDoc: PDFDocument;
     request: SignatureRequest;
@@ -1072,7 +1102,7 @@ class PdfSignatureService {
       }
     })();
 
-    const nowStr = this.formatManausDateTime(new Date());
+    const nowStr = this.formatCuiabaDateTime(new Date());
 
     const signerAssets = await Promise.all(
       signedRequestSigners.map(async (item) => ({
@@ -1305,7 +1335,7 @@ class PdfSignatureService {
     let yCards = sectionY1 - 22;
     for (const asset of signerAssets) {
       const item = asset.signer;
-      const signedAtStr = this.formatManausDateTime(item.signed_at, { withSeconds: true });
+      const signedAtStr = this.formatCuiabaDateTime(item.signed_at, { withSeconds: true });
       const authPoints = buildAuthPoints(item);
       const rightColW = 175;
       const rightStartX = pageWidth - lm - rightColW;
@@ -1378,7 +1408,7 @@ class PdfSignatureService {
     for (const asset of signerAssets) {
       const item = asset.signer;
       const page = pdfDoc.addPage([pageWidth, pageHeight]);
-      const signedAtStr = this.formatManausDateTime(item.signed_at, { withSeconds: true });
+      const signedAtStr = this.formatCuiabaDateTime(item.signed_at, { withSeconds: true });
       const geoP2 = this.parseGeolocation(item.signer_geolocation);
       const uaP2  = this.parseUserAgent(item.signer_user_agent);
 
@@ -1604,7 +1634,7 @@ class PdfSignatureService {
     const createdAtDate = this.toDateValue(request.created_at) ?? new Date();
     // Horários da trilha COM segundos: eventos próximos (ex.: termos e assinatura
     // no mesmo minuto) precisam do segundo para evidenciar a diferença/ordem.
-    const fmtWhen = (v: string | Date | null | undefined) => this.formatManausDateTime(v, { withSeconds: true });
+    const fmtWhen = (v: string | Date | null | undefined) => this.formatCuiabaDateTime(v, { withSeconds: true });
     const createdAtStr = fmtWhen(createdAtDate);
     // `order` = prioridade lógica para desempate quando o horário é idêntico
     // (ex.: aceite dos Termos e Assinatura no mesmo segundo): Termos antes de Assinado.
@@ -1822,7 +1852,7 @@ class PdfSignatureService {
 
     // Footer note on last page
     currentHistPage.drawLine({ start: { x: lm, y: 90 }, end: { x: pageWidth - lm, y: 90 }, thickness: 0.5, color: borderSoft });
-    currentHistPage.drawText('Este registro de auditoria é parte integrante do certificado de assinatura. Datas em horário de Manaus (UTC-04:00).', { x: lm, y: 77, size: 6.5, font: helvetica, color: txtSoft });
+    currentHistPage.drawText('Este registro de auditoria é parte integrante do certificado de assinatura. Datas em horário de Cuiabá (UTC-04:00).', { x: lm, y: 77, size: 6.5, font: helvetica, color: txtSoft });
     currentHistPage.drawText(`Documento ${request.id}  ·  Jurius`, { x: lm, y: 65, size: 6, font: helvetica, color: silver });
   }
 
@@ -1841,11 +1871,13 @@ class PdfSignatureService {
     const integrityChunks: Uint8Array[] = [new Uint8Array(originalPdfBytes)];
     const pdfDoc = await PDFDocument.load(originalPdfBytes);
 
-    // No modelo per_document a única fonte é o próprio arquivo (principal OU um anexo);
-    // mapeamos o offset 0 tanto para 'main' quanto para a chave do documento em escopo,
-    // para que os campos (com document_id = documentKey) caiam na página correta.
+    // No modelo per_document cada PDF contém UM único arquivo (o em escopo),
+    // mapeado no offset 0. NÃO incluímos um 'main' genérico junto: isso fazia um
+    // campo do documento principal VAZAR e ser estampado também nos anexos
+    // (assinaturas empilhadas). Cada arquivo só recebe os campos com o SEU
+    // document_key; anexos sem campo próprio caem no fallback (posição padrão).
     const documentOffsets: Record<string, number> = perDocument
-      ? { main: 0, [perDocument.documentKey]: 0 }
+      ? { [perDocument.documentKey]: 0 }
       : { main: 0 };
     let nextOffset = pdfDoc.getPageCount();
     
@@ -1975,7 +2007,11 @@ class PdfSignatureService {
       if (!img) continue;
 
       const docId = (f as any).document_id || 'main';
-      const offset = documentOffsets[docId] ?? 0;
+      // Bloqueio POR DOCUMENTO: um campo só é estampado no PDF onde o SEU documento
+      // realmente existe. Sem isto, campos de anexos ausentes (não mesclados) caíam
+      // no offset 0 e empilhavam várias assinaturas no documento principal.
+      if (!(docId in documentOffsets)) continue;
+      const offset = documentOffsets[docId];
       const pageIndex = Math.max(0, offset + Math.max(1, (f.page_number ?? 1)) - 1);
       const page = pages[pageIndex];
       if (!page) continue;
@@ -2011,30 +2047,16 @@ class PdfSignatureService {
     const docHash = this.generateHash(request.id, signer.id);
 
     // ── Reservar espaço para o rodapé de assinatura ──────────────────────────
-    // O strip do rodapé tem 52pt e é desenhado em y=0. Em PDFs que preenchem
-    // até a borda inferior (ex: gerados a partir de template), o strip cobriria
-    // o texto. Para garantir rodapé limpo em QUALQUER documento, comprimimos
-    // levemente o conteúdo de cada página de documento/anexo para cima,
-    // liberando a faixa inferior — mesmo comportamento do fluxo DOCX.
-    //
-    // A assinatura já foi desenhada como conteúdo da página acima, então é
-    // comprimida junto, permanecendo alinhada ao documento.
+    // Em PDFs que preenchem até a borda inferior, o strip cobriria o texto.
+    // Para garantir rodapé limpo em QUALQUER documento SEM deformar o original,
+    // a página é ESTENDIDA PARA BAIXO (MediaBox): conteúdo e assinaturas já
+    // desenhadas ficam intactos nas coordenadas originais e o strip é ancorado
+    // na nova origem física (getMediaBox().y) pelo drawFooterStamp.
     //
     // As páginas do relatório (criadas depois deste passo) NÃO são afetadas,
     // pois já têm layout próprio com espaço para o rodapé.
-    const FOOTER_RESERVED_H = 64;
     const contentPageCount = pdfDoc.getPageCount();
-    for (let i = 0; i < contentPageCount; i++) {
-      const p = pdfDoc.getPage(i);
-      const { width: pw, height: ph } = p.getSize();
-      if (ph <= FOOTER_RESERVED_H) continue;
-      const s = (ph - FOOTER_RESERVED_H) / ph;
-      // Ordem: scaleContent depois translateContent → ponto final = (s·x + tx, s·y + R)
-      //   y=0 → R (acima da faixa do rodapé)   |   y=H → H (topo intacto)
-      //   x centralizado para compensar a leve redução de largura
-      p.scaleContent(s, s);
-      p.translateContent((pw * (1 - s)) / 2, FOOTER_RESERVED_H);
-    }
+    this.reserveFooterStripOnContentPages(pdfDoc, contentPageCount);
 
     // Append report pages
     await this.addReportPages({
@@ -2330,6 +2352,7 @@ class PdfSignatureService {
     }
 
     const pages = pdfDoc.getPages();
+    this.reserveFooterStripOnContentPages(pdfDoc, pages.length);
     for (const p of pages) {
       const { width: w, height: h } = p.getSize();
       this.drawElectronicWatermark({
@@ -2373,7 +2396,7 @@ class PdfSignatureService {
     const pdfPageWidth = 595.28;
     const pdfPageHeight = 841.89;
     const A4_WIDTH_PX = 794;
-    const FOOTER_RESERVED_H = 64;
+    const FOOTER_RESERVED_H = 84;
     const CONTENT_MARGIN_X = 32;
     const CONTENT_MARGIN_TOP = 28;
     const contentTopY = pdfPageHeight - CONTENT_MARGIN_TOP;
@@ -2524,7 +2547,7 @@ class PdfSignatureService {
     const pdfPageHeight = 841.89;
     const A4_WIDTH_PX = 794; // A4 @ 96 DPI
     const A4_HEIGHT_PX = 1123; // A4 @ 96 DPI — mesma grade de página virtual usada no designer
-    const FOOTER_RESERVED_H = 64; // strip height=52 + 4pt margem — conteúdo escala ~6% p/ rodapé limpo
+    const FOOTER_RESERVED_H = 84; // strip + folga superior para linhas/assinaturas muito baixas
     const CONTENT_MARGIN_X = 32;
     const CONTENT_MARGIN_TOP = 28;
     const contentTopY = pdfPageHeight - CONTENT_MARGIN_TOP;

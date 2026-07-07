@@ -15,7 +15,7 @@ interface SignatureReportProps {
 
 const fmtFull = (d: string) =>
   new Date(d).toLocaleString('pt-BR', {
-    timeZone: 'America/Manaus',
+    timeZone: 'America/Cuiaba',
     day: '2-digit',
     month: 'long',
     year: 'numeric',
@@ -26,12 +26,13 @@ const fmtFull = (d: string) =>
 
 const fmtShort = (d: string) =>
   new Date(d).toLocaleString('pt-BR', {
-    timeZone: 'America/Manaus',
+    timeZone: 'America/Cuiaba',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
   });
 
 const parseUA = (ua: string) => ({

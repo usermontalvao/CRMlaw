@@ -2496,6 +2496,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         attachPaths = uploaded.length > 0 ? uploaded : null;
       }
 
+      // Envelope com MÚLTIPLOS documentos (principal + anexos) usa o modelo
+      // `per_document`: 1 PDF assinado + código de verificação PRÓPRIO por arquivo,
+      // além do protocolo do envelope. Cobre tanto o upload de vários arquivos
+      // (attachPaths recém-enviados) quanto a seleção de vários documentos gerados
+      // (selectedAttachmentPaths). Documento único permanece no fluxo consolidado
+      // (legado) — 1 PDF assinado único.
+      const isMultiDocEnvelope = (attachPaths?.length ?? 0) > 0;
+
       const payload: CreateSignatureRequestDTO = {
         document_id: docId,
         document_name: selectedDocumentName, document_path: docPath,
@@ -2505,6 +2513,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         require_cpf: settings.requireCpf,
         allow_refusal: settings.allowRefusal,
         signing_order: signerOrder === 'sequential' ? 'sequential' : 'parallel',
+        signature_model: isMultiDocEnvelope ? 'per_document' : 'consolidated',
         signers: signers.map((s, i) => ({ name: s.name, email: s.email, cpf: s.cpf || null, phone: null, role: s.role || 'Signatário', order: i + 1 })),
       };
       
@@ -3477,7 +3486,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     return null;
   };
 
-  const formatDate = (d: string) => new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+  const formatDate = (d: string) => new Date(d).toLocaleDateString('pt-BR', {
+    timeZone: 'America/Cuiaba',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
   const timeAgo = (d: string): string => {
     const diff = Date.now() - new Date(d).getTime();
     const mins = Math.floor(diff / 60000);
@@ -6791,7 +6805,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                 <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium ${badgeCls}`}>{badgeLabel}</span>
                               </div>
                               <p className="text-[10px] text-slate-400 mt-0.5">
-                                {new Date(log.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                {new Date(log.created_at).toLocaleString('pt-BR', {
+                                  timeZone: 'America/Cuiaba',
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                })}
                               </p>
                               {(ipAddress || deviceLabel) && (
                                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">

@@ -492,26 +492,33 @@ const PublicVerificationPage: React.FC = () => {
                         <div className="space-y-2">
                           {result.documents.map((doc, index) => {
                             const docCode = String(doc.verification_code || '').trim();
-                            const canOpenSignedDoc = !!docCode;
+                            const fallbackDocCode =
+                              !docCode &&
+                              doc.document_type === 'main' &&
+                              result.documents?.length === 1
+                                ? String(result.signer?.verification_hash || '').trim()
+                                : '';
+                            const effectiveDocCode = docCode || fallbackDocCode;
+                            const canOpenSignedDoc = !!effectiveDocCode;
                             return (
-                            <div key={docCode || `${doc.document_type}-${index}`} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
+                            <div key={effectiveDocCode || `${doc.document_type}-${index}`} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
                               <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600 ring-1 ring-orange-100">
                                 <FileText className="h-4 w-4" />
                               </div>
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-semibold text-slate-800">{stripDocumentExtension(doc.display_name) || docCode || `Documento ${index + 1}`}</p>
-                                <p className="font-mono text-[11px] text-slate-400">{doc.document_type === 'main' ? 'Principal' : 'Anexo'} · {doc.verification_code}</p>
+                                <p className="font-mono text-[11px] text-slate-400">{doc.document_type === 'main' ? 'Principal' : 'Anexo'} · {effectiveDocCode || 's/ código'}</p>
                               </div>
                               <div className="flex flex-shrink-0 items-center gap-1.5">
                                 <button
-                                  onClick={() => canOpenSignedDoc ? openDocumentViewer(docCode) : undefined}
+                                  onClick={() => canOpenSignedDoc ? openDocumentViewer(effectiveDocCode) : undefined}
                                   disabled={viewerLoading || !canOpenSignedDoc}
                                   className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   <Eye className="h-3.5 w-3.5" />Ver
                                 </button>
                                 <button
-                                  onClick={() => canOpenSignedDoc ? downloadSignedByCode(docCode, stripDocumentExtension(doc.display_name) || docCode) : undefined}
+                                  onClick={() => canOpenSignedDoc ? downloadSignedByCode(effectiveDocCode, stripDocumentExtension(doc.display_name) || effectiveDocCode) : undefined}
                                   disabled={viewerLoading || !canOpenSignedDoc}
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-[13px] font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
                                 >

@@ -1793,6 +1793,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         continue;
       }
       // Código de verificação PRÓPRIO deste documento (estampado no rodapé/QR do PDF).
+      const unitFields = signatureFields.filter((field: any) => (field.document_id || 'main') === unit.documentKey);
       const verificationCode = signatureService.generateVerificationHash();
       const verificationUrl = `${window.location.origin}/#/verificar/${verificationCode}`;
       const perDocument = {
@@ -1819,7 +1820,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             signer: currentSigner,
             creator,
             docxContainer: host,
-            fieldsOverride: signatureFields,
+            fieldsOverride: unitFields,
             perDocument,
           });
           filePath = out.filePath; sha256 = out.sha256; integritySha256 = out.integritySha256; pageCount = out.pageCount;
@@ -1829,7 +1830,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             signer: currentSigner,
             originalPdfUrl: unit.sourceUrl,
             creator,
-            fieldsOverride: signatureFields,
+            fieldsOverride: unitFields,
             perDocument,
           });
           filePath = out.filePath; sha256 = out.sha256; integritySha256 = out.integritySha256; pageCount = out.pageCount;
@@ -3057,12 +3058,14 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   // ========== HELPERS ==========
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('pt-BR', {
+    return new Date(dateStr).toLocaleString('pt-BR', {
+      timeZone: 'America/Cuiaba',
       day: '2-digit',
-      month: 'long',
+      month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      second: '2-digit',
     });
   };
 

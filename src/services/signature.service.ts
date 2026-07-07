@@ -282,13 +282,23 @@ class SignatureService {
 
     const { signers, ...requestData } = payload;
 
+    // Modelo `per_document`: o envelope recebe um PROTOCOLO próprio, separado dos
+    // códigos de verificação individuais de cada documento. Geramos aqui, na
+    // criação, para que o protocolo exista e seja estável desde o início. A
+    // finalização server-side preserva este valor (usa `|| generateVerificationHash()`),
+    // então nada é regravado depois. Fluxo consolidado (legado) não recebe protocolo.
+    const insertData: Record<string, any> = {
+      ...requestData,
+      created_by: userData.user.id,
+    };
+    if (requestData.signature_model === 'per_document' && !insertData.envelope_verification_code) {
+      insertData.envelope_verification_code = this.generateVerificationHash().toUpperCase();
+    }
+
     // Criar a solicitação
     const { data: request, error: reqError } = await supabase
       .from(this.requestsTable)
-      .insert({
-        ...requestData,
-        created_by: userData.user.id,
-      })
+      .insert(insertData)
       .select()
       .single();
 
