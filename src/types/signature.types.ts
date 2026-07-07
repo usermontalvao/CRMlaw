@@ -122,6 +122,10 @@ export interface Signer {
   // Aceite dos Termos de Uso (LGPD) no momento da assinatura
   terms_accepted_at?: string | null;
   terms_version?: string | null;
+  // Instantes REAIS das etapas probatórias (clampados pelo servidor)
+  auth_at?: string | null;
+  facial_captured_at?: string | null;
+  geolocation_captured_at?: string | null;
   // Consentimento SEPARADO p/ usar a selfie da assinatura como foto cadastral
   allow_signature_selfie_for_profile?: boolean | null;
   selfie_profile_consent_at?: string | null;
@@ -192,6 +196,12 @@ export interface SignDocumentDTO {
   // Consentimento opcional p/ usar a selfie como foto cadastral
   allow_signature_selfie_for_profile?: boolean;
   selfie_profile_consent_version?: string | null;
+  // Instantes REAIS de cada etapa probatória (capturados no ato; o servidor
+  // clampa à janela [viewed_at, now()]). Sem eles o dossiê reutilizava
+  // viewed_at e todos os eventos apareciam com o mesmo segundo.
+  auth_at?: string | null;
+  facial_captured_at?: string | null;
+  geolocation_captured_at?: string | null;
 }
 
 export interface SignatureRequestWithSigners extends SignatureRequest {

@@ -958,6 +958,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.311',
+    date: '07/07/2026',
+    summary: 'O registro de eventos da assinatura passou a gravar o instante real de cada etapa — autenticação, biometria facial e localização deixam de herdar o horário da visualização.',
+    modules: [
+      {
+        moduleId: 'signature',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Trilha de eventos com segundos reais por etapa',
+            description: 'Autenticação, biometria facial e localização agora registram o instante exato em que ocorreram no fluxo público (validado pelo servidor dentro da janela entre a abertura do documento e a assinatura). Antes, todos esses eventos exibiam o mesmo horário da visualização.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.310',
     date: '07/07/2026',
     summary: 'O rodapé de validação dos PDFs assinados voltou a ficar ancorado no fundo físico real da página e o modelo por documento deixou de estampar assinaturas de um arquivo nos demais arquivos do kit.',

@@ -33,12 +33,17 @@ const buildSignerEvents = (s: any): SignerEvent[] => {
 
   const viewedAt = s.viewed_at || s.opened_at;
   const signedMs = s.signed_at ? ms(s.signed_at) : 0;
+  // Instantes REAIS de cada etapa (colunas novas); registros legados (sem as
+  // colunas) caem no viewed_at como antes.
+  const authAt = s.auth_at || viewedAt;
+  const facialAt = s.facial_captured_at || viewedAt;
+  const geoAt = s.geolocation_captured_at || viewedAt;
   const events: SignerEvent[] = [];
   if (viewedAt) {
     events.push({ label: 'Visualizado', at: viewedAt, sortAt: ms(viewedAt), order: 1, detail: `${name}${cpf} abriu o documento${ipInfo}.` });
-    events.push({ label: 'Autenticação', at: viewedAt, sortAt: ms(viewedAt), order: 2, detail: `${name}${cpf}. ${authSummary}${ipInfo ? `${ipInfo}.` : '.'}` });
-    if (s.has_facial_biometrics) events.push({ label: 'Biometria facial', at: viewedAt, sortAt: ms(viewedAt), order: 2.5, detail: `${name}${contact}${cpf} concedeu acesso à câmera e teve a selfie capturada para verificação facial.` });
-    if (hasGeo) events.push({ label: 'Localização', at: viewedAt, sortAt: ms(viewedAt), order: 3, detail: `${name}${contact}${cpf} ativou a localização com coordenadas ${geo}.` });
+    events.push({ label: 'Autenticação', at: authAt, sortAt: ms(authAt), order: 2, detail: `${name}${cpf}. ${authSummary}${ipInfo ? `${ipInfo}.` : '.'}` });
+    if (s.has_facial_biometrics) events.push({ label: 'Biometria facial', at: facialAt, sortAt: ms(facialAt), order: 2.5, detail: `${name}${contact}${cpf} concedeu acesso à câmera e teve a selfie capturada para verificação facial.` });
+    if (hasGeo) events.push({ label: 'Localização', at: geoAt, sortAt: ms(geoAt), order: 3, detail: `${name}${contact}${cpf} ativou a localização com coordenadas ${geo}.` });
   }
   if (s.terms_accepted_at) {
     const v = String(s.terms_version || 'v1');

@@ -156,7 +156,7 @@ Deno.serve(async (req: Request) => {
     if (!payload || typeof payload !== 'object') return jsonResponse({ success: false, error: 'Invalid payload' }, 400);
 
     const action = String(payload?.action ?? 'sign').trim();
-    const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, ip_address, user_agent, terms_accepted, terms_version, allow_signature_selfie_for_profile, selfie_profile_consent_version } = payload;
+    const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, ip_address, user_agent, terms_accepted, terms_version, allow_signature_selfie_for_profile, selfie_profile_consent_version, auth_at, facial_captured_at, geolocation_captured_at } = payload;
 
     if (!token) return jsonResponse({ success: false, error: 'Token is required' }, 400);
     const { data: signer, error: signerError } = await supabase.from('signature_signers').select('*').eq('public_token', token).maybeSingle();
@@ -364,12 +364,31 @@ Deno.serve(async (req: Request) => {
     }
 
     const STORAGE_BUCKET = 'document-templates';
+
+    // Instantes REAIS das etapas probatórias, reportados pelo cliente no ato de
+    // cada uma (autenticação, selfie, localização) e CLAMPADOS pelo servidor à
+    // janela [viewed_at, now()] — o cliente não consegue alegar um instante
+    // anterior à abertura do documento nem no futuro. Sem isso o dossiê exibia
+    // todos esses eventos com o MESMO segundo (reutilizava viewed_at).
+    const stepWindowStartMs = (() => {
+      const t = new Date(signer.viewed_at || signer.opened_at || signer.created_at || 0).getTime();
+      return Number.isNaN(t) ? 0 : t;
+    })();
+    const clampStepTs = (v: unknown): string | null => {
+      if (typeof v !== 'string' || !v.trim()) return null;
+      const t = new Date(v).getTime();
+      if (Number.isNaN(t)) return null;
+      return new Date(Math.min(Math.max(t, stepWindowStartMs), Date.now())).toISOString();
+    };
+
     const updates: Record<string, unknown> = {
       status: 'signed', signed_at: new Date().toISOString(),
       signer_ip: ip_address||null, signer_user_agent: user_agent||null, signer_geolocation: geolocation||null,
       verification_hash: generateVerificationHash(),
       name: signer_name??signer.name, cpf: signer_cpf??signer.cpf, phone: signer_phone??signer.phone,
       auth_provider: auth_provider||null, auth_email: auth_email||null, auth_google_sub: auth_google_sub||null, auth_google_picture: auth_google_picture||null,
+      auth_at: clampStepTs(auth_at),
+      geolocation_captured_at: geolocation ? clampStepTs(geolocation_captured_at) : null,
       terms_accepted_at: new Date().toISOString(), terms_version: terms_version||'v1',
       // Consentimento SEPARADO e opcional p/ usar a selfie como foto cadastral.
       // Default false: a assinatura nunca depende deste consentimento.
@@ -384,6 +403,7 @@ Deno.serve(async (req: Request) => {
 
     if (facial_image) {
       try { updates.facial_image_path = await uploadBase64Image(supabase, facial_image, `facial_${signer.id}`, STORAGE_BUCKET); } catch {}
+      updates.facial_captured_at = clampStepTs(facial_captured_at);
     }
 
     const { data: updatedSigner, error: updateError } = await supabase.from('signature_signers').update(updates).eq('id', signer.id).select().single();

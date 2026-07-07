@@ -1058,6 +1058,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [phoneOtpLoading, setPhoneOtpLoading] = useState(false);
   const [phoneOtpError, setPhoneOtpError] = useState<string | null>(null);
 
+  // Instantes REAIS de cada etapa probatória (autenticação, selfie, localização),
+  // registrados no ato e enviados no payload da assinatura. Sem isto o dossiê
+  // reutilizava viewed_at e todos os eventos apareciam com o MESMO segundo.
+  const authAtRef = useRef<string | null>(null);
+  const facialCapturedAtRef = useRef<string | null>(null);
+  const geolocationCapturedAtRef = useRef<string | null>(null);
+
   // Email OTP
   const [emailToVerify, setEmailToVerify] = useState('');
   const [emailOtp, setEmailOtp] = useState('');
@@ -1593,6 +1600,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       const res = await signatureService.verifyEmailOtp({ token, code });
       setEmailOtpVerified(true);
+      authAtRef.current = new Date().toISOString(); // instante real da autenticação
       if (res.email) {
         setVerifiedEmail(res.email);
       }
@@ -1607,6 +1615,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   const finalizeGoogleUser = (user: GoogleUser) => {
     setGoogleUser(user);
+    authAtRef.current = new Date().toISOString(); // instante real da autenticação
 
     const next: SignerData = {
       ...signerData,
@@ -2667,6 +2676,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     const imageData = canvas.toDataURL('image/jpeg', 0.85);
     setFacialValidation(null);
     setFacialData(imageData);
+    facialCapturedAtRef.current = new Date().toISOString(); // instante real da selfie
     stopCamera();
 
     const result = await validateFacialPhotoWithAI(imageData);
@@ -2697,6 +2707,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         });
+        geolocationCapturedAtRef.current = new Date().toISOString(); // instante real da localização
         setLocationLoading(false);
         setModalStep('facial');
       },
@@ -2755,6 +2766,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         // Consentimento OPCIONAL p/ usar a selfie como foto cadastral (não afeta a assinatura)
         allow_signature_selfie_for_profile: allowSelfieForProfile,
         selfie_profile_consent_version: SELFIE_PROFILE_CONSENT_VERSION,
+        // Instantes REAIS das etapas probatórias (servidor clampa a [viewed_at, now()])
+        auth_at: authAtRef.current || undefined,
+        facial_captured_at: facialData ? (facialCapturedAtRef.current || undefined) : undefined,
+        geolocation_captured_at: locationData ? (geolocationCapturedAtRef.current || undefined) : undefined,
       };
 
       // Usar signDocumentPublic (Edge Function) para evitar erros de RLS em página pública
@@ -3134,6 +3149,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       const res = await signatureService.verifyPhoneOtp({ token, code });
       setPhoneOtpVerified(true);
+      authAtRef.current = new Date().toISOString(); // instante real da autenticação
       if (res.phone) {
         setSignerData((prev) => ({ ...prev, phone: res.phone || prev.phone }));
       }

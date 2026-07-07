@@ -1676,6 +1676,10 @@ class PdfSignatureService {
         (e) => e.action === 'viewed' && e.signer_id === item.id
       );
 
+      // Âncora de fallback dos eventos de etapa: primeiro "viewed" da trilha ou
+      // viewed_at do signatário (registros legados sem colunas de instante real).
+      const stepFallbackRaw = viewAuditEntries[0]?.created_at ?? item.viewed_at ?? item.signed_at ?? null;
+
       if (viewAuditEntries.length > 0) {
         // Use audit log entries — each visit is a separate card in the timeline
         for (const ve of viewAuditEntries) {
@@ -1688,22 +1692,6 @@ class PdfSignatureService {
             sortAt: ts?.getTime() ?? 0,
             order: 1,
           });
-          history.push({
-            label: 'Autenticação',
-            when: fmtWhen(ve.created_at),
-            detail: `${item.name}${signerCpf}. ${authTimelineSummary}${ipInfo ? `${ipInfo}.` : '.'}`,
-            sortAt: ts?.getTime() ?? 0,
-            order: 2,
-          });
-          if (geo.coordinates) {
-            history.push({
-              label: 'Localização',
-              when: fmtWhen(ve.created_at),
-              detail: `${item.name}${signerContact}${signerCpf} ativou a localização com coordenadas ${geo.coordinates}${geo.address ? ` (${geo.address})` : ''}.`,
-              sortAt: ts?.getTime() ?? 0,
-            order: 3,
-          });
-          }
         }
       } else if (item.viewed_at) {
         // Fallback for older records without audit log entries
@@ -1715,30 +1703,39 @@ class PdfSignatureService {
           sortAt: viewedAtDate?.getTime() ?? 0,
           order: 1,
         });
+      }
+
+      // Autenticação e Localização acontecem UMA vez, no instante REAL capturado
+      // (auth_at / geolocation_captured_at, clampados pelo servidor). Registros
+      // legados sem as colunas caem na âncora do primeiro "viewed" como antes.
+      if (stepFallbackRaw || item.auth_at) {
+        const authWhenRaw = item.auth_at ?? stepFallbackRaw;
+        const ipInfoSigner = item.signer_ip ? ` por meio do IP ${item.signer_ip}` : '';
         history.push({
           label: 'Autenticação',
-          when: fmtWhen(item.viewed_at),
-          detail: `${item.name}${signerCpf}. ${authTimelineSummary}${item.signer_ip ? ` por meio do IP ${item.signer_ip}.` : '.'}`,
-          sortAt: viewedAtDate?.getTime() ?? 0,
+          when: fmtWhen(authWhenRaw),
+          detail: `${item.name}${signerCpf}. ${authTimelineSummary}${ipInfoSigner ? `${ipInfoSigner}.` : '.'}`,
+          sortAt: this.toDateValue(authWhenRaw)?.getTime() ?? 0,
           order: 2,
         });
         if (geo.coordinates) {
+          const geoWhenRaw = item.geolocation_captured_at ?? stepFallbackRaw;
           history.push({
             label: 'Localização',
-            when: fmtWhen(item.viewed_at),
+            when: fmtWhen(geoWhenRaw),
             detail: `${item.name}${signerContact}${signerCpf} ativou a localização com coordenadas ${geo.coordinates}${geo.address ? ` (${geo.address})` : ''}.`,
-            sortAt: viewedAtDate?.getTime() ?? 0,
+            sortAt: this.toDateValue(geoWhenRaw)?.getTime() ?? 0,
             order: 3,
           });
         }
       }
 
       // Biometria facial (selfie): registra explicitamente o consentimento de
-      // câmera + a captura da selfie usada na verificação facial. Não há
-      // coluna própria de captura, então ancoramos no horário da autenticação
+      // câmera + a captura da selfie usada na verificação facial, no instante
+      // REAL da captura (facial_captured_at). Legado cai na âncora do "viewed"
       // (ordem 2.5 = logo após "Autenticação", antes de "Localização").
       if (item.facial_image_path) {
-        const facialWhenRaw = viewAuditEntries[0]?.created_at ?? item.viewed_at ?? item.signed_at ?? null;
+        const facialWhenRaw = item.facial_captured_at ?? stepFallbackRaw;
         history.push({
           label: 'Biometria facial',
           when: fmtWhen(facialWhenRaw),

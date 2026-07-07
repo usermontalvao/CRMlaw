@@ -933,6 +933,10 @@ class SignatureService {
         terms_version: payload.terms_version,
         allow_signature_selfie_for_profile: payload.allow_signature_selfie_for_profile === true,
         selfie_profile_consent_version: payload.selfie_profile_consent_version,
+        // Instantes reais das etapas (o servidor clampa à janela [viewed_at, now()])
+        auth_at: payload.auth_at,
+        facial_captured_at: payload.facial_captured_at,
+        geolocation_captured_at: payload.geolocation_captured_at,
         ip_address: ipAddress,
         user_agent: userAgent,
       },
