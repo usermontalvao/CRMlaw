@@ -3455,6 +3455,13 @@ Regras:
     if (loading) return;
     if (!hasDefaultTemplate) return;
 
+    // Abrindo um documento específico (import do Cloud por URL/base64)? Então NUNCA
+    // aplicar o modelo padrão: a importação faz seu próprio editor.open() e, em
+    // documentos grandes (ex.: KIT CONSUMIDOR), a conversão demora — o modelo
+    // padrão venceria a corrida e sobrescreveria o import, deixando a página em
+    // branco. hasUnsavedChanges só vira true no fim do import, tarde demais.
+    if (isCloudImportMode) return;
+
     // NÃ£o sobrescrever petiçÃ£o carregada ou alteraçÃµes do usuÃ¡rio
     if (currentPetitionId) return;
     if (hasUnsavedChanges) return;
@@ -3482,7 +3489,7 @@ Regras:
     return () => {
       cancelled = true;
     };
-  }, [loading, hasDefaultTemplate, currentPetitionId, hasUnsavedChanges]);
+  }, [loading, hasDefaultTemplate, currentPetitionId, hasUnsavedChanges, isCloudImportMode]);
 
   useEffect(() => {
     try {

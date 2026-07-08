@@ -568,6 +568,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   const [newLabelColor, setNewLabelColor] = useState('#f97316');
   const realtimeRefreshTimerRef = useRef<number | null>(null);
   const loadDataRef = useRef<typeof loadData | null>(null);
+  // Id do DOCX atualmente importado no editor inline. Serve para NÃO reimportar
+  // (recarregando por cima da edição) quando um refresh da lista — ex.: o realtime
+  // do `cloud-realtime` — apenas recria o objeto `previewFile` do mesmo arquivo.
+  const loadedDocxPreviewIdRef = useRef<string | null>(null);
   const [selectedImageFileIds, setSelectedImageFileIds] = useState<string[]>([]);
   const [imagePdfModalOpen, setImagePdfModalOpen] = useState(false);
   const [imagePdfName, setImagePdfName] = useState('imagens-convertidas');
@@ -1485,7 +1489,22 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
     if (!previewFile) {
       setPreviewUrl(null);
       setPreviewActionsMenuOpen(false);
+      loadedDocxPreviewIdRef.current = null;
       return;
+    }
+
+    // O editor inline já está com este DOCX aberto? Então NÃO reimporta: um
+    // refresh da lista (realtime) recria o objeto `previewFile` e, sem esta
+    // guarda, o editor recarregaria sozinho por cima do que está sendo editado.
+    // Só (re)importa quando o arquivo aberto muda de fato (id diferente).
+    const isDocxPreview = isDocxFile(previewFile.mime_type, previewFile.original_name);
+    if (isDocxPreview && loadedDocxPreviewIdRef.current === previewFile.id) {
+      return;
+    }
+    // Preview de arquivo não-DOCX desmonta o editor — esquece o id carregado
+    // para que reabrir o mesmo DOCX mais tarde volte a importar.
+    if (!isDocxPreview) {
+      loadedDocxPreviewIdRef.current = null;
     }
 
     let revokedUrl: string | null = null;
@@ -1497,6 +1516,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
           const response = await fetch(signedUrl);
           const buffer = await response.arrayBuffer();
           await editorRef.current?.loadDocxViaImport(buffer, previewFile.original_name);
+          loadedDocxPreviewIdRef.current = previewFile.id;
           setPreviewUrl(null);
         } else if (isWordFile(previewFile.mime_type, previewFile.original_name)) {
           await handleOpenDocxEditor(previewFile);
@@ -1527,6 +1547,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       setPreviewUrl(null);
       return;
     }
+    // DOCX aberto no editor: um refresh de metadados (ex.: realtime após um
+    // autosave/rename) NÃO deve trocar o objeto `previewFile`, senão o editor é
+    // remontado e recarregado por cima da edição. O fechamento em caso de
+    // exclusão já foi tratado acima; aqui só evitamos a troca por metadados.
+    if (isDocxFile(previewFile.mime_type, previewFile.original_name)) return;
     if (nextPreviewFile.original_name !== previewFile.original_name || nextPreviewFile.storage_path !== previewFile.storage_path || nextPreviewFile.updated_at !== previewFile.updated_at) {
       setPreviewFile(nextPreviewFile);
       setPreviewUrl(null);

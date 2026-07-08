@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.314': { name: 'Cafe Editor Blindado e Imagens Persistentes', emoji: '[memo]' },
   '1.10.313': { name: 'Cafe Editor Persistente na Retomada', emoji: '[memo]' },
   '1.10.312': { name: 'Cafe Agenda Coesa e Login Direto', emoji: '[palette]' },
   '1.10.309': { name: 'Cafe Trilha Cronologica Coesa', emoji: '[signature]' },
@@ -959,6 +960,63 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.314',
+    date: '08/07/2026',
+    summary: 'O editor e os previews DOCX ficaram mais resistentes a recargas indevidas, o e-mail passou a lembrar remetentes com imagens liberadas, e a integração do serviço Syncfusion por Edge Function ganhou headers de sessão automáticos.',
+    modules: [
+      {
+        moduleId: 'documents',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Preview DOCX do Cloud não reimporta por refresh de realtime',
+            description: 'O preview inline do Cloud passou a lembrar qual DOCX já está aberto no editor e ignora recriações de metadados do mesmo arquivo. Isso evita recarregar o documento por cima da edição quando o realtime apenas atualiza a lista.',
+          },
+          {
+            type: 'fix',
+            title: 'Import do Cloud não é mais sobrescrito pelo modelo padrão',
+            description: 'Ao abrir um documento específico vindo do Cloud no editor de petições, o fluxo deixa de aplicar o template padrão em paralelo. Isso elimina a corrida que podia vencer a importação e deixar documentos grandes em branco.',
+          },
+          {
+            type: 'improvement',
+            title: 'Ribbon ganhou alternância direta de espaço antes/depois do parágrafo',
+            description: 'Os seletores de espaçamento agora refletem e alternam espaço antes/depois do parágrafo, inclusive limpando o modo automático herdado de DOCX para que a ação produza efeito imediato no texto selecionado.',
+          },
+        ],
+      },
+      {
+        moduleId: 'email',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Liberação de imagens agora vale por remetente',
+            description: 'Ao autorizar imagens remotas em um e-mail, o CRM passa a lembrar o remetente e reutiliza essa permissão em novas mensagens da mesma origem, em vez de pedir novamente a cada mensagem.',
+          },
+        ],
+      },
+      {
+        moduleId: 'settings',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Tema do editor não insiste em coluna ausente no profile',
+            description: 'A preferência de tema do editor passou a memorizar quando a coluna ainda não existe ou não está disponível no schema, evitando novas tentativas ruidosas de leitura e escrita a cada carregamento.',
+          },
+        ],
+      },
+      {
+        moduleId: 'documents',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Syncfusion via Supabase Function envia headers de autenticação automaticamente',
+            description: 'Quando o serviço do DocumentEditor aponta para uma Edge Function do Supabase, o editor passa a anexar `apikey` e o bearer token da sessão corrente em todas as chamadas, cobrindo importação e demais requests do container.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.313',
     date: '07/07/2026',

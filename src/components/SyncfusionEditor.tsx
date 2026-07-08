@@ -22,6 +22,7 @@ import {
   type ScanResult,
 } from './editor-issues-scanner';
 import { attachLocalSpellChecker } from './local-spell-checker';
+import { supabase } from '../config/supabase';
 
 // Prune entradas expiradas na inicialização do módulo
 pruneExpiredEntries();
@@ -71,6 +72,26 @@ const PROPERTIES_PANE_COLLAPSED_WIDTH = 64;
 const SYNCFUSION_SERVICE_URL =
   String(import.meta.env.VITE_SYNC_FUSION || '').trim() ||
   'https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/';
+
+const SYNCFUSION_SUPABASE_API_KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+
+const isSupabaseFunctionsServiceUrl = (value: string) =>
+  /\/functions\/v1\/[^/]+\/?$/i.test(String(value || '').trim());
+
+const buildSyncfusionHeaders = (accessToken?: string | null): object[] => {
+  const headers: Record<string, string>[] = [];
+
+  if (isSupabaseFunctionsServiceUrl(SYNCFUSION_SERVICE_URL)) {
+    if (SYNCFUSION_SUPABASE_API_KEY) {
+      headers.push({ apikey: SYNCFUSION_SUPABASE_API_KEY });
+    }
+    if (accessToken) {
+      headers.push({ Authorization: `Bearer ${accessToken}` });
+    }
+  }
+
+  return headers;
+};
 
 const buildDocxImportError = (error: unknown) => {
   const message = String((error as any)?.message || '').toLowerCase();
@@ -855,6 +876,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const forcedPasteModeRef = useRef<'smart' | 'source' | 'merge' | 'text' | 'clean' | null>(null);
     const [isCreated, setIsCreated] = useState(false);
     const [scanResult, setScanResult] = useState<ScanResult>({ issues: [], totalOccurrences: 0 });
+    const [syncfusionHeaders, setSyncfusionHeaders] = useState<object[]>(() => buildSyncfusionHeaders(null));
 
     const toSentenceCase = (value: string) => {
       const lower = value.toLocaleLowerCase('pt-BR');
@@ -927,6 +949,38 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       document.addEventListener('contextmenu', capturePos, true);
       return () => {
         document.removeEventListener('contextmenu', capturePos, true);
+      };
+    }, []);
+
+    useEffect(() => {
+      if (!isSupabaseFunctionsServiceUrl(SYNCFUSION_SERVICE_URL)) {
+        setSyncfusionHeaders([]);
+        return;
+      }
+
+      let active = true;
+
+      const applySessionHeaders = async () => {
+        try {
+          const { data } = await supabase.auth.getSession();
+          if (!active) return;
+          setSyncfusionHeaders(buildSyncfusionHeaders(data.session?.access_token ?? null));
+        } catch {
+          if (!active) return;
+          setSyncfusionHeaders(buildSyncfusionHeaders(null));
+        }
+      };
+
+      void applySessionHeaders();
+
+      const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!active) return;
+        setSyncfusionHeaders(buildSyncfusionHeaders(session?.access_token ?? null));
+      });
+
+      return () => {
+        active = false;
+        authListener.subscription.unsubscribe();
       };
     }, []);
 
@@ -2805,11 +2859,16 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           id={id}
           height={height}
           serviceUrl={SYNCFUSION_SERVICE_URL}
+          headers={syncfusionHeaders}
           enableToolbar={enableToolbar}
           toolbarItems={(toolbarItems ?? TOOLBAR_ITEMS) as any}
           showPropertiesPane={showPropertiesPane}
           enableLocalPaste={false}
           enableSpellCheck={true}
+          beforeXmlHttpRequestSend={(args: any) => {
+            if (syncfusionHeaders.length === 0) return;
+            args.headers = Array.isArray(args.headers) ? [...args.headers, ...syncfusionHeaders] : [...syncfusionHeaders];
+          }}
           created={handleCreated}
           documentEditorSettings={{
             showRuler: !!(showRuler && isCreated),

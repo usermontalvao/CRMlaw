@@ -40,23 +40,29 @@ const MATCH_LABEL: Record<SpamRuleMatch, string> = {
 const LS_FOLDERS_W = 'email:foldersW';
 const LS_LIST_W = 'email:listW';
 const LS_PREFS = 'email:prefs';
-const LS_SHOWN_IMAGES = 'email:shownImages';
+const LS_ALLOWED_IMAGE_SENDERS = 'email:allowedImageSenders';
 const LS_COMPOSE_UI = 'email:composeUi';
 
 // Memória de "imagens liberadas" por mensagem. Uma vez que o usuário clica em
 // "Exibir imagens" num e-mail, não faz sentido bloquear de novo toda vez que ele
 // reabre — guardamos o id da mensagem (persistido entre sessões, com teto p/ não
 // crescer sem limite).
-const shownImages: Set<string> = (() => {
+const allowedImageSenders: Set<string> = (() => {
   try {
-    const raw = localStorage.getItem(LS_SHOWN_IMAGES);
+    const raw = localStorage.getItem(LS_ALLOWED_IMAGE_SENDERS);
     return new Set<string>(raw ? JSON.parse(raw) : []);
   } catch { return new Set<string>(); }
 })();
-function rememberShownImages(id: string) {
-  if (!id || shownImages.has(id)) return;
-  shownImages.add(id);
-  try { localStorage.setItem(LS_SHOWN_IMAGES, JSON.stringify([...shownImages].slice(-800))); } catch { /* noop */ }
+function senderImageKey(sender?: string | null): string | null {
+  if (!sender) return null;
+  const email = addressOf(sender).trim().toLowerCase();
+  return email || null;
+}
+function rememberAllowedImageSender(sender?: string | null) {
+  const key = senderImageKey(sender);
+  if (!key || allowedImageSenders.has(key)) return;
+  allowedImageSenders.add(key);
+  try { localStorage.setItem(LS_ALLOWED_IMAGE_SENDERS, JSON.stringify([...allowedImageSenders].slice(-800))); } catch { /* noop */ }
 }
 
 // MAILBOX_ADDRESS removido — endereço do usuário vem do AuthContext (user.email)
@@ -2914,7 +2920,7 @@ function MessageView({ m, single, defaultOpen, featured = false }: { m: EmailMes
   const isOut = m.direction === 'outbound';
   const personLabel = isOut ? 'Você' : 'Cliente';
   const body = m.body_html
-    ? <EmailHtmlFrame html={m.body_html} msgId={m.id} />
+    ? <EmailHtmlFrame html={m.body_html} msgId={m.id} sender={m.from_address ?? m.from_text} />
     : <pre className="whitespace-pre-wrap break-words font-sans text-[14px] leading-relaxed text-zinc-800 dark:text-zinc-200">{m.body_text || '(sem conteúdo)'}</pre>;
 
   if (single) {
@@ -3024,15 +3030,19 @@ function prepareEmailHtml(html: string, allowRemoteImages = false): { html: stri
  * documento sem deixar o email executar JS. Imagens remotas começam bloqueadas
  * (anti-rastreio) e só carregam ao clicar em "Exibir imagens".
  */
-function EmailHtmlFrame({ html, msgId }: { html: string; msgId?: string }) {
+function EmailHtmlFrame({ html, msgId, sender }: { html: string; msgId?: string; sender?: string | null }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(400);
   // Começa já liberado se o usuário já exibiu as imagens deste e-mail antes.
-  const [showImages, setShowImages] = useState(() => !!msgId && shownImages.has(msgId));
+  const senderKey = useMemo(() => senderImageKey(sender), [sender]);
+  const [showImages, setShowImages] = useState(() => !!senderKey && allowedImageSenders.has(senderKey));
+  useEffect(() => {
+    setShowImages(!!senderKey && allowedImageSenders.has(senderKey));
+  }, [senderKey, msgId]);
   const revealImages = useCallback(() => {
-    if (msgId) rememberShownImages(msgId);
+    rememberAllowedImageSender(sender);
     setShowImages(true);
-  }, [msgId]);
+  }, [sender]);
   const processedBlocked = useMemo(() => prepareEmailHtml(html, false), [html]);
   const processedFull = useMemo(() => prepareEmailHtml(html, true), [html]);
   const effectiveHtml = showImages ? processedFull.html : processedBlocked.html;

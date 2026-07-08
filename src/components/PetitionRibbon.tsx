@@ -68,6 +68,8 @@ interface FmtState {
   fontColor: string;
   alignment: '' | 'Left' | 'Center' | 'Right' | 'Justify';
   styleName: string;
+  beforeSpacing: number;
+  afterSpacing: number;
 }
 
 const EMPTY_FMT: FmtState = {
@@ -82,6 +84,8 @@ const EMPTY_FMT: FmtState = {
   fontColor: '#000000',
   alignment: '',
   styleName: 'Normal',
+  beforeSpacing: 0,
+  afterSpacing: 0,
 };
 
 type CustomStylePreset = PetitionRibbonCustomStyle;
@@ -336,6 +340,10 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
         fontColor: typeof cf.fontColor === 'string' && cf.fontColor ? cf.fontColor : '#000000',
         alignment: (pf.textAlignment as FmtState['alignment']) || '',
         styleName: typeof pf.styleName === 'string' && pf.styleName ? pf.styleName : 'Normal',
+        // Reflete "tem espaço?" (inclui o flag "auto") para o rótulo do menu
+        // alternar entre Adicionar/Remover, como no Word (12 = valor > 0 qualquer).
+        beforeSpacing: pf.spaceBeforeAuto === true ? 12 : (typeof pf.beforeSpacing === 'number' ? pf.beforeSpacing : 0),
+        afterSpacing: pf.spaceAfterAuto === true ? 12 : (typeof pf.afterSpacing === 'number' ? pf.afterSpacing : 0),
       });
       if (typeof ed.zoomFactor === 'number') {
         setZoom(Math.round(ed.zoomFactor * 100));
@@ -715,6 +723,31 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
       } else {
         const cur = typeof pf.afterSpacing === 'number' ? pf.afterSpacing : 0;
         pf.afterSpacing = Math.max(0, cur + delta);
+      }
+    });
+  // Alterna espaço de parágrafo antes/depois, como no Word (item "Adicionar/Remover
+  // Espaço ... de Parágrafo"). Aplica a TODOS os parágrafos da seleção (o setter do
+  // Syncfusion age sobre a seleção inteira). Sem espaço -> aplica 12pt; com espaço
+  // (inclusive espaçamento "auto" de DOCX) -> zera. Zeramos também o flag "auto",
+  // senão ele sobrepõe o valor numérico e nada muda (é o que fazia parecer bugado).
+  const PARAGRAPH_SPACE_PT = 12;
+  const paragraphHasSpace = (pf: any, which: 'before' | 'after'): boolean => {
+    if (which === 'before') {
+      return pf?.spaceBeforeAuto === true || (typeof pf?.beforeSpacing === 'number' && pf.beforeSpacing > 0);
+    }
+    return pf?.spaceAfterAuto === true || (typeof pf?.afterSpacing === 'number' && pf.afterSpacing > 0);
+  };
+  const toggleParagraphSpace = (which: 'before' | 'after') =>
+    run((ed) => {
+      const pf = ed.selection?.paragraphFormat;
+      if (!pf) return;
+      const has = paragraphHasSpace(pf, which);
+      if (which === 'before') {
+        pf.spaceBeforeAuto = false;
+        pf.beforeSpacing = has ? 0 : PARAGRAPH_SPACE_PT;
+      } else {
+        pf.spaceAfterAuto = false;
+        pf.afterSpacing = has ? 0 : PARAGRAPH_SPACE_PT;
       }
     });
 
@@ -1290,9 +1323,12 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <span className="pet-vsep" />
                 <select
                   className="pet-select pet-spacing"
-                  defaultValue=""
+                  value=""
                   onChange={(e) => {
-                    if (e.target.value) setLineSpacing(Number(e.target.value));
+                    const v = e.target.value;
+                    if (v === 'space-before') toggleParagraphSpace('before');
+                    else if (v === 'space-after') toggleParagraphSpace('after');
+                    else if (v) setLineSpacing(Number(v));
                     e.target.value = '';
                   }}
                   title={"Espaçamento entre linhas"}
@@ -1304,6 +1340,14 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                   <option value="1.15">1,15</option>
                   <option value="1.5">1,5</option>
                   <option value="2">2,0</option>
+                  <option value="2.5">2,5</option>
+                  <option value="3">3,0</option>
+                  <option value="space-before">
+                    {fmt.beforeSpacing > 0 ? 'Remover Espaço Antes de Parágrafo' : 'Adicionar Espaço Antes de Parágrafo'}
+                  </option>
+                  <option value="space-after">
+                    {fmt.afterSpacing > 0 ? 'Remover Espaço Depois de Parágrafo' : 'Adicionar Espaço Depois de Parágrafo'}
+                  </option>
                 </select>
               </div>
             </RibbonGroup>
@@ -1601,9 +1645,12 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
               </div>
               <select
                 className="pet-select"
-                defaultValue=""
+                value=""
                 onChange={(e) => {
-                  if (e.target.value) setLineSpacing(Number(e.target.value));
+                  const v = e.target.value;
+                  if (v === 'space-before') toggleParagraphSpace('before');
+                  else if (v === 'space-after') toggleParagraphSpace('after');
+                  else if (v) setLineSpacing(Number(v));
                 }}
                   title={"Espaçamento entre linhas"}
               >
@@ -1611,8 +1658,17 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                   {"Espaçamento"}
                 </option>
                 <option value="1">Simples</option>
+                <option value="1.15">1,15</option>
                 <option value="1.5">1,5 linhas</option>
                 <option value="2">Duplo</option>
+                <option value="2.5">2,5</option>
+                <option value="3">3,0</option>
+                <option value="space-before">
+                  {fmt.beforeSpacing > 0 ? 'Remover Espaço Antes de Parágrafo' : 'Adicionar Espaço Antes de Parágrafo'}
+                </option>
+                <option value="space-after">
+                  {fmt.afterSpacing > 0 ? 'Remover Espaço Depois de Parágrafo' : 'Adicionar Espaço Depois de Parágrafo'}
+                </option>
               </select>
             </RibbonGroup>
             <RibbonGroup label={"Espaçamento"}>

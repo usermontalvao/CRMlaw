@@ -79,6 +79,7 @@ class ProfileService {
   private tableName = 'profiles';
   private ribbonStylesColumn = 'petition_ribbon_custom_styles';
   private petitionEditorThemeColumn = 'petition_editor_theme_preference';
+  private petitionEditorThemeUnavailable = false;
 
   private isMissingRibbonStylesColumn(error: any): boolean {
     const msg = String(error?.message || '').toLowerCase();
@@ -213,6 +214,8 @@ class ProfileService {
   }
 
   async getMyPetitionEditorThemePreference(): Promise<PetitionEditorThemePreference | null> {
+    if (this.petitionEditorThemeUnavailable) return null;
+
     const userId = await this.requireUserId();
     const { data, error } = await supabase
       .from(this.tableName)
@@ -221,7 +224,18 @@ class ProfileService {
       .maybeSingle();
 
     if (error) {
-      if (this.isMissingPetitionEditorThemeColumn(error)) return null;
+      if (this.isMissingPetitionEditorThemeColumn(error)) {
+        this.petitionEditorThemeUnavailable = true;
+        return null;
+      }
+
+      const message = String(error.message || '').toLowerCase();
+      const details = String((error as any)?.details || '').toLowerCase();
+      if (message.includes('bad request') || details.includes(this.petitionEditorThemeColumn)) {
+        this.petitionEditorThemeUnavailable = true;
+        return null;
+      }
+
       throw new Error(error.message);
     }
 
@@ -230,6 +244,8 @@ class ProfileService {
   }
 
   async updateMyPetitionEditorThemePreference(theme: PetitionEditorThemePreference): Promise<boolean> {
+    if (this.petitionEditorThemeUnavailable) return false;
+
     const userId = await this.requireUserId();
     const { error } = await supabase
       .from(this.tableName)
@@ -240,7 +256,18 @@ class ProfileService {
       .eq('user_id', userId);
 
     if (error) {
-      if (this.isMissingPetitionEditorThemeColumn(error)) return false;
+      if (this.isMissingPetitionEditorThemeColumn(error)) {
+        this.petitionEditorThemeUnavailable = true;
+        return false;
+      }
+
+      const message = String(error.message || '').toLowerCase();
+      const details = String((error as any)?.details || '').toLowerCase();
+      if (message.includes('bad request') || details.includes(this.petitionEditorThemeColumn)) {
+        this.petitionEditorThemeUnavailable = true;
+        return false;
+      }
+
       throw new Error(error.message);
     }
 
