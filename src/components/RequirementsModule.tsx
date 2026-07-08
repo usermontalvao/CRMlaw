@@ -5710,12 +5710,13 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       {msTemplateEditing && (
         <TemplateDocxEditorModal
           isOpen={!!msTemplateEditing}
-          onClose={() => setMsTemplateEditing(null)}
-          fileName={msTemplateEditing.file_name || `${msTemplateEditing.name}.docx`}
-          badge="Modelo MS"
-          load={() => documentTemplateService.downloadTemplateFile(msTemplateEditing)}
-          save={(blob) => documentTemplateService.replaceTemplateContent(msTemplateEditing, blob).then(() => undefined)}
-          onSaved={() => { loadMsTemplates(); }}
+        onClose={() => setMsTemplateEditing(null)}
+        fileName={msTemplateEditing.file_name || `${msTemplateEditing.name}.docx`}
+        badge="Modelo MS"
+        persistenceKey={`ms-template:${msTemplateEditing.id}`}
+        load={() => documentTemplateService.downloadTemplateFile(msTemplateEditing)}
+        save={(blob) => documentTemplateService.replaceTemplateContent(msTemplateEditing, blob).then(() => undefined)}
+        onSaved={() => { loadMsTemplates(); }}
         />
       )}
 

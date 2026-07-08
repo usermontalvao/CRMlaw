@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.313': { name: 'Cafe Editor Persistente na Retomada', emoji: '[memo]' },
   '1.10.312': { name: 'Cafe Agenda Coesa e Login Direto', emoji: '[palette]' },
   '1.10.309': { name: 'Cafe Trilha Cronologica Coesa', emoji: '[signature]' },
   '1.10.308': { name: 'Cafe Laudo Seco e Disparo Blindado', emoji: '[signature]' },
@@ -958,6 +959,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.313',
+    date: '07/07/2026',
+    summary: 'O editor DOCX dos modelos deixou de recarregar ao minimizar ou retomar a janela e passou a restaurar o rascunho local da sessão antes de qualquer novo carregamento do arquivo.',
+    modules: [
+      {
+        moduleId: 'documents',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Editor de modelos não perde mais alterações ao retomar a janela',
+            description: 'O modal do editor Syncfusion agora ignora recargas causadas por re-render do pai, reaproveita a mesma sessão aberta do arquivo e persiste um rascunho local temporário por documento em sessionStorage. Com isso, minimizar/restaurar o navegador deixa de reabrir o DOCX por cima das alterações em andamento.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.312',
     date: '07/07/2026',

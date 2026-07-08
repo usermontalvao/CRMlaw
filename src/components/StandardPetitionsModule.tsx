@@ -1283,12 +1283,13 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
       {docxEditingPetition && (
         <TemplateDocxEditorModal
           isOpen={!!docxEditingPetition}
-          onClose={() => setDocxEditingPetition(null)}
-          fileName={docxEditingPetition.file_name || `${docxEditingPetition.name}.docx`}
-          badge="Petição"
-          load={() => standardPetitionService.downloadPetitionFile(docxEditingPetition)}
-          save={(blob) => standardPetitionService.replacePetitionContent(docxEditingPetition, blob).then(() => undefined)}
-          onSaved={() => { loadPetitions(); }}
+        onClose={() => setDocxEditingPetition(null)}
+        fileName={docxEditingPetition.file_name || `${docxEditingPetition.name}.docx`}
+        badge="Petição"
+        persistenceKey={`standard-petition:${docxEditingPetition.id}`}
+        load={() => standardPetitionService.downloadPetitionFile(docxEditingPetition)}
+        save={(blob) => standardPetitionService.replacePetitionContent(docxEditingPetition, blob).then(() => undefined)}
+        onSaved={() => { loadPetitions(); }}
         />
       )}
     </div>

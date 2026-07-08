@@ -602,6 +602,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
         onClose={() => setEditingFile(null)}
         fileName={editingFile.file_name || 'documento.docx'}
         badge="Anexo"
+        persistenceKey={`template-file:${editingFile.id}`}
         load={() => documentTemplateService.downloadTemplateFileById(editingFile.id)}
         save={(blob) => documentTemplateService.replaceTemplateFileContent(editingFile.id, blob).then(() => undefined)}
         onSaved={() => { loadFiles(); onUpdate(); }}
@@ -613,6 +614,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
         onClose={() => setEditingMain(false)}
         fileName={localTemplate.file_name || `${localTemplate.name}.docx`}
         badge="Principal"
+        persistenceKey={`template-main:${localTemplate.id}`}
         load={() => documentTemplateService.downloadTemplateFile(localTemplate)}
         save={(blob) => documentTemplateService.replaceTemplateContent(localTemplate, blob).then(() => undefined)}
         onSaved={() => { onUpdate(); }}

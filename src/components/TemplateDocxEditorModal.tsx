@@ -14,6 +14,7 @@ interface TemplateDocxEditorModalProps {
   save: (blob: Blob) => Promise<void>;
   onSaved?: () => void;
   badge?: string;
+  persistenceKey?: string;
 }
 
 const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
@@ -24,15 +25,61 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
   save,
   onSaved,
   badge,
+  persistenceKey,
 }) => {
   const editorRef = useRef<SyncfusionEditorRef>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const loadRef = useRef(load);
+  const loadedSessionKeyRef = useRef<string | null>(null);
+  const draftPersistTimerRef = useRef<number | null>(null);
+  const suppressContentChangeRef = useRef(false);
   const { darkMode, toggleDarkMode } = usePetitionEditorTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
+  const sessionKey = useMemo(
+    () => `${badge || 'documento'}:${persistenceKey || fileName}`,
+    [badge, fileName, persistenceKey]
+  );
+  const draftStorageKey = useMemo(
+    () => `template-docx-editor:draft:${sessionKey}`,
+    [sessionKey]
+  );
+
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
+
+  const clearDraft = useCallback(() => {
+    try {
+      sessionStorage.removeItem(draftStorageKey);
+    } catch {
+      // noop
+    }
+  }, [draftStorageKey]);
+
+  const persistDraftNow = useCallback(() => {
+    if (!isOpen || !editorRef.current) return;
+    try {
+      const sfdt = editorRef.current.getSfdt?.();
+      if (!sfdt?.trim()) return;
+      sessionStorage.setItem(draftStorageKey, sfdt);
+    } catch {
+      // noop
+    }
+  }, [draftStorageKey, isOpen]);
+
+  const scheduleDraftPersist = useCallback(() => {
+    if (draftPersistTimerRef.current !== null) {
+      window.clearTimeout(draftPersistTimerRef.current);
+    }
+    draftPersistTimerRef.current = window.setTimeout(() => {
+      draftPersistTimerRef.current = null;
+      persistDraftNow();
+    }, 500);
+  }, [persistDraftNow]);
 
   const loadDocxWithFallback = useCallback(async (arrayBuffer: ArrayBuffer, targetFileName: string) => {
     if (!editorRef.current) return;
@@ -52,26 +99,46 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
       setLoading(true);
       setError(null);
       setDirty(false);
-      const blob = await load();
-      const arrayBuffer = await blob.arrayBuffer();
+      suppressContentChangeRef.current = true;
+      const draft = (() => {
+        try {
+          return sessionStorage.getItem(draftStorageKey) || '';
+        } catch {
+          return '';
+        }
+      })().trim();
       let tries = 0;
       while (!editorRef.current && tries < 40) {
         await new Promise((r) => setTimeout(r, 50));
         tries += 1;
       }
-      await loadDocxWithFallback(arrayBuffer, fileName);
+      if (draft) {
+        editorRef.current?.loadSfdt(draft);
+        setDirty(true);
+      } else {
+        const blob = await loadRef.current();
+        const arrayBuffer = await blob.arrayBuffer();
+        await loadDocxWithFallback(arrayBuffer, fileName);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar o documento.');
     } finally {
+      window.setTimeout(() => {
+        suppressContentChangeRef.current = false;
+      }, 0);
       setLoading(false);
     }
-  }, [fileName, load, loadDocxWithFallback]);
+  }, [draftStorageKey, fileName, loadDocxWithFallback]);
 
   useEffect(() => {
-    if (isOpen) {
-      void loadDocument();
+    if (!isOpen) {
+      loadedSessionKeyRef.current = null;
+      return;
     }
-  }, [isOpen, loadDocument]);
+    if (loadedSessionKeyRef.current === sessionKey) return;
+    loadedSessionKeyRef.current = sessionKey;
+    void loadDocument();
+  }, [isOpen, loadDocument, sessionKey]);
 
   const handleSave = useCallback(async () => {
     if (!editorRef.current) return;
@@ -80,6 +147,7 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
       setError(null);
       const blob = await editorRef.current.exportDocx(fileName);
       await save(blob);
+      clearDraft();
       setDirty(false);
       onSaved?.();
       onClose();
@@ -88,7 +156,7 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
     } finally {
       setSaving(false);
     }
-  }, [fileName, onClose, onSaved, save]);
+  }, [clearDraft, fileName, onClose, onSaved, save]);
 
   const handleExportDocx = useCallback(async () => {
     if (!editorRef.current) return;
@@ -102,16 +170,18 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
   }, [fileName]);
 
   const handleClose = useCallback(() => {
+    if (dirty) persistDraftNow();
     if (dirty && !confirm('Ha alteracoes nao salvas. Deseja fechar mesmo assim?')) return;
     onClose();
-  }, [dirty, onClose]);
+  }, [dirty, onClose, persistDraftNow]);
 
   const handleNewDocument = useCallback(() => {
     if (dirty && !confirm('Ha alteracoes nao salvas. Deseja criar um novo documento mesmo assim?')) return;
     editorRef.current?.clear?.();
     setDirty(true);
     setError(null);
-  }, [dirty]);
+    scheduleDraftPersist();
+  }, [dirty, scheduleDraftPersist]);
 
   const handleOpenLocalDocx = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -122,14 +192,19 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
       setLoading(true);
       setError(null);
       const arrayBuffer = await file.arrayBuffer();
+      suppressContentChangeRef.current = true;
       await loadDocxWithFallback(arrayBuffer, file.name);
       setDirty(true);
+      scheduleDraftPersist();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao abrir o documento.');
     } finally {
+      window.setTimeout(() => {
+        suppressContentChangeRef.current = false;
+      }, 0);
       setLoading(false);
     }
-  }, [loadDocxWithFallback]);
+  }, [loadDocxWithFallback, scheduleDraftPersist]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -139,6 +214,24 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
   }, [handleClose, isOpen, saving]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const flushDraft = () => persistDraftNow();
+    const onVisibilityChange = () => {
+      if (document.hidden) flushDraft();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', flushDraft);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', flushDraft);
+      if (draftPersistTimerRef.current !== null) {
+        window.clearTimeout(draftPersistTimerRef.current);
+        draftPersistTimerRef.current = null;
+      }
+    };
+  }, [isOpen, persistDraftNow]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -432,7 +525,11 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
             window.setTimeout(() => editorRef.current?.refresh?.(), 60);
             window.setTimeout(() => editorRef.current?.refresh?.(), 320);
           }}
-          onContentChange={() => setDirty(true)}
+          onContentChange={() => {
+            if (suppressContentChangeRef.current) return;
+            setDirty(true);
+            scheduleDraftPersist();
+          }}
         />
       </div>
     </div>,
