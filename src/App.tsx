@@ -1946,7 +1946,13 @@ useEffect(() => {
               className="absolute inset-[-34px] jx-anim"
               viewBox="0 0 140 140"
               fill="none"
-              style={{ animation: 'jx-orbit 3.6s cubic-bezier(.45,.05,.55,.95) infinite' }}
+              style={{
+                animation: 'jx-orbit 3.6s cubic-bezier(.45,.05,.55,.95) infinite',
+                transformBox: 'view-box',
+                transformOrigin: 'center',
+                WebkitTransformOrigin: 'center',
+                willChange: 'transform',
+              }}
               aria-hidden="true"
             >
               <circle cx="70" cy="70" r="66" stroke="rgba(255,255,255,0.07)" strokeWidth="1" />

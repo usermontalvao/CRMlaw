@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.315': { name: 'Cafe Orbita Estavel no Splash', emoji: '[art]' },
   '1.10.314': { name: 'Cafe Editor Blindado e Imagens Persistentes', emoji: '[memo]' },
   '1.10.313': { name: 'Cafe Editor Persistente na Retomada', emoji: '[memo]' },
   '1.10.312': { name: 'Cafe Agenda Coesa e Login Direto', emoji: '[palette]' },
@@ -960,6 +961,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.315',
+    date: '08/07/2026',
+    summary: 'O splash inicial ficou mais estável em navegadores que tratavam a órbita SVG sem um centro de transformação explícito.',
+    modules: [
+      {
+        moduleId: 'core',
+        changes: [
+          {
+            type: 'fix',
+            title: 'Órbita do splash com origem de transformação consistente',
+            description: 'A animação circular do carregamento inicial agora define `transformBox`, `transformOrigin` e `willChange` diretamente no SVG. Isso evita deriva visual e rotação fora do eixo em navegadores que não inferiam corretamente o centro da viewBox.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.314',
     date: '08/07/2026',
