@@ -196,8 +196,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
 
   const currentMonth = useMemo(() => today.slice(0, 7), [today]);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [activeMonth, setActiveMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [reportMonth, setReportMonth] = useState(today.slice(0, 7));
+  const [activeMonth, setActiveMonth] = useState(today.slice(0, 7));
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'ativo' | 'concluido' | 'cancelado' | 'aguardando_definicao'>('all');
   const [filterPaymentStatus, setFilterPaymentStatus] = useState<'all' | 'with_pending' | 'fully_paid'>('all');
@@ -274,7 +274,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   const [auditLogs, setAuditLogs] = useState<PaymentAuditLog[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [auditAgreementId, setAuditAgreementId] = useState<string | null>(null);
-  const [auditFilterMonth, setAuditFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [auditFilterMonth, setAuditFilterMonth] = useState(today.slice(0, 7));
   const [auditShowAll, setAuditShowAll] = useState(false);
 
   // Estados para selector processo/requerimento
@@ -2553,17 +2553,16 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     }
   };
 
-  const handlePreviousMonth = () => {
-    const date = new Date(`${activeMonth}-01T00:00:00`);
-    date.setMonth(date.getMonth() - 1);
-    setActiveMonth(date.toISOString().slice(0, 7));
+  const changeActiveMonth = (offset: number) => {
+    const [year, month] = activeMonth.split('-').map(Number);
+    const monthIndex = year * 12 + (month - 1) + offset;
+    const nextYear = Math.floor(monthIndex / 12);
+    const nextMonth = ((monthIndex % 12) + 12) % 12 + 1;
+    setActiveMonth(`${nextYear}-${String(nextMonth).padStart(2, '0')}`);
   };
 
-  const handleNextMonth = () => {
-    const date = new Date(`${activeMonth}-01T00:00:00`);
-    date.setMonth(date.getMonth() + 1);
-    setActiveMonth(date.toISOString().slice(0, 7));
-  };
+  const handlePreviousMonth = () => changeActiveMonth(-1);
+  const handleNextMonth = () => changeActiveMonth(1);
 
   const formatMonthYear = (monthStr: string) => {
     const date = new Date(`${monthStr}-01T00:00:00`);
@@ -6123,7 +6122,6 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 {auditAgreementId && (
                   <button
                     onClick={() => {
-                      const currentMonth = new Date().toISOString().slice(0, 7);
                       setAuditShowAll(false);
                       setAuditFilterMonth(currentMonth);
                       loadAuditByMonth(currentMonth);
@@ -6368,7 +6366,5 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 };
 
 export default FinancialModule;
-
-
 
 
