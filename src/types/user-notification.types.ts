@@ -20,7 +20,8 @@ export type UserNotificationType =
   | 'access_request'
   | 'access_request_resolved'
   | 'profile_update_request'
-  | 'email_new';
+  | 'email_new'
+  | 'execution_pending';
 
 export interface UserNotification {
   id: string;

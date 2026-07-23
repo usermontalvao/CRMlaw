@@ -13,6 +13,39 @@ const EMPTY_FILTERS: EmailSearchFilters = {
   dateTo: '',
 };
 
+/**
+ * Colunas percorridas pela busca livre (campo "Pesquisar…"). Inclui o corpo da
+ * mensagem para que números de processo/termos que só aparecem no texto sejam
+ * encontrados.
+ */
+const SEARCH_COLUMNS = [
+  'subject',
+  'from_text',
+  'from_address',
+  'to_text',
+  'cc_text',
+  'bcc_text',
+  'body_text',
+] as const;
+
+/**
+ * Monta um valor de `ilike` seguro para uso dentro de um filtro lógico do
+ * PostgREST (`.or(...)`). O valor é envolvido em aspas duplas para que
+ * caracteres reservados (`,`, `.`, `(`, `)`, `:`) — comuns em números de
+ * processo — sejam tratados como literais; barras e aspas internas são
+ * escapadas.
+ */
+function ilikeQuoted(term: string): string {
+  const safe = term.replace(/[\\"]/g, (c) => `\\${c}`);
+  return `"%${safe}%"`;
+}
+
+/** `col1.ilike."%term%",col2.ilike."%term%",…` para um `.or(...)`. */
+function orIlike(term: string, columns: readonly string[]): string {
+  const pattern = ilikeQuoted(term);
+  return columns.map((col) => `${col}.ilike.${pattern}`).join(',');
+}
+
 function folderFilter(query: any, folder: EmailFolder) {
   switch (folder) {
     case 'inbox':
@@ -45,29 +78,41 @@ class EmailService {
     if (activeFilters.dateTo) {
       query = query.lte('sent_at', `${activeFilters.dateTo}T23:59:59`);
     }
+
+    // Busca e filtros de texto são aplicados no banco (não em memória) para que
+    // funcionem sobre TODA a pasta — inclusive mensagens fora da janela mais
+    // recente. Antes, o filtro rodava só sobre as ~500 linhas já carregadas, o
+    // que fazia buscas por termos antigos (ex.: nº de processo) retornarem vazio.
+    const normalizedSearch = search?.trim() || '';
+    const fromFilter = activeFilters.from.trim();
+    const toFilter = activeFilters.to.trim();
+    const subjectFilter = activeFilters.subject.trim();
+    if (normalizedSearch) query = query.or(orIlike(normalizedSearch, SEARCH_COLUMNS));
+    if (fromFilter) query = query.or(orIlike(fromFilter, ['from_text', 'from_address']));
+    if (toFilter) query = query.or(orIlike(toFilter, ['to_text', 'cc_text', 'bcc_text']));
+    if (subjectFilter) query = query.ilike('subject', `%${subjectFilter}%`);
+
+    // `hasAttachments` não é expressável trivialmente no PostgREST (comprimento
+    // de array jsonb), então continua em memória; nesse caso ampliamos a janela
+    // para reduzir a chance de perder resultados.
+    const needsClientAttachmentFilter = activeFilters.hasAttachments;
+    const fetchLimit = needsClientAttachmentFilter
+      ? Math.max(50, Math.min(limit * 4, 500))
+      : Math.max(1, Math.min(limit, 500));
+
     const { data, error } = await query
       .order('sent_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
-      .limit(Math.max(50, Math.min(limit * 4, 500)));
+      .limit(fetchLimit);
     if (error) throw new Error(error.message);
-    const rows = (data ?? []) as EmailMessage[];
-    const normalizedSearch = search?.trim().toLocaleLowerCase('pt-BR') || '';
-    const fromFilter = activeFilters.from.trim().toLocaleLowerCase('pt-BR');
-    const toFilter = activeFilters.to.trim().toLocaleLowerCase('pt-BR');
-    const subjectFilter = activeFilters.subject.trim().toLocaleLowerCase('pt-BR');
+    let rows = (data ?? []) as EmailMessage[];
 
-    return rows.filter((row) => {
-      const fromText = `${row.from_text ?? ''} ${row.from_address ?? ''}`.toLocaleLowerCase('pt-BR');
-      const toText = `${row.to_text ?? ''} ${row.cc_text ?? ''} ${row.bcc_text ?? ''}`.toLocaleLowerCase('pt-BR');
-      const subjectText = (row.subject ?? '').toLocaleLowerCase('pt-BR');
-      const searchable = `${subjectText} ${fromText} ${toText}`.trim();
-      if (normalizedSearch && !searchable.includes(normalizedSearch)) return false;
-      if (fromFilter && !fromText.includes(fromFilter)) return false;
-      if (toFilter && !toText.includes(toFilter)) return false;
-      if (subjectFilter && !subjectText.includes(subjectFilter)) return false;
-      if (activeFilters.hasAttachments && (!Array.isArray(row.attachments) || row.attachments.length === 0)) return false;
-      return true;
-    }).slice(0, Math.max(1, Math.min(limit, 500)));
+    if (needsClientAttachmentFilter) {
+      rows = rows
+        .filter((row) => Array.isArray(row.attachments) && row.attachments.length > 0)
+        .slice(0, Math.max(1, Math.min(limit, 500)));
+    }
+    return rows;
   }
 
   /** Uma mensagem específica por id (usado ao abrir via notificação). */

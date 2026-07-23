@@ -255,6 +255,27 @@ class DeadlineService {
     return data ?? [];
   }
 
+  /**
+   * Guardião de prazos: dado um conjunto de intimações, retorna os IDs das que
+   * JÁ possuem prazo vinculado (deadlines.intimation_id). Usado para bloquear
+   * "marcar como lida" quando a IA detectou prazo e nenhum foi cadastrado.
+   */
+  async getIntimationIdsWithDeadlines(intimationIds: string[]): Promise<Set<string>> {
+    if (intimationIds.length === 0) return new Set();
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select('intimation_id')
+      .in('intimation_id', intimationIds);
+
+    if (error) {
+      console.error('Erro ao verificar prazos vinculados a intimações:', error);
+      throw new Error(error.message);
+    }
+
+    return new Set((data ?? []).map((d) => d.intimation_id as string));
+  }
+
   async getOverdueDeadlines(): Promise<Deadline[]> {
     const today = new Date().toISOString();
 

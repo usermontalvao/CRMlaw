@@ -105,6 +105,11 @@ const htmlToText = (html: string): string => {
   }
 };
 
+// Intimação de processo sigiloso: o DJEN não traz o inteiro teor (só "Processo
+// sigiloso — consulte os autos"), então precisa de destaque para não passar batido.
+const isSigilosoIntimacao = (i: { texto?: string | null }): boolean =>
+  (i.texto || '').toLowerCase().includes('sigiloso');
+
 // Extrai nomes das partes do texto da intimação
 const extractPartesFromTexto = (texto: string): { nome: string; polo: string }[] => {
   const partes: { nome: string; polo: string }[] = [];
@@ -211,6 +216,15 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [prescriptionBaseDate, setPrescriptionBaseDate] = useState('');
   const [prescriptionError, setPrescriptionError] = useState<string | null>(null);
   const [prescriptionSuccess, setPrescriptionSuccess] = useState<string | null>(null);
+
+  // Guardião de prazos: bloqueia "marcar como lida" quando há prazo (IA)
+  // detectado sem cadastro vinculado.
+  const [readGuard, setReadGuard] = useState<{
+    intimation: DjenComunicacaoLocal;
+    dueDate?: string | null;
+    days?: number | null;
+  } | null>(null);
+  const pendingReadAfterDeadlineRef = useRef<string | null>(null);
 
   // Seleção múltipla
   const {
@@ -893,8 +907,43 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // Sincronização automática movida para cron no Supabase
 
+  // Guardião de prazos: retorna os IDs (entre os informados) que têm prazo
+  // detectado pela IA e NENHUM prazo cadastrado vinculado. Consulta o banco
+  // (não o estado local) para cobrir intimações cuja análise não está carregada.
+  const getUnprotectedIntimationIds = async (ids: string[]): Promise<string[]> => {
+    if (ids.length === 0) return [];
+    const analyses = await intimationAnalysisService.getAnalysesByIntimationIds(ids);
+    const withAiDeadline = ids.filter(id => analyses.get(id)?.deadline_due_date);
+    if (withAiDeadline.length === 0) return [];
+    const linked = await deadlineService.getIntimationIdsWithDeadlines(withAiDeadline);
+    return withAiDeadline.filter(id => !linked.has(id));
+  };
+
   // Marcar como lida
-  const handleMarkAsRead = async (id: string) => {
+  const handleMarkAsRead = async (id: string, force = false) => {
+    // Guardião de prazos: intimação com prazo detectado pela IA só pode ser
+    // marcada como lida com prazo vinculado ou decisão explícita do operador.
+    // Fail-closed: se a checagem falhar, a trava dispara mesmo assim.
+    if (!force) {
+      const intimation = intimations.find(int => int.id === id);
+      const analysis = aiAnalysis.get(id);
+      // 1) Guardião de prazos
+      if (intimation && analysis?.deadline) {
+        let hasLinkedDeadline = false;
+        try {
+          const linked = await deadlineService.getIntimationIdsWithDeadlines([id]);
+          hasLinkedDeadline = linked.has(id);
+        } catch { /* fail-closed */ }
+        if (!hasLinkedDeadline) {
+          setReadGuard({
+            intimation,
+            dueDate: analysis.deadline.dueDate || null,
+            days: analysis.deadline.days ?? null,
+          });
+          return;
+        }
+      }
+    }
     try {
       await djenLocalService.marcarComoLida(id);
 
@@ -949,6 +998,18 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         toast.info('Info', 'Nenhuma intimação não lida encontrada');
         return;
       }
+      // Guardião de prazos: alertar sobre prazos sem cadastro
+      try {
+        const unprotectedDeadlines = await getUnprotectedIntimationIds(unreadIds);
+        if (unprotectedDeadlines.length > 0) {
+          const ok = window.confirm(
+            `⚠️ ATENÇÃO ao marcar todas como lidas:\n\n` +
+            `• ${unprotectedDeadlines.length} com PRAZO detectado e sem prazo cadastrado\n\n` +
+            `Marcar mesmo assim? Prazos NÃO serão criados.`
+          );
+          if (!ok) return;
+        }
+      } catch { /* checagem falhou — segue com confirmação genérica abaixo */ }
       // Passa os IDs explicitamente para evitar UPDATE cego na tabela (sem escopo de office)
       const count = await djenLocalService.marcarTodasComoLidas(unreadIds);
       await reloadIntimations();
@@ -987,10 +1048,22 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     if (selectedIds.size === 0) return;
 
     const ids = Array.from(selectedIds);
+    // Guardião de prazos: checa o lote de uma vez (evita um modal por item)
+    try {
+      const unprotectedDeadlines = await getUnprotectedIntimationIds(ids);
+      if (unprotectedDeadlines.length > 0) {
+        const ok = window.confirm(
+          `⚠️ ATENÇÃO nas ${ids.length} selecionada(s):\n\n` +
+          `• ${unprotectedDeadlines.length} com PRAZO e sem prazo cadastrado\n\n` +
+          `Marcar como lidas mesmo assim? Prazos NÃO serão criados.`
+        );
+        if (!ok) return;
+      }
+    } catch { /* fail-open no lote: o operador confirmou a ação em massa */ }
     for (const id of ids) {
-      await handleMarkAsRead(id);
+      await handleMarkAsRead(id, true);
     }
-    
+
     disableSelectionMode();
   };
 
@@ -2213,11 +2286,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     const analysis = aiAnalysis.get(intimation.id);
                     const urg = analysis?.urgency ?? (intimation.lida ? null : 'media');
                     const urgCfg = urg ? urgencyConfig[urg as keyof typeof urgencyConfig] : null;
+                    const sig = isSigilosoIntimacao(intimation);
                     return (
                       <div
                         key={intimation.id}
-                        className={`border-l-4 transition ${urgCfg ? urgCfg.border : 'border-l-transparent'} ${
-                          selectionMode && selectedIds.has(intimation.id) ? 'bg-zinc-50' : 'bg-[#f8f7f5]'
+                        className={`border-l-4 transition ${sig ? 'border-l-red-500 bg-red-50/40' : urgCfg ? urgCfg.border : 'border-l-transparent'} ${
+                          !sig && selectionMode && selectedIds.has(intimation.id) ? 'bg-zinc-50' : !sig ? 'bg-[#f8f7f5]' : ''
                         }`}
                       >
                         {/* Row header */}
@@ -2251,6 +2325,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 flex-shrink-0">
                                     {intimation.sigla_tribunal}
                                   </span>
+                                  {sig && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 flex-shrink-0">
+                                      <ShieldAlert className="w-3 h-3" /> SIGILOSO · consultar autos
+                                    </span>
+                                  )}
                                   {intimation.tipo_comunicacao && (
                                     <span className="hidden sm:inline text-[11px] text-slate-400 truncate">{intimation.tipo_comunicacao}</span>
                                   )}
@@ -2464,16 +2543,17 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               const analysis = aiAnalysis.get(intimation.id);
               const urg = analysis?.urgency ?? (intimation.lida ? null : 'media');
               const urgCfg = urg ? urgencyConfig[urg as keyof typeof urgencyConfig] : null;
+              const sig = isSigilosoIntimacao(intimation);
               return (
                 <div
                   key={intimation.id}
-                  className={`group transition-colors ${
+                  className={`group transition-colors ${sig ? 'border-l-4 border-red-500 bg-red-50/50 hover:bg-red-50' : `${
                     !intimation.lida ? 'bg-[#f8f7f5]' : 'bg-slate-50/30'
                   } ${
                     selectionMode && selectedIds.has(intimation.id)
                       ? 'bg-blue-50/50'
                       : 'hover:bg-slate-50'
-                  }`}
+                  }`}`}
                 >
                   {/* Inbox row — single-line dense (Gmail-like) */}
                   <div
@@ -2506,6 +2586,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     }`}>
                       {intimation.numero_processo_mascara || intimation.numero_processo || 'Sem número'}
                     </span>
+
+                    {/* Sigiloso — destaque de atenção (DJEN não traz o inteiro teor) */}
+                    {sig && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 flex-shrink-0">
+                        <ShieldAlert className="w-3 h-3" />
+                        <span className="hidden sm:inline">SIGILOSO</span>
+                      </span>
+                    )}
 
                     {/* Vinculada ícone */}
                     {isLinked(intimation) && (
@@ -2955,11 +3043,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         return (
           <DeadlineFormModal
             open={deadlineModalOpen}
-            onClose={() => { setDeadlineModalOpen(false); setCurrentIntimationForAction(null); }}
+            onClose={() => { setDeadlineModalOpen(false); setCurrentIntimationForAction(null); pendingReadAfterDeadlineRef.current = null; }}
             onSaved={() => {
               setDeadlineModalOpen(false);
               setCurrentIntimationForAction(null);
               toast.success('Prazo criado', 'Prazo cadastrado com sucesso');
+              // Guardião: prazo criado a partir da trava → retomar a marcação
+              // como lida. force=false para que o guardião de compromissos ainda
+              // possa disparar caso a intimação também tenha audiência/perícia.
+              const pendingId = pendingReadAfterDeadlineRef.current;
+              if (pendingId) {
+                pendingReadAfterDeadlineRef.current = null;
+                handleMarkAsRead(pendingId, false);
+              }
             }}
             source="intimation"
             intimationId={intimation.id}
@@ -3010,7 +3106,81 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         />
       )}
 
-      {/* Modal de Prescrição */}
+      {/* Guardião de prazos: intimação com prazo (IA) sendo marcada como lida sem cadastro */}
+      <Modal
+        open={!!readGuard}
+        onClose={() => setReadGuard(null)}
+        title="Prazo detectado sem cadastro"
+        eyebrow="Guardião de Prazos"
+        size="md"
+        zIndex={80}
+        footer={
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setReadGuard(null)}
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!readGuard) return;
+                const id = readGuard.intimation.id;
+                setReadGuard(null);
+                handleMarkAsRead(id, true);
+              }}
+              className="px-3 py-1.5 text-[13px] font-medium text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition"
+            >
+              Marcar como lida sem prazo
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!readGuard) return;
+                const intimation = readGuard.intimation;
+                setReadGuard(null);
+                pendingReadAfterDeadlineRef.current = intimation.id;
+                handleCreateDeadline(intimation);
+              }}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
+            >
+              <Clock className="w-4 h-4" />
+              Criar prazo agora
+            </button>
+          </div>
+        }
+      >
+        <ModalBody className="px-5 py-4">
+          {readGuard ? (
+            <div className="space-y-3">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-sm text-amber-900 font-semibold">
+                  ⚠️ A IA detectou um prazo nesta intimação e nenhum prazo foi cadastrado no sistema.
+                </p>
+                <p className="text-xs text-amber-800 mt-1.5">
+                  <strong>Processo:</strong>{' '}
+                  {readGuard.intimation.numero_processo_mascara || readGuard.intimation.numero_processo || 'Sem número'}
+                </p>
+                {readGuard.days != null && (
+                  <p className="text-xs text-amber-800 mt-0.5">
+                    <strong>Prazo estimado:</strong> {readGuard.days} dia(s)
+                    {readGuard.dueDate && (
+                      <> — vencimento {new Date(readGuard.dueDate).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</>
+                    )}
+                  </p>
+                )}
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                Marcar como lida sem cadastrar o prazo remove esta intimação do radar de pendências.
+                A estimativa da IA usa dias corridos — confirme a contagem em dias úteis ao criar o prazo.
+              </p>
+            </div>
+          ) : null}
+        </ModalBody>
+      </Modal>
+
       <Modal
         open={prescriptionModalOpen && !!currentIntimationForAction}
         onClose={() => { setPrescriptionModalOpen(false); setCurrentIntimationForAction(null); }}
@@ -3551,6 +3721,8 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
         event_mode: (['hearing', 'meeting', 'pericia'] as CalendarEventType[]).includes(formData.type as CalendarEventType)
           ? (formData.event_mode || null)
           : null,
+        // Vínculo intimação → compromisso (guardião de compromissos)
+        djen_intimation_id: intimation.id,
       };
 
       const createdAppointment = await calendarService.createEvent(payload);

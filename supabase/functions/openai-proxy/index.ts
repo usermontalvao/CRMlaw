@@ -33,10 +33,18 @@ function mapModelToDeepSeek(_model: string): string {
 
 type Provider = 'deepseek' | 'groq' | 'openai';
 
+// Tarefas em que a QUALIDADE manda (redação jurídica): usam o melhor provedor
+// primeiro (OpenAI), com os baratos apenas como fallback. As demais tarefas
+// seguem a cadeia econômica (DeepSeek -> Groq -> OpenAI).
+const PREMIUM_TASKS = new Set(['petition_chat', 'edit_legal_text']);
+
 interface CallArgs {
   messages: unknown;
   model: string;
   max_tokens?: number;
+  temperature?: number;
+  response_format?: unknown;
+  task_key?: string;
 }
 
 function endpointFor(provider: Provider): string {
@@ -47,19 +55,27 @@ function endpointFor(provider: Provider): string {
   }
 }
 
-function resolveModel(provider: Provider, model: string): string {
+function resolveModel(provider: Provider, model: string, isPremiumTask = false): string {
   if (provider === 'deepseek') return mapModelToDeepSeek(model);
   if (provider === 'groq')     return mapModelToGroq(model);
+  // Tarefa premium nunca roda em modelo "mini" na OpenAI.
+  if (isPremiumTask && (model.startsWith('gpt-4o-mini') || model.startsWith('gpt-3.5'))) {
+    return 'gpt-4o';
+  }
   return model;
 }
 
 async function callProvider(provider: Provider, apiKey: string, args: CallArgs) {
   const body: Record<string, unknown> = {
-    model:       resolveModel(provider, args.model),
+    model:       resolveModel(provider, args.model, PREMIUM_TASKS.has(String(args.task_key || ''))),
     messages:    args.messages,
-    temperature: 0.7,
+    temperature: typeof args.temperature === 'number' ? args.temperature : 0.7,
   };
   if (args.max_tokens) body.max_tokens = args.max_tokens;
+  // json_object é suportado por OpenAI, Groq e DeepSeek (deepseek-chat).
+  if (args.response_format) {
+    body.response_format = args.response_format;
+  }
 
   const response = await fetch(endpointFor(provider), {
     method: 'POST',
@@ -69,7 +85,8 @@ async function callProvider(provider: Provider, apiKey: string, args: CallArgs) 
     },
     body: JSON.stringify(body),
     // Timeout para não travar o failover quando um provedor está pendurado.
-    signal: AbortSignal.timeout(30_000),
+    // Tarefas premium geram respostas longas (petições) e precisam de folga.
+    signal: AbortSignal.timeout(PREMIUM_TASKS.has(String(args.task_key || '')) ? 120_000 : 30_000),
   });
 
   if (!response.ok) {
@@ -85,18 +102,27 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { messages, model = 'gpt-4o-mini', max_tokens } = await req.json();
+    const { messages, model = 'gpt-4o-mini', max_tokens, temperature, response_format, task_key } = await req.json();
 
     const deepseekApiKey = Deno.env.get('DEEPSEEK_API_KEY');
     const groqApiKey   = Deno.env.get('GROQ_API_KEY');
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
 
-    // Cadeia de failover para tarefas de TEXTO:
-    // DeepSeek (barato/primário) -> Groq (rápido) -> OpenAI (rede de seguranca).
+    // Cadeia de failover para tarefas de TEXTO.
+    // Padrão (econômica): DeepSeek -> Groq -> OpenAI.
+    // Premium (petition_chat etc.): OpenAI -> DeepSeek -> Groq — a redação
+    // jurídica vai sempre para o melhor modelo disponível.
+    const isPremium = PREMIUM_TASKS.has(String(task_key || ''));
     const chain: { provider: Provider; key: string }[] = [];
-    if (deepseekApiKey) chain.push({ provider: 'deepseek', key: deepseekApiKey });
-    if (groqApiKey)     chain.push({ provider: 'groq',     key: groqApiKey });
-    if (openaiApiKey)   chain.push({ provider: 'openai',   key: openaiApiKey });
+    if (isPremium) {
+      if (openaiApiKey)   chain.push({ provider: 'openai',   key: openaiApiKey });
+      if (deepseekApiKey) chain.push({ provider: 'deepseek', key: deepseekApiKey });
+      if (groqApiKey)     chain.push({ provider: 'groq',     key: groqApiKey });
+    } else {
+      if (deepseekApiKey) chain.push({ provider: 'deepseek', key: deepseekApiKey });
+      if (groqApiKey)     chain.push({ provider: 'groq',     key: groqApiKey });
+      if (openaiApiKey)   chain.push({ provider: 'openai',   key: openaiApiKey });
+    }
 
     if (chain.length === 0) {
       throw new Error('Nenhuma chave de API configurada (DEEPSEEK_API_KEY, GROQ_API_KEY ou OPENAI_API_KEY)');
@@ -105,7 +131,7 @@ Deno.serve(async (req: Request) => {
     let lastError: unknown = null;
     for (const link of chain) {
       try {
-        const data = await callProvider(link.provider, link.key, { messages, model, max_tokens });
+        const data = await callProvider(link.provider, link.key, { messages, model, max_tokens, temperature, response_format, task_key });
         return new Response(JSON.stringify(data), {
           headers: {
             ...corsHeaders,

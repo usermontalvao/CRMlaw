@@ -1133,6 +1133,9 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   }, [messages, focusedId, checked, selected, composeOpen, settingsOpen, folder, helpOpen]);
 
   const onMarkAllRead = async () => {
+    const pendentes = await emailService.countUnread(folder);
+    if (pendentes === 0) return;
+    if (!window.confirm(`Marcar ${pendentes} email(s) não lido(s) como lidos?\n\nEsta ação não pode ser desfeita automaticamente.`)) return;
     const n = await emailService.markAllRead(folder);
     if (n > 0) void load(true);
   };
@@ -1858,18 +1861,26 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                 className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
               />
               <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  value={searchFilters.dateFrom}
-                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
-                  className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
-                />
-                <input
-                  type="date"
-                  value={searchFilters.dateTo}
-                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
-                  className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
-                />
+                <label className="flex flex-col gap-1 text-[11px] text-zinc-500">
+                  De
+                  <input
+                    type="date"
+                    value={searchFilters.dateFrom}
+                    max={searchFilters.dateTo || undefined}
+                    onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
+                    className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-zinc-500">
+                  Até
+                  <input
+                    type="date"
+                    value={searchFilters.dateTo}
+                    min={searchFilters.dateFrom || undefined}
+                    onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
+                    className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
+                  />
+                </label>
               </div>
               <label className="flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] text-zinc-600">
                 <input

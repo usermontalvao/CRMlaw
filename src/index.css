@@ -3633,3 +3633,22 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   z-index: 10 !important;
   position: relative !important;
 }
+
+/* ── Assistente IA do Editor de Petições ───────────────────────── */
+@keyframes ai-panel-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes ai-msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ai-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30%           { transform: translateY(-4px); opacity: 1; }
+}
+.ai-chat-panel { animation: ai-panel-in 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+.ai-chat-msg   { animation: ai-msg-in 0.22s ease-out; }
+.ai-typing-dot { animation: ai-typing-bounce 1.2s ease-in-out infinite; }
+.ai-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.ai-typing-dot:nth-child(3) { animation-delay: 0.3s; }

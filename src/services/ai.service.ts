@@ -2,6 +2,76 @@ import type { IntimationAnalysis, DeadlineExtraction } from '../types/ai.types';
 import { supabase } from '../config/supabase';
 import { settingsService, type AiTaskConfig } from './settings.service';
 
+// ── Assistente de Petições (chat) ──────────────────────────────────────────
+// Ação estruturada que o assistente pode propor sobre o documento aberto.
+// 'replace' usa busca/substituição de trecho EXATO (preserva a formatação do
+// restante do documento); 'insert' insere texto novo no cursor ou no final;
+// 'insert_block' insere um modelo da base INTEGRALMENTE (SFDT com a
+// formatação original), trocando apenas os dados do caso via 'replacements'.
+export interface PetitionChatActionReplacement {
+  /** Trecho EXATO do modelo a substituir (ex.: "[[QTD_HORAS_EXTRAS_MES]]"). */
+  search: string;
+  /** Valor do caso concreto. */
+  replace: string;
+}
+
+export interface PetitionChatAction {
+  type: 'replace' | 'insert' | 'insert_block';
+  /** Descrição curta exibida no cartão da ação (ex.: "Corrigir concordância"). */
+  label?: string;
+  /** Trecho EXATO do documento a ser substituído (type: 'replace'). */
+  search?: string;
+  /** Texto que substitui o trecho (type: 'replace'). */
+  replace?: string;
+  /** Onde inserir (type: 'insert' | 'insert_block'). */
+  position?: 'cursor' | 'end';
+  /** Texto a inserir (type: 'insert'). '\n' separa parágrafos. */
+  text?: string;
+  /** Id do modelo da base a inserir integralmente (type: 'insert_block'). */
+  blockId?: string;
+  /** Substituições de dados do caso aplicadas sobre o modelo (type: 'insert_block'). */
+  replacements?: PetitionChatActionReplacement[];
+}
+
+/** Pergunta de esclarecimento que a IA faz antes de redigir (ex.: jornada). */
+export interface PetitionChatQuestion {
+  question: string;
+  /** Respostas sugeridas exibidas como chips clicáveis. */
+  options?: string[];
+}
+
+export interface PetitionChatResult {
+  reply: string;
+  actions: PetitionChatAction[];
+  questions: PetitionChatQuestion[];
+  /** Buscas locais na base de conhecimento executadas durante a resposta. */
+  searches: string[];
+}
+
+export interface PetitionChatMessageInput {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** Trecho da base de conhecimento retornado pela busca local (sem custo de tokens). */
+export interface PetitionChatKbSnippet {
+  id?: string;
+  title: string;
+  category?: string;
+  snippet: string;
+  /** true quando "snippet" é o texto INTEGRAL do modelo (habilita insert_block). */
+  isFull?: boolean;
+}
+
+/** Normaliza uma consulta para comparar buscas repetidas (acentos/caixa/espaços). */
+const normalizePtQuery = (value: string): string =>
+  String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 class AIService {
   // Toda a IA de texto passa pela Edge Function `openai-proxy`, que mantém a
   // cadeia de provedores (DeepSeek -> Groq -> OpenAI) e as chaves NO SERVIDOR.
@@ -88,14 +158,17 @@ class AIService {
     if (!this.isEnabled()) return '';
     await this.ensureSettingsLoaded();
     const taskOpts = taskKey ? this.getTaskOpts(taskKey) : undefined;
-    const resolvedTokens = taskOpts?.maxTokens ?? maxTokens;
+    // Config explícita do banco prevalece; sem config, vale o pedido do
+    // chamador (getTaskOpts fabrica 800 como default e mascarava o parâmetro).
+    const dbTokens = taskKey ? this.taskConfigs.get(taskKey)?.max_tokens : undefined;
+    const resolvedTokens = dbTokens ?? maxTokens;
 
     const messages = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ];
 
-    return this.callOpenAIViaEdgeFunction(messages, taskOpts?.model ?? 'gpt-4o-mini', resolvedTokens);
+    return this.callOpenAIViaEdgeFunction(messages, taskOpts?.model ?? 'gpt-4o-mini', resolvedTokens, taskKey ? { taskKey } : undefined);
   }
 
   async editLegalTextWithContext(params: {
@@ -164,7 +237,7 @@ Regras obrigatórias:
       'Retorne apenas a versão final editada do trecho selecionado.',
     ].join('\n\n');
 
-    const content = await this.generateText(systemPrompt, userPrompt, taskOpts.maxTokens, 'edit_legal_text');
+    const content = await this.generateText(systemPrompt, userPrompt, Math.max(taskOpts.maxTokens, 2000), 'edit_legal_text');
     const output = String(content || '').trim();
 
     if (!output) {
@@ -175,13 +248,331 @@ Regras obrigatórias:
   }
 
   /**
+   * Chat do assistente do Editor de Petições.
+   *
+   * Recebe o histórico da conversa, o texto do documento e um callback de
+   * busca LOCAL na base de blocos-modelo (roda no navegador, custo zero de
+   * tokens). O fluxo é agêntico e econômico:
+   *  1. Busca local inicial com a mensagem do usuário → só os top trechos vão
+   *     no prompt (nunca a base inteira).
+   *  2. Se a IA precisar de outro modelo, ela retorna "search" com termos
+   *     melhores; a busca roda localmente e a IA é chamada de novo (máx. 2x).
+   *  3. Se faltar informação factual (jornada, salário, datas...), a IA
+   *     retorna "questions" em vez de inventar — o widget exibe as perguntas
+   *     com opções clicáveis.
+   */
+  async petitionAssistantChat(params: {
+    history: PetitionChatMessageInput[];
+    documentText: string;
+    selectedText?: string;
+    /** Busca local na base de conhecimento. Nunca consome tokens. */
+    searchKb?: (query: string) => PetitionChatKbSnippet[];
+    /** Progresso para a UI: 'thinking' (chamando IA) | 'searching' (busca local). */
+    onProgress?: (stage: 'thinking' | 'searching', detail?: string) => void;
+  }): Promise<PetitionChatResult> {
+    if (!this.isEnabled()) {
+      throw new Error('Serviço de IA não está disponível');
+    }
+
+    const history = (params.history || []).slice(-14);
+    const lastUser = [...history].reverse().find((m) => m.role === 'user');
+    if (!lastUser?.content?.trim()) {
+      throw new Error('Digite uma mensagem para o assistente');
+    }
+
+    await this.ensureSettingsLoaded();
+    const taskOpts = this.getTaskOpts('petition_chat');
+
+    const documentText = String(params.documentText || '').replace(/\r\n?/g, '\n').slice(0, 26000);
+    const selectedText = String(params.selectedText || '').trim().slice(0, 8000);
+
+    const formatSnippets = (query: string, snippets: PetitionChatKbSnippet[]): string => {
+      if (!snippets.length) return `(busca local por "${query}": nenhum modelo relevante encontrado)`;
+      const body = snippets
+        .map((s, i) => {
+          const header = `Modelo ${i + 1}${s.id ? ` — blockId: ${s.id}` : ''} — ${s.title}${s.category ? ` (${s.category})` : ''} ${s.isFull ? '[TEXTO INTEGRAL — pode usar insert_block]' : '[trecho parcial — para usar este modelo integralmente, peça "search" pelo título dele]'}`;
+          return `${header}\n${s.snippet}`;
+        })
+        .join('\n\n----------------\n\n');
+      return `MODELOS DO ESCRITÓRIO (busca local por "${query}"):\n${body}`;
+    };
+
+    const defaultSystemPrompt = `Você é o assistente jurídico do Editor de Petições de um escritório de advocacia brasileiro. Você conversa com o advogado sobre o documento aberto no editor e pode propor alterações que o sistema aplica no documento após aprovação.
+
+O QUE VOCÊ SABE FAZER:
+- Revisar o documento e fazer apontamentos (erros, inconsistências, argumentos frágeis, pedidos faltantes).
+- Corrigir ortografia, gramática, concordância e pontuação.
+- Melhorar a redação de trechos.
+- Redigir e inserir conteúdo novo (tópicos, parágrafos, fundamentos, pedidos) no estilo dos modelos do escritório.
+- Fazer cálculos trabalhistas/cíveis simples quando o usuário fornecer os dados (ex.: hora extra = salário ÷ divisor × 1,5 × quantidade), sempre declarando as premissas.
+- Responder dúvidas sobre o conteúdo do documento.
+
+FORMATO DA RESPOSTA — retorne APENAS JSON válido, sem texto fora dele:
+{
+  "reply": "sua resposta em texto para o chat",
+  "questions": [
+    { "question": "pergunta de esclarecimento", "options": ["opção 1", "opção 2"] }
+  ],
+  "actions": [
+    { "type": "replace", "label": "descrição curta", "search": "trecho EXATO copiado do documento", "replace": "trecho corrigido" },
+    { "type": "insert", "label": "descrição curta", "position": "cursor" ou "end", "text": "texto a inserir" },
+    { "type": "insert_block", "label": "descrição curta", "blockId": "id do modelo", "position": "cursor" ou "end", "replacements": [ { "search": "trecho EXATO do modelo", "replace": "valor do caso" } ] }
+  ],
+  "search": "termos para buscar outro modelo na base (opcional, use raramente)"
+}
+Todos os campos exceto "reply" são opcionais — omita ou deixe vazio quando não usar. "reply" é texto puro, SEM markdown (nada de **, #, listas com -).
+
+USO INTEGRAL DE MODELOS (prioridade máxima ao redigir conteúdo novo):
+- Se um dos modelos fornecidos marcado como [TEXTO INTEGRAL] cobre o tema pedido, você DEVE usar "insert_block" com o blockId dele. O sistema insere o modelo com o texto E a formatação originais, na íntegra.
+- As ÚNICAS mudanças permitidas são os dados do caso concreto, via "replacements": cada "search" é um trecho VERBATIM do modelo (de preferência variáveis [[ASSIM]], ou números/valores/nomes) e "replace" é o valor do caso. NÃO reescreva, NÃO resuma, NÃO reordene, NÃO "melhore" o modelo.
+- Se o modelo relevante veio como [trecho parcial], retorne "search" com o título dele para receber o texto integral antes de propor a ação.
+- Só use "insert" com texto de sua autoria quando NENHUM modelo da base cobrir o pedido — e diga isso no reply.
+
+ANTES DE REDIGIR CONTEÚDO NOVO — CHECAGEM DE FATOS (regra central):
+1. Reúna os fatos necessários NA SEGUINTE ORDEM: (a) o que está no documento; (b) o que está na conversa; (c) o que o modelo escolhido pede (variáveis [[...]] e dados citados). Exemplos: tópico de horas extras → jornada contratual, quantidade média de horas extras, salário; dano moral → fato lesivo e consequências.
+2. NUNCA pergunte um dado que já está no documento ou na conversa — use-o direto e cite a premissa no reply (ex.: "usei o salário de R$ 2.200,00 que consta no documento"). Não peça confirmação do que já está escrito.
+3. Se faltar informação ESSENCIAL, retorne "questions" com TODAS as perguntas essenciais DE UMA VEZ (o usuário responde tudo junto num formulário). Nesse caso NÃO retorne "actions" ainda. Inclua "options" quando fizer sentido, sempre incluindo a opção de usar variável [[NOME_CAMPO]] para preencher depois.
+4. Com os fatos em mãos (ou variáveis autorizadas), proponha a ação ("insert_block" se houver modelo; senão "insert").
+Máximo de 3 perguntas, só as essenciais. Nunca repita pergunta já respondida.
+
+BASE DE CONHECIMENTO (modelos do escritório):
+- Você recebe modelos selecionados por uma busca local. O primeiro geralmente vem com [TEXTO INTEGRAL]; os demais como [trecho parcial].
+- Se os modelos recebidos não servirem e você precisar de um específico (ex.: fundamentação de insalubridade), retorne "search" com 2 a 5 palavras-chave. O sistema busca localmente e te chama de novo. Use só quando necessário.
+- Nunca peça "search" para algo que você já recebeu ou que não depende de modelo.
+
+REGRAS PARA "replace" (CRÍTICAS — preservam a formatação do documento):
+- "search" da ação deve ser um trecho VERBATIM do documento: mesmas letras, acentos, espaços e pontuação. NUNCA parafraseie o trecho original.
+- O trecho deve estar contido em UM único parágrafo (não pode atravessar quebra de parágrafo).
+- Correções CIRÚRGICAS: substitua o menor trecho possível. NUNCA reescreva o documento inteiro.
+- Uma ação por correção; várias correções = várias ações. O usuário escolhe quais aplicar por checkbox, então NÃO agrupe correções independentes numa ação só.
+
+REGRAS PARA "insert":
+- "position": "cursor" para inserir onde o usuário está; "end" para adicionar ao final (novo tópico, novo pedido). O sistema insere "end" automaticamente ANTES do fecho da petição (Termos em que / data / assinatura) — NUNCA inclua data, local, "Termos em que", "Pede deferimento" ou assinatura no "text".
+- Em "text", use \\n para separar parágrafos. Títulos de tópicos em MAIÚSCULAS em linha própria (ex.: "DAS HORAS EXTRAS").
+- SIGA O PADRÃO DO DOCUMENTO: se os títulos existentes são numerados (ex.: "2.4 – DA MULTA..."), o novo título continua a sequência ("2.5 – ..."); se usam "DA/DO/DAS/DOS", mantenha; copie o mesmo estilo de caixa alta e pontuação. Um tópico novo entre tópicos existentes deve parecer escrito pelo mesmo autor.
+- Texto puro, sem markdown, sem cercas de código.
+
+REGRAS GERAIS:
+- Não invente fatos, datas, valores, nomes ou números de processo.
+- Pedido de só análise/apontamento/dúvida → "actions": [] e tudo em "reply".
+- Se o usuário selecionou um trecho, priorize trabalhar sobre ele.
+- "reply" em português do Brasil, direto e profissional. Não repita em "reply" o texto integral das ações; resuma o que cada uma faz.`;
+
+    const systemPrompt = `${this.getPrompt('petition_chat', defaultSystemPrompt)}
+
+REGRAS DE QUALIDADE E EXECUCAO:
+- Trate a resposta como trabalho para advogado: seja especifico, aplicavel e tecnicamente defensavel.
+- Para revisar, aponte problemas concretos com motivo e solucao sugerida. Nao responda genericamente.
+- Para corrigir, gere acoes pequenas e aplicaveis. O campo "search" deve copiar literalmente o trecho do DOCUMENTO ABERTO.
+- Para melhorar uma selecao, prefira uma unica acao "replace" usando exatamente o TRECHO SELECIONADO como "search".
+- Para criar novo conteudo, nao use texto raso. Estruture fundamento, enquadramento juridico e pedido/reflexo quando pertinente.
+- Dados informados pelo usuario prevalecem sobre qualquer texto do modelo. Se o modelo disser jornada, salario, quantidade, datas ou valores diferentes, substitua pelo dado do usuario ou use variavel.
+- Se faltar salario/base de calculo, nao calcule valores. Use variaveis como [[VALOR_HORAS_EXTRAS]], [[VALOR_REFLEXO_FERIAS]], [[VALOR_REFLEXO_13]], [[VALOR_REFLEXO_AVISO]], [[VALOR_REFLEXO_DSR]] e [[VALOR_TOTAL]].
+- Ao usar insert_block, inclua replacements para TODA informacao conflitante do modelo, principalmente jornada, periodo, salario, quantidade de horas extras e valores monetarios.
+- Quando nao houver dados suficientes, faca perguntas objetivas de uma vez. Nao invente fatos.
+- Retorne JSON valido. Sem markdown, sem comentarios, sem texto antes ou depois do JSON.`;
+
+    // Busca local inicial: mensagem do usuário + começo da seleção
+    const searches: string[] = [];
+    const runSearch = (query: string): PetitionChatKbSnippet[] => {
+      const q = String(query || '').trim().slice(0, 120);
+      if (!q || !params.searchKb) return [];
+      params.onProgress?.('searching', q);
+      searches.push(q);
+      try {
+        return (params.searchKb(q) || []).slice(0, 4);
+      } catch {
+        return [];
+      }
+    };
+
+    // A consulta inicial junta as DUAS últimas mensagens do usuário: quando a
+    // última é só a resposta de um formulário ("Resposta: 20 horas"), o pedido
+    // original ("tópico sobre horas extras") continua guiando a busca.
+    const userMessages = history.filter((m) => m.role === 'user');
+    const previousUser = userMessages.length > 1 ? userMessages[userMessages.length - 2] : undefined;
+    const initialQuery = [
+      previousUser?.content.slice(0, 120) || '',
+      lastUser.content.slice(0, 160),
+      selectedText.slice(0, 120),
+    ].filter(Boolean).join(' ');
+    const initialSnippets = runSearch(initialQuery);
+
+    const contextParts = [
+      `DOCUMENTO ABERTO NO EDITOR (texto puro; a formatação real é mantida pelo editor):\n${documentText || '(documento vazio)'}`,
+      selectedText ? `TRECHO SELECIONADO PELO USUÁRIO:\n${selectedText}` : '',
+      params.searchKb ? formatSnippets(initialQuery, initialSnippets) : '',
+    ].filter(Boolean).join('\n\n====================\n\n');
+
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Contexto atualizado:\n\n${contextParts}` },
+      { role: 'assistant', content: '{"reply":"Contexto recebido. Como posso ajudar com o documento?","questions":[],"actions":[]}' },
+      ...history.map((m) => ({ role: m.role, content: m.content })),
+    ];
+
+    const model = taskOpts.model ?? 'gpt-4o';
+    // Teto alto: JSON truncado no meio quebra o parse e vira texto cru no chat.
+    const maxTokens = Math.max(taskOpts.maxTokens, 4000);
+
+    // Loop de recuperação: chamada inicial + até 2 rodadas de busca pedidas pela IA
+    const MAX_SEARCH_ROUNDS = 2;
+    let parsed = null as ReturnType<AIService['parsePetitionChatResponse']> | null;
+
+    for (let round = 0; ; round++) {
+      params.onProgress?.('thinking');
+      const content = await this.callOpenAIViaEdgeFunction(messages, model, maxTokens, {
+        taskKey: 'petition_chat',
+        temperature: 0.15,
+        responseFormat: 'json_object',
+      });
+      const raw = String(content || '').trim();
+      if (!raw) throw new Error('IA não retornou resposta');
+
+      parsed = this.parsePetitionChatResponse(raw);
+
+      const searchQuery = parsed.search?.trim();
+      const alreadySearched = searchQuery ? searches.some((s) => normalizePtQuery(s) === normalizePtQuery(searchQuery)) : true;
+      if (!searchQuery || alreadySearched || round >= MAX_SEARCH_ROUNDS || !params.searchKb) break;
+
+      const snippets = runSearch(searchQuery);
+      messages.push({ role: 'assistant', content: raw });
+      messages.push({
+        role: 'user',
+        content: `${formatSnippets(searchQuery, snippets)}\n\nAgora responda a última mensagem do usuário usando esses modelos (não peça a mesma busca de novo).`,
+      });
+    }
+
+    return {
+      reply: parsed!.reply,
+      actions: parsed!.actions,
+      questions: parsed!.questions,
+      searches,
+    };
+  }
+
+  /** Faz o parse tolerante do JSON do protocolo do assistente de petições. */
+  private parsePetitionChatResponse(raw: string): {
+    reply: string;
+    actions: PetitionChatAction[];
+    questions: PetitionChatQuestion[];
+    search?: string;
+  } {
+    const jsonText = this.extractJsonObject(raw);
+    if (!jsonText) return { reply: raw, actions: [], questions: [] };
+
+    try {
+      const parsed = JSON.parse(jsonText);
+
+      const actions: PetitionChatAction[] = Array.isArray(parsed.actions)
+        ? parsed.actions
+            .filter((a: any) => a && (a.type === 'replace' || a.type === 'insert' || a.type === 'insert_block'))
+            .map((a: any): PetitionChatAction => ({
+              type: a.type,
+              label: typeof a.label === 'string' ? a.label : undefined,
+              search: typeof a.search === 'string' ? a.search : undefined,
+              replace: typeof a.replace === 'string' ? a.replace : undefined,
+              position: a.position === 'end' ? 'end' : 'cursor',
+              text: typeof a.text === 'string' ? a.text : undefined,
+              blockId: typeof a.blockId === 'string' ? a.blockId.trim() : undefined,
+              replacements: Array.isArray(a.replacements)
+                ? a.replacements
+                    .filter((r: any) => r && typeof r.search === 'string' && r.search.trim() && typeof r.replace === 'string')
+                    .map((r: any): PetitionChatActionReplacement => ({ search: r.search, replace: r.replace }))
+                : undefined,
+            }))
+            .filter((a: PetitionChatAction) => {
+              if (a.type === 'replace') return Boolean(a.search?.trim()) && typeof a.replace === 'string';
+              if (a.type === 'insert_block') return Boolean(a.blockId);
+              return Boolean(a.text?.trim());
+            })
+        : [];
+
+      const questions: PetitionChatQuestion[] = Array.isArray(parsed.questions)
+        ? parsed.questions
+            .map((q: any): PetitionChatQuestion | null => {
+              if (typeof q === 'string' && q.trim()) return { question: q.trim() };
+              if (q && typeof q.question === 'string' && q.question.trim()) {
+                const options = Array.isArray(q.options)
+                  ? q.options.filter((o: any) => typeof o === 'string' && o.trim()).slice(0, 4)
+                  : undefined;
+                return { question: q.question.trim(), options: options?.length ? options : undefined };
+              }
+              return null;
+            })
+            .filter((q: PetitionChatQuestion | null): q is PetitionChatQuestion => q !== null)
+            .slice(0, 3)
+        : [];
+
+      return {
+        reply: String(parsed.reply || '').trim() || (questions.length ? 'Preciso de algumas informações antes de continuar.' : 'Pronto.'),
+        actions,
+        questions,
+        search: typeof parsed.search === 'string' && parsed.search.trim() ? parsed.search.trim() : undefined,
+      };
+    } catch {
+      // JSON malformado: devolve o texto bruto como resposta de chat.
+      return { reply: raw, actions: [], questions: [] };
+    }
+  }
+
+  /** Extrai o primeiro objeto JSON balanceado mesmo quando o provedor envolve em markdown. */
+  private extractJsonObject(raw: string): string | null {
+    const text = String(raw || '').trim()
+      .replace(/^```(?:json)?/i, '')
+      .replace(/```$/i, '')
+      .trim();
+
+    const start = text.indexOf('{');
+    if (start < 0) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === '{') depth += 1;
+      if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) return text.slice(start, i + 1);
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Chama a IA através da Edge Function `openai-proxy`. O servidor mantém a
    * cadeia de provedores (DeepSeek -> Groq -> OpenAI) e as chaves; o frontend
    * nunca vê nenhuma chave de IA.
    */
-  private async callOpenAIViaEdgeFunction(messages: any[], model: string = 'gpt-4o-mini', maxTokens?: number): Promise<string> {
+  private async callOpenAIViaEdgeFunction(
+    messages: any[],
+    model: string = 'gpt-4o-mini',
+    maxTokens?: number,
+    opts?: { taskKey?: string; temperature?: number; responseFormat?: 'json_object' }
+  ): Promise<string> {
     const { data, error } = await supabase.functions.invoke('openai-proxy', {
-      body: { messages, model, max_tokens: maxTokens },
+      body: {
+        messages,
+        model,
+        max_tokens: maxTokens,
+        task_key: opts?.taskKey,
+        temperature: opts?.temperature,
+        response_format: opts?.responseFormat ? { type: opts.responseFormat } : undefined,
+      },
     });
 
     if (error) {

@@ -130,6 +130,9 @@ type NewEventForm = {
   pericia_link_type: 'process' | 'requirement';
   // Modalidade: presencial ou online (visível para Audiência, Reunião, Perícia)
   event_mode: 'presencial' | 'online' | '';
+  // Vínculo com a intimação de origem (guardião de compromissos) — usado quando
+  // o evento é criado a partir de uma sugestão da agenda
+  djen_intimation_id?: string | null;
 };
 
 interface CalendarModuleProps {
@@ -555,6 +558,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         requirement_id: '',
         pericia_link_type: 'process',
         event_mode: '',
+        djen_intimation_id: null,
         ...initialValues,
       };
 
@@ -735,16 +739,18 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
         const texto = data.texto ?? '';
 
-        // Extrair datas DD/MM/YYYY — apenas em CONTEXTO de agendamento, para não
-        // capturar datas avulsas do corpo (ex.: citação de jurisprudência
-        // "julgado em 23/05/2023"). Espelha fn_extract_hearing_dates no banco.
+        // Extrair datas DD/MM/YYYY — apenas ANCORADAS a contexto de audiência/
+        // perícia, para não capturar datas avulsas do corpo (ex.: "voo marcado
+        // para o dia 31/07/2026" ou citação de jurisprudência). Espelha
+        // fn_extract_hearing_dates no banco.
+        const kw = 'audi[eê]ncia|per[ií]cia|per[ií]cial|sess[aã]o\\s+de\\s+instru|julgamento\\s+oral|exame\\s+m[ée]dico|avalia[cç][aã]o\\s+m[ée]dica';
         const schedDates = [
-          // (a) data logo após um rótulo "Data:"
-          ...[...texto.matchAll(/data[^0-9a-z]{0,25}(\d{2}\/\d{2}\/\d{4})/gi)].map((m) => m[1]),
-          // (b) data após "dia"
-          ...[...texto.matchAll(/\bdia\b[^0-9]{0,8}(\d{2}\/\d{2}\/\d{4})/gi)].map((m) => m[1]),
-          // (c) data imediatamente seguida de horário (às HH:MM / Hora:)
-          ...[...texto.matchAll(/(\d{2}\/\d{2}\/\d{4})[^0-9]{0,20}(?:\d{1,2}[h:]\d{2}|hora)/gi)].map((m) => m[1]),
+          // (A) palavra-chave de audiência/perícia -> data (proximidade 70 chars)
+          ...[...texto.matchAll(new RegExp(`(?:${kw})[\\s\\S]{0,70}(\\d{2}\\/\\d{2}\\/\\d{4})`, 'gi'))].map((m) => m[1]),
+          // (A') data -> palavra-chave (proximidade 70 chars)
+          ...[...texto.matchAll(new RegExp(`(\\d{2}\\/\\d{2}\\/\\d{4})[\\s\\S]{0,70}(?:${kw})`, 'gi'))].map((m) => m[1]),
+          // (B) bloco estruturado de pauta DJEN: "Data: <data> ... Hora:"
+          ...[...texto.matchAll(/data[\s\S]{0,15}(\d{2}\/\d{2}\/\d{4})[\s\S]{0,12}hora/gi)].map((m) => m[1]),
         ];
         const allDates = [...texto.matchAll(/(\d{2}\/\d{2}\/\d{4})/g)].map((m) => m[1]);
         // Se nada em contexto de agendamento, cai para todas (formato atípico) — defensivo.
@@ -1802,6 +1808,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         const createdEvent = await calendarService.createEvent({
           ...basePayload,
           status: 'pendente',
+          // Vínculo com a intimação de origem quando criado a partir de sugestão
+          djen_intimation_id: newEventForm.djen_intimation_id || null,
         });
         setCalendarEventsData((prev) => [...prev, createdEvent]);
 
