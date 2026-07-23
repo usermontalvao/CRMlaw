@@ -14,6 +14,7 @@ import { clientService } from '../services/client.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
 import { useAuth } from '../contexts/AuthContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { supabase } from '../config/supabase';
 import type { EmailFolder, EmailMessage, EmailSignature, SendEmailDTO, EmailSpamRule, SpamRuleKind, SpamRuleMatch, EmailSearchFilters } from '../types/email.types';
 import type { Client } from '../types/client.types';
@@ -644,6 +645,7 @@ interface EmailModuleProps {
 
 export default function EmailModule({ params }: EmailModuleProps = {}) {
   const { user } = useAuth();
+  const { requirePin } = useSecurityPin();
   const [folder, setFolder] = useState<EmailFolder>('inbox');
   const [messages, setMessages] = useState<EmailMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1154,7 +1156,15 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const onMarkAllRead = async () => {
     const pendentes = await emailService.countUnread(folder);
     if (pendentes === 0) return;
-    if (!window.confirm(`Marcar ${pendentes} email(s) não lido(s) como lidos?\n\nEsta ação não pode ser desfeita automaticamente.`)) return;
+    const pinOk = await requirePin({
+      action: 'email_mark_all_read',
+      resourceType: 'email_folder',
+      resourceId: folder,
+      sensitivity: 'high',
+      title: 'Marcar todas como lidas',
+      description: `Confirme com seu PIN para marcar ${pendentes} e-mail(s) não lido(s) como lidos. Esta ação não pode ser desfeita automaticamente.`,
+    });
+    if (!pinOk) return;
     const n = await emailService.markAllRead(folder);
     if (n > 0) void load(true);
   };
