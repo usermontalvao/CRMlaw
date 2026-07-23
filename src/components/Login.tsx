@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { clientService } from '../services/client.service';
 import { BrandLogo } from './ui';
 import { BRAND_SERIF } from '../constants/brand';
 
@@ -235,109 +234,38 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
 
     try {
       const trimmed = identifier.trim();
-
-      // 1) Se for e-mail, buscamos direto em profiles
-      if (trimmed.includes('@')) {
-        if (typeof window !== 'undefined') {
-          sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
-        }
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('name, avatar_url, email, role')
-          .ilike('email', trimmed);
-
-        if (error) {
-          console.error('Erro ao buscar perfil para login:', error.message);
-          setIdentifierProfileName(null);
-          setIdentifierProfileAvatar(null);
-          setIdentifierProfileRole(null);
-          return { found: false };
-        }
-
-        const profile = data && data.length > 0 ? data[0] : null;
-        if (!profile) {
-          setIdentifierProfileName(null);
-          setIdentifierProfileAvatar(null);
-          setIdentifierProfileRole(null);
-          return { found: false };
-        }
-
-        // Garantimos que o e-mail do estado é o mesmo do perfil
-        if (profile.email && profile.email !== email) {
-          setEmail(profile.email);
-        }
-
-        setIdentifierProfileName(profile.name ?? null);
-        setIdentifierProfileAvatar(profile.avatar_url ?? null);
-        setIdentifierProfileRole(profile.role ?? null);
-        return { found: true };
-      }
-
-      // 2) Se não for e-mail, tratamos como CPF/CNPJ: buscamos em clients.cpf_cnpj
       const numericId = trimmed.replace(/\D/g, '');
-      if (!numericId) {
-        if (typeof window !== 'undefined') {
-          sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
-        }
-        setIdentifierProfileName(null);
-        setIdentifierProfileAvatar(null);
-        return { found: false };
-      }
 
+      // Mantém o CPF mascarado para exibição na próxima etapa
       if (typeof window !== 'undefined') {
-        if (numericId.length === 11) {
+        if (!trimmed.includes('@') && numericId.length === 11) {
           sessionStorage.setItem(LAST_LOGIN_CPF_KEY, formatCpf(numericId));
         } else {
           sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
         }
       }
 
-      if (numericId.length === 11) {
-        try {
-          const maskedCpf = formatCpf(numericId);
-          const { data: profileByMaskedCpf, error: profileByMaskedCpfError } = await supabase
-            .from('profiles')
-            .select('name, avatar_url, email, role')
-            .eq('cpf', maskedCpf)
-            .maybeSingle();
+      // Resolve identificador (e-mail, CPF ou CNPJ) via RPC SECURITY DEFINER.
+      // Isso evita o "permission denied" das tabelas profiles/clients quando
+      // o usuário ainda não está autenticado (RLS bloqueia acesso anônimo).
+      const { data, error } = await supabase.rpc('resolve_login_identifier', {
+        p_identifier: trimmed,
+      });
 
-          if (!profileByMaskedCpfError && profileByMaskedCpf?.email) {
-            setIdentifierProfileName(profileByMaskedCpf.name ?? profileByMaskedCpf.email);
-            setIdentifierProfileAvatar(profileByMaskedCpf.avatar_url ?? null);
-            setIdentifierProfileRole(profileByMaskedCpf.role ?? null);
-            setEmail(profileByMaskedCpf.email);
-            return { found: true };
-          }
-
-          const { data: profileByRawCpf, error: profileByRawCpfError } = await supabase
-            .from('profiles')
-            .select('name, avatar_url, email, role')
-            .eq('cpf', numericId)
-            .maybeSingle();
-
-          if (!profileByRawCpfError && profileByRawCpf?.email) {
-            setIdentifierProfileName(profileByRawCpf.name ?? profileByRawCpf.email);
-            setIdentifierProfileAvatar(profileByRawCpf.avatar_url ?? null);
-            setIdentifierProfileRole(profileByRawCpf.role ?? null);
-            setEmail(profileByRawCpf.email);
-            return { found: true };
-          }
-        } catch (profileLookupError) {
-          console.error('Erro ao buscar perfil por CPF para login:', profileLookupError);
-        }
+      if (error) {
+        console.error('Erro ao resolver identificador para login:', error.message);
+        setIdentifierProfileName(null);
+        setIdentifierProfileAvatar(null);
+        setIdentifierProfileRole(null);
+        return { found: false };
       }
 
-      try {
-        const client = await clientService.getClientByCpfCnpj(numericId);
-        if (!client) {
-          setIdentifierProfileName(null);
-          setIdentifierProfileAvatar(null);
-          setIdentifierProfileRole(null);
-          return { found: false };
-        }
+      const info = Array.isArray(data) ? data[0] : data;
 
-        if (!client.email) {
-          setIdentifierProfileName(client.full_name || null);
+      if (!info || !info.found) {
+        // CPF encontrado, mas sem e-mail vinculado: a RPC retorna found=false com o nome
+        if (info?.name) {
+          setIdentifierProfileName(info.name);
           setIdentifierProfileAvatar(null);
           setIdentifierProfileRole(null);
           return {
@@ -345,35 +273,19 @@ const Login: React.FC<LoginProps> = ({ onLogin, onResetPassword }) => {
             message: 'CPF encontrado, mas este cadastro não possui e-mail. Cadastre um e-mail para este CPF (ou vincule o usuário no sistema) para conseguir entrar.',
           };
         }
-
-        // Usamos o nome do cliente e o e-mail associado como identidade de login
-        setIdentifierProfileName(client.full_name || client.email);
-        setIdentifierProfileAvatar(null);
-        setIdentifierProfileRole(null);
-        setEmail(client.email);
-
-        // Opcionalmente, podemos tentar buscar avatar no profiles usando o e-mail do cliente
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('avatar_url, role')
-          .ilike('email', client.email);
-
-        const profileFromClientEmail = profileData && profileData.length > 0 ? profileData[0] : null;
-        if (profileFromClientEmail?.avatar_url) {
-          setIdentifierProfileAvatar(profileFromClientEmail.avatar_url);
-        }
-        if (profileFromClientEmail?.role) {
-          setIdentifierProfileRole(profileFromClientEmail.role);
-        }
-
-        return { found: true };
-      } catch (clientError) {
-        console.error('Erro ao buscar cliente por CPF/CNPJ para login:', clientError);
         setIdentifierProfileName(null);
         setIdentifierProfileAvatar(null);
         setIdentifierProfileRole(null);
         return { found: false };
       }
+
+      if (info.email && info.email !== email) {
+        setEmail(info.email);
+      }
+      setIdentifierProfileName(info.name ?? info.email ?? null);
+      setIdentifierProfileAvatar(info.avatar_url ?? null);
+      setIdentifierProfileRole(info.role ?? null);
+      return { found: true };
     } catch (e) {
       console.error('Erro inesperado ao buscar identificador para login:', e);
       setIdentifierProfileName(null);

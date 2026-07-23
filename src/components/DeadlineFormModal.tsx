@@ -143,6 +143,7 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
   selectedDeadline,
   initialData,
   source,
+  intimationId,
   intimationContext,
   members,
   processes,
@@ -247,6 +248,9 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
         publication_date: dataPublicacao || null,
         deadline_days: diasPrazo ? parseInt(diasPrazo, 10) : null,
         counting_type: tipoPrazoCalculadora || null,
+        // Vínculo intimação → prazo (guardião de prazos). Só na criação: em
+        // edição, preserva o vínculo existente no banco.
+        ...(!selectedDeadline && intimationId ? { intimation_id: intimationId, origin: 'intimation' } : {}),
       };
 
       if (selectedDeadline) {

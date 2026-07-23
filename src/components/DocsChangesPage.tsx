@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.316': { name: 'Cafe Login Unico e Email Confirmado', emoji: '[shield]' },
   '1.10.315': { name: 'Cafe Orbita Estavel no Splash', emoji: '[art]' },
   '1.10.314': { name: 'Cafe Editor Blindado e Imagens Persistentes', emoji: '[memo]' },
   '1.10.313': { name: 'Cafe Editor Persistente na Retomada', emoji: '[memo]' },
@@ -961,6 +962,38 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.316',
+    date: '23/07/2026',
+    summary: 'O sistema passou a ter um único login (o PortalLogin, que já atende equipe e cliente): a tela antiga foi aposentada e sessões expiradas caem direto no portal, sem loop. No e-mail, marcar todas como lidas agora pede confirmação e o filtro por intervalo de datas ganhou rótulos De/Até.',
+    modules: [
+      {
+        moduleId: 'core',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Login unificado no PortalLogin',
+            description: 'A tela de login antiga (staff) foi removida. Quando a sessão expira ou o token fica inválido, o app limpa os marcadores que o reabririam, preserva o aviso de "sessão encerrada" e redireciona ao PortalLogin — que já autentica tanto equipe quanto cliente —, evitando duas telas de entrada e loops de redirecionamento.',
+          },
+        ],
+      },
+      {
+        moduleId: 'email',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Confirmação ao marcar todas como lidas',
+            description: 'A ação "marcar todas como lidas" agora mostra quantos e-mails serão afetados e pede confirmação antes de executar, evitando cliques acidentais que zeravam os não lidos sem desfazer.',
+          },
+          {
+            type: 'improvement',
+            title: 'Filtro por intervalo de datas com rótulos De/Até',
+            description: 'Os campos de data da busca avançada ganharam rótulos "De" e "Até" e limites que impedem intervalo invertido, tornando o filtro por período mais claro e descoberto.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.315',
     date: '08/07/2026',

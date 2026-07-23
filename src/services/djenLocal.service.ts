@@ -66,6 +66,24 @@ class DjenLocalService {
   /**
    * Busca comunicação por hash
    */
+  async getComunicacaoById(id: string): Promise<DjenComunicacaoLocal | null> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return null;
+      }
+      console.error('Erro ao buscar comunicação por id:', error);
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
   async getComunicacaoByHash(hash: string): Promise<DjenComunicacaoLocal | null> {
     const { data, error } = await supabase
       .from(this.tableName)

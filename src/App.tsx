@@ -46,7 +46,6 @@ import {
   FolderOpen,
   type LucideIcon,
 } from 'lucide-react';
-import Login from './components/Login';
 import OfflinePage from './components/OfflinePage';
 import { FloatingWindowSystem, useFloatingWindows, MAX_WINDOWS, TASKBAR_H } from './components/FloatingWindowSystem';
 import type { FloatingModuleKey } from './components/FloatingWindowSystem';
@@ -2089,9 +2088,31 @@ useEffect(() => {
     }
   }
 
-  // Enquanto estiver animando login/logout, mantemos o overlay global
+  // Login unificado: o único login do sistema é o PortalLogin (staff + cliente).
+  // Se o App foi montado sem usuário autenticado (token inválido/expirado ou
+  // sessão encerrada), limpamos os marcadores que fariam o main.tsx re-rotear
+  // para cá e redirecionamos ao portal — evitando loop de redirecionamento.
   if (!user && !loggingIn && !loggingOut) {
-    return <Login onLogin={handleLogin} onResetPassword={resetPassword} />;
+    try {
+      // Remove tokens Supabase inválidos; senão hasSupabaseSession() no main.tsx
+      // continuaria escolhendo o App em vez do PortalApp (loop).
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k?.startsWith('sb-') && k.endsWith('-auth-token')) localStorage.removeItem(k);
+      }
+      // Preserva o aviso de sessão encerrada numa chave que o main.tsx NÃO
+      // inspeciona (evita loop) e que o PortalLogin lê para exibir o banner.
+      if (sessionStorage.getItem('auth_notice')) {
+        sessionStorage.removeItem('auth_notice');
+        sessionStorage.setItem('portal_notice', '1');
+      }
+    } catch { /* ignore */ }
+    window.location.replace('/');
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f8f7f5]">
+        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+      </div>
+    );
   }
 
   // Mostrar página offline se sem conexão — exceto quando o Editor de Petições

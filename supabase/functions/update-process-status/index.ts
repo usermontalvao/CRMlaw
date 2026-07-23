@@ -166,24 +166,37 @@ serve(async (req) => {
                 deadlineCount: deadlines.length
               })
 
-              // Criar notificação para o responsável
+              // Criar notificação para o responsável.
+              // responsible_lawyer_id referencia profiles.id, mas
+              // user_notifications.user_id exige auth.users.id — mapear via
+              // profiles.user_id (senão a inserção falha por FK). O tipo também
+              // precisa ser um valor válido do enum user_notification_type.
               if (process.responsible_lawyer_id) {
-                await supabaseClient
-                  .from('user_notifications')
-                  .insert({
-                    user_id: process.responsible_lawyer_id,
-                    type: 'deadline_alert',
-                    title: '⚠️ Processo arquivado com prazos pendentes',
-                    message: `O processo ${process.process_code} foi arquivado mas possui ${deadlines.length} prazo(s) pendente(s). Verifique se os prazos devem ser concluídos ou cancelados.`,
-                    process_id: process.id,
-                    metadata: {
-                      old_status: process.status,
-                      new_status: 'arquivado',
-                      pending_deadlines: deadlines.length
-                    }
-                  })
+                const { data: prof } = await supabaseClient
+                  .from('profiles')
+                  .select('user_id')
+                  .eq('id', process.responsible_lawyer_id)
+                  .maybeSingle()
+                const notifyUserId = prof?.user_id ?? null
 
-                console.log(`   🔔 Notificação enviada: processo arquivado com ${deadlines.length} prazo(s) pendente(s)`)
+                if (notifyUserId) {
+                  await supabaseClient
+                    .from('user_notifications')
+                    .insert({
+                      user_id: notifyUserId,
+                      type: 'process_updated',
+                      title: '⚠️ Processo arquivado com prazos pendentes',
+                      message: `O processo ${process.process_code} foi arquivado mas possui ${deadlines.length} prazo(s) pendente(s). Verifique se os prazos devem ser concluídos ou cancelados.`,
+                      process_id: process.id,
+                      metadata: {
+                        old_status: process.status,
+                        new_status: 'arquivado',
+                        pending_deadlines: deadlines.length
+                      }
+                    })
+
+                  console.log(`   🔔 Notificação enviada: processo arquivado com ${deadlines.length} prazo(s) pendente(s)`)
+                }
               }
             }
           }
@@ -311,25 +324,40 @@ function detectProcessStatus(texto: string, tipoComunicacao?: string): string | 
     return 'cumprimento'
   }
 
-  // Recurso
-  if (textoLower.includes('apelação') ||
-      textoLower.includes('agravo de instrumento') ||
-      textoLower.includes('agravo interno') ||
-      textoLower.includes('embargos de declaração') ||
-      textoLower.includes('recurso especial') ||
-      textoLower.includes('recurso extraordinário') ||
-      textoLower.includes('recurso ordinário')) {
+  // Sentença de mérito (1º grau) — VERIFICADA ANTES de recurso/acórdão porque
+  // sentenças costumam CITAR jurisprudência de "Turma Recursal", "apelação",
+  // "embargos" etc. no corpo. Detectar o mérito primeiro evita classificar
+  // erroneamente a própria sentença como recurso. Robusta a variações do
+  // dispositivo ("parcial procedência", "opino pela procedência", projeto de
+  // sentença de Juiz Leigo).
+  if (/julgo\s+(parcialmente\s+|totalmente\s+|integralmente\s+)?(procedent|improcedent)/.test(textoLower) ||
+      /pela\s+(parcial\s+)?proced[êe]ncia/.test(textoLower) ||
+      /parcial\s+proced[êe]ncia/.test(textoLower) ||
+      /proced[êe]ncia\s+parcial/.test(textoLower) ||
+      /projeto\s+de\s+senten[çc]a/.test(textoLower) ||
+      textoLower.includes('homologo o acordo') ||
+      textoLower.includes('extingo o processo') ||
+      textoLower.includes('julgo extinto') ||
+      textoLower.includes('resolvo o mérito') ||
+      textoLower.includes('sentença proferida')) {
+    return 'sentenca'
+  }
+
+  // Acórdão / decisão de instância recursal (Turma Recursal, Câmara).
+  if (/ac[óo]rd[ãa]o|turma recursal|c[âa]mara c[íi]vel|(dou|nego|deram|negaram|dar|negar)\s+provimento|recurso\s+(conhecido|provido|improvido|desprovido)/.test(textoLower)) {
     return 'recurso'
   }
 
-  // Sentença
-  if (textoLower.includes('julgo procedente') || 
-      textoLower.includes('julgo improcedente') ||
-      textoLower.includes('julgo parcialmente procedente') ||
-      textoLower.includes('extingo o processo') ||
-      textoLower.includes('homologo o acordo') ||
-      textoLower.includes('sentença proferida')) {
-    return 'sentenca'
+  // Recurso em trâmite/interposição — fallback após a sentença de mérito, com
+  // contexto de recurso real (evita falso positivo por citação no corpo).
+  if (textoLower.includes('recurso inominado') ||
+      textoLower.includes('agravo de instrumento') ||
+      textoLower.includes('agravo interno') ||
+      textoLower.includes('recurso especial') ||
+      textoLower.includes('recurso extraordinário') ||
+      textoLower.includes('recurso ordinário') ||
+      (textoLower.includes('apelação') && (textoLower.includes('interpos') || textoLower.includes('recebid') || textoLower.includes('razões')))) {
+    return 'recurso'
   }
 
   // Instrução

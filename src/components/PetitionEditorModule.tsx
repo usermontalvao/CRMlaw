@@ -73,6 +73,8 @@ import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { supabase } from '../config/supabase';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
+import PetitionAiChat from './PetitionAiChat';
+import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
 
 const useDebouncedValue = <T,>(value: T, delayMs: number): T => {
@@ -4142,6 +4144,52 @@ Regras:
     return map;
   }, [blocks]);
 
+  // Base de conhecimento do Assistente IA: blocos ativos do tipo de documento
+  // atual, com texto puro. A busca em si é local (petitionKbSearch) — só os
+  // trechos relevantes vão para o prompt da IA.
+  const aiKbEntries = useMemo(() => (
+    (blocks || [])
+      .filter((block) => Boolean(block?.is_active) && String((block.document_type || 'petition') as any) === String(selectedDocumentType))
+      .map((block) => {
+        const idx = blockIndexMap.get(block.id);
+        return {
+          id: block.id,
+          title: block.title,
+          category: getCategoryLabel(String(block.category || 'outros')),
+          tags: idx?.tags ?? getBlockTagsForUI(block),
+          content: idx?.plain ?? sfdtToPlainText(block.content),
+          sfdt: block.content,
+        };
+      })
+  ), [blocks, selectedDocumentType, blockIndexMap, blockCategories]);
+
+  // Inserção de modelo pelo Assistente IA: mesmo mecanismo do insertBlock da
+  // sidebar (converte o SFDT em fragmento no editor oculto e cola no
+  // principal), preservando a formatação original do bloco.
+  const insertAiBlockSfdt = useCallback(async (sfdt: string, position: 'cursor' | 'end'): Promise<boolean> => {
+    const editor = editorRef.current;
+    const converter = blockConvertEditorRef.current;
+    const payload = String(sfdt || '').trim();
+    if (!editor?.pasteSfdt || !converter?.convertSfdtToFragment || !payload) return false;
+    try {
+      const fragment = await converter.convertSfdtToFragment(payload);
+      if (!fragment || !fragment.trim()) return false;
+      editor.focus();
+      if (position === 'end') {
+        // "Fim" da petição é ANTES do fecho (Termos em que / data / assinatura).
+        const de = (editor as any).getEditor?.();
+        const docText = String(editor.getText() || '').replace(/\r\n?/g, '\n');
+        const placed = de ? moveCursorToSmartEnd(de, docText) : false;
+        if (!placed) {
+          try { de?.selection?.moveToDocumentEnd?.(); } catch { /* ignore */ }
+        }
+      }
+      return editor.pasteSfdt(fragment);
+    } catch {
+      return false;
+    }
+  }, []);
+
   const getRelevantBlocksForAiEdit = useCallback((selectedText: string) => {
     const query = normalizeSearchText(selectedText);
     const terms = parseSearchTerms(selectedText);
@@ -6401,6 +6449,16 @@ Regras:
               openCreateBlockFromSelection(selectedText || '', selectedSfdt || '');
             }}
             onRequestFormatQualification={handleFormatQualification}
+          />
+
+          {/* Widget de chat IA — assistente da petição (revisa, corrige, insere) */}
+          <PetitionAiChat
+            editorRef={editorRef}
+            onDocumentChanged={() => setHasUnsavedChanges(true)}
+            kbEntries={aiKbEntries}
+            insertBlockSfdt={insertAiBlockSfdt}
+            disabled={!isOnline || !serverReachable}
+            disabledReason="Voce esta offline. Reconecte para usar o assistente."
           />
 
         </div>

@@ -1219,13 +1219,23 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   };
 
   const periciaAutoUpdateRef = useRef(false);
-  const autoUpdatePericiaStatuses = async (list: Requirement[]) => {
+  const syncPericiaStatuses = async (list: Requirement[]) => {
     if (periciaAutoUpdateRef.current) return;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const startOfToday = today.getTime();
 
-    const candidates = list
+    const finalStatuses = new Set<RequirementStatus>(['indeferido', 'deferido', 'ajuizado']);
+    const promoteCandidates = list
+      .filter((req) => !finalStatuses.has(req.status) && req.status !== 'aguardando_pericia')
+      .map((req) => ({ req, endAt: getPericiaEndAt(req) }))
+      .filter((item) => {
+        if (!item.endAt) return false;
+        const endTime = new Date(item.endAt).getTime();
+        return !Number.isNaN(endTime) && endTime >= startOfToday;
+      });
+
+    const demoteCandidates = list
       .filter((req) => req.status === 'aguardando_pericia')
       .map((req) => ({ req, endAt: getPericiaEndAt(req) }))
       .filter((item) => {
@@ -1234,11 +1244,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         return !Number.isNaN(endTime) && endTime < startOfToday;
       });
 
-    if (!candidates.length) return;
+    if (!promoteCandidates.length && !demoteCandidates.length) return;
 
     periciaAutoUpdateRef.current = true;
     try {
-      await Promise.all(candidates.map((item) => requirementService.updateStatus(item.req.id, 'em_analise')));
+      await Promise.all([
+        ...promoteCandidates.map((item) => requirementService.updateStatus(item.req.id, 'aguardando_pericia')),
+        ...demoteCandidates.map((item) => requirementService.updateStatus(item.req.id, 'em_analise')),
+      ]);
       await handleReload();
     } catch (err) {
       console.error('Erro ao atualizar status automático (perícia):', err);
@@ -1941,7 +1954,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         setError(null);
         const data = await requirementService.listRequirements();
         setRequirements(data);
-        await autoUpdatePericiaStatuses(data);
+        await syncPericiaStatuses(data);
         await fetchRequirementsWithMs(); // Carregar processos MS vinculados
       } catch (err: any) {
         setError(err.message || 'Não foi possível carregar os requerimentos.');
@@ -1956,7 +1969,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   useEffect(() => {
     const check = () => {
       try {
-        autoUpdatePericiaStatuses(requirements);
+        syncPericiaStatuses(requirements);
       } catch {
         // ignore
       }
@@ -2146,7 +2159,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           setSelectedRequirementForView(updated);
         }
       }
-      await autoUpdatePericiaStatuses(data);
+      await syncPericiaStatuses(data);
       await fetchRequirementsWithMs(); // Manter mapa MS atualizado
 
       // Carregar processos para requerimentos indeferidos

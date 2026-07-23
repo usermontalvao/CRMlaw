@@ -59,6 +59,7 @@ export interface CreateCalendarEventDTO {
   is_private?: boolean;
   shared_with_ids?: string[];
   event_mode?: CalendarEventMode | null;
+  djen_intimation_id?: string | null;
 }
 
 export interface UpdateCalendarEventDTO extends Partial<CreateCalendarEventDTO> {}

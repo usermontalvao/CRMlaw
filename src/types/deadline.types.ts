@@ -18,6 +18,11 @@ export interface Deadline {
   requirement_id?: string | null;
   client_id?: string | null;
   responsible_id?: string | null;
+  intimation_id?: string | null;
+
+  // Guardião de prazos
+  origin?: string | null;
+  confirmed_at?: string | null;
 
   // Calculadora de prazo (inputs que geraram o due_date)
   publication_date?: string | null;
@@ -46,6 +51,8 @@ export interface CreateDeadlineDTO {
   requirement_id?: string | null;
   client_id?: string | null;
   responsible_id: string;
+  intimation_id?: string | null;
+  origin?: string | null;
   notify_days_before?: number | null;
   publication_date?: string | null;
   deadline_days?: number | null;

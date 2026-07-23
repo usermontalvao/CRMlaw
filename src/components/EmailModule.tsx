@@ -1152,6 +1152,9 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   }, [messages, focusedId, checked, selected, composeOpen, settingsOpen, folder, helpOpen]);
 
   const onMarkAllRead = async () => {
+    const pendentes = await emailService.countUnread(folder);
+    if (pendentes === 0) return;
+    if (!window.confirm(`Marcar ${pendentes} email(s) não lido(s) como lidos?\n\nEsta ação não pode ser desfeita automaticamente.`)) return;
     const n = await emailService.markAllRead(folder);
     if (n > 0) void load(true);
   };

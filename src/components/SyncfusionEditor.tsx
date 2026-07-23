@@ -1629,13 +1629,22 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           const s = (searchText || '').toString();
           const r = (replaceText ?? '').toString();
           if (!s.trim()) return false;
-          if (editor.search && typeof editor.search.replaceAll === 'function') {
-            editor.search.replaceAll(s, r);
-            return true;
+          const search = editor.search ?? (editor as any).searchModule;
+          if (!search) return false;
+          // API pública do EJ2: findAll popula searchResults e replaceAll do
+          // SearchResults troca todas as ocorrências preservando a formatação.
+          // (search.replaceAll direto é método interno com outra assinatura e
+          // lança exceção quando chamado com (texto, substituto).)
+          if (search.searchResults && typeof search.findAll === 'function') {
+            search.findAll(s);
+            const count = Number(search.searchResults.length || 0);
+            const replaced = count > 0;
+            if (replaced) search.searchResults.replaceAll(r);
+            try { search.searchResults.clear?.(); } catch { /* ignore */ }
+            return replaced;
           }
-          const searchModule = (editor as any).searchModule;
-          if (searchModule && typeof searchModule.replaceAll === 'function') {
-            searchModule.replaceAll(s, r);
+          if (typeof search.replaceAll === 'function') {
+            search.replaceAll(s, r);
             return true;
           }
           return false;

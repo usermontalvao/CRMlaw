@@ -29,7 +29,7 @@ export interface ProcessMovement {
 class ProcessService {
   private tableName = 'processes';
   private cache: ProcessCache | null = null;
-  private listSelectFields = 'id, client_id, process_code, status, distributed_at, practice_area, priority, requirement_id, requirement_role, court, responsible_lawyer, responsible_lawyer_id, hearing_scheduled, hearing_date, hearing_time, hearing_mode, djen_synced, djen_last_sync, djen_has_data, created_at, updated_at';
+  private listSelectFields = 'id, client_id, process_code, status, distributed_at, practice_area, priority, requirement_id, requirement_role, court, responsible_lawyer, responsible_lawyer_id, hearing_scheduled, hearing_date, hearing_time, hearing_mode, djen_synced, djen_last_sync, djen_has_data, execution_pending, execution_merit, execution_pending_source, execution_flagged_at, execution_resolved_at, execution_resolved_by, created_at, updated_at';
 
   // Invalidate cache
   invalidateCache(): void {
@@ -214,6 +214,33 @@ class ProcessService {
     }
 
     // Invalidate cache on status update
+    this.invalidateCache();
+    syncBus.emit('processes');
+    return data;
+  }
+
+  /**
+   * Marca a pendência de execução como resolvida (o advogado avaliou / entrou
+   * com o cumprimento de sentença, ou decidiu que não é o caso). Some do banner.
+   */
+  async resolveExecutionPending(id: string, resolvedByUserId?: string | null): Promise<Process> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({
+        execution_pending: false,
+        execution_resolved_at: new Date().toISOString(),
+        execution_resolved_by: resolvedByUserId ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao resolver pendência de execução:', error);
+      throw new Error(error.message);
+    }
+
     this.invalidateCache();
     syncBus.emit('processes');
     return data;

@@ -20,14 +20,35 @@ export interface EmailPage {
 }
 
 /**
+ * Colunas percorridas pela busca livre (campo "Pesquisar…"). Inclui o corpo da
+ * mensagem para que números de processo/termos que só aparecem no texto sejam
+ * encontrados.
+ */
+const SEARCH_COLUMNS = [
+  'subject',
+  'from_text',
+  'from_address',
+  'to_text',
+  'cc_text',
+  'bcc_text',
+  'body_text',
+] as const;
+
+/**
  * Monta o valor de um padrão ILIKE seguro para uso dentro de `.or()`.
  * O PostgREST separa condições por vírgula, então envolvemos o valor em aspas
- * duplas e escapamos aspas/contrabarras — assim vírgulas, parênteses e espaços
- * no texto do usuário não quebram a expressão do filtro.
+ * duplas — caracteres reservados (`,`, `.`, `(`, `)`, `:`), comuns em números
+ * de processo, viram literais; barras e aspas internas são escapadas.
  */
 function ilikePattern(raw: string): string {
-  const escaped = raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const escaped = raw.replace(/[\\"]/g, (c) => `\\${c}`);
   return `"%${escaped}%"`;
+}
+
+/** `col1.ilike."%term%",col2.ilike."%term%",…` para um `.or(...)`. */
+function orIlike(term: string, columns: readonly string[]): string {
+  const pattern = ilikePattern(term);
+  return columns.map((col) => `${col}.ilike.${pattern}`).join(',');
 }
 
 function folderFilter(query: any, folder: EmailFolder) {
@@ -84,14 +105,11 @@ class EmailService {
 
     // Remetente: casa em from_text OU from_address.
     const fromTerm = activeFilters.from.trim();
-    if (fromTerm) query = query.or(`from_text.ilike.${ilikePattern(fromTerm)},from_address.ilike.${ilikePattern(fromTerm)}`);
+    if (fromTerm) query = query.or(orIlike(fromTerm, ['from_text', 'from_address']));
 
     // Destinatário: casa em to/cc/bcc.
     const toTerm = activeFilters.to.trim();
-    if (toTerm) {
-      const p = ilikePattern(toTerm);
-      query = query.or(`to_text.ilike.${p},cc_text.ilike.${p},bcc_text.ilike.${p}`);
-    }
+    if (toTerm) query = query.or(orIlike(toTerm, ['to_text', 'cc_text', 'bcc_text']));
 
     // Assunto (parcial).
     const subjectTerm = activeFilters.subject.trim();
@@ -99,12 +117,7 @@ class EmailService {
 
     // Busca global: assunto, remetente, destinatários e corpo.
     const searchTerm = search?.trim() || '';
-    if (searchTerm) {
-      const p = ilikePattern(searchTerm);
-      query = query.or(
-        `subject.ilike.${p},from_text.ilike.${p},from_address.ilike.${p},to_text.ilike.${p},cc_text.ilike.${p},body_text.ilike.${p}`,
-      );
-    }
+    if (searchTerm) query = query.or(orIlike(searchTerm, SEARCH_COLUMNS));
 
     const from = Math.max(0, offset);
     const to = from + Math.max(1, limit) - 1;

@@ -143,6 +143,15 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: harness visual do Assistente IA de petições (?aichatpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('aichatpreview')) {
+    const { default: PetitionAiChatPreview } = await import('./dev/PetitionAiChatPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <PetitionAiChatPreview />,
+    );
+    return;
+  }
+
   if (isStaff) {
     const [
       { default: App },

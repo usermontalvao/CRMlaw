@@ -594,9 +594,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       const signerId = notification.metadata?.signer_id;
       console.log('➡️ Navegando para assinaturas (self-pending), signerId:', signerId);
       onNavigateToModule('assinaturas');
-    } else if (notification.type === 'process_created' || notification.type === 'process_updated' || notification.process_id) {
-      console.log('➡️ Navegando para processos');
-      onNavigateToModule('processos');
+    } else if (notification.type === 'process_created' || notification.type === 'process_updated' || notification.type === 'execution_pending' || notification.process_id) {
+      const processId = notification.process_id;
+      console.log('➡️ Navegando para processos, processId:', processId);
+      onNavigateToModule('processos', processId ? { mode: 'details', entityId: String(processId) } : undefined);
     } else if (notification.requirement_id) {
       console.log('➡️ Navegando para requerimentos');
       onNavigateToModule('requerimentos', { mode: 'details', entityId: notification.requirement_id });
@@ -772,6 +773,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       case 'process_created':
       case 'process_updated':
         return <Briefcase className="w-4 h-4 text-cyan-500" />;
+      case 'execution_pending':
+        return <AlertTriangle className="w-4 h-4 text-amber-600" />;
       case 'signature_completed':
       case 'signature_pending_self':
         return <PenTool className="w-4 h-4 text-emerald-500" />;

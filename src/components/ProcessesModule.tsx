@@ -462,6 +462,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   const [editingCourtFor, setEditingCourtFor] = useState<string | null>(null);
   const [courtDraft, setCourtDraft] = useState('');
   const [savingCourt, setSavingCourt] = useState(false);
+  const [resolvingExecution, setResolvingExecution] = useState(false);
   // #6 — Badge de não lidas
   const [processesWithUnread, setProcessesWithUnread] = useState<Set<string>>(new Set());
   // #8 — Resumo IA do processo
@@ -728,6 +729,20 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
       setEditingCourtFor(null);
     } catch { /* silencioso */ } finally {
       setSavingCourt(false);
+    }
+  };
+
+  // Resolver a pendência de execução (processo ganho + arquivado)
+  const resolveExecutionPending = async () => {
+    if (!selectedProcessForView || resolvingExecution) return;
+    setResolvingExecution(true);
+    try {
+      await processService.resolveExecutionPending(selectedProcessForView.id, user?.id ?? null);
+      const patch = { execution_pending: false, execution_resolved_at: new Date().toISOString() };
+      setSelectedProcessForView(prev => prev ? { ...prev, ...patch } : prev);
+      setProcesses(prev => prev.map(p => p.id === selectedProcessForView.id ? { ...p, ...patch } : p));
+    } catch { /* silencioso */ } finally {
+      setResolvingExecution(false);
     }
   };
 
@@ -3157,6 +3172,41 @@ Regras:
             </span>
           </div>
 
+          {/* Pendência de execução: processo ganho (procedente/parcial) e arquivado */}
+          {selectedProcessForView.execution_pending && !selectedProcessForView.execution_resolved_at && (
+            <div className="mx-6 sm:mx-8 mt-5 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 flex items-start gap-3">
+              <div className="shrink-0 mt-0.5 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold text-amber-900 dark:text-amber-200">
+                  Avaliar cumprimento de sentença / execução
+                </div>
+                <p className="mt-0.5 text-[13px] leading-relaxed text-amber-800 dark:text-amber-300/90">
+                  Processo julgado{' '}
+                  <strong>
+                    {selectedProcessForView.execution_merit === 'parcial' ? 'parcialmente procedente' : 'procedente'}
+                  </strong>{' '}
+                  e arquivado. Verifique a necessidade de entrar com a execução — esta pendência fica visível até você resolvê-la.
+                  {selectedProcessForView.execution_pending_source && (
+                    <span className="ml-1 text-[11px] text-amber-600 dark:text-amber-500">
+                      (detectado via {selectedProcessForView.execution_pending_source === 'datajud' ? 'DataJud' : 'DJEN'})
+                    </span>
+                  )}
+                </p>
+              </div>
+              <button
+                onClick={resolveExecutionPending}
+                disabled={resolvingExecution}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition"
+                title="Marcar pendência de execução como resolvida"
+              >
+                {resolvingExecution ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                Marcar como resolvida
+              </button>
+            </div>
+          )}
+
           <div className="p-6 sm:p-8 bg-white dark:bg-zinc-900">
             {/* Grid de dados — card unificado com células divididas */}
             <div className="rounded-2xl border border-[#e7e5df] dark:border-zinc-800 overflow-hidden mb-6">
@@ -4241,7 +4291,14 @@ Regras:
                         </div>
                       </div>
                       <div className="flex items-center justify-between gap-2 mb-3">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
+                          {process.execution_pending && !process.execution_resolved_at && (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-800 ring-1 ring-amber-300" title="Processo ganho e arquivado — avaliar execução">
+                              <AlertTriangle className="w-3 h-3" /> Execução
+                            </span>
+                          )}
+                        </div>
                         <span className="text-xs text-gray-600">{formatDate(process.distributed_at)}</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -4366,7 +4423,14 @@ Regras:
                             </td>
                             <td className="px-6 py-3 whitespace-nowrap text-xs text-gray-500">{formatDate(process.distributed_at)}</td>
                             <td className="px-6 py-3 whitespace-nowrap">
-                              <span className={`px-2.5 py-0.5 inline-flex text-[11px] leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`px-2.5 py-0.5 inline-flex text-[11px] leading-5 font-semibold rounded-full ${getStatusBadge(process.status)}`}>{getStatusLabel(process.status)}</span>
+                                {process.execution_pending && !process.execution_resolved_at && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-800 ring-1 ring-amber-300" title="Processo ganho e arquivado — avaliar execução">
+                                    <AlertTriangle className="w-3 h-3" /> Execução
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-3 py-3 w-[150px] shrink-0" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-0.5">

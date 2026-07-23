@@ -48,6 +48,13 @@ export interface Process {
   djen_has_data?: boolean | null;
   datajud_cache?: any | null;
   datajud_synced_at?: string | null;
+  /** Pendência de execução: processo ganho (procedente/parcial) e arquivado. */
+  execution_pending?: boolean | null;
+  execution_merit?: 'procedente' | 'parcial' | null;
+  execution_pending_source?: 'datajud' | 'djen' | null;
+  execution_flagged_at?: string | null;
+  execution_resolved_at?: string | null;
+  execution_resolved_by?: string | null;
   created_at: string;
   updated_at: string;
 }
