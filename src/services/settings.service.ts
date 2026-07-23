@@ -2069,6 +2069,30 @@ class SettingsService {
     limit?: number;
     offset?: number;
   }): Promise<AuditLogEntry[]> {
+    // Filtro por cliente: o `.or()` do PostgREST casando entity_id OU o caminho
+    // JSON new_value->>'client_id' fazia o planner varrer o jsonb gigante da
+    // tabela (~3,7 GB) e estourar statement timeout (57014). A RPC
+    // `search_audit_log` roda a MESMA consulta com plano garantido por índice
+    // (BitmapOr), retornando em poucos ms. Só usamos a RPC quando há cliente;
+    // sem cliente, o caminho direto abaixo já é rápido (índice de created_at).
+    if (filters?.client_id) {
+      const { data, error } = await supabase.rpc('search_audit_log', {
+        p_action:      filters.action ?? null,
+        p_entity_type: filters.entity_type ?? null,
+        p_user_name:   filters.user_name ?? null,
+        p_client_id:   filters.client_id,
+        p_date_from:   filters.date_from ?? null,
+        p_date_to:     filters.date_to ? filters.date_to + 'T23:59:59.999Z' : null,
+        p_limit:       filters.limit ?? 25,
+        p_offset:      filters.offset ?? 0,
+      });
+      if (error) {
+        console.error('Erro ao buscar log de auditoria (rpc):', error);
+        throw new Error(error.message);
+      }
+      return (data as AuditLogEntry[]) || [];
+    }
+
     let query = supabase
       .from('audit_log')
       .select('*')
@@ -2079,7 +2103,6 @@ class SettingsService {
     if (filters?.user_id)     query = query.eq('user_id', filters.user_id);
     if (filters?.action)      query = query.eq('action', filters.action);
     if (filters?.user_name)   query = query.ilike('user_name', `%${filters.user_name}%`);
-    if (filters?.client_id)   query = (query as any).or(`entity_id.eq.${filters.client_id},new_value->>client_id.eq.${filters.client_id}`);
     if (filters?.date_from)   query = query.gte('created_at', filters.date_from);
     if (filters?.date_to)     query = query.lte('created_at', filters.date_to + 'T23:59:59.999Z');
     if (filters?.limit)       query = query.limit(filters.limit);
@@ -2105,6 +2128,21 @@ class SettingsService {
     date_from?: string;
     date_to?: string;
   }): Promise<number> {
+    // Com filtro de cliente usamos a RPC indexada (ver getAuditLog) — o count
+    // via `.or()` no jsonb gigante também estourava timeout.
+    if (filters?.client_id) {
+      const { data, error } = await supabase.rpc('count_audit_log', {
+        p_action:      filters.action ?? null,
+        p_entity_type: filters.entity_type ?? null,
+        p_user_name:   filters.user_name ?? null,
+        p_client_id:   filters.client_id,
+        p_date_from:   filters.date_from ?? null,
+        p_date_to:     filters.date_to ? filters.date_to + 'T23:59:59.999Z' : null,
+      });
+      if (error) return 0;
+      return Number(data ?? 0);
+    }
+
     let query = supabase
       .from('audit_log')
       .select('id', { count: 'exact', head: true });
@@ -2112,7 +2150,6 @@ class SettingsService {
     if (filters?.action)      query = (query as any).eq('action', filters.action);
     if (filters?.entity_type) query = (query as any).eq('entity_type', filters.entity_type);
     if (filters?.user_name)   query = (query as any).ilike('user_name', `%${filters.user_name}%`);
-    if (filters?.client_id)   query = (query as any).or(`entity_id.eq.${filters.client_id},new_value->>client_id.eq.${filters.client_id}`);
     if (filters?.date_from)   query = (query as any).gte('created_at', filters.date_from);
     if (filters?.date_to)     query = (query as any).lte('created_at', filters.date_to + 'T23:59:59.999Z');
 

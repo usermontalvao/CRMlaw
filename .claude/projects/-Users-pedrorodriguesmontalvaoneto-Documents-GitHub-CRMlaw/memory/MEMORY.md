@@ -1,1 +1,2 @@
 - [Arquitetura do e-mail (bridge externo)](email-bridge-architecture.md) — ingestão/envio rodam no repo Servidor-mail (Portainer), não no CRM; cuidado com a tag da imagem Docker no deploy.
+- [Bloat da audit_log (3,7 GB)](audit-log-bloat.md) — trigger grava linha inteira de processos (notes ~550kB); correção da raiz adiada; filtro por cliente já mitigado via RPC.

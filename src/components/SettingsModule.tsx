@@ -1831,6 +1831,12 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   // ── Tabelas de tradução ──────────────────────────────────
                   const AUDIT_ACTION_VERBS: Record<string, string> = {
                     insert: 'criou', update: 'atualizou', delete: 'removeu',
+                    deadline_completed: 'deu baixa no',
+                    deadline_reopened: 'reabriu o',
+                    deadline_cancelled: 'cancelou o',
+                    deadline_due_date_changed: 'alterou o vencimento do',
+                    deadline_responsible_changed: 'trocou o responsável pelo',
+                    deadline_status_changed: 'alterou o status do',
                     security_pin_verified: 'verificou PIN de segurança em',
                     update_security_config: 'atualizou as configurações de segurança',
                     update_djen_config: 'atualizou a configuração do DJEN',
@@ -1873,6 +1879,12 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   const AUDIT_ACTION_COLORS: Record<string, { bg: string; color: string; dot: string }> = {
                     insert:                 { bg: '#f0fdf4', color: '#166534', dot: '#22c55e' },
                     delete:                 { bg: '#fef2f2', color: '#991b1b', dot: '#ef4444' },
+                    deadline_completed:     { bg: '#ecfdf5', color: '#047857', dot: '#10b981' },
+                    deadline_reopened:      { bg: '#fff7ed', color: '#c2410c', dot: '#f97316' },
+                    deadline_cancelled:     { bg: '#fef2f2', color: '#991b1b', dot: '#ef4444' },
+                    deadline_due_date_changed: { bg: '#fffbeb', color: '#92400e', dot: '#f59e0b' },
+                    deadline_responsible_changed: { bg: '#eff6ff', color: '#1e40af', dot: '#3b82f6' },
+                    deadline_status_changed: { bg: '#f5f3ff', color: '#6d28d9', dot: '#8b5cf6' },
                     security_pin_verified:  { bg: '#eff6ff', color: '#1e40af', dot: '#3b82f6' },
                     signed:                 { bg: '#f0fdf4', color: '#166534', dot: '#22c55e' },
                     viewed:                 { bg: '#f8fafc', color: '#475569', dot: '#94a3b8' },
@@ -2047,6 +2059,12 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             <option value="insert">Criação</option>
                             <option value="update">Atualização</option>
                             <option value="delete">Remoção</option>
+                            <option value="deadline_completed">Baixa de prazo</option>
+                            <option value="deadline_reopened">Reabertura de prazo</option>
+                            <option value="deadline_cancelled">Cancelamento de prazo</option>
+                            <option value="deadline_due_date_changed">Mudança de vencimento</option>
+                            <option value="deadline_responsible_changed">Troca de responsável</option>
+                            <option value="deadline_status_changed">Mudança de status</option>
                           </select>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
