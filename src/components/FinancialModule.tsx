@@ -209,6 +209,17 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   const [editError, setEditError] = useState<string | null>(null);
   const [isIRModalOpen, setIsIRModalOpen] = useState(false);
   const [showAllCompleted, setShowAllCompleted] = useState(false);
+  // Filtros da seção "Acordos Concluídos"
+  const [completedFiltersOpen, setCompletedFiltersOpen] = useState(false);
+  const [completedSearch, setCompletedSearch] = useState('');
+  const [completedDateField, setCompletedDateField] = useState<'closed' | 'agreement'>('closed');
+  const [completedPeriod, setCompletedPeriod] = useState<'all' | 'this_month' | 'last_month' | 'last_90' | 'this_year' | 'month' | 'custom'>('all');
+  const [completedMonth, setCompletedMonth] = useState(today.slice(0, 7));
+  const [completedFrom, setCompletedFrom] = useState('');
+  const [completedTo, setCompletedTo] = useState('');
+  const [completedMinValue, setCompletedMinValue] = useState('');
+  const [completedMaxValue, setCompletedMaxValue] = useState('');
+  const [completedSort, setCompletedSort] = useState<'closed_desc' | 'closed_asc' | 'value_desc' | 'value_asc' | 'fee_desc' | 'client_asc'>('closed_desc');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [showPaidInstallments, setShowPaidInstallments] = useState(false);
   const [showAvulsoEntries, setShowAvulsoEntries] = useState(false);
@@ -280,6 +291,9 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   // Estados para selector processo/requerimento
   const [clientProcesses, setClientProcesses] = useState<Process[]>([]);
   const [clientRequirements, setClientRequirements] = useState<Requirement[]>([]);
+  // Índices globais para busca por processo/requerimento vinculado ao acordo
+  const [processIndex, setProcessIndex] = useState<Map<string, Process>>(new Map());
+  const [requirementIndex, setRequirementIndex] = useState<Map<string, Requirement>>(new Map());
   const [loadingLinkedEntities, setLoadingLinkedEntities] = useState(false);
 
   const loadLinkedEntities = useCallback(async (clientId: string) => {
@@ -378,6 +392,15 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       setAgreements(agreementsData);
       setClients(clientsData);
       setAllInstallments(enrichedInstallments);
+
+      // Índices de processo/requerimento (não bloqueiam o carregamento principal)
+      Promise.all([
+        processService.listProcesses().catch(() => [] as Process[]),
+        requirementService.listRequirements().catch(() => [] as Requirement[]),
+      ]).then(([procs, reqs]) => {
+        setProcessIndex(new Map(procs.map((p) => [p.id, p])));
+        setRequirementIndex(new Map(reqs.map((r) => [r.id, r])));
+      }).catch(() => {/* busca por processo/requerimento fica indisponível */});
     } catch (err: any) {
       toast.error('Erro ao carregar', err.message);
     } finally {
@@ -448,6 +471,49 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     return client?.full_name || (client as any)?.name || 'Cliente não encontrado';
   };
 
+  // Processo ou requerimento vinculado ao acordo (para exibição e busca)
+  const getAgreementLink = useCallback((agreement: Agreement) => {
+    if (agreement.process_id) {
+      const process = processIndex.get(agreement.process_id);
+      if (process) return { kind: 'processo' as const, code: process.process_code || '', label: `Processo ${process.process_code || ''}`.trim() };
+      return { kind: 'processo' as const, code: '', label: 'Processo vinculado' };
+    }
+    if (agreement.requirement_id) {
+      const requirement = requirementIndex.get(agreement.requirement_id);
+      if (requirement) {
+        return {
+          kind: 'requerimento' as const,
+          code: requirement.protocol || '',
+          label: `Requerimento ${requirement.protocol || ''}`.trim(),
+        };
+      }
+      return { kind: 'requerimento' as const, code: '', label: 'Requerimento vinculado' };
+    }
+    return null;
+  }, [processIndex, requirementIndex]);
+
+  // Campos considerados na busca livre de acordos
+  const getAgreementSearchValues = useCallback((agreement: Agreement) => {
+    const process = agreement.process_id ? processIndex.get(agreement.process_id) : undefined;
+    const requirement = agreement.requirement_id ? requirementIndex.get(agreement.requirement_id) : undefined;
+    const client = clients.find((c) => c.id === agreement.client_id);
+
+    return [
+      agreement.title,
+      agreement.description,
+      agreement.notes,
+      getClientName(agreement.client_id),
+      client?.cpf_cnpj,
+      process?.process_code,
+      process?.court,
+      requirement?.protocol,
+      requirement?.beneficiary,
+      requirement?.cpf,
+      agreement.process_id ? String(agreement.process_id) : '',
+      agreement.requirement_id ? String(agreement.requirement_id) : '',
+    ];
+  }, [processIndex, requirementIndex, clients]);
+
   const numberToWords = (value: number) => {
     const units = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
     const teens = ['dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
@@ -515,16 +581,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     const term = searchTerm;
 
     return agreements.filter((agreement: Agreement) => {
-      const clientName = getClientName(agreement.client_id);
-      const matchesSearch = !term
-        ? true
-        : matchesNormalizedSearch(term, [
-            agreement.title,
-            agreement.description,
-            agreement.notes,
-            clientName,
-            agreement.process_id ? String(agreement.process_id) : '',
-          ]);
+      const matchesSearch = !term ? true : matchesNormalizedSearch(term, getAgreementSearchValues(agreement));
 
       const matchesStatus = filterStatus === 'all' ? true : agreement.status === filterStatus;
 
@@ -547,7 +604,135 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
 
       return matchesSearch && matchesStatus && matchesPaymentStatus;
     });
-  }, [agreements, searchTerm, filterStatus, filterPaymentStatus, allInstallments, pendingStatuses]);
+  }, [agreements, searchTerm, filterStatus, filterPaymentStatus, allInstallments, pendingStatuses, getAgreementSearchValues]);
+
+  // ============================================
+  // FILTROS DA SEÇÃO "ACORDOS CONCLUÍDOS"
+  // ============================================
+
+  // Intervalo [de, até] em ISO (yyyy-mm-dd) derivado do período escolhido
+  const completedRange = useMemo(() => {
+    const now = new Date();
+    const iso = (d: Date) => formatLocalISODate(d);
+
+    switch (completedPeriod) {
+      case 'this_month':
+        return {
+          from: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
+          to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+        };
+      case 'last_month':
+        return {
+          from: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+          to: iso(new Date(now.getFullYear(), now.getMonth(), 0)),
+        };
+      case 'last_90': {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 90);
+        return { from: iso(start), to: iso(now) };
+      }
+      case 'this_year':
+        return {
+          from: iso(new Date(now.getFullYear(), 0, 1)),
+          to: iso(new Date(now.getFullYear(), 11, 31)),
+        };
+      case 'month': {
+        if (!completedMonth) return { from: '', to: '' };
+        const [y, m] = completedMonth.split('-').map(Number);
+        if (!y || !m) return { from: '', to: '' };
+        return { from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 0)) };
+      }
+      case 'custom':
+        return { from: completedFrom, to: completedTo };
+      default:
+        return { from: '', to: '' };
+    }
+  }, [completedPeriod, completedMonth, completedFrom, completedTo]);
+
+  const completedFiltersActive = Boolean(
+    completedSearch.trim() ||
+    completedPeriod !== 'all' ||
+    completedMinValue ||
+    completedMaxValue ||
+    completedSort !== 'closed_desc',
+  );
+
+  const resetCompletedFilters = () => {
+    setCompletedSearch('');
+    setCompletedPeriod('all');
+    setCompletedMonth(today.slice(0, 7));
+    setCompletedFrom('');
+    setCompletedTo('');
+    setCompletedMinValue('');
+    setCompletedMaxValue('');
+    setCompletedSort('closed_desc');
+    setCompletedDateField('closed');
+  };
+
+  const allCompletedAgreements = useMemo(
+    () => filteredAgreements.filter((agreement: Agreement) => agreement.status === 'concluido'),
+    [filteredAgreements],
+  );
+
+  const completedAgreements = useMemo(() => {
+    const term = completedSearch.trim();
+    const min = completedMinValue ? Number(completedMinValue) : null;
+    const max = completedMaxValue ? Number(completedMaxValue) : null;
+
+    const dateOf = (agreement: Agreement) => (
+      completedDateField === 'closed'
+        ? String(agreement.updated_at || '').slice(0, 10)
+        : String(agreement.agreement_date || '').slice(0, 10)
+    );
+
+    const result = allCompletedAgreements.filter((agreement: Agreement) => {
+      if (term && !matchesNormalizedSearch(term, getAgreementSearchValues(agreement))) return false;
+
+      const reference = dateOf(agreement);
+      if (completedRange.from && (!reference || reference < completedRange.from)) return false;
+      if (completedRange.to && (!reference || reference > completedRange.to)) return false;
+
+      if (min !== null && !Number.isNaN(min) && agreement.total_value < min) return false;
+      if (max !== null && !Number.isNaN(max) && agreement.total_value > max) return false;
+
+      return true;
+    });
+
+    const sorted = [...result];
+    sorted.sort((a, b) => {
+      switch (completedSort) {
+        case 'closed_asc':
+          return dateOf(a).localeCompare(dateOf(b));
+        case 'value_desc':
+          return b.total_value - a.total_value;
+        case 'value_asc':
+          return a.total_value - b.total_value;
+        case 'fee_desc':
+          return b.fee_value - a.fee_value;
+        case 'client_asc':
+          return getClientName(a.client_id).localeCompare(getClientName(b.client_id), 'pt-BR');
+        default:
+          return dateOf(b).localeCompare(dateOf(a));
+      }
+    });
+
+    return sorted;
+  }, [
+    allCompletedAgreements,
+    completedSearch,
+    completedRange,
+    completedDateField,
+    completedMinValue,
+    completedMaxValue,
+    completedSort,
+    getAgreementSearchValues,
+    clients,
+  ]);
+
+  const completedTotals = useMemo(() => ({
+    total: completedAgreements.reduce((sum, a) => sum + (a.total_value || 0), 0),
+    fees: completedAgreements.reduce((sum, a) => sum + (a.fee_value || 0), 0),
+  }), [completedAgreements]);
 
   const nextDueInstallment = useMemo(() => {
     const pending = allInstallments
@@ -4336,32 +4521,197 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 
           {/* Acordos Concluídos */}
           {(() => {
-            const completedAgreements = filteredAgreements.filter((a: Agreement) => a.status === 'concluido');
-            if (completedAgreements.length === 0) return null;
-            
-            const displayedAgreements = showAllCompleted ? completedAgreements : completedAgreements.slice(0, 3);
+            if (allCompletedAgreements.length === 0) return null;
+
+            const expanded = showAllCompleted || completedFiltersActive;
+            const displayedAgreements = expanded ? completedAgreements : completedAgreements.slice(0, 3);
             const hasMore = completedAgreements.length > 3;
-            
+
             return (
               <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
-                <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 flex items-center justify-between border-b border-slate-100">
+                <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
                     <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500">
                       Acordos Concluídos &nbsp;·&nbsp; {completedAgreements.length}
+                      {completedFiltersActive && allCompletedAgreements.length !== completedAgreements.length && (
+                        <span className="ml-1 normal-case tracking-normal font-semibold text-slate-400">de {allCompletedAgreements.length}</span>
+                      )}
                     </h2>
                   </div>
-                  {hasMore && (
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setShowAllCompleted(!showAllCompleted)}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                      onClick={() => setCompletedFiltersOpen((open) => !open)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                        completedFiltersActive
+                          ? 'border-blue-200 bg-blue-50 text-blue-700'
+                          : 'border-[#e7e5df] bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
                     >
-                      {showAllCompleted ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      {showAllCompleted ? 'Ver menos' : `Mostrar todos (${completedAgreements.length})`}
+                      <Filter className="w-3.5 h-3.5" />
+                      Filtros
+                      {completedFiltersActive && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                      {completedFiltersOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
-                  )}
+                    {hasMore && !completedFiltersActive && (
+                      <button
+                        onClick={() => setShowAllCompleted(!showAllCompleted)}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
+                      >
+                        {showAllCompleted ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        {showAllCompleted ? 'Ver menos' : `Mostrar todos (${completedAgreements.length})`}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {viewMode === 'list' ? (
+
+                {completedFiltersOpen && (
+                  <div className="border-b border-slate-100 bg-slate-50/80 px-4 sm:px-6 py-3 space-y-2.5">
+                    <div className="flex flex-col @md:flex-row gap-2">
+                      <div className="relative flex-1">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={completedSearch}
+                          onChange={(e) => setCompletedSearch(e.target.value)}
+                          placeholder="Buscar por cliente, CPF, título, processo, requerimento, observações..."
+                          className="w-full pl-9 pr-8 py-2 border border-[#e7e5df] rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        />
+                        {completedSearch && (
+                          <button
+                            onClick={() => setCompletedSearch('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            title="Limpar busca"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <select
+                        value={completedSort}
+                        onChange={(e) => setCompletedSort(e.target.value as typeof completedSort)}
+                        className="px-2.5 py-2 border border-[#e7e5df] rounded-lg text-xs bg-white cursor-pointer focus:ring-2 focus:ring-blue-500"
+                        title="Ordenação"
+                      >
+                        <option value="closed_desc">Mais recentes</option>
+                        <option value="closed_asc">Mais antigos</option>
+                        <option value="value_desc">Maior valor</option>
+                        <option value="value_asc">Menor valor</option>
+                        <option value="fee_desc">Maior honorário</option>
+                        <option value="client_asc">Cliente (A-Z)</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={completedDateField}
+                        onChange={(e) => setCompletedDateField(e.target.value as 'closed' | 'agreement')}
+                        className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white cursor-pointer focus:ring-2 focus:ring-blue-500"
+                        title="Qual data usar no filtro de período"
+                      >
+                        <option value="closed">Data de encerramento</option>
+                        <option value="agreement">Data do acordo</option>
+                      </select>
+                      <select
+                        value={completedPeriod}
+                        onChange={(e) => setCompletedPeriod(e.target.value as typeof completedPeriod)}
+                        className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white cursor-pointer focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="all">Todo o período</option>
+                        <option value="this_month">Mês atual</option>
+                        <option value="last_month">Mês passado</option>
+                        <option value="last_90">Últimos 90 dias</option>
+                        <option value="this_year">Ano atual</option>
+                        <option value="month">Mês específico</option>
+                        <option value="custom">Intervalo personalizado</option>
+                      </select>
+
+                      {completedPeriod === 'month' && (
+                        <input
+                          type="month"
+                          value={completedMonth}
+                          onChange={(e) => setCompletedMonth(e.target.value)}
+                          className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
+                        />
+                      )}
+
+                      {completedPeriod === 'custom' && (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="date"
+                            value={completedFrom}
+                            onChange={(e) => setCompletedFrom(e.target.value)}
+                            className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
+                            title="De"
+                          />
+                          <span className="text-xs text-slate-400">até</span>
+                          <input
+                            type="date"
+                            value={completedTo}
+                            onChange={(e) => setCompletedTo(e.target.value)}
+                            className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
+                            title="Até"
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          value={completedMinValue}
+                          onChange={(e) => setCompletedMinValue(e.target.value)}
+                          placeholder="Valor mín."
+                          className="w-24 px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-xs text-slate-400">até</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={completedMaxValue}
+                          onChange={(e) => setCompletedMaxValue(e.target.value)}
+                          placeholder="Valor máx."
+                          className="w-24 px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      {completedFiltersActive && (
+                        <button
+                          onClick={resetCompletedFilters}
+                          className="inline-flex items-center gap-1 rounded-lg border border-[#e7e5df] bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          Limpar filtros
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                      <span>
+                        <strong className="text-slate-700">{completedAgreements.length}</strong> acordo{completedAgreements.length !== 1 ? 's' : ''}
+                      </span>
+                      <span>
+                        Valor total: <strong className="text-slate-700"><SensitiveValue value={completedTotals.total} isRevealed={financialRevealed} /></strong>
+                      </span>
+                      <span>
+                        Honorários: <strong className="text-blue-700"><SensitiveValue value={completedTotals.fees} isRevealed={financialRevealed} /></strong>
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {completedAgreements.length === 0 && (
+                  <div className="px-6 py-10 text-center">
+                    <p className="text-sm font-semibold text-slate-600">Nenhum acordo concluído para os filtros aplicados</p>
+                    <button
+                      onClick={resetCompletedFilters}
+                      className="mt-2 text-xs font-semibold text-blue-600 hover:text-blue-800"
+                    >
+                      Limpar filtros
+                    </button>
+                  </div>
+                )}
+                {completedAgreements.length === 0 ? null : viewMode === 'list' ? (
                   <div className="p-2 sm:p-6">
                     <div className="rounded-2xl border border-[#e7e5df] overflow-hidden bg-[#f8f7f5]">
                       <div className="sm:hidden divide-y divide-slate-100">
@@ -4379,6 +4729,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                 <div className="min-w-0">
                                   <p className="text-sm font-semibold text-slate-900 truncate">{agreement.title}</p>
                                   <p className="mt-0.5 text-xs text-slate-500 truncate">{getClientName(agreement.client_id)}</p>
+                                  {(() => {
+                                    const link = getAgreementLink(agreement);
+                                    return link ? (
+                                      <p className="mt-0.5 text-[11px] text-slate-400 truncate">{link.label}</p>
+                                    ) : null;
+                                  })()}
                                   <p className="mt-1 text-[11px] text-slate-500">Encerrado: <span className="font-semibold text-slate-700">{closedLabel}</span></p>
                                 </div>
                                 <div className="text-right flex-shrink-0">
@@ -4416,6 +4772,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                   <td className="px-4 py-3">
                                     <p className="font-semibold text-slate-900 truncate max-w-[280px]">{agreement.title}</p>
                                     <p className="text-xs text-slate-400">{getClientName(agreement.client_id)}</p>
+                                    {(() => {
+                                      const link = getAgreementLink(agreement);
+                                      return link ? (
+                                        <p className="text-[11px] text-slate-400 truncate max-w-[280px]">{link.label}</p>
+                                      ) : null;
+                                    })()}
                                   </td>
                                   <td className="px-4 py-3 text-right">
                                     <p className="font-semibold text-slate-900"><SensitiveValue value={agreement.total_value} isRevealed={financialRevealed} /></p>
@@ -4504,22 +4866,24 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                     })}
                   </div>
                 )}
-                <div className="flex items-center justify-between border-t border-blue-100 px-6 py-3 text-xs text-slate-500">
-                  <span>
-                    {showAllCompleted
-                      ? `Exibindo todos os ${completedAgreements.length} acordos concluídos`
-                      : `Mostrando ${Math.min(3, completedAgreements.length)} de ${completedAgreements.length}`}
-                  </span>
-                  {completedAgreements.length > 3 && (
-                    <button
-                      onClick={() => setShowAllCompleted(!showAllCompleted)}
-                      className="inline-flex items-center gap-2 text-xs font-semibold text-blue-700 hover:text-blue-900"
-                    >
-                      <span>Ver todos concluídos</span>
-                      {showAllCompleted ? <ChevronUp className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                    </button>
-                  )}
-                </div>
+                {completedAgreements.length > 0 && (
+                  <div className="flex items-center justify-between border-t border-blue-100 px-6 py-3 text-xs text-slate-500">
+                    <span>
+                      {expanded
+                        ? `Exibindo todos os ${completedAgreements.length} acordos concluídos`
+                        : `Mostrando ${Math.min(3, completedAgreements.length)} de ${completedAgreements.length}`}
+                    </span>
+                    {hasMore && !completedFiltersActive && (
+                      <button
+                        onClick={() => setShowAllCompleted(!showAllCompleted)}
+                        className="inline-flex items-center gap-2 text-xs font-semibold text-blue-700 hover:text-blue-900"
+                      >
+                        <span>Ver todos concluídos</span>
+                        {showAllCompleted ? <ChevronUp className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })()}
