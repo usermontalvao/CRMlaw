@@ -1,0 +1,1 @@
+- [Arquitetura do e-mail (bridge externo)](email-bridge-architecture.md) — ingestão/envio rodam no repo Servidor-mail (Portainer), não no CRM; cuidado com a tag da imagem Docker no deploy.
