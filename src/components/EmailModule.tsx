@@ -654,12 +654,17 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   // Campo da busca (digitação imediata) vs. termo aplicado (debounced) — evita
   // disparar uma query no banco a cada tecla numa caixa com milhares de e-mails.
   const [searchInput, setSearchInput] = useState('');
+  // `searchFilters` reflete o que está digitado nos campos (imediato); os campos
+  // de texto entram em vigor via `appliedFilters` (com debounce) para não disparar
+  // uma query no banco a cada tecla numa caixa com milhares de e-mails.
   const [searchFilters, setSearchFilters] = useState<EmailSearchFilters>(EMPTY_EMAIL_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<EmailSearchFilters>(EMPTY_EMAIL_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [spamUnread, setSpamUnread] = useState(0);
 
   const [limit, setLimit] = useState(() => loadPrefs().perPage);
+  const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [focusedId, setFocusedId] = useState<string | null>(null);
@@ -758,11 +763,13 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [list, count, spamCount] = await Promise.all([
-        emailService.listMessages(folder, search, limit, onlyUnread, searchFilters),
+      const [page, count, spamCount] = await Promise.all([
+        emailService.listMessages(folder, search, limit, onlyUnread, appliedFilters, 0),
         emailService.countUnread('inbox'),
         emailService.countUnread('spam'),
       ]);
+      const list = page.items;
+      setTotal(page.total);
       setMessages((prev) => {
         // Reanexa os "fixados" que saíram do filtro (ex.: lido no filtro Não lidas),
         // preservando a ordem cronológica para não pular embaixo do cursor.
@@ -774,7 +781,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
         const ts = (m: EmailMessage) => new Date(m.sent_at || m.created_at).getTime();
         return [...list, ...sticky].sort((a, b) => ts(b) - ts(a));
       });
-      setHasMore(list.length >= limit);
+      setHasMore(page.total > list.length);
       setUnread(count);
       setSpamUnread(spamCount);
       // Mantém aberto o e-mail selecionado mesmo que tenha saído do filtro (fixado)
@@ -785,11 +792,11 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [folder, search, limit, onlyUnread, searchFilters]);
+  }, [folder, search, limit, onlyUnread, appliedFilters]);
 
   useEffect(() => { load(); }, [load]);
   // Ao trocar de pasta/busca/filtro, volta ao tamanho de página inicial e limpa seleção.
-  useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); keepVisibleRef.current = new Set(); }, [folder, search, prefs.perPage, onlyUnread, searchFilters]);
+  useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); keepVisibleRef.current = new Set(); }, [folder, search, prefs.perPage, onlyUnread, appliedFilters]);
   useEffect(() => { emailService.getSignature().then((s) => { if (s) setSignature(s); }).catch(() => {}); }, []);
   useEffect(() => { emailService.listSpamRules().then(setSpamRules).catch(() => {}); }, []);
 
@@ -807,6 +814,18 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     const t = setTimeout(() => setSearch(searchInput.trim()), 350);
     return () => clearTimeout(t);
   }, [searchInput]);
+  // Debounce dos filtros avançados: os campos de texto (remetente/destinatário/
+  // assunto) só vão ao banco 350ms após parar de digitar; datas e checkboxes,
+  // por serem toques únicos, entram em vigor praticamente na hora.
+  useEffect(() => {
+    const textChanged =
+      searchFilters.from !== appliedFilters.from ||
+      searchFilters.to !== appliedFilters.to ||
+      searchFilters.subject !== appliedFilters.subject;
+    const delay = textChanged ? 350 : 0;
+    const t = setTimeout(() => setAppliedFilters(searchFilters), delay);
+    return () => clearTimeout(t);
+  }, [searchFilters, appliedFilters]);
   // Ao abrir a resposta inline (agora no topo), rola até ela pelo início.
   useEffect(() => {
     if (composeOpen && composeInline) {
@@ -1838,62 +1857,90 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
             </button>
           </div>
           {filtersOpen && (
-            <div className="grid grid-cols-1 gap-2 border-b border-[#f0efe9] bg-[#fcfbf8] px-3 py-2.5 dark:border-zinc-800 md:grid-cols-2">
-              <input
-                value={searchFilters.from}
-                onChange={(e) => setSearchFilters((prev) => ({ ...prev, from: e.target.value }))}
-                placeholder="Remetente"
-                className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
-              />
-              <input
-                value={searchFilters.to}
-                onChange={(e) => setSearchFilters((prev) => ({ ...prev, to: e.target.value }))}
-                placeholder="Destinatário"
-                className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
-              />
-              <input
-                value={searchFilters.subject}
-                onChange={(e) => setSearchFilters((prev) => ({ ...prev, subject: e.target.value }))}
-                placeholder="Assunto exato ou parcial"
-                className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  value={searchFilters.dateFrom}
-                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
-                  className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
-                />
-                <input
-                  type="date"
-                  value={searchFilters.dateTo}
-                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
-                  className="rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none focus:border-amber-400"
-                />
-              </div>
-              <label className="flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] text-zinc-600">
-                <input
-                  type="checkbox"
-                  checked={searchFilters.hasAttachments}
-                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, hasAttachments: e.target.checked }))}
-                />
-                Com anexo
-              </label>
-              <div className="flex items-center justify-between rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] text-zinc-600">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={searchFilters.starredOnly}
-                    onChange={(e) => setSearchFilters((prev) => ({ ...prev, starredOnly: e.target.checked }))}
-                  />
-                  Com estrela
-                </label>
+            <div className="border-b border-[#f0efe9] bg-[#fcfbf8] px-3 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+              <div className="mb-2.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                  <SlidersHorizontal className="h-3.5 w-3.5" /> Filtros avançados
+                </span>
                 <button
                   onClick={() => { setSearchFilters(EMPTY_EMAIL_FILTERS); setOnlyUnread(false); }}
-                  className="text-amber-700 hover:underline"
+                  disabled={activeFilterCount === 0}
+                  className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 disabled:cursor-default disabled:text-zinc-300 disabled:hover:bg-transparent"
                 >
-                  Limpar filtros
+                  <X className="h-3 w-3" /> Limpar
                 </button>
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] font-medium text-zinc-500">Remetente</span>
+                    <input
+                      value={searchFilters.from}
+                      onChange={(e) => setSearchFilters((prev) => ({ ...prev, from: e.target.value }))}
+                      placeholder="nome ou e-mail"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none transition-colors focus:border-amber-400 focus:ring-2 focus:ring-amber-100 dark:border-zinc-700 dark:bg-zinc-800"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] font-medium text-zinc-500">Destinatário</span>
+                    <input
+                      value={searchFilters.to}
+                      onChange={(e) => setSearchFilters((prev) => ({ ...prev, to: e.target.value }))}
+                      placeholder="nome ou e-mail"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none transition-colors focus:border-amber-400 focus:ring-2 focus:ring-amber-100 dark:border-zinc-700 dark:bg-zinc-800"
+                    />
+                  </label>
+                </div>
+
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-medium text-zinc-500">Assunto</span>
+                  <input
+                    value={searchFilters.subject}
+                    onChange={(e) => setSearchFilters((prev) => ({ ...prev, subject: e.target.value }))}
+                    placeholder="palavras do assunto"
+                    className="w-full rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] outline-none transition-colors focus:border-amber-400 focus:ring-2 focus:ring-amber-100 dark:border-zinc-700 dark:bg-zinc-800"
+                  />
+                </label>
+
+                <div>
+                  <span className="mb-1 block text-[11px] font-medium text-zinc-500">Período</span>
+                  <div className="grid grid-cols-2 items-center gap-2">
+                    <input
+                      type="date"
+                      aria-label="Data inicial"
+                      value={searchFilters.dateFrom}
+                      max={searchFilters.dateTo || undefined}
+                      onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
+                      className="w-full min-w-0 rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] text-zinc-600 outline-none transition-colors focus:border-amber-400 focus:ring-2 focus:ring-amber-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                    />
+                    <input
+                      type="date"
+                      aria-label="Data final"
+                      value={searchFilters.dateTo}
+                      min={searchFilters.dateFrom || undefined}
+                      onChange={(e) => setSearchFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
+                      className="w-full min-w-0 rounded-lg border border-[#e7e5df] bg-white px-2.5 py-2 text-[12px] text-zinc-600 outline-none transition-colors focus:border-amber-400 focus:ring-2 focus:ring-amber-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setSearchFilters((prev) => ({ ...prev, hasAttachments: !prev.hasAttachments }))}
+                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors ${searchFilters.hasAttachments ? 'border-amber-300 bg-amber-100 text-amber-800' : 'border-[#e7e5df] bg-white text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800'}`}
+                  >
+                    <Paperclip className="h-3.5 w-3.5" /> Com anexo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSearchFilters((prev) => ({ ...prev, starredOnly: !prev.starredOnly }))}
+                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors ${searchFilters.starredOnly ? 'border-amber-300 bg-amber-100 text-amber-800' : 'border-[#e7e5df] bg-white text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800'}`}
+                  >
+                    <Star className="h-3.5 w-3.5" fill={searchFilters.starredOnly ? 'currentColor' : 'none'} /> Com estrela
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -2029,15 +2076,25 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                     </div>
                   );
                 }); })()}
-                {/* Paginação: carregar mais */}
-                <div className="p-2 text-center">
+                {/* Paginação: carregar mais / carregar todos */}
+                <div className="flex flex-col items-center gap-1.5 p-2 text-center">
                   {hasMore ? (
-                    <button onClick={() => setLimit((l) => l + prefs.perPage)} disabled={loading}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12px] text-zinc-600 hover:bg-zinc-50 disabled:opacity-60">
-                      {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Carregar mais
-                    </button>
+                    <>
+                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        <button onClick={() => setLimit((l) => l + prefs.perPage)} disabled={loading}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12px] text-zinc-600 hover:bg-zinc-50 disabled:opacity-60">
+                          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Carregar mais
+                        </button>
+                        <button onClick={() => setLimit(total)} disabled={loading || total > 2000}
+                          title={total > 2000 ? 'Muitos e-mails — refine com filtros ou período' : `Carregar todos os ${total}`}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-[12px] font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60">
+                          Carregar todos ({total})
+                        </button>
+                      </div>
+                      <span className="text-[11px] text-zinc-400">Exibindo {messages.length} de {total}</span>
+                    </>
                   ) : (
-                    <span className="text-[11px] text-zinc-400">{messages.length} mensagem(ns)</span>
+                    <span className="text-[11px] text-zinc-400">{total || messages.length} mensagem(ns)</span>
                   )}
                 </div>
               </>

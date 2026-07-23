@@ -13,6 +13,23 @@ const EMPTY_FILTERS: EmailSearchFilters = {
   dateTo: '',
 };
 
+/** Resultado paginado de uma listagem: itens da página + total no servidor. */
+export interface EmailPage {
+  items: EmailMessage[];
+  total: number;
+}
+
+/**
+ * Monta o valor de um padrão ILIKE seguro para uso dentro de `.or()`.
+ * O PostgREST separa condições por vírgula, então envolvemos o valor em aspas
+ * duplas e escapamos aspas/contrabarras — assim vírgulas, parênteses e espaços
+ * no texto do usuário não quebram a expressão do filtro.
+ */
+function ilikePattern(raw: string): string {
+  const escaped = raw.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `"%${escaped}%"`;
+}
+
 function folderFilter(query: any, folder: EmailFolder) {
   switch (folder) {
     case 'inbox':
@@ -33,41 +50,70 @@ function folderFilter(query: any, folder: EmailFolder) {
 }
 
 class EmailService {
-  async listMessages(folder: EmailFolder, search?: string, limit = 50, onlyUnread = false, filters?: Partial<EmailSearchFilters>): Promise<EmailMessage[]> {
+  /**
+   * Lista mensagens de uma pasta com TODOS os filtros aplicados no servidor
+   * (Postgres), com paginação real por offset e contagem total exata.
+   *
+   * Antes, os filtros de texto (remetente/destinatário/assunto/anexo) e a busca
+   * eram aplicados no cliente sobre uma janela dos ~500 e-mails mais recentes —
+   * então a busca não achava e-mails antigos e o "Carregar mais" nunca passava
+   * desse teto. Agora tudo roda no banco: a busca varre toda a caixa e a
+   * paginação é fiel ao total real.
+   *
+   * @param limit  quantidade de itens a retornar (a partir de `offset`).
+   * @param offset deslocamento inicial (0 = primeira página).
+   */
+  async listMessages(
+    folder: EmailFolder,
+    search?: string,
+    limit = 50,
+    onlyUnread = false,
+    filters?: Partial<EmailSearchFilters>,
+    offset = 0,
+  ): Promise<EmailPage> {
     const activeFilters = { ...EMPTY_FILTERS, ...filters };
-    let query = supabase.from(TABLE).select('*');
+    let query = supabase.from(TABLE).select('*', { count: 'exact' });
     query = folderFilter(query, folder);
     if (onlyUnread) query = query.eq('is_read', false);
     if (activeFilters.starredOnly) query = query.eq('is_starred', true);
-    if (activeFilters.dateFrom) {
-      query = query.gte('sent_at', `${activeFilters.dateFrom}T00:00:00`);
+    if (activeFilters.dateFrom) query = query.gte('sent_at', `${activeFilters.dateFrom}T00:00:00`);
+    if (activeFilters.dateTo) query = query.lte('sent_at', `${activeFilters.dateTo}T23:59:59`);
+
+    // Anexo: array jsonb não-vazio → primeiro elemento existe.
+    if (activeFilters.hasAttachments) query = query.not('attachments->0', 'is', null);
+
+    // Remetente: casa em from_text OU from_address.
+    const fromTerm = activeFilters.from.trim();
+    if (fromTerm) query = query.or(`from_text.ilike.${ilikePattern(fromTerm)},from_address.ilike.${ilikePattern(fromTerm)}`);
+
+    // Destinatário: casa em to/cc/bcc.
+    const toTerm = activeFilters.to.trim();
+    if (toTerm) {
+      const p = ilikePattern(toTerm);
+      query = query.or(`to_text.ilike.${p},cc_text.ilike.${p},bcc_text.ilike.${p}`);
     }
-    if (activeFilters.dateTo) {
-      query = query.lte('sent_at', `${activeFilters.dateTo}T23:59:59`);
+
+    // Assunto (parcial).
+    const subjectTerm = activeFilters.subject.trim();
+    if (subjectTerm) query = query.ilike('subject', `%${subjectTerm}%`);
+
+    // Busca global: assunto, remetente, destinatários e corpo.
+    const searchTerm = search?.trim() || '';
+    if (searchTerm) {
+      const p = ilikePattern(searchTerm);
+      query = query.or(
+        `subject.ilike.${p},from_text.ilike.${p},from_address.ilike.${p},to_text.ilike.${p},cc_text.ilike.${p},body_text.ilike.${p}`,
+      );
     }
-    const { data, error } = await query
+
+    const from = Math.max(0, offset);
+    const to = from + Math.max(1, limit) - 1;
+    const { data, error, count } = await query
       .order('sent_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
-      .limit(Math.max(50, Math.min(limit * 4, 500)));
+      .range(from, to);
     if (error) throw new Error(error.message);
-    const rows = (data ?? []) as EmailMessage[];
-    const normalizedSearch = search?.trim().toLocaleLowerCase('pt-BR') || '';
-    const fromFilter = activeFilters.from.trim().toLocaleLowerCase('pt-BR');
-    const toFilter = activeFilters.to.trim().toLocaleLowerCase('pt-BR');
-    const subjectFilter = activeFilters.subject.trim().toLocaleLowerCase('pt-BR');
-
-    return rows.filter((row) => {
-      const fromText = `${row.from_text ?? ''} ${row.from_address ?? ''}`.toLocaleLowerCase('pt-BR');
-      const toText = `${row.to_text ?? ''} ${row.cc_text ?? ''} ${row.bcc_text ?? ''}`.toLocaleLowerCase('pt-BR');
-      const subjectText = (row.subject ?? '').toLocaleLowerCase('pt-BR');
-      const searchable = `${subjectText} ${fromText} ${toText}`.trim();
-      if (normalizedSearch && !searchable.includes(normalizedSearch)) return false;
-      if (fromFilter && !fromText.includes(fromFilter)) return false;
-      if (toFilter && !toText.includes(toFilter)) return false;
-      if (subjectFilter && !subjectText.includes(subjectFilter)) return false;
-      if (activeFilters.hasAttachments && (!Array.isArray(row.attachments) || row.attachments.length === 0)) return false;
-      return true;
-    }).slice(0, Math.max(1, Math.min(limit, 500)));
+    return { items: (data ?? []) as EmailMessage[], total: count ?? 0 };
   }
 
   /** Uma mensagem específica por id (usado ao abrir via notificação). */
