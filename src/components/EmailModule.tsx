@@ -167,6 +167,17 @@ function snippet(m: EmailMessage, max = 100): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
+// Chave de agrupamento por assunto: remove prefixos Re:/Fwd:/Enc:, colapsa
+// espaços e normaliza caixa/acentos, para juntar e-mails de mesmo título.
+function subjectKey(subject: string | null): string {
+  let s = (subject ?? '').trim();
+  // remove prefixos de resposta/encaminhamento repetidos no início
+  s = s.replace(/^(\s*(re|res|fw|fwd|enc|encaminhado)\s*:\s*)+/i, '');
+  s = s.replace(/\s+/g, ' ').trim().toLowerCase();
+  s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return s || '(sem assunto)';
+}
+
 // Agrupa a lista (já ordenada desc) por faixa de data, com cabeçalho por grupo.
 function dateBucket(iso: string | null): { key: string; label: string } {
   if (!iso) return { key: 'sem-data', label: 'Sem data' };
@@ -673,6 +684,14 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const [emptyingTrash, setEmptyingTrash] = useState(false);
   const [trashScope, setTrashScope] = useState<'all' | 'read' | 'unread'>('all');
   const [onlyUnread, setOnlyUnread] = useState(false);
+  // Grupos (por assunto) expandidos na visão "Não lidas".
+  const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set());
+  const toggleSubject = (k: string) =>
+    setExpandedSubjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
   const listScrollRef = useRef<HTMLDivElement>(null);
 
   const [foldersW, setFoldersW] = useState(() => Number(localStorage.getItem(LS_FOLDERS_W)) || 160);
@@ -798,7 +817,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   useEffect(() => { load(); }, [load]);
   // Ao trocar de pasta/busca/filtro, volta ao tamanho de página inicial e limpa seleção.
-  useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); keepVisibleRef.current = new Set(); }, [folder, search, prefs.perPage, onlyUnread, appliedFilters]);
+  useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); keepVisibleRef.current = new Set(); setExpandedSubjects(new Set()); }, [folder, search, prefs.perPage, onlyUnread, appliedFilters]);
   useEffect(() => { emailService.getSignature().then((s) => { if (s) setSignature(s); }).catch(() => {}); }, []);
   useEffect(() => { emailService.listSpamRules().then(setSpamRules).catch(() => {}); }, []);
 
@@ -1762,6 +1781,66 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     ].filter(Boolean).length
   ), [searchFilters, onlyUnread]);
 
+  // Renderiza uma linha da lista. `indent` recua a linha quando ela é filha de
+  // um grupo de assunto expandido (visão "Não lidas").
+  const renderRow = (m: EmailMessage, indent = false) => {
+    const isUnread = !m.is_read && m.direction === 'inbound';
+    const isSel = selected?.id === m.id;
+    const isFocused = focusedId === m.id;
+    const isChk = checked.has(m.id);
+    const name = senderName(m);
+    const preview = snippet(m);
+    return (
+      <div data-email-id={m.id} role="button" tabIndex={0}
+        draggable
+        onDragStart={(e) => {
+          const ids = checked.has(m.id) ? [...checked] : [m.id];
+          setDragIds(new Set(ids));
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', JSON.stringify(ids));
+        }}
+        onDragEnd={() => { setDragIds(new Set()); setDropTarget(null); }}
+        onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+        onClick={(e) => onRowClick(m, e)}
+        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, m }); }}
+        className={`group flex w-full select-none items-start gap-2.5 border-b border-[#f0efe9] py-2.5 text-left dark:border-zinc-800 ${indent ? 'border-l-2 border-l-amber-200 bg-amber-50/30 pl-6 pr-3 dark:bg-amber-950/10' : 'px-3'} ${isSel ? 'bg-amber-50' : isChk ? 'bg-amber-100/60' : 'hover:bg-zinc-50'} ${isFocused && !isSel ? 'ring-1 ring-inset ring-amber-300' : ''} ${dragIds.has(m.id) ? 'opacity-40' : ''}`}>
+        <div className="relative mt-0.5 flex-none">
+          <input type="checkbox" checked={isChk}
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => toggleChecked(m.id)}
+            className={`absolute inset-0 z-10 m-auto h-4 w-4 ${isChk ? '' : 'opacity-0 group-hover:opacity-100'}`} />
+          <div className={`flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-medium ${avatarColor(name)} ${isChk ? 'opacity-0' : 'group-hover:opacity-0'}`}>
+            {name.charAt(0).toUpperCase() || '?'}
+          </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-1.5">
+            <span className={`truncate text-[13px] ${isUnread ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-600'}`}>{name}</span>
+            <div className="flex flex-none items-center gap-1.5">
+              <button onClick={(e) => toggleStar(m, e)} title={m.is_starred ? 'Remover estrela' : 'Marcar com estrela'}
+                className={`rounded p-0.5 ${m.is_starred ? 'text-amber-500' : 'text-zinc-300 opacity-0 hover:text-amber-500 group-hover:opacity-100'}`}>
+                <Star className="h-3.5 w-3.5" fill={m.is_starred ? 'currentColor' : 'none'} />
+              </button>
+              <span className="text-[11px] text-zinc-400">{formatTime(m.sent_at || m.created_at)}</span>
+            </div>
+          </div>
+          <div className={`mt-0.5 flex items-center gap-1.5 truncate text-[13px] ${isUnread ? 'font-medium text-zinc-900 dark:text-zinc-100' : 'text-zinc-600'}`}>
+            {isUnread && <span className="h-1.5 w-1.5 flex-none rounded-full bg-amber-500" />}
+            {m.attachments?.length > 0 && <Paperclip className="h-3 w-3 flex-none text-zinc-400" />}
+            <span className="truncate">{m.subject || '(sem assunto)'}</span>
+          </div>
+          {preview && <div className="mt-0.5 truncate text-[12px] text-zinc-400">{preview}</div>}
+        </div>
+      </div>
+    );
+  };
+
+  const dateHeader = (label: string) => (
+    <div className="sticky top-0 z-[1] bg-white/95 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400 backdrop-blur dark:bg-zinc-900/95">
+      {label}
+    </div>
+  );
+
   return (
     <div ref={rootRef} className="relative flex h-full flex-col bg-[#f5f5f3] p-3 dark:bg-zinc-950 sm:p-4">
       {/* Pastas no mobile — barra horizontal (a coluna de pastas fica oculta < md) */}
@@ -2028,64 +2107,79 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
               </div>
             ) : (
               <>
-                {(() => { let lastKey = ''; return messages.map((m) => {
-                  const isUnread = !m.is_read && m.direction === 'inbound';
-                  const isSel = selected?.id === m.id;
-                  const isFocused = focusedId === m.id;
-                  const isChk = checked.has(m.id);
+                {onlyUnread ? (() => {
+                  // Visão "Não lidas": agrupa e-mails de mesmo assunto numa
+                  // sanfona com contador. Mensagens já vêm ordenadas desc.
+                  const groups: { key: string; subject: string; items: EmailMessage[] }[] = [];
+                  const idx = new Map<string, number>();
+                  for (const m of messages) {
+                    const k = subjectKey(m.subject);
+                    let i = idx.get(k);
+                    if (i === undefined) {
+                      i = groups.length;
+                      idx.set(k, i);
+                      groups.push({ key: k, subject: m.subject || '(sem assunto)', items: [] });
+                    }
+                    groups[i].items.push(m);
+                  }
+                  let lastKey = '';
+                  return groups.map((g) => {
+                    const rep = g.items[0];
+                    const bucket = dateBucket(rep.sent_at || rep.created_at);
+                    const showHeader = bucket.key !== lastKey;
+                    lastKey = bucket.key;
+                    const header = showHeader ? dateHeader(bucket.label) : null;
+                    if (g.items.length === 1) {
+                      return <div key={rep.id}>{header}{renderRow(rep)}</div>;
+                    }
+                    const expanded = expandedSubjects.has(g.key);
+                    const unreadCount = g.items.filter((x) => !x.is_read && x.direction === 'inbound').length;
+                    const groupChecked = g.items.every((x) => checked.has(x.id));
+                    return (
+                      <div key={g.key}>
+                        {header}
+                        <div role="button" tabIndex={0}
+                          onClick={() => toggleSubject(g.key)}
+                          className={`group flex w-full select-none items-start gap-2.5 border-b border-[#f0efe9] px-3 py-2.5 text-left dark:border-zinc-800 ${expanded ? 'bg-amber-50/50' : 'hover:bg-zinc-50'}`}>
+                          <div className="relative mt-0.5 flex-none">
+                            <input type="checkbox" checked={groupChecked}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={() => setChecked((prev) => {
+                                const next = new Set(prev);
+                                if (groupChecked) g.items.forEach((x) => next.delete(x.id));
+                                else g.items.forEach((x) => next.add(x.id));
+                                return next;
+                              })}
+                              className={`absolute inset-0 z-10 m-auto h-4 w-4 ${groupChecked ? '' : 'opacity-0 group-hover:opacity-100'}`} />
+                            <div className={`flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-800 ${groupChecked ? 'opacity-0' : 'group-hover:opacity-0'}`}>
+                              <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1.5">
+                              <div className={`flex min-w-0 items-center gap-1.5 truncate text-[13px] ${unreadCount > 0 ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-600'}`}>
+                                {unreadCount > 0 && <span className="h-1.5 w-1.5 flex-none rounded-full bg-amber-500" />}
+                                <span className="truncate">{g.subject}</span>
+                              </div>
+                              <span className="flex-none rounded-full bg-amber-100 px-1.5 text-[11px] font-medium text-amber-800">{g.items.length}</span>
+                            </div>
+                            <div className="mt-0.5 truncate text-[12px] text-zinc-400">
+                              {g.items.length} mensagens{unreadCount > 0 ? ` • ${unreadCount} não lida${unreadCount > 1 ? 's' : ''}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                        {expanded && g.items.map((m) => <div key={m.id}>{renderRow(m, true)}</div>)}
+                      </div>
+                    );
+                  });
+                })() : (() => { let lastKey = ''; return messages.map((m) => {
                   const bucket = dateBucket(m.sent_at || m.created_at);
                   const showHeader = bucket.key !== lastKey;
                   lastKey = bucket.key;
-                  const name = senderName(m);
-                  const preview = snippet(m);
                   return (
                     <div key={m.id}>
-                      {showHeader && (
-                        <div className="sticky top-0 z-[1] bg-white/95 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-zinc-400 backdrop-blur dark:bg-zinc-900/95">
-                          {bucket.label}
-                        </div>
-                      )}
-                      <div data-email-id={m.id} role="button" tabIndex={0}
-                        draggable
-                        onDragStart={(e) => {
-                          const ids = checked.has(m.id) ? [...checked] : [m.id];
-                          setDragIds(new Set(ids));
-                          e.dataTransfer.effectAllowed = 'move';
-                          e.dataTransfer.setData('text/plain', JSON.stringify(ids));
-                        }}
-                        onDragEnd={() => { setDragIds(new Set()); setDropTarget(null); }}
-                        onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
-                        onClick={(e) => onRowClick(m, e)}
-                        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, m }); }}
-                        className={`group flex w-full select-none items-start gap-2.5 border-b border-[#f0efe9] px-3 py-2.5 text-left dark:border-zinc-800 ${isSel ? 'bg-amber-50' : isChk ? 'bg-amber-100/60' : 'hover:bg-zinc-50'} ${isFocused && !isSel ? 'ring-1 ring-inset ring-amber-300' : ''} ${dragIds.has(m.id) ? 'opacity-40' : ''}`}>
-                        <div className="relative mt-0.5 flex-none">
-                          <input type="checkbox" checked={isChk}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={() => toggleChecked(m.id)}
-                            className={`absolute inset-0 z-10 m-auto h-4 w-4 ${isChk ? '' : 'opacity-0 group-hover:opacity-100'}`} />
-                          <div className={`flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-medium ${avatarColor(name)} ${isChk ? 'opacity-0' : 'group-hover:opacity-0'}`}>
-                            {name.charAt(0).toUpperCase() || '?'}
-                          </div>
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-1.5">
-                            <span className={`truncate text-[13px] ${isUnread ? 'font-semibold text-zinc-900 dark:text-zinc-100' : 'text-zinc-600'}`}>{name}</span>
-                            <div className="flex flex-none items-center gap-1.5">
-                              <button onClick={(e) => toggleStar(m, e)} title={m.is_starred ? 'Remover estrela' : 'Marcar com estrela'}
-                                className={`rounded p-0.5 ${m.is_starred ? 'text-amber-500' : 'text-zinc-300 opacity-0 hover:text-amber-500 group-hover:opacity-100'}`}>
-                                <Star className="h-3.5 w-3.5" fill={m.is_starred ? 'currentColor' : 'none'} />
-                              </button>
-                              <span className="text-[11px] text-zinc-400">{formatTime(m.sent_at || m.created_at)}</span>
-                            </div>
-                          </div>
-                          <div className={`mt-0.5 flex items-center gap-1.5 truncate text-[13px] ${isUnread ? 'font-medium text-zinc-900 dark:text-zinc-100' : 'text-zinc-600'}`}>
-                            {isUnread && <span className="h-1.5 w-1.5 flex-none rounded-full bg-amber-500" />}
-                            {m.attachments?.length > 0 && <Paperclip className="h-3 w-3 flex-none text-zinc-400" />}
-                            <span className="truncate">{m.subject || '(sem assunto)'}</span>
-                          </div>
-                          {preview && <div className="mt-0.5 truncate text-[12px] text-zinc-400">{preview}</div>}
-                        </div>
-                      </div>
+                      {showHeader && dateHeader(bucket.label)}
+                      {renderRow(m)}
                     </div>
                   );
                 }); })()}
