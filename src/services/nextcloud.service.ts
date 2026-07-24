@@ -67,16 +67,61 @@ export const nextcloudService = {
     return entries;
   },
 
-  /** Baixa um arquivo como Blob (para abrir num editor do CRM). */
+  /** Baixa um arquivo como Blob (para abrir num editor do CRM). O proxy já
+   *  envia headers no-cache; uma reabertura logo após um PUT lê a versão nova. */
   async readFile(path: string): Promise<Blob> {
     const { base64, mime } = await invoke<{ base64: string; mime: string }>({ action: 'read', path });
     return base64ToBlob(base64, mime);
   },
 
-  /** Grava/sobrescreve um arquivo no Nextcloud (salvar a versão editada). */
-  async writeFile(path: string, blob: Blob): Promise<void> {
+  /** Metadados de um arquivo (existe? tamanho, etag, mtime). `exists:false`
+   *  quando o arquivo não está no servidor. */
+  async stat(path: string): Promise<{ exists: boolean; size?: number; etag?: string | null; mtime?: string | null }> {
+    return invoke({ action: 'stat', path });
+  },
+
+  /** Grava/sobrescreve um arquivo no Nextcloud (salvar a versão editada).
+   *  Retorna o que o servidor confirmou (bytes recebidos + etag do PUT). */
+  async writeFile(
+    path: string,
+    blob: Blob,
+  ): Promise<{ ok: boolean; sentBytes?: number; etag?: string | null }> {
     const base64 = await blobToBase64(blob);
-    await invoke({ action: 'write', path, base64, mime: blob.type || 'application/octet-stream' });
+    return invoke({ action: 'write', path, base64, mime: blob.type || 'application/octet-stream' });
+  },
+
+  /** Grava e CONFIRMA a persistência relendo os metadados do servidor. Só
+   *  resolve se o Nextcloud reporta o arquivo com o tamanho exato que foi
+   *  enviado — caso contrário lança (nunca devolve um "salvo" falso). Retorna
+   *  o etag/tamanho remotos confirmados. */
+  async writeFileVerified(
+    path: string,
+    blob: Blob,
+  ): Promise<{ size: number; etag: string | null }> {
+    const expectedSize = blob.size;
+    if (!expectedSize) {
+      throw new Error('Documento exportado está vazio (0 bytes) — nada foi enviado ao Nextcloud.');
+    }
+
+    const put = await this.writeFile(path, blob);
+    if (put && typeof put.sentBytes === 'number' && put.sentBytes !== expectedSize) {
+      throw new Error(
+        `O proxy recebeu ${put.sentBytes} bytes, mas o documento exportado tem ${expectedSize}. Envio corrompido.`,
+      );
+    }
+
+    // Verificação real: relê o arquivo no servidor e compara o tamanho.
+    const remote = await this.stat(path);
+    if (!remote.exists) {
+      throw new Error('Após o PUT o arquivo não foi encontrado no Nextcloud (gravação não persistiu).');
+    }
+    if (typeof remote.size === 'number' && remote.size !== expectedSize) {
+      throw new Error(
+        `Versão remota tem ${remote.size} bytes, mas o documento salvo tem ${expectedSize}. A gravação não foi confirmada.`,
+      );
+    }
+
+    return { size: remote.size ?? expectedSize, etag: remote.etag ?? put?.etag ?? null };
   },
 
   /** Cria uma pasta (idempotente). */

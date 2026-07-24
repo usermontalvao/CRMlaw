@@ -230,27 +230,71 @@ Deno.serve(async (req: Request) => {
       }
 
       case 'read': {
-        const res = await fetch(davUrl(root, path), { method: 'GET', headers: { Authorization: auth } });
+        // Cache-busting: um GET reaberto logo após um PUT NÃO pode devolver uma
+        // versão antiga. Alguns caches (Cloudflare/reverse-proxy à frente do
+        // Nextcloud) IGNORAM o Cache-Control do request e servem o GET pela URL.
+        // Por isso variamos a URL com uma query única a cada leitura — muda a
+        // chave de cache e obriga a buscar do servidor. O Nextcloud ignora a
+        // query num GET de arquivo. (PROPFIND/stat não é cacheado, por isso via.)
+        const cacheBust = `nc_cb=${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const readUrl = davUrl(root, path) + (davUrl(root, path).includes('?') ? '&' : '?') + cacheBust;
+        const res = await fetch(readUrl, {
+          method: 'GET',
+          headers: { Authorization: auth, 'Cache-Control': 'no-cache, no-store', Pragma: 'no-cache' },
+          cache: 'no-store',
+        });
         if (!res.ok) return json({ error: `GET falhou (${res.status})` }, 502);
         const buf = new Uint8Array(await res.arrayBuffer());
         return json({
           base64: bytesToBase64(buf),
           mime: res.headers.get('content-type') || 'application/octet-stream',
+          size: buf.byteLength,
+          etag: res.headers.get('oc-etag') || res.headers.get('etag') || null,
+        });
+      }
+
+      // Metadados de um único arquivo (PROPFIND Depth:0). Usado para confirmar,
+      // após um PUT, que o servidor de fato guardou o tamanho/etag esperado.
+      case 'stat': {
+        const res = await fetch(davUrl(root, path), {
+          method: 'PROPFIND',
+          headers: { Authorization: auth, Depth: '0', 'Content-Type': 'application/xml', 'Cache-Control': 'no-cache' },
+          cache: 'no-store',
+        });
+        if (res.status === 404) { await res.text(); return json({ exists: false }); }
+        if (!res.ok) return json({ error: `PROPFIND falhou (${res.status})`, detail: await res.text() }, 502);
+        const xml = await res.text();
+        const rawEtag = tag(xml, 'getetag');
+        return json({
+          exists: true,
+          size: Number(tag(xml, 'getcontentlength') || 0),
+          mime: tag(xml, 'getcontenttype') || 'application/octet-stream',
+          mtime: tag(xml, 'getlastmodified'),
+          etag: rawEtag ? rawEtag.replace(/^"|"$|&quot;/g, '') : null,
         });
       }
 
       case 'write': {
         const b64 = String(body.base64 || '');
+        const bytes = base64ToBytes(b64);
         const res = await fetch(davUrl(root, path), {
           method: 'PUT',
           headers: {
             Authorization: auth,
             'Content-Type': String(body.mime || 'application/octet-stream'),
           },
-          body: base64ToBytes(b64),
+          body: bytes,
         });
         if (!res.ok) return json({ error: `PUT falhou (${res.status})`, detail: await res.text() }, 502);
-        return json({ ok: true });
+        // Devolve o que o Nextcloud confirmou sobre a gravação. O ETag e o tamanho
+        // permitem ao front provar que a versão remota é a que ele acabou de enviar.
+        const rawEtag = res.headers.get('oc-etag') || res.headers.get('etag');
+        return json({
+          ok: true,
+          status: res.status,
+          sentBytes: bytes.byteLength,
+          etag: rawEtag ? rawEtag.replace(/^"|"$|&quot;/g, '') : null,
+        });
       }
 
       case 'delete': {

@@ -1176,8 +1176,14 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const serverReachableRef = useRef(true);
   const realtimeRefreshTimerRef = useRef<number | null>(null);
   const localDraftStorageKey = useMemo(
-    () => `${PETITION_LOCAL_DRAFT_STORAGE_KEY_PREFIX}${user?.id || 'anon'}`,
-    [user?.id],
+    () => {
+      const owner = user?.id || 'anon';
+      const documentScope = initialNextcloudPath
+        ? `:nextcloud:${encodeURIComponent(initialNextcloudPath)}`
+        : '';
+      return `${PETITION_LOCAL_DRAFT_STORAGE_KEY_PREFIX}${owner}${documentScope}`;
+    },
+    [initialNextcloudPath, user?.id],
   );
 
   // PetiçÃµes salvas
@@ -1329,6 +1335,21 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     },
     [localDraftStorageKey],
   );
+
+  const restoreNextcloudDraft = useCallback(async (editor: SyncfusionEditorRef): Promise<boolean> => {
+    if (!sourceNextcloudPathRef.current) return false;
+    const draft = loadLocalDraftFromStorage();
+    if (!draft) return false;
+
+    await Promise.resolve(editor.loadSfdt(draft.content));
+    editor.focus();
+    setRestorableLocalDraft(draft);
+    setLocalDraftUpdatedAt(draft.updatedAt);
+    setPendingOfflineSync(false);
+    setHasUnsavedChanges(true);
+    showSuccessMessage('Rascunho local recuperado. Clique em Salvar para atualizar o arquivo no Nextcloud.');
+    return true;
+  }, [loadLocalDraftFromStorage]);
 
   useEffect(() => {
     const update = () => {
@@ -2577,7 +2598,13 @@ Regras:
         // Origem Nextcloud: salva de volta no servidor, sem criar petição.
         const exportedName = initialDocumentName || `${title}.docx`;
         const blob = await editor.exportDocx(exportedName.endsWith('.docx') ? exportedName : `${exportedName}.docx`);
-        await nextcloudService.writeFile(nextcloudPath, blob);
+        if (!blob.size) {
+          throw new Error('O documento exportado veio vazio (0 bytes). Nada foi enviado ao Nextcloud.');
+        }
+
+        // Grava E confirma relendo do servidor: só segue se a versão remota
+        // tiver exatamente o tamanho enviado. Evita o "salvo" falso.
+        await nextcloudService.writeFileVerified(nextcloudPath, blob);
       } else {
         let savedRow: SavedPetition | null = null;
 
@@ -2644,6 +2671,11 @@ Regras:
     savePetitionActionRef.current = savePetition;
   }, [savePetition]);
 
+  // Autosave para o Nextcloud REMOVIDO a pedido do usuário: documentos abertos
+  // do Nextcloud são gravados de volta apenas quando o usuário salva manualmente
+  // (botão Salvar / Ctrl+S). O rascunho local continua sendo mantido para não
+  // perder trabalho, mas a gravação no servidor não é mais automática.
+
   const restoreLocalDraft = useCallback(async () => {
     const draft = loadLocalDraftFromStorage();
     if (!draft) {
@@ -2703,7 +2735,7 @@ Regras:
       if (!isOnlineRef.current || !serverReachableRef.current) {
         setPendingOfflineSync(true);
       }
-    }, 1800);
+    }, sourceNextcloudPathRef.current ? 350 : 1800);
 
     return () => window.clearTimeout(timer);
   }, [
@@ -3551,8 +3583,12 @@ Regras:
       await loadDocxWithFallback(editor, arrayBuffer, fileName || 'documento.docx');
       captureAndApplyDocFontSoon(editor);
       setShowStartScreen(false);
-      setHasUnsavedChanges(true);
-      showSuccessMessage('Documento importado com sucesso.');
+      const restoredDraft = await restoreNextcloudDraft(editor);
+      if (!restoredDraft) {
+        const openedFromNextcloud = Boolean(sourceNextcloudPathRef.current);
+        setHasUnsavedChanges(!openedFromNextcloud);
+        showSuccessMessage(openedFromNextcloud ? 'Documento aberto do Nextcloud.' : 'Documento importado com sucesso.');
+      }
       if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
         setPetitionTitle(getSanitizedDocumentName(fileName));
       }
@@ -3567,7 +3603,7 @@ Regras:
         try { URL.revokeObjectURL(documentUrl); } catch { /* já revogada */ }
       }
     }
-  }, [applyInitialClientIfNeeded, petitionTitle]);
+  }, [applyInitialClientIfNeeded, petitionTitle, restoreNextcloudDraft]);
 
   // Recarrega o .docx direto do Nextcloud pelo caminho de origem. Usado na
   // restauração do widget após um reload da página: a object URL do blob morre
@@ -3592,8 +3628,11 @@ Regras:
       await loadDocxWithFallback(editor, arrayBuffer, fileName || 'documento.docx');
       captureAndApplyDocFontSoon(editor);
       setShowStartScreen(false);
-      // Recém-carregado do servidor: sem alterações pendentes ainda.
-      setHasUnsavedChanges(false);
+      const restoredDraft = await restoreNextcloudDraft(editor);
+      if (!restoredDraft) {
+        // Recém-carregado do servidor: sem alterações pendentes ainda.
+        setHasUnsavedChanges(false);
+      }
       if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
         setPetitionTitle(getSanitizedDocumentName(fileName));
       }
@@ -3604,7 +3643,7 @@ Regras:
     } finally {
       setDocumentImportLoading(false);
     }
-  }, [applyInitialClientIfNeeded, petitionTitle]);
+  }, [applyInitialClientIfNeeded, petitionTitle, restoreNextcloudDraft]);
 
   const loadDefaultTemplate = async () => {
     if (!isOnlineRef.current) {
