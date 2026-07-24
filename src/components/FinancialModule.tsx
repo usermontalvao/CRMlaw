@@ -41,6 +41,8 @@ import {
   Edit2,
 } from 'lucide-react';
 import { matchesNormalizedSearch } from '../utils/search';
+import { useAgreementFilters } from '../hooks/useAgreementFilters';
+import { AgreementFilterPanel, AgreementPagination } from './AgreementFilterPanel';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -208,18 +210,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   const [editInitialLoading, setEditInitialLoading] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [isIRModalOpen, setIsIRModalOpen] = useState(false);
-  const [showAllCompleted, setShowAllCompleted] = useState(false);
   // Filtros da seção "Acordos Concluídos"
-  const [completedFiltersOpen, setCompletedFiltersOpen] = useState(false);
-  const [completedSearch, setCompletedSearch] = useState('');
-  const [completedDateField, setCompletedDateField] = useState<'closed' | 'agreement'>('closed');
-  const [completedPeriod, setCompletedPeriod] = useState<'all' | 'this_month' | 'last_month' | 'last_90' | 'this_year' | 'month' | 'custom'>('all');
-  const [completedMonth, setCompletedMonth] = useState(today.slice(0, 7));
-  const [completedFrom, setCompletedFrom] = useState('');
-  const [completedTo, setCompletedTo] = useState('');
-  const [completedMinValue, setCompletedMinValue] = useState('');
-  const [completedMaxValue, setCompletedMaxValue] = useState('');
-  const [completedSort, setCompletedSort] = useState<'closed_desc' | 'closed_asc' | 'value_desc' | 'value_asc' | 'fee_desc' | 'client_asc'>('closed_desc');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [showPaidInstallments, setShowPaidInstallments] = useState(false);
   const [showAvulsoEntries, setShowAvulsoEntries] = useState(false);
@@ -607,132 +598,32 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   }, [agreements, searchTerm, filterStatus, filterPaymentStatus, allInstallments, pendingStatuses, getAgreementSearchValues]);
 
   // ============================================
-  // FILTROS DA SEÇÃO "ACORDOS CONCLUÍDOS"
+  // FILTROS DAS SEÇÕES DE LANÇAMENTOS
   // ============================================
-
-  // Intervalo [de, até] em ISO (yyyy-mm-dd) derivado do período escolhido
-  const completedRange = useMemo(() => {
-    const now = new Date();
-    const iso = (d: Date) => formatLocalISODate(d);
-
-    switch (completedPeriod) {
-      case 'this_month':
-        return {
-          from: iso(new Date(now.getFullYear(), now.getMonth(), 1)),
-          to: iso(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
-        };
-      case 'last_month':
-        return {
-          from: iso(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
-          to: iso(new Date(now.getFullYear(), now.getMonth(), 0)),
-        };
-      case 'last_90': {
-        const start = new Date(now);
-        start.setDate(start.getDate() - 90);
-        return { from: iso(start), to: iso(now) };
-      }
-      case 'this_year':
-        return {
-          from: iso(new Date(now.getFullYear(), 0, 1)),
-          to: iso(new Date(now.getFullYear(), 11, 31)),
-        };
-      case 'month': {
-        if (!completedMonth) return { from: '', to: '' };
-        const [y, m] = completedMonth.split('-').map(Number);
-        if (!y || !m) return { from: '', to: '' };
-        return { from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 0)) };
-      }
-      case 'custom':
-        return { from: completedFrom, to: completedTo };
-      default:
-        return { from: '', to: '' };
-    }
-  }, [completedPeriod, completedMonth, completedFrom, completedTo]);
-
-  const completedFiltersActive = Boolean(
-    completedSearch.trim() ||
-    completedPeriod !== 'all' ||
-    completedMinValue ||
-    completedMaxValue ||
-    completedSort !== 'closed_desc',
-  );
-
-  const resetCompletedFilters = () => {
-    setCompletedSearch('');
-    setCompletedPeriod('all');
-    setCompletedMonth(today.slice(0, 7));
-    setCompletedFrom('');
-    setCompletedTo('');
-    setCompletedMinValue('');
-    setCompletedMaxValue('');
-    setCompletedSort('closed_desc');
-    setCompletedDateField('closed');
-  };
 
   const allCompletedAgreements = useMemo(
     () => filteredAgreements.filter((agreement: Agreement) => agreement.status === 'concluido'),
     [filteredAgreements],
   );
 
-  const completedAgreements = useMemo(() => {
-    const term = completedSearch.trim();
-    const min = completedMinValue ? Number(completedMinValue) : null;
-    const max = completedMaxValue ? Number(completedMaxValue) : null;
+  const allWaitingDefinitionAgreements = useMemo(
+    () => filteredAgreements.filter((agreement: Agreement) => agreement.status === 'aguardando_definicao'),
+    [filteredAgreements],
+  );
 
-    const dateOf = (agreement: Agreement) => (
-      completedDateField === 'closed'
-        ? String(agreement.updated_at || '').slice(0, 10)
-        : String(agreement.agreement_date || '').slice(0, 10)
-    );
+  const completedFilters = useAgreementFilters({
+    agreements: allCompletedAgreements,
+    pageSize: 5,
+    getSearchValues: getAgreementSearchValues,
+    getClientName,
+  });
 
-    const result = allCompletedAgreements.filter((agreement: Agreement) => {
-      if (term && !matchesNormalizedSearch(term, getAgreementSearchValues(agreement))) return false;
-
-      const reference = dateOf(agreement);
-      if (completedRange.from && (!reference || reference < completedRange.from)) return false;
-      if (completedRange.to && (!reference || reference > completedRange.to)) return false;
-
-      if (min !== null && !Number.isNaN(min) && agreement.total_value < min) return false;
-      if (max !== null && !Number.isNaN(max) && agreement.total_value > max) return false;
-
-      return true;
-    });
-
-    const sorted = [...result];
-    sorted.sort((a, b) => {
-      switch (completedSort) {
-        case 'closed_asc':
-          return dateOf(a).localeCompare(dateOf(b));
-        case 'value_desc':
-          return b.total_value - a.total_value;
-        case 'value_asc':
-          return a.total_value - b.total_value;
-        case 'fee_desc':
-          return b.fee_value - a.fee_value;
-        case 'client_asc':
-          return getClientName(a.client_id).localeCompare(getClientName(b.client_id), 'pt-BR');
-        default:
-          return dateOf(b).localeCompare(dateOf(a));
-      }
-    });
-
-    return sorted;
-  }, [
-    allCompletedAgreements,
-    completedSearch,
-    completedRange,
-    completedDateField,
-    completedMinValue,
-    completedMaxValue,
-    completedSort,
-    getAgreementSearchValues,
-    clients,
-  ]);
-
-  const completedTotals = useMemo(() => ({
-    total: completedAgreements.reduce((sum, a) => sum + (a.total_value || 0), 0),
-    fees: completedAgreements.reduce((sum, a) => sum + (a.fee_value || 0), 0),
-  }), [completedAgreements]);
+  const waitingFilters = useAgreementFilters({
+    agreements: allWaitingDefinitionAgreements,
+    pageSize: 5,
+    getSearchValues: getAgreementSearchValues,
+    getClientName,
+  });
 
   const nextDueInstallment = useMemo(() => {
     const pending = allInstallments
@@ -925,9 +816,9 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       resourceId: selectedAgreement.id,
       sensitivity: 'high',
       title: statusTouchesWaitingDefinition
-        ? (editForm.status === 'aguardando_definicao' ? 'Mover acordo para aguardando definição' : 'Retomar acordo no fluxo')
-        : 'Editar acordo financeiro',
-      description: 'Confirme com seu PIN para salvar as alterações neste acordo.',
+        ? (editForm.status === 'aguardando_definicao' ? 'Mover lançamento para aguardando definição' : 'Retomar lançamento no fluxo')
+        : 'Editar lançamento financeiro',
+      description: 'Confirme com seu PIN para salvar as alterações neste lançamento.',
     });
     if (!pinOk) return;
 
@@ -937,7 +828,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     }
 
     if (!editForm.title.trim()) {
-      setEditError('Informe o título do acordo');
+      setEditError('Informe o título do lançamento');
       return;
     }
 
@@ -1024,11 +915,11 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
 
       setSelectedAgreement(updated);
       setAgreements((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-      toast.success('Acordo atualizado', 'As informações foram salvas com sucesso');
+      toast.success('Lançamento atualizado', 'As informações foram salvas com sucesso');
       handleCloseEditModal();
       loadData(activeMonth);
     } catch (err: any) {
-      setEditError(err.message || 'Não foi possível atualizar o acordo');
+      setEditError(err.message || 'Não foi possível atualizar o lançamento');
       setEditLoading(false);
     }
   };
@@ -1131,7 +1022,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
 
   const validateForm = () => {
     if (!formData.clientId) return 'Selecione um cliente';
-    if (!formData.title.trim()) return 'Informe o título do acordo';
+    if (!formData.title.trim()) return 'Informe o título do lançamento';
     if (!calendarResponsibleId) return 'Selecione o responsável pelos compromissos da agenda';
     if (!formData.totalValue || parseCurrencyToNumber(formData.totalValue) <= 0) return 'Informe um valor total válido';
     if (formData.feeType === 'percentage') {
@@ -1193,11 +1084,11 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         await createCalendarEventsForInstallments(createdAgreement, schedule, calendarResponsibleId || null);
       }
 
-      toast.success('Acordo criado', 'Os dados foram registrados com sucesso');
+      toast.success('Lançamento criado', 'Os dados foram registrados com sucesso');
       handleCloseModal();
       loadData();
     } catch (err: any) {
-      toast.error('Erro ao criar acordo', err.message);
+      toast.error('Erro ao criar lançamento', err.message);
       setFormLoading(false);
     }
   };
@@ -1229,10 +1120,10 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       resourceType: 'financial_agreement',
       resourceId: agreement.id,
       sensitivity: 'high',
-      title: nextStatus === 'aguardando_definicao' ? 'Mover acordo para aguardando definição' : 'Retomar acordo no fluxo',
+      title: nextStatus === 'aguardando_definicao' ? 'Mover lançamento para aguardando definição' : 'Retomar lançamento no fluxo',
       description: nextStatus === 'aguardando_definicao'
-        ? 'Confirme com seu PIN para tirar este acordo do fluxo operacional e do faturamento estimado.'
-        : 'Confirme com seu PIN para devolver este acordo ao fluxo operacional do financeiro.',
+        ? 'Confirme com seu PIN para tirar este lançamento do fluxo operacional e do faturamento estimado.'
+        : 'Confirme com seu PIN para devolver este lançamento ao fluxo operacional do financeiro.',
     });
     if (!pinOk) return;
 
@@ -1252,15 +1143,15 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       setAgreements((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       loadData(activeMonth);
       toast.success(
-        nextStatus === 'aguardando_definicao' ? 'Acordo em aguardando definição' : 'Acordo retomado',
+        nextStatus === 'aguardando_definicao' ? 'Lançamento em aguardando definição' : 'Lançamento retomado',
         nextStatus === 'aguardando_definicao'
-          ? 'O acordo saiu do fluxo operacional e dos indicadores do financeiro.'
-          : 'O acordo voltou a contar no fluxo operacional do financeiro.',
+          ? 'O lançamento saiu do fluxo operacional e dos indicadores do financeiro.'
+          : 'O lançamento voltou a contar no fluxo operacional do financeiro.',
       );
     } catch (err: any) {
       toast.error(
-        nextStatus === 'aguardando_definicao' ? 'Erro ao mover acordo' : 'Erro ao retomar acordo',
-        err.message || 'Não foi possível atualizar o status do acordo.',
+        nextStatus === 'aguardando_definicao' ? 'Erro ao mover lançamento' : 'Erro ao retomar lançamento',
+        err.message || 'Não foi possível atualizar o status do lançamento.',
       );
     }
   };
@@ -1389,7 +1280,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       resourceId: selectedAgreement.id,
       sensitivity: 'high',
       title: 'Quitar todas as parcelas',
-      description: `Confirme com seu PIN para quitar ${pending.length} parcela${pending.length > 1 ? 's' : ''} do acordo.`,
+      description: `Confirme com seu PIN para quitar ${pending.length} parcela${pending.length > 1 ? 's' : ''} do lançamento.`,
     });
     if (!pinOk) return;
     setBulkPaymentLoading(true);
@@ -1572,7 +1463,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   // Buscar nome do cliente e título do acordo a partir do agreement_id
   const getAuditAgreementInfo = (agreementId: string) => {
     const agreement = agreements.find(a => a.id === agreementId);
-    if (!agreement) return { clientName: 'Cliente não encontrado', title: 'Acordo não encontrado' };
+    if (!agreement) return { clientName: 'Cliente não encontrado', title: 'Lançamento não encontrado' };
     return {
       clientName: getClientName(agreement.client_id),
       title: agreement.title,
@@ -1586,9 +1477,9 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       payment_edited: { label: 'Pagamento Editado', color: 'text-blue-700', bgColor: 'bg-blue-100 border-blue-200' },
       installment_created: { label: 'Parcela Criada', color: 'text-indigo-700', bgColor: 'bg-indigo-100 border-indigo-200' },
       installment_cancelled: { label: 'Parcela Cancelada', color: 'text-orange-700', bgColor: 'bg-orange-100 border-orange-200' },
-      agreement_created: { label: 'Acordo Criado', color: 'text-purple-700', bgColor: 'bg-purple-100 border-purple-200' },
-      agreement_edited: { label: 'Acordo Editado', color: 'text-cyan-700', bgColor: 'bg-cyan-100 border-cyan-200' },
-      agreement_cancelled: { label: 'Acordo Cancelado', color: 'text-gray-700', bgColor: 'bg-gray-100 border-[#e7e5df]' },
+      agreement_created: { label: 'Lançamento Criado', color: 'text-purple-700', bgColor: 'bg-purple-100 border-purple-200' },
+      agreement_edited: { label: 'Lançamento Editado', color: 'text-cyan-700', bgColor: 'bg-cyan-100 border-cyan-200' },
+      agreement_cancelled: { label: 'Lançamento Cancelado', color: 'text-gray-700', bgColor: 'bg-gray-100 border-[#e7e5df]' },
     };
     return labels[action] || { label: action, color: 'text-gray-700', bgColor: 'bg-gray-100 border-[#e7e5df]' };
   };
@@ -1692,7 +1583,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       )
       .map((inst) => {
         const clientName = getClientName(inst.agreement?.client_id || '');
-        const agreementTitle = inst.agreement?.title || 'Acordo';
+        const agreementTitle = inst.agreement?.title || 'Lançamento';
         const amount = getInstallmentFeeValue(inst);
         return {
           clientName,
@@ -1712,7 +1603,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       )
       .map((inst) => ({
         clientName: getClientName(inst.agreement?.client_id || ''),
-        agreementTitle: inst.agreement?.title || 'Acordo',
+        agreementTitle: inst.agreement?.title || 'Lançamento',
         dueDate: inst.due_date!,
         amount: inst.value,
       }))
@@ -1889,7 +1780,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       <thead>
         <tr>
           <th>Cliente</th>
-          <th>Acordo</th>
+          <th>Lançamento</th>
           <th>Data</th>
           <th style="text-align:right;">Valor</th>
         </tr>
@@ -1916,7 +1807,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       <thead>
         <tr>
           <th>Cliente</th>
-          <th>Acordo</th>
+          <th>Lançamento</th>
           <th>Vencimento</th>
           <th style="text-align:right;">Valor</th>
         </tr>
@@ -2322,7 +2213,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
                 <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Data</th>
                 <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Cliente</th>
                 <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">CPF / CNPJ</th>
-                <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Acordo / Processo</th>
+                <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Lançamento / Processo</th>
                 <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:left;border-bottom:1px solid #e2e8f0;">Pagamento</th>
                 <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#94a3b8;text-align:right;border-bottom:1px solid #e2e8f0;">Faturado</th>
                 <th style="padding:8px 12px;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#0e2a47;text-align:right;border-bottom:1px solid #e2e8f0;">Honorários</th>
@@ -2809,7 +2700,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         schedule.map((item) =>
           calendarService.createEvent({
             title: `Recebimento ${clientName} - Parcela ${item.number}`,
-            description: `Acordo: ${agreement.title}\nParcela ${item.number}/${schedule.length}\nValor: ${formatCurrency(isNaN(item.value) ? 0 : item.value)}\n[agreement_id:${agreement.id}] [installment:${item.number}]`,
+            description: `Lançamento: ${agreement.title}\nParcela ${item.number}/${schedule.length}\nValor: ${formatCurrency(isNaN(item.value) ? 0 : item.value)}\n[agreement_id:${agreement.id}] [installment:${item.number}]`,
             event_type: 'payment',
             start_at: `${item.dueDate}T00:00:00`,
             notify_minutes_before: 60,
@@ -2915,7 +2806,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
 
             await calendarService.createEvent({
               title: `Prazo: Denúncia de inadimplência - ${clientName}`,
-              description: `Acordo: ${agreement.title}\nParcela ${inst.installment_number}/${agreement.installments_count}\nValor: ${formatCurrency(inst.value)}\n[inadimplencia] [agreement_id:${agreement.id}] [installment:${inst.installment_number}]`,
+              description: `Lançamento: ${agreement.title}\nParcela ${inst.installment_number}/${agreement.installments_count}\nValor: ${formatCurrency(inst.value)}\n[inadimplencia] [agreement_id:${agreement.id}] [installment:${inst.installment_number}]`,
               event_type: 'deadline',
               start_at: `${formatLocalISODate(deadlineDate)}T00:00:00`,
               notify_minutes_before: 60,
@@ -3269,7 +3160,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `acordo-${agreement.id}.json`;
+    link.download = `lancamento-${agreement.id}.json`;
     link.click();
     URL.revokeObjectURL(url);
     toast.success('Exportação', 'Dados exportados com sucesso');
@@ -3292,10 +3183,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 
   const handleDeleteAgreement = async (agreement: Agreement) => {
     const confirmed = await confirmDelete({
-      title: 'Excluir acordo',
+      title: 'Excluir lançamento',
       entityName: agreement.title,
-      message: 'Tem certeza que deseja excluir este acordo? Esta ação apagará todas as parcelas relacionadas.',
-      confirmLabel: 'Excluir acordo',
+      message: 'Tem certeza que deseja excluir este lançamento? Esta ação apagará todas as parcelas relacionadas.',
+      confirmLabel: 'Excluir lançamento',
     });
     if (!confirmed) return;
 
@@ -3303,7 +3194,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       await deleteCalendarEventsForAgreement(agreement.id);
       await financialService.deleteAgreement(agreement.id);
       notifyDeleted(agreement.title);
-      toast.success('Acordo excluído', 'O acordo e suas parcelas foram removidos');
+      toast.success('Lançamento excluído', 'O lançamento e suas parcelas foram removidos');
 
       if (selectedAgreement?.id === agreement.id) {
         handleCloseDetails();
@@ -3311,7 +3202,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 
       await loadData();
     } catch (err: any) {
-      toast.error('Erro ao excluir acordo', err.message);
+      toast.error('Erro ao excluir lançamento', err.message);
     }
   };
 
@@ -3376,7 +3267,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Buscar acordos..."
+              placeholder="Buscar lançamentos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-4 py-2 border border-[#e7e5df] rounded-lg text-sm bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all"
@@ -3510,7 +3401,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       <Modal
         open={isEditModalOpen && !!selectedAgreement}
         onClose={handleCloseEditModal}
-        title="Editar Acordo"
+        title="Editar Lançamento"
         eyebrow="Edição"
         size="xl"
         zIndex={70}
@@ -3521,10 +3412,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
               onClick={async () => {
                 if (!selectedAgreement) return;
                 const confirmed = await confirmDelete({
-                  title: 'Excluir acordo',
+                  title: 'Excluir lançamento',
                   entityName: selectedAgreement.title,
-                  message: 'Tem certeza que deseja excluir este acordo? Esta ação apagará todas as parcelas relacionadas.',
-                  confirmLabel: 'Excluir acordo',
+                  message: 'Tem certeza que deseja excluir este lançamento? Esta ação apagará todas as parcelas relacionadas.',
+                  confirmLabel: 'Excluir lançamento',
                 });
                 if (!confirmed) return;
                 await handleDeleteAgreement(selectedAgreement);
@@ -3644,7 +3535,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         </div>
                       </div>
                       <div className="flex flex-col w-full">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Título do acordo <span className="text-red-400">*</span></p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Título do lançamento <span className="text-red-400">*</span></p>
                         <input
                           type="text"
                           placeholder="Ex: Ação Trabalhista — Cálculo de Verbas"
@@ -3655,7 +3546,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         />
                       </div>
                       <div className="flex flex-col w-full">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Data do acordo</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Data do lançamento</p>
                         <input
                           type="date"
                           value={editForm.agreementDate}
@@ -3907,7 +3798,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         </div>
                       )}
                       <div className="flex flex-col w-full md:col-span-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Status do acordo</p>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-1.5">Status do lançamento</p>
                         <select
                           ref={editStatusSelectRef}
                           value={editForm.status}
@@ -3995,7 +3886,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                             onClick={() => { if (inst.agreement) handleOpenDetails(inst.agreement); }}
                             disabled={!inst.agreement}
                             className="text-sm font-semibold text-slate-900 truncate text-left hover:text-emerald-700 hover:underline transition disabled:no-underline disabled:cursor-default"
-                            title="Abrir acordo"
+                            title="Abrir lançamento"
                           >
                             {clientName}
                           </button>
@@ -4073,7 +3964,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
                     <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                      Acordos Ativos &nbsp;·&nbsp; {activeAgreements.length}
+                      Lançamentos Ativos &nbsp;·&nbsp; {activeAgreements.length}
                     </h2>
                   </div>
                 </div>
@@ -4351,7 +4242,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                             <table className="w-full text-sm min-w-[680px]">
                               <thead>
                                 <tr className="border-b-2 border-slate-100">
-                                  <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Acordo</th>
+                                  <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Lançamento</th>
                                   <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Valor</th>
                                   <th className="text-right px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-emerald-600">Honorários</th>
                                   <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 hidden @md:table-cell">Vencimento</th>
@@ -4442,448 +4333,188 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
             );
           })()}
 
-          {/* Acordos Aguardando Definição */}
+          {/* Lançamentos Aguardando Definição */}
           {(() => {
-            const waitingDefinitionAgreements = filteredAgreements.filter((a: Agreement) => a.status === 'aguardando_definicao');
-            if (waitingDefinitionAgreements.length === 0) return null;
+            if (allWaitingDefinitionAgreements.length === 0) return null;
 
             return (
-              <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-75">
-                <div className="bg-slate-50 border-b border-[#e7e5df] px-6 py-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-slate-200 text-slate-600 p-2.5 rounded-lg">
-                        <Clock className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h2 className="text-lg font-bold text-slate-700">Aguardando definição</h2>
-                        <p className="text-sm text-slate-500">Fora do faturamento estimado e do acompanhamento operacional</p>
-                      </div>
-                    </div>
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">
-                      {waitingDefinitionAgreements.length} acordo{waitingDefinitionAgreements.length !== 1 ? 's' : ''}
+              <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5]/60 overflow-hidden">
+                <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Clock className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 truncate">
+                      Aguardando definição
+                    </span>
+                    <span className="text-[11px] text-slate-400 flex-shrink-0">
+                      · {waitingFilters.items.length} fora do faturamento
+                      {waitingFilters.active && allWaitingDefinitionAgreements.length !== waitingFilters.items.length && (
+                        <span className="text-slate-400"> de {allWaitingDefinitionAgreements.length}</span>
+                      )}
                     </span>
                   </div>
-                </div>
-                <div className="divide-y divide-[#e7e5df]">
-                  {waitingDefinitionAgreements.map((agreement: Agreement) => {
-                    const agreementInstallments = allInstallments.filter((inst) => inst.agreement_id === agreement.id);
-                    const pendingInstallments = agreementInstallments.filter((inst) => pendingStatuses.includes(inst.status as InstallmentStatus));
-                    const nextInstallment = [...pendingInstallments].sort((a, b) => a.due_date.localeCompare(b.due_date))[0] ?? null;
-
-                    return (
-                      <div
-                        key={agreement.id}
-                        className="group px-6 py-5 hover:bg-slate-50 transition-all duration-200 cursor-pointer"
-                        onClick={() => handleOpenDetails(agreement)}
-                      >
-                        <div className="flex items-center justify-between gap-6">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h3 className="font-semibold text-slate-800 text-base truncate" title={agreement.title}>
-                                {agreement.title}
-                              </h3>
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-200 text-slate-700 uppercase tracking-wide flex-shrink-0">
-                                Aguardando definição
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
-                              <span className="flex items-center gap-1.5">
-                                <User className="w-3.5 h-3.5" />
-                                {getClientName(agreement.client_id)}
-                              </span>
-                              <span className="text-slate-300">•</span>
-                              <span>{pendingInstallments.length} pendente{pendingInstallments.length !== 1 ? 's' : ''} fora do fluxo</span>
-                              {nextInstallment && (
-                                <>
-                                  <span className="text-slate-300">•</span>
-                                  <span>Próximo vencimento original: {fmtDateShared(nextInstallment.due_date)}</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <p className="text-lg font-bold text-slate-700">
-                              <SensitiveValue value={agreement.total_value} isRevealed={financialRevealed} />
-                            </p>
-                            <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                              Honorários: <SensitiveValue value={agreement.fee_value} isRevealed={financialRevealed} />
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Acordos Concluídos */}
-          {(() => {
-            if (allCompletedAgreements.length === 0) return null;
-
-            const expanded = showAllCompleted || completedFiltersActive;
-            const displayedAgreements = expanded ? completedAgreements : completedAgreements.slice(0, 3);
-            const hasMore = completedAgreements.length > 3;
-
-            return (
-              <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
-                <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                      Acordos Concluídos &nbsp;·&nbsp; {completedAgreements.length}
-                      {completedFiltersActive && allCompletedAgreements.length !== completedAgreements.length && (
-                        <span className="ml-1 normal-case tracking-normal font-semibold text-slate-400">de {allCompletedAgreements.length}</span>
-                      )}
-                    </h2>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setCompletedFiltersOpen((open) => !open)}
-                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
-                        completedFiltersActive
-                          ? 'border-blue-200 bg-blue-50 text-blue-700'
-                          : 'border-[#e7e5df] bg-white text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <Filter className="w-3.5 h-3.5" />
-                      Filtros
-                      {completedFiltersActive && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
-                      {completedFiltersOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    </button>
-                    {hasMore && !completedFiltersActive && (
-                      <button
-                        onClick={() => setShowAllCompleted(!showAllCompleted)}
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800 transition"
-                      >
-                        {showAllCompleted ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                        {showAllCompleted ? 'Ver menos' : `Mostrar todos (${completedAgreements.length})`}
-                      </button>
-                    )}
-                  </div>
+                  <button
+                    onClick={() => waitingFilters.setOpen(!waitingFilters.open)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                      waitingFilters.active
+                        ? 'border-blue-200 bg-blue-50 text-blue-700'
+                        : 'border-[#e7e5df] bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Filter className="w-3.5 h-3.5" />
+                    Filtros
+                    {waitingFilters.active && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                    {waitingFilters.open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
 
-                {completedFiltersOpen && (
-                  <div className="border-b border-slate-100 bg-slate-50/80 px-4 sm:px-6 py-3 space-y-2.5">
-                    <div className="flex flex-col @md:flex-row gap-2">
-                      <div className="relative flex-1">
-                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="text"
-                          value={completedSearch}
-                          onChange={(e) => setCompletedSearch(e.target.value)}
-                          placeholder="Buscar por cliente, CPF, título, processo, requerimento, observações..."
-                          className="w-full pl-9 pr-8 py-2 border border-[#e7e5df] rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                        />
-                        {completedSearch && (
-                          <button
-                            onClick={() => setCompletedSearch('')}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                            title="Limpar busca"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                      <select
-                        value={completedSort}
-                        onChange={(e) => setCompletedSort(e.target.value as typeof completedSort)}
-                        className="px-2.5 py-2 border border-[#e7e5df] rounded-lg text-xs bg-white cursor-pointer focus:ring-2 focus:ring-blue-500"
-                        title="Ordenação"
-                      >
-                        <option value="closed_desc">Mais recentes</option>
-                        <option value="closed_asc">Mais antigos</option>
-                        <option value="value_desc">Maior valor</option>
-                        <option value="value_asc">Menor valor</option>
-                        <option value="fee_desc">Maior honorário</option>
-                        <option value="client_asc">Cliente (A-Z)</option>
-                      </select>
-                    </div>
+                <AgreementFilterPanel
+                  filters={waitingFilters}
+                  revealed={financialRevealed}
+                  dateFieldLabels={{ updated: 'Última atualização', agreement: 'Data do lançamento' }}
+                />
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={completedDateField}
-                        onChange={(e) => setCompletedDateField(e.target.value as 'closed' | 'agreement')}
-                        className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white cursor-pointer focus:ring-2 focus:ring-blue-500"
-                        title="Qual data usar no filtro de período"
-                      >
-                        <option value="closed">Data de encerramento</option>
-                        <option value="agreement">Data do acordo</option>
-                      </select>
-                      <select
-                        value={completedPeriod}
-                        onChange={(e) => setCompletedPeriod(e.target.value as typeof completedPeriod)}
-                        className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white cursor-pointer focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="all">Todo o período</option>
-                        <option value="this_month">Mês atual</option>
-                        <option value="last_month">Mês passado</option>
-                        <option value="last_90">Últimos 90 dias</option>
-                        <option value="this_year">Ano atual</option>
-                        <option value="month">Mês específico</option>
-                        <option value="custom">Intervalo personalizado</option>
-                      </select>
-
-                      {completedPeriod === 'month' && (
-                        <input
-                          type="month"
-                          value={completedMonth}
-                          onChange={(e) => setCompletedMonth(e.target.value)}
-                          className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
-                        />
-                      )}
-
-                      {completedPeriod === 'custom' && (
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="date"
-                            value={completedFrom}
-                            onChange={(e) => setCompletedFrom(e.target.value)}
-                            className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
-                            title="De"
-                          />
-                          <span className="text-xs text-slate-400">até</span>
-                          <input
-                            type="date"
-                            value={completedTo}
-                            onChange={(e) => setCompletedTo(e.target.value)}
-                            className="px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
-                            title="Até"
-                          />
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="number"
-                          min={0}
-                          value={completedMinValue}
-                          onChange={(e) => setCompletedMinValue(e.target.value)}
-                          placeholder="Valor mín."
-                          className="w-24 px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
-                        />
-                        <span className="text-xs text-slate-400">até</span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={completedMaxValue}
-                          onChange={(e) => setCompletedMaxValue(e.target.value)}
-                          placeholder="Valor máx."
-                          className="w-24 px-2.5 py-1.5 border border-[#e7e5df] rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-
-                      {completedFiltersActive && (
-                        <button
-                          onClick={resetCompletedFilters}
-                          className="inline-flex items-center gap-1 rounded-lg border border-[#e7e5df] bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          Limpar filtros
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
-                      <span>
-                        <strong className="text-slate-700">{completedAgreements.length}</strong> acordo{completedAgreements.length !== 1 ? 's' : ''}
-                      </span>
-                      <span>
-                        Valor total: <strong className="text-slate-700"><SensitiveValue value={completedTotals.total} isRevealed={financialRevealed} /></strong>
-                      </span>
-                      <span>
-                        Honorários: <strong className="text-blue-700"><SensitiveValue value={completedTotals.fees} isRevealed={financialRevealed} /></strong>
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {completedAgreements.length === 0 && (
-                  <div className="px-6 py-10 text-center">
-                    <p className="text-sm font-semibold text-slate-600">Nenhum acordo concluído para os filtros aplicados</p>
-                    <button
-                      onClick={resetCompletedFilters}
-                      className="mt-2 text-xs font-semibold text-blue-600 hover:text-blue-800"
-                    >
+                {waitingFilters.items.length === 0 ? (
+                  <div className="border-t border-[#e7e5df] px-4 py-8 text-center">
+                    <p className="text-xs font-semibold text-slate-500">Nenhum lançamento para os filtros aplicados</p>
+                    <button onClick={waitingFilters.reset} className="mt-1.5 text-[11px] font-semibold text-blue-600 hover:text-blue-800">
                       Limpar filtros
                     </button>
                   </div>
-                )}
-                {completedAgreements.length === 0 ? null : viewMode === 'list' ? (
-                  <div className="p-2 sm:p-6">
-                    <div className="rounded-2xl border border-[#e7e5df] overflow-hidden bg-[#f8f7f5]">
-                      <div className="sm:hidden divide-y divide-slate-100">
-                        {displayedAgreements.map((agreement: Agreement) => {
-                          const closedLabel = new Date(agreement.updated_at).toLocaleDateString('pt-BR');
-
-                          return (
-                            <button
-                              key={agreement.id}
-                              type="button"
-                              onClick={() => handleOpenDetails(agreement)}
-                              className="w-full text-left px-3 py-3 hover:bg-slate-50 transition"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="text-sm font-semibold text-slate-900 truncate">{agreement.title}</p>
-                                  <p className="mt-0.5 text-xs text-slate-500 truncate">{getClientName(agreement.client_id)}</p>
-                                  {(() => {
-                                    const link = getAgreementLink(agreement);
-                                    return link ? (
-                                      <p className="mt-0.5 text-[11px] text-slate-400 truncate">{link.label}</p>
-                                    ) : null;
-                                  })()}
-                                  <p className="mt-1 text-[11px] text-slate-500">Encerrado: <span className="font-semibold text-slate-700">{closedLabel}</span></p>
-                                </div>
-                                <div className="text-right flex-shrink-0">
-                                  <p className="text-sm font-bold text-slate-900"><SensitiveValue value={agreement.total_value} isRevealed={financialRevealed} /></p>
-                                  <p className="mt-0.5 text-[11px] font-bold text-blue-700">Hon: <SensitiveValue value={agreement.fee_value} isRevealed={financialRevealed} /></p>
-                                  <span className="mt-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
-                                    ENCERRADO
-                                  </span>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="hidden @sm:block overflow-x-auto">
-                        <table className="w-full text-sm min-w-[640px]">
-                          <thead className="bg-slate-50 border-b border-[#e7e5df]">
-                            <tr>
-                              <th className="text-left px-4 py-3 font-semibold text-slate-600">Acordo</th>
-                              <th className="text-right px-4 py-3 font-semibold text-slate-600">Valor</th>
-                              <th className="text-right px-4 py-3 font-semibold text-slate-600">Honorários</th>
-                              <th className="text-center px-4 py-3 font-semibold text-slate-600 hidden @md:table-cell">Encerrado em</th>
-                              <th className="text-center px-4 py-3 font-semibold text-slate-600">Pagamento</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {displayedAgreements.map((agreement: Agreement) => {
-                              return (
-                                <tr
-                                  key={agreement.id}
-                                  className="hover:bg-slate-50 cursor-pointer transition"
-                                  onClick={() => handleOpenDetails(agreement)}
-                                >
-                                  <td className="px-4 py-3">
-                                    <p className="font-semibold text-slate-900 truncate max-w-[280px]">{agreement.title}</p>
-                                    <p className="text-xs text-slate-400">{getClientName(agreement.client_id)}</p>
-                                    {(() => {
-                                      const link = getAgreementLink(agreement);
-                                      return link ? (
-                                        <p className="text-[11px] text-slate-400 truncate max-w-[280px]">{link.label}</p>
-                                      ) : null;
-                                    })()}
-                                  </td>
-                                  <td className="px-4 py-3 text-right">
-                                    <p className="font-semibold text-slate-900"><SensitiveValue value={agreement.total_value} isRevealed={financialRevealed} /></p>
-                                  </td>
-                                  <td className="px-4 py-3 text-right">
-                                    <p className="font-bold text-blue-700"><SensitiveValue value={agreement.fee_value} isRevealed={financialRevealed} /></p>
-                                  </td>
-                                  <td className="px-4 py-3 text-center hidden @md:table-cell">
-                                    <p className="text-slate-600">{new Date(agreement.updated_at).toLocaleDateString('pt-BR')}</p>
-                                  </td>
-                                  <td className="px-4 py-3 text-center">
-                                    <span className="inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-bold bg-emerald-100 text-emerald-700">
-                                      ENCERRADO
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
                 ) : (
-                  <div className="divide-y divide-slate-100">
-                    {displayedAgreements.map((agreement: Agreement, index: number) => {
+                  <div className="divide-y divide-[#e7e5df] border-t border-[#e7e5df]">
+                    {waitingFilters.pageItems.map((agreement: Agreement) => {
+                      const agreementInstallments = allInstallments.filter((inst) => inst.agreement_id === agreement.id);
+                      const pendingInstallments = agreementInstallments.filter((inst) => pendingStatuses.includes(inst.status as InstallmentStatus));
+                      const nextInstallment = [...pendingInstallments].sort((a, b) => a.due_date.localeCompare(b.due_date))[0] ?? null;
+
                       return (
                         <div
                           key={agreement.id}
-                          className="group px-4 py-3 hover:bg-blue-50/60 transition-all duration-200 cursor-pointer"
+                          className="flex items-center justify-between gap-4 px-4 py-2.5 hover:bg-slate-50/80 transition cursor-pointer"
                           onClick={() => handleOpenDetails(agreement)}
-                          style={{ animationDelay: `${index * 50}ms` }}
                         >
-                          <div className="flex flex-col gap-1.5 @md:flex-row @md:items-center @md:justify-between">
-                            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-blue-500">
-                              <CheckCircle className="w-3.5 h-3.5" />
-                              Concluído
-                              <span className="text-slate-300">•</span>
-                              <span className="text-slate-400">#{agreement.id.slice(0, 6)}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                              <span className="text-emerald-600 font-semibold">Encerrado</span>
-                              <span className="hidden @sm:inline text-slate-300">•</span>
-                              <span className="font-medium text-slate-400">{new Date(agreement.updated_at).toLocaleDateString('pt-BR')}</span>
-                            </div>
+                          <div className="min-w-0">
+                            <p className="text-[13px] text-slate-600 truncate" title={agreement.title}>
+                              <span className="font-medium text-slate-700">{getClientName(agreement.client_id)}</span>
+                              <span className="text-slate-300"> · </span>
+                              {agreement.title}
+                            </p>
+                            <p className="text-[11px] text-slate-400 truncate">
+                              {pendingInstallments.length} pendente{pendingInstallments.length !== 1 ? 's' : ''}
+                              {nextInstallment && ` · venc. original ${fmtDateShared(nextInstallment.due_date)}`}
+                            </p>
                           </div>
-                          <div className="mt-1.5 flex flex-col gap-1 @md:flex-row @md:items-center @md:justify-between">
-                            <div className="flex-1 min-w-0">
-                              <h3 className="text-sm font-semibold text-blue-950 truncate" title={agreement.title}>{agreement.title}</h3>
-                              <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-slate-500">
-                                <span className="inline-flex items-center gap-1.5">
-                                  <User className="h-3.5 w-3.5 text-slate-400" />
-                                  {getClientName(agreement.client_id)}
-                                </span>
-                                <span className="text-slate-300">•</span>
-                                <span>{agreement.payment_type === 'upfront' ? 'À vista' : `${agreement.installments_count} parcelas`}</span>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-base font-semibold text-slate-900"><SensitiveValue value={agreement.total_value} isRevealed={financialRevealed} /></p>
-                              <p className="text-[11px] text-blue-600 font-semibold">Honorários: <SensitiveValue value={agreement.fee_value} isRevealed={financialRevealed} /></p>
-                            </div>
-                          </div>
-                          <div className="mt-1.5 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 text-[11px]">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenEditModal(agreement);
-                              }}
-                              className="rounded-lg border border-blue-100 px-2.5 py-1 font-semibold text-blue-700 hover:border-blue-200 hover:bg-blue-50"
-                            >
-                              Editar
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteAgreement(agreement);
-                              }}
-                              className="rounded-lg border border-red-100 px-2.5 py-1 font-semibold text-red-600 hover:border-red-200 hover:bg-red-50"
-                            >
-                              Excluir
-                            </button>
+                          <div className="text-right flex-shrink-0 text-slate-500">
+                            <p className="text-[13px] font-medium">
+                              <SensitiveValue value={agreement.total_value} isRevealed={financialRevealed} />
+                            </p>
+                            <p className="text-[11px] text-slate-400">
+                              Hon. <SensitiveValue value={agreement.fee_value} isRevealed={financialRevealed} />
+                            </p>
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 )}
-                {completedAgreements.length > 0 && (
-                  <div className="flex items-center justify-between border-t border-blue-100 px-6 py-3 text-xs text-slate-500">
-                    <span>
-                      {expanded
-                        ? `Exibindo todos os ${completedAgreements.length} acordos concluídos`
-                        : `Mostrando ${Math.min(3, completedAgreements.length)} de ${completedAgreements.length}`}
+
+                <AgreementPagination filters={waitingFilters} />
+              </div>
+            );
+          })()}
+
+          {/* Lançamentos Concluídos */}
+          {(() => {
+            if (allCompletedAgreements.length === 0) return null;
+
+            return (
+              <div className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5]/60 overflow-hidden">
+                <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <CheckCircle className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 truncate">
+                      Lançamentos concluídos
+                    </h2>
+                    <span className="text-[11px] text-slate-400 flex-shrink-0">
+                      · {completedFilters.items.length}
+                      {completedFilters.active && allCompletedAgreements.length !== completedFilters.items.length && (
+                        <span className="text-slate-400"> de {allCompletedAgreements.length}</span>
+                      )}
                     </span>
-                    {hasMore && !completedFiltersActive && (
-                      <button
-                        onClick={() => setShowAllCompleted(!showAllCompleted)}
-                        className="inline-flex items-center gap-2 text-xs font-semibold text-blue-700 hover:text-blue-900"
-                      >
-                        <span>Ver todos concluídos</span>
-                        {showAllCompleted ? <ChevronUp className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                      </button>
-                    )}
+                  </div>
+                  <button
+                    onClick={() => completedFilters.setOpen(!completedFilters.open)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                      completedFilters.active
+                        ? 'border-blue-200 bg-blue-50 text-blue-700'
+                        : 'border-[#e7e5df] bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Filter className="w-3.5 h-3.5" />
+                    Filtros
+                    {completedFilters.active && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
+                    {completedFilters.open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+
+                <AgreementFilterPanel
+                  filters={completedFilters}
+                  revealed={financialRevealed}
+                  dateFieldLabels={{ updated: 'Data de encerramento', agreement: 'Data do lançamento' }}
+                />
+
+                {completedFilters.items.length === 0 ? (
+                  <div className="border-t border-[#e7e5df] px-4 py-8 text-center">
+                    <p className="text-xs font-semibold text-slate-500">Nenhum lançamento concluído para os filtros aplicados</p>
+                    <button onClick={completedFilters.reset} className="mt-1.5 text-[11px] font-semibold text-blue-600 hover:text-blue-800">
+                      Limpar filtros
+                    </button>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-[#e7e5df] border-t border-[#e7e5df]">
+                    {completedFilters.pageItems.map((agreement: Agreement) => {
+                      const link = getAgreementLink(agreement);
+                      const closedLabel = new Date(agreement.updated_at).toLocaleDateString('pt-BR');
+
+                      return (
+                        <div
+                          key={agreement.id}
+                          className="flex items-center justify-between gap-4 px-4 py-2.5 hover:bg-slate-50/80 transition cursor-pointer"
+                          onClick={() => handleOpenDetails(agreement)}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-[13px] text-slate-600 truncate" title={agreement.title}>
+                              <span className="font-medium text-slate-700">{getClientName(agreement.client_id)}</span>
+                              <span className="text-slate-300"> · </span>
+                              {agreement.title}
+                            </p>
+                            <p className="text-[11px] text-slate-400 truncate">
+                              Encerrado {closedLabel}
+                              <span className="text-slate-300"> · </span>
+                              {agreement.payment_type === 'upfront' ? 'À vista' : `${agreement.installments_count} parcelas`}
+                              {link && (
+                                <>
+                                  <span className="text-slate-300"> · </span>
+                                  {link.label}
+                                </>
+                              )}
+                            </p>
+                          </div>
+                          <div className="text-right flex-shrink-0 text-slate-500">
+                            <p className="text-[13px] font-medium">
+                              <SensitiveValue value={agreement.total_value} isRevealed={financialRevealed} />
+                            </p>
+                            <p className="text-[11px] text-slate-400">
+                              Hon. <SensitiveValue value={agreement.fee_value} isRevealed={financialRevealed} />
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
+
+                <AgreementPagination filters={completedFilters} />
               </div>
             );
           })()}
@@ -4902,8 +4533,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         <X className="w-5 h-5" />
                       </div>
                       <div>
-                        <h2 className="text-lg font-bold text-slate-700">Acordos Cancelados</h2>
-                        <p className="text-sm text-slate-500">{canceledAgreements.length} acordo{canceledAgreements.length !== 1 ? 's' : ''} neste mês</p>
+                        <h2 className="text-lg font-bold text-slate-700">Lançamentos Cancelados</h2>
+                        <p className="text-sm text-slate-500">{canceledAgreements.length} lançamento{canceledAgreements.length !== 1 ? 's' : ''} neste mês</p>
                       </div>
                     </div>
                   </div>
@@ -5598,7 +5229,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       if (next === current) return;
                       handleSetAgreementWaitingDefinition(selectedAgreement, next);
                     }}
-                    title="Status do acordo"
+                    title="Status do lançamento"
                     className={`inline-flex items-center px-3 py-1.5 rounded-full border text-[12px] font-medium transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 ${
                       selectedAgreement.status === 'aguardando_definicao'
                         ? 'border-slate-300 dark:border-slate-700/60 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -5621,7 +5252,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                       <div className="w-6 h-6 rounded-md bg-slate-100 dark:bg-zinc-700 flex items-center justify-center">
                         <FileText className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
                       </div>
-                      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Resumo do Acordo</h2>
+                      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Resumo do Lançamento</h2>
                     </div>
                     <div className="divide-y divide-slate-100 dark:divide-zinc-700/50 text-sm">
                       <div className="flex justify-between items-center py-2.5">
@@ -5714,7 +5345,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         );
                       })()}
                       <div className="flex justify-between items-center py-2.5">
-                        <span className="text-slate-500 dark:text-slate-400">Data do Acordo</span>
+                        <span className="text-slate-500 dark:text-slate-400">Data do Lançamento</span>
                         <span className="font-semibold text-slate-900 dark:text-white">{new Date(selectedAgreement.agreement_date).toLocaleDateString('pt-BR')}</span>
                       </div>
                       <div className="flex justify-between items-center py-2.5">
@@ -6320,7 +5951,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         <thead className="bg-slate-100 text-slate-600 uppercase text-xs">
                           <tr>
                             <th className="py-3 px-4 text-left">Cliente</th>
-                            <th className="py-3 px-4 text-left">Acordo</th>
+                            <th className="py-3 px-4 text-left">Lançamento</th>
                             <th className="py-3 px-4 text-center">Parcelas</th>
                             <th className="py-3 px-4 text-right">Valor Recebido</th>
                             <th className="py-3 px-4 text-right">Honorários</th>
@@ -6472,7 +6103,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 const ag = agreements.find(a => a.id === auditAgreementId);
                 return ag ? `${ag.title} — ${getClientName(ag.client_id)}` : undefined;
               })()
-            : 'Todos os acordos'
+            : 'Todos os lançamentos'
         }
         size="xl"
         zIndex={70}
@@ -6561,7 +6192,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   <History className="w-16 h-16 text-slate-300 dark:text-zinc-600 mx-auto mb-4" />
                   <p className="text-slate-600 dark:text-slate-400 font-medium mb-2">{auditShowAll ? 'Nenhuma baixa registrada' : 'Nenhuma baixa neste período'}</p>
                   <p className="text-sm text-slate-500 dark:text-slate-500">
-                    {auditShowAll ? 'Este acordo ainda não possui baixas registradas' : 'Selecione outro mês para ver os registros'}
+                    {auditShowAll ? 'Este lançamento ainda não possui baixas registradas' : 'Selecione outro mês para ver os registros'}
                   </p>
                 </div>
               ) : (
@@ -6573,7 +6204,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                         <tr className="border-b border-[#e7e5df] dark:border-zinc-700 bg-slate-50/80 dark:bg-zinc-900/80">
                           <th className="text-left py-3 px-3 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase">Data</th>
                           <th className="text-left py-3 px-3 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase">Cliente</th>
-                          <th className="text-left py-3 px-3 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase hidden lg:table-cell">Acordo</th>
+                          <th className="text-left py-3 px-3 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase hidden lg:table-cell">Lançamento</th>
                           <th className="text-center py-3 px-2 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase">Parc.</th>
                           <th className="text-left py-3 px-2 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase hidden sm:table-cell">Método</th>
                           <th className="text-right py-3 px-3 text-[11px] font-semibold tracking-wide text-slate-600 dark:text-slate-300 uppercase">Valor</th>
@@ -6645,7 +6276,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                     type="button"
                                     onClick={() => { handleCloseAuditModal(); setTimeout(() => handleOpenDetails(agreement), 80); }}
                                     className="text-slate-600 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-400 hover:underline transition truncate max-w-[160px] block text-left"
-                                    title={`Abrir acordo: ${agreementInfo.title}`}
+                                    title={`Abrir lançamento: ${agreementInfo.title}`}
                                   >
                                     {agreementInfo.title.length > 25 ? agreementInfo.title.substring(0, 25) + '...' : agreementInfo.title}
                                   </button>

@@ -50,6 +50,9 @@ const PetitionEditorWidget: React.FC = () => {
   const [pendingPayload, setPendingPayload] = useState<PetitionEditorOpenPayload | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [hasChatLauncher, setHasChatLauncher] = useState(false);
+  // Altura da taskbar de janelas flutuantes (z-[9999], acima deste widget):
+  // o editor reserva esse espaço para a status bar não ficar encoberta.
+  const [taskbarHeight, setTaskbarHeight] = useState(0);
 
   // Restaurar estado do localStorage ao montar
   useEffect(() => {
@@ -120,15 +123,19 @@ const PetitionEditorWidget: React.FC = () => {
   useEffect(() => {
     const update = () => {
       setHasChatLauncher(!!document.querySelector('[data-chat-floating-widget-launcher="1"]'));
+      const taskbar = document.querySelector<HTMLElement>('[data-app-taskbar="1"]');
+      setTaskbarHeight(taskbar ? taskbar.offsetHeight : 0);
     };
 
     update();
 
     const obs = new MutationObserver(() => update());
     obs.observe(document.body, { childList: true, subtree: true, attributes: true });
+    window.addEventListener('resize', update);
 
     return () => {
       obs.disconnect();
+      window.removeEventListener('resize', update);
     };
   }, []);
 
@@ -188,10 +195,10 @@ const PetitionEditorWidget: React.FC = () => {
       <div
         className={
           isMinimized
-            ? 'fixed inset-0 z-[9998] bg-white dark:bg-slate-900 flex flex-col opacity-0 pointer-events-none'
-            : 'fixed inset-0 z-[9998] bg-white dark:bg-slate-900 flex flex-col'
+            ? 'fixed inset-x-0 top-0 z-[9998] bg-white dark:bg-slate-900 flex flex-col opacity-0 pointer-events-none'
+            : 'fixed inset-x-0 top-0 z-[9998] bg-white dark:bg-slate-900 flex flex-col'
         }
-        style={{ isolation: 'isolate' }}
+        style={{ isolation: 'isolate', bottom: taskbarHeight }}
         aria-hidden={isMinimized}
       >
         <div className="flex-1 overflow-hidden">

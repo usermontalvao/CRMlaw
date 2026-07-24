@@ -815,6 +815,16 @@ export interface SyncfusionEditorRef {
   setTrackChanges: (enabled: boolean) => void;
   // Open the browser print dialog for the document
   printDocument: () => void;
+  // Zoom do documento (1 = 100%)
+  getZoom: () => number;
+  setZoom: (factor: number) => void;
+  // Modo de exibição: páginas ou contínuo
+  getLayoutType: () => 'Pages' | 'Continuous';
+  setLayoutType: (layout: 'Pages' | 'Continuous') => void;
+  // Página atual (pela seleção) e total de páginas
+  getPageInfo: () => { current: number; total: number };
+  // Contagem de palavras SEM tocar na seleção (getText usa selectAll e move o cursor)
+  getWordCount: () => number;
 }
 
 interface SyncfusionEditorProps {
@@ -828,6 +838,10 @@ interface SyncfusionEditorProps {
   onRequestFormatQualification?: (selectedText: string) => void;
   /** Called once the underlying DocumentEditor is created and ready. */
   onReady?: () => void;
+  /** Seleção mudou (cursor moveu) — usado pela status bar (página atual). */
+  onSelectionChange?: () => void;
+  /** Viewport mudou (rolagem/zoom) — usado pela status bar (página visível). */
+  onViewChange?: () => void;
   showPropertiesPane?: boolean;
   enableToolbar?: boolean;
   toolbarItems?: any;
@@ -853,6 +867,8 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       onRequestCompanyLookup,
       onRequestFormatQualification,
       onReady,
+      onSelectionChange,
+      onViewChange,
       showPropertiesPane = true,
       enableToolbar = true,
       toolbarItems,
@@ -874,6 +890,12 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const lastContextMenuPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
     const scannerRef = useRef<{ trigger: () => void; cancel: () => void } | null>(null);
     const forcedPasteModeRef = useRef<'smart' | 'source' | 'merge' | 'text' | 'clean' | null>(null);
+    // Refs para callbacks de status bar — handleCreated roda uma única vez e
+    // capturaria versões antigas das props sem eles.
+    const onSelectionChangeRef = useRef(onSelectionChange);
+    const onViewChangeRef = useRef(onViewChange);
+    onSelectionChangeRef.current = onSelectionChange;
+    onViewChangeRef.current = onViewChange;
     const [isCreated, setIsCreated] = useState(false);
     const [scanResult, setScanResult] = useState<ScanResult>({ issues: [], totalOccurrences: 0 });
     const [syncfusionHeaders, setSyncfusionHeaders] = useState<object[]>(() => buildSyncfusionHeaders(null));
@@ -1777,6 +1799,89 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           console.error('Erro ao imprimir:', err);
         }
       },
+
+      getZoom: () => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        const factor = Number(editor?.zoomFactor);
+        return Number.isFinite(factor) && factor > 0 ? factor : 1;
+      },
+
+      setZoom: (factor: number) => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (!editor) return;
+        try {
+          const clamped = Math.min(3, Math.max(0.25, Number(factor) || 1));
+          editor.zoomFactor = clamped;
+        } catch {
+          // ignore
+        }
+      },
+
+      getLayoutType: () => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        return editor?.layoutType === 'Continuous' ? 'Continuous' : 'Pages';
+      },
+
+      setLayoutType: (layout: 'Pages' | 'Continuous') => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (!editor) return;
+        try {
+          editor.layoutType = layout;
+        } catch {
+          // ignore
+        }
+      },
+
+      getPageInfo: () => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        const current = Number(editor?.selection?.startPage);
+        const total = Number(editor?.pageCount);
+        return {
+          current: Number.isFinite(current) && current > 0 ? current : 1,
+          total: Number.isFinite(total) && total > 0 ? total : 1,
+        };
+      },
+
+      getWordCount: () => {
+        // Percorre o modelo interno (pages → bodyWidgets → blocos → linhas →
+        // elementos) em modo somente-leitura. NUNCA usar getText() aqui: ele
+        // faz selectAll e moveria o cursor do usuário a cada contagem.
+        const editor: any = containerRef.current?.documentEditor as any;
+        try {
+          const pages = editor?.documentHelper?.pages;
+          if (!Array.isArray(pages)) return 0;
+
+          const blockText = (block: any): string => {
+            let text = '';
+            for (const child of block?.childWidgets || []) {
+              if (Array.isArray(child?.children)) {
+                // LineWidget: concatena os runs de texto da linha
+                for (const el of child.children) {
+                  if (typeof el?.text === 'string') text += el.text;
+                }
+                text += ' ';
+              } else {
+                // Tabela/linha/célula: desce recursivamente
+                text += `${blockText(child)} `;
+              }
+            }
+            return text;
+          };
+
+          let words = 0;
+          for (const page of pages) {
+            for (const body of page?.bodyWidgets || []) {
+              for (const block of body?.childWidgets || []) {
+                const matches = blockText(block).match(/\S+/g);
+                if (matches) words += matches.length;
+              }
+            }
+          }
+          return words;
+        } catch {
+          return 0;
+        }
+      },
     }));
 
     useEffect(() => {
@@ -2068,6 +2173,16 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         // Patch do context menu: adicionar .catch() no caminho async de spell-check
         try {
           patchContextMenuForSpellCheck(editor);
+        } catch {
+          // ignore
+        }
+
+        // Eventos da status bar customizada (página atual / zoom / rolagem)
+        try {
+          if (editor) {
+            editor.selectionChange = () => onSelectionChangeRef.current?.();
+            editor.viewChange = () => onViewChangeRef.current?.();
+          }
         } catch {
           // ignore
         }

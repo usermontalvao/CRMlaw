@@ -49,12 +49,35 @@ const SAMPLE_DOC = [
   'OAB/MT 30.021',
 ].join('\n');
 
-// Roteia a resposta simulada pelo conteúdo da mensagem para demonstrar cada estado.
-(aiService as unknown as { petitionAssistantChat: typeof aiService.petitionAssistantChat }).petitionAssistantChat = async (params) => {
+// Roteia a resposta simulada pelo conteúdo da mensagem para demonstrar cada
+// estado do chat STREAMING (deltas ao vivo, parar, erro, perguntas, ações).
+(aiService as unknown as { petitionAssistantChatStream: typeof aiService.petitionAssistantChatStream }).petitionAssistantChatStream = async (params) => {
+  const wait = (ms: number) => new Promise<void>((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    params.signal?.addEventListener('abort', () => {
+      clearTimeout(t);
+      reject(new DOMException('Aborted', 'AbortError'));
+    }, { once: true });
+  });
+
+  /** Streama o texto em pedaços de poucas palavras, respeitando o abort. */
+  const streamReply = async (reply: string): Promise<{ text: string; aborted: boolean }> => {
+    const chunks = reply.split(/(?<=\s)/);
+    let emitted = '';
+    params.onProgress?.('streaming');
+    for (let i = 0; i < chunks.length; i += 2) {
+      if (params.signal?.aborted) return { text: emitted, aborted: true };
+      emitted += chunks.slice(i, i + 2).join('');
+      params.onReplyDelta?.(emitted);
+      try { await wait(45); } catch { return { text: emitted, aborted: true }; }
+    }
+    return { text: emitted, aborted: false };
+  };
+
   params.onProgress?.('searching', 'horas extras jornada');
-  await new Promise((r) => setTimeout(r, 900));
+  try { await wait(900); } catch { return { reply: '', actions: [], questions: [], searches: [], aborted: true }; }
   params.onProgress?.('thinking');
-  await new Promise((r) => setTimeout(r, 1400));
+  try { await wait(1200); } catch { return { reply: '', actions: [], questions: [], searches: [], aborted: true }; }
 
   const last = [...params.history].reverse().find((m) => m.role === 'user')?.content || '';
 
@@ -63,8 +86,12 @@ const SAMPLE_DOC = [
   }
 
   if (/pergunta/i.test(last)) {
+    const { text, aborted } = await streamReply(
+      'Para redigir o tópico de **horas extras** com precisão, preciso de alguns dados do caso que não constam no documento.'
+    );
+    if (aborted) return { reply: text, actions: [], questions: [], searches: ['horas extras jornada'], aborted: true };
     return {
-      reply: 'Para redigir o tópico de horas extras com precisão, preciso de alguns dados do caso que não constam no documento.',
+      reply: text,
       actions: [],
       questions: [
         { question: 'Qual era a jornada contratual do reclamante?', options: ['8h/dia, 44h semanais', '6h/dia', '12x36', 'Usar variável [[JORNADA]]'] },
@@ -74,8 +101,18 @@ const SAMPLE_DOC = [
     };
   }
 
+  const { text, aborted } = await streamReply([
+    'Revisei o documento e encontrei **2 correções ortográficas**. Também preparei o tópico de horas extras seguindo a numeração do documento.',
+    '',
+    '### O que vou fazer',
+    '- Corrigir a concordância em "os reclamante foi admitido"',
+    '- Corrigir a grafia de *rescisão indireta*',
+    '- Inserir o tópico **2.3 – Das Horas Extras** antes do fecho, com pedido de reflexos',
+  ].join('\n'));
+  if (aborted) return { reply: text, actions: [], questions: [], searches: ['horas extras jornada'], aborted: true };
+
   return {
-    reply: 'Revisei o documento e encontrei 2 correções ortográficas. Também preparei o tópico de horas extras seguindo a numeração do documento (2.3) e um pedido de reflexos.',
+    reply: text,
     actions: [
       { type: 'replace', label: 'Corrigir concordância', search: 'os reclamante foi admitido', replace: 'o reclamante foi admitido' },
       { type: 'replace', label: 'Corrigir grafia de "rescisão"', search: 'recisão indireta', replace: 'rescisão indireta' },

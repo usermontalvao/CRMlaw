@@ -229,7 +229,7 @@ export const AgreementFormModal: React.FC<AgreementFormModalProps> = ({
 
   const validateForm = () => {
     if (!formData.clientId) return 'Selecione um cliente';
-    if (!formData.title.trim()) return 'Informe o título do acordo';
+    if (!formData.title.trim()) return 'Informe o título do lançamento';
     if (!calendarResponsibleId) return 'Selecione o responsável pelos compromissos da agenda';
     if (!formData.totalValue || parseCurrencyToNumber(formData.totalValue) <= 0) return 'Informe um valor total válido';
     if (formData.feeType === 'percentage') {
@@ -287,7 +287,7 @@ export const AgreementFormModal: React.FC<AgreementFormModalProps> = ({
         schedule.map((item) =>
           calendarService.createEvent({
             title: `Recebimento ${clientName} - Parcela ${item.number}`,
-            description: `Acordo: ${agreement.title}\nParcela ${item.number}/${schedule.length}\nValor: ${formatCurrency(isNaN(item.value) ? 0 : item.value)}\n[agreement_id:${agreement.id}] [installment:${item.number}]`,
+            description: `Lançamento: ${agreement.title}\nParcela ${item.number}/${schedule.length}\nValor: ${formatCurrency(isNaN(item.value) ? 0 : item.value)}\n[agreement_id:${agreement.id}] [installment:${item.number}]`,
             event_type: 'payment',
             start_at: `${item.dueDate}T00:00:00`,
             notify_minutes_before: 60,
@@ -333,11 +333,11 @@ export const AgreementFormModal: React.FC<AgreementFormModalProps> = ({
       if (schedule.length) {
         await createCalendarEventsForInstallments(createdAgreement, schedule, calendarResponsibleId || null);
       }
-      toast.success('Acordo criado', 'Os dados foram registrados com sucesso');
+      toast.success('Lançamento criado', 'Os dados foram registrados com sucesso');
       onSaved?.();
       onClose();
     } catch (err: any) {
-      toast.error('Erro ao criar acordo', err.message);
+      toast.error('Erro ao criar lançamento', err.message);
       setFormLoading(false);
     }
   };

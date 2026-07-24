@@ -74,6 +74,7 @@ import { useToastContext } from '../contexts/ToastContext';
 import { supabase } from '../config/supabase';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 import PetitionAiChat from './PetitionAiChat';
+import PetitionStatusBar from './petition/PetitionStatusBar';
 import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
 
@@ -573,6 +574,89 @@ const EDITOR_STYLES = `
   #petition-block-viewer .e-de-ctnr-statusbar-div {
     display: none !important;
   }
+
+  /* Editor principal: a status bar nativa dá lugar à PetitionStatusBar */
+  .petition-editor-root .syncfusion-editor-wrapper .e-de-status-bar,
+  .petition-editor-root .syncfusion-editor-wrapper .e-de-ctnr-status-bar,
+  #petition-main-editor .e-de-status-bar,
+  #petition-main-editor .e-de-ctnr-status-bar {
+    display: none !important;
+  }
+
+  /* ========== STATUS BAR CUSTOMIZADA (estilo Word) ========== */
+  .pet-statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    height: 28px;
+    padding: 0 12px;
+    flex-shrink: 0;
+    background: #fafafa;
+    border-top: 1px solid #e2e4e8;
+    font-size: 11.5px;
+    color: #6b7280;
+    user-select: none;
+    z-index: 30;
+  }
+  .pet-statusbar-left, .pet-statusbar-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .pet-statusbar-item { white-space: nowrap; }
+  .pet-statusbar-sep { width: 1px; height: 14px; background: #e2e4e8; }
+  .pet-statusbar-modes { display: flex; align-items: center; gap: 2px; }
+  .pet-statusbar-mode-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 22px; border: none; border-radius: 5px;
+    background: transparent; color: #9ca3af; cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .pet-statusbar-mode-btn:hover { background: #eef0f3; color: #374151; }
+  .pet-statusbar-mode-btn.is-active { background: #e5e9f2; color: #2563eb; }
+  .pet-statusbar-zoom { display: flex; align-items: center; gap: 6px; }
+  .pet-statusbar-zoom-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border: none; border-radius: 5px;
+    background: transparent; color: #9ca3af; cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+  }
+  .pet-statusbar-zoom-btn:hover { background: #eef0f3; color: #374151; }
+  .pet-statusbar-zoom-btn:disabled { opacity: .35; cursor: default; }
+  .pet-statusbar-zoom-slider {
+    width: 90px; height: 3px; appearance: none; -webkit-appearance: none;
+    background: #d2d6dc; border-radius: 3px; outline: none; cursor: pointer;
+  }
+  .pet-statusbar-zoom-slider::-webkit-slider-thumb {
+    appearance: none; -webkit-appearance: none;
+    width: 11px; height: 11px; border-radius: 50%;
+    background: #6b7280; border: 2px solid #fafafa;
+    box-shadow: 0 0 0 1px #d2d6dc; cursor: grab;
+  }
+  .pet-statusbar-zoom-slider::-moz-range-thumb {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: #6b7280; border: 2px solid #fafafa;
+    box-shadow: 0 0 0 1px #d2d6dc; cursor: grab;
+  }
+  .pet-statusbar-zoom-pct {
+    min-width: 40px; text-align: right; border: none; background: transparent;
+    font-size: 11.5px; color: #6b7280; cursor: pointer; padding: 2px 4px;
+    border-radius: 5px; transition: background .15s ease, color .15s ease;
+  }
+  .pet-statusbar-zoom-pct:hover { background: #eef0f3; color: #374151; }
+  @media (max-width: 640px) {
+    .pet-statusbar-zoom-slider { display: none; }
+    .pet-statusbar-left .pet-statusbar-item + .pet-statusbar-sep,
+    .pet-statusbar-left .pet-statusbar-sep + .pet-statusbar-item { display: none; }
+  }
+  body.petition-dark .pet-statusbar { background: #262626; border-top-color: #3d3d3d; color: #a3a3a3; }
+  body.petition-dark .pet-statusbar-sep { background: #3d3d3d; }
+  body.petition-dark .pet-statusbar-mode-btn { color: #737373; }
+  body.petition-dark .pet-statusbar-mode-btn:hover { background: #333; color: #d4d4d4; }
+  body.petition-dark .pet-statusbar-mode-btn.is-active { background: #1e2a44; color: #60a5fa; }
+  body.petition-dark .pet-statusbar-zoom-btn { color: #737373; }
+  body.petition-dark .pet-statusbar-zoom-btn:hover { background: #333; color: #d4d4d4; }
+  body.petition-dark .pet-statusbar-zoom-slider { background: #4a4a4a; }
+  body.petition-dark .pet-statusbar-zoom-slider::-webkit-slider-thumb { background: #a3a3a3; border-color: #262626; box-shadow: 0 0 0 1px #4a4a4a; }
+  body.petition-dark .pet-statusbar-zoom-pct { color: #a3a3a3; }
+  body.petition-dark .pet-statusbar-zoom-pct:hover { background: #333; color: #d4d4d4; }
   #petition-block-viewer .e-documenteditorcontainer,
   #petition-block-viewer .e-de-ctn,
   #petition-block-viewer .e-de-ctnr,
@@ -743,13 +827,13 @@ const EDITOR_STYLES = `
     border-right-color: #3a3a3a !important;
     box-shadow: none !important;
   }
-  body.petition-dark .petition-sidebar [class~="bg-[#f7f3ec]"],
-  body.petition-dark .petition-sidebar [class~="bg-[#f3eee5]"],
-  body.petition-dark .petition-sidebar [class~="bg-[#fbfaf8]"],
-  body.petition-dark .petition-sidebar [class~="bg-[#f8f4ee]"],
-  body.petition-dark .petition-sidebar [class~="bg-[#f7f1e7]"] { background-color: #2b2b2b !important; }
+  body.petition-dark .petition-sidebar [class~="bg-[#f7f8fa]"],
+  body.petition-dark .petition-sidebar [class~="bg-[#eef0f3]"],
+  body.petition-dark .petition-sidebar [class~="bg-[#ffffff]"],
+  body.petition-dark .petition-sidebar [class~="bg-[#eef0f3]"],
+  body.petition-dark .petition-sidebar [class~="bg-[#eef2f7]"] { background-color: #2b2b2b !important; }
   body.petition-dark .petition-sidebar [class~="bg-white"] { background-color: #333333 !important; }
-  body.petition-dark .petition-sidebar [class~="border-[#ddd7cd]"],
+  body.petition-dark .petition-sidebar [class~="border-[#e3e6ea]"],
   body.petition-dark .petition-sidebar [class~="border-[#e6dfd3]"] { border-color: #3d3d3d !important; }
   body.petition-dark .petition-sidebar [class~="text-slate-700"],
   body.petition-dark .petition-sidebar [class~="text-slate-600"],
@@ -768,11 +852,11 @@ const EDITOR_STYLES = `
   body.petition-dark .petition-sidebar [class*="bg-["] { background-color: #262626 !important; }
   body.petition-dark .petition-sidebar [class*="border-[#"] { border-color: #3d3d3d !important; }
   body.petition-dark .petition-sidebar [class*="hover:bg-"]:hover { background-color: #343434 !important; }
-  body.petition-dark .petition-sidebar [class*="bg-[#fff4df]"] { background-color: #4b3f28 !important; } /* cliente selecionado */
-  body.petition-dark .petition-sidebar [class*="bg-[#ff9f0a]"] { background-color: #ff9f0a !important; } /* botão + (novo bloco) */
+  body.petition-dark .petition-sidebar [class*="bg-[#eff6ff]"] { background-color: #4b3f28 !important; } /* cliente selecionado */
+  body.petition-dark .petition-sidebar [class*="bg-[#2563eb]"] { background-color: #2563eb !important; } /* botão + (novo bloco) */
   body.petition-dark .petition-sidebar [class*="bg-[#2f6fa8]"] { background-color: #2f6fa8 !important; }
-  body.petition-dark .petition-sidebar [class~="bg-amber-100"] { background-color: #544225 !important; }
-  body.petition-dark .petition-sidebar [class~="text-amber-700"] { color: #f8c968 !important; }
+  body.petition-dark .petition-sidebar [class~="bg-blue-100"] { background-color: #544225 !important; }
+  body.petition-dark .petition-sidebar [class~="text-blue-700"] { color: #f8c968 !important; }
   body.petition-dark .petition-sidebar [class~="text-slate-800"],
   body.petition-dark .petition-sidebar [class~="text-slate-900"] { color: #eef2f7 !important; }
   body.petition-dark .petition-sidebar [class~="shadow-sm"],
@@ -3018,7 +3102,53 @@ Regras:
   };
 
   // Handler de mudança de conteudo do editor
+  // ── Status bar (página, palavras, zoom, modo) ─────────────────────────────
+  const [docStatus, setDocStatus] = useState<{ page: number; pageCount: number; zoom: number; layout: 'Pages' | 'Continuous' }>({
+    page: 1,
+    pageCount: 1,
+    zoom: 1,
+    layout: 'Pages',
+  });
+  const [wordCount, setWordCount] = useState(0);
+  const wordCountTimerRef = useRef<number | null>(null);
+
+  const refreshDocStatus = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor?.getPageInfo) return;
+    try {
+      const info = editor.getPageInfo();
+      const zoom = editor.getZoom();
+      const layout = editor.getLayoutType();
+      setDocStatus((prev) => (
+        prev.page === info.current && prev.pageCount === info.total && prev.zoom === zoom && prev.layout === layout
+          ? prev
+          : { page: info.current, pageCount: info.total, zoom, layout }
+      ));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  /** Recontagem de palavras com debounce — a travessia do modelo é barata, mas
+   *  não precisa rodar a cada tecla. */
+  const scheduleWordCount = useCallback((delayMs = 900) => {
+    if (wordCountTimerRef.current) window.clearTimeout(wordCountTimerRef.current);
+    wordCountTimerRef.current = window.setTimeout(() => {
+      try {
+        setWordCount(editorRef.current?.getWordCount?.() ?? 0);
+      } catch {
+        // ignore
+      }
+    }, delayMs);
+  }, []);
+
+  useEffect(() => () => {
+    if (wordCountTimerRef.current) window.clearTimeout(wordCountTimerRef.current);
+  }, []);
+
   const handleContentChange = () => {
+    refreshDocStatus();
+    scheduleWordCount();
     if (isLoadingPetitionRef.current) return;
     // Marcar o documento como alterado antes de qualquer validação de conectividade.
     // Se a conexão cair no meio da edição, o navegador ainda precisa bloquear a saída.
@@ -4163,6 +4293,32 @@ Regras:
       })
   ), [blocks, selectedDocumentType, blockIndexMap, blockCategories]);
 
+  // Contexto do cliente/petição vinculados enviado ao Assistente IA: evita que
+  // ele pergunte dados que já temos (nome, CPF, profissão, cidade) e ancora a
+  // redação na área jurídica da petição atual.
+  const aiClientContext = useMemo(() => {
+    const lines: string[] = [];
+    if (selectedClient) {
+      const c = selectedClient;
+      const push = (label: string, value?: string | null) => {
+        const v = String(value || '').trim();
+        if (v) lines.push(`- ${label}: ${v}`);
+      };
+      push('Nome', c.full_name);
+      push('CPF/CNPJ', c.cpf_cnpj);
+      push('RG', c.rg);
+      push('Nacionalidade', c.nationality);
+      push('Estado civil', MARITAL_STATUS_LABELS[c.marital_status || ''] || c.marital_status);
+      push('Profissão', c.profession);
+      const cidadeUf = [c.address_city, c.address_state].filter(Boolean).join(' / ');
+      push('Cidade/UF', cidadeUf);
+    }
+    const titulo = String(petitionTitle || '').trim();
+    if (titulo) lines.push(`- Título da petição: ${titulo}`);
+    if (selectedLegalArea?.name) lines.push(`- Área jurídica: ${selectedLegalArea.name}`);
+    return lines.length ? lines.join('\n') : undefined;
+  }, [selectedClient, petitionTitle, selectedLegalArea]);
+
   // Inserção de modelo pelo Assistente IA: mesmo mecanismo do insertBlock da
   // sidebar (converte o SFDT em fragmento no editor oculto e cola no
   // principal), preservando a formatação original do bloco.
@@ -4842,13 +4998,13 @@ Regras:
             {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
           </button>
 
-          <div className="petition-workspace-toggle flex items-center rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+          <div className="petition-workspace-toggle flex items-center rounded-xl border border-[#e3e6ea] bg-[#f7f8fa] p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
             <button
               type="button"
               onClick={() => setActiveWorkspace('editor')}
               className={`petition-workspace-toggle-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                 activeWorkspace === 'editor'
-                  ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
+                  ? 'bg-white text-[#2563eb] shadow-sm'
                   : 'text-slate-600 hover:text-slate-800'
               }`}
             >
@@ -4860,7 +5016,7 @@ Regras:
                   onClick={() => setActiveWorkspace('blocks')}
                   className={`petition-workspace-toggle-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                     activeWorkspace === 'blocks'
-                      ? 'bg-[#f8f7f5] text-amber-700 shadow-sm'
+                      ? 'bg-white text-[#2563eb] shadow-sm'
                       : 'text-slate-600 hover:text-slate-800'
                 }`}
               >
@@ -4895,7 +5051,7 @@ Regras:
             type="text"
             value={petitionTitle}
             onChange={(e) => { setPetitionTitle(e.target.value); setHasUnsavedChanges(true); }}
-            className="pet-top-title-input px-3 py-2 text-sm font-semibold border border-transparent bg-transparent hover:border-[#e7e5df] focus:border-amber-400 rounded-xl focus:outline-none w-full"
+            className="pet-top-title-input px-3 py-2 text-sm font-semibold border border-transparent bg-transparent hover:border-[#e3e6ea] focus:border-blue-400 rounded-xl focus:outline-none w-full"
             placeholder={"T\u00edtulo da peti\u00e7\u00e3o..."}
           />
         </div>
@@ -4959,7 +5115,7 @@ Regras:
                 setPetitionTitle(`Nova Peticao ${sanitizeText(area.name)}`);
               }
             }}
-            className="pet-top-select px-3 py-2 text-xs border border-[#e7e5df] rounded-xl bg-white hover:border-amber-400 focus:border-amber-400 focus:outline-none"
+            className="pet-top-select px-3 py-2 text-xs border border-[#e3e6ea] rounded-xl bg-white hover:border-blue-300 focus:border-blue-400 focus:outline-none"
             style={{ borderLeftColor: selectedLegalArea?.color || '#e2e8f0', borderLeftWidth: '3px' }}
           >
             {legalAreas.map((area) => (
@@ -4993,7 +5149,7 @@ Regras:
         {legalAreas.length === 0 && (
           <button
             onClick={() => openLegalAreaModal()}
-            className="px-2 py-1 text-xs text-amber-600 hover:bg-amber-50 border border-amber-200 rounded transition-colors flex items-center gap-1"
+            className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 border border-blue-200 rounded transition-colors flex items-center gap-1"
           >
             <Plus className="w-3.5 h-3.5" />
             {"Criar \u00c1rea Jur\u00eddica"}
@@ -5004,8 +5160,8 @@ Regras:
       <div className="pet-top-group is-right">
         {selectedClient && (
           <div className="pet-top-client-chip pet-top-shrink">
-            <User className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-            <span className="text-amber-700 font-medium truncate">{selectedClient.full_name}</span>
+            <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <span className="text-slate-700 font-medium truncate">{selectedClient.full_name}</span>
             <button
               onClick={() => insertClientQualification(selectedClient)}
               className="pet-top-icon-btn is-chip"
@@ -5024,21 +5180,28 @@ Regras:
           </div>
         )}
 
-        {lastSaved && (
-          <>
-            <div className="pet-top-meta-chip flex sm:hidden items-center whitespace-nowrap">
-              <span title={lastSaved.toLocaleString('pt-BR')}>Agora</span>
-            </div>
-            <div className="pet-top-meta-chip pet-top-shrink hidden sm:flex lg:hidden items-center gap-1 tabular-nums whitespace-nowrap">
-              <Clock className="w-3.5 h-3.5 shrink-0" />
-              <span title={lastSaved.toLocaleString('pt-BR')}>{formatRelativeTime(lastSaved.toISOString())}</span>
-            </div>
-            <div className="pet-top-meta-chip pet-top-shrink hidden lg:flex items-center gap-1.5 min-w-[170px] justify-end tabular-nums whitespace-nowrap">
-              <Clock className="w-3.5 h-3.5 shrink-0" />
-              <span title={lastSaved.toLocaleString('pt-BR')}>Atualizado {formatRelativeTime(lastSaved.toISOString())}</span>
-            </div>
-          </>
-        )}
+        {/* Indicador de salvamento estilo Word: Salvando… / Alterações não salvas / Salvo às HH:MM */}
+        {(saving || savingDoc) ? (
+          <div className="pet-top-save-status is-saving pet-top-shrink" title="Salvando o documento...">
+            <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
+            <span className="hidden sm:inline">Salvando…</span>
+          </div>
+        ) : hasUnsavedChanges ? (
+          <div className="pet-top-save-status is-dirty pet-top-shrink" title="Há alterações que ainda não foram salvas">
+            <span className="pet-top-save-dot shrink-0" />
+            <span className="hidden sm:inline">Alterações não salvas</span>
+          </div>
+        ) : lastSaved ? (
+          <div
+            className="pet-top-save-status is-saved pet-top-shrink"
+            title={`Salvo em ${lastSaved.toLocaleString('pt-BR')}`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline tabular-nums">
+              Salvo às {lastSaved.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+        ) : null}
 
         {localDraftUpdatedAt && (
           <button
@@ -5151,7 +5314,7 @@ Regras:
         <div className="absolute inset-0 z-[140] flex items-center justify-center bg-slate-950/35 backdrop-blur-sm">
           <div className="w-full max-w-md mx-4 rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-black/10 p-6">
             <div className="flex items-center gap-4">
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
+              <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
                 <Loader2 className="w-6 h-6 animate-spin" />
               </div>
               <div className="min-w-0">
@@ -5159,8 +5322,8 @@ Regras:
                 <div className="mt-1 text-sm text-slate-600">Importando o arquivo no editor de peticoes e aplicando o vinculo do cliente da pasta.</div>
               </div>
             </div>
-            <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-amber-100">
-              <div className="h-full w-1/2 rounded-full bg-amber-500 animate-pulse" />
+            <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-blue-100">
+              <div className="h-full w-1/2 rounded-full bg-blue-500 animate-pulse" />
             </div>
           </div>
         </div>
@@ -5170,7 +5333,7 @@ Regras:
       {showBlockViewModal && viewingBlock && (
         <aside id="petition-editor-backdrop" className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
           <main id="block-editor-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-4xl max-h-[92vh] my-2 overflow-hidden flex flex-col mx-auto transition-all duration-300">
-            <div className="h-1 w-full shrink-0 bg-amber-500" />
+            <div className="h-1 w-full shrink-0 bg-blue-500" />
 
             <header className="relative px-3 sm:px-4 py-2 sm:py-3 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
@@ -5211,7 +5374,7 @@ Regras:
                     type="text"
                     value={viewingBlock.title}
                     readOnly
-                    className="w-full px-3 py-2.5 text-sm border border-[#e7e5df] rounded-lg bg-slate-50 font-medium text-slate-600"
+                    className="w-full px-3 py-2.5 text-sm border border-[#e3e6ea] rounded-lg bg-slate-50 font-medium text-slate-600"
                   />
                 </div>
 
@@ -5220,7 +5383,7 @@ Regras:
                   <select
                     value={viewingBlock.category}
                     disabled
-                    className="w-full px-3 py-2.5 text-sm border border-[#e7e5df] rounded-lg bg-slate-50 font-medium text-slate-600 cursor-not-allowed"
+                    className="w-full px-3 py-2.5 text-sm border border-[#e3e6ea] rounded-lg bg-slate-50 font-medium text-slate-600 cursor-not-allowed"
                   >
                     <option value={viewingBlock.category}>{getCategoryLabel(String(viewingBlock.category || 'outros'))}</option>
                   </select>
@@ -5229,8 +5392,8 @@ Regras:
 
               <div>
                 <label className="block text-[12px] font-medium text-slate-600 mb-1">Conteudo SFDT *</label>
-                <div className="border border-[#e7e5df] rounded-2xl overflow-hidden bg-[#f8f7f5] shadow-inner">
-                  <div className="relative w-full h-[620px] overflow-auto bg-[#f8f7f5] petition-block-docx-preview">
+                <div className="border border-[#e3e6ea] rounded-2xl overflow-hidden bg-[#f7f8fa] shadow-inner">
+                  <div className="relative w-full h-[620px] overflow-auto bg-[#f7f8fa] petition-block-docx-preview">
                     <div className="min-h-[620px] p-4">
                       <div
                         ref={(node) => {
@@ -5240,7 +5403,7 @@ Regras:
                     </div>
 
                     {blockViewDocxLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-[#f8f7f5]/80">
+                      <div className="absolute inset-0 flex items-center justify-center bg-[#f7f8fa]/80">
                         <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
                           <Loader2 className="w-4 h-4 animate-spin" />
                           <span>Carregando...</span>
@@ -5249,13 +5412,13 @@ Regras:
                     )}
 
                     {!blockViewDocxLoading && blockViewDocxError && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-[#f8f7f5]/80">
+                      <div className="absolute inset-0 flex items-center justify-center bg-[#f7f8fa]/80">
                         <div className="text-slate-500 text-sm font-medium">{blockViewDocxError}</div>
                       </div>
                     )}
 
                     {!blockViewDocxLoading && !blockViewDocxError && blockViewUseFallback && (
-                      <div className="absolute inset-0 bg-[#f8f7f5]">
+                      <div className="absolute inset-0 bg-[#f7f8fa]">
                         <div className="h-full w-full p-4 overflow-y-auto">
                           <pre className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
                             {(() => {
@@ -5303,19 +5466,19 @@ Regras:
                 </div>
               </div>
 
-              <label className="group flex items-center gap-4 cursor-pointer p-3 bg-amber-50/50 rounded-xl border border-amber-100">
+              <label className="group flex items-center gap-4 cursor-pointer p-3 bg-blue-50/50 rounded-xl border border-blue-100">
                 <div className="relative flex items-center">
                   <input
                     type="checkbox"
                     checked={viewingBlock.is_default}
                     disabled
-                    className="peer w-5 h-5 text-amber-600 rounded-lg border-amber-300 focus:ring-amber-500 transition-all cursor-pointer appearance-none border-2 checked:bg-amber-500 opacity-60"
+                    className="peer w-5 h-5 text-blue-600 rounded-lg border-blue-300 focus:ring-blue-500 transition-all cursor-pointer appearance-none border-2 checked:bg-blue-500 opacity-60"
                   />
                   <CheckCircle2 className="w-3 h-3 text-white absolute left-1 opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
                 </div>
                 <div>
-                  <span className="text-sm font-bold text-amber-900 uppercase tracking-tight">Incluir por padrao</span>
-                  <p className="text-xs text-amber-700/70 font-medium">Este bloco sera inserido automaticamente ao criar uma nova peticao</p>
+                  <span className="text-sm font-bold text-blue-900 uppercase tracking-tight">Incluir por padrao</span>
+                  <p className="text-xs text-blue-700/70 font-medium">Este bloco sera inserido automaticamente ao criar uma nova peticao</p>
                 </div>
               </label>
             </div>
@@ -5523,7 +5686,7 @@ Regras:
             <div className={`flex items-center gap-2 ${compact ? '' : 'flex-wrap'}`}>
               <h4 className={`font-semibold text-slate-900 ${compact ? 'text-sm leading-snug line-clamp-2' : 'text-sm'}`}>{block.title}</h4>
               {block.is_default && (
-                <span className={`inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 font-bold ${compact ? 'p-1' : 'px-2 py-0.5 text-[10px]'}`} title="Bloco padrao">
+                <span className={`inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-bold ${compact ? 'p-1' : 'px-2 py-0.5 text-[10px]'}`} title="Bloco padrao">
                   <Star className="w-3 h-3" />{!compact && ' Padrao'}
                 </span>
               )}
@@ -5545,7 +5708,7 @@ Regras:
             <div className="flex flex-wrap gap-1 mt-2">
               {tags.slice(0, maxTags).map((tag) => (
                 <span key={tag} className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-slate-100 text-[11px] font-medium text-slate-700 border border-slate-200">
-                  <Hash className="w-2.5 h-2.5 text-amber-500" />{tag}
+                  <Hash className="w-2.5 h-2.5 text-blue-500" />{tag}
                 </span>
               ))}
               {tags.length > maxTags && (
@@ -5562,14 +5725,14 @@ Regras:
                   window.setTimeout(() => bmQueuePreview(block.id), 30);
                 }
               }}
-              className="bm-docx-preview-container overflow-auto bg-[#f8f7f5] rounded-lg border border-[#e7e5df] shadow-inner"
+              className="bm-docx-preview-container overflow-auto bg-[#f7f8fa] rounded-lg border border-[#e3e6ea] shadow-inner"
               style={{ maxHeight: 500, minHeight: 80 }}
             />
           );
 
           if (bmViewMode === 'grid') {
             return (
-              <div key={block.id} className="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-amber-200 transition-all duration-200 flex flex-col overflow-hidden">
+              <div key={block.id} className="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-200 flex flex-col overflow-hidden">
                 <div className="p-4 flex-1 flex flex-col">
                   {headerRow(true)}
 
@@ -5584,7 +5747,7 @@ Regras:
                     <button
                       type="button"
                       onClick={() => bmToggleExpand(block.id)}
-                      className="mt-2 text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-0.5"
+                      className="mt-2 text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5"
                     >
                       {isExpanded ? <><ChevronUp className="w-3 h-3" /> Recolher</> : <><Eye className="w-3 h-3" /> Ver formatado</>}
                     </button>
@@ -5601,7 +5764,7 @@ Regras:
                 </div>
 
                 <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 flex items-center gap-1.5">
-                  <button type="button" onClick={() => openBlockModal(block)} className="flex-1 px-2 py-1.5 text-[12px] font-semibold rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors flex items-center justify-center gap-1">
+                  <button type="button" onClick={() => openBlockModal(block)} className="flex-1 px-2 py-1.5 text-[12px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center justify-center gap-1">
                     <Edit3 className="w-3 h-3" /> Editar
                   </button>
                   <button type="button" onClick={() => bmCopyPlainText(plain)} className="px-2.5 py-1.5 text-[12px] font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-white transition-colors" title="Copiar texto">
@@ -5616,7 +5779,7 @@ Regras:
           }
 
           return (
-            <div key={block.id} className="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-amber-200 transition-all duration-200 overflow-hidden">
+            <div key={block.id} className="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-200 overflow-hidden">
               <div className="px-5 py-4">
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
@@ -5625,27 +5788,27 @@ Regras:
                     {/* Preview area */}
                     <div className="mt-3">
                       {isExpanded ? (
-                        <div className="rounded-xl overflow-hidden border border-[#e7e5df]">
-                          <div className="bg-slate-50 px-3 py-2 border-b border-[#e7e5df] flex items-center justify-between">
+                        <div className="rounded-xl overflow-hidden border border-[#e3e6ea]">
+                          <div className="bg-slate-50 px-3 py-2 border-b border-[#e3e6ea] flex items-center justify-between">
                             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                               <FileText className="w-3.5 h-3.5" /> Preview formatado
                             </span>
                             <button type="button" onClick={() => bmToggleExpand(block.id)}
-                              className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-0.5">
+                              className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5">
                               <ChevronUp className="w-3.5 h-3.5" /> Recolher
                             </button>
                           </div>
                           {docxPreviewContainer}
                         </div>
                       ) : (
-                        <div className="p-3.5 bg-slate-50 border border-[#e7e5df]/80 rounded-xl">
+                        <div className="p-3.5 bg-slate-50 border border-[#e3e6ea]/80 rounded-xl">
                           <div className="text-[13px] text-slate-600 leading-relaxed line-clamp-3">
                             {summaryText || <span className="italic text-slate-400">Sem conteudo</span>}
                           </div>
                           <button
                             type="button"
                             onClick={() => bmToggleExpand(block.id)}
-                            className="mt-2 text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-1"
+                            className="mt-2 text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
                           >
                             <Eye className="w-3.5 h-3.5" /> Ver conteudo formatado (Word)
                           </button>
@@ -5657,7 +5820,7 @@ Regras:
                   </div>
 
                   <div className="flex flex-col gap-1.5 shrink-0">
-                    <button type="button" onClick={() => openBlockModal(block)} className="px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors flex items-center gap-1.5" title="Editar">
+                    <button type="button" onClick={() => openBlockModal(block)} className="px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center gap-1.5" title="Editar">
                       <Edit3 className="w-3.5 h-3.5" /> Editar
                     </button>
                     <button type="button" onClick={() => bmCopyPlainText(plain)} className="px-3 py-1.5 text-[12px] font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5" title="Copiar texto">
@@ -5681,8 +5844,8 @@ Regras:
               {/* Stats Bar */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
-                    <Layers className="w-[18px] h-[18px] text-amber-600" />
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
+                    <Layers className="w-[18px] h-[18px] text-blue-600" />
                   </div>
                   <div className="min-w-0">
                     <div className="text-[22px] font-semibold leading-none text-slate-900 tabular-nums">{filteredBlocks.length}</div>
@@ -5729,7 +5892,7 @@ Regras:
                       placeholder="Buscar por titulo, tags ou conteudo..."
                       value={blockSearch}
                       onChange={(e) => setBlockSearch(e.target.value)}
-                      className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400 bg-slate-50 focus:bg-white transition-colors"
+                      className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400 bg-slate-50 focus:bg-white transition-colors"
                     />
                     {blockSearch && (
                       <button type="button" onClick={() => setBlockSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600">
@@ -5743,7 +5906,7 @@ Regras:
                     <select
                       value={selectedDocumentType}
                       onChange={(e) => setSelectedDocumentType(e.target.value as DocumentType)}
-                      className="px-3 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400"
+                      className="px-3 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400"
                     >
                       <option value="petition">Peticao</option>
                       <option value="contestation">Contestacao</option>
@@ -5759,7 +5922,7 @@ Regras:
                         </button>
                       )}
                       <button type="button" onClick={() => setBlockFilterScope('area')}
-                        className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${blockFilterScope === 'area' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
+                        className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${blockFilterScope === 'area' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
                         Area
                       </button>
                       <button type="button" onClick={() => setBlockFilterScope('global')}
@@ -5773,7 +5936,7 @@ Regras:
                     <select
                       value={bmSortBy}
                       onChange={(e) => setBmSortBy(e.target.value as any)}
-                      className="px-3 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400"
+                      className="px-3 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400"
                       title="Ordenar por"
                     >
                       <option value="category">Por categoria</option>
@@ -5783,11 +5946,11 @@ Regras:
 
                     <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                       <button type="button" onClick={() => setBmViewMode('list')} title="Lista"
-                        className={`p-1.5 rounded-lg transition-colors ${bmViewMode === 'list' ? 'bg-[#f8f7f5] text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                        className={`p-1.5 rounded-lg transition-colors ${bmViewMode === 'list' ? 'bg-[#f7f8fa] text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                         <List className="w-4 h-4" />
                       </button>
                       <button type="button" onClick={() => setBmViewMode('grid')} title="Grade"
-                        className={`p-1.5 rounded-lg transition-colors ${bmViewMode === 'grid' ? 'bg-[#f8f7f5] text-amber-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                        className={`p-1.5 rounded-lg transition-colors ${bmViewMode === 'grid' ? 'bg-[#f7f8fa] text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
                         <LayoutGrid className="w-4 h-4" />
                       </button>
                     </div>
@@ -5807,7 +5970,7 @@ Regras:
                       <Settings className="w-3.5 h-3.5" /> Categorias
                     </button>
                     <button type="button" onClick={() => openBlockModal()}
-                      className="px-4 py-2 text-[12px] font-semibold rounded-lg bg-amber-500 text-white hover:bg-amber-600 shadow-sm shadow-amber-500/30 transition-colors flex items-center gap-1.5">
+                      className="px-4 py-2 text-[12px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 shadow-sm shadow-blue-500/30 transition-colors flex items-center gap-1.5">
                       <Plus className="w-4 h-4" /> Novo bloco
                     </button>
                   </div>
@@ -5819,13 +5982,13 @@ Regras:
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Modelo:</span>
                       <button type="button" onClick={() => { setSelectedStandardTypeId(null); setBlockFilterScope('area'); }}
-                        className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${!selectedStandardTypeId ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-[#f8f7f5] border-[#e7e5df] text-slate-600 hover:bg-slate-50'}`}>
+                        className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${!selectedStandardTypeId ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-[#f7f8fa] border-[#e3e6ea] text-slate-600 hover:bg-slate-50'}`}>
                         {selectedLegalArea?.name || 'Area'}
                       </button>
                       {standardTypes.map((t) => (
                         <button key={t.id} type="button"
                           onClick={() => { setSelectedStandardTypeId(t.id); setBlockFilterScope('type'); if (t.default_document && editorRef.current) { editorRef.current.loadSfdt(t.default_document); if (t.default_document_name) setPetitionTitle(sanitizeText(t.default_document_name)); } }}
-                          className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${selectedStandardTypeId === t.id ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-[#f8f7f5] border-[#e7e5df] text-slate-600 hover:bg-blue-50/40'}`}>
+                          className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${selectedStandardTypeId === t.id ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-[#f7f8fa] border-[#e3e6ea] text-slate-600 hover:bg-blue-50/40'}`}>
                           {t.name}
                         </button>
                       ))}
@@ -5840,13 +6003,13 @@ Regras:
                   <Filter className="w-3.5 h-3.5 text-slate-400" />
                   <span className="font-medium">Filtros:</span>
                   {blockSearch && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 font-medium">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-medium">
                       Busca: "{blockSearch}"
-                      <button type="button" onClick={() => setBlockSearch('')} className="hover:text-amber-900"><X className="w-3 h-3" /></button>
+                      <button type="button" onClick={() => setBlockSearch('')} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
                     </span>
                   )}
                   {blockFilterScope === 'global' && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 border border-[#e7e5df] text-slate-600 font-medium">Global</span>
+                    <span className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 border border-[#e3e6ea] text-slate-600 font-medium">Global</span>
                   )}
                   {blockFilterScope === 'type' && selectedStandardTypeId && (
                     <span className="inline-flex items-center px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-medium">
@@ -5870,7 +6033,7 @@ Regras:
                   <div className="text-base font-semibold text-slate-800">Nenhum bloco encontrado</div>
                   <div className="text-sm text-slate-500 mt-1.5 max-w-md mx-auto">Tente ajustar os filtros, alterar o escopo ou o tipo de documento.</div>
                   <button type="button" onClick={() => openBlockModal()}
-                    className="mt-5 px-5 py-2.5 text-sm font-semibold rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors inline-flex items-center gap-2">
+                    className="mt-5 px-5 py-2.5 text-sm font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors inline-flex items-center gap-2">
                     <Plus className="w-4 h-4" /> Criar primeiro bloco
                   </button>
                 </div>
@@ -5898,8 +6061,8 @@ Regras:
                           className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10">
-                              <Layers className="w-4 h-4 text-amber-600" />
+                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10">
+                              <Layers className="w-4 h-4 text-blue-600" />
                             </div>
                             <div className="text-left">
                               <h3 className="text-sm font-semibold text-slate-900">{getCategoryLabel(category)}</h3>
@@ -5963,15 +6126,15 @@ Regras:
           />
         )}
         {sidebarOpen && (
-          <div className="petition-sidebar fixed sm:relative inset-y-0 left-0 z-[31] sm:z-[20] flex flex-col flex-shrink-0 border-r border-[#ddd7cd] bg-[#f7f3ec] shadow-[inset_-1px_0_0_rgba(255,255,255,0.65)]" style={{ width: Math.min(sidebarWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : sidebarWidth) }}>
+          <div className="petition-sidebar fixed sm:relative inset-y-0 left-0 z-[31] sm:z-[20] flex flex-col flex-shrink-0 border-r border-[#e3e6ea] bg-[#f7f8fa] shadow-[inset_-1px_0_0_rgba(255,255,255,0.65)]" style={{ width: Math.min(sidebarWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : sidebarWidth) }}>
             {/* Tabs */}
-            <div className="flex items-end gap-1 border-b border-[#ddd7cd] bg-[#f3eee5] px-2 pt-2">
+            <div className="flex items-end gap-1 border-b border-[#e3e6ea] bg-[#eef0f3] px-2 pt-2">
               <button
                 onClick={() => setSidebarTab('blocks')}
                 className={`flex-1 rounded-t-lg px-3 py-2 text-xs font-semibold transition-colors ${
                   sidebarTab === 'blocks'
-                    ? 'border border-[#ddd7cd] border-b-transparent bg-[#fbfaf8] text-[#c0531f]'
-                    : 'text-slate-500 hover:bg-[#f8f4ee] hover:text-slate-700'
+                    ? 'border border-[#e3e6ea] border-b-transparent bg-[#ffffff] text-[#2563eb]'
+                    : 'text-slate-500 hover:bg-[#eef0f3] hover:text-slate-700'
                 }`}
               >
                 Blocos
@@ -5980,8 +6143,8 @@ Regras:
                 onClick={() => setSidebarTab('clients')}
                 className={`flex-1 rounded-t-lg px-3 py-2 text-xs font-semibold transition-colors ${
                   sidebarTab === 'clients'
-                    ? 'border border-[#ddd7cd] border-b-transparent bg-[#fbfaf8] text-[#c0531f]'
-                    : 'text-slate-500 hover:bg-[#f8f4ee] hover:text-slate-700'
+                    ? 'border border-[#e3e6ea] border-b-transparent bg-[#ffffff] text-[#2563eb]'
+                    : 'text-slate-500 hover:bg-[#eef0f3] hover:text-slate-700'
                 }`}
               >
                 Clientes
@@ -5991,7 +6154,7 @@ Regras:
             {/* Tab: Blocos */}
             {sidebarTab === 'blocks' && (
               <>
-                <div className="border-b border-[#e6dfd3] bg-[#fbfaf8] p-2.5">
+                <div className="border-b border-[#e6dfd3] bg-[#ffffff] p-2.5">
                   <div className="flex gap-1.5 items-center">
                   <div className="relative flex-1 min-w-0">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
@@ -6000,13 +6163,13 @@ Regras:
                       placeholder="Buscar bloco..."
                       value={blockSearch}
                       onChange={(e) => setBlockSearch(e.target.value)}
-                      className="w-full rounded-lg border border-[#ddd7cd] bg-white pl-8 pr-2 py-2 text-xs text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+                      className="w-full rounded-lg border border-[#e3e6ea] bg-white pl-8 pr-2 py-2 text-xs text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:border-blue-400 focus:ring-1 focus:ring-blue-300"
                     />
                   </div>
                   <select
                     value={selectedDocumentType}
                     onChange={(e) => setSelectedDocumentType(e.target.value as DocumentType)}
-                    className="w-[110px] shrink-0 rounded-lg border border-[#ddd7cd] bg-white px-2 py-2 text-xs text-slate-700 focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+                    className="w-[110px] shrink-0 rounded-lg border border-[#e3e6ea] bg-white px-2 py-2 text-xs text-slate-700 focus:border-blue-400 focus:ring-1 focus:ring-blue-300"
                     title="Tipo de documento"
                   >
                     <option value="petition">Peticao</option>
@@ -6020,14 +6183,14 @@ Regras:
                       ensureDraftFromCategories(blockCategories);
                       setShowCategoryModal(true);
                     }}
-                    className="shrink-0 rounded-lg border border-[#ddd7cd] bg-white p-2 text-slate-500 transition hover:bg-[#f7f1e7] hover:text-[#c0531f]"
+                    className="shrink-0 rounded-lg border border-[#e3e6ea] bg-white p-2 text-slate-500 transition hover:bg-[#eef2f7] hover:text-[#2563eb]"
                     title="Configurar categorias"
                   >
                     <Settings className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => openBlockModal()}
-                    className="shrink-0 rounded-lg bg-[#ff9f0a] p-2 text-white shadow-sm transition-colors hover:bg-[#f08c00]"
+                    className="shrink-0 rounded-lg bg-[#2563eb] p-2 text-white shadow-sm transition-colors hover:bg-[#1d4ed8]"
                     title="Novo bloco"
                   >
                     <Plus className="w-4 h-4" />
@@ -6036,9 +6199,9 @@ Regras:
                 </div>
 
                 {/* Filtro de escopo de blocos */}
-                <div className="flex items-center gap-2 border-b border-[#e6dfd3] bg-[#fbfaf8] px-2 py-2">
+                <div className="flex items-center gap-2 border-b border-[#e6dfd3] bg-[#ffffff] px-2 py-2">
                   <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Exibir:</span>
-                  <div className="flex flex-1 gap-1 rounded-xl border border-[#e4ddcf] bg-[#f3eee5] p-1">
+                  <div className="flex flex-1 gap-1 rounded-xl border border-[#e4ddcf] bg-[#eef0f3] p-1">
                     {selectedStandardTypeId && (
                       <button
                         onClick={() => setBlockFilterScope('type')}
@@ -6056,7 +6219,7 @@ Regras:
                       onClick={() => setBlockFilterScope('area')}
                       className={`flex-1 rounded-lg px-2 py-1.5 text-[10px] font-semibold transition-colors ${
                         blockFilterScope === 'area'
-                          ? 'bg-[#ff9f0a] text-white shadow-sm'
+                          ? 'bg-[#2563eb] text-white shadow-sm'
                           : 'text-slate-600 hover:bg-white'
                       }`}
                       title="Blocos da area juridica selecionada"
@@ -6078,7 +6241,7 @@ Regras:
                 </div>
 
                 {standardTypes.length > 0 && selectedLegalAreaId && (
-                  <div className="border-b border-[#e6dfd3] bg-[#fbfaf8] px-2 py-2">
+                  <div className="border-b border-[#e6dfd3] bg-[#ffffff] px-2 py-2">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-1">
                         <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
@@ -6087,7 +6250,7 @@ Regras:
                       <button
                         type="button"
                         onClick={() => openStandardTypeModal()}
-                        className="rounded-lg border border-[#ddd7cd] bg-white p-1.5 text-slate-500 transition hover:bg-[#f7f1e7] hover:text-[#c0531f]"
+                        className="rounded-lg border border-[#e3e6ea] bg-white p-1.5 text-slate-500 transition hover:bg-[#eef2f7] hover:text-[#2563eb]"
                         title="Gerenciar modelos"
                       >
                         <Settings className="w-3.5 h-3.5" />
@@ -6103,8 +6266,8 @@ Regras:
                         }}
                         className={`w-full rounded-xl px-2.5 py-2 text-left text-xs border transition-colors ${
                           !selectedStandardTypeId
-                            ? 'bg-amber-50 border-amber-200 text-amber-800 shadow-[inset_0_0_0_1px_rgba(255,159,10,0.08)]'
-                            : 'bg-white border-[#ddd7cd] text-slate-700 hover:bg-[#f8f4ee]'
+                            ? 'bg-blue-50 border-blue-200 text-blue-800 shadow-[inset_0_0_0_1px_rgba(255,159,10,0.08)]'
+                            : 'bg-white border-[#e3e6ea] text-slate-700 hover:bg-[#eef0f3]'
                         }`}
                         title="Ver todos os blocos da area"
                       >
@@ -6130,7 +6293,7 @@ Regras:
                               className={`mt-1 w-full rounded-xl px-2.5 py-2 text-left text-xs border transition-colors ${
                                 active
                                   ? 'bg-blue-50 border-blue-200 text-blue-800 shadow-[inset_0_0_0_1px_rgba(47,111,168,0.08)]'
-                                  : 'bg-white border-[#ddd7cd] text-slate-700 hover:bg-[#f4f7fb]'
+                                  : 'bg-white border-[#e3e6ea] text-slate-700 hover:bg-[#f4f7fb]'
                               }`}
                               title={t.description ? t.description : t.name}
                             >
@@ -6147,7 +6310,7 @@ Regras:
                   </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto bg-[#fffdfa]">
+                <div className="flex-1 overflow-y-auto bg-[#fbfcfd]">
                   {sidebarCategoryKeys.map((category) => {
                     const items = (blocksByCategory as any)[category] || [];
                     if (items.length === 0) return null;
@@ -6156,7 +6319,7 @@ Regras:
                       <div key={category} className="border-b border-[#ece5d9]">
                         <button
                           onClick={() => toggleCategory(category)}
-                          className="flex w-full items-center gap-1 px-3 py-3 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-[#f8f2e8]"
+                          className="flex w-full items-center gap-1 px-3 py-3 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-[#eef2f7]"
                         >
                           {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                           {getCategoryLabel(category)}
@@ -6168,19 +6331,19 @@ Regras:
                             {(items as PetitionBlock[]).map((block: PetitionBlock) => (
                               <div
                                 key={block.id}
-                                className="group cursor-pointer rounded-xl border border-transparent bg-white px-2.5 py-2.5 transition-colors hover:border-[#efd8b5] hover:bg-[#fff7eb]"
+                                className="group cursor-pointer rounded-xl border border-transparent bg-white px-2.5 py-2.5 transition-colors hover:border-[#cdd7ea] hover:bg-[#f5f8ff]"
                                 onClick={() => openViewBlock(block)}
                               >
                                 <div className="flex items-center gap-1">
                                   <span className="flex-1 truncate text-[13px] font-medium text-slate-700">{block.title}</span>
-                                  {block.is_default && <Star className="w-2.5 h-2.5 text-amber-400" />}
+                                  {block.is_default && <Star className="w-2.5 h-2.5 text-blue-400" />}
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                                     <button
                                       onClick={(e) => { e.stopPropagation(); openBlockModal(block); }}
-                                      className="rounded p-0.5 hover:bg-amber-100"
+                                      className="rounded p-0.5 hover:bg-blue-100"
                                       title="Editar bloco"
                                     >
-                                      <Edit3 className="w-2.5 h-2.5 text-amber-600" />
+                                      <Edit3 className="w-2.5 h-2.5 text-blue-600" />
                                     </button>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); openViewBlock(block); }}
@@ -6206,12 +6369,12 @@ Regras:
                                   return (
                                     <div className="flex flex-wrap gap-1 mt-1">
                                       {visible.map((t) => (
-                                        <span key={t} className="inline-flex max-w-[140px] items-center truncate rounded-md border border-[#e5ddd0] bg-[#f6f1e8] px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                                        <span key={t} className="inline-flex max-w-[140px] items-center truncate rounded-md border border-[#e2e8f0] bg-[#f1f5f9] px-2 py-0.5 text-[10px] font-medium text-slate-600">
                                           {t}
                                         </span>
                                       ))}
                                       {remaining > 0 && (
-                                        <span className="inline-flex items-center rounded-md border border-[#e5ddd0] bg-[#f6f1e8] px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                                        <span className="inline-flex items-center rounded-md border border-[#e2e8f0] bg-[#f1f5f9] px-2 py-0.5 text-[10px] font-medium text-slate-500">
                                           +{remaining}
                                         </span>
                                       )}
@@ -6232,7 +6395,7 @@ Regras:
             {/* Tab: Clientes */}
             {sidebarTab === 'clients' && (
               <>
-                <div className="border-b border-[#e6dfd3] bg-[#fbfaf8] p-2.5">
+                <div className="border-b border-[#e6dfd3] bg-[#ffffff] p-2.5">
                   <div className="relative">
                     <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                     <input
@@ -6240,12 +6403,12 @@ Regras:
                       placeholder="Buscar cliente..."
                       value={clientSearch}
                       onChange={(e) => setClientSearch(e.target.value)}
-                      className="w-full rounded-lg border border-[#ddd7cd] bg-white pl-8 pr-2 py-2 text-xs text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:border-amber-400 focus:ring-1 focus:ring-amber-300"
+                      className="w-full rounded-lg border border-[#e3e6ea] bg-white pl-8 pr-2 py-2 text-xs text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:border-blue-400 focus:ring-1 focus:ring-blue-300"
                     />
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto bg-[#fffdfa]">
+                <div className="flex-1 overflow-y-auto bg-[#fbfcfd]">
                   {filteredClients.length === 0 ? (
                     <div className="p-4 text-center text-slate-400">
                       <Users className="w-8 h-8 mx-auto mb-2" />
@@ -6256,13 +6419,13 @@ Regras:
                       <div
                         key={client.id}
                         className={`group cursor-pointer border-b border-[#ece5d9] px-3 py-3 transition-colors ${
-                          selectedClient?.id === client.id ? 'bg-[#fff4df]' : 'hover:bg-[#f8f2e8]'
+                          selectedClient?.id === client.id ? 'bg-[#eff6ff]' : 'hover:bg-[#eef2f7]'
                         }`}
                         onClick={() => selectClientForPetition(client)}
                       >
                         <div className="flex items-center gap-2">
-                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
-                            <User className="w-3.5 h-3.5 text-amber-600" />
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-100">
+                            <User className="w-3.5 h-3.5 text-blue-600" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="truncate text-[13px] font-medium text-slate-700">{client.full_name}</p>
@@ -6274,13 +6437,13 @@ Regras:
                               e.stopPropagation();
                               insertClientQualification(client);
                             }}
-                            className="rounded-md border border-amber-200 bg-white px-2 py-1 text-[10px] font-semibold text-amber-700 opacity-0 shadow-sm transition group-hover:opacity-100 hover:bg-amber-50"
+                            className="rounded-md border border-blue-200 bg-white px-2 py-1 text-[10px] font-semibold text-blue-700 opacity-0 shadow-sm transition group-hover:opacity-100 hover:bg-blue-50"
                             title="Inserir qualificacao no documento"
                           >
                             Inserir
                           </button>
                           {selectedClient?.id === client.id && (
-                            <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">Selecionado</span>
+                            <span className="rounded-full bg-blue-100 px-2 py-1 text-[10px] font-semibold text-blue-700">Selecionado</span>
                           )}
                         </div>
                       </div>
@@ -6296,7 +6459,7 @@ Regras:
         {/* Splitter — oculto no mobile */}
         {sidebarOpen && (
           <div
-            className="hidden sm:block w-1 flex-shrink-0 bg-slate-200 hover:bg-amber-400 cursor-col-resize"
+            className="hidden sm:block w-1 flex-shrink-0 bg-slate-200 hover:bg-blue-400 cursor-col-resize"
             onMouseDown={(e) => {
               isResizingSidebarRef.current = true;
               sidebarResizeStartXRef.current = e.clientX;
@@ -6315,9 +6478,9 @@ Regras:
           {(!isOnline || !serverReachable) && (
             <div className="absolute top-0 inset-x-0 z-[55] p-3 pointer-events-none">
               <div className={`pointer-events-auto mx-auto max-w-3xl overflow-hidden rounded-2xl border bg-[#fffdf7] shadow-[0_18px_45px_rgba(180,120,10,0.20)] animate-in fade-in slide-in-from-top-2 duration-300 ${reconnectFailed ? 'border-red-300/80 petition-shake' : 'border-amber-200/80'}`}>
-                <div className={`h-1 w-full bg-gradient-to-r ${reconnectFailed ? 'from-red-400 via-red-500 to-red-400' : 'from-amber-400 via-orange-500 to-amber-400'} ${(checkingServer || isRetrying) ? 'petition-progress-stripes' : ''}`} />
+                <div className={`h-1 w-full bg-gradient-to-r ${reconnectFailed ? 'from-red-400 via-red-500 to-red-400' : 'from-amber-400 via-amber-500 to-amber-400'} ${(checkingServer || isRetrying) ? 'petition-progress-stripes' : ''}`} />
                 <div className="flex items-start gap-3 p-4">
-                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-sm">
+                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center flex-shrink-0 shadow-sm">
                     <CloudOff className="w-5 h-5 text-white" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -6349,7 +6512,7 @@ Regras:
                       <button
                         type="button"
                         onClick={exportToWord}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-bold rounded-xl transition-all shadow-md petition-btn-orange"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-bold rounded-xl transition-all shadow-md bg-amber-500 text-white hover:bg-amber-600"
                       >
                         <Download className="w-4 h-4" />
                         Baixar em Word
@@ -6383,11 +6546,11 @@ Regras:
           {/* Overlay de formataçÃ£o com IA */}
           {formattingWithAI && (
             <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-              <div className="bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-2xl p-8 max-w-xs w-full mx-4">
+              <div className="bg-[#f7f8fa] rounded-2xl border border-[#e3e6ea] shadow-2xl p-8 max-w-xs w-full mx-4">
                 <div className="flex flex-col items-center text-center space-y-4">
                   {/* Ãcone animado */}
                   <div className="relative">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center">
                       <div className="w-8 h-8 text-white">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
                           <path d="M21 12a9 9 0 11-6.219-8.56"/>
@@ -6395,8 +6558,8 @@ Regras:
                       </div>
                     </div>
                     {/* AnÃ©is de onda */}
-                    <div className="absolute inset-0 rounded-full border-2 border-orange-400/30 animate-ping"></div>
-                    <div className="absolute inset-0 rounded-full border-2 border-orange-400/20 animate-ping" style={{ animationDelay: '200ms' }}></div>
+                    <div className="absolute inset-0 rounded-full border-2 border-amber-400/30 animate-ping"></div>
+                    <div className="absolute inset-0 rounded-full border-2 border-amber-400/20 animate-ping" style={{ animationDelay: '200ms' }}></div>
                   </div>
                   
                   {/* Texto */}
@@ -6407,9 +6570,9 @@ Regras:
                   
                   {/* Dots animados */}
                   <div className="flex space-x-1">
-                    <div className="w-2 h-2 rounded-full bg-orange-400 animate-bounce"></div>
-                    <div className="w-2 h-2 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '100ms' }}></div>
-                    <div className="w-2 h-2 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: '200ms' }}></div>
+                    <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"></div>
+                    <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '100ms' }}></div>
+                    <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '200ms' }}></div>
                   </div>
                 </div>
               </div>
@@ -6428,9 +6591,11 @@ Regras:
               setEditorReady(true);
               // Recalcula o layout apÃ³s o wrapper assumir a largura final (evita folha comprimida)
               window.setTimeout(() => editorRef.current?.refresh?.(), 60);
-              window.setTimeout(() => editorRef.current?.refresh?.(), 320);
+              window.setTimeout(() => { editorRef.current?.refresh?.(); refreshDocStatus(); scheduleWordCount(400); }, 320);
             }}
             onContentChange={handleContentChange}
+            onSelectionChange={refreshDocStatus}
+            onViewChange={refreshDocStatus}
             onRequestInsertBlock={() => {
               setBlockSearchQuery('');
               setBlockSearchScope(
@@ -6456,6 +6621,7 @@ Regras:
             editorRef={editorRef}
             onDocumentChanged={() => setHasUnsavedChanges(true)}
             kbEntries={aiKbEntries}
+            clientContext={aiClientContext}
             insertBlockSfdt={insertAiBlockSfdt}
             disabled={!isOnline || !serverReachable}
             disabledReason="Voce esta offline. Reconecte para usar o assistente."
@@ -6464,6 +6630,25 @@ Regras:
         </div>
 
         </div>
+
+        {/* Status bar estilo Word: página, palavras, modos e zoom */}
+        {activeWorkspace === 'editor' && editorReady && (
+          <PetitionStatusBar
+            page={docStatus.page}
+            pageCount={docStatus.pageCount}
+            words={wordCount}
+            zoom={docStatus.zoom}
+            onZoomChange={(zoom) => {
+              editorRef.current?.setZoom(zoom);
+              refreshDocStatus();
+            }}
+            layout={docStatus.layout}
+            onLayoutChange={(layout) => {
+              editorRef.current?.setLayoutType(layout);
+              refreshDocStatus();
+            }}
+          />
+        )}
       </>
       )}
 
@@ -6487,7 +6672,7 @@ Regras:
       {showCompanyLookupModal && (
         <aside id="petition-lookup-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
           <main id="company-lookup-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
-            <div className="h-1 w-full shrink-0 bg-amber-500" />
+            <div className="h-1 w-full shrink-0 bg-blue-500" />
 
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
@@ -6511,7 +6696,7 @@ Regras:
                   value={companyCnpjInput}
                   onChange={(e) => setCompanyCnpjInput(e.target.value)}
                   placeholder="00.000.000/0000-00"
-                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 bg-slate-50 transition-all font-medium placeholder:text-slate-300"
+                  className="w-full px-4 py-3 text-sm border border-[#e3e6ea] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50 transition-all font-medium placeholder:text-slate-300"
                   autoFocus
                 />
                 <p className="mt-2 text-[11px] text-slate-400 italic">Aceita CNPJ com ponto, barra e hifen. O sistema considera apenas numeros.</p>
@@ -6550,7 +6735,7 @@ Regras:
                     value={companyLookupResultText}
                     onChange={(e) => setCompanyLookupResultText(e.target.value)}
                     rows={6}
-                    className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-[#f8f7f5] transition-all leading-relaxed text-slate-700 font-medium"
+                    className="w-full px-4 py-3 text-sm border border-[#e3e6ea] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-[#f7f8fa] transition-all leading-relaxed text-slate-700 font-medium"
                   />
                 </div>
               )}
@@ -6574,11 +6759,11 @@ Regras:
       {showBlockSearchModal && (
         <aside id="petition-search-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
           <main id="block-search-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto">
-            <div className="h-1 w-full shrink-0 bg-amber-500" />
+            <div className="h-1 w-full shrink-0 bg-blue-500" />
 
             <header className="px-5 sm:px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-3 bg-white">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
                   <Layers className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
@@ -6605,7 +6790,7 @@ Regras:
                       onClick={() => setBlockSearchScope('type')}
                       className={`petition-scope-toggle-btn px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
                         blockSearchScope === 'type'
-                          ? 'bg-amber-500 text-white shadow-sm'
+                          ? 'bg-blue-500 text-white shadow-sm'
                           : 'text-slate-600 hover:bg-white'
                       }`}
                       title="Buscar apenas nos blocos vinculados a Peticao Padrao"
@@ -6618,7 +6803,7 @@ Regras:
                     onClick={() => setBlockSearchScope('area')}
                     className={`petition-scope-toggle-btn px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
                       blockSearchScope === 'area'
-                        ? 'bg-amber-500 text-white shadow-sm'
+                        ? 'bg-blue-500 text-white shadow-sm'
                         : 'text-slate-600 hover:bg-white'
                     }`}
                     title="Buscar nos blocos da Area Juridica selecionada"
@@ -6647,7 +6832,7 @@ Regras:
                   placeholder="Buscar bloco..."
                   value={blockSearchQuery}
                   onChange={(e) => setBlockSearchQuery(e.target.value)}
-                  className="w-full pl-11 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500/25 focus:border-amber-400 bg-slate-50 focus:bg-white transition"
+                  className="w-full pl-11 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400 bg-slate-50 focus:bg-white transition"
                   autoFocus
                 />
               </div>
@@ -6701,7 +6886,7 @@ Regras:
                               {matchPct}%
                             </span>
                           )}
-                          {b.is_default && <Star className="w-3 h-3 text-amber-400" />}
+                          {b.is_default && <Star className="w-3 h-3 text-blue-400" />}
                         </div>
                         {(() => {
                           const tags = blockIndexMap.get(b.id)?.tags ?? getBlockTagsForUI(b);
@@ -6715,7 +6900,7 @@ Regras:
                                   key={t}
                                   className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-medium max-w-[180px] truncate"
                                 >
-                                  <Hash className="w-2.5 h-2.5 text-amber-500" />{t}
+                                  <Hash className="w-2.5 h-2.5 text-blue-500" />{t}
                                 </span>
                               ))}
                               {remaining > 0 && (
@@ -6749,7 +6934,7 @@ Regras:
       {showAiEditModal && (
         <aside className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
           <main className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
-            <div className="h-1 w-full shrink-0 bg-amber-500" />
+            <div className="h-1 w-full shrink-0 bg-blue-500" />
 
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
@@ -6773,7 +6958,7 @@ Regras:
                   value={aiEditInstruction}
                   onChange={(e) => setAiEditInstruction(e.target.value)}
                   rows={4}
-                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-slate-50 transition-all leading-relaxed text-slate-700 font-medium"
+                  className="w-full px-4 py-3 text-sm border border-[#e3e6ea] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-slate-50 transition-all leading-relaxed text-slate-700 font-medium"
                   placeholder="Ex.: Reescreva esse trecho com linguagem mais tecnica, mais objetiva e com melhor conexao logica, sem mudar o pedido."
                   autoFocus
                 />
@@ -6781,7 +6966,7 @@ Regras:
 
               <div>
                 <label className="block text-[11px] font-medium text-slate-500 mb-2">Trecho selecionado</label>
-                <div className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl bg-[#f8f7f5] text-slate-700 leading-relaxed whitespace-pre-wrap max-h-[240px] overflow-y-auto">
+                <div className="w-full px-4 py-3 text-sm border border-[#e3e6ea] rounded-xl bg-[#f7f8fa] text-slate-700 leading-relaxed whitespace-pre-wrap max-h-[240px] overflow-y-auto">
                   {aiEditSelectedText}
                 </div>
               </div>
@@ -6810,7 +6995,7 @@ Regras:
       {showCategoryModal && (
         <aside id="petition-categories-backdrop" className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
           <main id="petition-categories-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-2xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
-            <div className="h-1 w-full shrink-0 bg-amber-500" />
+            <div className="h-1 w-full shrink-0 bg-blue-500" />
 
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div>
@@ -6842,7 +7027,7 @@ Regras:
                 </button>
               </div>
 
-              <div className="border border-[#e7e5df] rounded-xl overflow-hidden">
+              <div className="border border-[#e3e6ea] rounded-xl overflow-hidden">
                 {categoryDraft.length === 0 ? (
                   <div className="p-4 text-center text-slate-400 text-sm">Nenhuma categoria</div>
                 ) : (
@@ -6865,7 +7050,7 @@ Regras:
                                 });
                               }}
                               placeholder="ex: preliminares"
-                              className="w-full px-3 py-2 text-xs border border-[#e7e5df] rounded-lg bg-slate-50"
+                              className="w-full px-3 py-2 text-xs border border-[#e3e6ea] rounded-lg bg-slate-50"
                             />
                           </div>
                           <div className="col-span-6">
@@ -6881,7 +7066,7 @@ Regras:
                                 });
                               }}
                               placeholder="ex: Preliminares"
-                              className="w-full px-3 py-2 text-xs border border-[#e7e5df] rounded-lg bg-slate-50"
+                              className="w-full px-3 py-2 text-xs border border-[#e3e6ea] rounded-lg bg-slate-50"
                             />
                           </div>
                           <div className="col-span-3 flex justify-end gap-2">
@@ -6897,7 +7082,7 @@ Regras:
                                   return ordered.map((x, i) => ({ ...x, order: i }));
                                 });
                               }}
-                              className="px-2 py-2 text-xs border border-[#e7e5df] rounded-lg hover:bg-slate-50"
+                              className="px-2 py-2 text-xs border border-[#e3e6ea] rounded-lg hover:bg-slate-50"
                               title="Mover para cima"
                             >
                               â†‘
@@ -6914,7 +7099,7 @@ Regras:
                                   return ordered.map((x, i) => ({ ...x, order: i }));
                                 });
                               }}
-                              className="px-2 py-2 text-xs border border-[#e7e5df] rounded-lg hover:bg-slate-50"
+                              className="px-2 py-2 text-xs border border-[#e3e6ea] rounded-lg hover:bg-slate-50"
                               title="Mover para baixo"
                             >
                               â†“
@@ -7016,7 +7201,7 @@ Regras:
                   value={legalAreaFormData.name}
                   onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, name: e.target.value })}
                   placeholder="Ex: Trabalhista, Civel, Penal..."
-                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50"
+                  className="w-full px-4 py-3 text-sm border border-[#e3e6ea] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50"
                   autoFocus
                 />
               </div>
@@ -7028,7 +7213,7 @@ Regras:
                   onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, description: e.target.value })}
                   placeholder="Ex: Direito do Trabalho - CLT, Justica do Trabalho"
                   rows={2}
-                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50 resize-none"
+                  className="w-full px-4 py-3 text-sm border border-[#e3e6ea] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50 resize-none"
                 />
               </div>
 
@@ -7039,7 +7224,7 @@ Regras:
                     type="color"
                     value={legalAreaFormData.color}
                     onChange={(e) => setLegalAreaFormData({ ...legalAreaFormData, color: e.target.value })}
-                    className="w-12 h-10 rounded-lg border border-[#e7e5df] cursor-pointer"
+                    className="w-12 h-10 rounded-lg border border-[#e3e6ea] cursor-pointer"
                   />
                   <div className="flex gap-2">
                     {['#f97316', '#3b82f6', '#ef4444', '#10b981', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4'].map((color) => (
@@ -7057,13 +7242,13 @@ Regras:
 
               {/* Lista de areas existentes */}
               {legalAreas.length > 0 && !editingLegalArea && (
-                <div className="pt-4 border-t border-[#e7e5df]">
+                <div className="pt-4 border-t border-[#e3e6ea]">
                   <label className="block text-[12px] font-medium text-slate-600 mb-3">Areas Cadastradas</label>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {legalAreas.map((area) => (
                       <div
                         key={area.id}
-                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-[#e7e5df]"
+                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-[#e3e6ea]"
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-3 h-8 rounded" style={{ backgroundColor: area.color }} />
@@ -7078,7 +7263,7 @@ Regras:
                           <button
                             type="button"
                             onClick={() => openLegalAreaModal(area)}
-                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             title="Editar"
                           >
                             <Edit3 className="w-4 h-4" />
@@ -7129,10 +7314,10 @@ Regras:
       {showStandardTypeModal && (
         <aside className="fixed inset-0 z-[120] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
           <main className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
-            <div className="h-1 w-full shrink-0 bg-amber-500" />
+            <div className="h-1 w-full shrink-0 bg-blue-500" />
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
                   <FileText className="w-5 h-5" />
                 </div>
                 <div>
@@ -7159,7 +7344,7 @@ Regras:
                   value={standardTypeFormData.name}
                   onChange={(e) => setStandardTypeFormData({ ...standardTypeFormData, name: e.target.value })}
                   placeholder="Ex: Auxilio-acidente, BPC, Aposentadoria..."
-                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50"
+                  className="w-full px-4 py-3 text-sm border border-[#e3e6ea] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50"
                 />
               </div>
 
@@ -7170,12 +7355,12 @@ Regras:
                   onChange={(e) => setStandardTypeFormData({ ...standardTypeFormData, description: e.target.value })}
                   placeholder="Descricao opcional..."
                   rows={2}
-                  className="w-full px-4 py-3 text-sm border border-[#e7e5df] rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all font-medium bg-slate-50 resize-none"
+                  className="w-full px-4 py-3 text-sm border border-[#e3e6ea] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all font-medium bg-slate-50 resize-none"
                 />
               </div>
 
               {/* Area vinculada */}
-              <div className="p-3 bg-slate-50 rounded-xl border border-[#e7e5df]">
+              <div className="p-3 bg-slate-50 rounded-xl border border-[#e3e6ea]">
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <Scale className="w-4 h-4" />
                   <span>Area Juridica:</span>
@@ -7185,9 +7370,9 @@ Regras:
 
               {/* Documento padrao vinculado */}
               {editingStandardType && (
-                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-xs text-amber-700">
+                    <div className="flex items-center gap-2 text-xs text-blue-700">
                       <FileText className="w-4 h-4" />
                       <span>Documento padrao:</span>
                       <span className="font-bold">
@@ -7197,20 +7382,20 @@ Regras:
                     <button
                       onClick={() => handleSetDefaultDocument(editingStandardType.id)}
                       disabled={saving}
-                      className="px-2 py-1 text-[10px] bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors disabled:opacity-50"
+                      className="px-2 py-1 text-[10px] bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50"
                       title="Vincular o documento atual do editor como padrao"
                     >
                       {saving ? 'Salvando...' : 'Vincular Atual'}
                     </button>
                   </div>
-                  <p className="mt-1 text-[10px] text-amber-600">
+                  <p className="mt-1 text-[10px] text-blue-600">
                     Ao selecionar esta peticao padrao, o documento vinculado sera carregado automaticamente.
                   </p>
                 </div>
               )}
 
               {/* Lista de petiçÃµes padrÃµes cadastradas */}
-              <div className="pt-4 border-t border-[#e7e5df]">
+              <div className="pt-4 border-t border-[#e3e6ea]">
                 <label className="block text-[12px] font-medium text-slate-600 mb-3">
                   Peticoes Padrao de "{selectedLegalArea?.name}"
                 </label>
@@ -7221,14 +7406,14 @@ Regras:
                     standardTypes.map((type) => (
                       <div
                         key={type.id}
-                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-[#e7e5df]"
+                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-[#e3e6ea]"
                       >
                         <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-amber-500" />
+                          <FileText className="w-4 h-4 text-blue-500" />
                           <div>
                             <span className="text-sm font-medium text-slate-700">{type.name}</span>
                             {type.default_document_name && (
-                              <span className="ml-2 text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                              <span className="ml-2 text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
                                 {type.default_document_name}
                               </span>
                             )}
@@ -7237,7 +7422,7 @@ Regras:
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => openStandardTypeModal(type)}
-                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             title="Editar"
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -7292,7 +7477,7 @@ Regras:
                 <ArrowLeft className="w-5 h-5" />
               </button>
               <div className="h-7 w-px bg-slate-200" />
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
                 <FileText className="w-[18px] h-[18px]" />
               </div>
               <div className="min-w-0 flex-1">
@@ -7304,7 +7489,7 @@ Regras:
                   value={blockFormData.title}
                   onChange={(e) => setBlockFormData({ ...blockFormData, title: e.target.value })}
                   placeholder="Titulo do bloco"
-                  className="mt-0.5 w-full max-w-xl bg-transparent px-1.5 py-0.5 -ml-1.5 text-[15px] font-semibold text-slate-900 placeholder:text-slate-300 rounded-md outline-none transition hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-amber-500/30"
+                  className="mt-0.5 w-full max-w-xl bg-transparent px-1.5 py-0.5 -ml-1.5 text-[15px] font-semibold text-slate-900 placeholder:text-slate-300 rounded-md outline-none transition hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-blue-500/30"
                 />
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -7317,7 +7502,7 @@ Regras:
                 <button
                   onClick={saveBlock}
                   disabled={saving}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-[13px] font-semibold rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 shadow-sm shadow-amber-500/30 transition"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-[13px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 shadow-sm shadow-blue-500/30 transition"
                 >
                   {saving ? (
                     <>
@@ -7341,7 +7526,7 @@ Regras:
                 <select
                   value={blockFormData.category}
                   onChange={(e) => setBlockFormData({ ...blockFormData, category: e.target.value as BlockCategory })}
-                  className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 transition cursor-pointer"
+                  className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer"
                 >
                   {categoryKeysOrdered.map((key) => (
                     <option key={key} value={key}>{getCategoryLabel(key)}</option>
@@ -7364,7 +7549,7 @@ Regras:
                         }
                       }
                     }}
-                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 transition cursor-pointer"
+                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer"
                   >
                     {legalAreas.map((area) => (
                       <option key={area.id} value={area.id}>
@@ -7390,7 +7575,7 @@ Regras:
                       }
                     }}
                     disabled={blockStandardTypeLoading || (blockFilterScope === 'type' && Boolean(selectedStandardTypeId))}
-                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 transition cursor-pointer disabled:opacity-60"
+                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer disabled:opacity-60"
                   >
                     <option value="">Sem modelo</option>
                     {(standardTypesByArea[String(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '')] ?? []).map((t) => (
@@ -7411,7 +7596,7 @@ Regras:
                         setUpdateExistingBlockMode(checked);
                         if (!checked) setUpdateExistingBlockId('');
                       }}
-                      className="w-4 h-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500/40 cursor-pointer"
+                      className="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500/40 cursor-pointer"
                     />
                     <span className="text-[12px] font-medium text-slate-600 whitespace-nowrap">Atualizar existente</span>
                   </label>
@@ -7421,7 +7606,7 @@ Regras:
                   <select
                     value={updateExistingBlockId}
                     onChange={(e) => setUpdateExistingBlockId(e.target.value)}
-                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 transition cursor-pointer w-48"
+                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer w-48"
                   >
                     <option value="">Selecione o bloco</option>
                     {updatableBlocks.map((b) => (
@@ -7430,14 +7615,14 @@ Regras:
                   </select>
                 )}
 
-                <label className="flex items-center gap-2 cursor-pointer px-2.5 py-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100/70 transition">
+                <label className="flex items-center gap-2 cursor-pointer px-2.5 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100/70 transition">
                   <input
                     type="checkbox"
                     checked={blockFormData.is_default}
                     onChange={(e) => setBlockFormData({ ...blockFormData, is_default: e.target.checked })}
-                    className="w-4 h-4 rounded border-amber-300 text-amber-500 focus:ring-amber-500/40 cursor-pointer"
+                    className="w-4 h-4 rounded border-blue-300 text-blue-500 focus:ring-blue-500/40 cursor-pointer"
                   />
-                  <span className="text-[12px] font-medium text-amber-700 whitespace-nowrap">Padrao</span>
+                  <span className="text-[12px] font-medium text-blue-700 whitespace-nowrap">Padrao</span>
                 </label>
               </div>
             </div>
@@ -7497,8 +7682,8 @@ const petitionModalStyles = `
     opacity: 1 !important;
     transition: background-color .15s ease, border-color .15s ease, color .15s ease !important;
   }
-  .petition-btn-orange { background-color: #f59e0b !important; color: #ffffff !important; }
-  .petition-btn-orange:hover { background-color: #d97706 !important; }
+  .petition-btn-orange { background-color: #2563eb !important; color: #ffffff !important; }
+  .petition-btn-orange:hover { background-color: #1d4ed8 !important; }
   .petition-btn-emerald { background-color: #059669 !important; color: #ffffff !important; }
   .petition-btn-emerald:hover { background-color: #047857 !important; }
   .petition-btn-slate { background-color: #f1f5f9 !important; color: #334155 !important; border: 1px solid #e2e8f0 !important; }
@@ -7551,9 +7736,9 @@ const petitionModalStyles = `
     background: #3a3a3a !important;
     color: #eef2f7 !important;
   }
-  body.petition-dark .petition-workspace-toggle-btn.bg-\[\#f8f7f5\] {
-    background: #f3f4f6 !important;
-    color: #c05621 !important;
+  body.petition-dark .petition-workspace-toggle-btn.bg-white {
+    background: #3f4550 !important;
+    color: #93c5fd !important;
     box-shadow: 0 1px 2px rgba(0,0,0,0.25) !important;
   }
 
@@ -7707,11 +7892,15 @@ const petitionModalStyles = `
   }
 `;
 
-if (typeof document !== 'undefined' && !document.getElementById('petition-modal-isolation')) {
-  const style = document.createElement('style');
-  style.id = 'petition-modal-isolation';
+if (typeof document !== 'undefined') {
+  let style = document.getElementById('petition-modal-isolation');
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'petition-modal-isolation';
+    document.head.appendChild(style);
+  }
+  // Idempotente: atualiza sempre para refletir mudanças de CSS (HMR / re-render).
   style.innerHTML = petitionModalStyles;
-  document.head.appendChild(style);
 }
 
 // Estilos especÃ­ficos do editor de blocos (Syncfusion) para largura total e folha A4 centrada
@@ -7790,6 +7979,3 @@ if (typeof document !== 'undefined' && !document.getElementById('petition-block-
 }
 
 export default PetitionEditorModule;
-
-
-

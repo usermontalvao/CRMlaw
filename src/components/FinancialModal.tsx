@@ -26,7 +26,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
         const data = await financialService.getAgreement(agreementId);
         setAgreement(data);
       } catch (error) {
-        console.error('Erro ao carregar acordo:', error);
+        console.error('Erro ao carregar lançamento:', error);
       } finally {
         setLoading(false);
       }
@@ -50,7 +50,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
     return (
       <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4">
         <div className="aero-modal w-full max-w-md rounded-t-[24px] p-6 sm:rounded-2xl">
-          <p className="text-center text-slate-700 dark:text-slate-300">Acordo não encontrado</p>
+          <p className="text-center text-slate-700 dark:text-slate-300">Lançamento não encontrado</p>
           <button
             onClick={onClose}
             className="mt-4 w-full px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800"
@@ -67,7 +67,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
       <div className="aero-modal flex h-[100dvh] max-h-[100dvh] w-[calc(100vw-12px)] flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:w-full sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl">
         {/* Header */}
         <div className="sticky top-0 z-10 aero-modal-inner flex items-start justify-between gap-3 border-b border-white/30 px-4 py-4 dark:border-white/10 sm:px-6">
-          <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Detalhes do Acordo</h2>
+          <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Detalhes do Lançamento</h2>
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"

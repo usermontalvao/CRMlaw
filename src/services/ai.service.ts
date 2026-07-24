@@ -1,6 +1,7 @@
 import type { IntimationAnalysis, DeadlineExtraction } from '../types/ai.types';
 import { supabase } from '../config/supabase';
 import { settingsService, type AiTaskConfig } from './settings.service';
+import { streamChatCompletion } from './aiStream';
 
 // ── Assistente de Petições (chat) ──────────────────────────────────────────
 // Ação estruturada que o assistente pode propor sobre o documento aberto.
@@ -71,6 +72,18 @@ const normalizePtQuery = (value: string): string =>
     .replace(/[̀-ͯ]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+/** Formata os trechos da base de conhecimento para o prompt do assistente. */
+const formatKbSnippets = (query: string, snippets: PetitionChatKbSnippet[]): string => {
+  if (!snippets.length) return `(busca local por "${query}": nenhum modelo relevante encontrado)`;
+  const body = snippets
+    .map((s, i) => {
+      const header = `Modelo ${i + 1}${s.id ? ` — blockId: ${s.id}` : ''} — ${s.title}${s.category ? ` (${s.category})` : ''} ${s.isFull ? '[TEXTO INTEGRAL — pode usar insert_block]' : '[trecho parcial — para usar este modelo integralmente, peça "search" pelo título dele]'}`;
+      return `${header}\n${s.snippet}`;
+    })
+    .join('\n\n----------------\n\n');
+  return `MODELOS DO ESCRITÓRIO (busca local por "${query}"):\n${body}`;
+};
 
 class AIService {
   // Toda a IA de texto passa pela Edge Function `openai-proxy`, que mantém a
@@ -265,6 +278,8 @@ Regras obrigatórias:
     history: PetitionChatMessageInput[];
     documentText: string;
     selectedText?: string;
+    /** Resumo dos dados do cliente/petição vinculados (nome, CPF, área...). */
+    clientContext?: string;
     /** Busca local na base de conhecimento. Nunca consome tokens. */
     searchKb?: (query: string) => PetitionChatKbSnippet[];
     /** Progresso para a UI: 'thinking' (chamando IA) | 'searching' (busca local). */
@@ -286,17 +301,310 @@ Regras obrigatórias:
     const documentText = String(params.documentText || '').replace(/\r\n?/g, '\n').slice(0, 26000);
     const selectedText = String(params.selectedText || '').trim().slice(0, 8000);
 
-    const formatSnippets = (query: string, snippets: PetitionChatKbSnippet[]): string => {
-      if (!snippets.length) return `(busca local por "${query}": nenhum modelo relevante encontrado)`;
-      const body = snippets
-        .map((s, i) => {
-          const header = `Modelo ${i + 1}${s.id ? ` — blockId: ${s.id}` : ''} — ${s.title}${s.category ? ` (${s.category})` : ''} ${s.isFull ? '[TEXTO INTEGRAL — pode usar insert_block]' : '[trecho parcial — para usar este modelo integralmente, peça "search" pelo título dele]'}`;
-          return `${header}\n${s.snippet}`;
-        })
-        .join('\n\n----------------\n\n');
-      return `MODELOS DO ESCRITÓRIO (busca local por "${query}"):\n${body}`;
+    const systemPrompt = this.buildPetitionChatSystemPrompt('json');
+
+    // Busca local inicial: mensagem do usuário + começo da seleção
+    const searches: string[] = [];
+    const runSearch = (query: string): PetitionChatKbSnippet[] => {
+      const q = String(query || '').trim().slice(0, 120);
+      if (!q || !params.searchKb) return [];
+      params.onProgress?.('searching', q);
+      searches.push(q);
+      try {
+        return (params.searchKb(q) || []).slice(0, 4);
+      } catch {
+        return [];
+      }
     };
 
+    // A consulta inicial junta as DUAS últimas mensagens do usuário: quando a
+    // última é só a resposta de um formulário ("Resposta: 20 horas"), o pedido
+    // original ("tópico sobre horas extras") continua guiando a busca.
+    const userMessages = history.filter((m) => m.role === 'user');
+    const previousUser = userMessages.length > 1 ? userMessages[userMessages.length - 2] : undefined;
+    const initialQuery = [
+      previousUser?.content.slice(0, 120) || '',
+      lastUser.content.slice(0, 160),
+      selectedText.slice(0, 120),
+    ].filter(Boolean).join(' ');
+    const initialSnippets = runSearch(initialQuery);
+
+    const clientContext = String(params.clientContext || '').trim().slice(0, 1500);
+    const contextParts = [
+      `DOCUMENTO ABERTO NO EDITOR (texto puro; a formatação real é mantida pelo editor):\n${documentText || '(documento vazio)'}`,
+      selectedText ? `TRECHO SELECIONADO PELO USUÁRIO:\n${selectedText}` : '',
+      clientContext ? `DADOS DO CLIENTE VINCULADO (use estes dados em vez de perguntar; NUNCA invente os que faltarem):\n${clientContext}` : '',
+      params.searchKb ? formatKbSnippets(initialQuery, initialSnippets) : '',
+    ].filter(Boolean).join('\n\n====================\n\n');
+
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Contexto atualizado:\n\n${contextParts}` },
+      { role: 'assistant', content: '{"reply":"Contexto recebido. Como posso ajudar com o documento?","questions":[],"actions":[]}' },
+      ...history.map((m) => ({ role: m.role, content: m.content })),
+    ];
+
+    const model = taskOpts.model ?? 'gpt-4o';
+    // Teto alto: JSON truncado no meio quebra o parse e vira texto cru no chat.
+    const maxTokens = Math.max(taskOpts.maxTokens, 4000);
+
+    // Loop de recuperação: chamada inicial + até 2 rodadas de busca pedidas pela IA
+    const MAX_SEARCH_ROUNDS = 2;
+    let parsed = null as ReturnType<AIService['parsePetitionChatResponse']> | null;
+
+    for (let round = 0; ; round++) {
+      params.onProgress?.('thinking');
+      const content = await this.callOpenAIViaEdgeFunction(messages, model, maxTokens, {
+        taskKey: 'petition_chat',
+        temperature: 0.15,
+        responseFormat: 'json_object',
+      });
+      const raw = String(content || '').trim();
+      if (!raw) throw new Error('IA não retornou resposta');
+
+      parsed = this.parsePetitionChatResponse(raw);
+
+      const searchQuery = parsed.search?.trim();
+      const alreadySearched = searchQuery ? searches.some((s) => normalizePtQuery(s) === normalizePtQuery(searchQuery)) : true;
+      if (!searchQuery || alreadySearched || round >= MAX_SEARCH_ROUNDS || !params.searchKb) break;
+
+      const snippets = runSearch(searchQuery);
+      messages.push({ role: 'assistant', content: raw });
+      messages.push({
+        role: 'user',
+        content: `${formatKbSnippets(searchQuery, snippets)}\n\nAgora responda a última mensagem do usuário usando esses modelos (não peça a mesma busca de novo).`,
+      });
+    }
+
+    return {
+      reply: parsed!.reply,
+      actions: parsed!.actions,
+      questions: parsed!.questions,
+      searches,
+    };
+  }
+
+  /**
+   * Versão STREAMING do chat do assistente de petições.
+   *
+   * Protocolo streaming-friendly: o modelo escreve a resposta em markdown
+   * (streamada ao vivo via onReplyDelta) e, apenas quando houver ações,
+   * perguntas ou busca, encerra com um único bloco ```json:actions``` que é
+   * parseado UMA vez ao completar — JSON parcial nunca é parseado.
+   *
+   * Mantém o loop agêntico de busca local (máx. 2 rodadas) e cai no caminho
+   * não-streaming (mesmo prompt, resposta completa) se o stream falhar.
+   */
+  async petitionAssistantChatStream(params: {
+    history: PetitionChatMessageInput[];
+    documentText: string;
+    selectedText?: string;
+    /** Resumo dos dados do cliente/petição vinculados (nome, CPF, área...). */
+    clientContext?: string;
+    /** Busca local na base de conhecimento. Nunca consome tokens. */
+    searchKb?: (query: string) => PetitionChatKbSnippet[];
+    /** Cancelamento (botão "Parar"). Mantém o texto parcial, descarta ações. */
+    signal?: AbortSignal;
+    onProgress?: (stage: 'thinking' | 'searching' | 'streaming', detail?: string) => void;
+    /** Texto visível acumulado (sem o bloco json:actions), a cada chunk. */
+    onReplyDelta?: (visibleReply: string) => void;
+  }): Promise<PetitionChatResult & { aborted?: boolean }> {
+    if (!this.isEnabled()) {
+      throw new Error('Serviço de IA não está disponível');
+    }
+
+    const history = (params.history || []).slice(-14);
+    const lastUser = [...history].reverse().find((m) => m.role === 'user');
+    if (!lastUser?.content?.trim()) {
+      throw new Error('Digite uma mensagem para o assistente');
+    }
+
+    await this.ensureSettingsLoaded();
+    const taskOpts = this.getTaskOpts('petition_chat');
+
+    const documentText = String(params.documentText || '').replace(/\r\n?/g, '\n').slice(0, 26000);
+    const selectedText = String(params.selectedText || '').trim().slice(0, 8000);
+
+    const systemPrompt = this.buildPetitionChatSystemPrompt('stream');
+
+    const searches: string[] = [];
+    const runSearch = (query: string): PetitionChatKbSnippet[] => {
+      const q = String(query || '').trim().slice(0, 120);
+      if (!q || !params.searchKb) return [];
+      params.onProgress?.('searching', q);
+      searches.push(q);
+      try {
+        return (params.searchKb(q) || []).slice(0, 4);
+      } catch {
+        return [];
+      }
+    };
+
+    const userMessages = history.filter((m) => m.role === 'user');
+    const previousUser = userMessages.length > 1 ? userMessages[userMessages.length - 2] : undefined;
+    const initialQuery = [
+      previousUser?.content.slice(0, 120) || '',
+      lastUser.content.slice(0, 160),
+      selectedText.slice(0, 120),
+    ].filter(Boolean).join(' ');
+    const initialSnippets = runSearch(initialQuery);
+
+    const clientContext = String(params.clientContext || '').trim().slice(0, 1500);
+    const contextParts = [
+      `DOCUMENTO ABERTO NO EDITOR (texto puro; a formatação real é mantida pelo editor):\n${documentText || '(documento vazio)'}`,
+      selectedText ? `TRECHO SELECIONADO PELO USUÁRIO:\n${selectedText}` : '',
+      clientContext ? `DADOS DO CLIENTE VINCULADO (use estes dados em vez de perguntar; NUNCA invente os que faltarem):\n${clientContext}` : '',
+      params.searchKb ? formatKbSnippets(initialQuery, initialSnippets) : '',
+    ].filter(Boolean).join('\n\n====================\n\n');
+
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Contexto atualizado:\n\n${contextParts}` },
+      { role: 'assistant', content: 'Contexto recebido. Como posso ajudar com o documento?' },
+      ...history.map((m) => ({ role: m.role, content: m.content })),
+    ];
+
+    const model = taskOpts.model ?? 'gpt-4o';
+    const maxTokens = Math.max(taskOpts.maxTokens, 4000);
+    const MAX_SEARCH_ROUNDS = 2;
+
+    for (let round = 0; ; round++) {
+      params.onProgress?.('thinking');
+
+      let raw = '';
+      let aborted = false;
+      let emittedVisible = '';
+
+      try {
+        const result = await streamChatCompletion({
+          messages,
+          model,
+          maxTokens,
+          temperature: 0.15,
+          taskKey: 'petition_chat',
+          signal: params.signal,
+          onDelta: (_chunk, full) => {
+            // Modelo ignorou o protocolo e respondeu JSON puro: não mostrar
+            // o JSON cru sendo digitado — parse acontece no final.
+            if (full.trimStart().startsWith('{')) return;
+            params.onProgress?.('streaming');
+            const { visibleReply } = this.splitStreamingReply(full);
+            if (visibleReply !== emittedVisible) {
+              emittedVisible = visibleReply;
+              params.onReplyDelta?.(visibleReply);
+            }
+          },
+        });
+        raw = result.text.trim();
+        aborted = Boolean(result.aborted);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return { reply: emittedVisible, actions: [], questions: [], searches, aborted: true };
+        }
+        // Stream indisponível (rede, function antiga com erro etc.): mesma
+        // conversa, resposta completa de uma vez.
+        const content = await this.callOpenAIViaEdgeFunction(messages, model, maxTokens, {
+          taskKey: 'petition_chat',
+          temperature: 0.15,
+        });
+        raw = String(content || '').trim();
+      }
+
+      if (!raw) {
+        if (aborted) return { reply: emittedVisible, actions: [], questions: [], searches, aborted: true };
+        throw new Error('IA não retornou resposta');
+      }
+
+      const parsed = this.parseStreamingPetitionResponse(raw);
+
+      if (aborted) {
+        // Geração interrompida: mantém o texto parcial, descarta ações.
+        return { reply: parsed.reply, actions: [], questions: [], searches, aborted: true };
+      }
+
+      const searchQuery = parsed.search?.trim();
+      const alreadySearched = searchQuery ? searches.some((s) => normalizePtQuery(s) === normalizePtQuery(searchQuery)) : true;
+      if (!searchQuery || alreadySearched || round >= MAX_SEARCH_ROUNDS || !params.searchKb) {
+        return { reply: parsed.reply, actions: parsed.actions, questions: parsed.questions, searches };
+      }
+
+      const snippets = runSearch(searchQuery);
+      messages.push({ role: 'assistant', content: raw });
+      messages.push({
+        role: 'user',
+        content: `${formatKbSnippets(searchQuery, snippets)}\n\nAgora responda a última mensagem do usuário usando esses modelos (não peça a mesma busca de novo).`,
+      });
+      // Nova rodada substitui o texto da anterior na UI.
+      params.onReplyDelta?.('');
+    }
+  }
+
+  /**
+   * Separa o texto visível do bloco ```json:actions``` durante o streaming.
+   * Enquanto o bloco não fecha, ele é apenas OCULTADO (nunca parseado).
+   * Hold-back: um sufixo que pode ser o começo do fence fica retido para não
+   * piscar backticks na tela antes de desambiguar.
+   */
+  private splitStreamingReply(fullText: string): { visibleReply: string; tail: string | null } {
+    const text = String(fullText || '');
+    const lower = text.toLowerCase();
+
+    const idx = lower.indexOf('```json');
+    if (idx >= 0) {
+      return { visibleReply: text.slice(0, idx).trimEnd(), tail: text.slice(idx) };
+    }
+
+    const fence = '```json:actions';
+    const maxHold = Math.min(fence.length - 1, text.length);
+    for (let k = maxHold; k > 0; k--) {
+      if (lower.endsWith(fence.slice(0, k))) {
+        return { visibleReply: text.slice(0, text.length - k).trimEnd(), tail: null };
+      }
+    }
+
+    return { visibleReply: text, tail: null };
+  }
+
+  /** Parse final da resposta streaming: markdown visível + bloco json:actions. */
+  private parseStreamingPetitionResponse(raw: string): {
+    reply: string;
+    actions: PetitionChatAction[];
+    questions: PetitionChatQuestion[];
+    search?: string;
+  } {
+    const text = String(raw || '').trim();
+    // Modelo ignorou o protocolo e devolveu o JSON antigo ({"reply": ...}).
+    if (text.startsWith('{')) return this.parsePetitionChatResponse(text);
+
+    const { visibleReply, tail } = this.splitStreamingReply(text);
+
+    let actions: PetitionChatAction[] = [];
+    let questions: PetitionChatQuestion[] = [];
+    let search: string | undefined;
+
+    if (tail) {
+      const jsonText = this.extractJsonObject(tail);
+      if (jsonText) {
+        try {
+          ({ actions, questions, search } = this.mapPetitionChatPayload(JSON.parse(jsonText)));
+        } catch {
+          // Bloco malformado: fica só o texto do reply.
+        }
+      }
+    }
+
+    const reply = visibleReply
+      || (questions.length ? 'Preciso de algumas informações antes de continuar.' : 'Pronto.');
+    return { reply, actions, questions, search };
+  }
+
+  /**
+   * Prompt de sistema do assistente de petições.
+   * 'json'   — protocolo original: resposta inteira num objeto JSON.
+   * 'stream' — protocolo streaming: reply em markdown + bloco ```json:actions```
+   *            no final (a seção extra SUBSTITUI a instrução de formato JSON).
+   */
+  private buildPetitionChatSystemPrompt(mode: 'json' | 'stream'): string {
     const defaultSystemPrompt = `Você é o assistente jurídico do Editor de Petições de um escritório de advocacia brasileiro. Você conversa com o advogado sobre o documento aberto no editor e pode propor alterações que o sistema aplica no documento após aprovação.
 
 O QUE VOCÊ SABE FAZER:
@@ -358,9 +666,7 @@ REGRAS GERAIS:
 - Se o usuário selecionou um trecho, priorize trabalhar sobre ele.
 - "reply" em português do Brasil, direto e profissional. Não repita em "reply" o texto integral das ações; resuma o que cada uma faz.`;
 
-    const systemPrompt = `${this.getPrompt('petition_chat', defaultSystemPrompt)}
-
-REGRAS DE QUALIDADE E EXECUCAO:
+    const qualityRules = `REGRAS DE QUALIDADE E EXECUCAO:
 - Trate a resposta como trabalho para advogado: seja especifico, aplicavel e tecnicamente defensavel.
 - Para revisar, aponte problemas concretos com motivo e solucao sugerida. Nao responda genericamente.
 - Para corrigir, gere acoes pequenas e aplicaveis. O campo "search" deve copiar literalmente o trecho do DOCUMENTO ABERTO.
@@ -369,86 +675,28 @@ REGRAS DE QUALIDADE E EXECUCAO:
 - Dados informados pelo usuario prevalecem sobre qualquer texto do modelo. Se o modelo disser jornada, salario, quantidade, datas ou valores diferentes, substitua pelo dado do usuario ou use variavel.
 - Se faltar salario/base de calculo, nao calcule valores. Use variaveis como [[VALOR_HORAS_EXTRAS]], [[VALOR_REFLEXO_FERIAS]], [[VALOR_REFLEXO_13]], [[VALOR_REFLEXO_AVISO]], [[VALOR_REFLEXO_DSR]] e [[VALOR_TOTAL]].
 - Ao usar insert_block, inclua replacements para TODA informacao conflitante do modelo, principalmente jornada, periodo, salario, quantidade de horas extras e valores monetarios.
-- Quando nao houver dados suficientes, faca perguntas objetivas de uma vez. Nao invente fatos.
-- Retorne JSON valido. Sem markdown, sem comentarios, sem texto antes ou depois do JSON.`;
+- Quando nao houver dados suficientes, faca perguntas objetivas de uma vez. Nao invente fatos.`;
 
-    // Busca local inicial: mensagem do usuário + começo da seleção
-    const searches: string[] = [];
-    const runSearch = (query: string): PetitionChatKbSnippet[] => {
-      const q = String(query || '').trim().slice(0, 120);
-      if (!q || !params.searchKb) return [];
-      params.onProgress?.('searching', q);
-      searches.push(q);
-      try {
-        return (params.searchKb(q) || []).slice(0, 4);
-      } catch {
-        return [];
-      }
-    };
+    const jsonFormatRule = '- Retorne JSON valido. Sem markdown, sem comentarios, sem texto antes ou depois do JSON.';
 
-    // A consulta inicial junta as DUAS últimas mensagens do usuário: quando a
-    // última é só a resposta de um formulário ("Resposta: 20 horas"), o pedido
-    // original ("tópico sobre horas extras") continua guiando a busca.
-    const userMessages = history.filter((m) => m.role === 'user');
-    const previousUser = userMessages.length > 1 ? userMessages[userMessages.length - 2] : undefined;
-    const initialQuery = [
-      previousUser?.content.slice(0, 120) || '',
-      lastUser.content.slice(0, 160),
-      selectedText.slice(0, 120),
-    ].filter(Boolean).join(' ');
-    const initialSnippets = runSearch(initialQuery);
+    const streamFormatSection = `FORMATO DA RESPOSTA EM STREAMING (ATENCAO: esta secao SUBSTITUI qualquer instrucao anterior de responder em JSON):
+- Escreva sua resposta ao advogado como TEXTO NORMAL (nunca um objeto JSON), com markdown leve: **negrito** para destaques, listas com "-" ou "1.", "###" para subtitulos curtos quando ajudar na leitura. Seja direto.
+- Se propuser acoes, perguntas ou uma busca na base, acrescente AO FINAL da resposta UM UNICO bloco de codigo neste formato exato:
+\`\`\`json:actions
+{ "actions": [ ... ], "questions": [ ... ], "search": "..." }
+\`\`\`
+- Dentro do bloco valem os MESMOS schemas e regras de "actions", "questions" e "search" descritos acima (replace cirurgico com trecho verbatim do documento, insert, insert_block com replacements etc.).
+- NAO inclua o campo "reply" dentro do bloco: o texto fora do bloco JA E a sua resposta.
+- Omita o bloco por completo quando nao houver acoes, perguntas nem busca.
+- O bloco json:actions e o UNICO bloco de codigo permitido na resposta: nunca use cercas de codigo (\`\`\`) para outra coisa e NUNCA escreva nada depois do bloco.
+- Nao repita no texto o conteudo integral das acoes; resuma o que cada uma faz.`;
 
-    const contextParts = [
-      `DOCUMENTO ABERTO NO EDITOR (texto puro; a formatação real é mantida pelo editor):\n${documentText || '(documento vazio)'}`,
-      selectedText ? `TRECHO SELECIONADO PELO USUÁRIO:\n${selectedText}` : '',
-      params.searchKb ? formatSnippets(initialQuery, initialSnippets) : '',
-    ].filter(Boolean).join('\n\n====================\n\n');
+    const base = this.getPrompt('petition_chat', defaultSystemPrompt);
 
-    const messages: Array<{ role: string; content: string }> = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Contexto atualizado:\n\n${contextParts}` },
-      { role: 'assistant', content: '{"reply":"Contexto recebido. Como posso ajudar com o documento?","questions":[],"actions":[]}' },
-      ...history.map((m) => ({ role: m.role, content: m.content })),
-    ];
-
-    const model = taskOpts.model ?? 'gpt-4o';
-    // Teto alto: JSON truncado no meio quebra o parse e vira texto cru no chat.
-    const maxTokens = Math.max(taskOpts.maxTokens, 4000);
-
-    // Loop de recuperação: chamada inicial + até 2 rodadas de busca pedidas pela IA
-    const MAX_SEARCH_ROUNDS = 2;
-    let parsed = null as ReturnType<AIService['parsePetitionChatResponse']> | null;
-
-    for (let round = 0; ; round++) {
-      params.onProgress?.('thinking');
-      const content = await this.callOpenAIViaEdgeFunction(messages, model, maxTokens, {
-        taskKey: 'petition_chat',
-        temperature: 0.15,
-        responseFormat: 'json_object',
-      });
-      const raw = String(content || '').trim();
-      if (!raw) throw new Error('IA não retornou resposta');
-
-      parsed = this.parsePetitionChatResponse(raw);
-
-      const searchQuery = parsed.search?.trim();
-      const alreadySearched = searchQuery ? searches.some((s) => normalizePtQuery(s) === normalizePtQuery(searchQuery)) : true;
-      if (!searchQuery || alreadySearched || round >= MAX_SEARCH_ROUNDS || !params.searchKb) break;
-
-      const snippets = runSearch(searchQuery);
-      messages.push({ role: 'assistant', content: raw });
-      messages.push({
-        role: 'user',
-        content: `${formatSnippets(searchQuery, snippets)}\n\nAgora responda a última mensagem do usuário usando esses modelos (não peça a mesma busca de novo).`,
-      });
+    if (mode === 'json') {
+      return `${base}\n\n${qualityRules}\n${jsonFormatRule}`;
     }
-
-    return {
-      reply: parsed!.reply,
-      actions: parsed!.actions,
-      questions: parsed!.questions,
-      searches,
-    };
+    return `${base}\n\n${qualityRules}\n\n${streamFormatSection}`;
   }
 
   /** Faz o parse tolerante do JSON do protocolo do assistente de petições. */
@@ -463,7 +711,26 @@ REGRAS DE QUALIDADE E EXECUCAO:
 
     try {
       const parsed = JSON.parse(jsonText);
+      const { actions, questions, search } = this.mapPetitionChatPayload(parsed);
 
+      return {
+        reply: String(parsed.reply || '').trim() || (questions.length ? 'Preciso de algumas informações antes de continuar.' : 'Pronto.'),
+        actions,
+        questions,
+        search,
+      };
+    } catch {
+      // JSON malformado: devolve o texto bruto como resposta de chat.
+      return { reply: raw, actions: [], questions: [] };
+    }
+  }
+
+  /** Mapeia/valida actions, questions e search de um payload já parseado. */
+  private mapPetitionChatPayload(parsed: any): {
+    actions: PetitionChatAction[];
+    questions: PetitionChatQuestion[];
+    search?: string;
+  } {
       const actions: PetitionChatAction[] = Array.isArray(parsed.actions)
         ? parsed.actions
             .filter((a: any) => a && (a.type === 'replace' || a.type === 'insert' || a.type === 'insert_block'))
@@ -505,15 +772,10 @@ REGRAS DE QUALIDADE E EXECUCAO:
         : [];
 
       return {
-        reply: String(parsed.reply || '').trim() || (questions.length ? 'Preciso de algumas informações antes de continuar.' : 'Pronto.'),
         actions,
         questions,
         search: typeof parsed.search === 'string' && parsed.search.trim() ? parsed.search.trim() : undefined,
       };
-    } catch {
-      // JSON malformado: devolve o texto bruto como resposta de chat.
-      return { reply: raw, actions: [], questions: [] };
-    }
   }
 
   /** Extrai o primeiro objeto JSON balanceado mesmo quando o provedor envolve em markdown. */

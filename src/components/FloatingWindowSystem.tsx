@@ -367,6 +367,7 @@ function Taskbar({ windows, onRestore, onClose, onFocus, onUpdate, maxZ }: {
   if (windows.length === 0) return null;
   return (
     <div
+      data-app-taskbar="1"
       className="fixed bottom-0 left-0 right-0 z-[9999] flex items-center gap-1 px-2"
       style={{ height: TASKBAR_H, background: '#1f1f1f', borderTop: '1px solid rgba(255,255,255,0.08)' }}
     >
