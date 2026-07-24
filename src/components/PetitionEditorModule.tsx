@@ -1186,6 +1186,18 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     [initialNextcloudPath, user?.id],
   );
 
+  // Chave (localStorage) da última posição de leitura/edição por arquivo do
+  // Nextcloud — usada para reabrir exatamente onde o usuário parou, sem voltar
+  // ao topo. Só existe quando o documento veio do Nextcloud.
+  const cursorPositionStorageKey = useMemo(
+    () =>
+      initialNextcloudPath
+        ? `petition-editor-pos:${user?.id || 'anon'}:${encodeURIComponent(initialNextcloudPath)}`
+        : null,
+    [initialNextcloudPath, user?.id],
+  );
+  const cursorPersistTimerRef = useRef<number | null>(null);
+
   // PetiçÃµes salvas
   const [savedPetitions, setSavedPetitions] = useState<SavedPetition[]>([]);
   const [savedPetitionsLoading, setSavedPetitionsLoading] = useState(true);
@@ -1350,6 +1362,63 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     showSuccessMessage('Rascunho local recuperado. Clique em Salvar para atualizar o arquivo no Nextcloud.');
     return true;
   }, [loadLocalDraftFromStorage]);
+
+  // Guarda a posição atual do cursor (índice hierárquico do Syncfusion, ex.:
+  // "3;0;12") para reabrir o documento exatamente onde o usuário parou.
+  const persistCursorPosition = useCallback(() => {
+    const key = cursorPositionStorageKey;
+    if (!key) return;
+    try {
+      const ed: any = editorRef.current?.getEditor?.();
+      const offset = ed?.selection?.startOffset;
+      if (typeof offset === 'string' && offset) {
+        window.localStorage.setItem(key, offset);
+      }
+    } catch {
+      // ignore
+    }
+  }, [cursorPositionStorageKey]);
+
+  // Debounce: cursor move o tempo todo enquanto se digita/rola; grava só quando
+  // estabiliza para não martelar o localStorage.
+  const scheduleCursorPersist = useCallback(() => {
+    if (!cursorPositionStorageKey) return;
+    if (cursorPersistTimerRef.current) window.clearTimeout(cursorPersistTimerRef.current);
+    cursorPersistTimerRef.current = window.setTimeout(() => {
+      persistCursorPosition();
+    }, 600);
+  }, [cursorPositionStorageKey, persistCursorPosition]);
+
+  // Restaura a última posição salva (chamado após o documento carregar). Um
+  // pequeno atraso garante que o layout já existe antes de rolar até lá.
+  const restoreCursorPosition = useCallback(() => {
+    const key = cursorPositionStorageKey;
+    if (!key) return;
+    let saved: string | null = null;
+    try {
+      saved = window.localStorage.getItem(key);
+    } catch {
+      saved = null;
+    }
+    if (!saved) return;
+    window.setTimeout(() => {
+      try {
+        const ed: any = editorRef.current?.getEditor?.();
+        // select(inicio, fim) posiciona o cursor E rola a seleção para a vista.
+        ed?.selection?.select?.(saved, saved);
+        editorRef.current?.focus?.();
+      } catch {
+        // ignore — se o offset não existir mais, apenas ignora
+      }
+    }, 450);
+  }, [cursorPositionStorageKey]);
+
+  // Limpa o timer pendente ao desmontar.
+  useEffect(() => {
+    return () => {
+      if (cursorPersistTimerRef.current) window.clearTimeout(cursorPersistTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const update = () => {
@@ -3589,6 +3658,7 @@ Regras:
         setHasUnsavedChanges(!openedFromNextcloud);
         showSuccessMessage(openedFromNextcloud ? 'Documento aberto do Nextcloud.' : 'Documento importado com sucesso.');
       }
+      restoreCursorPosition();
       if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
         setPetitionTitle(getSanitizedDocumentName(fileName));
       }
@@ -3603,7 +3673,7 @@ Regras:
         try { URL.revokeObjectURL(documentUrl); } catch { /* já revogada */ }
       }
     }
-  }, [applyInitialClientIfNeeded, petitionTitle, restoreNextcloudDraft]);
+  }, [applyInitialClientIfNeeded, petitionTitle, restoreNextcloudDraft, restoreCursorPosition]);
 
   // Recarrega o .docx direto do Nextcloud pelo caminho de origem. Usado na
   // restauração do widget após um reload da página: a object URL do blob morre
@@ -3633,6 +3703,7 @@ Regras:
         // Recém-carregado do servidor: sem alterações pendentes ainda.
         setHasUnsavedChanges(false);
       }
+      restoreCursorPosition();
       if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
         setPetitionTitle(getSanitizedDocumentName(fileName));
       }
@@ -3643,7 +3714,7 @@ Regras:
     } finally {
       setDocumentImportLoading(false);
     }
-  }, [applyInitialClientIfNeeded, petitionTitle, restoreNextcloudDraft]);
+  }, [applyInitialClientIfNeeded, petitionTitle, restoreNextcloudDraft, restoreCursorPosition]);
 
   const loadDefaultTemplate = async () => {
     if (!isOnlineRef.current) {
@@ -6733,7 +6804,7 @@ Regras:
               window.setTimeout(() => { editorRef.current?.refresh?.(); refreshDocStatus(); scheduleWordCount(400); }, 320);
             }}
             onContentChange={handleContentChange}
-            onSelectionChange={refreshDocStatus}
+            onSelectionChange={() => { refreshDocStatus(); scheduleCursorPersist(); }}
             onViewChange={refreshDocStatus}
             onRequestInsertBlock={() => {
               setBlockSearchQuery('');
