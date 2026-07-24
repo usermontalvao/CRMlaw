@@ -64,6 +64,7 @@ const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const ClientsModule = lazy(() => import('./components/ClientsModule'));
 const DocumentsModule = lazy(() => import('./components/DocumentsModule'));
 const CloudModule = lazy(() => import('./components/CloudModule'));
+const NextcloudBrowser = lazy(() => import('./components/NextcloudBrowser'));
 const LeadsModule = lazy(() => import('./components/LeadsModule'));
 const ProcessesModule = lazy(() => import('./components/ProcessesModule'));
 const IntimationsModule = lazy(() => import('./components/IntimationsModule'));
@@ -212,6 +213,7 @@ const MODULE_META: Record<string, { label: string; desc: string; Icon: LucideIco
   clientes:      { label: 'Clientes',             desc: 'cadastro e histórico de clientes',       Icon: Users },
   documentos:    { label: 'Documentos',           desc: 'contratos e modelos',                    Icon: FileText },
   cloud:         { label: 'Cloud',                desc: 'armazenamento de arquivos',              Icon: Cloud },
+  nextcloud:     { label: 'Nextcloud',            desc: 'arquivos no servidor Nextcloud',         Icon: Cloud },
   assinaturas:   { label: 'Assinaturas Digitais', desc: 'coleta de assinaturas eletrônicas',      Icon: PenTool },
   processos:     { label: 'Processos',            desc: 'acompanhamento processual',              Icon: Briefcase },
   requerimentos: { label: 'Requerimentos',        desc: 'petições e requerimentos',               Icon: Library },
@@ -1294,7 +1296,7 @@ const MainApp: React.FC = () => {
   const canAccessModule = useCallback((moduleKey: ModuleName) => {
     if (isAdmin) return true;
     if (moduleKey === 'configuracoes') return canAccessConfig;
-    if (moduleKey === 'cloud') return canView('cloud') || canView('documentos');
+    if (moduleKey === 'cloud' || moduleKey === 'nextcloud') return canView('cloud') || canView('documentos');
     return canView(moduleKey);
   }, [isAdmin, canAccessConfig, canView]);
 
@@ -2427,6 +2429,12 @@ useEffect(() => {
               onOpenWindow={floatingWindowModules.has('cloud') ? (x,y) => setSidebarCtx({x,y,module:'cloud',label:'Cloud'}) : undefined}
               onOpenWindowDirect={floatingWindowModules.has('cloud') ? () => handleOpenWindow('cloud','Cloud') : undefined} />
           )}
+          {!permissionsLoading && canAccessModule('nextcloud') && (
+            <SidebarModuleBtn moduleKey="nextcloud" label="Nextcloud" Icon={Cloud}
+              isActive={activeModule === 'nextcloud'}
+              onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('nextcloud'); }}
+              expiresAt={getOverrideExpiry('nextcloud')} />
+          )}
 
           {/* Separador + Perfil */}
           <div className={`h-px bg-white/[0.06] ${sidebarMode === 'normal' ? 'mt-1.5 mb-0.5' : 'my-2 mx-1.5'}`} />
@@ -2803,6 +2811,9 @@ useEffect(() => {
                 initialFolderId={moduleParams['cloud'] ? JSON.parse(moduleParams['cloud']).folderId : undefined}
                 onParamConsumed={() => clearModuleParams('cloud')}
               />
+            )}
+            {activeModule === 'nextcloud' && (
+              <NextcloudBrowser />
             )}
             {activeModule === 'configuracoes' && (
               <SettingsModule

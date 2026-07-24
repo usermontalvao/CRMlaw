@@ -56,6 +56,7 @@ import { petitionEditorService } from '../services/petitionEditor.service';
 import { settingsService } from '../services/settings.service';
 import { aiService } from '../services/ai.service';
 import { cloudService } from '../services/cloud.service';
+import { nextcloudService } from '../services/nextcloud.service';
 import type {
   PetitionBlock,
   CreatePetitionBlockDTO,
@@ -887,6 +888,9 @@ interface PetitionEditorModuleProps {
   initialDocumentUrl?: string;
   initialDocumentName?: string;
   initialCloudFileId?: string;
+  /** Caminho no Nextcloud (relativo à raiz). Quando presente, o documento é
+   *  salvo de volta no Nextcloud em vez de criar registro de petição. */
+  initialNextcloudPath?: string;
   initialDocumentRequestId?: string;
   onUnsavedChanges?: (hasChanges: boolean) => void;
   onWidgetInfoChange?: (payload: { lastSaved: Date | null; selectedClient: Client | null }) => void;
@@ -914,6 +918,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   initialDocumentUrl,
   initialDocumentName,
   initialCloudFileId,
+  initialNextcloudPath,
   initialDocumentRequestId,
   onUnsavedChanges,
   onWidgetInfoChange,
@@ -947,7 +952,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     'Usuario';
 
   const userDisplayName = formatUserDisplayName(rawUserDisplayName) || 'Usuario';
-  const isCloudImportMode = isFloatingWidget && Boolean(initialDocumentBase64 || initialDocumentUrl);
+  const isCloudImportMode = isFloatingWidget && Boolean(initialDocumentBase64 || initialDocumentUrl || initialNextcloudPath);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -1179,6 +1184,29 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [savedPetitions, setSavedPetitions] = useState<SavedPetition[]>([]);
   const [savedPetitionsLoading, setSavedPetitionsLoading] = useState(true);
   const [sourceCloudFile, setSourceCloudFile] = useState<CloudFile | null>(null);
+  // Caminho de origem no Nextcloud (quando o doc veio do módulo Nextcloud).
+  const sourceNextcloudPathRef = useRef<string | null>(initialNextcloudPath ?? null);
+  useEffect(() => { sourceNextcloudPathRef.current = initialNextcloudPath ?? null; }, [initialNextcloudPath]);
+
+  // Presença de edição: enquanto um doc do Nextcloud está aberto, registra um
+  // "lock" (heartbeat) para que os outros vejam quem está editando. Libera ao
+  // fechar/trocar de documento ou sair da página.
+  useEffect(() => {
+    const p = initialNextcloudPath;
+    if (!p) return;
+    let active = true;
+    const beat = () => { if (active) void nextcloudService.heartbeatLock(p, userDisplayName); };
+    beat();
+    const iv = window.setInterval(beat, 45_000);
+    const onUnload = () => { void nextcloudService.releaseLock(p); };
+    window.addEventListener('beforeunload', onUnload);
+    return () => {
+      active = false;
+      window.clearInterval(iv);
+      window.removeEventListener('beforeunload', onUnload);
+      void nextcloudService.releaseLock(p);
+    };
+  }, [initialNextcloudPath, userDisplayName]);
 
   // Clientes
   const [clients, setClients] = useState<Client[]>([]);
@@ -2443,7 +2471,7 @@ Regras:
   // Modal fullscreen
   const [isFullscreen, setIsFullscreen] = useState(true);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [showStartScreen, setShowStartScreen] = useState<boolean>(() => isFloatingWidget && !initialPetitionId && !initialDocumentBase64 && !initialDocumentUrl);
+  const [showStartScreen, setShowStartScreen] = useState<boolean>(() => isFloatingWidget && !initialPetitionId && !initialDocumentBase64 && !initialDocumentUrl && !initialNextcloudPath);
 
   // Modo escuro do editor (estilo Word). Fonte unica de verdade: alterna a
   // classe `petition-dark` no <body> (cobre a faixa, o chrome do Syncfusion e
@@ -2507,8 +2535,10 @@ Regras:
   // Salvar petiçÃ£o
   const savePetition = async () => {
     const startSeq = contentChangeSeqRef.current;
-    // Regra: salvar apenas documentos vinculados a cliente
-    if (!selectedClient?.id) {
+    const nextcloudPath = sourceNextcloudPathRef.current;
+    // Regra: salvar apenas documentos vinculados a cliente — exceto quando o
+    // documento veio do Nextcloud (salvamos de volta no servidor, sem petição).
+    if (!selectedClient?.id && !nextcloudPath) {
       if (initialClientId) {
         return;
       }
@@ -2543,56 +2573,63 @@ Regras:
       const clientId = selectedClient?.id || null;
       const clientName = selectedClient?.full_name || null;
 
-      let savedRow: SavedPetition | null = null;
-
-      // LÃª do ref sÃ­ncrono â€” garante valor mais atualizado entre saves concorrentes
-      const existingId = currentPetitionIdRef.current ?? currentPetitionId;
-
-      if (existingId) {
-        // Atualizar petiçÃ£o existente
-        savedRow = await petitionEditorService.updatePetition(existingId, {
-          title,
-          content: sfdt,
-          client_id: clientId,
-          client_name: clientName,
-        });
-      } else {
-        // Criar nova petiçÃ£o
-        savedRow = await petitionEditorService.createPetition({
-          title,
-          content: sfdt,
-          client_id: clientId,
-          client_name: clientName,
-        });
-        if (savedRow?.id) {
-          // Atualiza ref ANTES do state â€” prÃ³ximos saves leem imediatamente
-          currentPetitionIdRef.current = savedRow.id;
-          setCurrentPetitionId(savedRow.id);
-        }
-      }
-
-      // Update otimista da lista de petiçÃµes salvas
-      if (savedRow) {
-        setSavedPetitions((prev) => {
-          const normalizedSavedRow = sanitizeSavedPetitionRecord(savedRow!);
-          const next = prev.filter((p) => p.id !== normalizedSavedRow.id);
-          next.unshift(normalizedSavedRow);
-          next.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-          return next;
-        });
-      }
-
-      if (sourceCloudFile) {
-        const exportedName = initialDocumentName || sourceCloudFile.original_name || `${title}.docx`;
+      if (nextcloudPath) {
+        // Origem Nextcloud: salva de volta no servidor, sem criar petição.
+        const exportedName = initialDocumentName || `${title}.docx`;
         const blob = await editor.exportDocx(exportedName.endsWith('.docx') ? exportedName : `${exportedName}.docx`);
-        const updatedCloudFile = await cloudService.replaceFileContents(sourceCloudFile, blob, exportedName.endsWith('.docx') ? exportedName : `${exportedName}.docx`);
-        setSourceCloudFile(updatedCloudFile);
+        await nextcloudService.writeFile(nextcloudPath, blob);
+      } else {
+        let savedRow: SavedPetition | null = null;
+
+        // LÃª do ref sÃ­ncrono â€” garante valor mais atualizado entre saves concorrentes
+        const existingId = currentPetitionIdRef.current ?? currentPetitionId;
+
+        if (existingId) {
+          // Atualizar petiçÃ£o existente
+          savedRow = await petitionEditorService.updatePetition(existingId, {
+            title,
+            content: sfdt,
+            client_id: clientId,
+            client_name: clientName,
+          });
+        } else {
+          // Criar nova petiçÃ£o
+          savedRow = await petitionEditorService.createPetition({
+            title,
+            content: sfdt,
+            client_id: clientId,
+            client_name: clientName,
+          });
+          if (savedRow?.id) {
+            // Atualiza ref ANTES do state â€” prÃ³ximos saves leem imediatamente
+            currentPetitionIdRef.current = savedRow.id;
+            setCurrentPetitionId(savedRow.id);
+          }
+        }
+
+        // Update otimista da lista de petiçÃµes salvas
+        if (savedRow) {
+          setSavedPetitions((prev) => {
+            const normalizedSavedRow = sanitizeSavedPetitionRecord(savedRow!);
+            const next = prev.filter((p) => p.id !== normalizedSavedRow.id);
+            next.unshift(normalizedSavedRow);
+            next.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+            return next;
+          });
+        }
+
+        if (sourceCloudFile) {
+          const exportedName = initialDocumentName || sourceCloudFile.original_name || `${title}.docx`;
+          const blob = await editor.exportDocx(exportedName.endsWith('.docx') ? exportedName : `${exportedName}.docx`);
+          const updatedCloudFile = await cloudService.replaceFileContents(sourceCloudFile, blob, exportedName.endsWith('.docx') ? exportedName : `${exportedName}.docx`);
+          setSourceCloudFile(updatedCloudFile);
+        }
       }
 
       setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
       setLastSaved(new Date());
       clearLocalDraft();
-      showSuccessMessage('Documento salvo com sucesso');
+      showSuccessMessage(nextcloudPath ? 'Documento salvo no Nextcloud' : 'Documento salvo com sucesso');
     } catch (err) {
       console.error('Erro ao salvar:', err);
       setError(err instanceof Error ? err.message : 'Erro ao salvar documento');
@@ -3486,6 +3523,10 @@ Regras:
   }, [applyInitialClientIfNeeded, petitionTitle]);
 
   const importInitialDocumentFromUrl = useCallback(async (documentUrl: string, fileName?: string) => {
+    // Object URLs (ex.: documento vindo do Nextcloud) só valem enquanto vivos.
+    // Só podem ser revogados DEPOIS que o fetch abaixo terminar de ler o blob —
+    // revogar antes quebraria o carregamento. Fazemos isso no finally.
+    const isObjectUrl = documentUrl.startsWith('blob:');
     try {
       setDocumentImportLoading(true);
       applyInitialClientIfNeeded();
@@ -3519,6 +3560,47 @@ Regras:
       console.error('Erro ao importar documento inicial por URL:', err);
       const msg = err?.message || 'Erro desconhecido';
       setError(`Nao foi possivel abrir o documento: ${msg}`);
+    } finally {
+      setDocumentImportLoading(false);
+      // Libera a object URL agora que o blob já foi totalmente lido (ou falhou).
+      if (isObjectUrl) {
+        try { URL.revokeObjectURL(documentUrl); } catch { /* já revogada */ }
+      }
+    }
+  }, [applyInitialClientIfNeeded, petitionTitle]);
+
+  // Recarrega o .docx direto do Nextcloud pelo caminho de origem. Usado na
+  // restauração do widget após um reload da página: a object URL do blob morre
+  // com o reload, então relemos o arquivo salvo no servidor.
+  const importInitialDocumentFromNextcloud = useCallback(async (nextcloudPath: string, fileName?: string) => {
+    try {
+      setDocumentImportLoading(true);
+      applyInitialClientIfNeeded();
+
+      const blob = await nextcloudService.readFile(nextcloudPath);
+      const arrayBuffer = await blob.arrayBuffer();
+      if (arrayBuffer.byteLength === 0) {
+        throw new Error('O documento do Nextcloud esta vazio (0 bytes).');
+      }
+
+      const editor = await waitForEditorReady();
+      if (!editor) {
+        setError('O editor Syncfusion nao carregou a tempo. Tente recarregar a pagina.');
+        return;
+      }
+
+      await loadDocxWithFallback(editor, arrayBuffer, fileName || 'documento.docx');
+      captureAndApplyDocFontSoon(editor);
+      setShowStartScreen(false);
+      // Recém-carregado do servidor: sem alterações pendentes ainda.
+      setHasUnsavedChanges(false);
+      if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
+        setPetitionTitle(getSanitizedDocumentName(fileName));
+      }
+    } catch (err: any) {
+      console.error('Erro ao reabrir documento do Nextcloud:', err);
+      const msg = err?.message || 'Erro desconhecido';
+      setError(`Nao foi possivel reabrir o documento do Nextcloud: ${msg}`);
     } finally {
       setDocumentImportLoading(false);
     }
@@ -4240,6 +4322,24 @@ Regras:
       void importInitialDocument(initialDocumentBase64, initialDocumentName);
     }
   }, [isFloatingWidget, loading, initialDocumentBase64, initialDocumentUrl, initialDocumentName, initialDocumentRequestId, importInitialDocument, importInitialDocumentFromUrl]);
+
+  // Restauração do widget após reload: existe o caminho do Nextcloud mas a
+  // object URL do blob já morreu (não é persistida). Relê o arquivo do servidor.
+  // No fluxo normal (abertura em sessão) a object URL está presente e este
+  // efeito não faz nada — quem importa é o efeito acima.
+  useEffect(() => {
+    if (!isFloatingWidget) return;
+    if (!initialNextcloudPath) return;
+    if (initialDocumentBase64 || initialDocumentUrl) return;
+    const key = `nc:${initialDocumentRequestId || initialNextcloudPath}`;
+    if (lastImportedRequestIdRef.current === key) return;
+    if (lastHandledInitialDocumentRequestId === key) return;
+
+    lastHandledInitialDocumentRequestId = key;
+    lastImportedRequestIdRef.current = key;
+    setShowStartScreen(false);
+    void importInitialDocumentFromNextcloud(initialNextcloudPath, initialDocumentName);
+  }, [isFloatingWidget, initialNextcloudPath, initialDocumentBase64, initialDocumentUrl, initialDocumentName, initialDocumentRequestId, importInitialDocumentFromNextcloud]);
 
   const blockIndexMap = useMemo(() => {
     const map = new Map<

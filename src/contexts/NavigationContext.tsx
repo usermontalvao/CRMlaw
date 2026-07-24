@@ -7,6 +7,7 @@ export type ModuleName =
   | 'clientes'
   | 'documentos'
   | 'cloud'
+  | 'nextcloud'
   | 'processos'
   | 'requerimentos'
   | 'prazos'

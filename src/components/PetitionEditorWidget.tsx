@@ -29,6 +29,7 @@ export interface PetitionEditorOpenPayload {
   initialDocumentUrl?: string;
   initialDocumentName?: string;
   initialCloudFileId?: string;
+  initialNextcloudPath?: string;
   openRequestId?: string;
 }
 
@@ -42,6 +43,7 @@ interface PersistedState {
   initialDocumentUrl?: string;
   initialDocumentName?: string;
   initialCloudFileId?: string;
+  initialNextcloudPath?: string;
   openRequestId?: string;
 }
 
@@ -63,8 +65,10 @@ const PetitionEditorWidget: React.FC = () => {
         // Restaurar estado minimizado ou aberto
         if (parsed.state === 'minimized' || parsed.state === 'open') {
           setWidgetState(parsed.state);
-          // Restaurar payload se existir
-          if (parsed.clientId || parsed.petitionId) {
+          // Restaurar payload se existir. Inclui documentos do Nextcloud, que
+          // só guardam o caminho (a object URL do blob morre no reload e é
+          // reaberta pelo editor a partir de initialNextcloudPath).
+          if (parsed.clientId || parsed.petitionId || parsed.initialNextcloudPath || parsed.initialDocumentUrl || parsed.initialDocumentBase64) {
             setPendingPayload({
               clientId: parsed.clientId,
               petitionId: parsed.petitionId,
@@ -73,6 +77,7 @@ const PetitionEditorWidget: React.FC = () => {
               initialDocumentUrl: parsed.initialDocumentUrl,
               initialDocumentName: parsed.initialDocumentName,
               initialCloudFileId: parsed.initialCloudFileId,
+              initialNextcloudPath: parsed.initialNextcloudPath,
               openRequestId: parsed.openRequestId,
             });
           }
@@ -86,14 +91,20 @@ const PetitionEditorWidget: React.FC = () => {
   // Persistir estado no localStorage
   useEffect(() => {
     try {
+      // Object URLs (blob:) não sobrevivem a um reload — não adianta persisti-las.
+      // Documentos do Nextcloud são reabertos pelo editor via initialNextcloudPath.
+      const persistedUrl = pendingPayload?.initialDocumentUrl?.startsWith('blob:')
+        ? undefined
+        : pendingPayload?.initialDocumentUrl;
       const toSave: PersistedState = {
         state: widgetState,
         clientId: pendingPayload?.clientId,
         petitionId: pendingPayload?.petitionId,
         initialDocumentBase64: pendingPayload?.initialDocumentBase64,
-        initialDocumentUrl: pendingPayload?.initialDocumentUrl,
+        initialDocumentUrl: persistedUrl,
         initialDocumentName: pendingPayload?.initialDocumentName,
         initialCloudFileId: pendingPayload?.initialCloudFileId,
+        initialNextcloudPath: pendingPayload?.initialNextcloudPath,
         openRequestId: pendingPayload?.openRequestId,
       };
       localStorage.setItem(WIDGET_STATE_KEY, JSON.stringify(toSave));
@@ -220,6 +231,7 @@ const PetitionEditorWidget: React.FC = () => {
               initialDocumentUrl={pendingPayload?.initialDocumentUrl}
               initialDocumentName={pendingPayload?.initialDocumentName}
               initialCloudFileId={pendingPayload?.initialCloudFileId}
+              initialNextcloudPath={pendingPayload?.initialNextcloudPath}
               initialDocumentRequestId={pendingPayload?.openRequestId}
               onUnsavedChanges={handleUnsavedChanges}
               onRequestClose={handleClose}
