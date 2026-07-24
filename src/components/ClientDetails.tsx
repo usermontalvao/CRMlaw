@@ -25,6 +25,7 @@ import { clientService } from '../services/client.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
 import { petitionEditorService } from '../services/petitionEditor.service';
 import { clientOverviewService } from '../services/clientOverview.service';
+import { nextcloudService } from '../services/nextcloud.service';
 import { financialService } from '../services/financial.service';
 import { SELFIE_PROFILE_CONSENT_LABEL } from '../constants/signatureTerms';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
@@ -804,6 +805,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   // ── Cloud
   const [clientCloudFolders, setClientCloudFolders] = useState<CloudFolder[]>([]);
   const [cloudFoldersLoading, setCloudFoldersLoading] = useState(false);
+  const [clientNextcloudPaths, setClientNextcloudPaths] = useState<string[]>([]);
+  const [nextcloudPathsLoading, setNextcloudPathsLoading] = useState(false);
 
   // ── Deadlines
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
@@ -971,6 +974,28 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       setDeadlinesLoading(false); setCalendarLoading(false); setFinancialLoading(false);
       setProfileReqLoading(false); setPortalDataLoading(false);
     });
+    return () => { active = false; };
+  }, [client.id]);
+
+  useEffect(() => {
+    let active = true;
+    setNextcloudPathsLoading(true);
+    nextcloudService.getFolderLinks()
+      .then((folderLinks) => {
+        if (!active) return;
+        setClientNextcloudPaths(
+          Object.entries(folderLinks)
+            .filter(([, clientId]) => clientId === client.id)
+            .map(([folderPath]) => folderPath)
+            .sort((a, b) => a.localeCompare(b, 'pt-BR')),
+        );
+      })
+      .catch(() => {
+        if (active) setClientNextcloudPaths([]);
+      })
+      .finally(() => {
+        if (active) setNextcloudPathsLoading(false);
+      });
     return () => { active = false; };
   }, [client.id]);
 
@@ -2425,6 +2450,25 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     </div>
                     <MiniField label="Cliente desde" value={formatDate(client.created_at)} />
                     <MiniField label="Atualizado em" value={formatDate(client.updated_at)} />
+                    <div className="col-span-2">
+                      <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-slate-400">Pasta Nextcloud</p>
+                      {nextcloudPathsLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                      ) : clientNextcloudPaths.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => { onBack(); navigateTo('nextcloud', { path: clientNextcloudPaths[0] }); }}
+                          className="flex max-w-full items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1.5 text-left text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+                          title={clientNextcloudPaths[0]}
+                        >
+                          <FolderPlus className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{clientNextcloudPaths[0]}</span>
+                          <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">Nenhuma pasta vinculada</span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Alertas + notas + próximos eventos */}
@@ -3602,6 +3646,46 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                               {f.archived_at ? 'Arquivada' : 'Ativa'}
                             </span>
                           </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Nextcloud */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <FolderPlus className="w-4 h-4 text-blue-500" />
+                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Pastas do Nextcloud</p>
+                      {clientNextcloudPaths.length > 0 && (
+                        <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">{clientNextcloudPaths.length}</span>
+                      )}
+                    </div>
+                    {nextcloudPathsLoading ? (
+                      <div className="flex items-center justify-center rounded-xl border border-dashed border-[#e7e5df] py-4 text-slate-400">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      </div>
+                    ) : clientNextcloudPaths.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-sm text-slate-400">
+                        Nenhuma pasta do Nextcloud vinculada
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {clientNextcloudPaths.map((folderPath) => (
+                          <button
+                            key={folderPath}
+                            type="button"
+                            onClick={() => { onBack(); navigateTo('nextcloud', { path: folderPath }); }}
+                            className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#f8f7f5] p-3.5 text-left shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] transition-all duration-150 hover:bg-blue-50 hover:shadow-md"
+                          >
+                            <span className="flex min-w-0 items-center gap-2.5">
+                              <FolderPlus className="h-4 w-4 shrink-0 text-blue-500" />
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold text-slate-900">{folderPath.split('/').filter(Boolean).pop() || 'Início'}</span>
+                                <span className="block truncate text-xs text-slate-400">{folderPath}</span>
+                              </span>
+                            </span>
+                            <ExternalLink className="h-4 w-4 shrink-0 text-slate-300" />
+                          </button>
                         ))}
                       </div>
                     )}

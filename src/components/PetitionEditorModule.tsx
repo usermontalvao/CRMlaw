@@ -3672,6 +3672,11 @@ Regras:
       if (isObjectUrl) {
         try { URL.revokeObjectURL(documentUrl); } catch { /* já revogada */ }
       }
+      // Avisa o app (abertura em nova aba) que o documento terminou de carregar,
+      // para o loader próprio da aba sumir só agora — uma animação só, contínua.
+      window.setTimeout(() => {
+        try { window.dispatchEvent(new Event('petition-editor-doc-ready')); } catch { /* ignore */ }
+      }, 350);
     }
   }, [applyInitialClientIfNeeded, petitionTitle, restoreNextcloudDraft, restoreCursorPosition]);
 
@@ -3713,6 +3718,9 @@ Regras:
       setError(`Nao foi possivel reabrir o documento do Nextcloud: ${msg}`);
     } finally {
       setDocumentImportLoading(false);
+      window.setTimeout(() => {
+        try { window.dispatchEvent(new Event('petition-editor-doc-ready')); } catch { /* ignore */ }
+      }, 350);
     }
   }, [applyInitialClientIfNeeded, petitionTitle, restoreNextcloudDraft, restoreCursorPosition]);
 

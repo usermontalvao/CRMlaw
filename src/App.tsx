@@ -1,4 +1,5 @@
 ﻿﻿import { useEffect, useState, useMemo, useCallback, lazy, Suspense, useRef, createContext, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigation } from './contexts/NavigationContext';
 import type { ModuleName } from './contexts/NavigationContext';
 import {
@@ -1178,6 +1179,42 @@ const MainApp: React.FC = () => {
   }, []);
   const loading = authLoading || !minLoadingElapsed;
 
+  // Abertura do editor em NOVA ABA (via #editor-doc=<token>): mostramos um
+  // carregamento PRÓPRIO ("Abrindo documento…") em vez do boot padrão do CRM,
+  // e o mantemos até o editor abrir — evitando o flash do dashboard atrás.
+  const editorDocBoot = useMemo(() => {
+    try {
+      const match = window.location.hash.match(/editor-doc=([\w-]+)/);
+      if (!match) return { active: false, name: '' as string };
+      let name = '';
+      try {
+        const raw = window.localStorage.getItem(`petition-editor-open:${match[1]}`);
+        if (raw) name = String((JSON.parse(raw) as { initialDocumentName?: string })?.initialDocumentName || '');
+      } catch {
+        // ignore
+      }
+      return { active: true, name };
+    } catch {
+      return { active: false, name: '' };
+    }
+  }, []);
+
+  // Loader próprio da nova aba: fica no ar do boot até o DOCUMENTO terminar de
+  // carregar (evento 'petition-editor-doc-ready'), cobrindo também o loader
+  // interno do editor — assim é UMA animação só, contínua, sem dois estilos.
+  // Não reaparece se o usuário fechar o editor depois (latch + timeout).
+  const [editorBootHandled, setEditorBootHandled] = useState(false);
+  useEffect(() => {
+    if (!editorDocBoot.active) return;
+    const done = () => setEditorBootHandled(true);
+    window.addEventListener('petition-editor-doc-ready', done);
+    const t = window.setTimeout(done, 20000); // segurança, caso o evento não venha
+    return () => {
+      window.removeEventListener('petition-editor-doc-ready', done);
+      window.clearTimeout(t);
+    };
+  }, [editorDocBoot.active]);
+
   useEffect(() => {
     if (!user) return;
 
@@ -1905,7 +1942,78 @@ useEffect(() => {
     }
   };
 
+  // Loader PRÓPRIO da abertura em nova aba: uma FOLHA de documento se montando
+  // (linhas de texto em shimmer, como o Word/Docs carregando) — condiz com
+  // "abrindo documento". Fica no ar até o documento terminar de carregar.
+  const editorDocLoader = (
+    <div
+      className="fixed inset-0 z-[10050] flex flex-col items-center justify-center overflow-hidden"
+      style={{ background: 'radial-gradient(ellipse at center, #14110d 0%, #0a0806 72%)' }}
+    >
+      <style>{`
+        @keyframes edl-rise{from{opacity:0;transform:translateY(18px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+        @keyframes edl-sheen{0%{transform:translateX(-140%)}100%{transform:translateX(140%)}}
+        @keyframes edl-cursor{0%,100%{opacity:0}50%{opacity:1}}
+        @media (prefers-reduced-motion:reduce){.edl-sheen{display:none}}
+        .edl-line{height:9px;border-radius:5px;background:#e9edf3}
+        .edl-line.dark{background:#eef2f7}
+      `}</style>
+
+      {/* Folha de papel */}
+      <div
+        className="relative overflow-hidden bg-white"
+        style={{
+          width: 320,
+          height: 400,
+          borderRadius: 14,
+          padding: '34px 30px',
+          boxShadow: '0 40px 100px rgba(0,0,0,.6), 0 2px 0 rgba(255,255,255,.04)',
+          animation: 'edl-rise .6s cubic-bezier(.16,1,.3,1) both',
+        }}
+      >
+        {/* Faixa âmbar no topo da folha */}
+        <div className="absolute top-0 left-0 right-0 h-1.5" style={{ background: 'linear-gradient(90deg,#ea580c,#f59e0b)' }} />
+
+        {/* Título + linhas de texto "carregando" */}
+        <div className="flex flex-col gap-3.5">
+          <div className="edl-line" style={{ width: '62%', height: 16, marginBottom: 10, background: '#dfe4ea' }} />
+          <div className="edl-line" style={{ width: '100%' }} />
+          <div className="edl-line" style={{ width: '95%' }} />
+          <div className="edl-line" style={{ width: '98%' }} />
+          <div className="edl-line" style={{ width: '70%' }} />
+          <div style={{ height: 8 }} />
+          <div className="edl-line" style={{ width: '100%' }} />
+          <div className="edl-line" style={{ width: '90%' }} />
+          <div className="edl-line" style={{ width: '96%' }} />
+          <div className="flex items-center gap-1">
+            <div className="edl-line" style={{ width: '45%' }} />
+            {/* cursor piscando */}
+            <span style={{ width: 2, height: 16, background: '#ea580c', borderRadius: 1, animation: 'edl-cursor 1s steps(1) infinite' }} />
+          </div>
+        </div>
+
+        {/* Brilho diagonal varrendo a folha (shimmer) */}
+        <div
+          className="edl-sheen absolute inset-0 pointer-events-none"
+          style={{
+            background: 'linear-gradient(105deg, transparent 35%, rgba(255,255,255,.65) 50%, transparent 65%)',
+            animation: 'edl-sheen 1.5s ease-in-out infinite',
+          }}
+        />
+      </div>
+
+      {/* Legenda */}
+      <div className="mt-7 flex flex-col items-center text-center px-6" style={{ animation: 'edl-rise .6s cubic-bezier(.16,1,.3,1) both', animationDelay: '.08s' }}>
+        <p className="text-[15px] font-semibold text-amber-50 tracking-tight">Abrindo documento</p>
+        {editorDocBoot.name && (
+          <p className="mt-1 text-amber-100/60 text-xs max-w-[300px] truncate">{editorDocBoot.name}</p>
+        )}
+      </div>
+    </div>
+  );
+
   if (loading) {
+    if (editorDocBoot.active) return editorDocLoader;
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-[#0a0806]">
         <style>{`
@@ -2468,8 +2576,8 @@ useEffect(() => {
 
         {/* Main Content Area */}
       <div
-        className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950 ${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'overflow-hidden' : ''}`}
-        style={activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email'
+        className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950 ${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' || activeModule === 'nextcloud' ? 'overflow-hidden' : ''}`}
+        style={activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' || activeModule === 'nextcloud'
           ? { height: `calc(100dvh - ${floatWins.length > 0 ? TASKBAR_H : 0}px)` }
           : undefined}
       >
@@ -2749,7 +2857,7 @@ useEffect(() => {
         </header>
 
         {/* Main Content */}
-        <main className={`${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-3 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'py-0' : activeModule === 'cloud' ? 'py-2 sm:py-2' : 'py-4 sm:py-6'}`}>
+        <main className={`${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-3 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : activeModule === 'nextcloud' ? 'flex flex-col overflow-hidden px-3 sm:px-4 lg:px-6 xl:px-8' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'py-0' : activeModule === 'cloud' ? 'py-2 sm:py-2' : activeModule === 'nextcloud' ? 'pt-4 pb-0 sm:pt-6 sm:pb-0' : 'py-4 sm:py-6'}`}>
           {profileBanner && (
             <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm shadow-sm">
               <CheckCheck className="w-4 h-4 flex-shrink-0 text-emerald-500" />
@@ -2813,7 +2921,9 @@ useEffect(() => {
               />
             )}
             {activeModule === 'nextcloud' && (
-              <NextcloudBrowser />
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <NextcloudBrowser />
+              </div>
             )}
             {activeModule === 'configuracoes' && (
               <SettingsModule
@@ -2951,7 +3061,7 @@ useEffect(() => {
           onBadgeCountChange={setDocRequestsBadge}
         />
 
-        {activeModule !== 'chat' && activeModule !== 'whatsapp' && activeModule !== 'email' && (
+        {activeModule !== 'chat' && activeModule !== 'whatsapp' && activeModule !== 'email' && activeModule !== 'nextcloud' && (
           <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-[#e7e5df] pt-4 text-xs text-slate-500">
               <div className="flex items-center gap-2">
@@ -2981,6 +3091,11 @@ useEffect(() => {
       <Suspense fallback={null}>
         <PetitionEditorWidget />
       </Suspense>
+
+      {/* Overlay do carregamento próprio da abertura em nova aba — cobre o
+          dashboard E o loader interno do editor até o documento carregar.
+          Portal p/ document.body para ficar acima do widget do editor. */}
+      {editorDocBoot.active && !editorBootHandled && createPortal(editorDocLoader, document.body)}
 
       <Suspense fallback={null}>
         <ChatFloatingWidget />

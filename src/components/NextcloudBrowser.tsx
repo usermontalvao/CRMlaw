@@ -5,7 +5,8 @@ import {
   Pencil, Eye, X, UserPlus, Search, Unlink, Wrench, Combine, Scissors, Stamp,
   Hash, RotateCw, Music, CheckSquare, Square, FileImage, Save, Copy, History,
   MoreVertical, FolderInput, List, LayoutGrid, GripVertical, RotateCcw, Layers,
-  ClipboardPaste, ShieldAlert, ArrowUpDown,
+  ClipboardPaste, ShieldAlert, ArrowUpDown, ChevronDown, PanelLeftClose,
+  PanelLeftOpen, HardDrive, NotebookPen,
 } from 'lucide-react';
 import { nextcloudService, type NextcloudEntry } from '../services/nextcloud.service';
 import { clientService } from '../services/client.service';
@@ -14,6 +15,7 @@ import { Modal, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigation } from '../contexts/NavigationContext';
 import {
   watermarkPdf, numberPdfPages, splitPdf, mergePdfs, rotatePdf, imagesToPdf,
   pdfBytesToBlob, getPdfPageCount, normalizeRotation, type PageNumberPosition,
@@ -22,6 +24,7 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Document, Page, pdfjs } from 'react-pdf';
+import PizZip from 'pizzip';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -134,6 +137,151 @@ const SortablePdfPage: React.FC<{ id: string; children: React.ReactNode }> = ({ 
   );
 };
 
+const NextcloudTreeNode: React.FC<{
+  name: string;
+  nodePath: string;
+  activePath: string;
+  depth?: number;
+  onNavigate: (path: string) => void;
+  dropEnabled?: boolean;
+  onDropItems?: (event: React.DragEvent, targetPath: string) => void;
+}> = ({ name, nodePath, activePath, depth = 0, onNavigate, dropEnabled = false, onDropItems }) => {
+  const rowRef = useRef<HTMLDivElement>(null);
+  const expandOnDragTimerRef = useRef<number | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [children, setChildren] = useState<NextcloudEntry[] | null>(null);
+  const [loadingChildren, setLoadingChildren] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const isActive = nodePath === activePath;
+
+  const loadChildren = useCallback(async () => {
+    if (children || loadingChildren) return;
+    setLoadingChildren(true);
+    try {
+      const items = await nextcloudService.list(nodePath);
+      setChildren(items.filter((item) => item.isDir).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+    } catch {
+      setChildren([]);
+    } finally {
+      setLoadingChildren(false);
+    }
+  }, [children, loadingChildren, nodePath]);
+
+  useEffect(() => {
+    const belongsToActivePath = activePath === nodePath || activePath.startsWith(`${nodePath}/`);
+    if (!belongsToActivePath) return;
+    setExpanded(true);
+    void loadChildren();
+  }, [activePath, loadChildren, nodePath]);
+
+  useEffect(() => {
+    if (isActive) rowRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [isActive]);
+
+  useEffect(() => {
+    if (dropEnabled) return;
+    clearExpandOnDragTimer();
+    setDragOver(false);
+  }, [dropEnabled]);
+
+  const toggleExpanded = async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    const nextExpanded = !expanded;
+    setExpanded(nextExpanded);
+    if (nextExpanded) await loadChildren();
+  };
+
+  const clearExpandOnDragTimer = () => {
+    if (expandOnDragTimerRef.current !== null) {
+      window.clearTimeout(expandOnDragTimerRef.current);
+      expandOnDragTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => clearExpandOnDragTimer(), []);
+
+  return (
+    <div>
+      <div
+        ref={rowRef}
+        role="button"
+        tabIndex={0}
+        onClick={() => onNavigate(nodePath)}
+        onDoubleClick={(event) => void toggleExpanded(event)}
+        onDragEnter={(event) => {
+          if (!dropEnabled) return;
+          event.preventDefault();
+          setDragOver(true);
+          if (!expanded && expandOnDragTimerRef.current === null) {
+            expandOnDragTimerRef.current = window.setTimeout(() => {
+              setExpanded(true);
+              void loadChildren();
+              expandOnDragTimerRef.current = null;
+            }, 650);
+          }
+        }}
+        onDragOver={(event) => {
+          if (!dropEnabled) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = event.ctrlKey || event.metaKey || event.altKey ? 'copy' : 'move';
+          setDragOver(true);
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+          clearExpandOnDragTimer();
+          setDragOver(false);
+        }}
+        onDrop={(event) => {
+          if (!dropEnabled || !onDropItems) return;
+          event.preventDefault();
+          event.stopPropagation();
+          clearExpandOnDragTimer();
+          setDragOver(false);
+          onDropItems(event, nodePath);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') onNavigate(nodePath);
+          if (event.key === 'ArrowRight' && !expanded) void toggleExpanded(event as unknown as React.MouseEvent);
+        }}
+        className={`group flex h-8 cursor-default items-center gap-1 rounded-lg pr-2 text-[13px] transition ${
+          dragOver
+            ? 'bg-blue-600 font-semibold text-white shadow-sm ring-2 ring-blue-300 dark:ring-blue-700'
+            : isActive
+            ? 'bg-blue-100 font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-200'
+            : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800'
+        }`}
+        style={{ paddingLeft: 6 + depth * 14 }}
+      >
+        <button
+          type="button"
+          onClick={(event) => void toggleExpanded(event)}
+          aria-label={expanded ? `Recolher ${name}` : `Expandir ${name}`}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-black/5"
+        >
+          {loadingChildren
+            ? <Loader2 className="h-3 w-3 animate-spin" />
+            : <ChevronRight className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-90' : ''}`} />}
+        </button>
+        <Folder className={`h-4 w-4 shrink-0 ${dragOver ? 'text-white' : isActive ? 'text-blue-600' : 'text-amber-500'}`} />
+        <span className="truncate" title={name}>{name}</span>
+      </div>
+      {expanded && children?.map((child) => (
+        <NextcloudTreeNode
+          key={child.path}
+          name={child.name}
+          nodePath={child.path}
+          activePath={activePath}
+          depth={depth + 1}
+          onNavigate={onNavigate}
+          dropEnabled={dropEnabled}
+          onDropItems={onDropItems}
+        />
+      ))}
+    </div>
+  );
+};
+
 /**
  * NextcloudBrowser
  * -----------------------------------------------------------------------------
@@ -172,13 +320,18 @@ const isVideo = (e: NextcloudEntry) =>
 const isAudio = (e: NextcloudEntry) =>
   e.mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(e.name);
 const isMedia = (e: NextcloudEntry) => isVideo(e) || isAudio(e);
+const isTextFile = (e: NextcloudEntry) =>
+  e.mime.startsWith('text/')
+  || e.mime === 'application/json'
+  || e.mime === 'application/xml'
+  || /\.(txt|md|log|csv|json|xml|yaml|yml)$/i.test(e.name);
 
 function extIcon(entry: NextcloudEntry) {
   if (entry.isDir) return Folder;
   if (isImage(entry)) return ImageIcon;
   if (isVideo(entry)) return Film;
   if (isAudio(entry)) return Music;
-  if (isDocx(entry) || isPdf(entry)) return FileText;
+  if (isDocx(entry) || isPdf(entry) || isTextFile(entry)) return FileText;
   return FileIcon;
 }
 
@@ -188,8 +341,24 @@ function baseName(name: string): string {
   return i > 0 ? name.slice(0, i) : name;
 }
 
+function fileExtension(name: string): string | null {
+  const match = name.trim().match(/\.([a-z0-9]{1,10})$/i);
+  return match ? match[1].toUpperCase() : null;
+}
+
+function extensionBadgeClass(extension: string): string {
+  if (extension === 'PDF') return 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300';
+  if (extension === 'DOC' || extension === 'DOCX') return 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300';
+  if (['XLS', 'XLSX', 'CSV'].includes(extension)) return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300';
+  if (['PPT', 'PPTX'].includes(extension)) return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/40 dark:text-orange-300';
+  if (['PNG', 'JPG', 'JPEG', 'GIF', 'WEBP', 'SVG'].includes(extension)) return 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-300';
+  if (['TXT', 'MD', 'LOG', 'JSON', 'XML', 'YAML', 'YML'].includes(extension)) return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+  return 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300';
+}
+
 const NextcloudBrowser: React.FC = () => {
   const { user } = useAuth();
+  const { moduleParams, clearModuleParams } = useNavigation();
   const myId = user?.id;
   const [path, setPath] = useState<string>('');
   const [entries, setEntries] = useState<NextcloudEntry[]>([]);
@@ -200,13 +369,50 @@ const NextcloudBrowser: React.FC = () => {
   const dropZoneRef = useRef<HTMLDivElement>(null);
   const [dragActive, setDragActive] = useState(false);
   const [pdfLibraryOpen, setPdfLibraryOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1024);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem('nextcloud-sidebar-width'));
+      return Number.isFinite(saved) && saved >= 210 && saved <= 420 ? saved : 260;
+    } catch {
+      return 260;
+    }
+  });
+  const [resizingSidebar, setResizingSidebar] = useState(false);
+  const [sidebarRoots, setSidebarRoots] = useState<NextcloudEntry[]>([]);
+  const [sidebarTreeRevision, setSidebarTreeRevision] = useState(0);
   const [nameDialog, setNameDialog] = useState<{
     mode: 'create' | 'rename';
     entry?: NextcloudEntry;
     value: string;
   } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<NextcloudEntry | null>(null);
+  const [deleteTargets, setDeleteTargets] = useState<NextcloudEntry[]>([]);
   const [restoreVersionId, setRestoreVersionId] = useState<string | null>(null);
+  const [textEditorOpen, setTextEditorOpen] = useState(false);
+  const [textEditorEntry, setTextEditorEntry] = useState<NextcloudEntry | null>(null);
+  const [textEditorName, setTextEditorName] = useState('Novo documento.txt');
+  const [textEditorContent, setTextEditorContent] = useState('');
+  const [textEditorSavedContent, setTextEditorSavedContent] = useState('');
+  const [textEditorLoading, setTextEditorLoading] = useState(false);
+  const [textEditorSaving, setTextEditorSaving] = useState(false);
+  const [textDiscardConfirm, setTextDiscardConfirm] = useState(false);
+  const [textDiscardAction, setTextDiscardAction] = useState<'close' | 'new'>('close');
+
+  useEffect(() => {
+    const rawParams = moduleParams.nextcloud;
+    if (!rawParams) return;
+    try {
+      const params = JSON.parse(rawParams) as { path?: string };
+      if (typeof params.path === 'string') {
+        setSearch('');
+        setPath(params.path);
+      }
+    } catch {
+      // Parâmetros inválidos não devem impedir a abertura do módulo.
+    } finally {
+      clearModuleParams('nextcloud');
+    }
+  }, [clearModuleParams, moduleParams.nextcloud]);
 
   // Busca (recursiva, tipo Windows Explorer) e menu de contexto.
   const [search, setSearch] = useState('');
@@ -238,6 +444,31 @@ const NextcloudBrowser: React.FC = () => {
     } catch { /* ignore */ }
   }, [sortBy, sortDir]);
 
+  useEffect(() => {
+    try { localStorage.setItem('nextcloud-sidebar-width', String(sidebarWidth)); } catch { /* ignore */ }
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (!resizingSidebar) return;
+    const onPointerMove = (event: PointerEvent) => {
+      const left = dropZoneRef.current?.getBoundingClientRect().left ?? 0;
+      setSidebarWidth(Math.max(210, Math.min(420, event.clientX - left)));
+    };
+    const stopResizing = () => setResizingSidebar(false);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', stopResizing);
+    window.addEventListener('pointercancel', stopResizing);
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', stopResizing);
+      window.removeEventListener('pointercancel', stopResizing);
+    };
+  }, [resizingSidebar]);
+
   // Preview (PDF / imagem)
   const [previewFile, setPreviewFile] = useState<NextcloudEntry | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -253,6 +484,17 @@ const NextcloudBrowser: React.FC = () => {
   const [selectionAnchorPath, setSelectionAnchorPath] = useState<string | null>(null);
   const [focusedEntryPath, setFocusedEntryPath] = useState<string | null>(null);
   const [draggedEntries, setDraggedEntries] = useState<NextcloudEntry[] | null>(null);
+  const fileAreaRef = useRef<HTMLDivElement>(null);
+  const marqueeBaseSelectionRef = useRef<Record<string, boolean>>({});
+  const suppressFileAreaClickRef = useRef(false);
+  const [marquee, setMarquee] = useState<{
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
 
   // Área de transferência (copiar / recortar / colar).
   const [clipboard, setClipboard] = useState<{ mode: 'copy' | 'cut'; entries: NextcloudEntry[] } | null>(null);
@@ -355,6 +597,14 @@ const NextcloudBrowser: React.FC = () => {
 
   const openCtxMenu = (e: React.MouseEvent, entry: NextcloudEntry) => {
     e.preventDefault();
+    // Como no Explorer/Finder: botão direito preserva uma seleção múltipla
+    // quando o item clicado já faz parte dela; caso contrário, seleciona apenas
+    // o item clicado. Assim todas as ações do menu usam o mesmo conjunto.
+    if (!selected[entry.path]) {
+      setSelected({ [entry.path]: true });
+      setSelectionAnchorPath(entry.path);
+      setFocusedEntryPath(entry.path);
+    }
     // Limita à viewport (menu ~240px largura).
     const x = Math.min(e.clientX, window.innerWidth - 250);
     const y = Math.min(e.clientY, window.innerHeight - 380);
@@ -428,36 +678,49 @@ const NextcloudBrowser: React.FC = () => {
     showTransient(`${list.length} item(ns) recortado(s). Cole com Ctrl+V.`);
   };
 
-  // Gera um nome único na pasta atual (evita sobrescrever ao colar).
-  const uniqueNameHere = (name: string) => {
-    const exists = (n: string) => entries.some((e) => e.name === n);
-    if (!exists(name)) return name;
+  // Gera um nome único no destino (evita sobrescrever ao colar).
+  const uniqueNameForPaste = (name: string, reservedNames: Set<string>) => {
+    if (!reservedNames.has(name)) {
+      reservedNames.add(name);
+      return name;
+    }
     const dot = name.lastIndexOf('.');
     const b = dot > 0 ? name.slice(0, dot) : name;
     const ext = dot > 0 ? name.slice(dot) : '';
     let i = 1;
     let cand = `${b} (cópia)${ext}`;
-    while (exists(cand)) { i++; cand = `${b} (cópia ${i})${ext}`; }
+    while (reservedNames.has(cand)) { i++; cand = `${b} (cópia ${i})${ext}`; }
+    reservedNames.add(cand);
     return cand;
   };
 
-  const paste = async () => {
+  const paste = async (destinationPath = path) => {
     if (!clipboard || clipboard.entries.length === 0) return;
     setBusy(clipboard.mode === 'copy' ? 'Colando (copiar)…' : 'Colando (mover)…');
     setError(null);
     try {
+      const destinationEntries = destinationPath === path
+        ? entries
+        : await nextcloudService.list(destinationPath);
+      const reservedNames = new Set(destinationEntries.map((entry) => entry.name));
+
       for (const e of clipboard.entries) {
         const srcDir = dirOf(e.path);
-        if (clipboard.mode === 'cut' && srcDir === path) continue; // mover p/ mesma pasta: ignora
-        const targetName = (clipboard.mode === 'copy' || entries.some((x) => x.name === e.name)) ? uniqueNameHere(e.name) : e.name;
-        const dest = [path, targetName].filter(Boolean).join('/');
+        if (clipboard.mode === 'cut' && srcDir === destinationPath) continue; // mover p/ mesma pasta: ignora
+        const targetName = (clipboard.mode === 'copy' || reservedNames.has(e.name))
+          ? uniqueNameForPaste(e.name, reservedNames)
+          : e.name;
+        reservedNames.add(targetName);
+        const dest = [destinationPath, targetName].filter(Boolean).join('/');
         if (clipboard.mode === 'copy') await nextcloudService.copy(e.path, dest);
         else await nextcloudService.move(e.path, dest);
       }
       if (clipboard.mode === 'cut') setClipboard(null);
       clearSelection();
       await load(path);
-      showTransient(clipboard.mode === 'copy' ? 'Itens colados.' : 'Itens movidos.');
+      showTransient(clipboard.mode === 'copy'
+        ? `Itens copiados para ${destinationPath === path ? 'esta pasta' : 'a pasta escolhida'}.`
+        : `Itens movidos para ${destinationPath === path ? 'esta pasta' : 'a pasta escolhida'}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao colar.');
     } finally {
@@ -465,9 +728,11 @@ const NextcloudBrowser: React.FC = () => {
     }
   };
 
-  const load = useCallback(async (target: string) => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (target: string, opts?: { silent?: boolean }) => {
+    // `silent`: refresh de fundo (realtime/foco/polling) — não mostra o spinner
+    // de carregamento nem apaga a lista/erro atual em caso de falha transitória.
+    const silent = opts?.silent === true;
+    if (!silent) { setLoading(true); setError(null); }
     try {
       const list = await nextcloudService.list(target);
       list.sort((a, b) => {
@@ -475,15 +740,121 @@ const NextcloudBrowser: React.FC = () => {
         return a.name.localeCompare(b.name, 'pt-BR');
       });
       setEntries(list);
+      if (!target) setSidebarRoots(list.filter((item) => item.isDir).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao carregar do Nextcloud.');
-      setEntries([]);
+      if (!silent) {
+        setError(err instanceof Error ? err.message : 'Falha ao carregar do Nextcloud.');
+        setEntries([]);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(path); }, [path, load]);
+
+  // ── Realtime: mudanças externas no Nextcloud (webhook → Supabase → aqui) ────
+  // Mantém a pasta aberta sincronizada quando alguém altera arquivos direto no
+  // servidor, sem exigir "Recarregar". O refresh é SILENCIOSO: preserva seleção,
+  // rolagem, modo de exibição e a busca em andamento (recarrega `entries`, que
+  // fica oculto enquanto a busca mostra `searchResults`).
+  const pathRef = useRef(path);
+  useEffect(() => { pathRef.current = path; }, [path]);
+
+  // Não faz refresh de fundo enquanto um modal/editor está aberto por cima.
+  const backgroundBlockedRef = useRef(false);
+  useEffect(() => {
+    backgroundBlockedRef.current = Boolean(
+      previewFile || textEditorOpen || nameDialog || pdfToolFile || organizeFile
+      || versionsFile || linkTarget || deleteTargets.length > 0 || imagesPdfTargets || busy,
+    );
+  }, [previewFile, textEditorOpen, nameDialog, pdfToolFile, organizeFile, versionsFile, linkTarget, deleteTargets.length, imagesPdfTargets, busy]);
+
+  const refreshSidebarRoots = useCallback(async () => {
+    try {
+      const items = await nextcloudService.list('');
+      setSidebarRoots(items.filter((item) => item.isDir).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+    } catch { /* a barra lateral é secundária */ }
+  }, []);
+
+  useEffect(() => {
+    const parentOf = (p: string | null | undefined): string | null => {
+      if (p === null || p === undefined) return null;
+      const i = p.lastIndexOf('/');
+      return i >= 0 ? p.slice(0, i) : '';
+    };
+    const pendingDirs = new Set<string>();
+    let rootTouched = false;
+    let timer: number | null = null;
+
+    // Debounce: eventos costumam vir em rajada (ex.: create + write juntos).
+    const flush = () => {
+      timer = null;
+      const current = pathRef.current;
+      if (rootTouched) { rootTouched = false; void refreshSidebarRoots(); }
+      if (pendingDirs.has(current)) void load(current, { silent: true });
+      pendingDirs.clear();
+    };
+
+    const unsub = nextcloudService.subscribeFileChanges((evt) => {
+      // Miniaturas: conteúdo pode ter mudado (write) ou o caminho sumiu (rename).
+      for (const p of [evt.nodePath, evt.sourcePath, evt.targetPath]) if (p) thumbCache.delete(p);
+
+      // Se a pasta ATUALMENTE aberta foi apagada/renomeada, sobe para a pai.
+      const removed = evt.eventClass.includes('NodeDeleted')
+        ? (evt.nodePath ?? evt.sourcePath)
+        : evt.eventClass.includes('NodeRenamed') ? evt.sourcePath : null;
+      if (removed && removed === pathRef.current) {
+        setPath(parentOf(removed) ?? '');
+      } else if (removed) {
+        // Remove da seleção o item que deixou de existir.
+        setSelected((prev) => { if (!prev[removed]) return prev; const next = { ...prev }; delete next[removed]; return next; });
+      }
+
+      // Diretórios afetados: o calculado pelo backend + pais de origem/destino.
+      for (const d of [evt.affectedDirectory, parentOf(evt.sourcePath), parentOf(evt.targetPath)]) {
+        if (d !== null) pendingDirs.add(d);
+      }
+      // Alteração em nível raiz → atualizar a barra lateral (pasta raiz criada/removida/renomeada).
+      if (evt.affectedDirectory === '' || parentOf(evt.sourcePath) === '' || parentOf(evt.targetPath) === '') rootTouched = true;
+
+      if (timer === null) timer = window.setTimeout(flush, 500);
+    });
+
+    return () => { unsub(); if (timer !== null) window.clearTimeout(timer); };
+  }, [load, refreshSidebarRoots]);
+
+  // Fallback (caso o Realtime caia): recupera mudanças no foco/visibilidade e um
+  // polling leve de 45s — só com a aba visível e sem modal/editor bloqueando.
+  useEffect(() => {
+    const silentRefresh = () => {
+      if (document.visibilityState === 'visible' && !backgroundBlockedRef.current) {
+        void load(pathRef.current, { silent: true });
+      }
+    };
+    const onFocus = () => silentRefresh();
+    const onVisibility = () => { if (document.visibilityState === 'visible') silentRefresh(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    const iv = window.setInterval(silentRefresh, 45_000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.clearInterval(iv);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    let active = true;
+    nextcloudService.list('')
+      .then((items) => {
+        if (active) setSidebarRoots(items.filter((item) => item.isDir).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+      })
+      .catch(() => {
+        if (active) setSidebarRoots([]);
+      });
+    return () => { active = false; };
+  }, []);
 
   // Clientes + vínculos de pasta (uma vez).
   const loadLinks = useCallback(async () => {
@@ -568,41 +939,147 @@ const NextcloudBrowser: React.FC = () => {
     return () => window.removeEventListener('keydown', closePreviewOnEscape);
   }, [previewFile]);
 
-  // Abre o .docx no EDITOR PRINCIPAL (mesmo das petições), com salvamento de
-  // volta no Nextcloud. Emite o evento que o PetitionEditorWidget escuta.
-  const openInMainEditor = async (entry: NextcloudEntry) => {
+  // Abre o .docx no EDITOR PRINCIPAL (mesmo das petições), em uma NOVA ABA do
+  // navegador, mantendo este navegador de arquivos aberto. O payload (que contém
+  // o caminho com nome de cliente) vai por um TOKEN aleatório no localStorage —
+  // nunca na URL — e a nova aba lê o arquivo do servidor pelo initialNextcloudPath.
+  // window.open é chamado DENTRO do clique (sem await antes) p/ não ser bloqueado.
+  const openInMainEditor = (entry: NextcloudEntry) => {
     const others = othersEditing(entry.path);
     if (others.length > 0) {
       const names = others.map((o) => o.name).join(', ');
       if (!window.confirm(`${names} ${others.length > 1 ? 'estão' : 'está'} editando "${entry.name}" agora. Se você salvar por cima, pode sobrescrever o trabalho ${others.length > 1 ? 'deles' : 'dele/dela'}.\n\nAbrir mesmo assim?`)) return;
     }
-    setBusy(`Abrindo ${entry.name} no editor…`);
+    // Cliente vinculado à pasta do arquivo (se houver).
+    const dir = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
+    const linkedClientId = links[dir] || links[entry.path];
+    const payload = {
+      clientId: linkedClientId,
+      mode: 'new' as const,
+      initialDocumentName: entry.name,
+      initialNextcloudPath: entry.path,
+      openRequestId: crypto.randomUUID(),
+    };
     try {
-      const blob = await nextcloudService.readFile(entry.path);
-      const url = URL.createObjectURL(new Blob([blob], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      }));
-      // Cliente vinculado à pasta do arquivo (se houver).
-      const dir = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
-      const linkedClientId = links[dir] || links[entry.path];
-      events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, {
-        clientId: linkedClientId,
-        mode: 'new',
-        initialDocumentUrl: url,
-        initialDocumentName: entry.name,
-        initialNextcloudPath: entry.path,
-        openRequestId: crypto.randomUUID(),
-      });
+      const token = crypto.randomUUID();
+      const key = `petition-editor-open:${token}`;
+      localStorage.setItem(key, JSON.stringify(payload));
+      const target = `${window.location.pathname}${window.location.search}#editor-doc=${token}`;
+      const win = window.open(target, '_blank');
+      if (!win) {
+        // Popup bloqueado → fallback: abre na mesma aba (comportamento antigo).
+        localStorage.removeItem(key);
+        events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, payload);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao abrir no editor.');
-    } finally {
-      setBusy(null);
     }
   };
+
+  const openTextEditor = async (entry?: NextcloudEntry) => {
+    setTextEditorOpen(true);
+    setTextEditorEntry(entry ?? null);
+    setTextEditorName(entry?.name ?? 'Novo documento.txt');
+    setTextEditorContent('');
+    setTextEditorSavedContent('');
+    if (!entry) return;
+    setTextEditorLoading(true);
+    setError(null);
+    try {
+      const blob = await nextcloudService.readFile(entry.path);
+      const content = await blob.text();
+      setTextEditorContent(content);
+      setTextEditorSavedContent(content);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao abrir o arquivo de texto.');
+      setTextEditorOpen(false);
+    } finally {
+      setTextEditorLoading(false);
+    }
+  };
+
+  const saveTextEditor = async () => {
+    if (!textEditorOpen || textEditorSaving) return false;
+    let normalizedName = textEditorName.trim() || 'Novo documento.txt';
+    if (!/\.[a-z0-9]+$/i.test(normalizedName)) normalizedName += '.txt';
+    if (normalizedName.includes('/') || normalizedName.includes('\\')) {
+      setError('O nome do arquivo não pode conter barras.');
+      return false;
+    }
+    const target = textEditorEntry?.path
+      ? [dirOf(textEditorEntry.path), normalizedName].filter(Boolean).join('/')
+      : [path, normalizedName].filter(Boolean).join('/');
+    setTextEditorSaving(true);
+    setError(null);
+    try {
+      if (textEditorEntry && target !== textEditorEntry.path) {
+        await nextcloudService.move(textEditorEntry.path, target);
+      }
+      const blob = new Blob([textEditorContent], { type: 'text/plain;charset=utf-8' });
+      await nextcloudService.writeFile(target, blob);
+      setTextEditorName(normalizedName);
+      setTextEditorSavedContent(textEditorContent);
+      setTextEditorEntry({
+        name: normalizedName,
+        path: target,
+        isDir: false,
+        size: blob.size,
+        mime: 'text/plain',
+        mtime: new Date().toISOString(),
+      });
+      await load(path);
+      showTransient('Arquivo de texto salvo no Nextcloud.');
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao salvar o arquivo de texto.');
+      return false;
+    } finally {
+      setTextEditorSaving(false);
+    }
+  };
+
+  const closeTextEditor = (discard = false) => {
+    if (!discard && textEditorContent !== textEditorSavedContent) {
+      setTextDiscardAction('close');
+      setTextDiscardConfirm(true);
+      return;
+    }
+    setTextDiscardConfirm(false);
+    setTextEditorOpen(false);
+    setTextEditorEntry(null);
+    setTextEditorContent('');
+    setTextEditorSavedContent('');
+  };
+
+  const createNewTextDocument = () => {
+    if (textEditorContent !== textEditorSavedContent) {
+      setTextDiscardAction('new');
+      setTextDiscardConfirm(true);
+      return;
+    }
+    void openTextEditor();
+  };
+
+  useEffect(() => {
+    if (!textEditorOpen) return;
+    const onTextEditorShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void saveTextEditor();
+      }
+      if (event.key === 'Escape' && !textDiscardConfirm) {
+        event.preventDefault();
+        closeTextEditor();
+      }
+    };
+    window.addEventListener('keydown', onTextEditorShortcut);
+    return () => window.removeEventListener('keydown', onTextEditorShortcut);
+  });
 
   const openEntry = (entry: NextcloudEntry) => {
     if (entry.isDir) { setSearch(''); setPath(entry.path); return; }
     if (isDocx(entry)) { openInMainEditor(entry); return; }
+    if (isTextFile(entry)) { void openTextEditor(entry); return; }
     if (isMedia(entry) && entry.size > MEDIA_MAX_BYTES) {
       setError(`"${entry.name}" é grande demais (${formatBytes(entry.size)}) para reproduzir no navegador. Baixando…`);
       download(entry);
@@ -616,14 +1093,7 @@ const NextcloudBrowser: React.FC = () => {
     setBusy(`Baixando ${entry.name}…`);
     try {
       const blob = await nextcloudService.readFile(entry.path);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = entry.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      triggerBlobDownload(blob, entry.name);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao baixar.');
     } finally {
@@ -631,25 +1101,119 @@ const NextcloudBrowser: React.FC = () => {
     }
   };
 
-  const remove = (entry: NextcloudEntry) => setDeleteTarget(entry);
+  const triggerBlobDownload = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadEntries = async (requestedEntries: NextcloudEntry[]) => {
+    if (requestedEntries.length === 0) return;
+    if (requestedEntries.length === 1 && !requestedEntries[0].isDir) {
+      await download(requestedEntries[0]);
+      return;
+    }
+
+    // Evita duplicar itens quando uma pasta e um arquivo dentro dela foram
+    // selecionados ao mesmo tempo nos resultados da pesquisa.
+    const roots = requestedEntries.filter((entry, index, all) =>
+      all.findIndex((candidate) => candidate.path === entry.path) === index
+      && !all.some((candidate) => candidate.isDir && entry.path.startsWith(`${candidate.path}/`)),
+    );
+    const zip = new PizZip();
+    const usedRootNames = new Set<string>();
+    let downloadedFiles = 0;
+
+    const uniqueRootName = (name: string) => {
+      if (!usedRootNames.has(name)) {
+        usedRootNames.add(name);
+        return name;
+      }
+      const extension = fileExtension(name);
+      const stem = extension ? name.slice(0, -(extension.length + 1)) : name;
+      let suffix = 2;
+      let candidate = extension ? `${stem} (${suffix}).${extension.toLowerCase()}` : `${stem} (${suffix})`;
+      while (usedRootNames.has(candidate)) {
+        suffix += 1;
+        candidate = extension ? `${stem} (${suffix}).${extension.toLowerCase()}` : `${stem} (${suffix})`;
+      }
+      usedRootNames.add(candidate);
+      return candidate;
+    };
+
+    const addEntryToZip = async (entry: NextcloudEntry, zipPath: string): Promise<void> => {
+      if (entry.isDir) {
+        zip.folder(zipPath);
+        const children = await nextcloudService.list(entry.path);
+        for (const child of children) {
+          await addEntryToZip(child, `${zipPath}/${child.name}`);
+        }
+        return;
+      }
+
+      setBusy(`Preparando ZIP… ${downloadedFiles + 1} arquivo(s)`);
+      const blob = await nextcloudService.readFile(entry.path);
+      zip.file(zipPath, await blob.arrayBuffer(), { binary: true });
+      downloadedFiles += 1;
+    };
+
+    setError(null);
+    setBusy('Preparando arquivos para download…');
+    try {
+      for (const entry of roots) {
+        await addEntryToZip(entry, uniqueRootName(entry.name));
+      }
+      setBusy(`Compactando ${downloadedFiles} arquivo(s)…`);
+      const zipBlob = zip.generate({ type: 'blob', mimeType: 'application/zip', compression: 'DEFLATE' });
+      const stamp = new Date().toISOString().slice(0, 10);
+      const zipName = roots.length === 1 && roots[0].isDir
+        ? `${roots[0].name}.zip`
+        : `arquivos-nextcloud-${stamp}.zip`;
+      triggerBlobDownload(zipBlob, zipName);
+      showTransient(`${downloadedFiles} arquivo(s) baixado(s) em ZIP.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao preparar o arquivo ZIP.');
+      setBusy(null);
+    }
+  };
+
+  const remove = (targets: NextcloudEntry[]) => {
+    if (targets.length) setDeleteTargets(targets);
+  };
 
   const confirmRemove = async () => {
-    if (!deleteTarget) return;
-    const entry = deleteTarget;
-    setBusy(`Apagando ${entry.name}…`);
+    if (!deleteTargets.length) return;
+    const targets = [...deleteTargets];
+    setBusy(targets.length === 1 ? `Apagando ${targets[0].name}…` : `Apagando ${targets.length} itens…`);
     setError(null);
     try {
-      await nextcloudService.remove(entry.path);
-      setDeleteTarget(null);
+      const results = await Promise.allSettled(targets.map((entry) => nextcloudService.remove(entry.path)));
+      const removedPaths = targets
+        .filter((_, index) => results[index].status === 'fulfilled')
+        .map((entry) => entry.path);
+      const failedTargets = targets.filter((_, index) => results[index].status === 'rejected');
+
       setSelected((prev) => {
         const next = { ...prev };
-        delete next[entry.path];
+        removedPaths.forEach((entryPath) => delete next[entryPath]);
         return next;
       });
       await load(path);
-      showTransient(`${entry.isDir ? 'Pasta' : 'Arquivo'} removido com sucesso.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao apagar.');
+
+      if (failedTargets.length) {
+        setDeleteTargets(failedTargets);
+        setError(`${removedPaths.length} item(ns) removido(s), mas ${failedTargets.length} não puderam ser apagado(s). Tente novamente.`);
+      } else {
+        setDeleteTargets([]);
+        showTransient(targets.length === 1
+          ? `${targets[0].isDir ? 'Pasta' : 'Arquivo'} removido com sucesso.`
+          : `${targets.length} itens removidos com sucesso.`);
+      }
     } finally {
       setBusy(null);
     }
@@ -859,6 +1423,73 @@ const NextcloudBrowser: React.FC = () => {
       range: event.shiftKey,
     });
   };
+
+  const handleMarqueePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('[data-nextcloud-entry-path], button, input, textarea, select, a')) return;
+
+    event.preventDefault();
+    const additive = event.ctrlKey || event.metaKey;
+    marqueeBaseSelectionRef.current = additive ? { ...selected } : {};
+    if (!additive) {
+      setSelected({});
+      setSelectionAnchorPath(null);
+      setFocusedEntryPath(null);
+    }
+    setMarquee({
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      width: 0,
+      height: 0,
+    });
+  };
+
+  useEffect(() => {
+    if (!marquee) return;
+
+    const onPointerMove = (event: PointerEvent) => {
+      const left = Math.min(marquee.startX, event.clientX);
+      const top = Math.min(marquee.startY, event.clientY);
+      const right = Math.max(marquee.startX, event.clientX);
+      const bottom = Math.max(marquee.startY, event.clientY);
+      const next = {
+        ...marquee,
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+      };
+      setMarquee(next);
+
+      const hits: Record<string, boolean> = { ...marqueeBaseSelectionRef.current };
+      fileAreaRef.current?.querySelectorAll<HTMLElement>('[data-nextcloud-entry-path]').forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        const intersects = rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom;
+        const entryPath = element.dataset.nextcloudEntryPath;
+        if (intersects && entryPath) hits[entryPath] = true;
+      });
+      setSelected(hits);
+    };
+
+    const finish = () => {
+      suppressFileAreaClickRef.current = true;
+      setMarquee(null);
+      window.setTimeout(() => { suppressFileAreaClickRef.current = false; }, 0);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', finish, { once: true });
+    window.addEventListener('pointercancel', finish, { once: true });
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+    };
+  }, [marquee?.startX, marquee?.startY]);
+
   const selectedEntries = useMemo(
     () => displayEntries.filter((e) => selected[e.path]),
     [displayEntries, selected],
@@ -876,8 +1507,8 @@ const NextcloudBrowser: React.FC = () => {
     event.dataTransfer.setData('text/plain', `${items.length} item(ns)`);
   };
 
-  const dropSelectedIntoFolder = async (event: React.DragEvent, folder: NextcloudEntry) => {
-    if (!folder.isDir || !draggedEntries?.length) return;
+  const dropDraggedItemsIntoPath = async (event: React.DragEvent, targetFolderPath: string) => {
+    if (!draggedEntries?.length) return;
     event.preventDefault();
     event.stopPropagation();
     const shouldCopy = event.ctrlKey || event.metaKey || event.altKey;
@@ -886,14 +1517,17 @@ const NextcloudBrowser: React.FC = () => {
     let completedSuccessfully = false;
     try {
       for (const item of draggedEntries) {
-        if (item.path === folder.path || folder.path.startsWith(`${item.path}/`)) continue;
-        const destination = `${folder.path}/${item.name}`;
+        if (item.path === targetFolderPath || targetFolderPath.startsWith(`${item.path}/`)) continue;
+        const destination = `${targetFolderPath}/${item.name}`;
         if (shouldCopy) await nextcloudService.copy(item.path, destination);
         else await nextcloudService.move(item.path, destination);
       }
       setDraggedEntries(null);
       clearSelection();
       await load(path);
+      const rootItems = await nextcloudService.list('');
+      setSidebarRoots(rootItems.filter((item) => item.isDir).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
+      setSidebarTreeRevision((revision) => revision + 1);
       completedSuccessfully = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao mover os itens selecionados.');
@@ -901,6 +1535,11 @@ const NextcloudBrowser: React.FC = () => {
       setBusy(null);
     }
     if (completedSuccessfully) showTransient(`${shouldCopy ? 'Cópia' : 'Movimentação'} concluída.`);
+  };
+
+  const dropSelectedIntoFolder = async (event: React.DragEvent, folder: NextcloudEntry) => {
+    if (!folder.isDir) return;
+    await dropDraggedItemsIntoPath(event, folder.path);
   };
 
   // Atalhos Ctrl/⌘ + C / X / V (só quando o foco não está num campo de texto
@@ -1226,7 +1865,83 @@ const NextcloudBrowser: React.FC = () => {
   };
 
   return (
-    <div ref={dropZoneRef} className="relative flex flex-col h-full bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div
+      ref={dropZoneRef}
+      className={`relative flex h-full flex-col bg-white text-gray-900 transition-[padding] duration-200 dark:bg-gray-900 dark:text-gray-100 ${sidebarOpen ? 'lg:pl-[var(--nextcloud-sidebar-width)]' : ''}`}
+      style={{ '--nextcloud-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
+    >
+      {sidebarOpen && (
+        <>
+          <button type="button" aria-label="Fechar navegação lateral" onClick={() => setSidebarOpen(false)} className="absolute inset-0 z-30 bg-slate-950/20 backdrop-blur-[1px] lg:hidden" />
+          <aside
+            className={`absolute inset-y-0 left-0 z-40 flex max-w-[calc(100vw_-_32px)] flex-col border-r bg-[#f8f9fb] shadow-xl lg:z-20 lg:shadow-none dark:bg-zinc-950 ${resizingSidebar ? 'border-blue-400' : 'border-slate-200 dark:border-zinc-800'}`}
+            style={{ width: sidebarWidth }}
+          >
+            <div className="flex h-[61px] shrink-0 items-center justify-between border-b border-slate-200 px-3 dark:border-zinc-800">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
+                  <HardDrive className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">Explorador</p>
+                  <p className="text-[11px] text-slate-400">Nextcloud</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setSidebarOpen(false)} title="Recolher painel" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-zinc-800 dark:hover:text-white">
+                <PanelLeftClose className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+              <p className="mb-1 flex items-center gap-1 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400"><ChevronDown className="h-3 w-3" /> Acesso rápido</p>
+              <button type="button" onClick={() => { setSearch(''); setPath(''); }} className={`flex h-8 w-full items-center gap-2 rounded-lg px-3 text-[13px] transition ${path === '' ? 'bg-blue-100 font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-200' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800'}`}>
+                <Home className="h-4 w-4 text-blue-600" /> Início
+              </button>
+              <button type="button" onClick={() => setPdfLibraryOpen(true)} className="flex h-8 w-full items-center gap-2 rounded-lg px-3 text-[13px] text-slate-700 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800">
+                <FileText className="h-4 w-4 text-red-500" /> Biblioteca PDF
+              </button>
+
+              <div className="mt-4">
+                <p className="mb-1 flex items-center gap-1 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400"><ChevronDown className="h-3 w-3" /> Este Nextcloud</p>
+                {sidebarRoots.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-slate-400">Nenhuma pasta na raiz.</p>
+                ) : sidebarRoots.map((folder) => (
+                  <NextcloudTreeNode
+                    key={`${sidebarTreeRevision}:${folder.path}`}
+                    name={folder.name}
+                    nodePath={folder.path}
+                    activePath={path}
+                    onNavigate={(nextPath) => { setSearch(''); setPath(nextPath); }}
+                    dropEnabled={Boolean(draggedEntries?.length)}
+                    onDropItems={(event, targetPath) => { void dropDraggedItemsIntoPath(event, targetPath); }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="shrink-0 border-t border-slate-200 px-3 py-3 text-[11px] text-slate-400 dark:border-zinc-800">
+              <div className="flex items-center justify-between gap-2">
+                <span>{entries.length} item(ns) na pasta atual</span>
+                <span className="tabular-nums">{sidebarWidth}px</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              aria-label="Redimensionar barra lateral"
+              title="Arraste para redimensionar · duplo clique para restaurar"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.currentTarget.setPointerCapture?.(event.pointerId);
+                setResizingSidebar(true);
+              }}
+              onDoubleClick={() => setSidebarWidth(260)}
+              className={`group absolute inset-y-0 -right-1.5 z-50 hidden w-3 cursor-col-resize items-center justify-center lg:flex ${resizingSidebar ? 'bg-blue-500/10' : 'hover:bg-blue-500/10'}`}
+            >
+              <span className={`h-12 w-1 rounded-full transition ${resizingSidebar ? 'bg-blue-500' : 'bg-slate-300 opacity-0 group-hover:opacity-100'}`} />
+            </button>
+          </aside>
+        </>
+      )}
       {dragActive && (
         <div className="pointer-events-none absolute inset-3 z-40 flex items-center justify-center rounded-3xl border-2 border-dashed border-blue-500 bg-blue-50/95 shadow-2xl backdrop-blur-sm dark:bg-blue-950/90">
           <div className="flex max-w-md flex-col items-center gap-3 px-6 text-center">
@@ -1244,6 +1959,11 @@ const NextcloudBrowser: React.FC = () => {
       <div className="border-b border-gray-200 dark:border-gray-800 bg-gradient-to-r from-blue-50/60 to-transparent dark:from-blue-950/20">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3">
           <div className="flex items-center gap-2.5 min-w-0 shrink-0">
+            {!sidebarOpen && (
+              <button type="button" onClick={() => setSidebarOpen(true)} title="Mostrar painel de navegação" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-white">
+                <PanelLeftOpen className="h-4 w-4" />
+              </button>
+            )}
             <div className="w-9 h-9 rounded-xl bg-blue-600/10 dark:bg-blue-500/15 flex items-center justify-center">
               <Cloud className="w-5 h-5 text-blue-600" />
             </div>
@@ -1310,6 +2030,9 @@ const NextcloudBrowser: React.FC = () => {
             <button onClick={newFolder} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
               <FolderPlus className="w-4 h-4" /> <span className="hidden sm:inline">Nova pasta</span>
             </button>
+            <button onClick={() => void openTextEditor()} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
+              <NotebookPen className="w-4 h-4 text-blue-600" /> <span className="hidden xl:inline">Bloco de notas</span>
+            </button>
             <button onClick={() => setPdfLibraryOpen(true)} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
               <Wrench className="w-4 h-4 text-red-500" /> <span className="hidden sm:inline">Biblioteca PDF</span>
             </button>
@@ -1375,6 +2098,12 @@ const NextcloudBrowser: React.FC = () => {
           <button onClick={() => cutEntries(selectedEntries)} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-slate-600 transition hover:bg-violet-50 hover:text-violet-700 dark:text-slate-300 dark:hover:bg-violet-950/40 dark:hover:text-violet-300">
             <Scissors className="w-4 h-4" /> Recortar
           </button>
+          <button onClick={() => { void downloadEntries(selectedEntries); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-slate-600 transition hover:bg-violet-50 hover:text-violet-700 dark:text-slate-300 dark:hover:bg-violet-950/40 dark:hover:text-violet-300">
+            <Download className="w-4 h-4" /> Baixar{selectedEntries.length > 1 || selectedEntries.some((entry) => entry.isDir) ? ' ZIP' : ''}
+          </button>
+          <button onClick={() => remove(selectedEntries)} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40">
+            <Trash2 className="w-4 h-4" /> Apagar
+          </button>
           {selectedPdfs.length >= 2 && (
             <button onClick={handleMergeSelected} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-violet-600 px-3 py-1.5 text-white transition hover:bg-violet-700">
               <Combine className="w-4 h-4" /> Juntar {selectedPdfs.length} PDFs
@@ -1392,7 +2121,20 @@ const NextcloudBrowser: React.FC = () => {
       )}
 
       {/* Lista / Blocos */}
-      <div className="flex-1 overflow-y-auto" onClick={() => clearSelection()}>
+      <div
+        ref={fileAreaRef}
+        className="relative flex-1 overflow-y-auto"
+        onPointerDown={handleMarqueePointerDown}
+        onClick={() => {
+          if (!suppressFileAreaClickRef.current) clearSelection();
+        }}
+      >
+        {marquee && (
+          <div
+            className="pointer-events-none fixed z-[80] border border-blue-500 bg-blue-500/15 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
+            style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }}
+          />
+        )}
         {(loading && !isSearchActive) || (isSearchActive && searching && !searchResults) ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3">
             <Loader2 className="w-6 h-6 animate-spin" />
@@ -1410,9 +2152,11 @@ const NextcloudBrowser: React.FC = () => {
               const Icon = extIcon(entry);
               const linkedClient = entry.isDir ? clientNameById(links[entry.path]) : null;
               const isSel = !!selected[entry.path];
+              const extension = entry.isDir ? null : fileExtension(entry.name);
               return (
                 <div
                   key={entry.path}
+                  data-nextcloud-entry-path={entry.path}
                   onContextMenu={(e) => openCtxMenu(e, entry)}
                   onDoubleClick={() => openEntry(entry)}
                   onClick={(event) => handleEntryClick(event, entry)}
@@ -1434,9 +2178,16 @@ const NextcloudBrowser: React.FC = () => {
                   <button onClick={(e) => { e.stopPropagation(); openCtxMenu(e, entry); }} title="Mais ações" className="absolute top-1.5 right-1.5 p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 opacity-0 group-hover:opacity-100 z-10">
                     <MoreVertical className="w-4 h-4" />
                   </button>
-                  {entry.isDir
-                    ? <div className="w-full h-24 flex items-center justify-center"><Icon className="w-12 h-12 text-blue-500" /></div>
-                    : <NcThumb entry={entry} />}
+                  <div className="relative w-full">
+                    {entry.isDir
+                      ? <div className="w-full h-24 flex items-center justify-center"><Icon className="w-12 h-12 text-blue-500" /></div>
+                      : <NcThumb entry={entry} />}
+                    {extension && (
+                      <span className={`absolute bottom-1.5 left-1.5 inline-flex rounded-md border px-1.5 py-1 text-[9px] font-extrabold leading-none tracking-[0.08em] shadow-sm backdrop-blur-sm ${extensionBadgeClass(extension)}`}>
+                        {extension}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-xs text-center leading-tight line-clamp-2 break-all w-full" title={entry.name}>{entry.name}</span>
                   {isSearchActive && <span className="text-[10px] text-gray-400 truncate w-full text-center" title={dirOf(entry.path) || 'raiz'}>{dirOf(entry.path) || 'raiz'}</span>}
                   {!entry.isDir && othersEditing(entry.path).length > 0 && (
@@ -1479,12 +2230,14 @@ const NextcloudBrowser: React.FC = () => {
             </thead>
             <tbody>
               {displayEntries.map((entry) => {
-                const Icon = extIcon(entry);
-                const linkedClient = entry.isDir ? clientNameById(links[entry.path]) : null;
-                const isSel = !!selected[entry.path];
-                return (
+              const Icon = extIcon(entry);
+              const linkedClient = entry.isDir ? clientNameById(links[entry.path]) : null;
+              const isSel = !!selected[entry.path];
+              const extension = entry.isDir ? null : fileExtension(entry.name);
+              return (
                   <tr
                     key={entry.path}
+                    data-nextcloud-entry-path={entry.path}
                     onContextMenu={(e) => openCtxMenu(e, entry)}
                     onDoubleClick={() => openEntry(entry)}
                     onClick={(event) => handleEntryClick(event, entry)}
@@ -1514,6 +2267,11 @@ const NextcloudBrowser: React.FC = () => {
                             {isSearchActive && <span className="text-[11px] text-gray-400 truncate max-w-[40vw]">{dirOf(entry.path) || 'raiz'}</span>}
                           </span>
                         </div>
+                        {extension && (
+                          <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-extrabold leading-none tracking-[0.08em] ${extensionBadgeClass(extension)}`}>
+                            {extension}
+                          </span>
+                        )}
                         {linkedClient && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
                             <UserPlus className="w-3 h-3" /> {linkedClient}
@@ -1550,6 +2308,8 @@ const NextcloudBrowser: React.FC = () => {
       {/* Menu de contexto (botão direito / kebab) */}
       {ctxMenu && (() => {
         const entry = ctxMenu.entry;
+        const contextEntries = selected[entry.path] && selectedEntries.length > 0 ? selectedEntries : [entry];
+        const isMultiContext = contextEntries.length > 1;
         const item = (icon: React.ReactNode, label: string, onClick: () => void, danger = false) => (
           <button
             onClick={() => { setCtxMenu(null); onClick(); }}
@@ -1567,40 +2327,127 @@ const NextcloudBrowser: React.FC = () => {
             onContextMenu={(e) => e.preventDefault()}
           >
             <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800">
-              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide truncate">{entry.name}</p>
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide truncate">
+                {isMultiContext ? `${contextEntries.length} itens selecionados` : entry.name}
+              </p>
             </div>
 
-            {entry.isDir && item(<Folder className="w-4 h-4 text-blue-500" />, 'Abrir pasta', () => setPath(entry.path))}
-            {isDocx(entry) && item(<Pencil className="w-4 h-4 text-blue-600" />, 'Editar no editor', () => openInMainEditor(entry))}
-            {(isPdf(entry) || isImage(entry) || isMedia(entry)) && item(<Eye className="w-4 h-4 text-slate-500" />, 'Visualizar', () => setPreviewFile(entry))}
-            {isPdf(entry) && item(<Layers className="w-4 h-4 text-indigo-600" />, 'Organizar páginas', () => openOrganizer(entry))}
-            {isPdf(entry) && item(<Wrench className="w-4 h-4 text-violet-600" />, 'Ferramentas de PDF', () => openPdfTools(entry))}
-            {isImage(entry) && item(<FileImage className="w-4 h-4 text-rose-500" />, 'Converter em PDF', () => { setImagesPdfTargets([entry]); setImagesPdfName(baseName(entry.name)); })}
+            {!isMultiContext && entry.isDir && item(<Folder className="w-4 h-4 text-blue-500" />, 'Abrir pasta', () => setPath(entry.path))}
+            {!isMultiContext && isDocx(entry) && item(<Pencil className="w-4 h-4 text-blue-600" />, 'Editar no editor', () => openInMainEditor(entry))}
+            {!isMultiContext && isTextFile(entry) && item(<NotebookPen className="w-4 h-4 text-blue-600" />, 'Editar no Bloco de Notas', () => { void openTextEditor(entry); })}
+            {!isMultiContext && (isPdf(entry) || isImage(entry) || isMedia(entry)) && item(<Eye className="w-4 h-4 text-slate-500" />, 'Visualizar', () => setPreviewFile(entry))}
+            {!isMultiContext && isPdf(entry) && item(<Layers className="w-4 h-4 text-indigo-600" />, 'Organizar páginas', () => openOrganizer(entry))}
+            {!isMultiContext && isPdf(entry) && item(<Wrench className="w-4 h-4 text-violet-600" />, 'Ferramentas de PDF', () => openPdfTools(entry))}
+            {!isMultiContext && isImage(entry) && item(<FileImage className="w-4 h-4 text-rose-500" />, 'Converter em PDF', () => { setImagesPdfTargets([entry]); setImagesPdfName(baseName(entry.name)); })}
 
             <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
 
-            {item(<Copy className="w-4 h-4 text-slate-500" />, 'Copiar', () => copyEntries(selected[entry.path] ? selectedEntries : [entry]))}
-            {item(<Scissors className="w-4 h-4 text-slate-500" />, 'Recortar', () => cutEntries(selected[entry.path] ? selectedEntries : [entry]))}
-            {clipboard && item(<ClipboardPaste className="w-4 h-4 text-blue-600" />, `Colar ${clipboard.entries.length} aqui`, () => { void paste(); })}
+            {item(<Copy className="w-4 h-4 text-slate-500" />, isMultiContext ? `Copiar ${contextEntries.length} itens` : 'Copiar', () => copyEntries(contextEntries))}
+            {item(<Scissors className="w-4 h-4 text-slate-500" />, isMultiContext ? `Recortar ${contextEntries.length} itens` : 'Recortar', () => cutEntries(contextEntries))}
+            {clipboard && item(
+              <ClipboardPaste className="w-4 h-4 text-blue-600" />,
+              !isMultiContext && entry.isDir
+                ? `Colar ${clipboard.entries.length} dentro desta pasta`
+                : `Colar ${clipboard.entries.length} nesta pasta`,
+              () => { void paste(!isMultiContext && entry.isDir ? entry.path : path); },
+            )}
 
             <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
 
-            {entry.isDir && item(<UserPlus className="w-4 h-4 text-emerald-600" />, links[entry.path] ? 'Alterar vínculo' : 'Vincular a cliente', () => setLinkTarget(entry))}
-            {!entry.isDir && item(<History className="w-4 h-4 text-amber-600" />, 'Histórico de versões', () => openVersions(entry))}
-            {item(<FolderInput className="w-4 h-4 text-slate-500" />, 'Renomear', () => setNameDialog({ mode: 'rename', entry, value: entry.name }))}
-            {!entry.isDir && item(<Download className="w-4 h-4 text-slate-500" />, 'Baixar', () => download(entry))}
+            {!isMultiContext && entry.isDir && item(<UserPlus className="w-4 h-4 text-emerald-600" />, links[entry.path] ? 'Alterar vínculo' : 'Vincular a cliente', () => setLinkTarget(entry))}
+            {!isMultiContext && !entry.isDir && item(<History className="w-4 h-4 text-amber-600" />, 'Histórico de versões', () => openVersions(entry))}
+            {!isMultiContext && item(<FolderInput className="w-4 h-4 text-slate-500" />, 'Renomear', () => setNameDialog({ mode: 'rename', entry, value: entry.name }))}
+            {item(
+              <Download className="w-4 h-4 text-slate-500" />,
+              entry.isDir || isMultiContext ? 'Baixar como ZIP' : 'Baixar',
+              () => { void downloadEntries(contextEntries); },
+            )}
 
             <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-            {item(<Trash2 className="w-4 h-4 text-red-500" />, 'Apagar', () => remove(entry), true)}
+            {item(<Trash2 className="w-4 h-4 text-red-500" />, isMultiContext ? `Apagar ${contextEntries.length} itens` : 'Apagar', () => remove(contextEntries), true)}
           </div>
         );
       })()}
+
+      {/* Bloco de Notas para arquivos de texto */}
+      {textEditorOpen && (
+        <div className="fixed inset-0 z-[145] flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-sm sm:p-5" onClick={() => closeTextEditor()}>
+          <div className="flex h-[90dvh] w-full max-w-[1000px] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-[0_35px_100px_rgba(0,0,0,0.35)] dark:border-zinc-700 dark:bg-zinc-900 sm:h-[76dvh]" onClick={(event) => event.stopPropagation()}>
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-3 dark:border-zinc-700 dark:bg-zinc-800">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <NotebookPen className="h-5 w-5 shrink-0 text-blue-600" />
+                <input
+                  value={textEditorName}
+                  onChange={(event) => setTextEditorName(event.target.value)}
+                  aria-label="Nome do arquivo"
+                  className="min-w-0 max-w-[55vw] rounded border border-transparent bg-transparent px-1.5 py-1 text-sm font-medium text-slate-800 outline-none hover:border-slate-300 focus:border-blue-400 focus:bg-white dark:text-white dark:focus:bg-zinc-900"
+                />
+                {textEditorContent !== textEditorSavedContent && <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500" title="Alterações não salvas" />}
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button type="button" onClick={() => void saveTextEditor()} disabled={textEditorSaving || textEditorLoading} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50">
+                  {textEditorSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Salvar
+                </button>
+                <button type="button" onClick={() => closeTextEditor()} aria-label="Fechar Bloco de Notas" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-100 hover:text-red-600 dark:text-slate-300 dark:hover:bg-red-950/40">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex h-9 shrink-0 items-center gap-1 border-b border-slate-200 bg-white px-2 text-xs text-slate-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-slate-300">
+              <button type="button" onClick={createNewTextDocument} className="rounded px-2.5 py-1 hover:bg-slate-100 dark:hover:bg-zinc-800">Novo</button>
+              <button type="button" onClick={() => void saveTextEditor()} className="rounded px-2.5 py-1 hover:bg-slate-100 dark:hover:bg-zinc-800">Salvar</button>
+              <button type="button" onClick={() => setTextEditorContent('')} className="rounded px-2.5 py-1 hover:bg-slate-100 dark:hover:bg-zinc-800">Limpar</button>
+              <span className="ml-auto hidden text-slate-400 sm:inline">Ctrl/Cmd + S para salvar</span>
+            </div>
+            <div className="relative min-h-0 flex-1 bg-white dark:bg-zinc-950">
+              {textEditorLoading ? (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/90 text-slate-400 dark:bg-zinc-950/90">
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Abrindo arquivo…
+                </div>
+              ) : null}
+              <textarea
+                autoFocus
+                spellCheck
+                value={textEditorContent}
+                onChange={(event) => setTextEditorContent(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Tab') return;
+                  event.preventDefault();
+                  const element = event.currentTarget;
+                  const start = element.selectionStart;
+                  const end = element.selectionEnd;
+                  setTextEditorContent((content) => `${content.slice(0, start)}\t${content.slice(end)}`);
+                  window.requestAnimationFrame(() => {
+                    element.selectionStart = element.selectionEnd = start + 1;
+                  });
+                }}
+                className="h-full w-full resize-none border-0 bg-white p-5 font-mono text-[14px] leading-6 text-slate-900 outline-none dark:bg-zinc-950 dark:text-zinc-100"
+                placeholder="Digite aqui…"
+              />
+            </div>
+            <div className="flex h-7 shrink-0 items-center justify-end gap-4 border-t border-slate-200 bg-slate-50 px-3 text-[11px] text-slate-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-slate-400">
+              <span>{textEditorContent.split('\n').length} linha(s)</span>
+              <span>{textEditorContent.length} caractere(s)</span>
+              <span>UTF-8</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de preview (PDF / imagem) */}
       {previewFile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-2 backdrop-blur-sm sm:p-6" onClick={() => setPreviewFile(null)}>
           <div
-            className="flex h-[94dvh] w-full max-w-[1380px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-white/15 dark:bg-gray-900 sm:h-[84dvh] sm:w-[88vw]"
+            className={[
+              'flex w-[calc(100vw_-_16px)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-white/15 dark:bg-gray-900',
+              isPdf(previewFile)
+                ? 'h-[90dvh] max-w-[1120px] sm:h-[78dvh] sm:w-[82vw]'
+                : isVideo(previewFile)
+                  ? 'max-w-[860px]'
+                  : isAudio(previewFile)
+                    ? 'max-w-[580px]'
+                    : 'max-w-[960px]',
+            ].join(' ')}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-2 dark:border-gray-800 sm:px-5">
@@ -1623,13 +2470,22 @@ const NextcloudBrowser: React.FC = () => {
                 </button>
               </div>
             </div>
-            <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-slate-200 dark:bg-gray-950">
+            <div className={[
+              'flex min-h-0 items-center justify-center overflow-auto',
+              isPdf(previewFile)
+                ? 'flex-1 bg-slate-200 dark:bg-gray-950'
+                : isVideo(previewFile)
+                  ? 'h-[min(68dvh,680px)] bg-black p-2'
+                  : isAudio(previewFile)
+                    ? 'h-52 bg-slate-900'
+                    : 'h-[min(68dvh,680px)] bg-slate-100 p-3 dark:bg-gray-950',
+            ].join(' ')}>
               {!previewUrl ? (
                 <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
               ) : isImage(previewFile) ? (
                 <img src={previewUrl} alt={previewFile.name} className="max-w-full max-h-full object-contain" />
               ) : isVideo(previewFile) ? (
-                <video src={previewUrl} controls autoPlay className="max-w-full max-h-full" />
+                <video src={previewUrl} controls autoPlay className="h-full max-h-full w-auto max-w-full object-contain" />
               ) : isAudio(previewFile) ? (
                 <div className="w-full max-w-lg px-6">
                   <div className="flex flex-col items-center gap-4 text-gray-300">
@@ -1703,7 +2559,7 @@ const NextcloudBrowser: React.FC = () => {
       {/* Modal: ferramentas de PDF */}
       {pdfToolFile && (
         <div className="fixed inset-0 z-[135] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !applyingTool && closePdfTools()}>
-          <div className="flex h-[96dvh] w-full flex-col overflow-hidden rounded-t-[24px] bg-[#f8f7f5] shadow-[0_40px_100px_rgba(0,0,0,0.35)] sm:h-[88dvh] sm:max-w-5xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="flex h-[94dvh] w-full flex-col overflow-hidden rounded-t-[24px] bg-[#f8f7f5] shadow-[0_40px_100px_rgba(0,0,0,0.35)] sm:h-[82dvh] sm:max-w-4xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex shrink-0 items-center gap-4 bg-slate-900 px-5 py-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-red-500/25 bg-red-500/15">
                 <FileText className="h-5 w-5 text-red-400" />
@@ -1822,8 +2678,8 @@ const NextcloudBrowser: React.FC = () => {
 
       {/* Modal: organizador de páginas de PDF */}
       {organizeFile && (
-        <div className="fixed inset-0 z-[60] flex flex-col bg-slate-950/70 backdrop-blur-sm" onClick={() => !organizeSaving && closeOrganizer()}>
-          <div className="m-2 sm:m-6 flex-1 flex flex-col rounded-2xl bg-white dark:bg-gray-900 overflow-hidden shadow-2xl ring-1 ring-white/10" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 p-2 backdrop-blur-sm sm:p-5" onClick={() => !organizeSaving && closeOrganizer()}>
+          <div className="flex h-[92dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-white/10 dark:bg-gray-900 sm:h-[84dvh]" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-200 dark:border-gray-800">
               <div className="flex items-center gap-2 min-w-0">
@@ -2002,6 +2858,51 @@ const NextcloudBrowser: React.FC = () => {
       )}
 
       <Modal
+        open={textDiscardConfirm}
+        onClose={() => setTextDiscardConfirm(false)}
+        size="sm"
+        title="Salvar alterações?"
+        eyebrow="Bloco de Notas"
+        subtitle={textEditorName}
+        icon={<NotebookPen className="h-5 w-5" />}
+        accentBarClassName="bg-blue-600"
+        iconContainerClassName="rounded-xl bg-blue-600 text-white"
+        zIndex={170}
+        footer={
+          <ModalFooter>
+            <Button variant="secondary" onClick={() => setTextDiscardConfirm(false)}>Cancelar</Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setTextDiscardConfirm(false);
+                if (textDiscardAction === 'new') void openTextEditor();
+                else closeTextEditor(true);
+              }}
+            >
+              Descartar
+            </Button>
+            <Button
+              onClick={async () => {
+                const saved = await saveTextEditor();
+                if (!saved) return;
+                setTextDiscardConfirm(false);
+                if (textDiscardAction === 'new') void openTextEditor();
+                else closeTextEditor(true);
+              }}
+            >
+              <Save className="h-4 w-4" /> Salvar
+            </Button>
+          </ModalFooter>
+        }
+      >
+        <ModalBody>
+          <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+            Existem alterações não salvas. Salve o arquivo antes de {textDiscardAction === 'new' ? 'criar um novo documento' : 'fechar'}.
+          </p>
+        </ModalBody>
+      </Modal>
+
+      <Modal
         open={pdfLibraryOpen}
         onClose={() => setPdfLibraryOpen(false)}
         size="lg"
@@ -2110,33 +3011,47 @@ const NextcloudBrowser: React.FC = () => {
       </Modal>
 
       <Modal
-        open={Boolean(deleteTarget)}
-        onClose={() => !busy && setDeleteTarget(null)}
+        open={deleteTargets.length > 0}
+        onClose={() => !busy && setDeleteTargets([])}
         size="sm"
-        title={`Excluir ${deleteTarget?.isDir ? 'pasta' : 'arquivo'}?`}
+        title={deleteTargets.length > 1
+          ? `Excluir ${deleteTargets.length} itens?`
+          : `Excluir ${deleteTargets[0]?.isDir ? 'pasta' : 'arquivo'}?`}
         eyebrow="Ação irreversível"
-        subtitle={deleteTarget?.name}
+        subtitle={deleteTargets.length > 1 ? 'Seleção múltipla' : deleteTargets[0]?.name}
         icon={<ShieldAlert className="h-5 w-5" />}
         accentBarClassName="bg-red-500"
         iconContainerClassName="rounded-xl bg-red-500 text-white shadow-sm"
         zIndex={161}
         footer={
           <ModalFooter>
-            <Button variant="secondary" onClick={() => setDeleteTarget(null)} disabled={Boolean(busy)}>Cancelar</Button>
+            <Button variant="secondary" onClick={() => setDeleteTargets([])} disabled={Boolean(busy)}>Cancelar</Button>
             <Button variant="danger" onClick={() => void confirmRemove()} disabled={Boolean(busy)}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              Excluir definitivamente
+              {deleteTargets.length > 1 ? `Excluir ${deleteTargets.length} itens` : 'Excluir definitivamente'}
             </Button>
           </ModalFooter>
         }
       >
         <ModalBody>
           <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm leading-relaxed text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-            {deleteTarget?.isDir
-              ? 'A pasta e todo o conteúdo dentro dela serão removidos do Nextcloud.'
-              : 'O arquivo será removido do Nextcloud.'}
+            {deleteTargets.length > 1
+              ? `Os ${deleteTargets.length} itens selecionados serão removidos do Nextcloud. Pastas terão todo o seu conteúdo apagado.`
+              : deleteTargets[0]?.isDir
+                ? 'A pasta e todo o conteúdo dentro dela serão removidos do Nextcloud.'
+                : 'O arquivo será removido do Nextcloud.'}
             {' '}Esta ação não pode ser desfeita por este módulo.
           </div>
+          {deleteTargets.length > 1 && (
+            <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">
+              {deleteTargets.map((entry) => (
+                <div key={entry.path} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-slate-600 dark:text-slate-300">
+                  {entry.isDir ? <Folder className="h-3.5 w-3.5 shrink-0 text-blue-500" /> : <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
+                  <span className="truncate">{entry.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </ModalBody>
       </Modal>
 

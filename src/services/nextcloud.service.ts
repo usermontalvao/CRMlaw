@@ -18,6 +18,20 @@ export interface NextcloudEntry {
   mtime: string | null;
 }
 
+/** Evento de mudança de arquivo no Nextcloud, entregue via Realtime. */
+export interface NextcloudChangeEvent {
+  id: string;
+  eventClass: string;
+  actorUid: string | null;
+  actorName: string | null;
+  nodePath: string | null;
+  sourcePath: string | null;
+  targetPath: string | null;
+  affectedDirectory: string | null;
+  nodeId: number | null;
+  createdAt: string;
+}
+
 async function invoke<T>(payload: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke('nextcloud-proxy', { body: payload });
   if (error) throw new Error(error.message);
@@ -244,6 +258,35 @@ export const nextcloudService = {
     const channel = supabase
       .channel('nextcloud-file-locks')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'nextcloud_file_locks' }, onChange)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  },
+
+  /** Assina eventos de mudança de arquivos vindos do Nextcloud (via webhook ->
+   *  Edge Function nextcloud-webhook -> nextcloud_change_events -> Realtime).
+   *  Independente de `subscribeLocks`. Retorna uma função de unsubscribe. */
+  subscribeFileChanges(onChange: (evt: NextcloudChangeEvent) => void): () => void {
+    const channel = supabase
+      .channel('nextcloud-change-events')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'nextcloud_change_events' },
+        (payload) => {
+          const row = (payload.new ?? {}) as Record<string, unknown>;
+          onChange({
+            id: String(row.id ?? ''),
+            eventClass: String(row.event_class ?? ''),
+            actorUid: (row.actor_uid as string | null) ?? null,
+            actorName: (row.actor_name as string | null) ?? null,
+            nodePath: (row.node_path as string | null) ?? null,
+            sourcePath: (row.source_path as string | null) ?? null,
+            targetPath: (row.target_path as string | null) ?? null,
+            affectedDirectory: (row.affected_directory as string | null) ?? null,
+            nodeId: typeof row.node_id === 'number' ? row.node_id : null,
+            createdAt: String(row.created_at ?? ''),
+          });
+        },
+      )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   },

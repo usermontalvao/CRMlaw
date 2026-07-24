@@ -873,32 +873,69 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   // ── Bulk ZIP download for selection ───────────────────────────────────
   const handleDownloadSelectionAsZip = async () => {
     const selectedFiles = files.filter(f => selectedFileKeys.includes(`file:${f.id}`));
-    if (selectedFiles.length === 0) { toast.info('Cloud', 'Nenhum arquivo selecionado.'); return; }
-    if (selectedFiles.length === 1) { await handleDownloadFile(selectedFiles[0]); return; }
+    const selectedFolders = allFolders.filter(f => selectedFolderKeys.includes(`folder:${f.id}`));
+
+    if (selectedFiles.length === 0 && selectedFolders.length === 0) {
+      toast.info('Cloud', 'Nenhum item selecionado.');
+      return;
+    }
+    // Atalhos: um único item baixa direto (sem empacotar num ZIP com 1 arquivo).
+    if (selectedFiles.length === 1 && selectedFolders.length === 0) {
+      await handleDownloadFile(selectedFiles[0]);
+      return;
+    }
+    if (selectedFiles.length === 0 && selectedFolders.length === 1) {
+      await handleDownloadFolder(selectedFolders[0]);
+      return;
+    }
+
     setDownloadingSelectionZip(true);
     try {
-      const zip = new JSZip();
-      const usedNames = new Set<string>();
-      const uniqueName = (name: string) => {
-        if (!usedNames.has(name)) { usedNames.add(name); return name; }
-        const dot = name.lastIndexOf('.');
-        const base = dot > 0 ? name.slice(0, dot) : name;
-        const ext = dot > 0 ? name.slice(dot) : '';
-        let i = 2;
-        while (usedNames.has(`${base} (${i})${ext}`)) i++;
-        const result = `${base} (${i})${ext}`;
-        usedNames.add(result);
-        return result;
-      };
-      for (const file of selectedFiles) {
-        const url = await cloudService.getFileSignedUrl(file.storage_path);
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`Falha ao baixar ${file.original_name}`);
-        zip.file(uniqueName(file.original_name), await resp.blob());
+      // Reúne todas as entradas preservando a estrutura de pastas:
+      //  - arquivos soltos vão para a raiz do ZIP;
+      //  - cada pasta selecionada é percorrida recursivamente e mantém seu
+      //    caminho relativo (ex.: "Pasta/Sub/arquivo.pdf").
+      const entries: Array<{ file: CloudFile; relativePath: string }> = [
+        ...selectedFiles.map((file) => ({ file, relativePath: file.original_name })),
+      ];
+      for (const folder of selectedFolders) {
+        const folderEntries = await collectFolderFiles(folder.id, `${folder.name}/`);
+        entries.push(...folderEntries);
       }
+
+      if (entries.length === 0) {
+        toast.info('Cloud', 'Os itens selecionados não possuem arquivos para download.');
+        return;
+      }
+
+      const zip = new JSZip();
+      const usedPaths = new Set<string>();
+      const getUniqueZipPath = (inputPath: string) => {
+        if (!usedPaths.has(inputPath)) { usedPaths.add(inputPath); return inputPath; }
+        const lastSlashIndex = inputPath.lastIndexOf('/');
+        const directory = lastSlashIndex >= 0 ? inputPath.slice(0, lastSlashIndex + 1) : '';
+        const fileName = lastSlashIndex >= 0 ? inputPath.slice(lastSlashIndex + 1) : inputPath;
+        const extensionIndex = fileName.lastIndexOf('.');
+        const baseName = extensionIndex > 0 ? fileName.slice(0, extensionIndex) : fileName;
+        const extension = extensionIndex > 0 ? fileName.slice(extensionIndex) : '';
+        let counter = 2;
+        let candidate = `${directory}${baseName} (${counter})${extension}`;
+        while (usedPaths.has(candidate)) { counter += 1; candidate = `${directory}${baseName} (${counter})${extension}`; }
+        usedPaths.add(candidate);
+        return candidate;
+      };
+
+      for (const entry of entries) {
+        const url = await cloudService.getFileSignedUrl(entry.file.storage_path);
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Falha ao baixar ${entry.file.original_name}`);
+        zip.file(getUniqueZipPath(entry.relativePath), await resp.blob());
+      }
+
       const blob = await zip.generateAsync({ type: 'blob' });
-      triggerBrowserDownload(blob, `seleção-${selectedFiles.length}-arquivos.zip`);
-      toast.success('Cloud', `ZIP com ${selectedFiles.length} arquivos iniciado.`);
+      const totalItems = selectedFiles.length + selectedFolders.length;
+      triggerBrowserDownload(blob, `seleção-${totalItems}-itens.zip`);
+      toast.success('Cloud', `ZIP com ${entries.length} arquivo(s) iniciado.`);
     } catch (err: any) {
       toast.error('Cloud', err.message || 'Erro ao criar ZIP.');
     } finally {
@@ -7599,7 +7636,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             {selectedItemKeys.length > 1 && (
               <>
                 <div className="my-1 border-t border-slate-100" />
-                {selectedFileKeys.length > 1 && (
+                {selectedItemKeys.length > 1 && (
                   <button
                     type="button"
                     onClick={() => { setContextMenu(null); void handleDownloadSelectionAsZip(); }}
@@ -7608,7 +7645,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                     <div className="w-7 h-7 rounded-lg bg-sky-50 flex items-center justify-center flex-shrink-0">
                       <FileArchive className="w-3.5 h-3.5 text-sky-500" />
                     </div>
-                    Baixar {selectedFileKeys.length} arquivos como ZIP
+                    Baixar {selectedItemKeys.length} itens como ZIP
                   </button>
                 )}
                 <button
@@ -7729,10 +7766,10 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               {/* ── Ações para seleção múltipla ── */}
               {selectedItemKeys.length > 1 && (
                 <>
-                  {selectedFileKeys.length > 1 && (
+                  {selectedItemKeys.length > 1 && (
                     <Btn onClick={() => void handleDownloadSelectionAsZip()} disabled={downloadingSelectionZip}
                       icon={downloadingSelectionZip ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileArchive className="w-3.5 h-3.5 text-sky-400" />}
-                      label={`ZIP (${selectedFileKeys.length})`} />
+                      label={`ZIP (${selectedItemKeys.length})`} />
                   )}
                   <Btn onClick={() => setBulkMoveModalOpen(true)} icon={<MoveRight className="w-3.5 h-3.5 text-amber-300" />} label="Mover" />
                   <Btn onClick={() => setBulkRenameModalOpen(true)} icon={<Tag className="w-3.5 h-3.5 text-violet-400" />} label="Renomear" />

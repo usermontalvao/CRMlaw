@@ -4,7 +4,7 @@
  * Persiste estado (aberto/minimizado) em localStorage
  */
 
-import React, { useEffect, useState, useCallback, Suspense, lazy } from 'react';
+import React, { useEffect, useRef, useState, useCallback, Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, FileText, Maximize2 } from 'lucide-react';
 import {
@@ -52,6 +52,9 @@ const PetitionEditorWidget: React.FC = () => {
   const [pendingPayload, setPendingPayload] = useState<PetitionEditorOpenPayload | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [hasChatLauncher, setHasChatLauncher] = useState(false);
+  // Verdadeiro quando esta aba foi aberta SÓ para o editor (via #editor-doc=).
+  // Nesse caso, fechar o editor deve fechar a ABA inteira, não voltar ao CRM.
+  const openedAsDedicatedTabRef = useRef(false);
   // Altura da taskbar de janelas flutuantes (z-[9999], acima deste widget):
   // o editor reserva esse espaço para a status bar não ficar encoberta.
   const [taskbarHeight, setTaskbarHeight] = useState(0);
@@ -161,6 +164,16 @@ const PetitionEditorWidget: React.FC = () => {
       const confirm = window.confirm('Você tem alterações não salvas. Deseja realmente fechar o editor?');
       if (!confirm) return;
     }
+    // Aba dedicada (aberta em nova aba só para editar): fecha a aba inteira.
+    if (openedAsDedicatedTabRef.current) {
+      try {
+        window.close();
+      } catch {
+        // ignore
+      }
+      // Se o navegador não fechar a aba (ex.: não foi aberta por script), cai no
+      // fechamento normal para não deixar o editor travado.
+    }
     setWidgetState('closed');
     setPendingPayload(null);
     setHasUnsavedChanges(false);
@@ -188,6 +201,31 @@ const PetitionEditorWidget: React.FC = () => {
       unsubMaximize();
     };
   }, [handleOpen, handleClose, handleMinimize, handleMaximize]);
+
+  // Abertura em NOVA ABA: quando o navegador de arquivos do Nextcloud abre um
+  // documento em outra aba, ele grava o payload no localStorage sob um token e
+  // navega para #editor-doc=<token>. Aqui detectamos o token, lemos o payload,
+  // abrimos o editor e limpamos o hash (para não reabrir em reloads).
+  useEffect(() => {
+    try {
+      const match = window.location.hash.match(/editor-doc=([\w-]+)/);
+      if (!match) return;
+      const token = match[1];
+      const key = `petition-editor-open:${token}`;
+      const raw = localStorage.getItem(key);
+      localStorage.removeItem(key);
+      try {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      } catch {
+        // ignore
+      }
+      if (!raw) return;
+      const payload = JSON.parse(raw) as PetitionEditorOpenPayload;
+      handleOpen(payload);
+    } catch (e) {
+      console.warn('Erro ao abrir editor a partir do token da URL:', e);
+    }
+  }, [handleOpen]);
 
   // Callback para o editor informar mudanças não salvas
   const handleUnsavedChanges = useCallback((hasChanges: boolean) => {
