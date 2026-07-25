@@ -27,10 +27,11 @@ const MAX_BODY_BYTES = 128 * 1024;
  * coincidente por timing). Retorna false imediatamente só quando os tamanhos
  * diferem — informação que o próprio protocolo já expõe.
  *
- * ATENÇÃO OPERACIONAL: o valor de NEXTCLOUD_WEBHOOK_SECRET pode ter sido
- * exposto anteriormente. Ele DEVE ser rotacionado no ambiente (Supabase
- * secrets + configuração do webhook no Nextcloud). O valor NUNCA aparece no
- * código nem em log — apenas é lido de Deno.env.
+ * MANUTENÇÃO OPERACIONAL: não há evidência no repositório de que o valor de
+ * NEXTCLOUD_WEBHOOK_SECRET tenha sido exposto. A rotação deve ser coordenada
+ * entre os secrets do Supabase e a configuração do webhook no Nextcloud, em
+ * uma janela de manutenção, ou antecipada se houver indício de exposição.
+ * O valor nunca deve aparecer no código, documentação, chat ou log.
  */
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;

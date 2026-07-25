@@ -145,6 +145,92 @@ const forceRulerVisibility = (container: any, show: boolean) => {
   }
 };
 
+const stabilizeDarkModeScrollRendering = (editor: any): (() => void) | null => {
+  try {
+    const helper = editor?.documentHelper as any;
+    const viewer = helper?.viewerContainer as HTMLElement | undefined;
+    if (!helper || !viewer || typeof helper.clearContent !== 'function') return null;
+
+    const originalClearContent = helper.clearContent.bind(helper);
+    let handlingScroll = false;
+    let releaseFrame = 0;
+
+    // O listener em capture roda antes do handler interno do Syncfusion.
+    // Durante esse mesmo evento preservamos o canvas anterior até que
+    // updateScrollBars pinte a nova região visível.
+    const markScrollFrame = () => {
+      handlingScroll = true;
+      if (releaseFrame) window.cancelAnimationFrame(releaseFrame);
+      releaseFrame = window.requestAnimationFrame(() => {
+        handlingScroll = false;
+        releaseFrame = 0;
+      });
+    };
+
+    const stableClearContent = (...args: any[]) => {
+      if (handlingScroll && document.body.classList.contains('petition-dark')) return;
+      return originalClearContent(...args);
+    };
+
+    viewer.addEventListener('scroll', markScrollFrame, { capture: true, passive: true });
+    helper.clearContent = stableClearContent;
+
+    return () => {
+      viewer.removeEventListener('scroll', markScrollFrame, true);
+      if (releaseFrame) window.cancelAnimationFrame(releaseFrame);
+      if (helper.clearContent === stableClearContent) helper.clearContent = originalClearContent;
+    };
+  } catch {
+    return null;
+  }
+};
+
+const pinHorizontalRulerToViewport = (editor: any): (() => void) | null => {
+  try {
+    const root = editor?.element as HTMLElement | undefined;
+    const helper = editor?.documentHelper as any;
+    const viewer = helper?.viewerContainer as HTMLElement | undefined;
+    const host = (helper?.optionsPaneContainer || viewer?.parentElement) as HTMLElement | undefined;
+    if (!root || !viewer || !host) return null;
+
+    host.classList.add('crm-pinned-ruler-host');
+
+    const pin = () => {
+      const selectors = [
+        `[id="${editor.element.id}_hRulerBottom"]`,
+        `[id="${editor.element.id}_markIndicator"]`,
+        `[id="${editor.element.id}_overlapRuler"]`,
+      ];
+
+      selectors.forEach((selector) => {
+        const node = root.querySelector<HTMLElement>(selector);
+        if (!node) return;
+        node.classList.add('crm-pinned-horizontal-ruler');
+        if (node.parentElement !== host) {
+          host.insertBefore(node, viewer);
+        }
+      });
+    };
+
+    pin();
+    const observer = new MutationObserver(pin);
+    observer.observe(root, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      root.querySelectorAll<HTMLElement>('.crm-pinned-horizontal-ruler').forEach((node) => {
+        node.classList.remove('crm-pinned-horizontal-ruler');
+        if (node.parentElement === host && viewer.isConnected) {
+          viewer.insertBefore(node, viewer.firstChild);
+        }
+      });
+      host.classList.remove('crm-pinned-ruler-host');
+    };
+  } catch {
+    return null;
+  }
+};
+
 const applySyncfusionServiceUrl = (editor: any) => {
   if (!editor) return;
   try {
@@ -798,7 +884,18 @@ export interface SyncfusionEditorRef {
   // Force minimal margins and fit page width (for modal use)
   applyMinimalMargins: () => void;
   // Replace all occurrences of a text (best-effort, preserves formatting)
-  replaceAll: (searchText: string, replaceText: string) => boolean;
+  replaceAll: (
+    searchText: string,
+    replaceText: string,
+    options?: { matchCase?: boolean; wholeWord?: boolean },
+  ) => boolean;
+  findText: (
+    searchText: string,
+    options?: { matchCase?: boolean; wholeWord?: boolean },
+  ) => { count: number; current: number };
+  navigateSearch: (direction: 'previous' | 'next') => { count: number; current: number };
+  replaceCurrentSearch: (replaceText: string) => boolean;
+  clearSearch: () => void;
   // Transform the current selection text case preserving formatting when possible
   transformSelectionCase: (mode: 'sentence' | 'lower' | 'upper' | 'title' | 'toggle') => boolean;
   // Force editor to refresh its layout and repaint
@@ -887,6 +984,8 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const contextMenuInitRef = useRef(false);
     const createdRef = useRef(false);
     const pendingActionsRef = useRef<(() => void)[]>([]);
+    const scrollStabilizerCleanupRef = useRef<(() => void) | null>(null);
+    const pinnedRulerCleanupRef = useRef<(() => void) | null>(null);
     const lastContextMenuPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
     const scannerRef = useRef<{ trigger: () => void; cancel: () => void } | null>(null);
     const forcedPasteModeRef = useRef<'smart' | 'source' | 'merge' | 'text' | 'clean' | null>(null);
@@ -1011,6 +1110,10 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       return () => {
         scannerRef.current?.cancel();
         scannerRef.current = null;
+        scrollStabilizerCleanupRef.current?.();
+        scrollStabilizerCleanupRef.current = null;
+        pinnedRulerCleanupRef.current?.();
+        pinnedRulerCleanupRef.current = null;
       };
     }, []);
 
@@ -1644,7 +1747,64 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         }
       },
 
-      replaceAll: (searchText: string, replaceText: string) => {
+      findText: (searchText, options) => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        const search: any = editor?.search ?? editor?.searchModule;
+        if (!search?.searchResults) return { count: 0, current: 0 };
+        try {
+          search.searchResults.clear?.();
+          const value = String(searchText || '');
+          if (!value.trim()) return { count: 0, current: 0 };
+          const findOption = options?.matchCase
+            ? (options?.wholeWord ? 'CaseSensitiveWholeWord' : 'CaseSensitive')
+            : (options?.wholeWord ? 'WholeWord' : 'None');
+          search.findAll?.(value, findOption);
+          const count = Number(search.searchResults.length || 0);
+          const index = Number(search.searchResults.index ?? -1);
+          return { count, current: count > 0 ? Math.max(0, index) + 1 : 0 };
+        } catch {
+          return { count: 0, current: 0 };
+        }
+      },
+
+      navigateSearch: (direction) => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        const results: any = (editor?.search ?? editor?.searchModule)?.searchResults;
+        const count = Number(results?.length || 0);
+        if (!results || count === 0) return { count: 0, current: 0 };
+        try {
+          const index = Number(results.index ?? 0);
+          results.index = direction === 'next'
+            ? (index + 1) % count
+            : (index - 1 + count) % count;
+          return { count, current: Number(results.index ?? 0) + 1 };
+        } catch {
+          return { count, current: 0 };
+        }
+      },
+
+      replaceCurrentSearch: (replaceText) => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        const results: any = (editor?.search ?? editor?.searchModule)?.searchResults;
+        if (!results || Number(results.length || 0) === 0) return false;
+        try {
+          results.replace?.(String(replaceText ?? ''));
+          return true;
+        } catch {
+          return false;
+        }
+      },
+
+      clearSearch: () => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        try {
+          (editor?.search ?? editor?.searchModule)?.searchResults?.clear?.();
+        } catch {
+          // ignore
+        }
+      },
+
+      replaceAll: (searchText: string, replaceText: string, options) => {
         const editor: any = containerRef.current?.documentEditor as any;
         if (!editor) return false;
         try {
@@ -1653,12 +1813,16 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           if (!s.trim()) return false;
           const search = editor.search ?? (editor as any).searchModule;
           if (!search) return false;
+          const findOption = options?.matchCase
+            ? (options?.wholeWord ? 'CaseSensitiveWholeWord' : 'CaseSensitive')
+            : (options?.wholeWord ? 'WholeWord' : 'None');
           // API pública do EJ2: findAll popula searchResults e replaceAll do
           // SearchResults troca todas as ocorrências preservando a formatação.
           // (search.replaceAll direto é método interno com outra assinatura e
           // lança exceção quando chamado com (texto, substituto).)
           if (search.searchResults && typeof search.findAll === 'function') {
-            search.findAll(s);
+            search.searchResults.clear?.();
+            search.findAll(s, findOption);
             const count = Number(search.searchResults.length || 0);
             const replaced = count > 0;
             if (replaced) search.searchResults.replaceAll(r);
@@ -2202,6 +2366,14 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         } catch {
           // ignore
         }
+
+        // Evita o flash/vazio do canvas em rolagens rápidas no modo escuro.
+        // O Syncfusion limpa o conteúdo antes de recalcular as páginas visíveis;
+        // em zoom alto esse intervalo se torna perceptível.
+        scrollStabilizerCleanupRef.current?.();
+        scrollStabilizerCleanupRef.current = stabilizeDarkModeScrollRendering(editor);
+        pinnedRulerCleanupRef.current?.();
+        pinnedRulerCleanupRef.current = pinHorizontalRulerToViewport(editor);
 
         // Força o editor a remedir a largura do container várias vezes após a criação.
         // O Syncfusion calcula a largura interna no created(); se o container ainda não

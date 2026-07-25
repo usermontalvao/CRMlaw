@@ -76,6 +76,7 @@ import { supabase } from '../config/supabase';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 import PetitionAiChat from './PetitionAiChat';
 import PetitionStatusBar from './petition/PetitionStatusBar';
+import PetitionFindReplacePanel from './petition/PetitionFindReplacePanel';
 import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
 
@@ -429,6 +430,7 @@ const SELECTED_LEGAL_AREA_STORAGE_KEY = 'petition-editor-selected-legal-area-v1'
 const SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX = 'petition-editor-selected-standard-type-v1:';
 const BLOCK_FILTER_SCOPE_STORAGE_KEY = 'petition-editor-block-filter-scope-v1';
 const PETITION_LOCAL_DRAFT_STORAGE_KEY_PREFIX = 'petition-editor-local-draft-v2:';
+const DEFAULT_EDITOR_ZOOM = 1.2;
 // CSS para o editor - Layout responsivo para 100% zoom
 const EDITOR_STYLES = `
   /* ========== ESTRUTURA PRINCIPAL ========== */
@@ -483,12 +485,40 @@ const EDITOR_STYLES = `
     min-width: 0 !important;
     max-width: 100% !important;
     overflow: auto !important;
-    background: #f1f5f9 !important;
+    background: #ffffff !important;
   }
 
   /* Viewer interno */
   .syncfusion-editor-wrapper .e-de-viewer-container {
     min-width: 0 !important;
+  }
+
+  /* Editor principal sem a moldura cinza do workspace do Syncfusion. */
+  #petition-main-editor,
+  #petition-main-editor > div,
+  #petition-main-editor .e-de-ctn,
+  #petition-main-editor [id$="_viewerContainer"] {
+    height: 100% !important;
+    min-height: 100% !important;
+  }
+
+  /* O tema do Syncfusion reserva 40px para a status bar nativa mesmo quando
+     ela está oculta. Como usamos a PetitionStatusBar fora do container, essa
+     reserva cortava o final visível da página. */
+  #petition-main-editor .e-de-tool-ctnr-properties-pane,
+  #petition-main-editor .e-de-ctnr-properties-pane,
+  #petition-main-editor .e-de-ribbon-simplified-ctnr-properties-pane,
+  #petition-main-editor .e-de-ribbon-classic-ctnr-properties-pane {
+    height: 100% !important;
+  }
+
+  #petition-main-editor [id$="_viewerContainer"] {
+    background: #ffffff !important;
+  }
+
+  #petition-main-editor .e-de-background {
+    background: #ffffff !important;
+    min-height: 100% !important;
   }
 
   .syncfusion-editor-wrapper .e-de-page-container {
@@ -497,7 +527,7 @@ const EDITOR_STYLES = `
     display: flex !important;
     justify-content: center !important;
     align-items: flex-start !important;
-    padding: 24px 32px !important;
+    padding: 0 !important;
     box-sizing: border-box !important;
   }
 
@@ -704,6 +734,23 @@ const EDITOR_STYLES = `
     background: #252525 !important;
   }
 
+  /* O editor principal possui regras claras com seletor por ID acima.
+     Sem uma contraparte igualmente específica, o espaço virtualizado entre
+     páginas volta a ficar branco durante a rolagem. */
+  body.petition-dark #petition-main-editor,
+  body.petition-dark #petition-main-editor > div,
+  body.petition-dark #petition-main-editor .e-documenteditorcontainer,
+  body.petition-dark #petition-main-editor .e-de-ctnr,
+  body.petition-dark #petition-main-editor .e-de-ctnr-container,
+  body.petition-dark #petition-main-editor .e-de-ctn,
+  body.petition-dark #petition-main-editor .e-de-viewer-container,
+  body.petition-dark #petition-main-editor [id$="_viewerContainer"],
+  body.petition-dark #petition-main-editor .e-de-background,
+  body.petition-dark #petition-main-editor .e-de-page-container {
+    background: #252525 !important;
+    background-color: #252525 !important;
+  }
+
   /* Folha: nesta versão do Syncfusion NÃO existe .e-de-page-container no
      DOM — o container real é .e-de-background, e as páginas (fundo branco
      + texto) são PINTADAS em dois <canvas> filhos dele (conteúdo e
@@ -800,7 +847,38 @@ const EDITOR_STYLES = `
   body.petition-dark .syncfusion-editor-wrapper .e-de-vRuler,
   body.petition-dark .syncfusion-editor-wrapper .e-de-hruler,
   body.petition-dark .syncfusion-editor-wrapper .e-de-vruler {
-    filter: invert(0.9) hue-rotate(180deg);
+    filter: none !important;
+  }
+  body.petition-dark #petition-main-editor div[id$="_hRuler"],
+  body.petition-dark #petition-main-editor .e-de-hRuler,
+  body.petition-dark #petition-main-editor .e-de-ruler-markIndicator,
+  body.petition-dark #petition-block-editor div[id$="_hRuler"],
+  body.petition-dark #petition-block-editor .e-de-hRuler,
+  body.petition-dark #petition-block-editor .e-de-ruler-markIndicator {
+    color: #c7ccd4 !important;
+    background: #3b3d42 !important;
+    border-color: #55585f !important;
+  }
+  body.petition-dark #petition-main-editor .e-de-ruler-indent-svg,
+  body.petition-dark #petition-main-editor .e-de-ruler-tab-svg,
+  body.petition-dark #petition-main-editor .e-de-ruler-table-svg,
+  body.petition-dark #petition-block-editor .e-de-ruler-indent-svg,
+  body.petition-dark #petition-block-editor .e-de-ruler-tab-svg,
+  body.petition-dark #petition-block-editor .e-de-ruler-table-svg {
+    fill: #d4d8df !important;
+    stroke: #8e959f !important;
+  }
+  #petition-main-editor .crm-pinned-ruler-host,
+  #petition-block-editor .crm-pinned-ruler-host {
+    position: relative !important;
+  }
+  #petition-main-editor .crm-pinned-horizontal-ruler,
+  #petition-block-editor .crm-pinned-horizontal-ruler {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    margin-top: 0 !important;
+    z-index: 24 !important;
   }
   body.petition-dark .syncfusion-editor-wrapper .e-de-ruler-tick {
     stroke: #d6d6d6 !important;
@@ -864,6 +942,489 @@ const EDITOR_STYLES = `
   body.petition-dark .petition-sidebar [class*="shadow-["] { box-shadow: none !important; }
   /* Splitter da lateral (fica fora do .petition-sidebar) */
   body.petition-dark .petition-editor-root [class~="bg-slate-200"] { background-color: #3a3a3a !important; }
+
+  /* Biblioteca lateral integrada ao editor. */
+  .petition-sidebar {
+    color: #334155;
+    background: #f8fafc !important;
+    border-right: 1px solid #dfe4ea !important;
+    box-shadow: 1px 0 0 rgba(255,255,255,.9), 8px 0 24px rgba(15,23,42,.025) !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .petition-sidebar-header {
+    min-height: 52px; display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 0 12px 0 14px; background: #fff; border-bottom: 1px solid #e7ebf0;
+  }
+  .petition-sidebar-heading { min-width: 0; display: flex; align-items: center; gap: 9px; }
+  .petition-sidebar-heading-icon {
+    width: 28px; height: 28px; flex: 0 0 auto; display: inline-flex; align-items: center;
+    justify-content: center; border-radius: 8px; color: #2563eb; background: #eff6ff;
+    border: 1px solid #dbeafe;
+  }
+  .petition-sidebar-heading strong {
+    display: block; color: #1e293b; font-size: 12px; font-weight: 700; line-height: 1.2;
+  }
+  .petition-sidebar-heading span {
+    display: block; margin-top: 2px; color: #94a3b8; font-size: 9px; font-weight: 600;
+    letter-spacing: .08em; line-height: 1.1; text-transform: uppercase;
+  }
+  .petition-sidebar-close {
+    width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; border: 0; border-radius: 7px; background: transparent; color: #94a3b8;
+    cursor: pointer; transition: background .15s ease, color .15s ease;
+  }
+  .petition-sidebar-close:hover { color: #475569; background: #f1f5f9; }
+  .petition-sidebar-tabs {
+    min-height: 46px; display: flex; align-items: center; gap: 4px;
+    border-bottom: 1px solid #e7ebf0; background: #fff; padding: 7px 10px;
+  }
+  .petition-sidebar-tab {
+    height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    position: relative; flex: 1; border: 1px solid transparent; border-radius: 7px;
+    background: transparent; color: #64748b; padding: 0 10px; font-size: 11px;
+    font-weight: 650; cursor: pointer; transition: color .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .petition-sidebar-tab:hover { color: #334155; background: #f8fafc; }
+  .petition-sidebar-tab.is-active { color: #1d4ed8; border-color: #dbeafe; background: #eff6ff; }
+  .petition-sidebar-tab-count {
+    min-width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px; padding: 0 5px; background: rgba(148,163,184,.14); color: #64748b;
+    font-size: 9px; font-variant-numeric: tabular-nums;
+  }
+  .petition-sidebar-tab.is-active .petition-sidebar-tab-count { background: #dbeafe; color: #2563eb; }
+  .petition-sidebar-context { padding: 11px 10px 9px !important; }
+  .petition-sidebar-search { padding: 0 10px 10px !important; }
+  .petition-sidebar-field-label {
+    display: flex; align-items: center; justify-content: space-between; min-height: 22px;
+    margin-bottom: 5px; padding: 0 2px;
+  }
+  .petition-sidebar-field-label > span {
+    color: #94a3b8; font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  }
+  .petition-sidebar-field-actions { display: flex; align-items: center; gap: 2px; }
+  .petition-sidebar-field-actions button {
+    width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 6px; background: transparent; color: #94a3b8; cursor: pointer;
+  }
+  .petition-sidebar-field-actions button:hover { color: #2563eb; background: #eff6ff; }
+  .petition-sidebar-context select,
+  .petition-sidebar-search input,
+  .petition-sidebar-search select {
+    height: 34px; border-radius: 7px !important; border-color: #dfe4ea !important;
+    box-shadow: 0 1px 1px rgba(15,23,42,.025) !important;
+  }
+  .petition-sidebar-context select:focus,
+  .petition-sidebar-search input:focus,
+  .petition-sidebar-search select:focus {
+    border-color: #93c5fd !important; box-shadow: 0 0 0 3px rgba(59,130,246,.10) !important;
+    outline: none;
+  }
+  .petition-sidebar-toolbar { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+  .petition-sidebar-toolbar select { flex: 1; width: auto !important; min-width: 0; }
+  .petition-sidebar-tool-button {
+    width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; border: 1px solid #dfe4ea; border-radius: 7px; background: #fff;
+    color: #64748b; cursor: pointer; box-shadow: 0 1px 1px rgba(15,23,42,.025);
+    transition: border-color .15s ease, background .15s ease, color .15s ease;
+  }
+  .petition-sidebar-tool-button:hover { border-color: #bfdbfe; color: #2563eb; background: #f8fbff; }
+  .petition-sidebar-tool-button.is-primary {
+    width: auto; gap: 6px; padding: 0 10px; border-color: #2563eb; background: #2563eb;
+    color: #fff; font-size: 10px; font-weight: 700; box-shadow: 0 1px 2px rgba(37,99,235,.2);
+  }
+  .petition-sidebar-tool-button.is-primary:hover { border-color: #1d4ed8; background: #1d4ed8; color: #fff; }
+  .petition-sidebar-scope {
+    min-height: 42px; padding: 6px 10px 8px !important; background: #fff !important;
+    border-bottom: 1px solid #e7ebf0 !important;
+  }
+  .petition-sidebar-scope > span { display: none; }
+  .petition-sidebar-scope > div {
+    width: 100%; border: 0 !important; border-radius: 7px !important; padding: 2px !important;
+    background: #f1f5f9 !important;
+  }
+  .petition-sidebar-scope button {
+    border-radius: 5px !important; padding-top: 5px !important; padding-bottom: 5px !important;
+    color: #64748b; font-size: 10px !important;
+  }
+  .petition-sidebar-scope button[class*="bg-[#2563eb]"],
+  .petition-sidebar-scope button[class*="bg-[#2f6fa8]"],
+  .petition-sidebar-scope button[class*="bg-slate-700"] {
+    background: #fff !important; color: #1d4ed8 !important;
+    box-shadow: 0 1px 3px rgba(15,23,42,.10) !important;
+  }
+  .petition-sidebar-list { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+  .petition-sidebar-category { border-bottom: 1px solid #edf0f3 !important; }
+  .petition-sidebar-category-button {
+    min-height: 42px; padding: 0 12px !important; color: #475569 !important;
+    font-size: 11px !important; font-weight: 700 !important; letter-spacing: .01em;
+  }
+  .petition-sidebar-category-button:hover { background: #f1f5f9 !important; }
+  .petition-sidebar-category-chevron {
+    width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; border-radius: 5px; color: #94a3b8; background: #f1f5f9;
+  }
+  .petition-sidebar-category-count {
+    margin-left: auto; color: #94a3b8; font-size: 9px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .petition-sidebar-block {
+    position: relative; border: 1px solid transparent !important; border-radius: 8px !important;
+    background: transparent !important; padding: 8px !important;
+  }
+  .petition-sidebar-block:hover {
+    border-color: #dbe5f1 !important; background: #fff !important;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04);
+  }
+  .petition-sidebar-block-icon {
+    width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; border-radius: 6px; color: #64748b; background: #eef2f7;
+  }
+  .petition-sidebar-block:hover .petition-sidebar-block-icon { color: #2563eb; background: #eff6ff; }
+  .petition-sidebar-empty {
+    min-height: 210px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 28px 22px; color: #94a3b8; text-align: center;
+  }
+  .petition-sidebar-empty-icon {
+    width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center;
+    margin-bottom: 10px; border: 1px solid #e2e8f0; border-radius: 10px; color: #94a3b8;
+    background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04);
+  }
+  .petition-sidebar-empty strong { color: #475569; font-size: 11px; font-weight: 700; }
+  .petition-sidebar-empty p { max-width: 210px; margin-top: 4px; font-size: 10px; line-height: 1.5; }
+  .petition-sidebar-client {
+    position: relative; margin: 3px 6px; padding: 9px 8px; border: 1px solid transparent;
+    border-radius: 8px; cursor: pointer; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+  }
+  .petition-sidebar-client:hover { border-color: #dbe5f1; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+  .petition-sidebar-client.is-selected { border-color: #bfdbfe; background: #eff6ff; }
+  .petition-sidebar-client-avatar {
+    width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+    flex: 0 0 auto; border-radius: 8px; color: #64748b; background: #e9eef5;
+    font-size: 10px; font-weight: 750; letter-spacing: .02em;
+  }
+  .petition-sidebar-client.is-selected .petition-sidebar-client-avatar { color: #1d4ed8; background: #dbeafe; }
+  .petition-sidebar-client-action {
+    min-width: 25px; height: 25px; display: inline-flex; align-items: center; justify-content: center;
+    gap: 4px; border: 1px solid #dbeafe; border-radius: 6px; padding: 0 7px; background: #fff;
+    color: #2563eb; font-size: 9px; font-weight: 700; opacity: 0; cursor: pointer;
+    transition: opacity .15s ease, background .15s ease;
+  }
+  .petition-sidebar-client:hover .petition-sidebar-client-action,
+  .petition-sidebar-client:focus-within .petition-sidebar-client-action { opacity: 1; }
+  .petition-sidebar-client-action:hover { background: #eff6ff; }
+  .petition-sidebar-resizer {
+    width: 3px !important; background: #e7ebf0 !important; cursor: col-resize;
+    transition: background .15s ease;
+  }
+  .petition-sidebar-resizer:hover { background: #60a5fa !important; }
+  body.petition-dark .petition-sidebar { background: #242424 !important; border-right-color: #3d3d3d !important; }
+  body.petition-dark .petition-sidebar-header,
+  body.petition-dark .petition-sidebar-tabs { background: #262626; border-color: #3d3d3d; }
+  body.petition-dark .petition-sidebar-heading-icon { color: #60a5fa; background: #1e3655; border-color: #284a72; }
+  body.petition-dark .petition-sidebar-heading strong { color: #e5e7eb; }
+  body.petition-dark .petition-sidebar-tab { color: #a3a3a3; }
+  body.petition-dark .petition-sidebar-tab:hover { background: #303030; color: #e5e7eb; }
+  body.petition-dark .petition-sidebar-tab.is-active { color: #93c5fd; background: #1e3655; border-color: #284a72; }
+  body.petition-dark .petition-sidebar-scope { background: #2b2b2b !important; border-color: #3d3d3d !important; }
+  body.petition-dark .petition-sidebar-scope > div { background: #202020 !important; }
+  body.petition-dark .petition-sidebar-scope button[class*="bg-"] { background: #383838 !important; color: #93c5fd !important; }
+  body.petition-dark .petition-sidebar-block:hover { background: #303030 !important; border-color: #454545 !important; }
+  body.petition-dark .petition-sidebar-block-icon { background: #383838; color: #a3a3a3; }
+  body.petition-dark .petition-sidebar-empty-icon { background: #303030; border-color: #454545; }
+  body.petition-dark .petition-sidebar-empty strong { color: #d4d4d4; }
+  body.petition-dark .petition-sidebar-client:hover { background: #303030; border-color: #454545; }
+  body.petition-dark .petition-sidebar-client.is-selected { background: #1e3655; border-color: #284a72; }
+  body.petition-dark .petition-sidebar-client-avatar { background: #383838; color: #d4d4d4; }
+
+  /* V2 — superfície única, densidade Office e hierarquia sem cartões empilhados. */
+  .petition-sidebar {
+    color: #303846; background: #fff !important; border-right-color: #d9dee7 !important;
+    box-shadow: none !important;
+  }
+  .petition-sidebar-header {
+    height: 45px; min-height: 45px; align-items: stretch; gap: 4px;
+    padding: 0 6px 0 10px; border-bottom-color: #e3e7ed; background: #fff;
+  }
+  .petition-sidebar-header .petition-sidebar-tabs {
+    min-width: 0; flex: 1; align-items: stretch; gap: 18px; padding: 0;
+    border: 0; background: transparent;
+  }
+  .petition-sidebar-tab {
+    height: 45px; flex: 0 1 auto; gap: 6px; padding: 0 2px; border: 0;
+    border-radius: 0; color: #667085; background: transparent; font-size: 11px; font-weight: 600;
+  }
+  .petition-sidebar-tab:hover { color: #344054; background: transparent; }
+  .petition-sidebar-tab.is-active { color: #1d4ed8; border-color: transparent; background: transparent; }
+  .petition-sidebar-tab.is-active::after {
+    content: ''; position: absolute; right: 0; bottom: -1px; left: 0; height: 2px;
+    border-radius: 2px 2px 0 0; background: #2563eb;
+  }
+  .petition-sidebar-tab-count,
+  .petition-sidebar-tab.is-active .petition-sidebar-tab-count {
+    min-width: auto; height: auto; padding: 0; border-radius: 0; background: transparent;
+    color: #98a2b3; font-size: 9px; font-weight: 600;
+  }
+  .petition-sidebar-tab.is-active .petition-sidebar-tab-count { color: #2563eb; }
+  .petition-sidebar-close {
+    width: 28px; height: 28px; align-self: center; border-radius: 5px; color: #8a94a4;
+  }
+  .petition-sidebar-close:hover { color: #344054; background: #f0f2f5; }
+  .petition-sidebar-controls { background: #fbfcfe; border-bottom: 1px solid #e3e7ed; }
+  .petition-sidebar-context { padding: 10px 12px 7px !important; }
+  .petition-sidebar-search { padding: 0 12px 8px !important; }
+  .petition-sidebar-field-label { min-height: 20px; margin-bottom: 4px; padding: 0; }
+  .petition-sidebar-field-label > span {
+    color: #667085; font-size: 10px; font-weight: 600; letter-spacing: 0; text-transform: none;
+  }
+  .petition-sidebar-field-actions { gap: 1px; }
+  .petition-sidebar-field-actions button {
+    width: 22px; height: 22px; border-radius: 5px; color: #8a94a4;
+  }
+  .petition-sidebar-field-actions button:hover { color: #344054; background: #eceff3; }
+  .petition-sidebar-context select,
+  .petition-sidebar-search input,
+  .petition-sidebar-search select {
+    height: 34px; border-radius: 6px !important; border-color: #d8dde6 !important;
+    box-shadow: 0 1px 2px rgba(16,24,40,.035) !important;
+  }
+  .petition-sidebar-context select:focus,
+  .petition-sidebar-search input:focus,
+  .petition-sidebar-search select:focus {
+    border-color: #84adff !important; box-shadow: 0 0 0 3px rgba(47,101,234,.10) !important;
+  }
+  .petition-sidebar-context-selector { position: relative; }
+  .petition-sidebar-context-selector > span {
+    position: absolute; z-index: 1; top: 50%; left: 11px; width: 6px; height: 6px;
+    transform: translateY(-50%); border-radius: 999px; box-shadow: 0 0 0 3px rgba(148,163,184,.12);
+    pointer-events: none;
+  }
+  .petition-sidebar-context-selector select { padding-left: 27px !important; }
+  .petition-sidebar-toolbar { gap: 5px; margin-top: 6px; }
+  .petition-sidebar-tool-button {
+    border-color: #d8dde6; border-radius: 6px; color: #667085;
+    box-shadow: 0 1px 2px rgba(16,24,40,.035);
+  }
+  .petition-sidebar-tool-button:hover { border-color: #b8c0cc; color: #344054; background: #f8f9fb; }
+  .petition-sidebar-tool-button.is-primary {
+    gap: 5px; border-color: #2f65ea; background: #2f65ea; font-weight: 650;
+    box-shadow: 0 1px 2px rgba(47,101,234,.24);
+  }
+  .petition-sidebar-tool-button.is-primary:hover { border-color: #2457d6; background: #2457d6; }
+  .petition-sidebar-scope {
+    min-height: 32px; padding: 0 12px 8px !important; border-bottom: 0 !important;
+    background: #fbfcfe !important;
+  }
+  .petition-sidebar-scope > div {
+    width: auto; flex: 0 1 auto; gap: 3px !important; padding: 0 !important;
+    border-radius: 0 !important; background: transparent !important;
+  }
+  .petition-sidebar-scope button {
+    flex: 0 0 auto !important; min-width: 54px; padding: 4px 10px !important;
+    border: 1px solid transparent; border-radius: 999px !important; color: #667085;
+    font-size: 9px !important; font-weight: 600 !important;
+  }
+  .petition-sidebar-scope button[class*="bg-[#2563eb]"],
+  .petition-sidebar-scope button[class*="bg-[#2f6fa8]"],
+  .petition-sidebar-scope button[class*="bg-slate-700"] {
+    border-color: #cbd8fb !important; background: #edf3ff !important; color: #2457d6 !important;
+    box-shadow: none !important;
+  }
+  .petition-sidebar-list { background: #fff !important; }
+  .petition-sidebar-list-heading {
+    height: 31px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 12px; border-bottom: 1px solid #edf0f4; color: #98a2b3; background: #fff;
+    font-size: 9px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  }
+  .petition-sidebar-list-heading span:last-child {
+    font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none;
+  }
+  .petition-sidebar-category { border-bottom-color: #edf0f4 !important; }
+  .petition-sidebar-category-button {
+    min-height: 44px; color: #344054 !important; font-size: 11px !important;
+    font-weight: 600 !important; letter-spacing: 0;
+  }
+  .petition-sidebar-category-button:hover { background: #f7f8fa !important; }
+  .petition-sidebar-category-chevron {
+    width: 16px; border-radius: 0; color: #98a2b3; background: transparent;
+  }
+  .petition-sidebar-category-count { color: #98a2b3; font-weight: 600; }
+  body.petition-dark .petition-sidebar-header .petition-sidebar-tabs { background: transparent; }
+  body.petition-dark .petition-sidebar-tab:hover { background: transparent; }
+  body.petition-dark .petition-sidebar-tab.is-active { color: #93c5fd; background: transparent; }
+  body.petition-dark .petition-sidebar-controls,
+  body.petition-dark .petition-sidebar-scope { background: #2b2b2b !important; border-color: #3d3d3d !important; }
+  body.petition-dark .petition-sidebar-scope > div { background: transparent !important; }
+  body.petition-dark .petition-sidebar-scope button[class*="bg-"] {
+    border-color: #365f8d !important; background: #1e3655 !important; color: #93c5fd !important;
+  }
+  body.petition-dark .petition-sidebar {
+    color: #d4d8df !important; background: #202124 !important; border-right-color: #3a3d44 !important;
+  }
+  body.petition-dark .petition-sidebar-header {
+    background: #25262a !important; border-bottom-color: #3a3d44 !important;
+  }
+  body.petition-dark .petition-sidebar-tab { color: #9da4b1 !important; }
+  body.petition-dark .petition-sidebar-tab:hover { color: #e1e5eb !important; }
+  body.petition-dark .petition-sidebar-tab.is-active { color: #75a7ff !important; }
+  body.petition-dark .petition-sidebar-tab.is-active::after { background: #4f8cff !important; }
+  body.petition-dark .petition-sidebar-tab-count { color: #747d8c !important; }
+  body.petition-dark .petition-sidebar-tab.is-active .petition-sidebar-tab-count { color: #75a7ff !important; }
+  body.petition-dark .petition-sidebar-close { color: #858e9d !important; }
+  body.petition-dark .petition-sidebar-close:hover { color: #e1e5eb !important; background: #34363c !important; }
+  body.petition-dark .petition-sidebar-controls,
+  body.petition-dark .petition-sidebar-context,
+  body.petition-dark .petition-sidebar-search,
+  body.petition-dark .petition-sidebar-scope {
+    background: #25262a !important;
+  }
+  body.petition-dark .petition-sidebar-controls { border-bottom-color: #3a3d44 !important; }
+  body.petition-dark .petition-sidebar-field-label > span { color: #a5acb8 !important; }
+  body.petition-dark .petition-sidebar-field-actions button { color: #858e9d !important; }
+  body.petition-dark .petition-sidebar-field-actions button:hover {
+    color: #e1e5eb !important; background: #34363c !important;
+  }
+  body.petition-dark .petition-sidebar-context select,
+  body.petition-dark .petition-sidebar-search input,
+  body.petition-dark .petition-sidebar-search select {
+    color: #e4e7ec !important; background: #2d2f34 !important; border-color: #454951 !important;
+    box-shadow: none !important;
+  }
+  body.petition-dark .petition-sidebar-search input::placeholder { color: #777f8d !important; }
+  body.petition-dark .petition-sidebar-context select:focus,
+  body.petition-dark .petition-sidebar-search input:focus,
+  body.petition-dark .petition-sidebar-search select:focus {
+    border-color: #5f8fe8 !important; box-shadow: 0 0 0 3px rgba(79,140,255,.14) !important;
+  }
+  body.petition-dark .petition-sidebar-context-selector > span {
+    box-shadow: 0 0 0 3px rgba(255,255,255,.08) !important;
+  }
+  body.petition-dark .petition-sidebar-tool-button {
+    color: #b6bdc8 !important; background: #303238 !important; border-color: #484c55 !important;
+    box-shadow: none !important;
+  }
+  body.petition-dark .petition-sidebar-tool-button:hover {
+    color: #f0f2f5 !important; background: #393c43 !important; border-color: #5b606b !important;
+  }
+  body.petition-dark .petition-sidebar-tool-button.is-primary {
+    color: #fff !important; background: #3478f6 !important; border-color: #3478f6 !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,.22) !important;
+  }
+  body.petition-dark .petition-sidebar-tool-button.is-primary:hover {
+    background: #4385fb !important; border-color: #4385fb !important;
+  }
+  body.petition-dark .petition-sidebar-scope button {
+    color: #9da4b1 !important; background: transparent !important;
+  }
+  body.petition-dark .petition-sidebar-scope button:hover { color: #e1e5eb !important; background: #303238 !important; }
+  body.petition-dark .petition-sidebar-scope button[class*="bg-[#2563eb]"],
+  body.petition-dark .petition-sidebar-scope button[class*="bg-[#2f6fa8]"],
+  body.petition-dark .petition-sidebar-scope button[class*="bg-slate-700"] {
+    color: #9ec1ff !important; background: #253a5d !important; border-color: #3e6095 !important;
+  }
+  body.petition-dark .petition-sidebar-list { background: #202124 !important; }
+  body.petition-dark .petition-sidebar-list-heading {
+    color: #818a99 !important; background: #242529 !important; border-bottom-color: #373a41 !important;
+  }
+  body.petition-dark .petition-sidebar-category { border-bottom-color: #363940 !important; }
+  body.petition-dark .petition-sidebar-category-button { color: #c8ced8 !important; }
+  body.petition-dark .petition-sidebar-category-button:hover { color: #eef1f5 !important; background: #292b30 !important; }
+  body.petition-dark .petition-sidebar-category-chevron,
+  body.petition-dark .petition-sidebar-category-count { color: #7f8897 !important; }
+  body.petition-dark .petition-sidebar-block { color: #d4d8df !important; background: transparent !important; }
+  body.petition-dark .petition-sidebar-block:hover {
+    background: #2a2c31 !important; border-color: #41454d !important; box-shadow: none !important;
+  }
+  body.petition-dark .petition-sidebar-block-icon { color: #aab1bd !important; background: #34363c !important; }
+  body.petition-dark .petition-sidebar-block:hover .petition-sidebar-block-icon {
+    color: #8db6ff !important; background: #283b5c !important;
+  }
+  body.petition-dark .petition-sidebar-block [class~="text-slate-700"] { color: #d6dbe3 !important; }
+  body.petition-dark .petition-sidebar-block [class~="bg-[#f1f5f9]"] {
+    color: #aeb6c2 !important; background: #303238 !important; border-color: #444851 !important;
+  }
+  body.petition-dark .petition-sidebar-empty { color: #858e9d !important; }
+  body.petition-dark .petition-sidebar-empty-icon {
+    color: #858e9d !important; background: #2b2d32 !important; border-color: #42464e !important;
+  }
+  body.petition-dark .petition-sidebar-empty strong { color: #cbd1da !important; }
+  body.petition-dark .petition-sidebar-client { color: #d4d8df !important; }
+  body.petition-dark .petition-sidebar-client:hover {
+    background: #2a2c31 !important; border-color: #41454d !important; box-shadow: none !important;
+  }
+  body.petition-dark .petition-sidebar-client.is-selected {
+    background: #253a5d !important; border-color: #3e6095 !important;
+  }
+  body.petition-dark .petition-sidebar-client-avatar { color: #b8c0cb !important; background: #34363c !important; }
+  body.petition-dark .petition-sidebar-client.is-selected .petition-sidebar-client-avatar {
+    color: #a8c8ff !important; background: #31517f !important;
+  }
+  body.petition-dark .petition-sidebar-client [class~="text-slate-700"] { color: #d6dbe3 !important; }
+  body.petition-dark .petition-sidebar-client-action {
+    color: #9ec1ff !important; background: #303238 !important; border-color: #4d6590 !important;
+  }
+  body.petition-dark .petition-sidebar-resizer { background: #3a3d44 !important; }
+  body.petition-dark .petition-sidebar-resizer:hover { background: #4f8cff !important; }
+
+  .petition-find-panel {
+    width: 318px; min-width: 280px; max-width: min(360px, 88vw); height: 100%;
+    flex: 0 0 auto; display: flex; flex-direction: column; background: #fff;
+    border-left: 1px solid #e3e6ea; color: #334155; z-index: 24;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .petition-find-header {
+    height: 42px; flex-shrink: 0; display: flex; align-items: center;
+    justify-content: space-between; border-bottom: 1px solid #e3e6ea; padding: 0 8px 0 12px;
+  }
+  .petition-find-tabs { display: flex; align-self: stretch; gap: 14px; }
+  .petition-find-tabs button {
+    position: relative; border: 0; background: transparent; color: #64748b;
+    font-size: 12px; font-weight: 600; cursor: pointer; padding: 0 2px;
+  }
+  .petition-find-tabs button.is-active { color: #2563eb; }
+  .petition-find-tabs button.is-active::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: #2563eb;
+  }
+  .petition-find-close, .petition-find-summary button {
+    width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 6px; background: transparent; color: #64748b; cursor: pointer;
+  }
+  .petition-find-close:hover, .petition-find-summary button:hover { background: #eef2f7; color: #2563eb; }
+  .petition-find-content { padding: 14px; overflow-y: auto; }
+  .petition-find-field { display: block; margin-bottom: 12px; }
+  .petition-find-field > span {
+    display: block; margin-bottom: 5px; font-size: 10px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; color: #94a3b8;
+  }
+  .petition-find-field > div {
+    height: 36px; display: flex; align-items: center; gap: 8px; border: 1px solid #d9dee6;
+    border-radius: 7px; padding: 0 10px; background: #fff; color: #94a3b8;
+  }
+  .petition-find-field > div:focus-within { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.1); }
+  .petition-find-field input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; font-size: 13px; color: #334155; }
+  .petition-find-options { display: flex; flex-direction: column; gap: 8px; padding: 2px 0 12px; }
+  .petition-find-options label { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #64748b; cursor: pointer; }
+  .petition-find-options input { accent-color: #2563eb; }
+  .petition-find-summary {
+    min-height: 34px; display: flex; align-items: center; justify-content: space-between;
+    border-block: 1px solid #edf0f3; padding: 7px 0; font-size: 11px; color: #64748b;
+  }
+  .petition-find-summary > div { display: flex; align-items: center; gap: 4px; }
+  .petition-find-actions { display: flex; justify-content: flex-end; gap: 7px; padding-top: 12px; }
+  .petition-find-actions button {
+    height: 32px; border: 1px solid #d9dee6; border-radius: 6px; background: #fff;
+    padding: 0 11px; font-size: 11px; font-weight: 600; color: #475569; cursor: pointer;
+  }
+  .petition-find-actions button.is-primary { border-color: #2563eb; background: #2563eb; color: #fff; }
+  .petition-find-actions button:disabled { opacity: .45; cursor: not-allowed; }
+  .petition-find-feedback { margin: 10px 0 0; font-size: 11px; color: #64748b; }
+  body.petition-dark .petition-find-panel { background: #262626; border-left-color: #3d3d3d; color: #e5e7eb; }
+  body.petition-dark .petition-find-header, body.petition-dark .petition-find-summary { border-color: #3d3d3d; }
+  body.petition-dark .petition-find-tabs button { color: #a3a3a3; }
+  body.petition-dark .petition-find-tabs button.is-active { color: #60a5fa; }
+  body.petition-dark .petition-find-field > div { background: #303030; border-color: #474747; }
+  body.petition-dark .petition-find-field input { color: #e5e7eb; }
+  body.petition-dark .petition-find-actions button { background: #303030; border-color: #474747; color: #d4d4d4; }
+  body.petition-dark .petition-find-actions button.is-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
 `;
 
 // Injeta os estilos estruturais do editor (flex do wrapper, container Syncfusion, etc.).
@@ -971,6 +1532,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   // Sidebar
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [findReplaceMode, setFindReplaceMode] = useState<'find' | 'replace' | null>(null);
   const [sidebarTab, setSidebarTab] = useState<'blocks' | 'clients'>('blocks');
   const [activeWorkspace, setActiveWorkspace] = useState<'editor' | 'blocks'>('editor');
   const [blocksEnabled, setBlocksEnabled] = useState(true);
@@ -984,12 +1546,14 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [bmCollapsedCategories, setBmCollapsedCategories] = useState<Set<string>>(new Set());
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     try {
-      if (typeof window === 'undefined') return 288;
+      if (typeof window === 'undefined') return 320;
       const raw = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
       const parsed = raw ? Number(raw) : NaN;
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : 288;
+      return Number.isFinite(parsed) && parsed > 0
+        ? Math.max(296, Math.min(360, parsed))
+        : 320;
     } catch {
-      return 288;
+      return 320;
     }
   });
   const isResizingSidebarRef = useRef(false);
@@ -1161,6 +1725,18 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const editorRef = useRef<SyncfusionEditorRef>(null);
   const blockConvertEditorRef = useRef<SyncfusionEditorRef>(null);
   const [editorReady, setEditorReady] = useState(false);
+
+  // O painel de busca ocupa espaço real ao lado do documento. Recalcular o
+  // Syncfusion evita que a folha fique comprimida ou mantenha a largura antiga.
+  useEffect(() => {
+    if (!editorReady) return;
+    const immediateRefresh = window.setTimeout(() => editorRef.current?.refresh?.(), 0);
+    const settledRefresh = window.setTimeout(() => editorRef.current?.refresh?.(), 180);
+    return () => {
+      window.clearTimeout(immediateRefresh);
+      window.clearTimeout(settledRefresh);
+    };
+  }, [editorReady, findReplaceMode]);
 
   const [defaultDocFont, setDefaultDocFont] = useState<{ fontFamily?: string; fontSize?: number } | null>(null);
   const defaultDocFontRef = useRef<{ fontFamily?: string; fontSize?: number } | null>(null);
@@ -1585,6 +2161,22 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   });
 
   const blockEditorRef = useRef<SyncfusionEditorRef | null>(null);
+  const [blockEditorReady, setBlockEditorReady] = useState(false);
+  const [blockEditorDirty, setBlockEditorDirty] = useState(false);
+  const [blockFindReplaceMode, setBlockFindReplaceMode] = useState<'find' | 'replace' | null>(null);
+  const [blockDocStatus, setBlockDocStatus] = useState<{
+    page: number;
+    pageCount: number;
+    zoom: number;
+    layout: 'Pages' | 'Continuous';
+  }>({
+    page: 1,
+    pageCount: 1,
+    zoom: 1,
+    layout: 'Pages',
+  });
+  const [blockWordCount, setBlockWordCount] = useState(0);
+  const blockWordCountTimerRef = useRef<number | null>(null);
   const [selectionToCreateBlock, setSelectionToCreateBlock] = useState<{ sfdt: string; text: string } | null>(null);
   const blockModalInitDoneRef = useRef(false);
   const [blockTagInput, setBlockTagInput] = useState('');
@@ -1739,6 +2331,11 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     setError(null);
     setSelectionToCreateBlock(null);
     blockModalInitDoneRef.current = false;
+    setBlockEditorReady(false);
+    setBlockEditorDirty(false);
+    setBlockFindReplaceMode(null);
+    setBlockDocStatus({ page: 1, pageCount: 1, zoom: 1, layout: 'Pages' });
+    setBlockWordCount(0);
     setBlockStandardTypeLoading(false);
 
     if (block) {
@@ -3284,6 +3881,47 @@ Regras:
     if (wordCountTimerRef.current) window.clearTimeout(wordCountTimerRef.current);
   }, []);
 
+  const refreshBlockDocStatus = useCallback(() => {
+    const editor = blockEditorRef.current;
+    if (!editor?.getPageInfo) return;
+    try {
+      const info = editor.getPageInfo();
+      const zoom = editor.getZoom();
+      const layout = editor.getLayoutType();
+      setBlockDocStatus((prev) => (
+        prev.page === info.current
+        && prev.pageCount === info.total
+        && prev.zoom === zoom
+        && prev.layout === layout
+          ? prev
+          : { page: info.current, pageCount: info.total, zoom, layout }
+      ));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const scheduleBlockWordCount = useCallback((delayMs = 500) => {
+    if (blockWordCountTimerRef.current) window.clearTimeout(blockWordCountTimerRef.current);
+    blockWordCountTimerRef.current = window.setTimeout(() => {
+      try {
+        setBlockWordCount(blockEditorRef.current?.getWordCount?.() ?? 0);
+      } catch {
+        // ignore
+      }
+    }, delayMs);
+  }, []);
+
+  useEffect(() => () => {
+    if (blockWordCountTimerRef.current) window.clearTimeout(blockWordCountTimerRef.current);
+  }, []);
+
+  const handleBlockContentChange = useCallback(() => {
+    refreshBlockDocStatus();
+    scheduleBlockWordCount();
+    if (blockModalInitDoneRef.current) setBlockEditorDirty(true);
+  }, [refreshBlockDocStatus, scheduleBlockWordCount]);
+
   const handleContentChange = () => {
     refreshDocStatus();
     scheduleWordCount();
@@ -3388,6 +4026,7 @@ Regras:
       }
 
       setShowBlockModal(false);
+      setBlockEditorDirty(false);
       setEditingBlock(null);
       setUpdateExistingBlockMode(false);
       setUpdateExistingBlockId('');
@@ -3415,6 +4054,7 @@ Regras:
   useEffect(() => {
     if (!showBlockModal) {
       blockModalInitDoneRef.current = false;
+      setBlockEditorReady(false);
       return;
     }
 
@@ -3440,8 +4080,6 @@ Regras:
         } else if (sfdt) {
           ed.insertText(sfdt);
         }
-
-        blockModalInitDoneRef.current = true;
 
         // Reforço: se renderizar vazio, tentar novamente e, por fim, fallback para texto
         window.setTimeout(() => {
@@ -3470,6 +4108,16 @@ Regras:
             // Texto puro jÃ¡ inserido; se vazio, nada a fazer
           }
         }, 160);
+
+        // O Syncfusion emite contentChange durante a abertura do SFDT. Só
+        // começamos a considerar mudanças do usuário após a carga e o fallback.
+        window.setTimeout(() => {
+          if (cancelled) return;
+          blockModalInitDoneRef.current = true;
+          setBlockEditorDirty(false);
+          refreshBlockDocStatus();
+          scheduleBlockWordCount(100);
+        }, 420);
       } catch {
         // ignore
       }
@@ -3480,7 +4128,13 @@ Regras:
     return () => {
       cancelled = true;
     };
-  }, [showBlockModal, blockFormData.content, editingBlock?.id]);
+  }, [
+    showBlockModal,
+    blockFormData.content,
+    editingBlock?.id,
+    refreshBlockDocStatus,
+    scheduleBlockWordCount,
+  ]);
 
   useEffect(() => {
     if (!showBlockModal) return;
@@ -3836,8 +4490,8 @@ Regras:
     const onMouseMove = (e: MouseEvent) => {
       if (!isResizingSidebarRef.current) return;
       const delta = e.clientX - sidebarResizeStartXRef.current;
-      const minWidth = 220;
-      const maxWidth = Math.min(620, Math.max(260, Math.floor(window.innerWidth * 0.55)));
+      const minWidth = 280;
+      const maxWidth = Math.min(440, Math.max(320, Math.floor(window.innerWidth * 0.4)));
       const next = Math.max(minWidth, Math.min(maxWidth, sidebarResizeStartWidthRef.current + delta));
       setSidebarWidth(next);
       document.body.style.cursor = 'col-resize';
@@ -5204,6 +5858,8 @@ Regras:
     );
   }
 
+  // Mantido temporariamente como referência durante a migração visual.
+  // A barra compacta abaixo é a interface ativa.
   const ribbonTopContent = (
     <>
       <div className="pet-top-group is-left">
@@ -5524,6 +6180,201 @@ Regras:
         </div>
       </div>
     </>
+  );
+
+  const compactRibbonTopContent = (
+    <div className="pet-titlebar">
+      <div className="pet-titlebar-nav">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="pet-top-icon-btn"
+          title={sidebarOpen ? 'Ocultar painel lateral' : 'Mostrar painel lateral'}
+          aria-label={sidebarOpen ? 'Ocultar painel lateral' : 'Mostrar painel lateral'}
+        >
+          {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (hasUnsavedChanges) {
+              const message = `Há alterações não salvas em "${petitionTitle || 'Documento sem título'}". Deseja voltar mesmo assim?`;
+              if (!confirm(message)) return;
+            }
+            setShowStartScreen(true);
+          }}
+          className="pet-top-icon-btn"
+          title="Voltar para a tela inicial"
+          aria-label="Voltar para a tela inicial"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="pet-titlebar-document">
+        <input
+          type="text"
+          value={petitionTitle}
+          onChange={(event) => {
+            setPetitionTitle(event.target.value);
+            setHasUnsavedChanges(true);
+          }}
+          className="pet-titlebar-input"
+          placeholder="Documento sem título"
+          aria-label="Nome do documento"
+        />
+        <span className={`pet-titlebar-state ${(saving || savingDoc) ? 'is-saving' : hasUnsavedChanges ? 'is-dirty' : 'is-saved'}`}>
+          {(saving || savingDoc) ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Salvando…
+            </>
+          ) : hasUnsavedChanges ? (
+            <>
+              <span className="pet-titlebar-dot" />
+              Alterações pendentes
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="w-3 h-3" />
+              Salvo
+            </>
+          )}
+        </span>
+      </div>
+
+      <div className="pet-titlebar-actions">
+        <button
+          type="button"
+          onClick={() => { void savePetition(); }}
+          disabled={savingDoc}
+          className="pet-titlebar-save"
+        >
+          {savingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+          <span>Salvar</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (isFloatingWidget) {
+              onRequestMinimize?.();
+              return;
+            }
+            setIsMinimized(true);
+          }}
+          className="pet-top-icon-btn"
+          title="Minimizar"
+          aria-label="Minimizar editor"
+        >
+          <Minimize2 className="w-4 h-4" />
+        </button>
+        {!isFloatingWidget && (
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="pet-top-icon-btn"
+            title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+            aria-label={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            if (hasUnsavedChanges && !confirm('Há alterações não salvas. Deseja fechar mesmo assim?')) return;
+            if (isFloatingWidget) onRequestClose?.();
+            else setIsMinimized(true);
+          }}
+          className="pet-top-icon-btn is-danger"
+          title="Fechar editor"
+          aria-label="Fechar editor"
+        >
+          <XCircle className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+
+  const closeBlockEditor = () => {
+    if (blockEditorDirty && !saving) {
+      const title = blockFormData.title.trim() || 'Bloco sem título';
+      if (!confirm(`Há alterações não salvas em "${title}". Deseja fechar mesmo assim?`)) return;
+    }
+    setShowBlockModal(false);
+    setBlockEditorDirty(false);
+  };
+
+  const blockRibbonTopContent = (
+    <div className="pet-titlebar">
+      <div className="pet-titlebar-nav">
+        <button
+          type="button"
+          onClick={closeBlockEditor}
+          className="pet-top-icon-btn"
+          title="Voltar ao gerenciador de blocos"
+          aria-label="Voltar ao gerenciador de blocos"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-500/10 text-blue-600">
+          <FileText className="h-3.5 w-3.5" />
+        </div>
+      </div>
+
+      <div className="pet-titlebar-document">
+        <input
+          type="text"
+          value={blockFormData.title}
+          onChange={(event) => {
+            setBlockFormData((current) => ({ ...current, title: event.target.value }));
+            setBlockEditorDirty(true);
+          }}
+          className="pet-titlebar-input"
+          placeholder="Bloco sem título"
+          aria-label="Nome do bloco"
+        />
+        <span className={`pet-titlebar-state ${saving ? 'is-saving' : blockEditorDirty ? 'is-dirty' : 'is-saved'}`}>
+          {saving ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Salvando…
+            </>
+          ) : blockEditorDirty ? (
+            <>
+              <span className="pet-titlebar-dot" />
+              Alterações pendentes
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="w-3 h-3" />
+              {editingBlock ? 'Bloco carregado' : 'Novo bloco'}
+            </>
+          )}
+        </span>
+      </div>
+
+      <div className="pet-titlebar-actions">
+        <button
+          type="button"
+          onClick={() => { void saveBlock(); }}
+          disabled={saving || !blockFormData.title.trim()}
+          className="pet-titlebar-save"
+        >
+          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+          <span>{editingBlock || updateExistingBlockMode ? 'Atualizar' : 'Criar bloco'}</span>
+        </button>
+        <button
+          type="button"
+          onClick={closeBlockEditor}
+          className="pet-top-icon-btn is-danger"
+          title="Fechar editor de blocos"
+          aria-label="Fechar editor de blocos"
+        >
+          <XCircle className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
   );
 
   return (
@@ -6058,6 +6909,22 @@ Regras:
         <div className="flex-1 overflow-hidden bg-slate-50">
           <div className="h-full overflow-y-auto">
             <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setActiveWorkspace('editor')}
+                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-600"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Voltar ao editor
+                  </button>
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900">Gerenciador de blocos</h2>
+                    <p className="text-xs text-slate-500">Organize os textos reutilizáveis do editor.</p>
+                  </div>
+                </div>
+              </div>
 
               {/* Stats Bar */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -6130,6 +6997,30 @@ Regras:
                       <option value="contestation">Contestacao</option>
                       <option value="impugnation">Impugnacao</option>
                       <option value="appeal">Recurso</option>
+                    </select>
+
+                    <select
+                      value={blockFilterScope === 'global' ? '__all__' : (selectedLegalAreaId || '')}
+                      onChange={(e) => {
+                        const areaId = e.target.value;
+                        if (areaId === '__all__') {
+                          setBlockFilterScope('global');
+                          return;
+                        }
+
+                        setSelectedLegalAreaId(areaId || null);
+                        setSelectedStandardTypeId(null);
+                        setStandardTypes(areaId ? (standardTypesByArea[areaId] ?? []).map(sanitizeStandardTypeRecord) : []);
+                        setBlockFilterScope('area');
+                      }}
+                      className="min-w-[160px] px-3 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400"
+                      title="Filtrar blocos por área jurídica"
+                      aria-label="Filtrar blocos por área jurídica"
+                    >
+                      <option value="__all__">Todas as áreas</option>
+                      {legalAreas.map((area) => (
+                        <option key={area.id} value={area.id}>{area.name}</option>
+                      ))}
                     </select>
 
                     <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
@@ -6326,16 +7217,23 @@ Regras:
       <PetitionRibbon
         editorRef={editorRef}
         ready={editorReady}
-        topContent={ribbonTopContent}
+        topContent={compactRibbonTopContent}
+        shortcutScopeActive={!showBlockModal}
         darkMode={darkMode}
         onToggleDarkMode={toggleDarkMode}
         onNew={() => { editorRef.current?.clear?.(); setHasUnsavedChanges(true); }}
         onOpen={() => fileInputRef.current?.click()}
         onSave={() => { void savePetition(); }}
         onExportDocx={() => { void exportToWord(); }}
+        onLoadDefaultTemplate={() => { void loadDefaultTemplate(); }}
+        hasDefaultTemplate={hasDefaultTemplate}
+        onManageAreas={() => openLegalAreaModal()}
+        onManageModels={() => openStandardTypeModal()}
+        onManageBlocks={() => setActiveWorkspace('blocks')}
+        onOpenFindReplace={(mode) => setFindReplaceMode(mode)}
       />
 
-      <div className="flex-1 flex min-w-0 max-w-full overflow-hidden relative">
+      <div className="flex-1 flex min-h-0 min-w-0 max-w-full overflow-hidden relative">
         {/* Sidebar — overlay no mobile, inline no desktop */}
         {sidebarOpen && (
           <div
@@ -6344,55 +7242,160 @@ Regras:
           />
         )}
         {sidebarOpen && (
-          <div className="petition-sidebar fixed sm:relative inset-y-0 left-0 z-[31] sm:z-[20] flex flex-col flex-shrink-0 border-r border-[#e3e6ea] bg-[#f7f8fa] shadow-[inset_-1px_0_0_rgba(255,255,255,0.65)]" style={{ width: Math.min(sidebarWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : sidebarWidth) }}>
-            {/* Tabs */}
-            <div className="flex items-end gap-1 border-b border-[#e3e6ea] bg-[#eef0f3] px-2 pt-2">
+          <div className="petition-sidebar fixed sm:relative inset-y-0 left-0 z-[31] sm:z-[20] flex flex-col flex-shrink-0" style={{ width: Math.min(sidebarWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : sidebarWidth) }}>
+            <div className="petition-sidebar-header">
+              <div className="petition-sidebar-tabs" role="tablist" aria-label="Conteúdo do documento">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={sidebarTab === 'blocks'}
+                  onClick={() => setSidebarTab('blocks')}
+                  className={`petition-sidebar-tab ${sidebarTab === 'blocks' ? 'is-active' : ''}`}
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  Blocos
+                  <span className="petition-sidebar-tab-count">{filteredBlocks.length}</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={sidebarTab === 'clients'}
+                  onClick={() => setSidebarTab('clients')}
+                  className={`petition-sidebar-tab ${sidebarTab === 'clients' ? 'is-active' : ''}`}
+                >
+                  <Users className="h-3.5 w-3.5" />
+                  Clientes
+                  <span className="petition-sidebar-tab-count">{filteredClients.length}</span>
+                </button>
+              </div>
               <button
-                onClick={() => setSidebarTab('blocks')}
-                className={`flex-1 rounded-t-lg px-3 py-2 text-xs font-semibold transition-colors ${
-                  sidebarTab === 'blocks'
-                    ? 'border border-[#e3e6ea] border-b-transparent bg-[#ffffff] text-[#2563eb]'
-                    : 'text-slate-500 hover:bg-[#eef0f3] hover:text-slate-700'
-                }`}
+                type="button"
+                className="petition-sidebar-close"
+                onClick={() => setSidebarOpen(false)}
+                title="Ocultar biblioteca"
+                aria-label="Ocultar biblioteca"
               >
-                Blocos
-              </button>
-              <button
-                onClick={() => setSidebarTab('clients')}
-                className={`flex-1 rounded-t-lg px-3 py-2 text-xs font-semibold transition-colors ${
-                  sidebarTab === 'clients'
-                    ? 'border border-[#e3e6ea] border-b-transparent bg-[#ffffff] text-[#2563eb]'
-                    : 'text-slate-500 hover:bg-[#eef0f3] hover:text-slate-700'
-                }`}
-              >
-                Clientes
+                <PanelLeftClose className="h-4 w-4" />
               </button>
             </div>
 
             {/* Tab: Blocos */}
             {sidebarTab === 'blocks' && (
               <>
-                <div className="border-b border-[#e6dfd3] bg-[#ffffff] p-2.5">
-                  <div className="flex gap-1.5 items-center">
-                  <div className="relative flex-1 min-w-0">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                <div className="petition-sidebar-controls">
+                <div className="petition-sidebar-context">
+                  <div className="petition-sidebar-field-label">
+                    <span>
+                      Contexto jurídico
+                    </span>
+                    <div className="petition-sidebar-field-actions">
+                      <button
+                        type="button"
+                        onClick={() => openLegalAreaModal()}
+                        title="Gerenciar áreas jurídicas"
+                        aria-label="Gerenciar áreas jurídicas"
+                      >
+                        <Settings className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openStandardTypeModal()}
+                        title="Gerenciar modelos"
+                        aria-label="Gerenciar modelos"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  {legalAreas.length > 0 ? (
+                    <div className="petition-sidebar-context-selector">
+                      <span style={{ backgroundColor: selectedLegalArea?.color || '#94a3b8' }} />
+                    <select
+                      value={selectedStandardTypeId ? `type:${selectedStandardTypeId}` : `area:${selectedLegalAreaId || ''}`}
+                      onChange={(event) => {
+                        const raw = event.target.value;
+                        if (raw.startsWith('type:')) {
+                          const typeId = raw.replace('type:', '').trim();
+                          const foundType = Object.values(standardTypesByArea).flat().find((type) => type.id === typeId) || null;
+                          const areaId = foundType?.legal_area_id || null;
+                          if (areaId) {
+                            setSelectedLegalAreaId(areaId);
+                            setStandardTypes((standardTypesByArea[areaId] ?? []).map(sanitizeStandardTypeRecord));
+                            try {
+                              window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, areaId);
+                              window.localStorage.setItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${areaId}`, typeId);
+                            } catch {
+                              // ignore
+                            }
+                          }
+                          setSelectedStandardTypeId(typeId);
+                          setBlockFilterScope('type');
+                          if (foundType?.default_document && editorRef.current) {
+                            editorRef.current.loadSfdt(foundType.default_document);
+                            if (foundType.default_document_name) setPetitionTitle(sanitizeText(foundType.default_document_name));
+                          }
+                          return;
+                        }
+
+                        const areaId = raw.replace('area:', '').trim() || null;
+                        setSelectedLegalAreaId(areaId);
+                        setSelectedStandardTypeId(null);
+                        setBlockFilterScope('area');
+                        setStandardTypes(areaId ? (standardTypesByArea[areaId] ?? []).map(sanitizeStandardTypeRecord) : []);
+                        if (areaId) {
+                          try {
+                            window.localStorage.setItem(SELECTED_LEGAL_AREA_STORAGE_KEY, areaId);
+                            window.localStorage.removeItem(`${SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX}${areaId}`);
+                          } catch {
+                            // ignore
+                          }
+                        }
+                      }}
+                      className="w-full border bg-white pr-2.5 text-xs font-medium text-slate-700 outline-none transition"
+                      title="Área jurídica e modelo de petição"
+                    >
+                      {legalAreas.map((area) => (
+                        <optgroup key={area.id} label={area.name}>
+                          <option value={`area:${area.id}`}>Todos da área</option>
+                          {(standardTypesByArea[area.id] ?? []).map((type) => (
+                            <option key={type.id} value={`type:${type.id}`}>{type.name}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openLegalAreaModal()}
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-300 px-3 py-2 text-xs font-semibold text-blue-600 transition hover:bg-blue-50"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Criar área jurídica
+                    </button>
+                  )}
+                </div>
+                <div className="petition-sidebar-search">
+                  <div className="relative min-w-0">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Buscar bloco..."
+                      placeholder="Buscar por título, conteúdo ou tag"
                       value={blockSearch}
                       onChange={(e) => setBlockSearch(e.target.value)}
-                      className="w-full rounded-lg border border-[#e3e6ea] bg-white pl-8 pr-2 py-2 text-xs text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:border-blue-400 focus:ring-1 focus:ring-blue-300"
+                      className="w-full border bg-white pl-8 pr-2 text-xs text-slate-700"
                     />
                   </div>
+                  <div className="petition-sidebar-toolbar">
                   <select
                     value={selectedDocumentType}
                     onChange={(e) => setSelectedDocumentType(e.target.value as DocumentType)}
-                    className="w-[110px] shrink-0 rounded-lg border border-[#e3e6ea] bg-white px-2 py-2 text-xs text-slate-700 focus:border-blue-400 focus:ring-1 focus:ring-blue-300"
+                    className="border bg-white px-2 text-xs text-slate-700"
                     title="Tipo de documento"
                   >
-                    <option value="petition">Peticao</option>
-                    <option value="contestation">Contestacao</option>
-                    <option value="impugnation">Impugnacao</option>
+                    <option value="petition">Petição</option>
+                    <option value="contestation">Contestação</option>
+                    <option value="impugnation">Impugnação</option>
                     <option value="appeal">Recurso</option>
                   </select>
                   <button
@@ -6401,23 +7404,25 @@ Regras:
                       ensureDraftFromCategories(blockCategories);
                       setShowCategoryModal(true);
                     }}
-                    className="shrink-0 rounded-lg border border-[#e3e6ea] bg-white p-2 text-slate-500 transition hover:bg-[#eef2f7] hover:text-[#2563eb]"
+                    className="petition-sidebar-tool-button"
                     title="Configurar categorias"
+                    aria-label="Configurar categorias"
                   >
                     <Settings className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => openBlockModal()}
-                    className="shrink-0 rounded-lg bg-[#2563eb] p-2 text-white shadow-sm transition-colors hover:bg-[#1d4ed8]"
+                    className="petition-sidebar-tool-button is-primary"
                     title="Novo bloco"
                   >
                     <Plus className="w-4 h-4" />
+                    Novo
                   </button>
                 </div>
                 </div>
 
                 {/* Filtro de escopo de blocos */}
-                <div className="flex items-center gap-2 border-b border-[#e6dfd3] bg-[#ffffff] px-2 py-2">
+                <div className="petition-sidebar-scope flex items-center gap-2 border-b border-[#e6dfd3] bg-[#ffffff] px-2 py-2">
                   <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Exibir:</span>
                   <div className="flex flex-1 gap-1 rounded-xl border border-[#e4ddcf] bg-[#eef0f3] p-1">
                     {selectedStandardTypeId && (
@@ -6430,7 +7435,7 @@ Regras:
                         }`}
                         title="Blocos vinculados a peticao padrao selecionada"
                       >
-                        Peticao
+                        Modelo
                       </button>
                     )}
                     <button
@@ -6441,8 +7446,8 @@ Regras:
                           : 'text-slate-600 hover:bg-white'
                       }`}
                       title="Blocos da area juridica selecionada"
-                    >
-                      Area
+                      >
+                      Área
                     </button>
                     <button
                       onClick={() => setBlockFilterScope('global')}
@@ -6452,108 +7457,56 @@ Regras:
                           : 'text-slate-600 hover:bg-white'
                       }`}
                       title="Todos os blocos (consulta global)"
-                    >
-                      Global
+                      >
+                      Todos
                     </button>
                   </div>
                 </div>
+                </div>
 
-                {standardTypes.length > 0 && selectedLegalAreaId && (
-                  <div className="border-b border-[#e6dfd3] bg-[#ffffff] px-2 py-2">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-1">
-                        <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wider">Modelos</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => openStandardTypeModal()}
-                        className="rounded-lg border border-[#e3e6ea] bg-white p-1.5 text-slate-500 transition hover:bg-[#eef2f7] hover:text-[#2563eb]"
-                        title="Gerenciar modelos"
-                      >
-                        <Settings className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="flex flex-col gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedStandardTypeId(null);
-                          setBlockFilterScope('area');
-                        }}
-                        className={`w-full rounded-xl px-2.5 py-2 text-left text-xs border transition-colors ${
-                          !selectedStandardTypeId
-                            ? 'bg-blue-50 border-blue-200 text-blue-800 shadow-[inset_0_0_0_1px_rgba(255,159,10,0.08)]'
-                            : 'bg-white border-[#e3e6ea] text-slate-700 hover:bg-[#eef0f3]'
-                        }`}
-                        title="Ver todos os blocos da area"
-                      >
-                        <span className="font-semibold">Area</span>
-                        {selectedLegalArea?.name ? <span className="text-slate-400"> - {selectedLegalArea.name}</span> : null}
-                      </button>
-
-                      <div className="max-h-36 overflow-y-auto pr-0.5">
-                        {standardTypes.map((t) => {
-                          const active = selectedStandardTypeId === t.id;
-                          return (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedStandardTypeId(t.id);
-                                setBlockFilterScope('type');
-                                if (t.default_document && editorRef.current) {
-                                  editorRef.current.loadSfdt(t.default_document);
-                                  if (t.default_document_name) setPetitionTitle(sanitizeText(t.default_document_name));
-                                }
-                              }}
-                              className={`mt-1 w-full rounded-xl px-2.5 py-2 text-left text-xs border transition-colors ${
-                                active
-                                  ? 'bg-blue-50 border-blue-200 text-blue-800 shadow-[inset_0_0_0_1px_rgba(47,111,168,0.08)]'
-                                  : 'bg-white border-[#e3e6ea] text-slate-700 hover:bg-[#f4f7fb]'
-                              }`}
-                              title={t.description ? t.description : t.name}
-                            >
-                              <div className="flex items-center gap-1">
-                                <FileText className="w-3.5 h-3.5 text-slate-400" />
-                                <span className="font-semibold truncate">{t.name}</span>
-                                {active && <ChevronLeft className="w-3.5 h-3.5 ml-auto text-blue-400" />}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                <div className="petition-sidebar-list flex-1 overflow-y-auto bg-[#f8fafc]">
+                  <div className="petition-sidebar-list-heading">
+                    <span>Seções</span>
+                    <span>{filteredBlocks.length} blocos</span>
                   </div>
-                )}
-
-                <div className="flex-1 overflow-y-auto bg-[#fbfcfd]">
-                  {sidebarCategoryKeys.map((category) => {
+                  {filteredBlocks.length === 0 ? (
+                    <div className="petition-sidebar-empty">
+                      <span className="petition-sidebar-empty-icon">
+                        <Search className="h-4 w-4" />
+                      </span>
+                      <strong>Nenhum bloco encontrado</strong>
+                      <p>Ajuste a busca, o tipo de documento ou o escopo selecionado.</p>
+                    </div>
+                  ) : sidebarCategoryKeys.map((category) => {
                     const items = (blocksByCategory as any)[category] || [];
                     if (items.length === 0) return null;
                     const isExpanded = expandedCategories.has(category);
                     return (
-                      <div key={category} className="border-b border-[#ece5d9]">
+                      <div key={category} className="petition-sidebar-category">
                         <button
                           onClick={() => toggleCategory(category)}
-                          className="flex w-full items-center gap-1 px-3 py-3 text-left text-[13px] font-semibold text-slate-700 transition hover:bg-[#eef2f7]"
+                          className="petition-sidebar-category-button flex w-full items-center gap-2 text-left transition"
                         >
-                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                          {getCategoryLabel(category)}
-                          <span className="ml-auto text-[11px] font-semibold text-[#8ca1c1]">({items.length})</span>
+                          <span className="petition-sidebar-category-chevron">
+                            {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                          </span>
+                          <span className="truncate">{getCategoryLabel(category)}</span>
+                          <span className="petition-sidebar-category-count">{items.length}</span>
                         </button>
 
                         {isExpanded && (
-                          <div className="space-y-1 px-2 pb-2">
+                          <div className="space-y-0.5 px-2 pb-2">
                             {(items as PetitionBlock[]).map((block: PetitionBlock) => (
                               <div
                                 key={block.id}
-                                className="group cursor-pointer rounded-xl border border-transparent bg-white px-2.5 py-2.5 transition-colors hover:border-[#cdd7ea] hover:bg-[#f5f8ff]"
+                                className="petition-sidebar-block group cursor-pointer transition"
                                 onClick={() => openViewBlock(block)}
                               >
-                                <div className="flex items-center gap-1">
-                                  <span className="flex-1 truncate text-[13px] font-medium text-slate-700">{block.title}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="petition-sidebar-block-icon">
+                                    <FileText className="h-3.5 w-3.5" />
+                                  </span>
+                                  <span className="flex-1 truncate text-[12px] font-medium text-slate-700">{block.title}</span>
                                   {block.is_default && <Star className="w-2.5 h-2.5 text-blue-400" />}
                                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                                     <button
@@ -6585,14 +7538,14 @@ Regras:
                                   const visible = tags.slice(0, 5);
                                   const remaining = tags.length - visible.length;
                                   return (
-                                    <div className="flex flex-wrap gap-1 mt-1">
+                                    <div className="ml-[34px] flex flex-wrap gap-1 mt-1">
                                       {visible.map((t) => (
-                                        <span key={t} className="inline-flex max-w-[140px] items-center truncate rounded-md border border-[#e2e8f0] bg-[#f1f5f9] px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                                        <span key={t} className="inline-flex max-w-[120px] items-center truncate rounded border border-[#e2e8f0] bg-[#f1f5f9] px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
                                           {t}
                                         </span>
                                       ))}
                                       {remaining > 0 && (
-                                        <span className="inline-flex items-center rounded-md border border-[#e2e8f0] bg-[#f1f5f9] px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                                        <span className="inline-flex items-center rounded border border-[#e2e8f0] bg-[#f1f5f9] px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
                                           +{remaining}
                                         </span>
                                       )}
@@ -6613,41 +7566,52 @@ Regras:
             {/* Tab: Clientes */}
             {sidebarTab === 'clients' && (
               <>
-                <div className="border-b border-[#e6dfd3] bg-[#ffffff] p-2.5">
+                <div className="petition-sidebar-search border-b border-[#e7ebf0] bg-[#ffffff] pt-2.5">
                   <div className="relative">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Buscar cliente..."
+                      placeholder="Buscar por nome ou documento"
                       value={clientSearch}
                       onChange={(e) => setClientSearch(e.target.value)}
-                      className="w-full rounded-lg border border-[#e3e6ea] bg-white pl-8 pr-2 py-2 text-xs text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] focus:border-blue-400 focus:ring-1 focus:ring-blue-300"
+                      className="w-full border bg-white pl-8 pr-2 text-xs text-slate-700"
                     />
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto bg-[#fbfcfd]">
+                <div className="petition-sidebar-list flex-1 overflow-y-auto bg-[#f8fafc] py-1">
+                  <div className="petition-sidebar-list-heading">
+                    <span>Clientes</span>
+                    <span>{filteredClients.length} disponíveis</span>
+                  </div>
                   {filteredClients.length === 0 ? (
-                    <div className="p-4 text-center text-slate-400">
-                      <Users className="w-8 h-8 mx-auto mb-2" />
-                      <p className="text-xs">Nenhum cliente encontrado</p>
+                    <div className="petition-sidebar-empty">
+                      <span className="petition-sidebar-empty-icon">
+                        <Users className="h-4 w-4" />
+                      </span>
+                      <strong>Nenhum cliente encontrado</strong>
+                      <p>Pesquise pelo nome completo, CPF ou CNPJ.</p>
                     </div>
                   ) : (
                     filteredClients.map(client => (
                       <div
                         key={client.id}
-                        className={`group cursor-pointer border-b border-[#ece5d9] px-3 py-3 transition-colors ${
-                          selectedClient?.id === client.id ? 'bg-[#eff6ff]' : 'hover:bg-[#eef2f7]'
-                        }`}
+                        className={`petition-sidebar-client group ${selectedClient?.id === client.id ? 'is-selected' : ''}`}
                         onClick={() => selectClientForPetition(client)}
                       >
                         <div className="flex items-center gap-2">
-                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-100">
-                            <User className="w-3.5 h-3.5 text-blue-600" />
+                          <div className="petition-sidebar-client-avatar" aria-hidden="true">
+                            {client.full_name
+                              .split(/\s+/)
+                              .filter(Boolean)
+                              .slice(0, 2)
+                              .map((part) => part.charAt(0))
+                              .join('')
+                              .toUpperCase() || <User className="h-3.5 w-3.5" />}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="truncate text-[13px] font-medium text-slate-700">{client.full_name}</p>
-                            <p className="text-[10px] text-slate-400">{client.cpf_cnpj}</p>
+                            <p className="truncate text-[12px] font-semibold text-slate-700">{client.full_name}</p>
+                            <p className="mt-0.5 truncate text-[9px] text-slate-400">{client.cpf_cnpj || 'Documento não informado'}</p>
                           </div>
                           <button
                             type="button"
@@ -6655,14 +7619,12 @@ Regras:
                               e.stopPropagation();
                               insertClientQualification(client);
                             }}
-                            className="rounded-md border border-blue-200 bg-white px-2 py-1 text-[10px] font-semibold text-blue-700 opacity-0 shadow-sm transition group-hover:opacity-100 hover:bg-blue-50"
+                            className="petition-sidebar-client-action"
                             title="Inserir qualificacao no documento"
                           >
+                            <Plus className="h-3 w-3" />
                             Inserir
                           </button>
-                          {selectedClient?.id === client.id && (
-                            <span className="rounded-full bg-blue-100 px-2 py-1 text-[10px] font-semibold text-blue-700">Selecionado</span>
-                          )}
                         </div>
                       </div>
                     ))
@@ -6677,7 +7639,7 @@ Regras:
         {/* Splitter — oculto no mobile */}
         {sidebarOpen && (
           <div
-            className="hidden sm:block w-1 flex-shrink-0 bg-slate-200 hover:bg-blue-400 cursor-col-resize"
+            className="petition-sidebar-resizer hidden sm:block flex-shrink-0"
             onMouseDown={(e) => {
               isResizingSidebarRef.current = true;
               sidebarResizeStartXRef.current = e.clientX;
@@ -6807,9 +7769,18 @@ Regras:
             showNavigationPane={false}
             onReady={() => {
               setEditorReady(true);
+              editorRef.current?.setZoom(DEFAULT_EDITOR_ZOOM);
               // Recalcula o layout apÃ³s o wrapper assumir a largura final (evita folha comprimida)
-              window.setTimeout(() => editorRef.current?.refresh?.(), 60);
-              window.setTimeout(() => { editorRef.current?.refresh?.(); refreshDocStatus(); scheduleWordCount(400); }, 320);
+              window.setTimeout(() => {
+                editorRef.current?.refresh?.();
+                editorRef.current?.setZoom(DEFAULT_EDITOR_ZOOM);
+              }, 60);
+              window.setTimeout(() => {
+                editorRef.current?.refresh?.();
+                editorRef.current?.setZoom(DEFAULT_EDITOR_ZOOM);
+                refreshDocStatus();
+                scheduleWordCount(400);
+              }, 320);
             }}
             onContentChange={handleContentChange}
             onSelectionChange={() => { refreshDocStatus(); scheduleCursorPersist(); }}
@@ -6846,6 +7817,16 @@ Regras:
           />
 
         </div>
+
+        {findReplaceMode && (
+          <PetitionFindReplacePanel
+            key={findReplaceMode}
+            editorRef={editorRef}
+            initialMode={findReplaceMode}
+            onClose={() => setFindReplaceMode(null)}
+            onDocumentChanged={() => setHasUnsavedChanges(true)}
+          />
+        )}
 
         </div>
 
@@ -7684,66 +8665,33 @@ Regras:
 
       {showBlockModal && (
         <aside id="petition-editor-backdrop" className="fixed inset-0 z-[999999] flex flex-col bg-white">
-          <main id="block-editor-modal" className="flex flex-col flex-1 overflow-hidden">
-            {/* App bar do editor */}
-            <header className="shrink-0 h-14 px-3 flex items-center gap-3 border-b border-slate-200 bg-white">
-              <button
-                onClick={() => setShowBlockModal(false)}
-                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
-                title="Voltar sem salvar"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <div className="h-7 w-px bg-slate-200" />
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
-                <FileText className="w-[18px] h-[18px]" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="ml-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 leading-none">
-                  {editingBlock ? 'Editar bloco' : 'Novo bloco'}
-                </div>
-                <input
-                  type="text"
-                  value={blockFormData.title}
-                  onChange={(e) => setBlockFormData({ ...blockFormData, title: e.target.value })}
-                  placeholder="Titulo do bloco"
-                  className="mt-0.5 w-full max-w-xl bg-transparent px-1.5 py-0.5 -ml-1.5 text-[15px] font-semibold text-slate-900 placeholder:text-slate-300 rounded-md outline-none transition hover:bg-slate-100 focus:bg-white focus:ring-2 focus:ring-blue-500/30"
-                />
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  onClick={() => setShowBlockModal(false)}
-                  className="px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={saveBlock}
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-[13px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 shadow-sm shadow-blue-500/30 transition"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Salvando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      <span>{editingBlock || updateExistingBlockMode ? 'Atualizar' : 'Criar'}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </header>
+          <main id="block-editor-modal" className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <PetitionRibbon
+              editorRef={blockEditorRef}
+              ready={blockEditorReady}
+              topContent={blockRibbonTopContent}
+              entityLabel="bloco"
+              shortcutScopeActive
+              darkMode={darkMode}
+              onToggleDarkMode={toggleDarkMode}
+              onNew={() => {
+                blockEditorRef.current?.clear?.();
+                setBlockEditorDirty(true);
+              }}
+              onSave={() => { void saveBlock(); }}
+              onOpenFindReplace={(mode) => setBlockFindReplaceMode(mode)}
+            />
 
             {/* Propriedades do bloco */}
-            <div className="shrink-0 px-4 py-2.5 border-b border-slate-200 bg-slate-50/70 flex items-center gap-5 flex-wrap">
+            <div className="petition-block-properties shrink-0 px-4 py-2 border-b border-slate-200 bg-slate-50/70 flex items-center gap-5 flex-wrap">
               <div className="flex items-center gap-2">
                 <label className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Categoria</label>
                 <select
                   value={blockFormData.category}
-                  onChange={(e) => setBlockFormData({ ...blockFormData, category: e.target.value as BlockCategory })}
+                  onChange={(e) => {
+                    setBlockFormData({ ...blockFormData, category: e.target.value as BlockCategory });
+                    setBlockEditorDirty(true);
+                  }}
                   className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer"
                 >
                   {categoryKeysOrdered.map((key) => (
@@ -7760,6 +8708,7 @@ Regras:
                     onChange={(e) => {
                       const v = e.target.value || null;
                       setBlockFormData({ ...blockFormData, legal_area_id: v as any });
+                      setBlockEditorDirty(true);
                       if (v && blockStandardTypeId) {
                         const types = standardTypesByArea[String(v)] ?? [];
                         if (!types.some((t) => t.id === blockStandardTypeId)) {
@@ -7787,6 +8736,7 @@ Regras:
                       if (blockFilterScope === 'type' && selectedStandardTypeId) return;
                       const v = e.target.value || null;
                       setBlockStandardTypeId(v as any);
+                      setBlockEditorDirty(true);
                       const found = Object.values(standardTypesByArea).flat().find((t) => t.id === v) || null;
                       if (found?.legal_area_id) {
                         setBlockFormData((prev) => ({ ...prev, legal_area_id: found.legal_area_id as any }));
@@ -7812,6 +8762,7 @@ Regras:
                       onChange={(e) => {
                         const checked = e.target.checked;
                         setUpdateExistingBlockMode(checked);
+                        setBlockEditorDirty(true);
                         if (!checked) setUpdateExistingBlockId('');
                       }}
                       className="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500/40 cursor-pointer"
@@ -7823,7 +8774,10 @@ Regras:
                 {updateExistingBlockMode && !editingBlock && (
                   <select
                     value={updateExistingBlockId}
-                    onChange={(e) => setUpdateExistingBlockId(e.target.value)}
+                    onChange={(e) => {
+                      setUpdateExistingBlockId(e.target.value);
+                      setBlockEditorDirty(true);
+                    }}
                     className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer w-48"
                   >
                     <option value="">Selecione o bloco</option>
@@ -7837,7 +8791,10 @@ Regras:
                   <input
                     type="checkbox"
                     checked={blockFormData.is_default}
-                    onChange={(e) => setBlockFormData({ ...blockFormData, is_default: e.target.checked })}
+                    onChange={(e) => {
+                      setBlockFormData({ ...blockFormData, is_default: e.target.checked });
+                      setBlockEditorDirty(true);
+                    }}
                     className="w-4 h-4 rounded border-blue-300 text-blue-500 focus:ring-blue-500/40 cursor-pointer"
                   />
                   <span className="text-[12px] font-medium text-blue-700 whitespace-nowrap">Padrao</span>
@@ -7846,41 +8803,61 @@ Regras:
             </div>
 
             {/* Editor - ocupa todo o espaço restante */}
-            <div className="flex-1 min-h-0 flex flex-col">
+            <div className="syncfusion-editor-wrapper petition-block-editor-surface relative flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
               <SyncfusionEditor
                 ref={blockEditorRef}
                 id="petition-block-editor"
                 height="100%"
                 currentUserName={userDisplayName}
-                showPropertiesPane
-                enableToolbar
+                showPropertiesPane={false}
+                enableToolbar={false}
                 enableCustomContextMenu
                 showRuler
                 showNavigationPane={false}
                 layoutType="Pages"
                 pageFit="FitPageWidth"
                 removeMargins={false}
+                onReady={() => {
+                  setBlockEditorReady(true);
+                  window.setTimeout(() => blockEditorRef.current?.refresh?.(), 60);
+                  window.setTimeout(() => {
+                    blockEditorRef.current?.refresh?.();
+                    refreshBlockDocStatus();
+                    scheduleBlockWordCount(100);
+                  }, 320);
+                }}
+                onContentChange={handleBlockContentChange}
+                onSelectionChange={refreshBlockDocStatus}
+                onViewChange={refreshBlockDocStatus}
               />
+              {blockFindReplaceMode && (
+                <PetitionFindReplacePanel
+                  key={blockFindReplaceMode}
+                  editorRef={blockEditorRef}
+                  initialMode={blockFindReplaceMode}
+                  onClose={() => setBlockFindReplaceMode(null)}
+                  onDocumentChanged={() => setBlockEditorDirty(true)}
+                />
+              )}
             </div>
 
-            {/* Barra de status */}
-            <footer className="shrink-0 h-10 px-4 border-t border-slate-200 flex items-center justify-between bg-slate-50/70">
-              <div className="flex items-center gap-2 min-w-0 text-[11px] text-slate-400">
-                <Hash className="w-3.5 h-3.5 shrink-0 text-slate-300" />
-                <span className="truncate">
-                  <span className="font-semibold text-slate-500">Variaveis:</span> [[NOME_CLIENTE]], [[CPF]], [[RG]], [[ENDERECO]], [[CIDADE]], [[UF]]...
-                </span>
-              </div>
-              {editingBlock && (
-                <button
-                  onClick={() => { deleteBlock(editingBlock.id); setShowBlockModal(false); }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium rounded-lg text-red-600 hover:bg-red-50 transition shrink-0"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Excluir</span>
-                </button>
-              )}
-            </footer>
+            {blockEditorReady && (
+              <PetitionStatusBar
+                page={blockDocStatus.page}
+                pageCount={blockDocStatus.pageCount}
+                words={blockWordCount}
+                zoom={blockDocStatus.zoom}
+                onZoomChange={(zoom) => {
+                  blockEditorRef.current?.setZoom(zoom);
+                  refreshBlockDocStatus();
+                }}
+                layout={blockDocStatus.layout}
+                onLayoutChange={(layout) => {
+                  blockEditorRef.current?.setLayoutType(layout);
+                  refreshBlockDocStatus();
+                }}
+              />
+            )}
           </main>
         </aside>
       )}
@@ -8121,79 +9098,117 @@ if (typeof document !== 'undefined') {
   style.innerHTML = petitionModalStyles;
 }
 
-// Estilos especÃ­ficos do editor de blocos (Syncfusion) para largura total e folha A4 centrada
+// O editor de blocos usa a mesma superfície responsiva do editor de documentos.
 const blockEditorModalStyles = `
+  #block-editor-modal {
+    background: #f5f6f8;
+  }
+  #block-editor-modal .pet-ribbon {
+    width: 100%;
+  }
+  #block-editor-modal .petition-block-properties {
+    min-height: 42px;
+  }
+  .petition-block-editor-surface {
+    background: #ffffff;
+  }
   #petition-block-editor {
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
     height: 100% !important;
-    border: none;
-    border-radius: 0;
-    overflow: hidden;
-    background: #fff;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: hidden !important;
+    background: #ffffff !important;
   }
+  #petition-block-editor > div,
   #petition-block-editor .e-documenteditorcontainer {
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
     height: 100% !important;
   }
-  #petition-block-editor .e-de-ctn,
-  #petition-block-editor .e-de-ctnr {
+  #petition-block-editor .e-de-tool-ctnr-properties-pane,
+  #petition-block-editor .e-de-ctnr-properties-pane,
+  #petition-block-editor .e-de-ribbon-simplified-ctnr-properties-pane,
+  #petition-block-editor .e-de-ribbon-classic-ctnr-properties-pane {
+    height: 100% !important;
+  }
+  #petition-block-editor .e-de-ctn {
     width: 100% !important;
     max-width: 100% !important;
     min-width: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    background: #fff !important;
+    height: 100% !important;
+    overflow: auto !important;
+    background: #ffffff !important;
   }
-  #petition-block-editor .e-de-ctnr .e-de-status-bar {
+  #petition-block-editor .e-de-status-bar,
+  #petition-block-editor .e-de-ctnr-status-bar,
+  #petition-block-editor .e-de-statusbar {
     display: none !important;
   }
-  #petition-block-editor .e-de-ctnr .e-de-ctnr-inner {
-    max-width: 100% !important;
+  #petition-block-editor [id$="_viewerContainer"],
+  #petition-block-editor .e-de-background {
+    min-height: 100% !important;
+    background: #ffffff !important;
   }
   #petition-block-editor .e-de-page-container {
     width: 100% !important;
-    max-width: 100% !important;
+    min-width: 0 !important;
     display: flex !important;
     justify-content: center !important;
     align-items: flex-start !important;
-    padding: 28px 12px !important;
+    padding: 0 !important;
     box-sizing: border-box !important;
-    overflow: auto !important;
-    background: #eef1f5 !important;
   }
-  #petition-block-editor .e-de-page {
-    width: 595px !important; /* ~210mm */
-    min-height: 842px !important; /* ~297mm */
-    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.16) !important;
-    border: 1px solid #e2e8f0 !important;
-    margin: 0 auto !important;
-    background: #fff !important;
-  }
-  #petition-block-editor .e-de-editor {
-    min-height: 820px !important;
-  }
-  #petition-block-editor .e-de-ctnr .e-scrollbar::-webkit-scrollbar {
+  #petition-block-editor .e-scrollbar::-webkit-scrollbar {
     height: 8px;
     width: 8px;
   }
-  #petition-block-editor .e-de-ctnr .e-scrollbar::-webkit-scrollbar-thumb {
+  #petition-block-editor .e-scrollbar::-webkit-scrollbar-thumb {
     background: #cbd5e1;
     border-radius: 8px;
   }
-  #petition-block-editor .e-de-ctnr .e-scrollbar::-webkit-scrollbar-track {
+  #petition-block-editor .e-scrollbar::-webkit-scrollbar-track {
     background: #f8fafc;
+  }
+  body.petition-dark #block-editor-modal,
+  body.petition-dark #block-editor-modal .petition-block-editor-surface,
+  body.petition-dark #petition-block-editor,
+  body.petition-dark #petition-block-editor > div,
+  body.petition-dark #petition-block-editor .e-documenteditorcontainer,
+  body.petition-dark #petition-block-editor .e-de-ctnr,
+  body.petition-dark #petition-block-editor .e-de-ctn,
+  body.petition-dark #petition-block-editor [id$="_viewerContainer"],
+  body.petition-dark #petition-block-editor .e-de-background,
+  body.petition-dark #petition-block-editor .e-de-page-container {
+    background: #252525 !important;
+    background-color: #252525 !important;
+  }
+  body.petition-dark #block-editor-modal .petition-block-properties {
+    background: #2b2b2b !important;
+    border-color: #3d3d3d !important;
+  }
+  body.petition-dark #block-editor-modal .petition-block-properties label {
+    color: #c8ccd3 !important;
+  }
+  body.petition-dark #block-editor-modal .petition-block-properties select,
+  body.petition-dark #block-editor-modal .petition-block-properties input {
+    background-color: #333333 !important;
+    border-color: #4a4a4a !important;
+    color: #eef2f7 !important;
   }
 `;
 
-if (typeof document !== 'undefined' && !document.getElementById('petition-block-editor-styles')) {
-  const style = document.createElement('style');
-  style.id = 'petition-block-editor-styles';
+if (typeof document !== 'undefined') {
+  let style = document.getElementById('petition-block-editor-styles');
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'petition-block-editor-styles';
+    document.head.appendChild(style);
+  }
   style.innerHTML = blockEditorModalStyles;
-  document.head.appendChild(style);
 }
 
 export default PetitionEditorModule;

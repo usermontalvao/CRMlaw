@@ -54,7 +54,7 @@ import {
 import type { SyncfusionEditorRef } from './SyncfusionEditor';
 import { profileService, type PetitionRibbonCustomStyle } from '../services/profile.service';
 
-type RibbonTab = 'inicio' | 'inserir' | 'layout' | 'revisao' | 'exibir';
+type RibbonTab = 'inicio' | 'inserir' | 'layout' | 'revisao' | 'exibir' | 'configuracoes';
 
 interface FmtState {
   bold: boolean;
@@ -127,7 +127,7 @@ const STYLES = ['Normal', 'Heading 1', 'Heading 2', 'Heading 3'];
 
 const A4 = { w: 595.3, h: 841.9 };
 const LETTER = { w: 612, h: 792 };
-const RIBBON_COLLAPSED_STORAGE_KEY = 'petition-ribbon-collapsed-v1';
+const RIBBON_COLLAPSED_STORAGE_KEY = 'petition-ribbon-collapsed-v2';
 const CUSTOM_STYLES_STORAGE_KEY = 'petition-ribbon-custom-styles-v1';
 
 const getReadablePreviewColor = (color: string) => {
@@ -157,11 +157,21 @@ interface PetitionRibbonProps {
   editorRef: React.RefObject<SyncfusionEditorRef | null>;
   ready: boolean;
   topContent?: React.ReactNode;
+  /** Nome da entidade editada, usado pelos comandos do menu Arquivo. */
+  entityLabel?: string;
+  /** Evita que ribbons montados atrás de um modal capturem atalhos globais. */
+  shortcutScopeActive?: boolean;
   /** Menu Arquivo â€” ligados Ã s aÃ§Ãµes do mÃ³dulo. */
   onNew?: () => void;
   onOpen?: () => void;
   onSave?: () => void;
   onExportDocx?: () => void;
+  onLoadDefaultTemplate?: () => void;
+  hasDefaultTemplate?: boolean;
+  onManageAreas?: () => void;
+  onManageModels?: () => void;
+  onManageBlocks?: () => void;
+  onOpenFindReplace?: (mode: 'find' | 'replace') => void;
   /** Modo escuro: estado controlado pelo modulo (fonte unica de verdade). */
   darkMode?: boolean;
   onToggleDarkMode?: () => void;
@@ -171,12 +181,20 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
   editorRef,
   ready,
   topContent,
+  entityLabel = 'documento',
+  shortcutScopeActive = true,
   darkMode = false,
   onToggleDarkMode,
   onNew,
   onOpen,
   onSave,
   onExportDocx,
+  onLoadDefaultTemplate,
+  hasDefaultTemplate = false,
+  onManageAreas,
+  onManageModels,
+  onManageBlocks,
+  onOpenFindReplace,
 }) => {
   const [tab, setTab] = useState<RibbonTab>('inicio');
   const [fmt, setFmt] = useState<FmtState>(EMPTY_FMT);
@@ -233,6 +251,31 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     }
     if (!isCollapsed) setHoverReveal(false);
   }, [isCollapsed]);
+
+  useEffect(() => {
+    if (!shortcutScopeActive) return;
+    const handleRibbonShortcut = (event: KeyboardEvent) => {
+      if (event.key !== 'F1' || !(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      setIsCollapsed((value) => !value);
+      setHoverReveal(false);
+    };
+    window.addEventListener('keydown', handleRibbonShortcut);
+    return () => window.removeEventListener('keydown', handleRibbonShortcut);
+  }, [shortcutScopeActive]);
+
+  useEffect(() => {
+    if (!shortcutScopeActive) return;
+    const handleFindShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLocaleLowerCase('pt-BR');
+      if (key !== 'f' && key !== 'h') return;
+      event.preventDefault();
+      onOpenFindReplace?.(key === 'h' ? 'replace' : 'find');
+    };
+    window.addEventListener('keydown', handleFindShortcut);
+    return () => window.removeEventListener('keydown', handleFindShortcut);
+  }, [onOpenFindReplace, shortcutScopeActive]);
   useEffect(() => {
     let cancelled = false;
     const loadCustomStyles = async () => {
@@ -419,15 +462,15 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     },
     [getEd, syncFmt],
   );
-  const returnToHomeTab = useCallback(() => {
-    window.setTimeout(() => setTab('inicio'), 0);
-  }, []);
+  // Os comandos devem preservar a aba escolhida pelo usuário. Este helper é
+  // mantido para compatibilidade com as ações existentes, mas não troca mais
+  // automaticamente para "Início".
+  const returnToHomeTab = useCallback(() => {}, []);
   const runAndReturnHome = useCallback(
     (fn: (ed: any) => void, refocus = true) => {
       run(fn, refocus);
-      returnToHomeTab();
     },
-    [run, returnToHomeTab],
+    [run],
   );
 
   // ---- AÃ§Ãµes de fonte / parÃ¡grafo ----
@@ -756,9 +799,12 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     runAndReturnHome((ed) => {
       if (ed.spellChecker) ed.spellChecker.enableSpellCheck = !ed.spellChecker.enableSpellCheck;
     });
-  const openFind = (returnHome = false) => {
-    const runner = returnHome ? runAndReturnHome : run;
-    runner((ed) => ed.showOptionsPane?.());
+  const openFind = (mode: 'find' | 'replace' = 'find') => {
+    if (onOpenFindReplace) {
+      onOpenFindReplace(mode);
+      return;
+    }
+    run((ed) => ed.showOptionsPane?.());
   };
   const replaceAll = () => {
     const search = replaceSearch.trim();
@@ -948,7 +994,10 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
             type="button"
             className="pet-ribbon-file"
             onClick={() => {
-              if (isCollapsed) setHoverReveal(true);
+              if (isCollapsed) {
+                setIsCollapsed(false);
+                setHoverReveal(false);
+              }
               setFileMenuOpen((v) => !v);
             }}
             title="Menu Arquivo"
@@ -957,19 +1006,27 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
           </button>
           {fileMenuOpen && (
             <div className="pet-file-menu" data-ribbon-popover>
-              <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onNew?.(); }}>
-                <FilePlus2 size={15} /> Novo documento
-              </button>
-              <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onOpen?.(); }}>
-                <FolderOpen size={15} /> Abrir / Importar DOCX
-              </button>
-              <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onSave?.(); }}>
-                <SaveIcon size={15} /> Salvar
-              </button>
-              <div className="pet-file-sep" />
-              <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onExportDocx?.(); }}>
-                <Download size={15} /> Exportar DOCX
-              </button>
+              {onNew && (
+                <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onNew(); }}>
+                  <FilePlus2 size={15} /> Novo {entityLabel}
+                </button>
+              )}
+              {onOpen && (
+                <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onOpen(); }}>
+                  <FolderOpen size={15} /> Abrir / Importar DOCX
+                </button>
+              )}
+              {onSave && (
+                <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onSave(); }}>
+                  <SaveIcon size={15} /> Salvar
+                </button>
+              )}
+              {(onNew || onOpen || onSave) && <div className="pet-file-sep" />}
+              {onExportDocx && (
+                <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onExportDocx(); }}>
+                  <Download size={15} /> Exportar DOCX
+                </button>
+              )}
               <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); printDoc(); }}>
                 <Printer size={15} /> Imprimir / PDF
               </button>
@@ -982,13 +1039,17 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
           ['layout', 'Layout'],
           ['revisao', 'Revisão'],
           ['exibir', 'Exibir'],
+          ['configuracoes', 'Configurações'],
         ] as [RibbonTab, string][]).map(([key, label]) => (
           <button
             key={key}
             type="button"
             onClick={() => {
               setTab(key);
-              if (isCollapsed) setHoverReveal(true);
+              if (isCollapsed) {
+                setIsCollapsed(false);
+                setHoverReveal(false);
+              }
             }}
             className={`pet-ribbon-tab ${tab === key ? 'is-active' : ''}`}
           >
@@ -1424,48 +1485,17 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
             {/* Edição */}
             <RibbonGroup label={"Edição"} className="is-slim" bodyClassName="is-inline is-center">
               <div className="pet-stack">
-                <Btn small title="Localizar / Substituir" onClick={openFind}>
+                <Btn small title="Localizar" onClick={() => openFind('find')}>
                   <Search size={14} /> <span>Localizar</span>
                 </Btn>
-                <div className="pet-split-btn" data-ribbon-popover>
+                <div className="pet-split-btn">
                   <Btn
                     small
                     title="Substituir texto"
-                    onClick={() => {
-                      if (isCollapsed) setHoverReveal(true);
-                      setReplaceOpen((v) => !v);
-                    }}
+                    onClick={() => openFind('replace')}
                   >
                     <span>Substituir</span>
                   </Btn>
-                  {replaceOpen && (
-                    <div className="pet-popover" data-ribbon-popover style={{ width: 260 }}>
-                      <div className="pet-replace-pop">
-                        <input
-                          type="text"
-                          className="pet-input"
-                          value={replaceSearch}
-                          onChange={(e) => setReplaceSearch(e.target.value)}
-                          placeholder="Localizar"
-                        />
-                        <input
-                          type="text"
-                          className="pet-input"
-                          value={replaceValue}
-                          onChange={(e) => setReplaceValue(e.target.value)}
-                          placeholder="Substituir por"
-                        />
-                        <div className="pet-flow-row">
-                          <Btn small title="Abrir localizar" onClick={() => openFind()}>
-                            <span>Localizar</span>
-                          </Btn>
-                          <Btn small title="Substituir tudo" onClick={replaceAll}>
-                            <span>Substituir Tudo</span>
-                          </Btn>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
                 <Btn small title="Selecionar tudo" onClick={() => run((ed) => ed.selection?.selectAll?.())}>
                   <span style={{ width: 14, textAlign: 'center' }}>+</span> <span>Selecionar</span>
@@ -1764,7 +1794,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
               </div>
             </RibbonGroup>
             <RibbonGroup label="Localizar">
-              <Btn title="Localizar / Substituir" onClick={() => openFind(true)}>
+              <Btn title="Localizar / Substituir" onClick={() => openFind('find')}>
                 <Search size={18} />
                 <span className="lbl">Localizar</span>
               </Btn>
@@ -1857,6 +1887,73 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
             </RibbonGroup>
           </>
         )}
+
+        {tab === 'configuracoes' && (
+          <>
+            <RibbonGroup label="Aparência">
+              <div className="pet-flow-row">
+                <Btn
+                  small
+                  title={darkMode ? 'Usar tema claro' : 'Usar tema escuro'}
+                  onClick={toggleDarkMode}
+                >
+                  {darkMode ? <Sun size={15} /> : <Moon size={15} />}
+                  <span>{darkMode ? 'Tema claro' : 'Tema escuro'}</span>
+                </Btn>
+              </div>
+            </RibbonGroup>
+            {onLoadDefaultTemplate && (
+              <RibbonGroup label="Documento padrão">
+                <div className="pet-flow-row">
+                  <Btn
+                    small
+                    title={hasDefaultTemplate ? 'Carregar documento padrão' : 'Nenhum documento padrão definido'}
+                    onClick={() => {
+                      if (hasDefaultTemplate) onLoadDefaultTemplate();
+                    }}
+                  >
+                    <FolderOpen size={15} />
+                    <span>{hasDefaultTemplate ? 'Abrir padrão' : 'Sem padrão'}</span>
+                  </Btn>
+                </div>
+              </RibbonGroup>
+            )}
+            {(onManageAreas || onManageModels || onManageBlocks) && (
+              <RibbonGroup label="Petições">
+                <div className="pet-flow-row">
+                  {onManageAreas && (
+                    <Btn small title="Gerenciar áreas jurídicas" onClick={onManageAreas}>
+                      <span>Áreas</span>
+                    </Btn>
+                  )}
+                  {onManageModels && (
+                    <Btn small title="Gerenciar modelos de petição" onClick={onManageModels}>
+                      <span>Modelos</span>
+                    </Btn>
+                  )}
+                  {onManageBlocks && (
+                    <Btn small title="Abrir gerenciador de blocos" onClick={onManageBlocks}>
+                      <span>Blocos</span>
+                    </Btn>
+                  )}
+                </div>
+              </RibbonGroup>
+            )}
+            <RibbonGroup label="Faixa de opções">
+              <label className="pet-check" title="Recolher ou manter a faixa de opções expandida">
+                <input
+                  type="checkbox"
+                  checked={isCollapsed}
+                  onChange={() => {
+                    setIsCollapsed((value) => !value);
+                    setHoverReveal(false);
+                  }}
+                />
+                <span>Recolher automaticamente</span>
+              </label>
+            </RibbonGroup>
+          </>
+        )}
       </div>
 
       {/* Botões de undo/redo flutuantes no canto direito da faixa de abas */}
@@ -1920,8 +2017,22 @@ const Btn: React.FC<{
 const RIBBON_CSS = `
 .pet-ribbon{display:flex;flex-direction:column;background:#f7f8fa;border-bottom:1px solid #e3e6ea;flex-shrink:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#334155;user-select:none;position:relative;z-index:40;overflow:visible;}
 .pet-ribbon-peek{display:none;}
-.pet-ribbon-topslot{display:flex;align-items:center;padding:8px 14px;border-bottom:1px solid #e3e6ea;background:linear-gradient(180deg,#ffffff 0%,#ffffff 100%);transition:opacity .14s ease,transform .14s ease,max-height .16s ease,padding .16s ease,border-color .16s ease;max-height:78px;overflow-x:auto;overflow-y:hidden;position:relative;z-index:3;}
+.pet-ribbon-topslot{display:flex;align-items:center;padding:3px 10px;border-bottom:1px solid #e3e6ea;background:#ffffff;transition:opacity .14s ease,transform .14s ease,max-height .16s ease,padding .16s ease,border-color .16s ease;max-height:46px;overflow-x:auto;overflow-y:hidden;position:relative;z-index:3;}
 .pet-ribbon-topslot-inner{display:flex;align-items:center;gap:10px;width:100%;min-width:0;}
+.pet-titlebar{display:grid;grid-template-columns:auto minmax(220px,1fr) auto;align-items:center;gap:10px;width:100%;min-width:0;height:34px;}
+.pet-titlebar-nav,.pet-titlebar-actions{display:flex;align-items:center;gap:3px;}
+.pet-titlebar-document{display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;}
+.pet-titlebar-input{width:min(520px,100%);min-width:120px;height:28px;border:1px solid transparent;border-radius:5px;background:transparent;padding:0 8px;text-align:center;font-size:13px;font-weight:600;color:#334155;outline:none;text-overflow:ellipsis;}
+.pet-titlebar-input:hover{border-color:#e3e6ea;background:#f8fafc;}
+.pet-titlebar-input:focus{border-color:#93c5fd;background:#fff;box-shadow:0 0 0 2px rgba(37,99,235,.10);}
+.pet-titlebar-state{display:inline-flex;align-items:center;gap:5px;flex-shrink:0;white-space:nowrap;font-size:10px;color:#64748b;}
+.pet-titlebar-state.is-saving{color:#2563eb;}
+.pet-titlebar-state.is-dirty{color:#b45309;}
+.pet-titlebar-state.is-saved{color:#059669;}
+.pet-titlebar-dot{width:6px;height:6px;border-radius:50%;background:#f59e0b;}
+.pet-titlebar-save{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 11px;border:0;border-radius:5px;background:#2563eb;color:#fff;font-size:11px;font-weight:600;cursor:pointer;}
+.pet-titlebar-save:hover{background:#1d4ed8;}
+.pet-titlebar-save:disabled{opacity:.55;cursor:not-allowed;}
 .pet-top-group{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:nowrap;}
 .pet-top-group.is-left{justify-content:flex-start;flex:1 1 460px;}
 .pet-top-group.is-center{justify-content:center;flex:0 1 340px;}
@@ -1959,9 +2070,9 @@ const RIBBON_CSS = `
 .pet-top-primary-btn:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
 .pet-ribbon-topslot::-webkit-scrollbar{height:6px;}
 .pet-ribbon-topslot::-webkit-scrollbar-thumb{background:#cbd0d6;border-radius:6px;}
-.pet-ribbon-tabs{display:flex;align-items:flex-end;gap:1px;padding:0 8px;height:30px;background:#f7f8fa;position:relative;z-index:2;transition:opacity .14s ease,transform .14s ease;}
+.pet-ribbon-tabs{display:flex;align-items:stretch;gap:2px;padding:0 8px;height:30px;background:#f7f8fa;border-bottom:1px solid #e3e6ea;position:relative;z-index:2;transition:opacity .14s ease,transform .14s ease;}
 .pet-file-wrap{position:relative;display:flex;align-items:flex-end;z-index:10;}
-.pet-ribbon-file{padding:0 14px;height:26px;display:flex;align-items:center;font-size:12px;font-weight:600;color:#fff;background:#2563eb;border:none;border-radius:5px 5px 0 0;cursor:pointer;}
+.pet-ribbon-file{padding:0 14px;height:30px;display:flex;align-items:center;font-size:12px;font-weight:600;color:#fff;background:#2563eb;border:none;border-radius:0;cursor:pointer;}
 .pet-ribbon-file:hover{background:#1d4ed8;}
 .pet-file-menu{position:absolute;top:30px;left:0;z-index:9999;min-width:210px;background:#fff;border:1px solid #e3e6ea;border-radius:8px;box-shadow:0 14px 36px rgba(15,23,42,.18);padding:5px;}
 .pet-file-item{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#334155;cursor:pointer;text-align:left;}
@@ -1976,12 +2087,13 @@ const RIBBON_CSS = `
 .pet-tablegrid-cell{width:16px;height:16px;border:1px solid #d2d6dc;background:#fff;border-radius:2px;cursor:pointer;padding:0;}
 .pet-tablegrid-cell.on{background:#dbeafe;border-color:#2563eb;}
 .pet-tablegrid-label{margin-top:6px;text-align:center;font-size:11px;color:#64748b;}
-.pet-ribbon-tab{padding:0 14px;height:26px;display:flex;align-items:center;font-size:12px;color:#5b6472;background:transparent;border:none;cursor:pointer;border-radius:5px 5px 0 0;}
+.pet-ribbon-tab{position:relative;padding:0 14px;height:30px;display:flex;align-items:center;font-size:12px;color:#5b6472;background:transparent;border:none;cursor:pointer;border-radius:0;}
 .pet-ribbon-tab:hover{background:#eef2f7;}
-.pet-ribbon-tab.is-active{color:#2563eb;font-weight:600;background:#ffffff;}
+.pet-ribbon-tab.is-active{color:#2563eb;font-weight:600;background:transparent;}
+.pet-ribbon-tab.is-active::after{content:'';position:absolute;left:10px;right:10px;bottom:-1px;height:2px;border-radius:2px 2px 0 0;background:#2563eb;}
 .pet-ribbon-collapse{margin-left:auto;margin-bottom:2px;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:4px;color:#64748b;cursor:pointer;flex-shrink:0;}
 .pet-ribbon-collapse:hover{background:#eef2f7;color:#334155;}
-.pet-ribbon-body{min-height:66px;max-height:88px;background:#ffffff;border-top:1px solid #e3e6ea;padding:3px 8px 2px;display:flex;align-items:stretch;gap:0;overflow:visible;opacity:1;transition:max-height .16s ease,padding .16s ease,border-color .16s ease,opacity .16s ease;position:relative;z-index:2;isolation:isolate;}
+.pet-ribbon-body{height:88px;min-height:88px;max-height:88px;box-sizing:border-box;background:#ffffff;padding:3px 8px 2px;display:flex;align-items:stretch;gap:0;overflow:visible;opacity:1;transition:max-height .16s ease,padding .16s ease,border-color .16s ease,opacity .16s ease;position:relative;z-index:2;isolation:isolate;}
 .pet-ribbon-body::-webkit-scrollbar{height:6px;}
 .pet-ribbon-body::-webkit-scrollbar-thumb{background:#cbd0d6;border-radius:6px;}
 .pet-ribbon.is-collapsed{border-bottom-color:transparent;min-height:8px;background:transparent;}
@@ -1991,9 +2103,9 @@ const RIBBON_CSS = `
 .pet-ribbon.is-collapsed .pet-ribbon-body{min-height:0;max-height:0;padding-top:0;padding-bottom:0;border-top-color:transparent;opacity:0;overflow:hidden;pointer-events:none;}
 .pet-ribbon.is-collapsed.is-revealed{border-bottom-color:#e3e6ea;background:#f7f8fa;}
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-peek{display:none;}
-.pet-ribbon.is-collapsed.is-revealed .pet-ribbon-topslot{max-height:78px;padding-top:8px;padding-bottom:8px;border-bottom-color:#e3e6ea;opacity:1;transform:translateY(0);pointer-events:auto;}
+.pet-ribbon.is-collapsed.is-revealed .pet-ribbon-topslot{max-height:46px;padding-top:3px;padding-bottom:3px;border-bottom-color:#e3e6ea;opacity:1;transform:translateY(0);pointer-events:auto;}
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-tabs{height:30px;padding-top:0;padding-bottom:0;opacity:1;transform:translateY(0);overflow:visible;pointer-events:auto;}
-.pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body{min-height:66px;max-height:88px;padding-top:3px;padding-bottom:2px;border-top-color:#e3e6ea;opacity:1;overflow-x:auto;pointer-events:auto;}
+.pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body{height:88px;min-height:88px;max-height:88px;padding-top:3px;padding-bottom:2px;border-top-color:#e3e6ea;opacity:1;overflow-x:auto;pointer-events:auto;}
 
 .pet-group{display:flex;flex-direction:column;padding:0 7px;border-right:1px solid #e8ebef;flex-shrink:0;position:relative;z-index:1;}
 .pet-group:last-child{border-right:none;}
@@ -2064,34 +2176,47 @@ const RIBBON_CSS = `
 .pet-ribbon-body[data-tab="inserir"],
 .pet-ribbon-body[data-tab="layout"],
 .pet-ribbon-body[data-tab="revisao"],
-.pet-ribbon-body[data-tab="exibir"]{min-height:50px;max-height:72px;align-items:flex-start;}
+.pet-ribbon-body[data-tab="exibir"],
+.pet-ribbon-body[data-tab="configuracoes"]{height:88px;min-height:88px;max-height:88px;align-items:stretch;}
 .pet-ribbon-body[data-tab="inserir"] .pet-group-body,
 .pet-ribbon-body[data-tab="layout"] .pet-group-body,
 .pet-ribbon-body[data-tab="revisao"] .pet-group-body,
-.pet-ribbon-body[data-tab="exibir"] .pet-group-body{flex-direction:row;align-items:center;gap:4px;}
+.pet-ribbon-body[data-tab="exibir"] .pet-group-body,
+.pet-ribbon-body[data-tab="configuracoes"] .pet-group-body{flex-direction:row;align-items:center;gap:4px;}
 .pet-ribbon-body[data-tab="inserir"] .pet-btn-lg,
 .pet-ribbon-body[data-tab="layout"] .pet-btn-lg,
 .pet-ribbon-body[data-tab="revisao"] .pet-btn-lg,
-.pet-ribbon-body[data-tab="exibir"] .pet-btn-lg{min-width:50px;min-height:32px;padding:2px 5px;}
+.pet-ribbon-body[data-tab="exibir"] .pet-btn-lg,
+.pet-ribbon-body[data-tab="configuracoes"] .pet-btn-lg{min-width:50px;min-height:32px;padding:2px 5px;}
 .pet-ribbon-body[data-tab="layout"] .pet-group-body .pet-stack,
 .pet-ribbon-body[data-tab="revisao"] .pet-group-body .pet-stack,
-.pet-ribbon-body[data-tab="exibir"] .pet-group-body .pet-stack{justify-content:flex-start;}
+.pet-ribbon-body[data-tab="exibir"] .pet-group-body .pet-stack,
+.pet-ribbon-body[data-tab="configuracoes"] .pet-group-body .pet-stack{justify-content:flex-start;}
 .pet-ribbon-body[data-tab="layout"] .pet-group,
 .pet-ribbon-body[data-tab="inserir"] .pet-group,
 .pet-ribbon-body[data-tab="revisao"] .pet-group,
-.pet-ribbon-body[data-tab="exibir"] .pet-group{padding-top:1px;padding-bottom:1px;}
+.pet-ribbon-body[data-tab="exibir"] .pet-group,
+.pet-ribbon-body[data-tab="configuracoes"] .pet-group{padding-top:1px;padding-bottom:1px;}
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="inserir"],
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="layout"],
 .pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="revisao"],
-.pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="exibir"]{min-height:50px;max-height:72px;}
+.pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="exibir"],
+.pet-ribbon.is-collapsed.is-revealed .pet-ribbon-body[data-tab="configuracoes"]{height:88px;min-height:88px;max-height:88px;}
 
 /* ===== Modo escuro da faixa (ativado por body.petition-dark) ===== */
 body.petition-dark .pet-ribbon{background:#2b2b2b;border-bottom-color:#3d3d3d;color:#dcdcdc;}
 body.petition-dark .pet-ribbon-topslot{background:linear-gradient(180deg,#333333,#2b2b2b);border-bottom-color:#3d3d3d;}
-body.petition-dark .pet-ribbon-tabs{background:#2b2b2b;}
+body.petition-dark .pet-titlebar-input{color:#eef2f7;}
+body.petition-dark .pet-titlebar-input:hover,body.petition-dark .pet-titlebar-input:focus{background:#333;border-color:#4a4a4a;}
+body.petition-dark .pet-titlebar-state{color:#aeb6c3;}
+body.petition-dark .pet-titlebar-state.is-saving{color:#93c5fd;}
+body.petition-dark .pet-titlebar-state.is-dirty{color:#fbbf24;}
+body.petition-dark .pet-titlebar-state.is-saved{color:#6ee7b7;}
+body.petition-dark .pet-ribbon-tabs{background:#2b2b2b;border-bottom-color:#3d3d3d;}
 body.petition-dark .pet-ribbon-tab{color:#c2c2c2;}
 body.petition-dark .pet-ribbon-tab:hover{background:#3a3a3a;}
-body.petition-dark .pet-ribbon-tab.is-active{background:#1f1f1f;color:#ff9d57;}
+body.petition-dark .pet-ribbon-tab.is-active{background:transparent;color:#60a5fa;}
+body.petition-dark .pet-ribbon-tab.is-active::after{background:#60a5fa;}
 body.petition-dark .pet-ribbon-body{background:#1f1f1f;border-top-color:#3d3d3d;}
 body.petition-dark .pet-ribbon.is-collapsed.is-revealed{background:#2b2b2b;border-bottom-color:#3d3d3d;}
 body.petition-dark .pet-ribbon.is-collapsed .pet-ribbon-peek{background:linear-gradient(to bottom,rgba(37,99,235,.28),rgba(37,99,235,.06));border-bottom-color:rgba(37,99,235,.3);}
@@ -2128,6 +2253,13 @@ body.petition-dark .pet-top-icon-btn:hover{background:#3a3a3a;color:#93c5fd;}
 body.petition-dark .pet-top-text-btn{color:#d8dee6;}
 body.petition-dark .pet-top-text-btn:hover{background:#3a3a3a;color:#93c5fd;}
 body.petition-dark .pet-top-primary-btn{background:#2563eb;box-shadow:0 10px 20px rgba(37,99,235,.18);}
+
+@media (max-width:900px){
+  .pet-titlebar{grid-template-columns:auto minmax(120px,1fr) auto;gap:4px;}
+  .pet-titlebar-state{display:none;}
+  .pet-titlebar-save span{display:none;}
+  .pet-titlebar-save{width:30px;padding:0;}
+}
 body.petition-dark .pet-top-primary-btn:hover{background:#3b82f6;}
 body.petition-dark .pet-top-meta-chip{background:#333333;border-color:#454545;color:#c5ced9;box-shadow:none;}
 body.petition-dark .pet-top-save-status.is-saving{color:#93c5fd;background:#1e2a44;border-color:#31436b;}

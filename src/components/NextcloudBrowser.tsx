@@ -7,6 +7,7 @@ import {
   MoreVertical, FolderInput, List, LayoutGrid, GripVertical, RotateCcw, Layers,
   ClipboardPaste, ShieldAlert, ArrowUpDown, ChevronDown, PanelLeftClose,
   PanelLeftOpen, NotebookPen, ZoomIn, ZoomOut, Maximize2, Info, MapPin, Clock3, HardDrive,
+  Wand2, Link2,
 } from 'lucide-react';
 import {
   getNextcloudErrorMessage,
@@ -15,6 +16,7 @@ import {
   type NextcloudEntry,
 } from '../services/nextcloud.service';
 import { clientService } from '../services/client.service';
+import { planAutoLinks, type AutoLinkPlan } from '../utils/nextcloudAutoLink';
 import type { Client } from '../types/client.types';
 import { Modal, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
@@ -481,6 +483,10 @@ const NextcloudBrowser: React.FC = () => {
   const [links, setLinks] = useState<Record<string, string>>({}); // path -> client_id
   const [linkTarget, setLinkTarget] = useState<NextcloudEntry | null>(null); // pasta sendo vinculada
   const [clientSearch, setClientSearch] = useState('');
+  // Vinculação automática: plano em revisão + escolha do usuário por pasta ambígua.
+  const [autoLinkPlan, setAutoLinkPlan] = useState<AutoLinkPlan | null>(null);
+  const [autoLinkAutoApplied, setAutoLinkAutoApplied] = useState(0); // quantos vínculos certos já aplicados
+  const [autoLinkChoices, setAutoLinkChoices] = useState<Record<string, string>>({}); // folderPath -> clientId ('' = não vincular)
 
   // Seleção múltipla — estado centralizado no hook useNextcloudSelection.
   const {
@@ -1254,6 +1260,64 @@ const NextcloudBrowser: React.FC = () => {
     if (!q) return clients.slice(0, 50);
     return clients.filter((c) => (c.full_name || '').toLowerCase().includes(q)).slice(0, 50);
   }, [clients, clientSearch]);
+
+  // Vinculação automática: varre as pastas da pasta atual, aplica sozinho os
+  // casamentos com 100% de certeza (CPF/CNPJ ou nome exato e único) e abre um
+  // modal de confirmação para as pastas ambíguas ("pode ser outra pessoa").
+  const runAutoLink = async () => {
+    if (clients.length === 0) { setError('Lista de clientes indisponível para vincular.'); return; }
+    const folders = entries.filter((e) => e.isDir).map((e) => ({ name: e.name, path: e.path }));
+    if (folders.length === 0) { showTransient('Não há pastas nesta pasta para vincular.'); return; }
+    const plan = planAutoLinks(folders, clients, new Set(Object.keys(links)));
+    if (plan.auto.length === 0 && plan.confirm.length === 0) {
+      showTransient('Nenhuma pasta nova para vincular automaticamente aqui.');
+      return;
+    }
+    let applied = 0;
+    let failed = 0;
+    if (plan.auto.length > 0) {
+      setBusy(`Vinculando ${plan.auto.length} pasta(s)…`);
+      try {
+        for (const m of plan.auto) {
+          try { await nextcloudService.linkFolder(m.folderPath, m.clientId); applied += 1; }
+          catch { failed += 1; }
+        }
+        await loadLinks();
+      } finally { setBusy(null); }
+    }
+    if (plan.confirm.length > 0) {
+      // Restam ambíguas: abre o modal com as escolhas em branco (= não vincular).
+      setAutoLinkAutoApplied(applied);
+      setAutoLinkChoices(Object.fromEntries(plan.confirm.map((c) => [c.folderPath, ''])));
+      setAutoLinkPlan(plan);
+      return;
+    }
+    showTransient(`${applied} pasta(s) vinculada(s) automaticamente${failed ? `, ${failed} falharam` : ''}.`);
+  };
+
+  // Aplica as escolhas do usuário no modal de confirmação (só as marcadas).
+  const applyAutoLinkChoices = async () => {
+    const chosen = Object.entries(autoLinkChoices).filter(([, clientId]) => clientId);
+    let ok = 0;
+    let failed = 0;
+    if (chosen.length > 0) {
+      setBusy(`Vinculando ${chosen.length} pasta(s)…`);
+      try {
+        for (const [folderPath, clientId] of chosen) {
+          try { await nextcloudService.linkFolder(folderPath, clientId); ok += 1; }
+          catch { failed += 1; }
+        }
+        await loadLinks();
+      } finally { setBusy(null); }
+    }
+    setAutoLinkPlan(null);
+    setAutoLinkChoices({});
+    const auto = autoLinkAutoApplied;
+    setAutoLinkAutoApplied(0);
+    showTransient(`${auto + ok} vínculo(s) aplicado(s)${failed ? `, ${failed} falharam` : ''}.`);
+  };
+
+  const closeAutoLink = () => { setAutoLinkPlan(null); setAutoLinkChoices({}); setAutoLinkAutoApplied(0); };
 
   // Carrega o blob de preview (PDF/imagem) em uma object URL.
   useEffect(() => {
@@ -3195,6 +3259,14 @@ const NextcloudBrowser: React.FC = () => {
             <button onClick={newFolder} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
               <FolderPlus className="w-4 h-4" /> <span className="hidden sm:inline">Nova pasta</span>
             </button>
+            <button
+              onClick={() => void runAutoLink()}
+              disabled={!!busy}
+              title="Vincular automaticamente as pastas desta pasta aos clientes (por CPF/CNPJ ou nome)"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+            >
+              <Wand2 className="w-4 h-4" /> <span className="hidden lg:inline">Vincular auto</span>
+            </button>
             <button onClick={() => void openTextEditor()} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
               <NotebookPen className="w-4 h-4 text-blue-600" /> <span className="hidden xl:inline">Bloco de notas</span>
             </button>
@@ -4548,6 +4620,72 @@ const NextcloudBrowser: React.FC = () => {
                   </button>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: confirmação da vinculação automática (pastas ambíguas) */}
+      {autoLinkPlan && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]" onClick={closeAutoLink}>
+          <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-[0_32px_90px_rgba(15,23,42,0.35)] ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/10" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="min-w-0">
+                <h2 className="flex items-center gap-2 font-semibold"><Wand2 className="h-4 w-4 text-emerald-600" /> Confirmar vínculos</h2>
+                <p className="text-xs text-gray-500">
+                  {autoLinkAutoApplied > 0 && <>{autoLinkAutoApplied} vinculada(s) automaticamente. </>}
+                  {autoLinkPlan.confirm.length} pasta(s) precisam de confirmação (nome ambíguo).
+                </p>
+              </div>
+              <NcModalCloseButton onClick={closeAutoLink} />
+            </div>
+            <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+              {autoLinkPlan.confirm.map((row) => (
+                <div key={row.folderPath} className="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                    <Folder className="h-4 w-4 shrink-0 text-amber-500" />
+                    <span className="truncate" title={row.folderPath}>{row.folderName}</span>
+                  </div>
+                  <div className="space-y-1">
+                    {row.candidates.map((cand) => (
+                      <label key={cand.clientId} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-800">
+                        <input
+                          type="radio"
+                          name={`autolink-${row.folderPath}`}
+                          checked={autoLinkChoices[row.folderPath] === cand.clientId}
+                          onChange={() => setAutoLinkChoices((prev) => ({ ...prev, [row.folderPath]: cand.clientId }))}
+                          className="accent-emerald-600"
+                        />
+                        <Link2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                        <span className="truncate">{cand.clientName}</span>
+                        <span className="ml-auto shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800">
+                          {cand.reason === 'cpf' ? 'CPF/CNPJ' : cand.reason === 'name-exact' ? 'nome idêntico' : 'nome parcial'}
+                        </span>
+                      </label>
+                    ))}
+                    <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <input
+                        type="radio"
+                        name={`autolink-${row.folderPath}`}
+                        checked={!autoLinkChoices[row.folderPath]}
+                        onChange={() => setAutoLinkChoices((prev) => ({ ...prev, [row.folderPath]: '' }))}
+                        className="accent-gray-400"
+                      />
+                      Não vincular
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+              <button onClick={closeAutoLink} className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">Cancelar</button>
+              <button
+                onClick={() => void applyAutoLinkChoices()}
+                disabled={!!busy}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                <Link2 className="h-4 w-4" /> Confirmar {Object.values(autoLinkChoices).filter(Boolean).length} vínculo(s)
+              </button>
             </div>
           </div>
         </div>
