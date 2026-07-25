@@ -11,6 +11,7 @@ import {
 import {
   getNextcloudErrorMessage,
   nextcloudService,
+  NextcloudConflictError,
   type NextcloudEntry,
 } from '../services/nextcloud.service';
 import { clientService } from '../services/client.service';
@@ -510,6 +511,10 @@ const NextcloudBrowser: React.FC = () => {
   const [textEditorSaving, setTextEditorSaving] = useState(false);
   const [textDiscardConfirm, setTextDiscardConfirm] = useState(false);
   const [textDiscardAction, setTextDiscardAction] = useState<'close' | 'new'>('close');
+  // ETag da versão aberta (controle de concorrência otimista via If-Match).
+  const [textEditorEtag, setTextEditorEtag] = useState<string | null>(null);
+  // Conflito 412 no salvar do editor de texto: oferece recarregar/copiar/cancelar.
+  const [textConflict, setTextConflict] = useState(false);
   const [inlineRename, setInlineRename] = useState<{ path: string; value: string; extension?: string } | null>(null);
 
   useEffect(() => {
@@ -1510,6 +1515,9 @@ const NextcloudBrowser: React.FC = () => {
       const content = await blob.text();
       setTextEditorContent(content);
       setTextEditorSavedContent(content);
+      // Guarda o ETag remoto para detectar edição concorrente ao salvar.
+      try { const meta = await nextcloudService.stat(entry.path); setTextEditorEtag(meta.etag ?? null); }
+      catch { setTextEditorEtag(null); }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao abrir o arquivo de texto.');
       setTextEditorOpen(false);
@@ -1532,13 +1540,18 @@ const NextcloudBrowser: React.FC = () => {
     setTextEditorSaving(true);
     setError(null);
     try {
-      if (textEditorEntry && target !== textEditorEntry.path) {
-        await nextcloudService.move(textEditorEntry.path, target);
+      const movedNow = Boolean(textEditorEntry && target !== textEditorEntry.path);
+      if (movedNow) {
+        await nextcloudService.move(textEditorEntry!.path, target);
       }
       const blob = new Blob([textEditorContent], { type: 'text/plain;charset=utf-8' });
-      await nextcloudService.writeFile(target, blob);
+      // Só usa If-Match ao SOBRESCREVER a mesma versão que abrimos (não em
+      // arquivo novo nem após mover). Assim detectamos edição concorrente (412).
+      const useIfMatch = !movedNow && textEditorEntry && target === textEditorEntry.path ? textEditorEtag : null;
+      const put = await nextcloudService.writeFile(target, blob, { ifMatch: useIfMatch });
       setTextEditorName(normalizedName);
       setTextEditorSavedContent(textEditorContent);
+      setTextEditorEtag(put.etag ?? null);
       setTextEditorEntry({
         name: normalizedName,
         path: target,
@@ -1551,8 +1564,59 @@ const NextcloudBrowser: React.FC = () => {
       showTransient('Arquivo de texto salvo no Nextcloud.');
       return true;
     } catch (err) {
+      if (err instanceof NextcloudConflictError) {
+        setTextConflict(true);
+        return false;
+      }
       setError(err instanceof Error ? err.message : 'Falha ao salvar o arquivo de texto.');
       return false;
+    } finally {
+      setTextEditorSaving(false);
+    }
+  };
+
+  // --- Resolução do conflito 412 do editor de texto -------------------------
+  // Recarrega a versão do servidor, descartando as edições locais.
+  const textConflictReload = async () => {
+    if (!textEditorEntry) return;
+    setTextConflict(false);
+    setTextEditorSaving(true);
+    setError(null);
+    try {
+      const blob = await nextcloudService.readFile(textEditorEntry.path);
+      const content = await blob.text();
+      setTextEditorContent(content);
+      setTextEditorSavedContent(content);
+      const meta = await nextcloudService.stat(textEditorEntry.path);
+      setTextEditorEtag(meta.etag ?? null);
+      showTransient('Versão do servidor recarregada.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao recarregar a versão do servidor.');
+    } finally {
+      setTextEditorSaving(false);
+    }
+  };
+
+  // Salva as edições locais como uma CÓPIA nova (sem sobrescrever a do servidor).
+  const textConflictSaveCopy = async () => {
+    if (!textEditorEntry) return;
+    setTextConflict(false);
+    setTextEditorSaving(true);
+    setError(null);
+    try {
+      const dir = dirOf(textEditorEntry.path);
+      const freeName = await resolveFreeName(dir, textEditorName.trim() || 'Novo documento.txt');
+      const target = [dir, freeName].filter(Boolean).join('/');
+      const blob = new Blob([textEditorContent], { type: 'text/plain;charset=utf-8' });
+      const put = await nextcloudService.writeFile(target, blob);
+      setTextEditorName(freeName);
+      setTextEditorSavedContent(textEditorContent);
+      setTextEditorEtag(put.etag ?? null);
+      setTextEditorEntry({ name: freeName, path: target, isDir: false, size: blob.size, mime: 'text/plain', mtime: new Date().toISOString() });
+      await load(path);
+      showTransient(`Cópia salva como “${freeName}”.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao salvar a cópia.');
     } finally {
       setTextEditorSaving(false);
     }
@@ -5239,6 +5303,38 @@ const NextcloudBrowser: React.FC = () => {
           <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
             Existem alterações não salvas. Salve o arquivo antes de {textDiscardAction === 'new' ? 'criar um novo documento' : 'fechar'}.
           </p>
+        </ModalBody>
+      </Modal>
+
+      <Modal
+        open={textConflict}
+        onClose={() => setTextConflict(false)}
+        size="sm"
+        title="Conflito de versão"
+        eyebrow="Bloco de Notas"
+        subtitle={textEditorName}
+        icon={<AlertCircle className="h-5 w-5" />}
+        accentBarClassName="bg-amber-500"
+        iconContainerClassName="rounded-xl bg-amber-500 text-white"
+        zIndex={175}
+        footer={
+          <ModalFooter>
+            <Button variant="secondary" onClick={() => setTextConflict(false)}>Cancelar</Button>
+            <Button variant="secondary" onClick={() => void textConflictReload()}>Recarregar do servidor</Button>
+            <Button onClick={() => void textConflictSaveCopy()}><Copy className="h-4 w-4" /> Salvar como cópia</Button>
+          </ModalFooter>
+        }
+      >
+        <ModalBody>
+          <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+            Outra pessoa (ou outra aba) alterou este arquivo no servidor desde que você o abriu.
+            Para não sobrescrever esse trabalho, escolha uma opção:
+          </p>
+          <ul className="mt-3 space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+            <li><strong className="text-slate-700 dark:text-slate-200">Recarregar do servidor</strong> — descarta suas edições e traz a versão atual.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Salvar como cópia</strong> — mantém as duas versões, salvando a sua com outro nome.</li>
+            <li><strong className="text-slate-700 dark:text-slate-200">Cancelar</strong> — volta ao editor sem salvar.</li>
+          </ul>
         </ModalBody>
       </Modal>
 
