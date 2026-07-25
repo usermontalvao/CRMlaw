@@ -3297,19 +3297,20 @@ const NextcloudBrowser: React.FC = () => {
                 <LayoutGrid className="w-4 h-4" />
               </button>
             </div>
-            <button onClick={newFolder} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
-              <FolderPlus className="w-4 h-4" /> <span className="hidden sm:inline">Nova pasta</span>
+            <button onClick={newFolder} title="Nova pasta" aria-label="Nova pasta" className="inline-flex items-center justify-center p-2 rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
+              <FolderPlus className="w-4 h-4" />
             </button>
             <button
               onClick={() => void runAutoLink()}
               disabled={!!busy}
               title="Vincular automaticamente as pastas desta pasta aos clientes (por CPF/CNPJ ou nome)"
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+              aria-label="Vincular auto"
+              className="inline-flex items-center justify-center p-2 rounded-xl border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
             >
-              <Wand2 className="w-4 h-4" /> <span className="hidden lg:inline">Vincular auto</span>
+              <Wand2 className="w-4 h-4" />
             </button>
-            <button onClick={() => void openTextEditor()} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
-              <NotebookPen className="w-4 h-4 text-blue-600" /> <span className="hidden xl:inline">Bloco de notas</span>
+            <button onClick={() => void openTextEditor()} title="Bloco de notas" aria-label="Bloco de notas" className="inline-flex items-center justify-center p-2 rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
+              <NotebookPen className="w-4 h-4 text-blue-600" />
             </button>
             <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl bg-blue-600 text-white hover:bg-blue-700 shadow-sm">
               <Upload className="w-4 h-4" /> <span className="hidden sm:inline">Enviar</span>

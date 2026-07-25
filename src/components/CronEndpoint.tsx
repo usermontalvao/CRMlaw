@@ -5,6 +5,8 @@ import { profileService } from '../services/profile.service';
 import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
 import { processTimelineService } from '../services/processTimeline.service';
+import { nextcloudService } from '../services/nextcloud.service';
+import { planAutoLinks, type AutoLinkFolder } from '../utils/nextcloudAutoLink';
 import { supabase } from '../config/supabase';
 
 const CronEndpoint = () => {
@@ -44,6 +46,18 @@ const CronEndpoint = () => {
         return;
       }
       runDjenBackfill(processCode, startDate);
+    }
+
+    // Vinculação automática de pastas do Nextcloud aos clientes (só 100% de certeza).
+    // URL: ?action=nextcloud-autolink&token=djen-sync-2024   (adicione &deep=0 p/ só a raiz)
+    if (action === 'nextcloud-autolink') {
+      if (token !== 'djen-sync-2024') {
+        setStatus('error');
+        setMessage('Token inválido');
+        return;
+      }
+      const deep = urlParams.get('deep') !== '0'; // padrão: varre toda a árvore
+      runNextcloudAutoLink(deep);
     }
   }, []);
 
@@ -265,6 +279,84 @@ const CronEndpoint = () => {
     }
   };
 
+  // Varre as pastas do Nextcloud e aplica SOZINHO apenas os vínculos com 100% de
+  // certeza (CPF/CNPJ único ou nome exato e único). Pastas ambíguas ("pode ser
+  // outra pessoa") são deliberadamente ignoradas — continuam para confirmação
+  // manual no CloudModule. Reusa a lógica pura `planAutoLinks`, já testada.
+  const runNextcloudAutoLink = async (deep: boolean) => {
+    setStatus('running');
+    setMessage('Iniciando vinculação automática do Nextcloud...');
+
+    try {
+      // Limites defensivos para não estourar chamadas no proxy WebDAV.
+      const MAX_LISTINGS = 500; // nº máximo de diretórios listados por execução
+      const MAX_FOLDERS = 5000; // nº máximo de pastas coletadas
+
+      setMessage('Carregando clientes e vínculos existentes...');
+      const [clients, links] = await Promise.all([
+        clientService.listClients(),
+        nextcloudService.getFolderLinks(),
+      ]);
+      if (clients.length === 0) {
+        setStatus('error');
+        setMessage('Lista de clientes indisponível — nada a vincular.');
+        return;
+      }
+      const linkedPaths = new Set(Object.keys(links));
+
+      // ── Coletar pastas: raiz (deep=0) ou toda a árvore (BFS bounded) ──────────
+      setMessage('Varrendo pastas no Nextcloud...');
+      const folders: AutoLinkFolder[] = [];
+      const queue: string[] = ['']; // '' = raiz
+      let listings = 0;
+      while (queue.length > 0 && listings < MAX_LISTINGS && folders.length < MAX_FOLDERS) {
+        const dir = queue.shift() as string;
+        let entries;
+        try {
+          entries = await nextcloudService.list(dir);
+        } catch (err) {
+          console.error(`Falha ao listar "${dir}":`, err);
+          continue;
+        }
+        listings += 1;
+        for (const e of entries) {
+          if (!e.isDir) continue;
+          folders.push({ name: e.name, path: e.path });
+          if (deep) queue.push(e.path);
+        }
+      }
+
+      // ── Planejar e aplicar apenas os 100% certos ─────────────────────────────
+      setMessage(`Analisando ${folders.length} pasta(s)...`);
+      const plan = planAutoLinks(folders, clients, linkedPaths);
+
+      let applied = 0;
+      let failed = 0;
+      for (const m of plan.auto) {
+        try {
+          await nextcloudService.linkFolder(m.folderPath, m.clientId);
+          applied += 1;
+          console.log(`🔗 ${m.folderName} → ${m.clientName} (${m.reason})`);
+        } catch (err) {
+          failed += 1;
+          console.error(`Falha ao vincular "${m.folderPath}":`, err);
+        }
+      }
+
+      setStats({ found: folders.length, saved: applied });
+      setStatus('success');
+      setMessage(
+        `Vinculação concluída! ${applied} pasta(s) vinculada(s) automaticamente` +
+        `${failed ? `, ${failed} falharam` : ''}. ` +
+        `${plan.confirm.length} aguardam confirmação manual.`,
+      );
+    } catch (error: any) {
+      console.error('❌ Erro no cron de vinculação Nextcloud:', error);
+      setStatus('error');
+      setMessage(`Erro: ${error.message}`);
+    }
+  };
+
   const getStatusColor = () => {
     switch (status) {
       case 'running': return 'text-blue-600';
@@ -311,10 +403,14 @@ const CronEndpoint = () => {
             </div>
           )}
 
-          <div className="text-xs text-gray-500 mt-6">
-            <div>Endpoint: <code>/cron/djen?token=djen-sync-2024</code></div>
-            <div className="mt-2">
-              Para usar: <code>{window.location.origin}/cron/djen?action=djen-sync&token=djen-sync-2024</code>
+          <div className="text-xs text-gray-500 mt-6 space-y-2">
+            <div>
+              <div className="font-semibold text-gray-600">Sincronizar DJEN:</div>
+              <code>{window.location.origin}/#/cron/djen?action=djen-sync&token=djen-sync-2024</code>
+            </div>
+            <div>
+              <div className="font-semibold text-gray-600">Vincular pastas Nextcloud (só 100%):</div>
+              <code>{window.location.origin}/#/cron/djen?action=nextcloud-autolink&token=djen-sync-2024</code>
             </div>
           </div>
         </div>

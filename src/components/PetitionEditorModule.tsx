@@ -48,6 +48,7 @@ import {
   CloudOff,
   RefreshCw,
   AlertTriangle,
+  Cloud,
 } from 'lucide-react';
 import PetitionRibbon from './PetitionRibbon';
 import { saveAs } from 'file-saver';
@@ -57,6 +58,11 @@ import { settingsService } from '../services/settings.service';
 import { aiService } from '../services/ai.service';
 import { cloudService } from '../services/cloud.service';
 import { nextcloudService } from '../services/nextcloud.service';
+import {
+  documentEditHistoryService,
+  type DocumentEditHistoryEntry,
+  type TouchDocumentEditHistoryInput,
+} from '../services/documentEditHistory.service';
 import type {
   PetitionBlock,
   CreatePetitionBlockDTO,
@@ -79,6 +85,7 @@ import PetitionStatusBar from './petition/PetitionStatusBar';
 import PetitionFindReplacePanel from './petition/PetitionFindReplacePanel';
 import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 
 const useDebouncedValue = <T,>(value: T, delayMs: number): T => {
   const [debounced, setDebounced] = useState(value);
@@ -1469,6 +1476,19 @@ type LocalPetitionDraft = {
   updatedAt: string;
 };
 
+type RecentDocumentItem = {
+  key: string;
+  source: 'petition' | 'nextcloud';
+  title: string;
+  clientName: string | null;
+  location: string | null;
+  updatedAt: string;
+  lastAction: 'opened' | 'saved';
+  petition?: SavedPetition;
+  nextcloudPath?: string;
+  clientId?: string | null;
+};
+
 let lastHandledInitialDocumentRequestId: string | null = null;
 
 const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
@@ -1535,6 +1555,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [findReplaceMode, setFindReplaceMode] = useState<'find' | 'replace' | null>(null);
   const [sidebarTab, setSidebarTab] = useState<'blocks' | 'clients'>('blocks');
   const [activeWorkspace, setActiveWorkspace] = useState<'editor' | 'blocks'>('editor');
+  const [blocksReturnTarget, setBlocksReturnTarget] = useState<'start' | 'editor'>('editor');
   const [blocksEnabled, setBlocksEnabled] = useState(true);
   const [bmExpandedBlocks, setBmExpandedBlocks] = useState<Set<string>>(new Set());
   const [bmDocxPreviews, setBmDocxPreviews] = useState<Map<string, 'loading' | 'done' | 'error'>>(new Map());
@@ -1777,6 +1798,10 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // PetiçÃµes salvas
   const [savedPetitions, setSavedPetitions] = useState<SavedPetition[]>([]);
   const [savedPetitionsLoading, setSavedPetitionsLoading] = useState(true);
+  const [documentHistory, setDocumentHistory] = useState<DocumentEditHistoryEntry[]>([]);
+  const [documentHistoryLoading, setDocumentHistoryLoading] = useState(true);
+  const [recentDocumentSearch, setRecentDocumentSearch] = useState('');
+  const [recentDocumentSource, setRecentDocumentSource] = useState<'all' | 'petition' | 'nextcloud'>('all');
   const [sourceCloudFile, setSourceCloudFile] = useState<CloudFile | null>(null);
   // Caminho de origem no Nextcloud (quando o doc veio do módulo Nextcloud).
   const sourceNextcloudPathRef = useRef<string | null>(initialNextcloudPath ?? null);
@@ -1808,6 +1833,24 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
   const [relativeTimeTick, setRelativeTimeTick] = useState(0);
+
+  const trackDocumentActivity = useCallback(async (input: TouchDocumentEditHistoryInput) => {
+    try {
+      const entry = await documentEditHistoryService.touch(input);
+      if (!entry) return;
+      setDocumentHistory((current) => {
+        const next = current.filter(
+          (item) => !(item.source === entry.source && item.source_key === entry.source_key),
+        );
+        next.unshift(entry);
+        return next
+          .sort((a, b) => new Date(b.last_activity_at).getTime() - new Date(a.last_activity_at).getTime())
+          .slice(0, 50);
+      });
+    } catch (historyError) {
+      console.warn('Não foi possível registrar a atividade do documento:', historyError);
+    }
+  }, []);
 
   useEffect(() => {
     settingsService.getPetitionEditorModuleConfig().then(cfg => {
@@ -3271,6 +3314,15 @@ Regras:
         // Grava E confirma relendo do servidor: só segue se a versão remota
         // tiver exatamente o tamanho enviado. Evita o "salvo" falso.
         await nextcloudService.writeFileVerified(nextcloudPath, blob);
+        await trackDocumentActivity({
+          source: 'nextcloud',
+          sourceKey: nextcloudPath,
+          title: initialDocumentName || `${title}.docx`,
+          clientId,
+          clientName,
+          nextcloudPath,
+          action: 'saved',
+        });
       } else {
         let savedRow: SavedPetition | null = null;
 
@@ -3308,6 +3360,15 @@ Regras:
             next.unshift(normalizedSavedRow);
             next.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
             return next;
+          });
+          await trackDocumentActivity({
+            source: 'petition',
+            sourceKey: savedRow.id,
+            title: savedRow.title || title,
+            clientId: savedRow.client_id || clientId,
+            clientName: savedRow.client_name || clientName,
+            action: 'saved',
+            activityAt: savedRow.updated_at,
           });
         }
 
@@ -3475,6 +3536,14 @@ Regras:
     }
 
     setHasUnsavedChanges(false);
+    void trackDocumentActivity({
+      source: 'petition',
+      sourceKey: petitionToLoad.id,
+      title: petitionToLoad.title || 'Sem título',
+      clientId: petitionToLoad.client_id,
+      clientName: petitionToLoad.client_name,
+      action: 'opened',
+    });
 
     const editor = editorRef.current;
     if (editor && petitionToLoad.content) {
@@ -4284,7 +4353,7 @@ Regras:
     const isObjectUrl = documentUrl.startsWith('blob:');
     try {
       setDocumentImportLoading(true);
-      applyInitialClientIfNeeded();
+      const initialClient = applyInitialClientIfNeeded();
 
       const response = await fetch(documentUrl);
       if (!response.ok) {
@@ -4313,6 +4382,18 @@ Regras:
         showSuccessMessage(openedFromNextcloud ? 'Documento aberto do Nextcloud.' : 'Documento importado com sucesso.');
       }
       restoreCursorPosition();
+      const nextcloudPath = sourceNextcloudPathRef.current;
+      if (nextcloudPath) {
+        void trackDocumentActivity({
+          source: 'nextcloud',
+          sourceKey: nextcloudPath,
+          title: fileName || nextcloudPath.split('/').pop() || 'Documento do Nextcloud',
+          clientId: initialClient?.id || initialClientId || null,
+          clientName: initialClient?.full_name || null,
+          nextcloudPath,
+          action: 'opened',
+        });
+      }
       if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
         setPetitionTitle(getSanitizedDocumentName(fileName));
       }
@@ -4332,7 +4413,7 @@ Regras:
         try { window.dispatchEvent(new Event('petition-editor-doc-ready')); } catch { /* ignore */ }
       }, 350);
     }
-  }, [applyInitialClientIfNeeded, petitionTitle, restoreNextcloudDraft, restoreCursorPosition]);
+  }, [applyInitialClientIfNeeded, initialClientId, petitionTitle, restoreNextcloudDraft, restoreCursorPosition, trackDocumentActivity]);
 
   // Recarrega o .docx direto do Nextcloud pelo caminho de origem. Usado na
   // restauração do widget após um reload da página: a object URL do blob morre
@@ -4340,7 +4421,7 @@ Regras:
   const importInitialDocumentFromNextcloud = useCallback(async (nextcloudPath: string, fileName?: string) => {
     try {
       setDocumentImportLoading(true);
-      applyInitialClientIfNeeded();
+      const initialClient = applyInitialClientIfNeeded();
 
       const blob = await nextcloudService.readFile(nextcloudPath);
       const arrayBuffer = await blob.arrayBuffer();
@@ -4363,6 +4444,15 @@ Regras:
         setHasUnsavedChanges(false);
       }
       restoreCursorPosition();
+      void trackDocumentActivity({
+        source: 'nextcloud',
+        sourceKey: nextcloudPath,
+        title: fileName || nextcloudPath.split('/').pop() || 'Documento do Nextcloud',
+        clientId: initialClient?.id || initialClientId || null,
+        clientName: initialClient?.full_name || null,
+        nextcloudPath,
+        action: 'opened',
+      });
       if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
         setPetitionTitle(getSanitizedDocumentName(fileName));
       }
@@ -4376,7 +4466,7 @@ Regras:
         try { window.dispatchEvent(new Event('petition-editor-doc-ready')); } catch { /* ignore */ }
       }, 350);
     }
-  }, [applyInitialClientIfNeeded, petitionTitle, restoreNextcloudDraft, restoreCursorPosition]);
+  }, [applyInitialClientIfNeeded, initialClientId, petitionTitle, restoreNextcloudDraft, restoreCursorPosition, trackDocumentActivity]);
 
   const loadDefaultTemplate = async () => {
     if (!isOnlineRef.current) {
@@ -4816,11 +4906,13 @@ Regras:
       setLoading(true);
       setError(null);
       setSavedPetitionsLoading(true);
+      setDocumentHistoryLoading(true);
 
-      const [petitionsData, clientsData, areasData] = await Promise.all([
+      const [petitionsData, clientsData, areasData, historyData] = await Promise.all([
         isCloudImportMode ? Promise.resolve([]) : petitionEditorService.listPetitions(),
         loadClients(),
         petitionEditorService.listLegalAreas(),
+        documentEditHistoryService.list(50).catch(() => []),
       ]);
 
       const normalizedAreas = (areasData || []).map(sanitizeLegalAreaRecord);
@@ -4875,6 +4967,7 @@ Regras:
           // ignore
         });
       }
+      setDocumentHistory(historyData);
       setClients(clientsData);
     } catch (err) {
       console.error('Erro ao carregar dados:', err);
@@ -4882,6 +4975,7 @@ Regras:
     } finally {
       setLoading(false);
       setSavedPetitionsLoading(false);
+      setDocumentHistoryLoading(false);
     }
   };
 
@@ -5591,267 +5685,498 @@ Regras:
     }
   };
 
+  const recentDocuments = useMemo<RecentDocumentItem[]>(() => {
+    const byKey = new Map<string, RecentDocumentItem>();
+    const savedById = new Map(savedPetitions.map((petition) => [petition.id, petition]));
+
+    for (const petition of savedPetitions) {
+      byKey.set(`petition:${petition.id}`, {
+        key: `petition:${petition.id}`,
+        source: 'petition',
+        title: petition.title || 'Sem título',
+        clientName: petition.client_name || null,
+        location: petition.process_number ? `Processo ${petition.process_number}` : 'Jurius',
+        updatedAt: petition.updated_at,
+        lastAction: 'saved',
+        petition,
+        clientId: petition.client_id,
+      });
+    }
+
+    for (const historyEntry of documentHistory) {
+      if (historyEntry.source === 'petition') {
+        const petition = savedById.get(historyEntry.source_key);
+        if (!petition) continue;
+        const current = byKey.get(`petition:${petition.id}`);
+        const currentTime = current ? new Date(current.updatedAt).getTime() : 0;
+        const historyTime = new Date(historyEntry.last_activity_at).getTime();
+        byKey.set(`petition:${petition.id}`, {
+          key: `petition:${petition.id}`,
+          source: 'petition',
+          title: historyEntry.title || petition.title || 'Sem título',
+          clientName: historyEntry.client_name || petition.client_name || null,
+          location: petition.process_number ? `Processo ${petition.process_number}` : 'Jurius',
+          updatedAt: historyTime > currentTime ? historyEntry.last_activity_at : (current?.updatedAt || petition.updated_at),
+          lastAction: historyTime > currentTime ? historyEntry.last_action : (current?.lastAction || 'saved'),
+          petition,
+          clientId: historyEntry.client_id || petition.client_id,
+        });
+        continue;
+      }
+
+      const nextcloudPath = historyEntry.nextcloud_path || historyEntry.source_key;
+      if (!nextcloudPath) continue;
+      const pathParts = nextcloudPath.split('/').filter(Boolean);
+      const fileName = pathParts.pop() || historyEntry.title || 'Documento do Nextcloud';
+      byKey.set(`nextcloud:${historyEntry.source_key}`, {
+        key: `nextcloud:${historyEntry.source_key}`,
+        source: 'nextcloud',
+        title: historyEntry.title || fileName,
+        clientName: historyEntry.client_name || null,
+        location: pathParts.length ? pathParts.join(' / ') : 'Nextcloud',
+        updatedAt: historyEntry.last_activity_at,
+        lastAction: historyEntry.last_action,
+        nextcloudPath,
+        clientId: historyEntry.client_id,
+      });
+    }
+
+    const normalizedSearch = recentDocumentSearch.trim().toLocaleLowerCase('pt-BR');
+    return Array.from(byKey.values())
+      .filter((item) => recentDocumentSource === 'all' || item.source === recentDocumentSource)
+      .filter((item) => {
+        if (!normalizedSearch) return true;
+        return [item.title, item.clientName, item.location]
+          .filter(Boolean)
+          .some((value) => String(value).toLocaleLowerCase('pt-BR').includes(normalizedSearch));
+      })
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 40);
+  }, [documentHistory, recentDocumentSearch, recentDocumentSource, savedPetitions]);
+
+  const recentDocumentTotals = useMemo(() => {
+    const petitionKeys = new Set(savedPetitions.map((petition) => petition.id));
+    const nextcloudKeys = new Set(
+      documentHistory
+        .filter((entry) => entry.source === 'nextcloud')
+        .map((entry) => entry.source_key),
+    );
+    return {
+      all: petitionKeys.size + nextcloudKeys.size,
+      petition: petitionKeys.size,
+      nextcloud: nextcloudKeys.size,
+    };
+  }, [documentHistory, savedPetitions]);
+
+  const openRecentDocument = (item: RecentDocumentItem) => {
+    if (item.source === 'petition' && item.petition) {
+      void loadPetition(item.petition);
+      return;
+    }
+    if (!item.nextcloudPath) return;
+
+    setOpeningPetitionId(item.key);
+    events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, {
+      clientId: item.clientId || undefined,
+      mode: 'new',
+      initialDocumentName: item.title,
+      initialNextcloudPath: item.nextcloudPath,
+      openRequestId: crypto.randomUUID(),
+    });
+  };
+
+  const openBlocksWorkspaceFromStart = () => {
+    if (!blocksEnabled) return;
+    setBlocksReturnTarget('start');
+    setActiveWorkspace('blocks');
+    setSidebarOpen(true);
+    setShowStartScreen(false);
+  };
+
+  const returnFromBlocksWorkspace = () => {
+    setActiveWorkspace('editor');
+    if (blocksReturnTarget === 'start') {
+      setShowStartScreen(true);
+    }
+  };
+
   // ========== RENDER ==========
   // Tela de inÃ­cio (quando showStartScreen === true)
   if (showStartScreen) {
     return (
-      <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} flex flex-col bg-white`}>
-        {/* Barra de tÃ­tulo (estilo Word) */}
-        <div className="h-12 flex items-center justify-between px-4 border-b border-slate-200 bg-white">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-md bg-[#2b579a] flex items-center justify-center shadow-sm">
-              <FileText className="w-4 h-4 text-white" />
+      <div className={`${isFloatingWidget ? 'h-full' : 'h-screen'} flex bg-white text-slate-900`}>
+        <aside className="hidden w-[210px] shrink-0 flex-col bg-[#185abd] text-white md:flex">
+          <div className="flex h-16 items-center gap-3 px-5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-white text-[#185abd] shadow-sm">
+              <FileText className="h-[18px] w-[18px]" />
             </div>
-            <div className="text-sm font-semibold text-slate-900">Editor de Peticoes</div>
-          </div>
-          <div className="flex items-center gap-1">
-            {isFloatingWidget && (
-              <button
-                onClick={() => onRequestMinimize?.()}
-                className="p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-500 hover:text-slate-700"
-                title="Minimizar"
-              >
-                <Minimize2 className="w-4 h-4" />
-              </button>
-            )}
-            {isFloatingWidget && (
-              <button
-                onClick={() => onRequestClose?.()}
-                className="p-1.5 hover:bg-slate-100 rounded transition-colors text-slate-500 hover:text-slate-700"
-                title="Fechar"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-5xl mx-auto px-6 py-8">
-            {/* SaudaçÃ£o */}
-            <div className="mb-7">
-              <div className="text-[26px] font-semibold tracking-tight text-slate-900">{getGreeting()}</div>
-              <div className="mt-0.5 text-sm text-slate-500">{userDisplayName}</div>
+            <div>
+              <div className="text-sm font-semibold">Jurius</div>
+              <div className="text-[10px] text-blue-100">Documentos</div>
             </div>
+          </div>
 
-            {/* Novo */}
-            <div className="mb-9">
-              <div className="text-sm font-semibold text-slate-700 mb-3">Novo</div>
-              <div className="flex gap-5 flex-wrap">
+          <nav className="mt-3 space-y-1 px-3" aria-label="Navegação do editor">
+            <button type="button" className="flex w-full items-center gap-3 rounded px-3 py-2.5 text-left text-[13px] font-medium bg-white/15">
+              <FileText className="h-4 w-4" />
+              Início
+            </button>
+            <button
+              type="button"
+              onClick={() => { newPetition(); setActiveWorkspace('editor'); setShowStartScreen(false); }}
+              className="flex w-full items-center gap-3 rounded px-3 py-2.5 text-left text-[13px] font-medium text-blue-50 transition hover:bg-white/10"
+            >
+              <Plus className="h-4 w-4" />
+              Novo
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveWorkspace('editor');
+                setShowStartScreen(false);
+                window.setTimeout(() => fileInputRef.current?.click(), 150);
+              }}
+              className="flex w-full items-center gap-3 rounded px-3 py-2.5 text-left text-[13px] font-medium text-blue-50 transition hover:bg-white/10"
+            >
+              <FolderOpen className="h-4 w-4" />
+              Abrir arquivo
+            </button>
+            <button
+              type="button"
+              onClick={openBlocksWorkspaceFromStart}
+              disabled={!blocksEnabled}
+              className="flex w-full items-center gap-3 rounded px-3 py-2.5 text-left text-[13px] font-medium text-blue-50 transition hover:bg-white/10 disabled:opacity-40"
+            >
+              <Layers className="h-4 w-4" />
+              Blocos
+            </button>
+          </nav>
+
+          <div className="mt-auto border-t border-white/15 p-4">
+            <div className="mb-3 flex items-center gap-2 text-[11px] text-blue-100">
+              <Cloud className="h-3.5 w-3.5" />
+              Nextcloud integrado
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-xs font-semibold">
+                {userDisplayName.charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-xs font-medium">{userDisplayName}</div>
+                <div className="text-[10px] text-blue-200">Conta profissional</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center bg-[#185abd] text-white md:hidden">
+                <FileText className="h-4 w-4" />
+              </div>
+              <div className="text-sm font-semibold text-slate-800">Início</div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={openBlocksWorkspaceFromStart}
+                disabled={!blocksEnabled}
+                className="mr-2 flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium text-[#185abd] transition hover:bg-blue-50 disabled:opacity-40 md:hidden"
+              >
+                <Layers className="h-3.5 w-3.5" />
+                Blocos
+              </button>
+              {isFloatingWidget && (
                 <button
-                  onClick={() => { newPetition(); setShowStartScreen(false); }}
-                  className="group w-[168px] text-left"
+                  onClick={() => onRequestMinimize?.()}
+                  className="rounded p-2 text-slate-500 transition hover:bg-slate-100"
+                  title="Minimizar"
+                  aria-label="Minimizar"
                 >
-                  <div className="relative h-[152px] rounded-md border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center transition group-hover:border-[#2b579a] group-hover:shadow-md">
-                    <div className="w-[98px] h-[126px] bg-white border border-slate-200 shadow-sm" />
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                      <div className="w-10 h-10 rounded-full bg-[#2b579a] text-white flex items-center justify-center shadow-md">
-                        <Plus className="w-5 h-5" />
+                  <Minimize2 className="h-4 w-4" />
+                </button>
+              )}
+              {isFloatingWidget && (
+                <button
+                  onClick={() => onRequestClose?.()}
+                  className="rounded p-2 text-slate-500 transition hover:bg-red-50 hover:text-red-600"
+                  title="Fechar"
+                  aria-label="Fechar"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </header>
+
+          <div className="flex-1 overflow-y-auto bg-[#f7f7f7]">
+            <main className="mx-auto w-full max-w-[1100px] px-5 py-7 sm:px-8 lg:py-9">
+              <div className="mb-7">
+                <h1 className="text-[26px] font-semibold tracking-tight text-slate-900">{getGreeting()}</h1>
+                <p className="mt-1 text-sm text-slate-500">{userDisplayName}</p>
+              </div>
+
+              <section className="mb-8">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-slate-700">Novo</h2>
+                  {hasDefaultTemplate && (
+                    <button
+                      type="button"
+                      onClick={clearDefaultTemplate}
+                      className="text-[11px] text-slate-400 transition hover:text-red-600"
+                    >
+                      Remover documento padrão
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 items-start gap-4 sm:grid-cols-4">
+                  <button
+                    onClick={() => { newPetition(); setActiveWorkspace('editor'); setShowStartScreen(false); }}
+                    className="group flex w-full flex-col text-left"
+                  >
+                    <div className="flex h-[120px] items-center justify-center border border-slate-200 bg-white shadow-sm transition group-hover:border-[#185abd] group-hover:shadow-md">
+                      <div className="relative h-[88px] w-[68px] border border-slate-200 bg-white shadow-sm">
+                        <Plus className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 text-[#185abd] opacity-0 transition group-hover:opacity-100" />
                       </div>
                     </div>
-                  </div>
-                  <div className="mt-2.5 text-[13px] font-medium text-slate-700 group-hover:text-[#2b579a] transition-colors">Documento em branco</div>
-                </button>
-
-                <div className="relative w-[168px]">
-                  {/* Configurar: subir modelo padrao (.docx) */}
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); defaultTemplateInputRef.current?.click(); }}
-                    disabled={settingDefaultTemplate}
-                    className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-white/95 backdrop-blur border border-slate-200 shadow-sm flex items-center justify-center text-slate-500 hover:text-[#2b579a] hover:border-[#2b579a] transition-colors disabled:opacity-60"
-                    title="Configurar: subir modelo padrão (.docx)"
-                  >
-                    {settingDefaultTemplate ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Settings className="w-3.5 h-3.5" />}
+                    <div className="mt-2 text-[12px] font-medium text-slate-700 group-hover:text-[#185abd]">Documento em branco</div>
                   </button>
+
+                  <div className="relative self-start">
+                    <button
+                      type="button"
+                      onClick={(event) => { event.stopPropagation(); defaultTemplateInputRef.current?.click(); }}
+                      disabled={settingDefaultTemplate}
+                      className="absolute right-2 top-2 z-10 rounded-full border border-slate-200 bg-white p-1.5 text-slate-400 shadow-sm transition hover:text-[#185abd] disabled:opacity-50"
+                      title="Configurar documento padrão"
+                    >
+                      {settingDefaultTemplate ? <Loader2 className="h-3 w-3 animate-spin" /> : <Settings className="h-3 w-3" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isLoadingPetitionRef.current) return;
+                        isLoadingPetitionRef.current = true;
+                        newPetition();
+                        setActiveWorkspace('editor');
+                        setShowStartScreen(false);
+                        window.setTimeout(() => {
+                          void Promise.resolve(loadDefaultTemplate()).finally(() => {
+                            isLoadingPetitionRef.current = false;
+                          });
+                        }, 200);
+                      }}
+                      disabled={!hasDefaultTemplate}
+                      className="group flex w-full flex-col text-left disabled:opacity-50"
+                    >
+                      <div className="flex h-[120px] items-center justify-center border border-slate-200 bg-white shadow-sm transition group-hover:border-[#185abd] group-hover:shadow-md">
+                        <div className="h-[88px] w-[68px] overflow-hidden border border-slate-200 bg-white shadow-sm">
+                          <div className="h-2 bg-[#185abd]" />
+                          <div className="space-y-1.5 p-2">
+                            <div className="h-1 bg-slate-200" />
+                            <div className="h-1 w-4/5 bg-slate-200" />
+                            <div className="h-1 bg-slate-200" />
+                            <div className="h-1 w-2/3 bg-slate-200" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2 truncate text-[12px] font-medium text-slate-700 group-hover:text-[#185abd]">Documento padrão</div>
+                      {hasDefaultTemplate && (
+                        <div className="mt-0.5 truncate text-[10px] text-slate-400">{defaultTemplateName || 'Modelo configurado'}</div>
+                      )}
+                    </button>
+                    <input
+                      ref={defaultTemplateInputRef}
+                      type="file"
+                      accept=".docx"
+                      className="hidden"
+                      onChange={handleUploadDefaultTemplate}
+                    />
+                  </div>
 
                   <button
                     onClick={() => {
-                      // Abrir o editor primeiro para garantir que o Syncfusion esteja montado
-                      if (isLoadingPetitionRef.current) return;
-                      isLoadingPetitionRef.current = true;
-                      newPetition();
+                      setActiveWorkspace('editor');
                       setShowStartScreen(false);
-                      window.setTimeout(() => {
-                        void Promise.resolve(loadDefaultTemplate()).finally(() => {
-                          isLoadingPetitionRef.current = false;
-                        });
-                      }, 200);
+                      window.setTimeout(() => fileInputRef.current?.click(), 150);
                     }}
-                    disabled={!hasDefaultTemplate}
-                    className="group w-full text-left disabled:opacity-50"
-                    title={hasDefaultTemplate ? `Carregar documento padrao${defaultTemplateName ? `: ${defaultTemplateName}` : ''}` : 'Nenhum documento padrao definido — use a engrenagem para subir um modelo'}
+                    className="group flex w-full flex-col text-left"
                   >
-                    <div className="relative h-[152px] rounded-md border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center transition group-hover:border-[#2b579a] group-hover:shadow-md group-disabled:border-slate-200 group-disabled:shadow-none">
-                      <div className="w-[98px] h-[126px] bg-white border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                        <div className="h-2 shrink-0 bg-[#2b579a]/80" />
-                        <div className="p-2.5 space-y-1.5">
-                          <div className="h-1 rounded bg-slate-200" />
-                          <div className="h-1 rounded bg-slate-200 w-4/5" />
-                          <div className="h-1 rounded bg-slate-200" />
-                          <div className="h-1 rounded bg-slate-200 w-2/3" />
-                          <div className="h-1 rounded bg-slate-200 w-5/6" />
-                        </div>
+                    <div className="flex h-[120px] items-center justify-center border border-slate-200 bg-white shadow-sm transition group-hover:border-[#185abd] group-hover:shadow-md">
+                      <div className="flex h-[88px] w-[68px] items-center justify-center border border-slate-200 bg-white shadow-sm">
+                        <FileUp className="h-6 w-6 text-slate-400 transition group-hover:text-[#185abd]" />
                       </div>
                     </div>
-                    <div className="mt-2.5 text-[13px] font-medium text-slate-700 group-hover:text-[#2b579a] transition-colors">Documento padrao</div>
+                    <div className="mt-2 text-[12px] font-medium text-slate-700 group-hover:text-[#185abd]">Importar arquivo</div>
                   </button>
 
-                  {/* Input oculto para subir o modelo padrao (disponivel ja na tela inicial) */}
-                  <input
-                    ref={defaultTemplateInputRef}
-                    type="file"
-                    accept=".docx"
-                    className="hidden"
-                    onChange={handleUploadDefaultTemplate}
-                  />
+                  <button
+                    onClick={openBlocksWorkspaceFromStart}
+                    disabled={!blocksEnabled}
+                    className="group flex w-full flex-col text-left disabled:opacity-50"
+                  >
+                    <div className="flex h-[120px] items-center justify-center border border-slate-200 bg-white shadow-sm transition group-hover:border-[#185abd] group-hover:shadow-md">
+                      <div className="flex h-[88px] w-[68px] flex-col items-center justify-center border border-blue-100 bg-blue-50 text-[#185abd] shadow-sm">
+                        <Layers className="h-7 w-7" />
+                        <span className="mt-2 text-[9px] font-semibold uppercase tracking-wide">Biblioteca</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-[12px] font-medium text-slate-700 group-hover:text-[#185abd]">Blocos</div>
+                  </button>
                 </div>
+              </section>
 
-                <button
-                  onClick={() => {
-                    setShowStartScreen(false);
-                    window.setTimeout(() => {
-                      fileInputRef.current?.click();
-                    }, 150);
-                  }}
-                  className="group w-[168px] text-left"
-                >
-                  <div className="relative h-[152px] rounded-md border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center transition group-hover:border-[#2b579a] group-hover:shadow-md">
-                    <div className="w-[98px] h-[126px] bg-white border border-slate-200 shadow-sm flex items-center justify-center">
-                      <FileUp className="w-8 h-8 text-slate-400 group-hover:text-[#2b579a] transition-colors" />
-                    </div>
+              <section>
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold text-slate-700">Recentes</h2>
+                    <p className="mt-0.5 text-[11px] text-slate-400">Jurius e Nextcloud no mesmo histórico</p>
                   </div>
-                  <div className="mt-2.5 text-[13px] font-medium text-slate-700 group-hover:text-[#2b579a] transition-colors">Importar arquivo</div>
-                </button>
-              </div>
-
-              {/* Status do documento padrao */}
-              <div className="mt-4 flex items-center gap-2 text-[12px] flex-wrap">
-                {hasDefaultTemplate ? (
-                  <>
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-200 px-2.5 py-1 text-slate-700">
-                      <FileText className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="font-medium">Documento padrão:</span>
-                      <span className="max-w-[220px] truncate">{defaultTemplateName || 'definido'}</span>
-                    </span>
-                    <button
-                      onClick={clearDefaultTemplate}
-                      className="inline-flex items-center gap-1 text-slate-400 hover:text-red-600 font-medium transition-colors"
-                      title="Remover documento padrão"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      Remover
-                    </button>
-                  </>
-                ) : (
-                  <span className="text-slate-400">
-                    Nenhum documento padrão definido. Clique na <span className="font-medium text-slate-500">engrenagem</span> do card “Documento padrão” para subir um modelo, ou em <span className="font-medium text-slate-500">“Definir padrão”</span> na barra do editor.
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Recentes */}
-            <div className="border-t border-slate-200 pt-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-semibold text-slate-700">Recentes</div>
-              </div>
-
-              <div>
-                {savedPetitionsLoading ? (
-                  <div className="px-1 py-2"><ModuleSkeleton variant="list" rows={5} /></div>
-                ) : savedPetitions.length === 0 ? (
-                  <div className="px-3 py-12 text-center">
-                    <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-slate-100 flex items-center justify-center">
-                      <Clock className="w-6 h-6 text-slate-400" />
-                    </div>
-                    <div className="text-sm text-slate-500">Nenhuma peticao recente</div>
-                  </div>
-                ) : (
-                  <div className="max-h-[420px] overflow-y-auto -mx-1.5">
-                    {(() => {
-                      // Dedup: agrupa por (tÃ­tulo normalizado + client_id), mantÃ©m o mais recente.
-                      // NormalizaçÃ£o remove sufixos Windows ` (N)` do final do tÃ­tulo:
-                      // "MODELO MASCULINO (8) (1) (2)" â†’ "modelo masculino"
-                      const normalizeTitle = (t: string) =>
-                        t.trim().replace(/(\s*\(\d+\))+$/g, '').trim().toLowerCase();
-                      const seen = new Map<string, SavedPetition>();
-                      for (const p of savedPetitions) {
-                        const key = `${normalizeTitle(p.title || '')}|${p.client_id || ''}`;
-                        const existing = seen.get(key);
-                        if (!existing || new Date(p.updated_at).getTime() > new Date(existing.updated_at).getTime()) {
-                          seen.set(key, p);
-                        }
-                      }
-                      return Array.from(seen.values())
-                        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-                        .slice(0, 15);
-                    })().map((p) => {
-                      const isOpening = openingPetitionId === p.id;
-                      const isBusyOpening = openingPetitionId !== null;
-
-                      return (
-                        <div
-                          key={p.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => {
-                            if (isBusyOpening) return;
-                            void loadPetition(p);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key !== 'Enter' && e.key !== ' ') return;
-                            if (isBusyOpening) return;
-                            e.preventDefault();
-                            void loadPetition(p);
-                          }}
-                          className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg border border-transparent transition-colors ${
-                            isBusyOpening ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-[#2b579a]/[0.06] hover:border-slate-200'
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="flex items-center gap-4 border-b border-slate-200">
+                      {([
+                        ['all', 'Todos', recentDocumentTotals.all],
+                        ['petition', 'Jurius', recentDocumentTotals.petition],
+                        ['nextcloud', 'Nextcloud', recentDocumentTotals.nextcloud],
+                      ] as const).map(([value, label, count]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setRecentDocumentSource(value)}
+                          className={`border-b-2 px-0.5 pb-1.5 text-[11px] font-medium transition ${
+                            recentDocumentSource === value
+                              ? 'border-[#185abd] text-[#185abd]'
+                              : 'border-transparent text-slate-500 hover:text-slate-800'
                           }`}
                         >
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#2b579a]/10 text-[#2b579a]">
-                            {isOpening ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-[18px] h-[18px]" />}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm text-slate-800 truncate">{isOpening ? 'Abrindo...' : (p.title || 'Sem titulo')}</div>
-                            <div className="text-xs text-slate-500 truncate">{p.client_name || 'Sem cliente'}</div>
-                          </div>
-                          <div className="shrink-0 text-xs text-slate-400 whitespace-nowrap tabular-nums" data-tick={relativeTimeTick}>
-                            {formatRelativeTime(p.updated_at)}
-                          </div>
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              if (isBusyOpening) return;
-                              const confirmed = await confirmDelete({
-                                title: 'Excluir peticao',
-                                entityName: p.title || 'Sem titulo',
-                                message: `Deseja excluir a peticao "${p.title || 'Sem titulo'}"${p.client_name ? ` vinculada ao cliente ${p.client_name}` : ''}?`,
-                                confirmLabel: 'Excluir',
-                              });
-                              if (!confirmed) return;
-                              try {
-                                await petitionEditorService.deletePetition(p.id);
-                                notifyDeleted(p.title || undefined);
-                                setSavedPetitions((prev) => prev.filter((x) => x.id !== p.id));
-                              } catch (err) {
-                                console.error('Erro ao excluir peticao:', err);
-                                setError('Erro ao excluir peticao');
-                              }
-                            }}
-                            disabled={isBusyOpening}
-                            className="shrink-0 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-all disabled:opacity-30 disabled:hover:bg-transparent"
-                            title="Excluir peticao"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
+                          {label} <span className="text-slate-400">{count}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="relative sm:w-[230px]">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="search"
+                        value={recentDocumentSearch}
+                        onChange={(event) => setRecentDocumentSearch(event.target.value)}
+                        placeholder="Pesquisar recentes"
+                        className="h-8 w-full border border-slate-200 bg-white pl-8 pr-2.5 text-[11px] outline-none focus:border-[#185abd]"
+                      />
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+
+                <div className="border border-slate-200 bg-white">
+                  {savedPetitionsLoading || documentHistoryLoading ? (
+                    <div className="px-4 py-3"><ModuleSkeleton variant="list" rows={5} /></div>
+                  ) : recentDocuments.length === 0 ? (
+                    <div className="px-4 py-12 text-center">
+                      <Clock className="mx-auto h-6 w-6 text-slate-300" />
+                      <div className="mt-2 text-xs text-slate-500">
+                        {recentDocumentSearch ? 'Nenhum documento encontrado' : 'Nenhum documento recente'}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="max-h-[390px] overflow-y-auto">
+                      {recentDocuments.map((item) => {
+                        const isOpening = openingPetitionId === item.petition?.id || openingPetitionId === item.key;
+                        const isBusyOpening = openingPetitionId !== null;
+                        const subtitle = item.clientName || item.location || (item.source === 'nextcloud' ? 'Nextcloud' : 'Sem cliente vinculado');
+                        return (
+                          <div
+                            key={item.key}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                              if (!isBusyOpening) openRecentDocument(item);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== 'Enter' && event.key !== ' ') return;
+                              if (isBusyOpening) return;
+                              event.preventDefault();
+                              openRecentDocument(item);
+                            }}
+                            className={`group grid min-h-[58px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-100 px-3.5 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_120px_105px_32px] ${
+                              isBusyOpening ? 'cursor-wait opacity-60' : 'cursor-pointer hover:bg-[#f2f6fc]'
+                            }`}
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className={`flex h-8 w-8 shrink-0 items-center justify-center ${
+                                item.source === 'nextcloud' ? 'text-cyan-700' : 'text-[#185abd]'
+                              }`}>
+                                {isOpening
+                                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                                  : item.source === 'nextcloud'
+                                    ? <Cloud className="h-[18px] w-[18px]" />
+                                    : <FileText className="h-[18px] w-[18px]" />}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="truncate text-[12px] font-medium text-slate-800">
+                                  {isOpening ? 'Abrindo...' : item.title}
+                                </div>
+                                <div className="mt-0.5 truncate text-[10px] text-slate-500">{subtitle}</div>
+                              </div>
+                            </div>
+
+                            <div className="hidden text-[10px] text-slate-500 sm:flex sm:items-center sm:gap-1.5">
+                              {item.source === 'nextcloud' ? <Cloud className="h-3 w-3 text-cyan-700" /> : <FileText className="h-3 w-3 text-[#185abd]" />}
+                              {item.source === 'nextcloud' ? 'Nextcloud' : 'Jurius'}
+                            </div>
+
+                            <div
+                              className="text-right text-[10px] tabular-nums text-slate-400"
+                              data-tick={relativeTimeTick}
+                              title={new Date(item.updatedAt).toLocaleString('pt-BR')}
+                            >
+                              {formatRelativeTime(item.updatedAt)}
+                            </div>
+
+                            <div className="flex justify-end">
+                              {item.source === 'petition' && item.petition && (
+                                <button
+                                  type="button"
+                                  onClick={async (event) => {
+                                    event.stopPropagation();
+                                    if (isBusyOpening) return;
+                                    const petition = item.petition!;
+                                    const confirmed = await confirmDelete({
+                                      title: 'Excluir petição',
+                                      entityName: petition.title || 'Sem título',
+                                      message: `Deseja excluir a petição "${petition.title || 'Sem título'}"${petition.client_name ? ` vinculada ao cliente ${petition.client_name}` : ''}?`,
+                                      confirmLabel: 'Excluir',
+                                    });
+                                    if (!confirmed) return;
+                                    try {
+                                      await petitionEditorService.deletePetition(petition.id);
+                                      await documentEditHistoryService.remove('petition', petition.id);
+                                      notifyDeleted(petition.title || undefined);
+                                      setSavedPetitions((current) => current.filter((candidate) => candidate.id !== petition.id));
+                                      setDocumentHistory((current) => current.filter(
+                                        (historyEntry) => !(historyEntry.source === 'petition' && historyEntry.source_key === petition.id),
+                                      ));
+                                    } catch (deleteError) {
+                                      console.error('Erro ao excluir petição:', deleteError);
+                                      setError('Erro ao excluir petição');
+                                    }
+                                  }}
+                                  disabled={isBusyOpening}
+                                  className="p-1.5 text-slate-300 opacity-0 transition hover:text-red-600 group-hover:opacity-100 focus:opacity-100"
+                                  title="Excluir petição"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </section>
+            </main>
           </div>
         </div>
       </div>
@@ -5887,7 +6212,10 @@ Regras:
             {blocksEnabled && (
                 <button
                   type="button"
-                  onClick={() => setActiveWorkspace('blocks')}
+                  onClick={() => {
+                    setBlocksReturnTarget('editor');
+                    setActiveWorkspace('blocks');
+                  }}
                   className={`petition-workspace-toggle-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
                     activeWorkspace === 'blocks'
                       ? 'bg-white text-[#2563eb] shadow-sm'
@@ -6913,11 +7241,11 @@ Regras:
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setActiveWorkspace('editor')}
+                    onClick={returnFromBlocksWorkspace}
                     className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-600"
                   >
                     <ArrowLeft className="h-4 w-4" />
-                    Voltar ao editor
+                    {blocksReturnTarget === 'start' ? 'Voltar ao início' : 'Voltar ao editor'}
                   </button>
                   <div>
                     <h2 className="text-base font-semibold text-slate-900">Gerenciador de blocos</h2>
@@ -7229,7 +7557,10 @@ Regras:
         hasDefaultTemplate={hasDefaultTemplate}
         onManageAreas={() => openLegalAreaModal()}
         onManageModels={() => openStandardTypeModal()}
-        onManageBlocks={() => setActiveWorkspace('blocks')}
+        onManageBlocks={() => {
+          setBlocksReturnTarget('editor');
+          setActiveWorkspace('blocks');
+        }}
         onOpenFindReplace={(mode) => setFindReplaceMode(mode)}
       />
 
