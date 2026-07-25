@@ -251,6 +251,65 @@ export const nextcloudService = {
     return data as { ok: boolean; sentBytes?: number; etag?: string | null };
   },
 
+  /** Upload com PROGRESSO REAL e CANCELAMENTO. Usa XMLHttpRequest direto na
+   *  Edge Function (o `functions.invoke` não expõe progresso nem aborto).
+   *  `onProgress(loaded, total)` reporta bytes enviados; `signal` cancela.
+   *  Lança NextcloudConflictError em 412 e AbortError quando cancelado. */
+  async writeFileWithProgress(
+    path: string,
+    blob: Blob,
+    opts: {
+      ifMatch?: string | null;
+      onProgress?: (loaded: number, total: number) => void;
+      signal?: AbortSignal;
+    } = {},
+  ): Promise<{ ok: boolean; sentBytes?: number; etag?: string | null }> {
+    const baseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    if (!baseUrl || !anon) throw new NextcloudServiceError('Supabase não configurado no cliente.', 500);
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) throw new NextcloudServiceError('Sua sessão expirou. Entre novamente para enviar arquivos.', 401);
+
+    if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${baseUrl.replace(/\/+$/, '')}/functions/v1/nextcloud-upload`);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.setRequestHeader('apikey', anon);
+      xhr.setRequestHeader('x-nc-path', encodeURIComponent(path));
+      xhr.setRequestHeader('x-nc-mime', blob.type || 'application/octet-stream');
+      if (opts.ifMatch) xhr.setRequestHeader('If-Match', opts.ifMatch);
+
+      const onAbort = () => xhr.abort();
+      if (opts.signal) opts.signal.addEventListener('abort', onAbort);
+      const cleanup = () => { if (opts.signal) opts.signal.removeEventListener('abort', onAbort); };
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) opts.onProgress?.(event.loaded, event.total);
+      };
+      xhr.onabort = () => { cleanup(); reject(new DOMException('Aborted', 'AbortError')); };
+      xhr.onerror = () => { cleanup(); reject(new NextcloudServiceError('Falha de rede ao enviar o arquivo.')); };
+      xhr.onload = () => {
+        cleanup();
+        if (xhr.status === 412) { reject(new NextcloudConflictError()); return; }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)); } catch { resolve({ ok: true }); }
+          return;
+        }
+        let serverMsg = '';
+        try { serverMsg = String(JSON.parse(xhr.responseText).error ?? ''); } catch { /* corpo não-JSON */ }
+        reject(new NextcloudServiceError(
+          friendlyNextcloudMessage(xhr.status, serverMsg, 'enviar o arquivo'),
+          xhr.status,
+        ));
+      };
+      xhr.send(blob);
+    });
+  },
+
   /** Grava e CONFIRMA a persistência relendo os metadados do servidor. Só
    *  resolve se o Nextcloud reporta o arquivo com o tamanho exato que foi
    *  enviado — caso contrário lança (nunca devolve um "salvo" falso). Retorna

@@ -470,6 +470,14 @@ const NextcloudBrowser: React.FC = () => {
   const dropZoneRef = useRef<HTMLDivElement>(null);
   const [dragActive, setDragActive] = useState(false);
   const [uploadDropReport, setUploadDropReport] = useState<UploadDropReport | null>(null);
+  // Fila de upload com progresso real por arquivo, cancelamento e nova tentativa.
+  type UploadJob = {
+    id: string; name: string; file: File; size: number;
+    status: 'pending' | 'uploading' | 'done' | 'failed' | 'canceled';
+    progress: number; error?: string;
+  };
+  const [uploadJobs, setUploadJobs] = useState<UploadJob[] | null>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() =>
     typeof restoredSessionRef.current.sidebarOpen === 'boolean'
       ? restoredSessionRef.current.sidebarOpen
@@ -726,6 +734,10 @@ const NextcloudBrowser: React.FC = () => {
   const [pdfSplitRanges, setPdfSplitRanges] = useState('');
   // Resultado por item da última operação em lote (para exibir e re-tentar).
   const [pdfBatchResults, setPdfBatchResults] = useState<BatchItemResult[] | null>(null);
+  // Guarda a última operação de lote para re-tentar só os itens que falharam.
+  const lastPdfBatchOpRef = useRef<{
+    label: string; fn: (b: ArrayBuffer) => Promise<Uint8Array>; suffix: string; asCopy: boolean;
+  } | null>(null);
 
   // Organizador de páginas de PDF (reordenar / girar / remover / extrair).
   const [organizeFile, setOrganizeFile] = useState<NextcloudEntry | null>(null);
@@ -1725,42 +1737,77 @@ const NextcloudBrowser: React.FC = () => {
 
   const newFolder = () => { void createItemInline('folder'); };
 
-  const handleUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const list = Array.from(files);
-    const total = list.length;
-    const errors: string[] = [];
-    let done = 0;
+  // Envia uma fila de jobs com progresso real por arquivo, concorrência
+  // limitada e cancelamento. Atualiza `uploadJobs` no lugar. Resolve o nome
+  // livre no servidor (não sobrescreve arquivos existentes).
+  const runUploadJobs = async (jobs: UploadJob[]) => {
+    const abort = new AbortController();
+    uploadAbortRef.current = abort;
+    const reserved = new Set<string>();
 
-    const uploadOne = async (file: File) => {
+    const patch = (id: string, changes: Partial<UploadJob>) =>
+      setUploadJobs((prev) => (prev ? prev.map((j) => (j.id === id ? { ...j, ...changes } : j)) : prev));
+
+    const uploadOne = async (job: UploadJob) => {
+      if (abort.signal.aborted) { patch(job.id, { status: 'canceled' }); return; }
+      patch(job.id, { status: 'uploading', progress: 0, error: undefined });
       try {
-        const target = [path, file.name].filter(Boolean).join('/');
-        await nextcloudService.writeFile(target, file);
+        const name = await resolveFreeName(path, job.name, reserved);
+        reserved.add(name);
+        const target = [path, name].filter(Boolean).join('/');
+        await nextcloudService.writeFileWithProgress(target, job.file, {
+          signal: abort.signal,
+          onProgress: (loaded, totalBytes) =>
+            patch(job.id, { progress: totalBytes ? Math.round((loaded / totalBytes) * 100) : 0 }),
+        });
+        patch(job.id, { status: 'done', progress: 100 });
       } catch (err) {
-        errors.push(err instanceof Error ? err.message : `Falha ao enviar ${file.name}.`);
-      } finally {
-        done += 1;
-        setBusy(total > 1 ? `Enviando ${done} de ${total}…` : `Enviando ${file.name}…`);
+        if (err instanceof DOMException && err.name === 'AbortError') patch(job.id, { status: 'canceled' });
+        else patch(job.id, { status: 'failed', error: err instanceof Error ? err.message : 'Falha no envio.' });
       }
     };
 
-    // Envia em paralelo com limite de concorrência (4). Antes era 1 por vez —
-    // com o upload binário, várias imagens sobem simultaneamente.
-    const CONCURRENCY = 4;
+    const CONCURRENCY = 3;
     let cursor = 0;
     const worker = async () => {
-      while (cursor < total) {
-        const index = cursor++;
-        await uploadOne(list[index]);
+      while (cursor < jobs.length && !abort.signal.aborted) {
+        await uploadOne(jobs[cursor++]);
+      }
+      // Marca como cancelados os que ainda estavam pendentes ao abortar.
+      if (abort.signal.aborted) {
+        setUploadJobs((prev) => (prev ? prev.map((j) => (j.status === 'pending' || j.status === 'uploading' ? { ...j, status: 'canceled' } : j)) : prev));
       }
     };
-    setBusy(total > 1 ? `Enviando 0 de ${total}…` : `Enviando ${list[0].name}…`);
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, worker));
-
-    if (errors.length) setError(errors.length === 1 ? errors[0] : `${errors.length} arquivo(s) falharam. Ex.: ${errors[0]}`);
-    setBusy(null);
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, worker));
+    uploadAbortRef.current = null;
     await load(path);
   };
+
+  const handleUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const jobs: UploadJob[] = Array.from(files).map((file, index) => ({
+      id: `${Date.now()}-${index}-${file.name}`,
+      name: file.name, file, size: file.size, status: 'pending', progress: 0,
+    }));
+    setError(null);
+    setUploadJobs(jobs);
+    await runUploadJobs(jobs);
+  };
+
+  const cancelUploads = () => uploadAbortRef.current?.abort();
+
+  const retryFailedUploads = async () => {
+    const failed = (uploadJobs ?? []).filter((j) => j.status === 'failed' || j.status === 'canceled');
+    if (failed.length === 0) return;
+    const retried = failed.map((j) => ({ ...j, status: 'pending' as const, progress: 0, error: undefined }));
+    setUploadJobs((prev) => (prev ? prev.map((j) => {
+      const match = retried.find((r) => r.id === j.id);
+      return match ?? j;
+    }) : retried));
+    await runUploadJobs(retried);
+  };
+
+  const dismissUploadJobs = () => { setUploadJobs(null); uploadAbortRef.current = null; };
 
   const readDroppedFile = useCallback((entry: NextcloudDragFileEntry, parentSegments: string[]) =>
     new Promise<NextcloudDroppedItem>((resolve, reject) => {
@@ -2477,22 +2524,22 @@ const NextcloudBrowser: React.FC = () => {
     return pdfToolScope === 'selected' && conjunto.length > 1 ? conjunto : [pdfToolFile];
   };
 
-  const runPdfTool = async (
+  // Núcleo reutilizável: aplica `fn` a uma lista explícita de PDFs, com
+  // resultado por item. Usado tanto pela execução normal quanto pelo retry.
+  const runPdfToolOn = async (
+    targets: NextcloudEntry[],
     label: string,
     fn: (bytes: ArrayBuffer) => Promise<Uint8Array>,
     suffix: string,
+    asCopy: boolean,
   ) => {
-    if (!pdfToolFile) return;
+    if (!pdfToolFile || targets.length === 0) return;
     const sourceFile = pdfToolFile;
     const conjunto = pdfToolFiles.length ? pdfToolFiles : [sourceFile];
-    const targets = pdfToolTargets();
-    // Em lote (>1 alvo) preservamos SEMPRE os originais (salva cópia) para não
-    // sobrescrever vários arquivos de uma vez sem escolha por item.
-    const asCopy = targets.length > 1 ? true : pdfSaveAsCopy;
+    lastPdfBatchOpRef.current = { label, fn, suffix, asCopy };
 
     setApplyingTool(true);
     setError(null);
-    setPdfBatchResults(null);
 
     const results: BatchItemResult[] = targets.map((file) => ({
       id: file.path, source: file.name, status: 'pending',
@@ -2537,6 +2584,29 @@ const NextcloudBrowser: React.FC = () => {
       // Nunca declara sucesso geral quando há falhas — mantém o painel por item.
       setError(`${label}: ${done} concluído(s), ${failed.length} com falha. Veja o resultado por item.`);
     }
+  };
+
+  const runPdfTool = async (
+    label: string,
+    fn: (bytes: ArrayBuffer) => Promise<Uint8Array>,
+    suffix: string,
+  ) => {
+    const targets = pdfToolTargets();
+    // Em lote (>1 alvo) preservamos SEMPRE os originais (salva cópia) para não
+    // sobrescrever vários arquivos de uma vez sem escolha por item.
+    const asCopy = targets.length > 1 ? true : pdfSaveAsCopy;
+    await runPdfToolOn(targets, label, fn, suffix, asCopy);
+  };
+
+  // Re-executa a última operação SOMENTE nos itens que falharam.
+  const retryFailedPdfBatch = async () => {
+    const op = lastPdfBatchOpRef.current;
+    const failed = (pdfBatchResults ?? []).filter((r) => r.status === 'failed');
+    if (!op || failed.length === 0) return;
+    const failedPaths = new Set(failed.map((r) => r.id));
+    const conjunto = pdfToolFiles.length ? pdfToolFiles : (pdfToolFile ? [pdfToolFile] : []);
+    const targets = conjunto.filter((f) => failedPaths.has(f.path));
+    await runPdfToolOn(targets, op.label, op.fn, op.suffix, op.asCopy);
   };
 
   const handleWatermark = () =>
@@ -4745,7 +4815,14 @@ const NextcloudBrowser: React.FC = () => {
                       <div className="rounded-xl border border-slate-200 bg-white">
                         <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
                           <span className="text-xs font-semibold text-slate-700">Resultado por item</span>
-                          <span className="text-[11px] text-slate-400">{pdfBatchResults.filter((r) => r.status === 'done').length}/{pdfBatchResults.length} ok</span>
+                          <div className="flex items-center gap-2">
+                            {pdfBatchResults.some((r) => r.status === 'failed') && !applyingTool && (
+                              <button type="button" onClick={() => void retryFailedPdfBatch()} className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 transition hover:bg-red-100">
+                                <RotateCcw className="h-3 w-3" /> Tentar os que falharam
+                              </button>
+                            )}
+                            <span className="text-[11px] text-slate-400">{pdfBatchResults.filter((r) => r.status === 'done').length}/{pdfBatchResults.length} ok</span>
+                          </div>
                         </div>
                         <ul className="max-h-40 space-y-0.5 overflow-y-auto px-3 py-2 text-xs">
                           {pdfBatchResults.map((r) => (
@@ -5172,6 +5249,52 @@ const NextcloudBrowser: React.FC = () => {
           <p className="text-xs text-slate-500">O nome não pode conter barras.</p>
         </ModalBody>
       </Modal>
+
+      {uploadJobs && uploadJobs.length > 0 && (() => {
+        const active = uploadJobs.some((j) => j.status === 'pending' || j.status === 'uploading');
+        const done = uploadJobs.filter((j) => j.status === 'done').length;
+        const failed = uploadJobs.filter((j) => j.status === 'failed' || j.status === 'canceled').length;
+        return (
+          <div className="fixed bottom-4 right-4 z-[150] w-[min(92vw,380px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.25)] dark:border-zinc-700 dark:bg-zinc-900" role="status" aria-live="polite">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-zinc-800">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                  {active ? 'Enviando arquivos…' : failed ? 'Envio concluído com falhas' : 'Envio concluído'}
+                </p>
+                <p className="text-[11px] text-slate-400">{done}/{uploadJobs.length} enviado(s){failed ? ` · ${failed} com falha` : ''}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {active && (
+                  <button type="button" onClick={cancelUploads} className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 transition hover:bg-red-100">Cancelar</button>
+                )}
+                {!active && failed > 0 && (
+                  <button type="button" onClick={() => void retryFailedUploads()} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100"><RotateCcw className="h-3 w-3" />Repetir falhas</button>
+                )}
+                {!active && (
+                  <button type="button" onClick={dismissUploadJobs} aria-label="Fechar painel de envio" className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-zinc-800"><X className="h-4 w-4" /></button>
+                )}
+              </div>
+            </div>
+            <ul className="max-h-64 space-y-2 overflow-y-auto px-4 py-3">
+              {uploadJobs.map((job) => (
+                <li key={job.id}>
+                  <div className="mb-1 flex items-center gap-2 text-xs">
+                    <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${job.status === 'done' ? 'bg-emerald-500' : job.status === 'failed' ? 'bg-red-500' : job.status === 'canceled' ? 'bg-slate-400' : job.status === 'uploading' ? 'bg-blue-500' : 'bg-slate-300'}`} />
+                    <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-200" title={job.name}>{job.name}</span>
+                    <span className="shrink-0 text-[11px] text-slate-400">
+                      {job.status === 'uploading' ? `${job.progress}%` : job.status === 'done' ? 'ok' : job.status === 'failed' ? 'falhou' : job.status === 'canceled' ? 'cancelado' : '…'}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-zinc-800">
+                    <div className={`h-full rounded-full transition-[width] duration-200 ${job.status === 'failed' ? 'bg-red-400' : job.status === 'canceled' ? 'bg-slate-300' : job.status === 'done' ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${job.status === 'done' ? 100 : job.progress}%` }} />
+                  </div>
+                  {job.error && <p className="mt-0.5 truncate text-[11px] text-red-500" title={job.error}>{job.error}</p>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       <Modal
         open={Boolean(uploadDropReport)}
