@@ -23,7 +23,7 @@ import { useNavigation } from '../contexts/NavigationContext';
 import {
   watermarkPdf, numberPdfPages, splitPdf, mergePdfs, rotatePdf, imagesToPdf,
   pdfBytesToBlob, getPdfPageCount, normalizeRotation, type PageNumberPosition,
-  splitPdfByRanges, explodePdfToPages,
+  splitPdfByRanges, explodePdfToPages, parsePageList, type PageNumberFormat,
 } from '../utils/pdfTools';
 import { resolveFreeName } from '../services/nextcloudConflict.service';
 import type { BatchItemResult, PdfToolScope } from '../types/nextcloud.types';
@@ -722,6 +722,11 @@ const NextcloudBrowser: React.FC = () => {
   const [pdfWatermarkOpacity, setPdfWatermarkOpacity] = useState(0.15);
   const [pdfWatermarkDiagonal, setPdfWatermarkDiagonal] = useState(true);
   const [pdfPageNumPosition, setPdfPageNumPosition] = useState<PageNumberPosition>('bottom-center');
+  const [pdfPageNumStart, setPdfPageNumStart] = useState(1);
+  const [pdfPageNumFormat, setPdfPageNumFormat] = useState<'n' | 'n-of-total' | 'custom'>('n-of-total');
+  const [pdfPageNumTemplate, setPdfPageNumTemplate] = useState('Fls. {n}');
+  const [pdfPageNumRange, setPdfPageNumRange] = useState('');
+  const [pdfWatermarkRange, setPdfWatermarkRange] = useState('');
   const [pdfSplitAt, setPdfSplitAt] = useState(1);
   const [pdfSaveAsCopy, setPdfSaveAsCopy] = useState(true);
   const [mergePdfName, setMergePdfName] = useState('documentos-unificados');
@@ -2609,13 +2614,34 @@ const NextcloudBrowser: React.FC = () => {
     await runPdfToolOn(targets, op.label, op.fn, op.suffix, op.asCopy);
   };
 
-  const handleWatermark = () =>
-    runPdfTool('Marca d\'água', (b) => watermarkPdf(b, {
-      text: pdfWatermarkText, opacity: pdfWatermarkOpacity, diagonal: pdfWatermarkDiagonal,
-    }), 'marca d\'água');
+  // Converte um texto de intervalo em índices 0-based, validando contra o total
+  // do documento ATIVO. Vazio => undefined (todas as páginas). Lança em inválido.
+  const rangeToIndices = (spec: string): number[] | undefined => {
+    if (!spec.trim()) return undefined;
+    return parsePageList(spec, pdfPageCount ?? 0);
+  };
 
-  const handlePageNumbers = () =>
-    runPdfTool('Numeração', (b) => numberPdfPages(b, { position: pdfPageNumPosition }), 'numerado');
+  const handleWatermark = () => {
+    let pages: number[] | undefined;
+    try { pages = rangeToIndices(pdfWatermarkRange); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Intervalo inválido.'); return; }
+    void runPdfTool('Marca d\'água', (b) => watermarkPdf(b, {
+      text: pdfWatermarkText, opacity: pdfWatermarkOpacity, diagonal: pdfWatermarkDiagonal, pages,
+    }), 'marca d\'água');
+  };
+
+  const handlePageNumbers = () => {
+    let pages: number[] | undefined;
+    try { pages = rangeToIndices(pdfPageNumRange); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Intervalo inválido.'); return; }
+    void runPdfTool('Numeração', (b) => numberPdfPages(b, {
+      position: pdfPageNumPosition,
+      startNumber: pdfPageNumStart,
+      format: pdfPageNumFormat,
+      template: pdfPageNumTemplate,
+      pages,
+    }), 'numerado');
+  };
 
   const handleRotateAll = () =>
     runPdfTool('Rotação', (b) => rotatePdf(b, 90), 'girado');
@@ -4733,8 +4759,25 @@ const NextcloudBrowser: React.FC = () => {
                       <label className="block text-xs font-semibold text-slate-600">Texto da marca d’água<input value={pdfWatermarkText} onChange={(e) => setPdfWatermarkText(e.target.value)} className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm font-bold uppercase outline-none focus:border-purple-400" /></label>
                       <label className="block text-xs font-semibold text-slate-600">Opacidade — <span className="text-purple-600">{Math.round(pdfWatermarkOpacity * 100)}%</span><input type="range" min={5} max={60} value={Math.round(pdfWatermarkOpacity * 100)} onChange={(e) => setPdfWatermarkOpacity(Number(e.target.value) / 100)} className="mt-2 w-full accent-purple-500" /></label>
                       <div className="grid grid-cols-2 gap-2">{[{ value: true, label: '↗ Diagonal (45°)' }, { value: false, label: '— Horizontal' }].map((option) => <button key={String(option.value)} onClick={() => setPdfWatermarkDiagonal(option.value)} className={`rounded-xl border py-2.5 text-sm font-medium ${pdfWatermarkDiagonal === option.value ? 'border-purple-400 bg-purple-50 text-purple-700' : 'border-[#e7e5df] text-slate-600'}`}>{option.label}</button>)}</div>
+                      <label className="block text-xs font-semibold text-slate-600">Aplicar nas páginas (vazio = todas)<input value={pdfWatermarkRange} onChange={(e) => setPdfWatermarkRange(e.target.value)} placeholder={`ex.: 1-3, 5 (de 1 a ${pdfPageCount ?? '?'})`} className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-purple-400" /></label>
                     </>}
-                    {pdfToolMode === 'pagenumber' && <div className="space-y-2">{([{ value: 'bottom-center', label: 'Rodapé — Centro' }, { value: 'bottom-right', label: 'Rodapé — Direita' }, { value: 'top-center', label: 'Cabeçalho — Centro' }] as { value: PageNumberPosition; label: string }[]).map((option) => <button key={option.value} onClick={() => setPdfPageNumPosition(option.value)} className={`w-full rounded-xl border px-4 py-3 text-left text-sm font-medium ${pdfPageNumPosition === option.value ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-[#e7e5df] text-slate-600'}`}>{option.label}</button>)}</div>}
+                    {pdfToolMode === 'pagenumber' && <div className="space-y-3">
+                      <div>
+                        <p className="mb-1.5 text-xs font-semibold text-slate-600">Posição</p>
+                        <div className="space-y-2">{([{ value: 'bottom-center', label: 'Rodapé — Centro' }, { value: 'bottom-right', label: 'Rodapé — Direita' }, { value: 'top-center', label: 'Cabeçalho — Centro' }] as { value: PageNumberPosition; label: string }[]).map((option) => <button key={option.value} onClick={() => setPdfPageNumPosition(option.value)} className={`w-full rounded-xl border px-4 py-2.5 text-left text-sm font-medium ${pdfPageNumPosition === option.value ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-[#e7e5df] text-slate-600'}`}>{option.label}</button>)}</div>
+                      </div>
+                      <div>
+                        <p className="mb-1.5 text-xs font-semibold text-slate-600">Formato</p>
+                        <div className="grid grid-cols-3 gap-2">{([{ value: 'n', label: 'N' }, { value: 'n-of-total', label: 'N / Total' }, { value: 'custom', label: 'Personalizado' }] as { value: PageNumberFormat; label: string }[]).map((option) => <button key={option.value} onClick={() => setPdfPageNumFormat(option.value)} className={`rounded-xl border py-2 text-xs font-medium ${pdfPageNumFormat === option.value ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-[#e7e5df] text-slate-600'}`}>{option.label}</button>)}</div>
+                      </div>
+                      {pdfPageNumFormat === 'custom' && (
+                        <label className="block text-xs font-semibold text-slate-600">Modelo (use {'{n}'} e {'{total}'})<input value={pdfPageNumTemplate} onChange={(e) => setPdfPageNumTemplate(e.target.value)} placeholder="Fls. {n} de {total}" className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-teal-400" /></label>
+                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="block text-xs font-semibold text-slate-600">Nº inicial<input type="number" min={0} value={pdfPageNumStart} onChange={(e) => setPdfPageNumStart(Math.max(0, Number(e.target.value) || 0))} className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-teal-400" /></label>
+                        <label className="block text-xs font-semibold text-slate-600">Páginas (vazio = todas)<input value={pdfPageNumRange} onChange={(e) => setPdfPageNumRange(e.target.value)} placeholder="ex.: 2-10" className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-teal-400" /></label>
+                      </div>
+                    </div>}
                     {pdfToolMode === 'split' && <>
                       <div className="grid grid-cols-3 gap-2">
                         {([

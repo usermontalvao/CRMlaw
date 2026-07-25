@@ -13,6 +13,9 @@ import {
   splitPdfByRanges,
   explodePdfToPages,
   normalizeRotation,
+  formatPageLabel,
+  numberPdfPages,
+  watermarkPdf,
 } from './pdfTools.ts';
 
 // --- Helpers ----------------------------------------------------------------
@@ -113,4 +116,24 @@ test('normalizeRotation: mantém [0,360)', () => {
   assert.equal(normalizeRotation(-90), 270);
   assert.equal(normalizeRotation(450), 90);
   assert.equal(normalizeRotation(360), 0);
+});
+
+test('formatPageLabel: formatos N, N/Total e custom', () => {
+  assert.equal(formatPageLabel('n', 3, 10), '3');
+  assert.equal(formatPageLabel('n-of-total', 3, 10), '3 / 10');
+  assert.equal(formatPageLabel('custom', 3, 10, 'Fls. {n} de {total}'), 'Fls. 3 de 10');
+  assert.equal(formatPageLabel('custom', 3, 10, 'Página {n}'), 'Página 3');
+});
+
+test('numberPdfPages: aplica só ao intervalo, sem quebrar o total de páginas', async () => {
+  const src = await makePdf(4);
+  // Numera apenas as páginas 2-3 (índices 1,2) começando em 5.
+  const out = await numberPdfPages(src, { pages: [1, 2], startNumber: 5, format: 'n' });
+  assert.equal(await pageCount(out), 4); // não altera a contagem
+});
+
+test('watermarkPdf: aceita intervalo de páginas sem alterar a contagem', async () => {
+  const src = await makePdf(3);
+  const out = await watermarkPdf(src, { text: 'CONFIDENCIAL', pages: [0] });
+  assert.equal(await pageCount(out), 3);
 });

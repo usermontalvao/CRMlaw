@@ -24,10 +24,20 @@ export async function getPdfPageCount(bytes: ArrayBuffer | Uint8Array): Promise<
   return doc.getPageCount();
 }
 
-/** Aplica marca d'água (texto) em todas as páginas. */
+/**
+ * Converte uma lista de índices 0-based num predicado "esta página recebe?".
+ * `undefined` = todas as páginas.
+ */
+function pageSelector(indices: number[] | undefined): (index: number) => boolean {
+  if (!indices) return () => true;
+  const set = new Set(indices);
+  return (index) => set.has(index);
+}
+
+/** Aplica marca d'água (texto) nas páginas (todas, ou apenas `pages` 0-based). */
 export async function watermarkPdf(
   bytes: ArrayBuffer | Uint8Array,
-  opts: { text: string; opacity?: number; diagonal?: boolean },
+  opts: { text: string; opacity?: number; diagonal?: boolean; pages?: number[] },
 ): Promise<Uint8Array> {
   const { PDFDocument, StandardFonts, rgb, degrees } = await import('pdf-lib');
   const opacity = opts.opacity ?? 0.15;
@@ -35,7 +45,11 @@ export async function watermarkPdf(
   const doc = await PDFDocument.load(bytes);
   const font = await doc.embedFont(StandardFonts.HelveticaBold);
   const text = opts.text.trim().toUpperCase();
-  for (const page of doc.getPages()) {
+  const applies = pageSelector(opts.pages);
+  const allPages = doc.getPages();
+  for (let index = 0; index < allPages.length; index += 1) {
+    if (!applies(index)) continue;
+    const page = allPages[index];
     const { width, height } = page.getSize();
     const fontSize = Math.min(width, height) * 0.1;
     const textWidth = font.widthOfTextAtSize(text, fontSize);
@@ -52,21 +66,58 @@ export async function watermarkPdf(
   return doc.save();
 }
 
-/** Adiciona numeração "n / total" em todas as páginas. */
+/** Formato do rótulo de numeração. */
+export type PageNumberFormat = 'n' | 'n-of-total' | 'custom';
+
+/**
+ * Monta o texto do número de uma página.
+ * `custom` usa um template com {n} (número atual) e {total} (total de páginas).
+ */
+export function formatPageLabel(
+  format: PageNumberFormat,
+  n: number,
+  total: number,
+  template = '{n}',
+): string {
+  if (format === 'n') return String(n);
+  if (format === 'n-of-total') return `${n} / ${total}`;
+  return template.replace(/\{n\}/g, String(n)).replace(/\{total\}/g, String(total));
+}
+
+/**
+ * Adiciona numeração às páginas.
+ * - `startNumber`: número da primeira página numerada (padrão 1).
+ * - `format`: "n", "n-of-total" ou "custom" (com `template`).
+ * - `pages`: índices 0-based que recebem número (padrão: todas). O rótulo usa
+ *   uma contagem sequencial começando em `startNumber` sobre as páginas incluídas.
+ */
 export async function numberPdfPages(
   bytes: ArrayBuffer | Uint8Array,
-  opts: { position?: PageNumberPosition } = {},
+  opts: {
+    position?: PageNumberPosition;
+    startNumber?: number;
+    format?: PageNumberFormat;
+    template?: string;
+    pages?: number[];
+  } = {},
 ): Promise<Uint8Array> {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
   const position = opts.position ?? 'bottom-center';
+  const startNumber = Number.isFinite(opts.startNumber) ? Number(opts.startNumber) : 1;
+  const format = opts.format ?? 'n-of-total';
   const doc = await PDFDocument.load(bytes);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const pages = doc.getPages();
-  const total = pages.length;
+  const applies = pageSelector(opts.pages);
+  const includedCount = opts.pages ? opts.pages.length : pages.length;
+  const total = startNumber + includedCount - 1;
   const fontSize = 9;
+  let counter = startNumber;
   pages.forEach((page, idx) => {
+    if (!applies(idx)) return;
     const { width, height } = page.getSize();
-    const text = `${idx + 1} / ${total}`;
+    const text = formatPageLabel(format, counter, total, opts.template);
+    counter += 1;
     const textWidth = font.widthOfTextAtSize(text, fontSize);
     let x = (width - textWidth) / 2;
     let y = 18;
