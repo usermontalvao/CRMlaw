@@ -40,6 +40,7 @@ import { NextcloudIcon } from './icons/NextcloudIcon';
 import { NcModalCloseButton } from './nextcloud/NcModalCloseButton';
 import { SortablePdfPage } from './nextcloud/SortablePdfPage';
 import { NcThumb, thumbCache } from './nextcloud/NcThumb';
+import { useNextcloudSelection } from '../hooks/useNextcloudSelection';
 import { setLocalPdfWorker } from '../utils/pdfWorker';
 import {
   isDocx, isPdf, isImage, isVideo, isAudio, isMedia, isTextFile,
@@ -479,16 +480,17 @@ const NextcloudBrowser: React.FC = () => {
   const [linkTarget, setLinkTarget] = useState<NextcloudEntry | null>(null); // pasta sendo vinculada
   const [clientSearch, setClientSearch] = useState('');
 
-  // Seleção múltipla (para juntar PDFs / converter imagens em PDF).
-  const [selected, setSelected] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries((restoredSessionRef.current.selectedPaths || []).map((selectedPath) => [selectedPath, true])),
-  );
-  const [selectionAnchorPath, setSelectionAnchorPath] = useState<string | null>(
-    restoredSessionRef.current.selectionAnchorPath ?? null,
-  );
-  const [focusedEntryPath, setFocusedEntryPath] = useState<string | null>(
-    restoredSessionRef.current.focusedEntryPath ?? null,
-  );
+  // Seleção múltipla — estado centralizado no hook useNextcloudSelection.
+  const {
+    selected, setSelected,
+    selectionAnchorPath, setSelectionAnchorPath,
+    focusedEntryPath, setFocusedEntryPath,
+    toggleSelect,
+  } = useNextcloudSelection({
+    selectedPaths: restoredSessionRef.current.selectedPaths,
+    selectionAnchorPath: restoredSessionRef.current.selectionAnchorPath,
+    focusedEntryPath: restoredSessionRef.current.focusedEntryPath,
+  });
   const [draggedEntries, setDraggedEntries] = useState<NextcloudEntry[] | null>(null);
   const [dragTargetPath, setDragTargetPath] = useState<string | null>(null);
   const [dragOperation, setDragOperation] = useState<'move' | 'copy'>('move');
@@ -2023,9 +2025,7 @@ const NextcloudBrowser: React.FC = () => {
     return () => window.removeEventListener('paste', onPaste);
   }, [imagesPdfTargets, linkTarget, load, organizeFile, path, pdfToolFile, previewFile, versionsFile]);
 
-  // ── Seleção múltipla ──────────────────────────────────────────────────────
-  const toggleSelect = (p: string) =>
-    setSelected((prev) => { const next = { ...prev }; if (next[p]) delete next[p]; else next[p] = true; return next; });
+  // ── Seleção múltipla (estado no hook; orquestração aqui) ──────────────────
   const clearSelection = () => {
     setSelected({});
     setSelectionAnchorPath(null);
