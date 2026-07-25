@@ -785,6 +785,15 @@ const NextcloudBrowser: React.FC = () => {
   const [propertiesStats, setPropertiesStats] = useState<{ files: number; folders: number; size: number } | null>(null);
   const [propertiesLoading, setPropertiesLoading] = useState(false);
   const [propertiesError, setPropertiesError] = useState<string | null>(null);
+  // Cancelamento do cálculo recursivo de propriedades (compartilhado com a UI).
+  const propertiesAbortRef = useRef<{ cancelled: boolean }>({ cancelled: false });
+  const cancelPropertiesCalc = () => {
+    propertiesAbortRef.current.cancelled = true;
+    setPropertiesLoading(false);
+    setPropertiesError('Cálculo cancelado. Os totais mostrados são parciais.');
+  };
+  // Teto defensivo: evita varrer eternamente árvores gigantescas.
+  const PROPERTIES_MAX_NODES = 50_000;
 
   const clientNameById = useCallback(
     (id: string | undefined) => (id ? clients.find((c) => c.id === id)?.full_name ?? null : null),
@@ -858,39 +867,53 @@ const NextcloudBrowser: React.FC = () => {
       setPropertiesError(null);
       return;
     }
-    let cancelled = false;
+    const token = { cancelled: false };
+    propertiesAbortRef.current = token;
     const hasFolder = propertiesTargets.some((entry) => entry.isDir);
     setPropertiesLoading(hasFolder);
     setPropertiesError(null);
+    setPropertiesStats(null);
     const stats = { files: 0, folders: 0, size: 0 };
+    let visited = 0;
+    let capped = false;
 
     const collect = async (entry: NextcloudEntry, countFolder: boolean): Promise<void> => {
-      if (cancelled) return;
+      if (token.cancelled || capped) return;
+      visited += 1;
+      if (visited > PROPERTIES_MAX_NODES) { capped = true; return; }
       if (!entry.isDir) {
         stats.files += 1;
         stats.size += entry.size || 0;
+        // Atualização parcial periódica para o usuário ver progresso.
+        if (stats.files % 200 === 0 && !token.cancelled) setPropertiesStats({ ...stats });
         return;
       }
       if (countFolder) stats.folders += 1;
       const children = await nextcloudService.list(entry.path);
-      for (const child of children) await collect(child, true);
+      for (const child of children) {
+        if (token.cancelled || capped) return;
+        await collect(child, true);
+      }
     };
 
     void (async () => {
       try {
         for (const target of propertiesTargets) await collect(target, false);
-        if (!cancelled) setPropertiesStats({ ...stats });
+        if (!token.cancelled) {
+          setPropertiesStats({ ...stats });
+          if (capped) setPropertiesError(`Pasta muito grande: totais parciais até ${PROPERTIES_MAX_NODES.toLocaleString('pt-BR')} itens.`);
+        }
       } catch (err) {
-        if (!cancelled) {
+        if (!token.cancelled) {
           setPropertiesStats({ ...stats });
           setPropertiesError(err instanceof Error ? err.message : 'Não foi possível calcular todo o conteúdo.');
         }
       } finally {
-        if (!cancelled) setPropertiesLoading(false);
+        if (!token.cancelled) setPropertiesLoading(false);
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => { token.cancelled = true; };
   }, [propertiesTargets]);
 
   useEffect(() => {
@@ -3884,7 +3907,10 @@ const NextcloudBrowser: React.FC = () => {
                 {(single?.isDir || !single) && propertyRow(
                   'Contém',
                   propertiesLoading
-                    ? 'Analisando conteúdo…'
+                    ? <span className="inline-flex items-center gap-2">
+                        <span className="text-slate-500">{propertiesStats ? `${propertiesStats.files} arquivo(s), ${propertiesStats.folders} subpasta(s)…` : 'Analisando conteúdo…'}</span>
+                        <button type="button" onClick={cancelPropertiesCalc} className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-zinc-700 dark:hover:bg-zinc-800">Cancelar</button>
+                      </span>
                     : `${propertiesStats?.files ?? selectedFiles} arquivo(s) e ${propertiesStats?.folders ?? selectedFolders} subpasta(s)`,
                   <Folder className="h-4 w-4" />,
                 )}
