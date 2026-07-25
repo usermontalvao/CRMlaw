@@ -39,7 +39,12 @@ import { Document as DocxDocument, Packer, Paragraph } from 'docx';
 import { NextcloudIcon } from './icons/NextcloudIcon';
 import { NcModalCloseButton } from './nextcloud/NcModalCloseButton';
 import { SortablePdfPage } from './nextcloud/SortablePdfPage';
+import { NcThumb, thumbCache } from './nextcloud/NcThumb';
 import { setLocalPdfWorker } from '../utils/pdfWorker';
+import {
+  isDocx, isPdf, isImage, isVideo, isAudio, isMedia, isTextFile,
+  fileTypeLabel, extIcon, baseName, fileExtension,
+} from '../utils/nextcloudFile';
 
 // Worker do PDF.js empacotado localmente (sem depender do unpkg em runtime).
 setLocalPdfWorker(pdfjs);
@@ -71,9 +76,6 @@ function readNextcloudBrowserSession(userId?: string): Partial<NextcloudBrowserS
     return {};
   }
 }
-
-// Cache de miniaturas por caminho (data URL do PDF ou object URL da imagem).
-const thumbCache = new Map<string, string>();
 
 type NextcloudDragEntry = {
   name?: string;
@@ -110,66 +112,6 @@ type UploadDropReport = {
 
 type NextcloudPdfToolMode = 'home' | 'watermark' | 'pagenumber' | 'split' | 'merge';
 type PdfPageState = { sourceIndex: number; rotation: number };
-
-/** Renderiza a 1ª página de um PDF (bytes) em um data URL, via pdfjs. */
-async function pdfFirstPageThumb(bytes: ArrayBuffer, width = 150): Promise<string> {
-  const doc = await pdfjs.getDocument({ data: bytes }).promise;
-  try {
-    const page = await doc.getPage(1);
-    const base = page.getViewport({ scale: 1 });
-    const viewport = page.getViewport({ scale: width / base.width });
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('canvas');
-    await page.render({ canvas, canvasContext: ctx, viewport }).promise;
-    return canvas.toDataURL('image/png');
-  } finally {
-    doc.destroy();
-  }
-}
-
-/** Miniatura de um item no modo blocos: imagem real, 1ª página do PDF, ou ícone. */
-const NcThumb: React.FC<{ entry: NextcloudEntry }> = ({ entry }) => {
-  const eligible = (isImage(entry) && entry.size <= 12 * 1024 * 1024) || (isPdf(entry) && entry.size <= 25 * 1024 * 1024);
-  const [url, setUrl] = useState<string | null>(() => thumbCache.get(entry.path) ?? null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!eligible || thumbCache.has(entry.path)) { setUrl(thumbCache.get(entry.path) ?? null); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const blob = await nextcloudService.readFile(entry.path);
-        let out: string;
-        if (isImage(entry)) {
-          out = URL.createObjectURL(blob);
-        } else {
-          out = await pdfFirstPageThumb(await blob.arrayBuffer());
-        }
-        thumbCache.set(entry.path, out);
-        if (!cancelled) setUrl(out);
-      } catch {
-        if (!cancelled) setFailed(true);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [entry.path, entry.size, eligible]);
-
-  const Icon = extIcon(entry);
-  if (!eligible || failed) {
-    return <div className="w-full h-24 flex items-center justify-center"><Icon className={`w-12 h-12 ${entry.isDir ? 'text-blue-500' : 'text-gray-400'}`} /></div>;
-  }
-  if (!url) {
-    return <div className="w-full h-24 flex items-center justify-center bg-slate-100 dark:bg-gray-800 rounded-lg"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>;
-  }
-  return (
-    <div className="w-full h-24 overflow-hidden rounded-lg bg-slate-100 dark:bg-gray-800 flex items-center justify-center">
-      <img src={url} alt={entry.name} className="max-w-full max-h-full object-contain" />
-    </div>
-  );
-};
 
 const NextcloudTreeNode: React.FC<{
   name: string;
@@ -361,55 +303,6 @@ function formatDateTime(mtime: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-const isDocx = (e: NextcloudEntry) =>
-  e.mime.includes('word') || /\.docx?$/i.test(e.name);
-const isPdf = (e: NextcloudEntry) =>
-  e.mime.includes('pdf') || /\.pdf$/i.test(e.name);
-const isImage = (e: NextcloudEntry) =>
-  e.mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(e.name);
-const isVideo = (e: NextcloudEntry) =>
-  e.mime.startsWith('video/') || /\.(mp4|webm|ogv|mov|m4v|mkv|avi)$/i.test(e.name);
-const isAudio = (e: NextcloudEntry) =>
-  e.mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(e.name);
-const isMedia = (e: NextcloudEntry) => isVideo(e) || isAudio(e);
-const isTextFile = (e: NextcloudEntry) =>
-  e.mime.startsWith('text/')
-  || e.mime === 'application/json'
-  || e.mime === 'application/xml'
-  || /\.(txt|md|log|csv|json|xml|yaml|yml)$/i.test(e.name);
-
-function fileTypeLabel(entry: NextcloudEntry): string {
-  if (entry.isDir) return 'Pasta de arquivos';
-  if (isPdf(entry)) return 'Documento PDF';
-  if (isDocx(entry)) return 'Documento do Microsoft Word';
-  if (isImage(entry)) return 'Arquivo de imagem';
-  if (isVideo(entry)) return 'Arquivo de vídeo';
-  if (isAudio(entry)) return 'Arquivo de áudio';
-  if (isTextFile(entry)) return 'Documento de texto';
-  const extension = fileExtension(entry.name);
-  return extension ? `Arquivo ${extension.toUpperCase()}` : 'Arquivo';
-}
-
-function extIcon(entry: NextcloudEntry) {
-  if (entry.isDir) return Folder;
-  if (isImage(entry)) return ImageIcon;
-  if (isVideo(entry)) return Film;
-  if (isAudio(entry)) return Music;
-  if (isDocx(entry) || isPdf(entry) || isTextFile(entry)) return FileText;
-  return FileIcon;
-}
-
-/** Nome base (sem extensão) para compor nomes de arquivos derivados. */
-function baseName(name: string): string {
-  const i = name.lastIndexOf('.');
-  return i > 0 ? name.slice(0, i) : name;
-}
-
-function fileExtension(name: string): string | null {
-  const match = name.trim().match(/\.([a-z0-9]{1,10})$/i);
-  return match ? match[1].toUpperCase() : null;
 }
 
 function extensionBadgeClass(extension: string): string {
