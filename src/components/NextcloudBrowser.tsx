@@ -23,7 +23,10 @@ import { useNavigation } from '../contexts/NavigationContext';
 import {
   watermarkPdf, numberPdfPages, splitPdf, mergePdfs, rotatePdf, imagesToPdf,
   pdfBytesToBlob, getPdfPageCount, normalizeRotation, type PageNumberPosition,
+  splitPdfByRanges, explodePdfToPages,
 } from '../utils/pdfTools';
+import { resolveFreeName } from '../services/nextcloudConflict.service';
+import type { BatchItemResult, PdfToolScope } from '../types/nextcloud.types';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -715,6 +718,14 @@ const NextcloudBrowser: React.FC = () => {
   const [pdfSaveAsCopy, setPdfSaveAsCopy] = useState(true);
   const [mergePdfName, setMergePdfName] = useState('documentos-unificados');
   const [applyingTool, setApplyingTool] = useState(false);
+  // Escopo explícito das ferramentas que aceitam vários PDFs: só o documento
+  // ativo, ou todos os PDFs do conjunto carregado. Fonte única de verdade.
+  const [pdfToolScope, setPdfToolScope] = useState<PdfToolScope>('active');
+  // Modo de divisão: em duas partes, por intervalos ("1-3, 5"), ou 1 por página.
+  const [pdfSplitMode, setPdfSplitMode] = useState<'half' | 'ranges' | 'pages'>('half');
+  const [pdfSplitRanges, setPdfSplitRanges] = useState('');
+  // Resultado por item da última operação em lote (para exibir e re-tentar).
+  const [pdfBatchResults, setPdfBatchResults] = useState<BatchItemResult[] | null>(null);
 
   // Organizador de páginas de PDF (reordenar / girar / remover / extrair).
   const [organizeFile, setOrganizeFile] = useState<NextcloudEntry | null>(null);
@@ -2364,9 +2375,10 @@ const NextcloudBrowser: React.FC = () => {
   // Grava um resultado de PDF: sobrescreve o original ou cria novo arquivo.
   const writePdfResult = async (source: NextcloudEntry, blob: Blob, newName: string, asCopy: boolean) => {
     const dir = dirOf(source.path);
-    const targetName = asCopy
-      ? uniqueNameForPaste(newName, new Set(entries.filter((entry) => dirOf(entry.path) === dir).map((entry) => entry.name)))
-      : source.name;
+    // "Manter ambos" (asCopy) checa o destino REAL no servidor — nunca a lista
+    // exibida, que pode estar desatualizada. Sobrescrever (asCopy=false) mantém
+    // o nome de origem propositalmente.
+    const targetName = asCopy ? await resolveFreeName(dir, newName) : source.name;
     const target = [dir, targetName].filter(Boolean).join('/');
     await nextcloudService.writeFile(target, blob);
     return { target, targetName };
@@ -2442,6 +2454,10 @@ const NextcloudBrowser: React.FC = () => {
     setPdfToolFile(null);
     setPdfToolFiles([]);
     setPdfToolMode('home');
+    setPdfBatchResults(null);
+    setPdfToolScope('active');
+    setPdfSplitMode('half');
+    setPdfSplitRanges('');
   };
 
   const openPdfMergeTools = async (targets: NextcloudEntry[]) => {
@@ -2453,6 +2469,14 @@ const NextcloudBrowser: React.FC = () => {
   const readPdfBytes = async (entry: NextcloudEntry) =>
     (await nextcloudService.readFile(entry.path)).arrayBuffer();
 
+  // Lista de PDFs que uma ferramenta vai processar, conforme o escopo escolhido.
+  // 'active' = só o documento aberto; 'selected' = todo o conjunto carregado.
+  const pdfToolTargets = (): NextcloudEntry[] => {
+    if (!pdfToolFile) return [];
+    const conjunto = pdfToolFiles.length ? pdfToolFiles : [pdfToolFile];
+    return pdfToolScope === 'selected' && conjunto.length > 1 ? conjunto : [pdfToolFile];
+  };
+
   const runPdfTool = async (
     label: string,
     fn: (bytes: ArrayBuffer) => Promise<Uint8Array>,
@@ -2460,22 +2484,58 @@ const NextcloudBrowser: React.FC = () => {
   ) => {
     if (!pdfToolFile) return;
     const sourceFile = pdfToolFile;
-    const toolFiles = pdfToolFiles.length ? pdfToolFiles : [sourceFile];
+    const conjunto = pdfToolFiles.length ? pdfToolFiles : [sourceFile];
+    const targets = pdfToolTargets();
+    // Em lote (>1 alvo) preservamos SEMPRE os originais (salva cópia) para não
+    // sobrescrever vários arquivos de uma vez sem escolha por item.
+    const asCopy = targets.length > 1 ? true : pdfSaveAsCopy;
+
     setApplyingTool(true);
     setError(null);
-    try {
-      const bytes = await readPdfBytes(sourceFile);
-      const out = await fn(bytes);
-      const blob = pdfBytesToBlob(out);
-      const newName = `${baseName(sourceFile.name)} (${suffix}).pdf`;
-      await writePdfResult(sourceFile, blob, newName, pdfSaveAsCopy);
-      await load(path);
-      await openPdfTools(sourceFile, toolFiles);
-      showTransient(pdfSaveAsCopy ? `${label}: novo PDF gerado.` : `${label}: PDF atualizado.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : `Falha ao aplicar: ${label}.`);
-    } finally {
-      setApplyingTool(false);
+    setPdfBatchResults(null);
+
+    const results: BatchItemResult[] = targets.map((file) => ({
+      id: file.path, source: file.name, status: 'pending',
+    }));
+    setPdfBatchResults(results);
+
+    for (let i = 0; i < targets.length; i += 1) {
+      const file = targets[i];
+      results[i] = { ...results[i], status: 'processing' };
+      setPdfBatchResults([...results]);
+      try {
+        const bytes = await readPdfBytes(file);
+        const out = await fn(bytes);
+        const blob = pdfBytesToBlob(out);
+        const newName = `${baseName(file.name)} (${suffix}).pdf`;
+        const { targetName } = await writePdfResult(file, blob, newName, asCopy);
+        results[i] = { ...results[i], status: 'done', destination: targetName };
+      } catch (err) {
+        results[i] = {
+          ...results[i],
+          status: 'failed',
+          error: err instanceof Error ? err.message : `Falha ao aplicar ${label}.`,
+        };
+      }
+      setPdfBatchResults([...results]);
+    }
+
+    setApplyingTool(false);
+    await load(path);
+    await openPdfTools(sourceFile, conjunto);
+
+    const done = results.filter((r) => r.status === 'done').length;
+    const failed = results.filter((r) => r.status === 'failed');
+    if (failed.length === 0) {
+      setPdfBatchResults(targets.length > 1 ? results : null);
+      showTransient(
+        targets.length > 1
+          ? `${label}: ${done} PDF(s) processado(s).`
+          : (asCopy ? `${label}: novo PDF gerado.` : `${label}: PDF atualizado.`),
+      );
+    } else {
+      // Nunca declara sucesso geral quando há falhas — mantém o painel por item.
+      setError(`${label}: ${done} concluído(s), ${failed.length} com falha. Veja o resultado por item.`);
     }
   };
 
@@ -2492,7 +2552,8 @@ const NextcloudBrowser: React.FC = () => {
 
   const handleSplit = async () => {
     if (!pdfToolFile) return;
-    if ((pdfPageCount ?? 0) < 2) {
+    const total = pdfPageCount ?? 0;
+    if (total < 2) {
       setError('O PDF precisa ter ao menos duas páginas para ser dividido.');
       return;
     }
@@ -2502,18 +2563,36 @@ const NextcloudBrowser: React.FC = () => {
     setError(null);
     try {
       const bytes = await readPdfBytes(sourceFile);
-      const { part1, part2, splitAt, total } = await splitPdf(bytes, pdfSplitAt);
       const dir = dirOf(sourceFile.path);
       const base = baseName(sourceFile.name);
-      const existingNames = new Set(entries.filter((entry) => dirOf(entry.path) === dir).map((entry) => entry.name));
-      const part1Name = uniqueNameForPaste(`${base} (parte 1).pdf`, existingNames);
-      existingNames.add(part1Name);
-      const part2Name = uniqueNameForPaste(`${base} (parte 2).pdf`, existingNames);
-      await nextcloudService.writeFile([dir, part1Name].filter(Boolean).join('/'), pdfBytesToBlob(part1));
-      await nextcloudService.writeFile([dir, part2Name].filter(Boolean).join('/'), pdfBytesToBlob(part2));
+
+      // Monta os pedaços conforme o modo, validando os intervalos ANTES de gravar.
+      let parts: Array<{ label: string; bytes: Uint8Array }> = [];
+      if (pdfSplitMode === 'ranges') {
+        // splitPdfByRanges valida e lança em intervalo inválido/fora do total.
+        const chunks = await splitPdfByRanges(bytes, pdfSplitRanges);
+        parts = chunks.map((b, i) => ({ label: `intervalo ${i + 1}`, bytes: b }));
+      } else if (pdfSplitMode === 'pages') {
+        const chunks = await explodePdfToPages(bytes);
+        parts = chunks.map((b, i) => ({ label: `página ${i + 1}`, bytes: b }));
+      } else {
+        const { part1, part2 } = await splitPdf(bytes, pdfSplitAt);
+        parts = [{ label: 'parte 1', bytes: part1 }, { label: 'parte 2', bytes: part2 }];
+      }
+
+      // Grava cada pedaço com nome livre confirmado no servidor (sem sobrescrever).
+      const reserved = new Set<string>();
+      let saved = 0;
+      for (let i = 0; i < parts.length; i += 1) {
+        const desired = `${base} (${parts[i].label}).pdf`;
+        const name = await resolveFreeName(dir, desired, reserved);
+        reserved.add(name);
+        await nextcloudService.writeFile([dir, name].filter(Boolean).join('/'), pdfBytesToBlob(parts[i].bytes));
+        saved += 1;
+      }
       await load(path);
       await openPdfTools(sourceFile, toolFiles);
-      showTransient(`PDF dividido: páginas 1-${splitAt} e ${splitAt + 1}-${total}.`);
+      showTransient(`PDF dividido em ${saved} arquivo(s).`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao dividir PDF.');
     } finally {
@@ -2539,7 +2618,8 @@ const NextcloudBrowser: React.FC = () => {
       for (const f of targets) list.push(await readPdfBytes(f));
       const out = await mergePdfs(list);
       const normalizedName = (outputName || 'pdf-unificado').trim().replace(/\.pdf$/i, '');
-      const outputFileName = uniqueNameForPaste(`${normalizedName}.pdf`, new Set(entries.map((entry) => entry.name)));
+      // Nome livre confirmado no servidor (não na lista exibida) — sem sobrescrever.
+      const outputFileName = await resolveFreeName(path, `${normalizedName}.pdf`);
       const target = [path, outputFileName].filter(Boolean).join('/');
       await nextcloudService.writeFile(target, pdfBytesToBlob(out));
       clearSelection();
@@ -4585,7 +4665,31 @@ const NextcloudBrowser: React.FC = () => {
                       <div className="grid grid-cols-2 gap-2">{[{ value: true, label: '↗ Diagonal (45°)' }, { value: false, label: '— Horizontal' }].map((option) => <button key={String(option.value)} onClick={() => setPdfWatermarkDiagonal(option.value)} className={`rounded-xl border py-2.5 text-sm font-medium ${pdfWatermarkDiagonal === option.value ? 'border-purple-400 bg-purple-50 text-purple-700' : 'border-[#e7e5df] text-slate-600'}`}>{option.label}</button>)}</div>
                     </>}
                     {pdfToolMode === 'pagenumber' && <div className="space-y-2">{([{ value: 'bottom-center', label: 'Rodapé — Centro' }, { value: 'bottom-right', label: 'Rodapé — Direita' }, { value: 'top-center', label: 'Cabeçalho — Centro' }] as { value: PageNumberPosition; label: string }[]).map((option) => <button key={option.value} onClick={() => setPdfPageNumPosition(option.value)} className={`w-full rounded-xl border px-4 py-3 text-left text-sm font-medium ${pdfPageNumPosition === option.value ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-[#e7e5df] text-slate-600'}`}>{option.label}</button>)}</div>}
-                    {pdfToolMode === 'split' && <><label className="block text-xs font-semibold text-slate-600">Dividir após a página <span className="text-amber-600">{pdfSplitAt}</span><input type="range" min={1} max={Math.max(1, (pdfPageCount ?? 2) - 1)} value={pdfSplitAt} onChange={(e) => setPdfSplitAt(Number(e.target.value))} className="mt-3 w-full accent-amber-500" /></label><div className="grid grid-cols-2 gap-3"><div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center"><p className="text-2xl font-black text-amber-700">{pdfSplitAt}</p><p className="text-xs text-amber-600">Parte 1</p></div><div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center"><p className="text-2xl font-black text-amber-700">{Math.max(0, (pdfPageCount ?? 0) - pdfSplitAt)}</p><p className="text-xs text-amber-600">Parte 2</p></div></div></>}
+                    {pdfToolMode === 'split' && <>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([
+                          { value: 'half', label: 'Em duas partes' },
+                          { value: 'ranges', label: 'Por intervalos' },
+                          { value: 'pages', label: 'Uma por página' },
+                        ] as { value: 'half' | 'ranges' | 'pages'; label: string }[]).map((option) => (
+                          <button key={option.value} type="button" onClick={() => setPdfSplitMode(option.value)} className={`rounded-xl border py-2 text-xs font-medium ${pdfSplitMode === option.value ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-[#e7e5df] text-slate-600'}`}>{option.label}</button>
+                        ))}
+                      </div>
+                      {pdfSplitMode === 'half' && <>
+                        <label className="block text-xs font-semibold text-slate-600">Dividir após a página <span className="text-amber-600">{pdfSplitAt}</span><input type="range" min={1} max={Math.max(1, (pdfPageCount ?? 2) - 1)} value={pdfSplitAt} onChange={(e) => setPdfSplitAt(Number(e.target.value))} className="mt-3 w-full accent-amber-500" /></label>
+                        <div className="grid grid-cols-2 gap-3"><div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center"><p className="text-2xl font-black text-amber-700">{pdfSplitAt}</p><p className="text-xs text-amber-600">Parte 1</p></div><div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center"><p className="text-2xl font-black text-amber-700">{Math.max(0, (pdfPageCount ?? 0) - pdfSplitAt)}</p><p className="text-xs text-amber-600">Parte 2</p></div></div>
+                      </>}
+                      {pdfSplitMode === 'ranges' && (
+                        <label className="block text-xs font-semibold text-slate-600">
+                          Intervalos (ex.: 1-3, 5, 8-10)
+                          <input value={pdfSplitRanges} onChange={(e) => setPdfSplitRanges(e.target.value)} placeholder={`1-3, 5, 8-${pdfPageCount ?? '?'}`} className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-amber-400" />
+                          <span className="mt-1.5 block font-normal text-[11px] text-slate-400">Gera um PDF por intervalo. Páginas fora de 1–{pdfPageCount ?? '?'} ou intervalos inválidos são recusados.</span>
+                        </label>
+                      )}
+                      {pdfSplitMode === 'pages' && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">Gera {pdfPageCount ?? 0} PDF(s), um por página.</div>
+                      )}
+                    </>}
                     {pdfToolMode === 'merge' && (
                       <>
                         <label className="block text-xs font-semibold text-slate-600">
@@ -4611,14 +4715,55 @@ const NextcloudBrowser: React.FC = () => {
                       </>
                     )}
                     {(pdfToolMode === 'watermark' || pdfToolMode === 'pagenumber') && (
-                      <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={pdfSaveAsCopy} onChange={(e) => setPdfSaveAsCopy(e.target.checked)} className="rounded" />Preservar o original e salvar como cópia</label>
+                      <>
+                        {(pdfToolFiles.length > 1) && (
+                          <div>
+                            <p className="mb-1.5 text-xs font-semibold text-slate-600">Aplicar em</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {([
+                                { value: 'active', label: 'Documento ativo', desc: pdfToolFile.name },
+                                { value: 'selected', label: 'Todos os selecionados', desc: `${pdfToolFiles.length} PDFs` },
+                              ] as { value: PdfToolScope; label: string; desc: string }[]).map((option) => (
+                                <button key={option.value} type="button" onClick={() => setPdfToolScope(option.value)} className={`rounded-xl border px-3 py-2 text-left ${pdfToolScope === option.value ? 'border-blue-400 bg-blue-50' : 'border-[#e7e5df]'}`}>
+                                  <span className="block text-xs font-semibold text-slate-800">{option.label}</span>
+                                  <span className="block truncate text-[11px] text-slate-400">{option.desc}</span>
+                                </button>
+                              ))}
+                            </div>
+                            {pdfToolScope === 'selected' && (
+                              <p className="mt-1.5 text-[11px] text-amber-600">Em lote, cada original é preservado e uma cópia processada é gerada.</p>
+                            )}
+                          </div>
+                        )}
+                        {!(pdfToolScope === 'selected' && pdfToolFiles.length > 1) && (
+                          <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600"><input type="checkbox" checked={pdfSaveAsCopy} onChange={(e) => setPdfSaveAsCopy(e.target.checked)} className="rounded" />Preservar o original e salvar como cópia</label>
+                        )}
+                      </>
+                    )}
+
+                    {(pdfToolMode === 'watermark' || pdfToolMode === 'pagenumber') && pdfBatchResults && pdfBatchResults.length > 0 && (
+                      <div className="rounded-xl border border-slate-200 bg-white">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                          <span className="text-xs font-semibold text-slate-700">Resultado por item</span>
+                          <span className="text-[11px] text-slate-400">{pdfBatchResults.filter((r) => r.status === 'done').length}/{pdfBatchResults.length} ok</span>
+                        </div>
+                        <ul className="max-h-40 space-y-0.5 overflow-y-auto px-3 py-2 text-xs">
+                          {pdfBatchResults.map((r) => (
+                            <li key={r.id} className="flex items-center gap-2">
+                              <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${r.status === 'done' ? 'bg-emerald-500' : r.status === 'failed' ? 'bg-red-500' : r.status === 'processing' ? 'bg-amber-400' : 'bg-slate-300'}`} />
+                              <span className="min-w-0 flex-1 truncate text-slate-700">{r.source}</span>
+                              <span className={`shrink-0 ${r.status === 'failed' ? 'text-red-600' : 'text-slate-400'}`}>{r.status === 'done' ? 'concluído' : r.status === 'failed' ? 'falhou' : r.status === 'processing' ? '…' : 'pendente'}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
                   <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
                     <button onClick={() => setPdfToolMode('home')} className="flex-1 rounded-xl border border-[#e7e5df] py-2.5 text-sm font-medium text-slate-700">Cancelar</button>
                     <button
                       onClick={() => pdfToolMode === 'watermark' ? handleWatermark() : pdfToolMode === 'pagenumber' ? handlePageNumbers() : pdfToolMode === 'merge' ? void mergePdfEntries(pdfToolFiles, mergePdfName) : void handleSplit()}
-                      disabled={applyingTool || (pdfToolMode === 'watermark' && !pdfWatermarkText.trim()) || (pdfToolMode === 'split' && (pdfPageCount ?? 0) < 2) || (pdfToolMode === 'merge' && (pdfToolFiles.length < 2 || !mergePdfName.trim()))}
+                      disabled={applyingTool || (pdfToolMode === 'watermark' && !pdfWatermarkText.trim()) || (pdfToolMode === 'split' && ((pdfPageCount ?? 0) < 2 || (pdfSplitMode === 'ranges' && !pdfSplitRanges.trim()))) || (pdfToolMode === 'merge' && (pdfToolFiles.length < 2 || !mergePdfName.trim()))}
                       className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ${pdfToolMode === 'merge' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-red-500 hover:bg-red-600'}`}
                     >
                       {applyingTool || busy ? <Loader2 className="h-4 w-4 animate-spin" /> : pdfToolMode === 'merge' ? <Combine className="h-4 w-4" /> : <Save className="h-4 w-4" />}
