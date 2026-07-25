@@ -42,6 +42,7 @@ import { SortablePdfPage } from './nextcloud/SortablePdfPage';
 import { NcThumb, thumbCache } from './nextcloud/NcThumb';
 import { useNextcloudSelection } from '../hooks/useNextcloudSelection';
 import { useNextcloudClipboard } from '../hooks/useNextcloudClipboard';
+import { useNextcloudLocks } from '../hooks/useNextcloudLocks';
 import { setLocalPdfWorker } from '../utils/pdfWorker';
 import {
   isDocx, isPdf, isImage, isVideo, isAudio, isMedia, isTextFile,
@@ -588,7 +589,7 @@ const NextcloudBrowser: React.FC = () => {
   }, [movementExecuting, pendingMovement]);
 
   // Presença de edição: path -> quem está editando.
-  const [locks, setLocks] = useState<Record<string, Array<{ id: string; name: string }>>>({});
+  const { locks } = useNextcloudLocks();
 
   // Ferramentas de PDF (modal por arquivo).
   const [pdfToolFile, setPdfToolFile] = useState<NextcloudEntry | null>(null);
@@ -871,22 +872,6 @@ const NextcloudBrowser: React.FC = () => {
     clearSelection();
     setCtxMenu({ x: event.clientX, y: event.clientY });
   };
-
-  // Presença de edição: carrega locks + assina realtime (outros editores).
-  const loadLocks = useCallback(async () => {
-    try {
-      const rows = await nextcloudService.listLocks();
-      const map: Record<string, Array<{ id: string; name: string }>> = {};
-      for (const r of rows) (map[r.path] ||= []).push({ id: r.user_id, name: r.user_name || 'Alguém' });
-      setLocks(map);
-    } catch { /* presença é opcional */ }
-  }, []);
-  useEffect(() => {
-    loadLocks();
-    const unsub = nextcloudService.subscribeLocks(loadLocks);
-    const iv = window.setInterval(loadLocks, 60_000); // reavalia expiração dos locks
-    return () => { unsub(); window.clearInterval(iv); };
-  }, [loadLocks]);
 
   // Quem (além de mim) está editando `path`.
   const othersEditing = (p: string) => (locks[p] || []).filter((l) => l.id !== myId);
