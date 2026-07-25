@@ -41,19 +41,8 @@ async function invoke<T>(payload: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
-// --- base64 <-> Blob (o proxy trafega binário como base64 em JSON) -----------
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      resolve(result.split(',')[1] || ''); // remove o prefixo data:...;base64,
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-}
+// --- base64 -> Blob (leitura: o proxy devolve binário como base64 em JSON) ---
+// O UPLOAD não usa mais base64: `writeFile` envia o blob cru (octet-stream).
 
 function base64ToBlob(b64: string, mime: string): Blob {
   const bin = atob(b64);
@@ -100,8 +89,22 @@ export const nextcloudService = {
     path: string,
     blob: Blob,
   ): Promise<{ ok: boolean; sentBytes?: number; etag?: string | null }> {
-    const base64 = await blobToBase64(blob);
-    return invoke({ action: 'write', path, base64, mime: blob.type || 'application/octet-stream' });
+    // Envia o arquivo CRU (binário) via função dedicada `nextcloud-upload` —
+    // sem base64. supabase-js manda o Blob como application/octet-stream; a
+    // função faz o PUT direto. O caminho vai percent-encoded no header (headers
+    // só aceitam ASCII; pastas podem ter acento).
+    const { data, error } = await supabase.functions.invoke('nextcloud-upload', {
+      body: blob,
+      headers: {
+        'x-nc-path': encodeURIComponent(path),
+        'x-nc-mime': blob.type || 'application/octet-stream',
+      },
+    });
+    if (error) throw new Error(error.message);
+    if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
+      throw new Error(String((data as { error: string }).error));
+    }
+    return data as { ok: boolean; sentBytes?: number; etag?: string | null };
   },
 
   /** Grava e CONFIRMA a persistência relendo os metadados do servidor. Só

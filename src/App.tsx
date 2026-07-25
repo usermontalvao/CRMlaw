@@ -1,4 +1,4 @@
-﻿﻿import { useEffect, useState, useMemo, useCallback, lazy, Suspense, useRef, createContext, useContext } from 'react';
+﻿﻿import { useEffect, useState, useMemo, useCallback, lazy, Suspense, useRef, createContext, useContext, type ComponentType, type SVGProps } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigation } from './contexts/NavigationContext';
 import type { ModuleName } from './contexts/NavigationContext';
@@ -45,7 +45,6 @@ import {
   MessageSquare,
   Mail,
   FolderOpen,
-  type LucideIcon,
 } from 'lucide-react';
 import OfflinePage from './components/OfflinePage';
 import { FloatingWindowSystem, useFloatingWindows, MAX_WINDOWS, TASKBAR_H } from './components/FloatingWindowSystem';
@@ -57,6 +56,9 @@ import BlockedAccountOverlay from './components/BlockedAccountOverlay';
 import LogoutOverlay from './components/LogoutOverlay';
 import TermsPrivacyPage from './components/TermsPrivacyPage';
 import ProfileModal, { type AppProfile, type UserRole } from './components/ProfileModal';
+import { NextcloudIcon } from './components/icons/NextcloudIcon';
+
+type ModuleIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
 // Lazy loading dos módulos principais (carrega apenas quando acessado)
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -209,12 +211,12 @@ const CloudModuleFallback = () => (
 );
 
 // â”€â”€ AccessDeniedScreen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const MODULE_META: Record<string, { label: string; desc: string; Icon: LucideIcon }> = {
+const MODULE_META: Record<string, { label: string; desc: string; Icon: ModuleIcon }> = {
   leads:         { label: 'Leads',                desc: 'captação e gestão de leads',            Icon: Target },
   clientes:      { label: 'Clientes',             desc: 'cadastro e histórico de clientes',       Icon: Users },
   documentos:    { label: 'Documentos',           desc: 'contratos e modelos',                    Icon: FileText },
   cloud:         { label: 'Cloud',                desc: 'armazenamento de arquivos',              Icon: Cloud },
-  nextcloud:     { label: 'Nextcloud',            desc: 'arquivos no servidor Nextcloud',         Icon: Cloud },
+  nextcloud:     { label: 'Nextcloud',            desc: 'arquivos no servidor Nextcloud',         Icon: NextcloudIcon },
   assinaturas:   { label: 'Assinaturas Digitais', desc: 'coleta de assinaturas eletrônicas',      Icon: PenTool },
   processos:     { label: 'Processos',            desc: 'acompanhamento processual',              Icon: Briefcase },
   requerimentos: { label: 'Requerimentos',        desc: 'petições e requerimentos',               Icon: Library },
@@ -802,7 +804,7 @@ const SidebarSkeletonBtn: React.FC<{ index?: number }> = ({ index = 0 }) => {
 const SidebarModuleBtn: React.FC<{
   moduleKey: string;
   label: string;
-  Icon: LucideIcon;
+  Icon: ModuleIcon;
   isActive: boolean;
   onClick: () => void;
   expiresAt?: string | null;
@@ -2538,7 +2540,7 @@ useEffect(() => {
               onOpenWindowDirect={floatingWindowModules.has('cloud') ? () => handleOpenWindow('cloud','Cloud') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('nextcloud') && (
-            <SidebarModuleBtn moduleKey="nextcloud" label="Nextcloud" Icon={Cloud}
+            <SidebarModuleBtn moduleKey="nextcloud" label="Nextcloud" Icon={NextcloudIcon}
               isActive={activeModule === 'nextcloud'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('nextcloud'); }}
               expiresAt={getOverrideExpiry('nextcloud')} />
@@ -2642,7 +2644,7 @@ useEffect(() => {
                   {isMobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </button>
                 {(() => {
-                  const MODULE_META: Record<string, { label: string; Icon: LucideIcon }> = {
+                  const MODULE_META: Record<string, { label: string; Icon: ModuleIcon }> = {
                     cloud: { label: 'Cloud', Icon: Cloud },
                     dashboard: { label: 'Dashboard', Icon: Layers },
                     feed: { label: 'Feed', Icon: Newspaper },

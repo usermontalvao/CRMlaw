@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 
@@ -65,7 +64,7 @@ export const Modal: React.FC<ModalProps> = ({
       {open && (
         <div className="fixed inset-0 overflow-y-auto px-0 py-0 sm:px-6 sm:py-4" style={{ zIndex }}>
           <motion.div
-            className="absolute inset-0 bg-black/45"
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-[3px]"
             onClick={onClose}
             aria-hidden="true"
             initial={{ opacity: 0 }}
@@ -80,8 +79,8 @@ export const Modal: React.FC<ModalProps> = ({
               aria-modal="true"
               aria-label={title}
               className={[
-                'relative flex w-[calc(100vw-12px)] max-h-[100dvh] flex-col overflow-hidden bg-white shadow-xl ring-1 ring-black/8 dark:bg-zinc-900 dark:ring-white/8 sm:w-full',
-                'rounded-t-[16px] sm:max-h-[92dvh] sm:rounded-none',
+                'relative flex w-[calc(100vw-12px)] max-h-[100dvh] flex-col overflow-hidden bg-white shadow-[0_32px_90px_rgba(15,23,42,0.35)] ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/10 sm:w-full',
+                'rounded-t-2xl sm:max-h-[92dvh] sm:rounded-2xl',
                 sizeClasses[size],
               ].join(' ')}
               initial={{ opacity: 0, scale: 0.985 }}
@@ -91,7 +90,7 @@ export const Modal: React.FC<ModalProps> = ({
             >
               <div className={['h-1.5 w-full shrink-0', accentBarClassName].join(' ')} />
 
-              <div className="shrink-0 border-b border-[#e7e5df] px-4 py-2 dark:border-zinc-800 sm:px-5 sm:py-2.5">
+              <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900 sm:px-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
                     {icon && (
@@ -120,9 +119,9 @@ export const Modal: React.FC<ModalProps> = ({
                       type="button"
                       onClick={onClose}
                       aria-label="Fechar"
-                      className="rounded p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:hover:border-red-800 dark:hover:bg-red-950/40"
                     >
-                      <X className="w-5 h-5" />
+                      <span aria-hidden="true" className="text-2xl font-light leading-none">×</span>
                     </button>
                   </div>
                 </div>
