@@ -32,7 +32,7 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Document, Page, pdfjs } from 'react-pdf';
-import PizZip from 'pizzip';
+import JSZip from 'jszip';
 import { renderAsync } from 'docx-preview';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -479,6 +479,10 @@ const NextcloudBrowser: React.FC = () => {
   };
   const [uploadJobs, setUploadJobs] = useState<UploadJob[] | null>(null);
   const uploadAbortRef = useRef<AbortController | null>(null);
+  // Progresso da geração de ZIP (assíncrona e cancelável).
+  const [zipProgress, setZipProgress] = useState<{ label: string; percent: number } | null>(null);
+  const zipAbortRef = useRef<{ cancelled: boolean }>({ cancelled: false });
+  const cancelZip = () => { zipAbortRef.current.cancelled = true; };
   const [sidebarOpen, setSidebarOpen] = useState(() =>
     typeof restoredSessionRef.current.sidebarOpen === 'boolean'
       ? restoredSessionRef.current.sidebarOpen
@@ -1732,7 +1736,11 @@ const NextcloudBrowser: React.FC = () => {
       all.findIndex((candidate) => candidate.path === entry.path) === index
       && !all.some((candidate) => candidate.isDir && entry.path.startsWith(`${candidate.path}/`)),
     );
-    const zip = new PizZip();
+    // Geração ASSÍNCRONA (JSZip) — não trava a interface como o generate síncrono
+    // do PizZip. Cancelável: interrompemos a coleta de arquivos e a geração.
+    const token = { cancelled: false };
+    zipAbortRef.current = token;
+    const zip = new JSZip();
     const usedRootNames = new Set<string>();
     let downloadedFiles = 0;
 
@@ -1754,29 +1762,40 @@ const NextcloudBrowser: React.FC = () => {
     };
 
     const addEntryToZip = async (entry: NextcloudEntry, zipPath: string): Promise<void> => {
+      if (token.cancelled) return;
       if (entry.isDir) {
         zip.folder(zipPath);
         const children = await nextcloudService.list(entry.path);
         for (const child of children) {
+          if (token.cancelled) return;
           await addEntryToZip(child, `${zipPath}/${child.name}`);
         }
         return;
       }
-
-      setBusy(`Preparando ZIP… ${downloadedFiles + 1} arquivo(s)`);
       const blob = await nextcloudService.readFile(entry.path);
       zip.file(zipPath, await blob.arrayBuffer(), { binary: true });
       downloadedFiles += 1;
+      setZipProgress({ label: `Lendo arquivos… (${downloadedFiles})`, percent: 0 });
     };
 
     setError(null);
-    setBusy('Preparando arquivos para download…');
+    setZipProgress({ label: 'Preparando arquivos…', percent: 0 });
     try {
       for (const entry of roots) {
+        if (token.cancelled) break;
         await addEntryToZip(entry, uniqueRootName(entry.name));
       }
-      setBusy(`Compactando ${downloadedFiles} arquivo(s)…`);
-      const zipBlob = zip.generate({ type: 'blob', mimeType: 'application/zip', compression: 'DEFLATE' });
+      if (token.cancelled) { showTransient('Download em ZIP cancelado.'); return; }
+
+      const zipBlob = await zip.generateAsync(
+        { type: 'blob', mimeType: 'application/zip', compression: 'DEFLATE' },
+        (meta) => {
+          if (token.cancelled) throw new Error('__zip_cancelled__');
+          setZipProgress({ label: `Compactando ${downloadedFiles} arquivo(s)…`, percent: Math.round(meta.percent) });
+        },
+      );
+      if (token.cancelled) { showTransient('Download em ZIP cancelado.'); return; }
+
       const stamp = new Date().toISOString().slice(0, 10);
       const zipName = roots.length === 1 && roots[0].isDir
         ? `${roots[0].name}.zip`
@@ -1784,9 +1803,13 @@ const NextcloudBrowser: React.FC = () => {
       triggerBlobDownload(zipBlob, zipName);
       showTransient(`${downloadedFiles} arquivo(s) baixado(s) em ZIP.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao preparar o arquivo ZIP.');
+      if (token.cancelled || (err instanceof Error && err.message === '__zip_cancelled__')) {
+        showTransient('Download em ZIP cancelado.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Falha ao preparar o arquivo ZIP.');
+      }
     } finally {
-      setBusy(null);
+      setZipProgress(null);
     }
   };
 
@@ -5414,6 +5437,21 @@ const NextcloudBrowser: React.FC = () => {
           <p className="text-xs text-slate-500">O nome não pode conter barras.</p>
         </ModalBody>
       </Modal>
+
+      {zipProgress && (
+        <div className="fixed bottom-4 left-4 z-[150] w-[min(92vw,340px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.25)] dark:border-zinc-700 dark:bg-zinc-900" role="status" aria-live="polite">
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{zipProgress.label}</p>
+              <p className="text-[11px] text-slate-400">{zipProgress.percent > 0 ? `${zipProgress.percent}%` : 'preparando…'}</p>
+            </div>
+            <button type="button" onClick={cancelZip} className="shrink-0 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 transition hover:bg-red-100">Cancelar</button>
+          </div>
+          <div className="h-1.5 w-full bg-slate-100 dark:bg-zinc-800">
+            <div className="h-full bg-blue-500 transition-[width] duration-200" style={{ width: `${zipProgress.percent}%` }} />
+          </div>
+        </div>
+      )}
 
       {uploadJobs && uploadJobs.length > 0 && (() => {
         const active = uploadJobs.some((j) => j.status === 'pending' || j.status === 'uploading');
