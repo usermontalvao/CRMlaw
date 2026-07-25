@@ -1,6 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 
@@ -43,6 +46,10 @@ export const Modal: React.FC<ModalProps> = ({
   accentBarClassName = 'bg-amber-500',
   iconContainerClassName = 'bg-amber-500 text-white',
 }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const shouldReduceMotion = useReducedMotion();
+
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -59,6 +66,36 @@ export const Modal: React.FC<ModalProps> = ({
     };
   }, [open]);
 
+  // Foco inicial ao abrir + restauração ao fechar (acessibilidade).
+  useEffect(() => {
+    if (!open) return;
+    previousFocusRef.current = (document.activeElement as HTMLElement | null) ?? null;
+    const node = dialogRef.current;
+    if (node) {
+      const focusables = node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      (focusables[0] ?? node).focus({ preventScroll: true });
+    }
+    return () => { previousFocusRef.current?.focus?.({ preventScroll: true }); };
+  }, [open]);
+
+  // Focus trap: Tab/Shift+Tab ciclam apenas dentro do diálogo.
+  const handleTabTrap = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab') return;
+    const node = dialogRef.current;
+    if (!node) return;
+    const focusables = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+      .filter((el) => el.offsetParent !== null || el === document.activeElement);
+    if (focusables.length === 0) { e.preventDefault(); node.focus(); return; }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
+
+  const motionTransition = shouldReduceMotion
+    ? { duration: 0 }
+    : { duration: 0.16, ease: 'easeOut' as const };
+
   return createPortal(
     <AnimatePresence>
       {open && (
@@ -70,23 +107,26 @@ export const Modal: React.FC<ModalProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.14, ease: 'easeOut' }}
+            transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.14, ease: 'easeOut' }}
           />
 
           <div className="flex min-h-full items-end justify-center sm:items-center">
             <motion.div
+              ref={dialogRef}
               role="dialog"
               aria-modal="true"
               aria-label={title}
+              tabIndex={-1}
+              onKeyDown={handleTabTrap}
               className={[
-                'relative flex w-[calc(100vw-12px)] max-h-[100dvh] flex-col overflow-hidden bg-white shadow-[0_32px_90px_rgba(15,23,42,0.35)] ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/10 sm:w-full',
+                'relative flex w-[calc(100vw-12px)] max-h-[100dvh] flex-col overflow-hidden bg-white shadow-[0_32px_90px_rgba(15,23,42,0.35)] ring-1 ring-black/10 outline-none dark:bg-zinc-900 dark:ring-white/10 sm:w-full',
                 'rounded-t-2xl sm:max-h-[92dvh] sm:rounded-2xl',
                 sizeClasses[size],
               ].join(' ')}
-              initial={{ opacity: 0, scale: 0.985 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.985 }}
-              transition={{ duration: 0.16, ease: 'easeOut' }}
+              initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985 }}
+              animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+              exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985 }}
+              transition={motionTransition}
             >
               <div className={['h-1.5 w-full shrink-0', accentBarClassName].join(' ')} />
 
