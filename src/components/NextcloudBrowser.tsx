@@ -606,6 +606,9 @@ const NextcloudBrowser: React.FC = () => {
   const [pdfPageNumTemplate, setPdfPageNumTemplate] = useState('Fls. {n}');
   const [pdfPageNumRange, setPdfPageNumRange] = useState('');
   const [pdfWatermarkRange, setPdfWatermarkRange] = useState('');
+  // Pré-visualização real da marca d'água (bytes gerados sob demanda).
+  const [pdfWatermarkPreviewUrl, setPdfWatermarkPreviewUrl] = useState<string | null>(null);
+  const [pdfWatermarkPreviewBusy, setPdfWatermarkPreviewBusy] = useState(false);
   const [pdfSplitAt, setPdfSplitAt] = useState(1);
   const [pdfSaveAsCopy, setPdfSaveAsCopy] = useState(true);
   const [mergePdfName, setMergePdfName] = useState('documentos-unificados');
@@ -2459,6 +2462,7 @@ const NextcloudBrowser: React.FC = () => {
     setPdfToolScope('active');
     setPdfSplitMode('half');
     setPdfSplitRanges('');
+    setPdfWatermarkPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
   };
 
   const openPdfMergeTools = async (targets: NextcloudEntry[]) => {
@@ -2577,6 +2581,28 @@ const NextcloudBrowser: React.FC = () => {
     void runPdfTool('Marca d\'água', (b) => watermarkPdf(b, {
       text: pdfWatermarkText, opacity: pdfWatermarkOpacity, diagonal: pdfWatermarkDiagonal, pages,
     }), 'marca d\'água');
+  };
+
+  // Gera a pré-visualização REAL da marca d'água no documento ativo (aplica o
+  // watermark de verdade e mostra o PDF resultante antes de salvar).
+  const generateWatermarkPreview = async () => {
+    if (!pdfToolFile || !pdfWatermarkText.trim()) return;
+    let pages: number[] | undefined;
+    try { pages = rangeToIndices(pdfWatermarkRange); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Intervalo inválido.'); return; }
+    setPdfWatermarkPreviewBusy(true);
+    setError(null);
+    try {
+      const bytes = await readPdfBytes(pdfToolFile);
+      const out = await watermarkPdf(bytes, {
+        text: pdfWatermarkText, opacity: pdfWatermarkOpacity, diagonal: pdfWatermarkDiagonal, pages,
+      });
+      setPdfWatermarkPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(pdfBytesToBlob(out)); });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao gerar a pré-visualização.');
+    } finally {
+      setPdfWatermarkPreviewBusy(false);
+    }
   };
 
   const handlePageNumbers = () => {
@@ -4845,7 +4871,38 @@ const NextcloudBrowser: React.FC = () => {
                     </button>
                   </div>
                 </div>
-                <div className="hidden flex-1 items-center justify-center bg-[#f8f9fb] p-10 lg:flex"><div className="text-center"><div className="mx-auto mb-4 flex h-20 w-16 items-center justify-center rounded-xl bg-white shadow-md"><FileText className="h-7 w-7 text-slate-300" /></div><p className="max-w-[220px] text-sm leading-relaxed text-slate-400">O resultado será salvo diretamente no Nextcloud.</p></div></div>
+                {pdfToolMode === 'watermark' ? (
+                  <div className="hidden min-h-0 flex-1 flex-col bg-[#f8f9fb] lg:flex">
+                    <div className="flex items-center justify-between border-b border-slate-100 bg-white px-5 py-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-900">Pré-visualização</p>
+                        <p className="text-xs text-slate-400">Resultado real da marca d'água no documento ativo.</p>
+                      </div>
+                      <button type="button" onClick={() => void generateWatermarkPreview()} disabled={pdfWatermarkPreviewBusy || !pdfWatermarkText.trim()} className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-purple-700 disabled:opacity-50">
+                        {pdfWatermarkPreviewBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                        {pdfWatermarkPreviewUrl ? 'Atualizar' : 'Pré-visualizar'}
+                      </button>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-auto bg-[#f5f5f5] p-5">
+                      {pdfWatermarkPreviewUrl ? (
+                        <Document file={pdfWatermarkPreviewUrl} loading={<div className="py-12 text-center text-sm text-slate-400"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Renderizando…</div>}>
+                          <div className="flex flex-col items-center gap-4">
+                            {Array.from({ length: Math.min(pdfPageCount ?? 1, 5) }, (_, index) => (
+                              <div key={index} className="overflow-hidden rounded-lg border border-[#cfcfcf] bg-white shadow-sm">
+                                <Page pageNumber={index + 1} width={340} renderTextLayer={false} renderAnnotationLayer={false} />
+                              </div>
+                            ))}
+                            {(pdfPageCount ?? 0) > 5 && <p className="text-xs text-slate-400">Mostrando as 5 primeiras de {pdfPageCount} páginas.</p>}
+                          </div>
+                        </Document>
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-center"><div><div className="mx-auto mb-4 flex h-20 w-16 items-center justify-center rounded-xl bg-white shadow-md"><Stamp className="h-7 w-7 text-purple-300" /></div><p className="max-w-[240px] text-sm leading-relaxed text-slate-400">Clique em "Pré-visualizar" para ver a marca d'água aplicada antes de salvar.</p></div></div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="hidden flex-1 items-center justify-center bg-[#f8f9fb] p-10 lg:flex"><div className="text-center"><div className="mx-auto mb-4 flex h-20 w-16 items-center justify-center rounded-xl bg-white shadow-md"><FileText className="h-7 w-7 text-slate-300" /></div><p className="max-w-[220px] text-sm leading-relaxed text-slate-400">O resultado será salvo diretamente no Nextcloud.</p></div></div>
+                )}
               </div>
             )}
           </div>
