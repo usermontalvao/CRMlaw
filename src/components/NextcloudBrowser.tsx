@@ -41,6 +41,7 @@ import { NcModalCloseButton } from './nextcloud/NcModalCloseButton';
 import { SortablePdfPage } from './nextcloud/SortablePdfPage';
 import { NcThumb, thumbCache } from './nextcloud/NcThumb';
 import { useNextcloudSelection } from '../hooks/useNextcloudSelection';
+import { useNextcloudClipboard } from '../hooks/useNextcloudClipboard';
 import { setLocalPdfWorker } from '../utils/pdfWorker';
 import {
   isDocx, isPdf, isImage, isVideo, isAudio, isMedia, isTextFile,
@@ -563,8 +564,13 @@ const NextcloudBrowser: React.FC = () => {
     height: number;
   } | null>(null);
 
-  // Área de transferência (copiar / recortar / colar).
-  const [clipboard, setClipboard] = useState<{ mode: 'copy' | 'cut'; entries: NextcloudEntry[] } | null>(null);
+  // Área de transferência (estado no hook; colar orquestrado no componente).
+  // notifyRef desacopla o hook do showTransient (definido mais abaixo).
+  const notifyRef = useRef<(message: string) => void>(() => {});
+  const notify = useCallback((message: string) => notifyRef.current(message), []);
+  const {
+    clipboard, setClipboard, isCut, copyEntries, cutEntries,
+  } = useNextcloudClipboard(notify);
   const [pendingMovement, setPendingMovement] = useState<{
     entries: NextcloudEntry[];
     targetFolderPath: string;
@@ -930,19 +936,6 @@ const NextcloudBrowser: React.FC = () => {
   };
 
   // ── Copiar / Recortar / Colar ─────────────────────────────────────────────
-  const isCut = (p: string) => clipboard?.mode === 'cut' && clipboard.entries.some((e) => e.path === p);
-
-  const copyEntries = (list: NextcloudEntry[]) => {
-    if (!list.length) return;
-    setClipboard({ mode: 'copy', entries: list });
-    showTransient(`${list.length} item(ns) copiado(s). Cole com Ctrl+V.`);
-  };
-  const cutEntries = (list: NextcloudEntry[]) => {
-    if (!list.length) return;
-    setClipboard({ mode: 'cut', entries: list });
-    showTransient(`${list.length} item(ns) recortado(s). Cole com Ctrl+V.`);
-  };
-
   // Gera um nome único no destino (evita sobrescrever ao colar).
   const uniqueNameForPaste = (name: string, reservedNames: Set<string>) => {
     if (!reservedNames.has(name)) {
@@ -2982,6 +2975,8 @@ const NextcloudBrowser: React.FC = () => {
     setNotice({ message: msg, stamp });
     window.setTimeout(() => setNotice((current) => (current?.stamp === stamp ? null : current)), 2800);
   };
+  // Liga o notify do hook de clipboard ao toast (showTransient definido acima).
+  notifyRef.current = showTransient;
 
   useEffect(() => {
     if (!organizeFile || organizeSaving || organizeExitIntent) return;
