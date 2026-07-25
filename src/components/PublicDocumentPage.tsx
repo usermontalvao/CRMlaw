@@ -9,11 +9,20 @@ import QRCode from 'qrcode';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
-import type { SignatureRequestWithSigners } from '../types/signature.types';
+import type { SignatureRequestDocument, SignatureRequestWithSigners } from '../types/signature.types';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface Props { token: string }
+
+interface ResolvedSignedDocument {
+  id: string;
+  documentType: 'main' | 'attachment';
+  displayName: string;
+  url: string;
+  verificationCode: string | null | undefined;
+  sortOrder: number;
+}
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 const BRAND = '#ea580c';
@@ -36,6 +45,15 @@ const initials = (name: string) =>
 
 const isPlaceholderEmail = (e?: string | null) =>
   (e || '').toLowerCase().startsWith('public+') && (e || '').toLowerCase().endsWith('@crm.local');
+
+const signedDocumentLabel = (doc: SignatureRequestDocument, attachmentIndex: number) => {
+  if (doc.document_type === 'main') return doc.display_name?.trim() || 'Documento principal';
+
+  const raw = doc.display_name?.trim() || '';
+  const withoutExtension = raw.replace(/\.[^.]+$/, '');
+  const looksGenerated = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(withoutExtension);
+  return raw && !looksGenerated ? raw : `Anexo ${attachmentIndex + 1}`;
+};
 
 // PDF embutido via <iframe> não renderiza em mobile (Android/iOS mostram só a
 // 1ª página ou forçam download). Renderiza todas as páginas como canvas com
@@ -128,6 +146,7 @@ export default function PublicDocumentPage({ token }: Props) {
   const [error,      setError]      = useState<string | null>(null);
   const [signedUrl,  setSignedUrl]  = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [signedDocuments, setSignedDocuments] = useState<ResolvedSignedDocument[]>([]);
   const [qrMap,      setQrMap]      = useState<Record<string, string>>({});
   const [copied,     setCopied]     = useState(false);
   const [expanded,       setExpanded]       = useState<Set<string>>(new Set());
@@ -157,16 +176,61 @@ export default function PublicDocumentPage({ token }: Props) {
         if ((data as any).blocked_at) { setError('blocked'); return; }
         setReq(data);
 
-        const latestSigned = [...data.signers]
-          .filter(s => s.status === 'signed' && s.signed_document_path)
-          .sort((a, b) => new Date(b.signed_at || 0).getTime() - new Date(a.signed_at || 0).getTime())[0];
+        if (data.signature_model === 'per_document') {
+          // A rota /documento usa o token público do ENVELOPE, enquanto as RPCs
+          // e a edge de arquivos são intencionalmente token-scoped pelo
+          // SIGNATÁRIO. O signer já faz parte do bundle público carregado acima;
+          // reutilizamos seu token para listar e resolver somente os arquivos
+          // pertencentes a esta mesma solicitação.
+          const signerFileToken = [...data.signers]
+            .filter(s => s.status === 'signed' && s.public_token)
+            .sort((a, b) => new Date(b.signed_at || 0).getTime() - new Date(a.signed_at || 0).getTime())[0]
+            ?.public_token;
 
-        if (latestSigned?.signed_document_path) {
-          const url = await pdfSignatureService.getSignedPdfUrl(latestSigned.signed_document_path).catch(() => null);
-          if (url) { setSignedUrl(url); setPreviewUrl(url); }
-        } else if (data.document_path && !/\.(docx?|doc)$/i.test(data.document_path)) {
-          const url = await resolveDocUrl(data.document_path);
-          if (url) setPreviewUrl(url);
+          if (signerFileToken) {
+            const docs = await signatureService.getPublicRequestDocuments(signerFileToken);
+            let attachmentIndex = 0;
+            const resolved = (await Promise.all(
+              docs
+                .filter(doc => doc.status === 'signed' && doc.signed_file_path)
+                .map(async doc => {
+                  const currentAttachmentIndex = doc.document_type === 'attachment' ? attachmentIndex++ : 0;
+                  const url = await signatureService
+                    .getPublicFileUrl(signerFileToken, doc.signed_file_path!)
+                    .catch(() => null);
+                  if (!url) return null;
+                  return {
+                    id: doc.id,
+                    documentType: doc.document_type,
+                    displayName: signedDocumentLabel(doc, currentAttachmentIndex),
+                    url,
+                    verificationCode: doc.verification_code,
+                    sortOrder: doc.sort_order ?? 0,
+                  } satisfies ResolvedSignedDocument;
+                }),
+            ))
+              .filter((doc): doc is ResolvedSignedDocument => !!doc)
+              .sort((a, b) => a.sortOrder - b.sortOrder);
+
+            setSignedDocuments(resolved);
+            const primary = resolved.find(doc => doc.documentType === 'main') ?? resolved[0];
+            if (primary) {
+              setSignedUrl(primary.url);
+              setPreviewUrl(primary.url);
+            }
+          }
+        } else {
+          const latestSigned = [...data.signers]
+            .filter(s => s.status === 'signed' && s.signed_document_path)
+            .sort((a, b) => new Date(b.signed_at || 0).getTime() - new Date(a.signed_at || 0).getTime())[0];
+
+          if (latestSigned?.signed_document_path) {
+            const url = await pdfSignatureService.getSignedPdfUrl(latestSigned.signed_document_path).catch(() => null);
+            if (url) { setSignedUrl(url); setPreviewUrl(url); }
+          } else if (data.document_path && !/\.(docx?|doc)$/i.test(data.document_path)) {
+            const url = await resolveDocUrl(data.document_path);
+            if (url) setPreviewUrl(url);
+          }
         }
 
         const qrs: Record<string, string> = {};
@@ -191,9 +255,9 @@ export default function PublicDocumentPage({ token }: Props) {
   const copyLink = () =>
     navigator.clipboard.writeText(window.location.href).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2200); });
 
-  const downloadPdf = () => {
-    if (!signedUrl) return;
-    const a = document.createElement('a'); a.href = signedUrl; a.download = `${req?.document_name || 'documento'}.pdf`; a.click();
+  const downloadPdf = (url = signedUrl, name = req?.document_name || 'documento') => {
+    if (!url) return;
+    const a = document.createElement('a'); a.href = url; a.download = `${name.replace(/\.pdf$/i, '')}.pdf`; a.click();
   };
 
   // Print: fetch PDF as blob → same-origin blob URL → iframe.contentWindow.print()
@@ -297,6 +361,7 @@ export default function PublicDocumentPage({ token }: Props) {
   const accent = allSigned ? '#16a34a' : '#d97706';
   const accentBg = allSigned ? '#f0fdf4' : '#fffbeb';
   const accentBd = allSigned ? '#bbf7d0' : '#fde68a';
+  const viewerDocument = signedDocuments.find(doc => doc.url === viewerUrl);
 
   return (
     <div className="jurius-page-root" style={{ minHeight: '100vh', background: '#eef2f6', fontFamily: ST.font }}>
@@ -308,14 +373,19 @@ export default function PublicDocumentPage({ token }: Props) {
           <div className="jurius-fullscreen-toolbar" style={{ height: 54, background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', flexShrink: 0, gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
               <FileText style={{ width: 16, height: 16, color: BRAND, flexShrink: 0 }} />
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{req.document_name}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{viewerDocument?.displayName || req.document_name}</span>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => handlePrint(viewerUrl!)} style={ST.viewerBtnGhost}>
                 <Printer style={{ width: 13, height: 13 }} />Imprimir
               </button>
-              {signedUrl && viewerUrl === previewUrl && (
-                <button onClick={downloadPdf} style={ST.viewerBtnPrimary}><Download style={{ width: 13, height: 13 }} />Baixar</button>
+              {(viewerDocument || (signedUrl && viewerUrl === previewUrl)) && (
+                <button
+                  onClick={() => downloadPdf(viewerUrl, viewerDocument?.displayName || req.document_name)}
+                  style={ST.viewerBtnPrimary}
+                >
+                  <Download style={{ width: 13, height: 13 }} />Baixar
+                </button>
               )}
               <button onClick={() => setViewerUrl(null)} style={ST.viewerIconBtn}><X style={{ width: 16, height: 16, color: '#cbd5e1' }} /></button>
             </div>
@@ -340,7 +410,7 @@ export default function PublicDocumentPage({ token }: Props) {
           </button>
         )}
         {signedUrl && (
-          <button onClick={downloadPdf} style={ST.btnPrimary} className="btn-hover">
+          <button onClick={() => downloadPdf()} style={ST.btnPrimary} className="btn-hover">
             <Download style={{ width: 14, height: 14 }} /><span className="hide-sm">Baixar PDF</span>
           </button>
         )}
@@ -420,14 +490,31 @@ export default function PublicDocumentPage({ token }: Props) {
                     <div style={{ height: '100%', borderRadius: 99, width: `${pct}%`, background: `linear-gradient(90deg, ${accent}, ${allSigned ? '#4ade80' : '#fbbf24'})`, transition: 'width 0.6s ease' }} />
                   </div>
                 </div>
-                {(signedUrl || attachments.length > 0) && (
+                {(signedUrl || signedDocuments.length > 0 || attachments.length > 0) && (
                   <div style={{ borderTop: '1px solid #f1f5f9', padding: 12, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {signedUrl && (
+                    {signedDocuments.length > 0 ? (
+                      signedDocuments.map((doc, index) => (
+                        <button
+                          key={doc.id}
+                          onClick={() => setViewerUrl(doc.url)}
+                          style={doc.documentType === 'main' ? ST.sideBtnPrimary : ST.sideBtnGhost}
+                          className="btn-hover"
+                          title={doc.verificationCode ? `Código de verificação: ${doc.verificationCode}` : undefined}
+                        >
+                          {doc.documentType === 'main'
+                            ? <FileSignature style={{ width: 14, height: 14, flexShrink: 0 }} />
+                            : <Paperclip style={{ width: 13, height: 13, flexShrink: 0 }} />}
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {doc.documentType === 'main' && index === 0 ? 'Documento principal' : doc.displayName}
+                          </span>
+                        </button>
+                      ))
+                    ) : signedUrl && (
                       <button onClick={() => setViewerUrl(previewUrl)} style={ST.sideBtnPrimary} className="btn-hover">
                         <Eye style={{ width: 14, height: 14 }} />Visualizar documento assinado
                       </button>
                     )}
-                    {attachments.map((path, i) => {
+                    {signedDocuments.length === 0 && attachments.map((path, i) => {
                       const raw  = path.split('/').pop() ?? `Anexo ${i + 1}`;
                       const name = raw.replace(/^\d{10,}_/, '').replace(/_\d{10,}[_.]/g, (m) => m[m.length - 1]);
                       return (

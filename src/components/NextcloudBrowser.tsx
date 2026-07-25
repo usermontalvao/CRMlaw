@@ -474,6 +474,10 @@ const NextcloudBrowser: React.FC = () => {
   const [previewRotationSaveMode, setPreviewRotationSaveMode] = useState<'copy' | 'replace'>('copy');
   const [previewRotationSaving, setPreviewRotationSaving] = useState(false);
   const previewPageAreaRef = useRef<HTMLDivElement>(null);
+  // Rolagem contínua do PDF: refs de cada página + sincronização com o indicador.
+  const pdfPageRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const previewPdfPageRef = useRef(1);
+  const suppressPageScrollRef = useRef(false);
   const [previewMediaZoom, setPreviewMediaZoom] = useState(1);
   const [previewMediaRotation, setPreviewMediaRotation] = useState(0);
   const previewMediaShellRef = useRef<HTMLDivElement>(null);
@@ -1395,6 +1399,43 @@ const NextcloudBrowser: React.FC = () => {
     observer.observe(element);
     return () => observer.disconnect();
   }, [previewFile, previewUrl, previewPdfSidebar]);
+
+  // Rolagem contínua: leva a página atual à vista quando ela muda por um
+  // controle (setas, campo numérico, miniatura). Se a mudança veio do próprio
+  // scroll (observer abaixo), a flag evita re-rolar e criar um laço.
+  useEffect(() => {
+    previewPdfPageRef.current = previewPdfPage;
+    if (!previewFile || !isPdf(previewFile)) return;
+    if (suppressPageScrollRef.current) { suppressPageScrollRef.current = false; return; }
+    const el = pdfPageRefs.current[previewPdfPage];
+    if (el) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [previewPdfPage, previewFile]);
+
+  // Sincroniza o indicador e as miniaturas com a página mais visível ao rolar.
+  useEffect(() => {
+    if (!previewFile || !isPdf(previewFile) || !previewUrl || previewPdfPages <= 0) return;
+    const root = previewPageAreaRef.current;
+    if (!root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let best: { page: number; ratio: number } | null = null;
+        for (const entry of entries) {
+          const page = Number((entry.target as HTMLElement).dataset.pdfPage);
+          if (!page || !entry.isIntersecting) continue;
+          if (!best || entry.intersectionRatio > best.ratio) best = { page, ratio: entry.intersectionRatio };
+        }
+        if (best && best.page !== previewPdfPageRef.current) {
+          suppressPageScrollRef.current = true;
+          setPreviewPdfPage(best.page);
+        }
+      },
+      { root, threshold: [0.1, 0.25, 0.5, 0.75] },
+    );
+    const raf = requestAnimationFrame(() => {
+      Object.values(pdfPageRefs.current).forEach((node) => node && observer.observe(node));
+    });
+    return () => { cancelAnimationFrame(raf); observer.disconnect(); };
+  }, [previewFile, previewUrl, previewPdfPages]);
 
   // Abre o .docx no EDITOR PRINCIPAL (mesmo das petições), em uma NOVA ABA do
   // navegador, mantendo este navegador de arquivos aberto. O payload (que contém
@@ -4333,15 +4374,27 @@ const NextcloudBrowser: React.FC = () => {
                         onLoadError={() => setError('Não foi possível renderizar este PDF.')}
                         loading={<div className="flex items-center gap-2 pt-20 text-xs text-white/45"><Loader2 className="h-5 w-5 animate-spin" /> Carregando PDF…</div>}
                       >
-                        <div className="overflow-hidden bg-white shadow-[0_14px_55px_rgba(0,0,0,0.45)] ring-1 ring-black/15">
-                          <Page
-                            pageNumber={previewPdfPage}
-                            width={Math.max(300, Math.min(980, previewPageAreaWidth - 64)) * previewPdfZoom}
-                            rotate={previewPdfRotation}
-                            renderTextLayer={false}
-                            renderAnnotationLayer={false}
-                            loading={<div className="flex h-[70vh] w-[520px] items-center justify-center bg-white text-slate-400"><Loader2 className="h-6 w-6 animate-spin" /></div>}
-                          />
+                        <div className="flex flex-col items-center gap-4">
+                          {Array.from({ length: previewPdfPages || 1 }, (_, index) => {
+                            const page = index + 1;
+                            return (
+                              <div
+                                key={page}
+                                data-pdf-page={page}
+                                ref={(el) => { pdfPageRefs.current[page] = el; }}
+                                className="scroll-mt-6 overflow-hidden bg-white shadow-[0_14px_55px_rgba(0,0,0,0.45)] ring-1 ring-black/15"
+                              >
+                                <Page
+                                  pageNumber={page}
+                                  width={Math.max(300, Math.min(980, previewPageAreaWidth - 64)) * previewPdfZoom}
+                                  rotate={previewPdfRotation}
+                                  renderTextLayer={false}
+                                  renderAnnotationLayer={false}
+                                  loading={<div className="flex h-[70vh] w-[520px] items-center justify-center bg-white text-slate-400"><Loader2 className="h-6 w-6 animate-spin" /></div>}
+                                />
+                              </div>
+                            );
+                          })}
                         </div>
                       </Document>
                     )}

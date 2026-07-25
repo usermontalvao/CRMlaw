@@ -7,7 +7,7 @@ import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
   Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, FolderOpen, Phone,
-  ArrowUpDown, FileSignature, ChevronUp, ChevronDown, Lock, LockOpen, RotateCcw, Inbox,
+  ArrowUpDown, FileSignature, ChevronUp, ChevronDown, Lock, LockOpen, RotateCcw, Inbox, UploadCloud,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,6 +18,9 @@ import { buildWaPreviewUrl } from '../utils/publicAppUrl';
 import { processService } from '../services/process.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
 import { cloudService } from '../services/cloud.service';
+import { nextcloudService } from '../services/nextcloud.service';
+import { joinPath, nextAvailableName } from '../utils/nextcloudNames';
+import { NextcloudFolderPicker } from './nextcloud/NextcloudFolderPicker';
 import { supabase } from '../config/supabase';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { documentTemplateService } from '../services/documentTemplate.service';
@@ -264,6 +267,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [createProcessUrgent, setCreateProcessUrgent] = useState(false);
   const [createProcessLoading, setCreateProcessLoading] = useState(false);
   const [copyToCloudLoading, setCopyToCloudLoading] = useState(false);
+  // Envio ao Nextcloud (paralelo ao Cloud/Supabase; não interfere no fluxo acima).
+  const [ncPickerOpen, setNcPickerOpen] = useState(false);
+  const [ncPickerRequest, setNcPickerRequest] = useState<SignatureRequestWithSigners | null>(null);
+  const [copyToNextcloudLoading, setCopyToNextcloudLoading] = useState(false);
   const [sendEmailLoading, setSendEmailLoading] = useState(false);
 
   useEffect(() => {
@@ -3460,6 +3467,72 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     }
   };
 
+  // --- Enviar documentos assinados para uma pasta do Nextcloud ----------------
+  // Independente de handleCopySignedDocumentToCloud (Cloud/Supabase). Reaproveita
+  // a MESMA montagem dos PDFs assinados, mas grava via nextcloudService, criando
+  // ou reutilizando a subpasta "NÃO PROTOCOLAR" dentro da pasta escolhida.
+  const collectSignedFilesForNextcloud = async (request: SignatureRequestWithSigners): Promise<File[]> => {
+    if ((request as any).signature_model === 'per_document') {
+      const docs = await signatureService.listRequestDocuments(request.id);
+      const signedDocs = docs.filter((d) => d.signed_file_path);
+      if (signedDocs.length === 0) throw new Error('Ainda não há documentos assinados para enviar.');
+      const out: File[] = [];
+      for (const doc of signedDocs) {
+        const url = await pdfSignatureService.getSignedPdfUrl(doc.signed_file_path!);
+        if (!url) throw new Error(`Não foi possível acessar o PDF assinado de ${doc.display_name || doc.document_key}.`);
+        const b = await fetchBlobFromUrl(url);
+        const name = sanitizeDownloadName(`${doc.display_name || doc.document_key}_assinado.pdf`, `${doc.document_key}_assinado.pdf`);
+        out.push(new File([b], name, { type: b.type || 'application/pdf' }));
+      }
+      return out;
+    }
+    const { blob, fileName } = await resolveSignedDocumentBlob(request);
+    return [new File([blob], fileName, { type: blob.type || 'application/pdf' })];
+  };
+
+  const openNextcloudPicker = (request: SignatureRequestWithSigners) => {
+    setNcPickerRequest(request);
+    setNcPickerOpen(true);
+  };
+
+  const handleCopySignedToNextcloud = async (targetPath: string) => {
+    const request = ncPickerRequest;
+    if (!request) return;
+    try {
+      setCopyToNextcloudLoading(true);
+      const files = await collectSignedFilesForNextcloud(request);
+
+      // Garante a subpasta "NÃO PROTOCOLAR" dentro da pasta escolhida (reutiliza
+      // se já existir — makeFolder falha se a pasta já está lá).
+      const NON_PROTOCOL = 'NÃO PROTOCOLAR';
+      const siblings = await nextcloudService.list(targetPath);
+      let destDir = siblings.find((e) => e.isDir && e.name === NON_PROTOCOL)?.path;
+      if (!destDir) {
+        destDir = joinPath(targetPath, NON_PROTOCOL);
+        await nextcloudService.makeFolder(destDir);
+      }
+
+      // Anti-colisão: evita sobrescrever arquivos já presentes no destino.
+      const existing = await nextcloudService.list(destDir);
+      const taken = new Set(existing.map((e) => e.name));
+      let sent = 0;
+      for (const file of files) {
+        const name = nextAvailableName(file.name, taken);
+        taken.add(name);
+        await nextcloudService.writeFile(joinPath(destDir, name), file);
+        sent += 1;
+      }
+
+      setNcPickerOpen(false);
+      setNcPickerRequest(null);
+      toast.success(`${sent} documento(s) enviado(s) para "${destDir}" no Nextcloud.`);
+    } catch (error: any) {
+      toast.error(error?.message || 'Não foi possível enviar para o Nextcloud.');
+    } finally {
+      setCopyToNextcloudLoading(false);
+    }
+  };
+
   const openSignModal = (signer: Signer) => { setSigningSigner(signer); setSignatureData(null); setFacialData(null); setSignCpf(signer.cpf || ''); setSignStep('signature'); setSignModalOpen(true); };
 
   // Solicitação do signatário em assinatura (para aplicar require_cpf no modal interno)
@@ -6224,6 +6297,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         {copyToCloudLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderOpen className="w-3.5 h-3.5" />}
                         <span className="group-hover:underline underline-offset-2">{copyToCloudLoading ? 'Copiando...' : 'Criar pasta'}</span>
                       </button>
+                      <button
+                        disabled={copyToNextcloudLoading}
+                        onClick={() => openNextcloudPicker(detailsRequest)}
+                        title="Enviar os documentos assinados para uma pasta escolhida no Nextcloud"
+                        className="group flex items-center gap-1.5 text-[13px] text-slate-500 hover:text-[#0082c9] transition-colors whitespace-nowrap flex-shrink-0 disabled:opacity-60"
+                      >
+                        {copyToNextcloudLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
+                        <span className="group-hover:underline underline-offset-2">Enviar ao Nextcloud</span>
+                      </button>
                       {detailsRequest.public_token && (
                         <button
                           onClick={() => {
@@ -6844,6 +6926,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             </div>{/* end body */}
         </>)}
       </Modal>
+      {/* Seletor de pasta do Nextcloud para o envio dos documentos assinados. */}
+      <NextcloudFolderPicker
+        open={ncPickerOpen}
+        busy={copyToNextcloudLoading}
+        onClose={() => { if (!copyToNextcloudLoading) { setNcPickerOpen(false); setNcPickerRequest(null); } }}
+        onSelect={(path) => void handleCopySignedToNextcloud(path)}
+        title="Enviar assinados ao Nextcloud"
+        confirmLabel="Enviar aqui"
+      />
       <Modal
         open={signModalOpen && !!signingSigner}
         onClose={() => setSignModalOpen(false)}
