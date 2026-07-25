@@ -951,7 +951,7 @@ const NextcloudBrowser: React.FC = () => {
     setBusy(kind === 'folder' ? 'Criando pasta…' : 'Criando arquivo…');
     setError(null);
     try {
-      const name = uniqueNameForPaste(definition.name, new Set(entries.map((entry) => entry.name)));
+      const name = await resolveFreeName(path, definition.name);
       const target = [path, name].filter(Boolean).join('/');
       let size = 0;
       if (kind === 'folder') {
@@ -1046,18 +1046,15 @@ const NextcloudBrowser: React.FC = () => {
     setBusy(clipboard.mode === 'copy' ? 'Colando (copiar)…' : 'Colando (mover)…');
     setError(null);
     try {
-      const destinationEntries = destinationPath === path
-        ? entries
-        : await nextcloudService.list(destinationPath);
-      const reservedNames = new Set(destinationEntries.map((entry) => entry.name));
-
+      // Nome livre confirmado no SERVIDOR (não na lista exibida) — nunca
+      // sobrescreve silenciosamente. `reserved` evita colisão entre os itens
+      // desta mesma operação.
+      const reserved = new Set<string>();
       for (const e of clipboard.entries) {
         const srcDir = dirOf(e.path);
         if (clipboard.mode === 'cut' && srcDir === destinationPath) continue; // mover p/ mesma pasta: ignora
-        const targetName = (clipboard.mode === 'copy' || reservedNames.has(e.name))
-          ? uniqueNameForPaste(e.name, reservedNames)
-          : e.name;
-        reservedNames.add(targetName);
+        const targetName = await resolveFreeName(destinationPath, e.name, reserved);
+        reserved.add(targetName);
         const dest = [destinationPath, targetName].filter(Boolean).join('/');
         if (clipboard.mode === 'copy') await nextcloudService.copy(e.path, dest);
         else await nextcloudService.move(e.path, dest);
@@ -2190,9 +2187,18 @@ const NextcloudBrowser: React.FC = () => {
     setError(null);
     let completedSuccessfully = false;
     try {
+      // Nome livre confirmado no servidor — o proxy usa Overwrite:T, então sem
+      // isto um arraste sobrescreveria silenciosamente um arquivo homônimo.
+      const reserved = new Set<string>();
       for (const item of items) {
         if (item.path === targetFolderPath || targetFolderPath.startsWith(`${item.path}/`)) continue;
-        const destination = `${targetFolderPath}/${item.name}`;
+        // Mover para a mesma pasta de origem mantém o nome (não é conflito real).
+        const sameFolder = dirOf(item.path) === targetFolderPath;
+        const targetName = sameFolder && !shouldCopy
+          ? item.name
+          : await resolveFreeName(targetFolderPath, item.name, reserved);
+        reserved.add(targetName);
+        const destination = `${targetFolderPath}/${targetName}`;
         if (shouldCopy) await nextcloudService.copy(item.path, destination);
         else await nextcloudService.move(item.path, destination);
       }
@@ -2884,7 +2890,7 @@ const NextcloudBrowser: React.FC = () => {
       const blob = await buildPdfFromPages(organizePages);
       const dir = dirOf(organizeFile.path);
       const targetName = organizeSaveAsCopy
-        ? uniqueNameForPaste(`${baseName(organizeFile.name)} (editado).pdf`, new Set(entries.filter((entry) => dirOf(entry.path) === dir).map((entry) => entry.name)))
+        ? await resolveFreeName(dir, `${baseName(organizeFile.name)} (editado).pdf`)
         : organizeFile.name;
       await nextcloudService.writeFile([dir, targetName].filter(Boolean).join('/'), blob);
       closeOrganizer(afterSave === 'close');
@@ -2906,7 +2912,7 @@ const NextcloudBrowser: React.FC = () => {
       const sorted = [...organizeSelected].sort((a, b) => a - b);
       const blob = await buildPdfFromPages(sorted.map((i) => organizePages[i]));
       const dir = dirOf(organizeFile.path);
-      const targetName = uniqueNameForPaste(`${baseName(organizeFile.name)} (extraído).pdf`, new Set(entries.filter((entry) => dirOf(entry.path) === dir).map((entry) => entry.name)));
+      const targetName = await resolveFreeName(dir, `${baseName(organizeFile.name)} (extraído).pdf`);
       const target = [dir, targetName].filter(Boolean).join('/');
       await nextcloudService.writeFile(target, blob);
       await load(path);
