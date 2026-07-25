@@ -8,7 +8,11 @@ import {
   ClipboardPaste, ShieldAlert, ArrowUpDown, ChevronDown, PanelLeftClose,
   PanelLeftOpen, NotebookPen, ZoomIn, ZoomOut, Maximize2, Info, MapPin, Clock3, HardDrive,
 } from 'lucide-react';
-import { nextcloudService, type NextcloudEntry } from '../services/nextcloud.service';
+import {
+  getNextcloudErrorMessage,
+  nextcloudService,
+  type NextcloudEntry,
+} from '../services/nextcloud.service';
 import { clientService } from '../services/client.service';
 import type { Client } from '../types/client.types';
 import { Modal, ModalBody, ModalFooter } from './ui/Modal';
@@ -30,8 +34,10 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { Document as DocxDocument, Packer, Paragraph } from 'docx';
 import { NextcloudIcon } from './icons/NextcloudIcon';
+import { setLocalPdfWorker } from '../utils/pdfWorker';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Worker do PDF.js empacotado localmente (sem depender do unpkg em runtime).
+setLocalPdfWorker(pdfjs);
 
 /** Vídeos/áudios são carregados via base64 no proxy; acima disso, só download. */
 const MEDIA_MAX_BYTES = 60 * 1024 * 1024;
@@ -773,7 +779,10 @@ const NextcloudBrowser: React.FC = () => {
         });
         setSearchResults(results);
       } catch (err) {
-        if (!cancelled) { setError(err instanceof Error ? err.message : 'Falha na busca.'); setSearchResults([]); }
+        if (!cancelled) {
+          setError(getNextcloudErrorMessage(err, 'pesquisar arquivos e pastas'));
+          setSearchResults([]);
+        }
       } finally {
         if (!cancelled) setSearching(false);
       }
@@ -1952,13 +1961,21 @@ const NextcloudBrowser: React.FC = () => {
       const image = imageItem?.getAsFile();
       if (!image) return;
       event.preventDefault();
-      setBusy('Convertendo imagem colada em PDF…');
+
+      // Deriva a extensão do MIME (ex.: image/png -> png; image/jpeg -> jpg).
+      const mime = image.type || 'image/png';
+      const extFromMime = mime.split('/')[1]?.split('+')[0] || 'png';
+      const ext = extFromMime === 'jpeg' ? 'jpg' : extFromMime;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const fileName = `print-${stamp}.${ext}`;
+
+      setBusy(`Enviando imagem colada (${fileName})…`);
       setError(null);
       let pastedSuccessfully = false;
       try {
-        const bytes = await imagesToPdf([image]);
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        await nextcloudService.writeFile([path, `print-${stamp}.pdf`].filter(Boolean).join('/'), pdfBytesToBlob(bytes));
+        // Envia a imagem crua para a pasta aberta (sem converter em PDF).
+        const blob = image instanceof Blob ? image : new Blob([image], { type: mime });
+        await nextcloudService.writeFile([path, fileName].filter(Boolean).join('/'), blob);
         await load(path);
         pastedSuccessfully = true;
       } catch (err) {
@@ -1966,7 +1983,7 @@ const NextcloudBrowser: React.FC = () => {
       } finally {
         setBusy(null);
       }
-      if (pastedSuccessfully) showTransient('Imagem colada, convertida em PDF e salva na pasta atual.');
+      if (pastedSuccessfully) showTransient(`Imagem colada e salva como ${fileName} na pasta atual.`);
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);

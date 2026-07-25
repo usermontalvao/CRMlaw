@@ -32,11 +32,139 @@ export interface NextcloudChangeEvent {
   createdAt: string;
 }
 
-async function invoke<T>(payload: Record<string, unknown>): Promise<T> {
+type NextcloudErrorPayload = {
+  error?: string;
+  detail?: string;
+  code?: string;
+};
+
+export class NextcloudServiceError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+    public readonly code?: string,
+  ) {
+    super(message);
+    this.name = 'NextcloudServiceError';
+  }
+}
+
+/** Lançado quando o servidor rejeita um PUT com If-Match (412): a versão
+ *  remota mudou desde que o cliente leu o ETag. A UI oferece recarregar,
+ *  salvar cópia ou cancelar. */
+export class NextcloudConflictError extends NextcloudServiceError {
+  constructor(message = 'A versão no servidor mudou desde que você abriu o arquivo.') {
+    super(message, 412, 'version_conflict');
+    this.name = 'NextcloudConflictError';
+  }
+}
+
+const upstreamStatusFrom = (message: string): number | undefined => {
+  const match = message.match(/\((\d{3})\)/);
+  return match ? Number(match[1]) : undefined;
+};
+
+function friendlyNextcloudMessage(
+  status: number | undefined,
+  serverMessage = '',
+  operation = 'concluir a operação',
+): string {
+  const upstreamStatus = upstreamStatusFrom(serverMessage);
+  const effectiveStatus = upstreamStatus ?? status;
+
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return 'Você está sem conexão com a internet. Verifique a rede e tente novamente.';
+  }
+
+  switch (effectiveStatus) {
+    case 400:
+      return `Não foi possível ${operation} porque os dados enviados são inválidos. Atualize a página e tente novamente.`;
+    case 401:
+      return 'Sua sessão expirou ou a conexão com o Nextcloud precisa ser autenticada novamente. Entre novamente e repita a operação.';
+    case 403:
+      return `Você não tem permissão para ${operation} neste local do Nextcloud.`;
+    case 404:
+      return 'A pasta ou o arquivo solicitado não existe mais. Atualize a lista e tente novamente.';
+    case 405:
+    case 501:
+      return 'Este servidor Nextcloud não oferece suporte a esse tipo de pesquisa.';
+    case 408:
+    case 504:
+      return 'O Nextcloud demorou demais para responder. Tente novamente em alguns instantes ou pesquise em uma pasta mais específica.';
+    case 413:
+      return 'A solicitação é grande demais para ser processada pelo servidor.';
+    case 429:
+      return 'Foram feitas muitas solicitações ao Nextcloud. Aguarde alguns segundos e tente novamente.';
+    case 500:
+      return `O serviço encontrou um erro interno ao tentar ${operation}. Tente novamente em alguns instantes.`;
+    case 502:
+    case 503:
+      return 'O Nextcloud está temporariamente indisponível. Verifique a conexão com o servidor e tente novamente.';
+    default:
+      break;
+  }
+
+  const normalized = serverMessage.toLocaleLowerCase('pt-BR');
+  if (
+    normalized.includes('failed to fetch')
+    || normalized.includes('networkerror')
+    || normalized.includes('fetch failed')
+  ) {
+    return 'Não foi possível conectar ao Nextcloud. Verifique sua internet e a disponibilidade do servidor.';
+  }
+
+  if (
+    !serverMessage
+    || normalized.includes('edge function returned')
+    || normalized.includes('non-2xx')
+  ) {
+    return `Não foi possível ${operation} no Nextcloud. Tente novamente em alguns instantes.`;
+  }
+
+  return serverMessage;
+}
+
+async function normalizeInvokeError(error: unknown, operation?: string): Promise<NextcloudServiceError> {
+  const functionError = error as {
+    message?: string;
+    context?: Response;
+  };
+  const response = functionError?.context;
+  let payload: NextcloudErrorPayload | null = null;
+
+  if (response && typeof response.clone === 'function') {
+    try {
+      payload = await response.clone().json() as NextcloudErrorPayload;
+    } catch {
+      // A Edge Function pode devolver texto ou uma resposta vazia.
+    }
+  }
+
+  const rawMessage = payload?.error || functionError?.message || '';
+  return new NextcloudServiceError(
+    friendlyNextcloudMessage(response?.status, rawMessage, operation),
+    response?.status,
+    payload?.code,
+  );
+}
+
+/** Converte falhas técnicas do proxy em texto seguro e compreensível para a interface. */
+export function getNextcloudErrorMessage(
+  error: unknown,
+  operation = 'concluir a operação',
+): string {
+  if (error instanceof NextcloudServiceError) return error.message;
+  const message = error instanceof Error ? error.message : '';
+  return friendlyNextcloudMessage(undefined, message, operation);
+}
+
+async function invoke<T>(payload: Record<string, unknown>, operation?: string): Promise<T> {
   const { data, error } = await supabase.functions.invoke('nextcloud-proxy', { body: payload });
-  if (error) throw new Error(error.message);
+  if (error) throw await normalizeInvokeError(error, operation);
   if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
-    throw new Error(String((data as { error: string }).error));
+    throw new NextcloudServiceError(
+      friendlyNextcloudMessage(undefined, String((data as { error: string }).error), operation),
+    );
   }
   return data as T;
 }
@@ -66,7 +194,10 @@ export const nextcloudService = {
   /** Busca recursiva por nome a partir de `path` (raiz = tudo). Windows-like:
    *  encontra pastas e arquivos em qualquer subpasta. */
   async search(query: string, path = ''): Promise<NextcloudEntry[]> {
-    const { entries } = await invoke<{ entries: NextcloudEntry[] }>({ action: 'search', query, path });
+    const { entries } = await invoke<{ entries: NextcloudEntry[] }>(
+      { action: 'search', query, path },
+      'pesquisar arquivos e pastas',
+    );
     return entries;
   },
 
@@ -88,21 +219,34 @@ export const nextcloudService = {
   async writeFile(
     path: string,
     blob: Blob,
+    opts: { ifMatch?: string | null } = {},
   ): Promise<{ ok: boolean; sentBytes?: number; etag?: string | null }> {
     // Envia o arquivo CRU (binário) via função dedicada `nextcloud-upload` —
     // sem base64. supabase-js manda o Blob como application/octet-stream; a
     // função faz o PUT direto. O caminho vai percent-encoded no header (headers
     // só aceitam ASCII; pastas podem ter acento).
+    //
+    // `ifMatch`: quando informado, o servidor recusa com 412 se a versão remota
+    // mudou (controle de concorrência otimista). Traduzimos para NextcloudConflictError.
+    const headers: Record<string, string> = {
+      'x-nc-path': encodeURIComponent(path),
+      'x-nc-mime': blob.type || 'application/octet-stream',
+    };
+    if (opts.ifMatch) headers['If-Match'] = opts.ifMatch;
+
     const { data, error } = await supabase.functions.invoke('nextcloud-upload', {
       body: blob,
-      headers: {
-        'x-nc-path': encodeURIComponent(path),
-        'x-nc-mime': blob.type || 'application/octet-stream',
-      },
+      headers,
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      const status = (error as { context?: Response }).context?.status;
+      if (status === 412) throw new NextcloudConflictError();
+      throw await normalizeInvokeError(error, 'salvar o arquivo');
+    }
     if (data && typeof data === 'object' && 'error' in data && (data as { error?: string }).error) {
-      throw new Error(String((data as { error: string }).error));
+      const code = String((data as { error: string }).error);
+      if (code === 'version_conflict') throw new NextcloudConflictError();
+      throw new NextcloudServiceError(friendlyNextcloudMessage(undefined, code, 'salvar o arquivo'));
     }
     return data as { ok: boolean; sentBytes?: number; etag?: string | null };
   },
@@ -114,13 +258,14 @@ export const nextcloudService = {
   async writeFileVerified(
     path: string,
     blob: Blob,
+    opts: { ifMatch?: string | null } = {},
   ): Promise<{ size: number; etag: string | null }> {
     const expectedSize = blob.size;
     if (!expectedSize) {
       throw new Error('Documento exportado está vazio (0 bytes) — nada foi enviado ao Nextcloud.');
     }
 
-    const put = await this.writeFile(path, blob);
+    const put = await this.writeFile(path, blob, opts);
     if (put && typeof put.sentBytes === 'number' && put.sentBytes !== expectedSize) {
       throw new Error(
         `O proxy recebeu ${put.sentBytes} bytes, mas o documento exportado tem ${expectedSize}. Envio corrompido.`,

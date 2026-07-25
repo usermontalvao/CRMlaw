@@ -164,3 +164,155 @@ export async function imagesToPdf(images: Blob[]): Promise<Uint8Array> {
 export function pdfBytesToBlob(bytes: Uint8Array): Blob {
   return new Blob([bytes as unknown as BlobPart], { type: 'application/pdf' });
 }
+
+// --- Intervalos de páginas e operações por seleção ---------------------------
+
+export interface PageRange {
+  /** 1-based, inclusivo. */
+  start: number;
+  /** 1-based, inclusivo. */
+  end: number;
+}
+
+/**
+ * Faz o parse de uma especificação de intervalos como "1-3, 5, 8-10".
+ * Retorna a lista de intervalos (1-based, inclusivos) na ordem informada.
+ * Função PURA — valida e LANÇA em: token vazio/malformado, número < 1,
+ * início > fim, ou página fora de [1, total].
+ *
+ * `allowOverlap = false` (padrão) também rejeita intervalos que se sobrepõem —
+ * usado na divisão, onde sobreposição normalmente é engano do usuário.
+ */
+export function parsePageRanges(
+  spec: string,
+  total: number,
+  opts: { allowOverlap?: boolean } = {},
+): PageRange[] {
+  if (total < 1) throw new Error('Documento sem páginas.');
+  const tokens = String(spec).split(',').map((t) => t.trim()).filter(Boolean);
+  if (tokens.length === 0) throw new Error('Informe pelo menos um intervalo (ex.: "1-3, 5").');
+
+  const ranges: PageRange[] = [];
+  for (const token of tokens) {
+    const m = token.match(/^(\d+)\s*(?:-\s*(\d+))?$/);
+    if (!m) throw new Error(`Intervalo inválido: "${token}".`);
+    const start = Number(m[1]);
+    const end = m[2] !== undefined ? Number(m[2]) : start;
+    if (start < 1 || end < 1) throw new Error(`Página deve ser ≥ 1 em "${token}".`);
+    if (start > end) throw new Error(`Intervalo invertido em "${token}" (início > fim).`);
+    if (end > total) throw new Error(`"${token}" ultrapassa o total de ${total} página(s).`);
+    ranges.push({ start, end });
+  }
+
+  if (!opts.allowOverlap) {
+    const ordered = [...ranges].sort((a, b) => a.start - b.start);
+    for (let i = 1; i < ordered.length; i += 1) {
+      if (ordered[i].start <= ordered[i - 1].end) {
+        throw new Error('Os intervalos informados se sobrepõem.');
+      }
+    }
+  }
+  return ranges;
+}
+
+/**
+ * Converte uma spec de páginas em índices 0-based únicos e ordenados.
+ * Aceita sobreposição (a união é deduplicada) — útil para seleção de
+ * extração/remoção. Valida os limites via parsePageRanges.
+ */
+export function parsePageList(spec: string, total: number): number[] {
+  const ranges = parsePageRanges(spec, total, { allowOverlap: true });
+  const set = new Set<number>();
+  for (const { start, end } of ranges) {
+    for (let p = start; p <= end; p += 1) set.add(p - 1);
+  }
+  return [...set].sort((a, b) => a - b);
+}
+
+/** Divide um PDF gerando UM arquivo por intervalo informado. */
+export async function splitPdfByRanges(
+  bytes: ArrayBuffer | Uint8Array,
+  spec: string,
+): Promise<Uint8Array[]> {
+  const { PDFDocument } = await import('pdf-lib');
+  const src = await PDFDocument.load(bytes);
+  const total = src.getPageCount();
+  const ranges = parsePageRanges(spec, total, { allowOverlap: true });
+
+  const out: Uint8Array[] = [];
+  for (const { start, end } of ranges) {
+    const doc = await PDFDocument.create();
+    const indices = Array.from({ length: end - start + 1 }, (_, i) => start - 1 + i);
+    const pages = await doc.copyPages(src, indices);
+    pages.forEach((p) => doc.addPage(p));
+    out.push(await doc.save());
+  }
+  return out;
+}
+
+/** Gera um PDF por página (1 página cada). */
+export async function explodePdfToPages(bytes: ArrayBuffer | Uint8Array): Promise<Uint8Array[]> {
+  const { PDFDocument } = await import('pdf-lib');
+  const src = await PDFDocument.load(bytes);
+  const total = src.getPageCount();
+  const out: Uint8Array[] = [];
+  for (let i = 0; i < total; i += 1) {
+    const doc = await PDFDocument.create();
+    const [page] = await doc.copyPages(src, [i]);
+    doc.addPage(page);
+    out.push(await doc.save());
+  }
+  return out;
+}
+
+/** Extrai as páginas em `indices` (0-based) num novo PDF, na ordem dada. */
+export async function extractPages(
+  bytes: ArrayBuffer | Uint8Array,
+  indices: number[],
+): Promise<Uint8Array> {
+  const { PDFDocument } = await import('pdf-lib');
+  const src = await PDFDocument.load(bytes);
+  const total = src.getPageCount();
+  const valid = indices.filter((i) => Number.isInteger(i) && i >= 0 && i < total);
+  if (valid.length === 0) throw new Error('Nenhuma página válida para extrair.');
+  const doc = await PDFDocument.create();
+  const pages = await doc.copyPages(src, valid);
+  pages.forEach((p) => doc.addPage(p));
+  return doc.save();
+}
+
+/** Remove as páginas em `indices` (0-based), preservando o restante e as
+ *  rotações existentes de cada página mantida. */
+export async function removePages(
+  bytes: ArrayBuffer | Uint8Array,
+  indices: number[],
+): Promise<Uint8Array> {
+  const { PDFDocument } = await import('pdf-lib');
+  const src = await PDFDocument.load(bytes);
+  const total = src.getPageCount();
+  const toRemove = new Set(indices.filter((i) => i >= 0 && i < total));
+  const keep = Array.from({ length: total }, (_, i) => i).filter((i) => !toRemove.has(i));
+  if (keep.length === 0) throw new Error('A remoção deixaria o PDF sem páginas.');
+  const doc = await PDFDocument.create();
+  const pages = await doc.copyPages(src, keep);
+  pages.forEach((p) => doc.addPage(p));
+  return doc.save();
+}
+
+/** Gira apenas as páginas em `indices` (0-based) por `delta` graus, somando à
+ *  rotação atual (preserva a rotação já existente das demais páginas). */
+export async function rotatePagesByIndices(
+  bytes: ArrayBuffer | Uint8Array,
+  indices: number[],
+  delta: number,
+): Promise<Uint8Array> {
+  const { PDFDocument, degrees } = await import('pdf-lib');
+  const doc = await PDFDocument.load(bytes);
+  const pages = doc.getPages();
+  const target = new Set(indices.filter((i) => i >= 0 && i < pages.length));
+  target.forEach((i) => {
+    const current = pages[i].getRotation().angle;
+    pages[i].setRotation(degrees(normalizeRotation(current + delta)));
+  });
+  return doc.save();
+}

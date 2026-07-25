@@ -1,4 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import {
+  auditLog,
+  authenticateStaff,
+  corsHeadersFor,
+  jsonResponse,
+  sanitizeNextcloudPath,
+} from "../_shared/nextcloud-auth.ts";
 
 /**
  * nextcloud-proxy
@@ -29,21 +36,13 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
  * `path` é sempre relativo à raiz do usuário no Nextcloud.
  */
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Max-Age': '86400',
-};
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
-
 // --- helpers -----------------------------------------------------------------
+
+/** Ações que exigem um `path` de arquivo/pasta válido (não-raiz). */
+const PATH_REQUIRED = new Set([
+  'read', 'stat', 'write', 'delete', 'mkcol', 'move', 'copy',
+  'versions', 'restoreVersion', 'readVersion',
+]);
 
 function davRoot(url: string, user: string): string {
   return `${url.replace(/\/+$/, '')}/remote.php/dav/files/${encodeURIComponent(user)}`;
@@ -174,12 +173,20 @@ function parseVersions(xml: string): Array<Record<string, unknown>> {
 // --- handler -----------------------------------------------------------------
 
 Deno.serve(async (req: Request) => {
+  const cors = corsHeadersFor(req);
+  const json = (body: unknown, status = 200): Response => jsonResponse(body, status, cors);
+
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response(null, { status: 204, headers: cors });
   }
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405);
   }
+
+  // --- autenticação + autorização (colaborador ativo) ----------------------
+  const authResult = await authenticateStaff(req, cors);
+  if (authResult instanceof Response) return authResult;
+  const userId = authResult.user.id;
 
   const url = Deno.env.get('NEXTCLOUD_URL');
   const user = Deno.env.get('NEXTCLOUD_USER');
@@ -205,7 +212,29 @@ Deno.serve(async (req: Request) => {
   }
 
   const action = String(body.action || '');
-  const path = String(body.path || '');
+
+  // --- sanitização de caminho ----------------------------------------------
+  // `list`/`search` aceitam raiz (""); as demais exigem um caminho válido.
+  const rawPath = body.path;
+  const path = sanitizeNextcloudPath(rawPath, { allowRoot: true }) ?? '';
+  if (rawPath != null && rawPath !== '' && path === '') {
+    auditLog({ fn: 'nextcloud-proxy', userId, action, path: null, result: 'denied', status: 400, detail: 'invalid_path' });
+    return json({ error: 'Caminho inválido.' }, 400);
+  }
+  if (PATH_REQUIRED.has(action) && !path) {
+    auditLog({ fn: 'nextcloud-proxy', userId, action, path: null, result: 'denied', status: 400, detail: 'path_required' });
+    return json({ error: 'Caminho é obrigatório para esta ação.' }, 400);
+  }
+  // `destination` (move/copy) também precisa ser sanitizado.
+  let destination = '';
+  if (action === 'move' || action === 'copy') {
+    const sanitizedDest = sanitizeNextcloudPath(body.destination, { allowRoot: false });
+    if (!sanitizedDest) {
+      auditLog({ fn: 'nextcloud-proxy', userId, action, path, result: 'denied', status: 400, detail: 'invalid_destination' });
+      return json({ error: 'destination inválido.' }, 400);
+    }
+    destination = sanitizedDest;
+  }
 
   try {
     switch (action) {
@@ -311,8 +340,6 @@ Deno.serve(async (req: Request) => {
       }
 
       case 'move': {
-        const destination = String(body.destination || '');
-        if (!destination) return json({ error: 'destination é obrigatório para move.' }, 400);
         const res = await fetch(davUrl(root, path), {
           method: 'MOVE',
           headers: { Authorization: auth, Destination: davUrl(root, destination), Overwrite: 'T' },
@@ -322,8 +349,6 @@ Deno.serve(async (req: Request) => {
       }
 
       case 'copy': {
-        const destination = String(body.destination || '');
-        if (!destination) return json({ error: 'destination é obrigatório para copy.' }, 400);
         const res = await fetch(davUrl(root, path), {
           method: 'COPY',
           headers: { Authorization: auth, Destination: davUrl(root, destination), Overwrite: 'T' },

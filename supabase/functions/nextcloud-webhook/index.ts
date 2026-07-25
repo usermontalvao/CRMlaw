@@ -22,6 +22,23 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const MAX_BODY_BYTES = 128 * 1024;
 
+/**
+ * Comparação de segredo em tempo constante (não vaza o tamanho do prefixo
+ * coincidente por timing). Retorna false imediatamente só quando os tamanhos
+ * diferem — informação que o próprio protocolo já expõe.
+ *
+ * ATENÇÃO OPERACIONAL: o valor de NEXTCLOUD_WEBHOOK_SECRET pode ter sido
+ * exposto anteriormente. Ele DEVE ser rotacionado no ambiente (Supabase
+ * secrets + configuração do webhook no Nextcloud). O valor NUNCA aparece no
+ * código nem em log — apenas é lido de Deno.env.
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 // Classes canônicas (event_class gravado na tabela).
 const NODE_CREATED = "OCP\\Files\\Events\\Node\\NodeCreatedEvent";
 const NODE_WRITTEN = "OCP\\Files\\Events\\Node\\NodeWrittenEvent";
@@ -102,7 +119,7 @@ Deno.serve(async (req: Request) => {
     ?? requestUrl.searchParams.get("secret")
     ?? requestUrl.searchParams.get("token")
     ?? "";
-  if (provided.length !== secret.length || provided !== secret) {
+  if (!timingSafeEqual(provided, secret)) {
     console.warn(JSON.stringify({ correlationId, level: "warn", msg: "invalid_secret" }));
     return json({ error: "unauthorized" }, 401);
   }
