@@ -108,6 +108,7 @@ import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
 import { useEditingPresence } from '../hooks/useNextcloudPresence';
 import EditorPresenceBar from './EditorPresenceBar';
 import { isCollabEnabled, type CollabPeer, type CollabSaveOutcome, type CollabStatus } from '../services/syncfusionCollab.service';
+import { decideCollabSave, describeOtherEditors } from '../services/collabSaveScope';
 import { profileService } from '../services/profile.service';
 import { useUserAvatars } from '../hooks/useUserAvatars';
 import { primeAvatar } from '../services/userAvatars';
@@ -3849,6 +3850,28 @@ Regras:
     try {
       const fileName = fileNameOf(path);
 
+      // QUEM grava — ver `collabSaveScope.ts`. Com sala, quem grava é o
+      // servidor e a gravação vale para TODO MUNDO; sem sala, este navegador
+      // subiria a própria cópia por cima do arquivo, apagando o texto de quem
+      // estiver editando junto (era o "cada um salva só o que escreveu").
+      const saveScope = decideCollabSave({
+        collabEnabled: isCollabEnabled(),
+        inRoom: Boolean(editorRef.current?.isCollaborating?.()),
+        savingActiveOrigin: options.adopt && activeNextcloudPathValue === path,
+        otherEditors: editingPeers.map((peer) => peer.userName),
+      });
+
+      if (saveScope.kind === 'blocked-others-editing') {
+        const who = describeOtherEditors(saveScope.peerNames);
+        setError(
+          `${who} está com este documento aberto e a edição em conjunto não subiu nesta janela. ` +
+          'Gravar agora substituiria o texto dessa pessoa pelo seu. Feche e reabra o documento ' +
+          'para entrar na edição em conjunto — ou use "Salvar uma cópia" para guardar o seu ' +
+          'trabalho em outro arquivo, sem perder nada.',
+        );
+        return false;
+      }
+
       // CO-EDIÇÃO, mesmo arquivo: NÃO subir o documento daqui. O servidor da sala
       // ainda tem operações a aplicar sobre a versão gravada; se o navegador
       // gravasse por cima agora, essas operações seriam aplicadas de novo depois
@@ -3857,7 +3880,7 @@ Regras:
       // confirma. (Antes esta linha mostrava "tudo sincronizado" sem pedir
       // gravação nenhuma: o arquivo só era escrito quando a última pessoa saía
       // do documento, e o usuário achava que tinha salvado.)
-      if (editorRef.current?.isCollaborating?.() && options.adopt && activeNextcloudPathValue === path) {
+      if (saveScope.kind === 'room-flush') {
         if (collabStatusRef.current === 'disconnected') {
           setError(
             'A coedição está desconectada: as últimas edições não chegaram ao servidor. ' +
@@ -3866,7 +3889,13 @@ Regras:
           return false;
         }
 
-        const outcome = await editorRef.current.flushCollaboration();
+        const collabEditor = editorRef.current;
+        if (!collabEditor) {
+          setError('O editor ainda não está pronto para gravar. Tente de novo em instantes.');
+          return false;
+        }
+
+        const outcome = await collabEditor.flushCollaboration();
 
         clearLocalDraft();
         setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
@@ -3985,6 +4014,8 @@ Regras:
     activeNextcloudPathValue,
     userDisplayName,
     user?.id,
+    // Quem mais está no arquivo decide se a cópia local pode subir.
+    editingPeers,
   ]);
 
   /** Confirma no SERVIDOR se o destino já existe antes de gravar. */
