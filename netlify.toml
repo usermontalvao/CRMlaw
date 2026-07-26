@@ -2,6 +2,14 @@
   command = "npm run build"
   publish = "dist"
 
+# Serviço de EDIÇÃO EM CONJUNTO (repositório `collab`). Sem esta variável NO
+# MOMENTO DO BUILD, o editor abre o .docx direto do Nextcloud e cada navegador
+# fica com a sua cópia: duas pessoas no mesmo arquivo não veem o que a outra
+# digita e quem salvar por último sobrescreve a outra. O Vite grava o valor
+# dentro do bundle, então mudar isto exige NOVO BUILD.
+[build.environment]
+  VITE_SYNCFUSION_COLLAB_URL = "https://collab.jurius-api.com"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
