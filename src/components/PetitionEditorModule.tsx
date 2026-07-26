@@ -107,7 +107,7 @@ import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
 import { useEditingPresence } from '../hooks/useNextcloudPresence';
 import EditorPresenceBar from './EditorPresenceBar';
-import { isCollabEnabled, type CollabPeer, type CollabStatus } from '../services/syncfusionCollab.service';
+import { isCollabEnabled, type CollabPeer, type CollabSaveOutcome, type CollabStatus } from '../services/syncfusionCollab.service';
 import { profileService } from '../services/profile.service';
 import { useUserAvatars } from '../hooks/useUserAvatars';
 import { primeAvatar } from '../services/userAvatars';
@@ -3638,6 +3638,26 @@ Regras:
   collabStatusRef.current = collabStatus;
   const collabSessionActive = collabStatus !== 'off';
 
+  /**
+   * ALGUÉM da sala gravou o documento no Nextcloud (o servidor avisa a sala
+   * inteira). Numa sessão de coedição as edições desta tela já estão no
+   * servidor, então a gravação de UM vale para TODOS: sem isto, quem não
+   * clicou em Salvar continuava vendo "Alterações pendentes" de um conteúdo
+   * que já estava gravado.
+   */
+  const handleCollabRemoteSave = useCallback((outcome: CollabSaveOutcome) => {
+    // Desconectado, as edições daqui podem NEM TER CHEGADO ao servidor — a
+    // gravação do outro não cobre o que só existe nesta tela.
+    if (collabStatusRef.current !== 'connected') return;
+    // Sobraram operações fora da gravação (chegaram durante o upload): a
+    // pendência continua verdadeira até o próximo flush.
+    if (outcome.stillPending > 0) return;
+    // Havia operações e o upload não aconteceu: nada a comemorar.
+    if (!outcome.uploaded && outcome.operations > 0) return;
+    setHasUnsavedChanges(false);
+    setLastSaved(outcome.savedAt ? new Date(outcome.savedAt) : new Date());
+  }, []);
+
   /** A barra dentro do papel: sala de co-edição quando existe, presença quando não. */
   const editingPeersBase = useMemo(() => {
     if (collabSessionActive) {
@@ -3667,6 +3687,21 @@ Regras:
     () => editingPeersBase.map((peer) => ({ ...peer, avatarUrl: avatarOf(peer.userId) })),
     [editingPeersBase, avatarOf],
   );
+
+  // Plaquinha nome+foto EM CIMA DO CURSOR de cada pessoa (estilo Google Docs).
+  // O cursor colorido é do Syncfusion; a identificação acompanha a lista da
+  // sala — inclusive o "está digitando", que acende e apaga a plaquinha.
+  useEffect(() => {
+    if (!collabSessionActive) return;
+    editorRef.current?.syncCollabCaretFlags?.(
+      editingPeers.map((peer) => ({
+        connectionId: peer.id,
+        userName: peer.userName,
+        avatarUrl: peer.avatarUrl,
+        typing: peer.typing,
+      })),
+    );
+  }, [editingPeers, collabSessionActive]);
 
   // Modo escuro do editor (estilo Word). Fonte unica de verdade: alterna a
   // classe `petition-dark` no <body> (cobre a faixa, o chrome do Syncfusion e
@@ -9938,6 +9973,7 @@ Regras:
             currentUserName={userDisplayName}
             onCollabPeersChange={setCollabPeers}
             onCollabStatusChange={setCollabStatus}
+            onCollabSaved={handleCollabRemoteSave}
             readOnly={!isOnline || !serverReachable}
             enableToolbar={false}
             showPropertiesPane={false}

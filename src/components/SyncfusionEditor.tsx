@@ -23,6 +23,7 @@ import {
   type ScanResult,
 } from './editor-issues-scanner';
 import { attachLocalSpellChecker } from './local-spell-checker';
+import { syncCollabCaretFlags, type CaretFlagPeer } from './collabCaretFlags';
 import {
   curateSpellingSuggestions,
   hasHighConfidenceCorrection,
@@ -1589,6 +1590,11 @@ export interface SyncfusionEditorRef {
   flushCollaboration: () => Promise<CollabSaveOutcome>;
   /** Avisa a sala que este usuário está digitando (não sai com a sala vazia). */
   notifyCollabTyping: () => void;
+  /**
+   * Plaquinha nome+foto em cima do cursor de cada pessoa da sala (estilo
+   * Google Docs). Chamar a cada mudança da lista de participantes.
+   */
+  syncCollabCaretFlags: (peers: CaretFlagPeer[]) => void;
   // Get document content as SFDT (Syncfusion Document Text format)
   getSfdt: () => string;
   // Load SFDT content into editor
@@ -1742,6 +1748,11 @@ interface SyncfusionEditorProps {
    */
   onCollabPeersChange?: (peers: CollabPeer[]) => void;
   /**
+   * Alguém da sala gravou o documento no Nextcloud. Deixa o chamador tirar o
+   * "Alterações pendentes" da tela de quem NÃO clicou em Salvar.
+   */
+  onCollabSaved?: (outcome: CollabSaveOutcome) => void;
+  /**
    * Estado da co-edição. É o ÚNICO sinal que autoriza a tela a dizer que está
    * tudo sincronizado — e o que manda mostrar "Coedição desconectada".
    */
@@ -1775,6 +1786,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       currentUserName,
       onCollabPeersChange,
       onCollabStatusChange,
+      onCollabSaved,
     },
     ref
   ) => {
@@ -1794,8 +1806,10 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const collabOwnConnectionIdsRef = useRef<Set<string>>(new Set());
     const onCollabPeersChangeRef = useRef(onCollabPeersChange);
     const onCollabStatusChangeRef = useRef(onCollabStatusChange);
+    const onCollabSavedRef = useRef(onCollabSaved);
     onCollabPeersChangeRef.current = onCollabPeersChange;
     onCollabStatusChangeRef.current = onCollabStatusChange;
+    onCollabSavedRef.current = onCollabSaved;
 
     const setCollabStatus = (status: CollabStatus) => {
       if (collabStatusRef.current === status) return;
@@ -2296,6 +2310,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           onPeersChange: (peers) => onCollabPeersChangeRef.current?.(peers),
           onStatusChange: (status) => setCollabStatus(status),
           onReconnected: () => { void recoverMissedCollabActions(); },
+          onSaved: (outcome) => onCollabSavedRef.current?.(outcome),
         },
       });
     };
@@ -2363,6 +2378,10 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
 
       notifyCollabTyping: () => {
         collabConnectionRef.current?.notifyTyping();
+      },
+
+      syncCollabCaretFlags: (peers: CaretFlagPeer[]) => {
+        syncCollabCaretFlags(collabHandlerRef.current, peers);
       },
 
       getSfdt: () => {

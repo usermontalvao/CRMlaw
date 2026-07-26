@@ -31,6 +31,7 @@ import {
   type Operation,
   type ActionInfo,
 } from '@syncfusion/ej2-react-documenteditor';
+import { syncCollabCaretFlags } from '../components/collabCaretFlags';
 import {
   collabApiUrl,
   connectToCollabRoom,
@@ -55,6 +56,8 @@ interface HarnessApi {
   roomName: string;
   received: number;
   sent: number;
+  /** Último aviso de gravação recebido da sala (evento `saved`). */
+  saved: CollabSaveOutcome | null;
   type: (text: string) => void;
   text: () => string;
   flush: () => Promise<CollabSaveOutcome>;
@@ -111,6 +114,7 @@ async function start(): Promise<void> {
     roomName,
     received: 0,
     sent: 0,
+    saved: null,
     type: (text: string) => {
       editor.editor.insertText(text);
     },
@@ -145,9 +149,19 @@ async function start(): Promise<void> {
       },
       onPeersChange: (peers) => {
         api.peers = peers;
+        // Plaquinha nome+foto no cursor de cada pessoa — mesmo caminho do CRM.
+        syncCollabCaretFlags(handler, peers.map((peer) => ({
+          connectionId: peer.connectionId,
+          userName: peer.userName,
+          avatarUrl: null,
+          typing: peer.typing,
+        })));
       },
       onStatusChange: (status) => {
         api.status = status;
+      },
+      onSaved: (outcome) => {
+        api.saved = outcome;
       },
     },
   });

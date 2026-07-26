@@ -7,6 +7,11 @@ import { describePresence, type CollabStatus } from '../services/collabPresence'
  * Quem está com ESTE documento aberto, no canto do papel — no espírito do Google
  * Docs: a FOTO de cada pessoa, e o NOME apenas na frase ("Ana está digitando…").
  *
+
+ * Quem está DIGITANDO aparece identificado EM CIMA DO PRÓPRIO CURSOR, dentro
+ * do papel (ver collabCaretFlags.ts) — por isso esta barra é UMA linha só,
+ * sem pilha de avisos.
+ *
  * Duas coisas que este componente NÃO faz de propósito:
  *  - não inventa "digitando" a partir de presença solta: quem manda no `typing`
  *    é a sala de co-edição (ver `collabPresence.ts`);
@@ -135,7 +140,12 @@ export const EditorPresenceBar: React.FC<EditorPresenceBarProps> = ({
 
   const visible = peers.slice(0, MAX_VISIBLE);
   const overflow = peers.length - visible.length;
-  const isTyping = peers.some((peer) => peer.typing);
+
+  // UM elemento só, enxuto. O "fulano está digitando" NÃO mora mais aqui: ele
+  // aparece em cima do cursor da própria pessoa, dentro do papel (ver
+  // collabCaretFlags.ts). Aqui fica apenas quem está no documento — a foto na
+  // frente e a frase curta — para a barra não virar uma pilha de avisos.
+  const presenceOnly = peers.map((peer) => ({ ...peer, typing: false }));
 
   return (
     <div
@@ -155,14 +165,7 @@ export const EditorPresenceBar: React.FC<EditorPresenceBarProps> = ({
         )}
       </div>
       <span className="flex items-center gap-1 pr-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-        {isTyping && (
-          <span className="flex items-end gap-[2px] pb-[2px]" aria-hidden>
-            <span className="h-1 w-1 animate-bounce rounded-full bg-emerald-500 [animation-delay:-0.3s]" />
-            <span className="h-1 w-1 animate-bounce rounded-full bg-emerald-500 [animation-delay:-0.15s]" />
-            <span className="h-1 w-1 animate-bounce rounded-full bg-emerald-500" />
-          </span>
-        )}
-        {describePresence(peers)}
+        {describePresence(presenceOnly)}
       </span>
     </div>
   );

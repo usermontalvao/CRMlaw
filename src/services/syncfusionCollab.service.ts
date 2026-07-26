@@ -285,6 +285,13 @@ export interface CollabConnectionCallbacks {
   onStatusChange?: (status: CollabStatus) => void;
   /** Voltou depois de uma queda: hora de buscar o que foi perdido. */
   onReconnected?: () => void;
+  /**
+   * ALGUÉM da sala gravou o documento no Nextcloud (ou o servidor gravou por
+   * conta própria). É o que faz o "Alterações pendentes" dos OUTROS
+   * navegadores virar "Salvo" na hora — sem este aviso, quem não clicou em
+   * Salvar continuava vendo pendência de um conteúdo que já estava gravado.
+   */
+  onSaved?: (outcome: CollabSaveOutcome) => void;
 }
 
 export interface CollabConnection {
@@ -350,6 +357,23 @@ export async function connectToCollabRoom(input: {
         emitPeers();
       }
       // O aviso de digitação NÃO é operação: nunca vai para o editor.
+      return;
+    } else if (action === 'saved') {
+      const payload = data as Partial<CollabSaveOutcome> | null;
+      const outcome: CollabSaveOutcome = {
+        operations: Number(payload?.operations) || 0,
+        version: Number(payload?.version) || 0,
+        uploaded: payload?.uploaded === true,
+        stillPending: Number(payload?.stillPending) || 0,
+        savedAt: typeof payload?.savedAt === 'string' ? payload.savedAt : null,
+      };
+      collabLog('sala avisada da gravação', {
+        room: roomName,
+        uploaded: outcome.uploaded,
+        stillPending: outcome.stillPending,
+      });
+      callbacks.onSaved?.(outcome);
+      // Aviso de gravação não é operação: o editor não tem o que fazer com ele.
       return;
     } else if (action === 'action') {
       // A operação prova que a pessoa está no documento — e o aviso de digitação
