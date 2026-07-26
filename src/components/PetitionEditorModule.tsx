@@ -105,6 +105,9 @@ import PetitionFindReplacePanel from './petition/PetitionFindReplacePanel';
 import PetitionProofreaderPanel from './petition/PetitionProofreaderPanel';
 import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
+import { useEditingPresence } from '../hooks/useNextcloudPresence';
+import EditorPresenceBar from './EditorPresenceBar';
+import { isCollabEnabled } from '../services/syncfusionCollab.service';
 
 // Tipo do documento do editor traduzido para o vocabulário do briefing do
 // Assistente IA (o formulário fala "Petição inicial", não "petition").
@@ -2126,26 +2129,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     [documentScopeKey, activeNextcloudPathValue, user?.id],
   );
 
-  // Presença de edição: enquanto um doc do Nextcloud está aberto, registra um
-  // "lock" (heartbeat) para que os outros vejam quem está editando. Segue a
-  // ORIGEM ATIVA — ao abrir outro arquivo, o lock anterior é liberado aqui.
-  useEffect(() => {
-    const p = activeNextcloudPathValue;
-    if (!p) return;
-    let active = true;
-    const beat = () => { if (active) void nextcloudService.heartbeatLock(p, userDisplayName); };
-    beat();
-    const iv = window.setInterval(beat, 45_000);
-    const onUnload = () => { void nextcloudService.releaseLock(p); };
-    window.addEventListener('beforeunload', onUnload);
-    return () => {
-      active = false;
-      window.clearInterval(iv);
-      window.removeEventListener('beforeunload', onUnload);
-      void nextcloudService.releaseLock(p);
-    };
-  }, [activeNextcloudPathValue, userDisplayName]);
-
   // Clientes
   const [clients, setClients] = useState<Client[]>([]);
   const [clientSearch, setClientSearch] = useState('');
@@ -3606,6 +3589,19 @@ Regras:
   const [isMinimized, setIsMinimized] = useState(false);
   const [showStartScreen, setShowStartScreen] = useState<boolean>(() => isFloatingWidget && !initialPetitionId && !initialDocumentBase64 && !initialDocumentUrl && !initialNextcloudPath && !initialDocSource);
 
+  // Presença de edição em tempo real: este usuário aparece como "editando" para
+  // os outros ENQUANTO ESTÁ NA TELA DE EDIÇÃO do documento — e some na hora em
+  // que sai dela (volta ao início, vai para os blocos, fecha a janela), igual ao
+  // Word. O estado vive no websocket, não em heartbeat de tabela: fechar a
+  // janela derruba a presença sozinho.
+  // Segue a ORIGEM ATIVA: ao abrir outro arquivo, a presença migra sozinha.
+  const { peers: editingPeers, signalTyping } = useEditingPresence({
+    path: activeNextcloudPathValue,
+    userId: user?.id,
+    userName: userDisplayName,
+    enabled: !showStartScreen && activeWorkspace === 'editor',
+  });
+
   // Modo escuro do editor (estilo Word). Fonte unica de verdade: alterna a
   // classe `petition-dark` no <body> (cobre a faixa, o chrome do Syncfusion e
   // popups portados) e inverte a folha apenas na exibicao. Persistido em
@@ -3751,6 +3747,21 @@ Regras:
     setError(null);
     try {
       const fileName = fileNameOf(path);
+
+      // CO-EDIÇÃO, mesmo arquivo: NÃO subir o documento daqui. O servidor da sala
+      // ainda tem operações a aplicar sobre a versão gravada; se o navegador
+      // gravasse por cima agora, essas operações seriam aplicadas de novo depois
+      // e o texto sairia duplicado. A gravação no Nextcloud é do servidor.
+      if (isCollabEnabled() && options.adopt && activeNextcloudPathValue === path) {
+        clearLocalDraft();
+        setHasUnsavedChanges(false);
+        setLastSaved(new Date());
+        showSuccessMessage('Tudo sincronizado com quem está editando junto. A gravação no Nextcloud é automática.');
+        // Libera a ação que estava esperando o salvamento (fechar, abrir outro…).
+        flushPendingAfterSave();
+        return true;
+      }
+
       const blob = await exportCurrentDocx(fileName);
       // Gravação VERIFICADA: relê o arquivo no servidor e compara o tamanho.
       // Nada de "salvo" antes da confirmação do servidor.
@@ -3783,6 +3794,16 @@ Regras:
         clearLocalDraft();
         setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
         setLastSaved(new Date());
+        // "Salvar como" com co-edição: o arquivo mudou, então a sala tem de mudar
+        // junto — senão o que for digitado daqui em diante continuaria indo para
+        // o documento antigo.
+        if (isCollabEnabled()) {
+          try {
+            await editorRef.current?.startCollaboration({ path, fileName, userName: userDisplayName });
+          } catch (collabError) {
+            console.error('Falha ao mover a co-edição para o novo arquivo:', collabError);
+          }
+        }
       } else {
         // A cópia não muda a origem: o documento aberto continua "sujo" se ainda
         // não foi gravado no destino original.
@@ -3826,6 +3847,8 @@ Regras:
     trackDocumentActivity,
     selectedClient?.id,
     selectedClient?.full_name,
+    activeNextcloudPathValue,
+    userDisplayName,
   ]);
 
   /** Confirma no SERVIDOR se o destino já existe antes de gravar. */
@@ -3881,11 +3904,21 @@ Regras:
       setShowStartScreen(false);
       setActiveWorkspace('editor');
 
-      const blob = await nextcloudService.readFile(entry.path);
-      const arrayBuffer = await blob.arrayBuffer();
-      if (arrayBuffer.byteLength === 0) {
-        throw new Error('O documento do Nextcloud está vazio (0 bytes).');
-      }
+      // Co-edição ligada: o documento vem do serviço de co-edição, que abre o
+      // arquivo do Nextcloud JÁ com o que as outras pessoas digitaram e ainda não
+      // foi gravado. Baixar o arquivo aqui devolveria uma versão atrasada.
+      const collabActive = isCollabEnabled();
+
+      const arrayBuffer = collabActive
+        ? null
+        : await (async () => {
+            const blob = await nextcloudService.readFile(entry.path);
+            const buffer = await blob.arrayBuffer();
+            if (buffer.byteLength === 0) {
+              throw new Error('O documento do Nextcloud está vazio (0 bytes).');
+            }
+            return buffer;
+          })();
 
       // Margem maior: vindo da tela inicial, o Syncfusion está sendo montado
       // (e o chunk pode estar sendo baixado) agora.
@@ -3902,7 +3935,15 @@ Regras:
         // continua valendo.
       }
 
-      await loadDocxWithFallback(editor, arrayBuffer, entry.name);
+      if (collabActive) {
+        await editor.startCollaboration({
+          path: entry.path,
+          fileName: entry.name,
+          userName: userDisplayName,
+        });
+      } else {
+        await loadDocxWithFallback(editor, arrayBuffer!, entry.name);
+      }
       captureAndApplyDocFontSoon(editor);
 
       // A origem ativa troca AQUI: o lock/heartbeat do documento anterior é
@@ -3941,6 +3982,7 @@ Regras:
     trackDocumentActivity,
     selectedClient?.id,
     selectedClient?.full_name,
+    userDisplayName,
   ]);
 
   /** Recarrega a versão do servidor, descartando as alterações locais (escolha explícita). */
@@ -4813,6 +4855,8 @@ Regras:
     // Ajustes automáticos logo após abrir o documento (fonte padrão, margens,
     // repaginação) não são edição do usuário — não marcam alterações pendentes.
     if (isProgrammaticContentChange()) return;
+    // Avisa quem mais está no documento que este usuário está digitando agora.
+    signalTyping();
     // Marcar o documento como alterado antes de qualquer validação de conectividade.
     // Se a conexão cair no meio da edição, o navegador ainda precisa bloquear a saída.
     contentChangeSeqRef.current += 1;
@@ -9620,6 +9664,13 @@ Regras:
               </div>
             </div>
           )}
+          {/* Quem mais está neste documento agora (e quem está digitando). */}
+          {editingPeers.length > 0 && (
+            <div className="pointer-events-none absolute right-4 top-3 z-[45] flex justify-end">
+              <EditorPresenceBar peers={editingPeers} />
+            </div>
+          )}
+
           <SyncfusionEditor
             ref={editorRef}
             id="petition-main-editor"

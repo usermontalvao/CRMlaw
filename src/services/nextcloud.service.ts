@@ -426,53 +426,10 @@ export const nextcloudService = {
     if (error) throw new Error(error.message);
   },
 
-  // --- Presença de edição ("quem está editando") ----------------------------
-
-  /** Registra/renova que o usuário atual está editando `path`. Chame ao abrir
-   *  o documento no editor e periodicamente (heartbeat). */
-  async heartbeatLock(path: string, userName: string): Promise<void> {
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData?.user?.id;
-    if (!userId) return;
-    await supabase
-      .from('nextcloud_file_locks')
-      .upsert({ path, user_id: userId, user_name: userName, updated_at: new Date().toISOString() }, { onConflict: 'path,user_id' });
-  },
-
-  /** Libera o lock do usuário atual sobre `path` (ao fechar/salvar/sair). */
-  async releaseLock(path: string): Promise<void> {
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData?.user?.id;
-    if (!userId) return;
-    await supabase.from('nextcloud_file_locks').delete().eq('path', path).eq('user_id', userId);
-  },
-
-  /** Lista todos os locks ativos (não expirados). `staleMs` descarta locks
-   *  cujo heartbeat parou (ex.: aba fechada sem liberar). */
-  async listLocks(staleMs = 120_000): Promise<Array<{ path: string; user_id: string; user_name: string | null }>> {
-    const { data, error } = await supabase
-      .from('nextcloud_file_locks')
-      .select('path, user_id, user_name, updated_at');
-    if (error) throw new Error(error.message);
-    const cutoff = Date.now() - staleMs;
-    return (data || [])
-      .filter((r) => new Date((r as { updated_at: string }).updated_at).getTime() >= cutoff)
-      .map((r) => ({
-        path: (r as { path: string }).path,
-        user_id: (r as { user_id: string }).user_id,
-        user_name: (r as { user_name: string | null }).user_name,
-      }));
-  },
-
-  /** Assina mudanças na tabela de locks (realtime). Retorna uma função para
-   *  cancelar a inscrição. */
-  subscribeLocks(onChange: () => void): () => void {
-    const channel = supabase
-      .channel('nextcloud-file-locks')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'nextcloud_file_locks' }, onChange)
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  },
+  // A presença de edição ("quem está editando agora") saiu daqui: virou
+  // `nextcloudPresence.service`, sobre o Presence do Supabase Realtime. A
+  // tabela `nextcloud_file_locks` (heartbeat) não é mais usada — ela mantinha
+  // o aviso na tela depois de o documento já ter sido fechado.
 
   /** Assina eventos de mudança de arquivos vindos do Nextcloud (via webhook ->
    *  Edge Function nextcloud-webhook -> nextcloud_change_events -> Realtime).

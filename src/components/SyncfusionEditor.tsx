@@ -7,7 +7,9 @@ import { L10n, registerLicense, setCulture } from '@syncfusion/ej2-base';
 import * as EJ2_PT_LOCALE from '@syncfusion/ej2-locale/src/pt.json';
 import {
   DocumentEditorContainerComponent,
+  DocumentEditor,
   Toolbar,
+  CollaborativeEditingHandler,
 } from '@syncfusion/ej2-react-documenteditor';
 import '../styles/syncfusion-editor.css';
 import {
@@ -34,6 +36,15 @@ import {
 } from '../services/proofContextBudget';
 import { aiService } from '../services/ai.service';
 import { supabase } from '../config/supabase';
+import {
+  collabApiUrl,
+  connectToCollabRoom,
+  importCollabDocument,
+  isCollabEnabled,
+  roomNameForPath,
+  type CollabConnection,
+  type CollabPeer,
+} from '../services/syncfusionCollab.service';
 
 // Prune entradas expiradas na inicialização do módulo
 pruneExpiredEntries();
@@ -1530,6 +1541,16 @@ function patchRulerForCentimeters(editor: any): void {
 }
 
 export interface SyncfusionEditorRef {
+  /**
+   * Abre um .docx do Nextcloud em modo CO-EDIÇÃO: o documento vem do serviço de
+   * co-edição (que já aplica o que os outros digitaram) e, a partir daí, cada
+   * edição sua vai para os outros e cada edição deles aparece aqui.
+   * Só funciona com `VITE_SYNCFUSION_COLLAB_URL` configurada — sem ela, quem
+   * chama deve seguir pelo caminho normal (`loadDocx`).
+   */
+  startCollaboration: (input: { path: string; fileName: string; userName: string }) => Promise<void>;
+  /** Sai da sala de co-edição (ao fechar o documento ou abrir outro). */
+  stopCollaboration: () => Promise<void>;
   // Get document content as SFDT (Syncfusion Document Text format)
   getSfdt: () => string;
   // Load SFDT content into editor
@@ -1676,6 +1697,10 @@ interface SyncfusionEditorProps {
   removeMargins?: boolean;
   readOnly?: boolean;
   currentUserName?: string;
+  /** Quem mais está na sala de co-edição mudou (nomes vindos do servidor). */
+  onCollabPeersChange?: (peers: CollabPeer[]) => void;
+  /** A conexão de co-edição caiu de vez — o documento parou de sincronizar. */
+  onCollabDisconnected?: () => void;
 }
 
 const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
@@ -1703,10 +1728,19 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       removeMargins = false,
       readOnly = false,
       currentUserName,
+      onCollabPeersChange,
+      onCollabDisconnected,
     },
     ref
   ) => {
     const containerRef = useRef<DocumentEditorContainerComponent | null>(null);
+    // Sessão de co-edição ativa (null = documento comum, sem sala).
+    const collabHandlerRef = useRef<any>(null);
+    const collabConnectionRef = useRef<CollabConnection | null>(null);
+    const onCollabPeersChangeRef = useRef(onCollabPeersChange);
+    const onCollabDisconnectedRef = useRef(onCollabDisconnected);
+    onCollabPeersChangeRef.current = onCollabPeersChange;
+    onCollabDisconnectedRef.current = onCollabDisconnected;
     const contextMenuInitRef = useRef(false);
     const contextMenuModuleRef = useRef<any>(null);
     const contextMenuRecoveryTimersRef = useRef<number[]>([]);
@@ -1860,6 +1894,11 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         scrollStabilizerCleanupRef.current = null;
         pinnedRulerCleanupRef.current?.();
         pinnedRulerCleanupRef.current = null;
+        // Fechar a aba sem sair da sala deixaria o servidor achando que ainda
+        // há alguém editando (e adiaria a gravação no Nextcloud).
+        void collabConnectionRef.current?.stop();
+        collabConnectionRef.current = null;
+        collabHandlerRef.current = null;
       };
     }, []);
 
@@ -2008,6 +2047,64 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     };
 
     useImperativeHandle(ref, () => ({
+      startCollaboration: async ({ path, fileName, userName }) => {
+        if (!isCollabEnabled()) {
+          throw new Error('Co-edição não configurada (VITE_SYNCFUSION_COLLAB_URL ausente).');
+        }
+        const container = containerRef.current;
+        const editor: any = container?.documentEditor as any;
+        if (!editor) throw new Error('O editor ainda não está pronto.');
+
+        // Trocar de documento sem sair da sala anterior deixaria as operações
+        // deste arquivo indo para a sala errada.
+        await collabConnectionRef.current?.stop();
+        collabConnectionRef.current = null;
+        collabHandlerRef.current = null;
+
+        const roomName = await roomNameForPath(path);
+        const document = await importCollabDocument({ roomName, filePath: path, fileName });
+
+        DocumentEditor.Inject(CollaborativeEditingHandler);
+        editor.enableCollaborativeEditing = true;
+        editor.currentUser = userName;
+
+        const handler = editor.collaborativeEditingHandlerModule;
+        if (!handler) throw new Error('O módulo de co-edição do Syncfusion não carregou.');
+
+        // A ordem importa: informar sala/versão ANTES de abrir, senão a primeira
+        // edição sai com a versão errada e o servidor a trata como atrasada.
+        handler.updateRoomInfo(roomName, document.version, collabApiUrl());
+        editor.open(document.sfdt);
+
+        collabConnectionRef.current = await connectToCollabRoom({
+          roomName,
+          currentUser: userName,
+          callbacks: {
+            onData: (action, data) => {
+              try {
+                handler.applyRemoteAction(action, data);
+              } catch (err) {
+                console.error('Falha ao aplicar a edição recebida:', err);
+              }
+            },
+            onPeersChange: (peers) => onCollabPeersChangeRef.current?.(peers),
+            onDisconnected: () => onCollabDisconnectedRef.current?.(),
+          },
+        });
+
+        collabHandlerRef.current = handler;
+      },
+
+      stopCollaboration: async () => {
+        const connection = collabConnectionRef.current;
+        collabConnectionRef.current = null;
+        collabHandlerRef.current = null;
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (editor) editor.enableCollaborativeEditing = false;
+        onCollabPeersChangeRef.current?.([]);
+        await connection?.stop();
+      },
+
       getSfdt: () => {
         const editor = containerRef.current?.documentEditor;
         if (!editor) return '';
@@ -3055,7 +3152,18 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       });
     };
 
-    const handleContentChange = () => {
+    const handleContentChange = (args?: { operations?: unknown[] }) => {
+      // Co-edição: cada alteração vira operação e sobe para o servidor, que a
+      // distribui para quem mais estiver no documento. É isto que faz o texto
+      // aparecer na tela do outro enquanto se digita.
+      const operations = args?.operations;
+      if (collabHandlerRef.current && Array.isArray(operations) && operations.length > 0) {
+        try {
+          collabHandlerRef.current.sendActionToServer(operations);
+        } catch (err) {
+          console.error('Falha ao enviar a edição para a sala de co-edição:', err);
+        }
+      }
       onContentChange?.();
       // Dispara scanner de issues (espaços duplos, etc.) com debounce
       scannerRef.current?.trigger();

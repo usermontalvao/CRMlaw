@@ -44,7 +44,8 @@ import { SortablePdfPage } from './nextcloud/SortablePdfPage';
 import { NcThumb, thumbCache } from './nextcloud/NcThumb';
 import { useNextcloudSelection } from '../hooks/useNextcloudSelection';
 import { useNextcloudClipboard } from '../hooks/useNextcloudClipboard';
-import { useNextcloudLocks } from '../hooks/useNextcloudLocks';
+import { useNextcloudPresence } from '../hooks/useNextcloudPresence';
+import EditingNowBadge from './EditingNowBadge';
 import { setLocalPdfWorker } from '../utils/pdfWorker';
 import {
   isDocx, isPdf, isImage, isVideo, isAudio, isMedia, isTextFile,
@@ -630,8 +631,9 @@ const NextcloudBrowser: React.FC = () => {
     return () => window.removeEventListener('keydown', cancelOnEscape);
   }, [movementExecuting, pendingMovement]);
 
-  // Presença de edição: path -> quem está editando.
-  const { locks } = useNextcloudLocks();
+  // Presença de edição em tempo real: path -> quem está com o arquivo aberto.
+  // Sai da lista no instante em que a pessoa fecha o editor (websocket).
+  const { byPath: editingByPath } = useNextcloudPresence();
 
   // Ferramentas de PDF (modal por arquivo).
   const [pdfToolFile, setPdfToolFile] = useState<NextcloudEntry | null>(null);
@@ -918,8 +920,8 @@ const NextcloudBrowser: React.FC = () => {
     setCtxMenu({ x: event.clientX, y: event.clientY });
   };
 
-  // Quem (além de mim) está editando `path`.
-  const othersEditing = (p: string) => (locks[p] || []).filter((l) => l.id !== myId);
+  // Quem (além de mim) está com `path` aberto no editor agora.
+  const othersEditing = (p: string) => (editingByPath[p] || []).filter((peer) => peer.userId !== myId);
 
   const closeNameDialog = () => {
     if (!busy) setNameDialog(null);
@@ -1477,8 +1479,8 @@ const NextcloudBrowser: React.FC = () => {
   const openInMainEditor = (entry: NextcloudEntry) => {
     const others = othersEditing(entry.path);
     if (others.length > 0) {
-      const names = others.map((o) => o.name).join(', ');
-      if (!window.confirm(`${names} ${others.length > 1 ? 'estão' : 'está'} editando "${entry.name}" agora. Se você salvar por cima, pode sobrescrever o trabalho ${others.length > 1 ? 'deles' : 'dele/dela'}.\n\nAbrir mesmo assim?`)) return;
+      const names = others.map((o) => o.userName).join(', ');
+      if (!window.confirm(`${names} ${others.length > 1 ? 'estão' : 'está'} com "${entry.name}" aberto no editor agora. Se você salvar por cima, pode sobrescrever o trabalho ${others.length > 1 ? 'deles' : 'dele/dela'}.\n\nAbrir mesmo assim?`)) return;
     }
     // Cliente vinculado à pasta do arquivo (se houver).
     const dir = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
@@ -3596,11 +3598,7 @@ const NextcloudBrowser: React.FC = () => {
                     <span className="text-xs text-center leading-tight line-clamp-2 break-all w-full" title={entry.name}>{entry.name}</span>
                   )}
                   {isSearchActive && <span className="text-[10px] text-gray-400 truncate w-full text-center" title={dirOf(entry.path) || 'raiz'}>{dirOf(entry.path) || 'raiz'}</span>}
-                  {!entry.isDir && othersEditing(entry.path).length > 0 && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 truncate max-w-full" title={`Editando agora: ${othersEditing(entry.path).map((o) => o.name).join(', ')}`}>
-                      <Pencil className="w-2.5 h-2.5 shrink-0" /> <span className="truncate">{othersEditing(entry.path)[0].name}</span>
-                    </span>
-                  )}
+                  {!entry.isDir && <EditingNowBadge peers={othersEditing(entry.path)} compact />}
                   {linkedClient && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 truncate max-w-full">
                       <UserPlus className="w-2.5 h-2.5 shrink-0" /> <span className="truncate">{linkedClient}</span>
@@ -3730,11 +3728,7 @@ const NextcloudBrowser: React.FC = () => {
                             <UserPlus className="w-3 h-3" /> {linkedClient}
                           </span>
                         )}
-                        {!entry.isDir && othersEditing(entry.path).length > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" title={`Editando agora: ${othersEditing(entry.path).map((o) => o.name).join(', ')}`}>
-                            <Pencil className="w-3 h-3" /> {othersEditing(entry.path)[0].name}{othersEditing(entry.path).length > 1 ? ` +${othersEditing(entry.path).length - 1}` : ''}
-                          </span>
-                        )}
+                        {!entry.isDir && <EditingNowBadge peers={othersEditing(entry.path)} />}
                       </div>
                     </td>
                     <td className="px-4 py-2.5 text-right text-gray-500 hidden sm:table-cell">{entry.isDir ? '—' : formatBytes(entry.size)}</td>

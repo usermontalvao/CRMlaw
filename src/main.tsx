@@ -162,6 +162,15 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: harness visual dos avisos de "quem está editando" (?presencepreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('presencepreview')) {
+    const { default: EditingPresencePreview } = await import('./dev/EditingPresencePreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <EditingPresencePreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: harness visual do Assistente IA de petições (?aichatpreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('aichatpreview')) {
     const { default: PetitionAiChatPreview } = await import('./dev/PetitionAiChatPreview');
