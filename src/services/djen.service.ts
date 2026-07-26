@@ -5,9 +5,47 @@ import type {
 } from '../types/djen.types';
 import { supabase } from '../config/supabase';
 
+/**
+ * A chamada direta do navegador ao DJEN falha por dois motivos independentes:
+ *
+ * 1. CORS: `comunicaapi.pje.jus.br` não envia `Access-Control-Allow-Origin`,
+ *    então o preflight é bloqueado.
+ * 2. Geo-block: o CloudFront do DJEN responde 403 ("blocked access from your
+ *    country") para qualquer IP fora do Brasil — inclusive a máquina do usuário
+ *    quando ele está no exterior.
+ *
+ * A Edge Function `djen-proxy` resolve os dois, mas só quando executa no Brasil:
+ * o Supabase roda a função na região mais próxima de quem chama, então uma
+ * chamada feita do exterior sairia com IP estrangeiro e tomaria 403 igual. O
+ * header `x-region` força a execução em sa-east-1 (São Paulo), garantindo egress
+ * brasileiro independentemente de onde o usuário esteja.
+ */
+const DJEN_PROXY_REGION = 'sa-east-1';
+
 class DjenService {
   private baseUrl = 'https://comunicaapi.pje.jus.br/api/v1';
-  private useProxy = false; // Desabilitado - Edge Function não deployada
+
+  private async invokeProxy<T>(endpoint: string, params?: Record<string, unknown>): Promise<T> {
+    const { data, error } = await supabase.functions.invoke('djen-proxy', {
+      headers: { 'x-region': DJEN_PROXY_REGION },
+      body: { endpoint, params },
+    });
+
+    if (error) {
+      throw new Error(`Edge Function error: ${error.message}`);
+    }
+
+    if (data?.error) {
+      // O proxy repassa o status do DJEN dentro da mensagem; 429 tem tratamento
+      // próprio porque o chamador espaça as requisições justamente para evitá-lo.
+      if (String(data.error).includes('429')) {
+        throw new Error('Taxa de requisições excedida. Aguarde 1 minuto antes de tentar novamente.');
+      }
+      throw new Error(data.error);
+    }
+
+    return data as T;
+  }
 
   /**
    * Consulta comunicações no DJEN (uma página)
@@ -19,82 +57,21 @@ class DjenService {
    */
   async consultarComunicacoes(params: DjenConsultaParams): Promise<DjenConsultaResponse> {
     try {
-      // Usar Edge Function em desenvolvimento para evitar CORS
-      if (this.useProxy) {
-        console.log('🔄 Usando Edge Function proxy para DJEN...');
-        const { data, error } = await supabase.functions.invoke('djen-proxy', {
-          body: {
-            endpoint: '/comunicacao',
-            params: {
-              numeroOab: params.numeroOab,
-              ufOab: params.ufOab,
-              nomeAdvogado: params.nomeAdvogado,
-              nomeParte: params.nomeParte,
-              numeroProcesso: params.numeroProcesso,
-              dataDisponibilizacaoInicio: params.dataDisponibilizacaoInicio,
-              dataDisponibilizacaoFim: params.dataDisponibilizacaoFim,
-              siglaTribunal: params.siglaTribunal,
-              numeroComunicacao: params.numeroComunicacao,
-              pagina: params.pagina,
-              itensPorPagina: params.itensPorPagina,
-              orgaoId: params.orgaoId,
-              meio: params.meio,
-            },
-          },
-        });
-
-        if (error) {
-          throw new Error(`Edge Function error: ${error.message}`);
-        }
-
-        if (data.error) {
-          throw new Error(data.error);
-        }
-
-        return data as DjenConsultaResponse;
-      }
-
-      // Requisição direta (produção)
-      const queryParams = new URLSearchParams();
-
-      if (params.numeroOab) queryParams.append('numeroOab', params.numeroOab);
-      if (params.ufOab) queryParams.append('ufOab', params.ufOab);
-      if (params.nomeAdvogado) queryParams.append('nomeAdvogado', params.nomeAdvogado);
-      if (params.nomeParte) queryParams.append('nomeParte', params.nomeParte);
-      if (params.numeroProcesso) queryParams.append('numeroProcesso', params.numeroProcesso);
-      if (params.dataDisponibilizacaoInicio)
-        queryParams.append('dataDisponibilizacaoInicio', params.dataDisponibilizacaoInicio);
-      if (params.dataDisponibilizacaoFim)
-        queryParams.append('dataDisponibilizacaoFim', params.dataDisponibilizacaoFim);
-      if (params.siglaTribunal) queryParams.append('siglaTribunal', params.siglaTribunal);
-      if (params.numeroComunicacao)
-        queryParams.append('numeroComunicacao', params.numeroComunicacao.toString());
-      if (params.pagina) queryParams.append('pagina', params.pagina.toString());
-      if (params.itensPorPagina)
-        queryParams.append('itensPorPagina', params.itensPorPagina.toString());
-      if (params.orgaoId) queryParams.append('orgaoId', params.orgaoId.toString());
-      if (params.meio) queryParams.append('meio', params.meio);
-
-      const response = await fetch(`${this.baseUrl}/comunicacao?${queryParams.toString()}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      return await this.invokeProxy<DjenConsultaResponse>('/comunicacao', {
+        numeroOab: params.numeroOab,
+        ufOab: params.ufOab,
+        nomeAdvogado: params.nomeAdvogado,
+        nomeParte: params.nomeParte,
+        numeroProcesso: params.numeroProcesso,
+        dataDisponibilizacaoInicio: params.dataDisponibilizacaoInicio,
+        dataDisponibilizacaoFim: params.dataDisponibilizacaoFim,
+        siglaTribunal: params.siglaTribunal,
+        numeroComunicacao: params.numeroComunicacao,
+        pagina: params.pagina,
+        itensPorPagina: params.itensPorPagina,
+        orgaoId: params.orgaoId,
+        meio: params.meio,
       });
-
-      if (response.status === 429) {
-        throw new Error(
-          'Taxa de requisições excedida. Aguarde 1 minuto antes de tentar novamente.',
-        );
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Erro ao consultar comunicações: ${response.status}`);
-      }
-
-      const data: DjenConsultaResponse = await response.json();
-      return data;
     } catch (error: any) {
       console.error('Erro ao consultar comunicações DJEN:', error);
       throw error;
@@ -166,19 +143,7 @@ class DjenService {
    */
   async listarTribunais(): Promise<DjenTribunal[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/comunicacao/tribunal`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Erro ao listar tribunais: ${response.status}`);
-      }
-
-      const data: DjenTribunal[] = await response.json();
-      return data;
+      return await this.invokeProxy<DjenTribunal[]>('/comunicacao/tribunal');
     } catch (error: any) {
       console.error('Erro ao listar tribunais:', error);
       throw error;
@@ -186,7 +151,10 @@ class DjenService {
   }
 
   /**
-   * Gera URL para certidão de uma comunicação
+   * Gera URL para certidão de uma comunicação.
+   * Continua apontando direto para o DJEN: é um link aberto pelo usuário numa
+   * nova aba (navegação, não fetch), então não sofre CORS. Ainda assim depende
+   * do geo-block — de fora do Brasil o próprio DJEN devolve 403 na aba.
    */
   getCertidaoUrl(hash: string): string {
     return `${this.baseUrl}/comunicacao/${hash}/certidao`;

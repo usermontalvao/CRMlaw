@@ -9,7 +9,10 @@ serve(async (req) => {
   // CORS headers
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    // x-region precisa estar liberado: o frontend o envia para forçar a execução
+    // em sa-east-1 (ver comentário no fetch abaixo). Sem isso o preflight falha.
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-region',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 
   // Handle CORS preflight
@@ -36,11 +39,16 @@ serve(async (req) => {
 
     console.log(`📡 Proxy DJEN: ${url.toString()}`);
 
-    // Fazer requisição ao DJEN
+    // Fazer requisição ao DJEN.
+    // O CloudFront do DJEN bloqueia IPs fora do Brasil (403 "blocked access from
+    // your country"). O Supabase executa a função na região mais próxima de quem
+    // chama, então o cliente envia `x-region: sa-east-1` para forçar São Paulo e
+    // garantir egress brasileiro. Os headers abaixo espelham run-djen-sync.
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
+        'User-Agent': 'CRM-Advocacia/DJEN-Proxy (contato: pedro@advcuiaba.com)',
+        Accept: 'application/json',
       },
     });
 

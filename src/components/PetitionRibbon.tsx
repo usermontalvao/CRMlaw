@@ -34,6 +34,7 @@ import {
   PanelBottom,
   Hash,
   SpellCheck,
+  ScanText,
   ChevronDown,
   ChevronUp,
   FilePlus2,
@@ -178,6 +179,8 @@ interface PetitionRibbonProps {
   onToggleLibrary?: () => void;
   libraryOpen?: boolean;
   onOpenFindReplace?: (mode: 'find' | 'replace') => void;
+  /** Abre o painel de revisão de texto (ortografia + gramática + IA). */
+  onOpenProofreader?: () => void;
   /** Modo escuro: estado controlado pelo modulo (fonte unica de verdade). */
   darkMode?: boolean;
   onToggleDarkMode?: () => void;
@@ -204,6 +207,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
   onToggleLibrary,
   libraryOpen = false,
   onOpenFindReplace,
+  onOpenProofreader,
 }) => {
   const [tab, setTab] = useState<RibbonTab>('inicio');
   const [fmt, setFmt] = useState<FmtState>(EMPTY_FMT);
@@ -1765,6 +1769,15 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 <SpellCheck size={18} />
                 <span className="lbl">Ortografia</span>
               </Btn>
+              {onOpenProofreader && (
+                <Btn
+                  title="Revisar texto: ortografia, gramática, concordância, crase e regras jurídicas"
+                  onClick={onOpenProofreader}
+                >
+                  <ScanText size={18} />
+                  <span className="lbl">Revisar Texto</span>
+                </Btn>
+              )}
             </RibbonGroup>
             <RibbonGroup label={"Comentários"}>
               <Btn title={"Novo comentário"} onClick={insertComment}>

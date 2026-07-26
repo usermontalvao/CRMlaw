@@ -41,6 +41,11 @@ const SAMPLE_DOC = [
   '2.2 – DO DIREITO',
   'O conjunto probatório demonstra de forma inequívoca a violação dos direitos trabalhistas do reclamante, impondo-se a procedência integral dos pedidos formulados na presente reclamatória.',
   '',
+  // Bloco DUPLICADO de propósito: exercita a ação "delete" por intervalo,
+  // que atravessa parágrafos (nenhum replaceAll alcança isto).
+  '2.2 – DO DIREITO',
+  'O conjunto probatório demonstra de forma inequívoca a violação dos direitos trabalhistas do reclamante, impondo-se a procedência integral dos pedidos formulados na presente reclamatória.',
+  '',
   'Termos em que pede deferimento.',
   '',
   'Cuiabá - MT, 12 de julho de 2026.',
@@ -83,6 +88,27 @@ const SAMPLE_DOC = [
 
   if (/simular erro/i.test(last)) {
     throw new Error('Todos os provedores de IA falharam. Ultimo erro: openai HTTP 500 (simulado).');
+  }
+
+  if (/remov|duplicad|apagar|limpar/i.test(last)) {
+    const { text, aborted } = await streamReply(
+      'Encontrei o tópico **2.2 – DO DIREITO** repetido: o mesmo título e o mesmo parágrafo aparecem duas vezes seguidas. Vou remover a segunda cópia e manter a original.'
+    );
+    if (aborted) return { reply: text, actions: [], questions: [], searches: [], aborted: true };
+    return {
+      reply: text,
+      actions: [
+        {
+          type: 'delete',
+          label: 'Remover a cópia duplicada de "2.2 – DO DIREITO"',
+          search: '2.2 – DO DIREITO',
+          searchEnd: 'formulados na presente reclamatória.',
+          occurrence: 'last',
+        },
+      ],
+      questions: [],
+      searches: [],
+    };
   }
 
   if (/pergunta/i.test(last)) {
@@ -132,6 +158,10 @@ export default function PetitionAiChatPreview() {
   const editorRef = useRef<SyncfusionEditorRef | null>(null);
   const seededRef = useRef(false);
   const [ready, setReady] = useState(false);
+  const previewParams = new URLSearchParams(window.location.search);
+  const previewEmpty = previewParams.has('empty');
+  const previewSelection = previewParams.has('selection');
+  const previewPageFallback = previewParams.has('pagefallback');
 
   // Preenche o documento de exemplo assim que o editor estiver pronto.
   const handleReady = () => {
@@ -139,7 +169,7 @@ export default function PetitionAiChatPreview() {
     seededRef.current = true;
     window.setTimeout(() => {
       try {
-        editorRef.current?.insertText(SAMPLE_DOC);
+        if (!previewEmpty) editorRef.current?.insertText(SAMPLE_DOC);
         editorRef.current?.getEditor?.()?.selection?.moveToDocumentEnd?.();
         setReady(true);
       } catch {
@@ -157,7 +187,7 @@ export default function PetitionAiChatPreview() {
   return (
     <div className="relative w-screen h-screen bg-slate-200 overflow-hidden flex flex-col">
       <div className="shrink-0 px-4 py-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide bg-white border-b border-slate-200">
-        Preview dev · Assistente IA (respostas simuladas) {ready ? '· documento carregado' : '· carregando documento...'}
+        Preview dev · Assistente IA (respostas simuladas) {ready ? previewEmpty ? '· documento vazio' : '· documento carregado' : '· carregando documento...'}
       </div>
       <div className="relative flex-1 min-h-0">
         <SyncfusionEditor
@@ -173,6 +203,10 @@ export default function PetitionAiChatPreview() {
         <PetitionAiChat
           editorRef={editorRef}
           kbEntries={FAKE_KB}
+          selectedText={previewSelection ? 'O conjunto probatório demonstra de forma inequívoca a violação dos direitos trabalhistas.' : ''}
+          documentWordCount={previewEmpty || previewPageFallback ? 0 : SAMPLE_DOC.trim().split(/\s+/).filter(Boolean).length}
+          documentHasContent={!previewEmpty && ready}
+          documentPageCount={previewPageFallback ? 14 : 1}
         />
       </div>
     </div>

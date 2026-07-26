@@ -13,7 +13,6 @@ import '../styles/syncfusion-editor.css';
 import {
   getCachedSuggestions,
   setCachedSuggestions,
-  schedulePrefetch,
   pruneExpiredEntries,
 } from './spell-check-cache';
 import {
@@ -22,6 +21,18 @@ import {
   type ScanResult,
 } from './editor-issues-scanner';
 import { attachLocalSpellChecker } from './local-spell-checker';
+import {
+  curateSpellingSuggestions,
+  hasHighConfidenceCorrection,
+  replaceSpellingWordInRange,
+  type ContextualSentenceSpellingIssue,
+} from './spelling-suggestions';
+import {
+  collectSuspectWords,
+  evaluateContextGate,
+  registerProofTokens,
+} from '../services/proofContextBudget';
+import { aiService } from '../services/ai.service';
 import { supabase } from '../config/supabase';
 
 // Prune entradas expiradas na inicialização do módulo
@@ -436,6 +447,604 @@ const extractStructuredTextFromHtml = (html: string): string => {
 };
 
 /* ────────────────────────────────────────────────────────────────
+ * Sugestão de ortografia com contexto de frase (IA)
+ *
+ * Estado de módulo (e não do componente) porque quem consome é o patch do
+ * context menu, que também vive no módulo.
+ * ──────────────────────────────────────────────────────────────── */
+
+/** Silêncio depois da última tecla antes de olhar o trecho do cursor. */
+const SENTENCE_ANALYSIS_IDLE_MS = 900;
+const SENTENCE_ANALYSIS_TIMEOUT_MS = 8_000;
+/** Teto de espera do tempo ocioso: em digitação contínua, não fica para depois. */
+const IDLE_WORK_TIMEOUT_MS = 1_200;
+
+/**
+ * Fila de tempo ocioso do editor.
+ *
+ * Tudo que envolve percorrer parágrafo, buscar no documento ou injetar
+ * sublinhado passa por aqui: assim o trabalho cai entre os frames, e a
+ * digitação nunca espera por ele. Onde não existe `requestIdleCallback`
+ * (Safari antigo), um timeout curto cumpre o mesmo papel.
+ */
+const scheduleIdleWork = (work: () => void): number => {
+  const idle = (window as any).requestIdleCallback;
+  if (typeof idle === 'function') {
+    return idle(() => work(), { timeout: IDLE_WORK_TIMEOUT_MS }) as number;
+  }
+  return window.setTimeout(work, 60);
+};
+
+const cancelIdleWork = (handle: number | null): void => {
+  if (handle === null) return;
+  const cancel = (window as any).cancelIdleCallback;
+  if (typeof cancel === 'function') {
+    cancel(handle);
+    return;
+  }
+  window.clearTimeout(handle);
+};
+
+/** Identidade da análise aberta agora — evita injetar resposta atrasada. */
+let activeSpellRequestId = 0;
+let activeSpellAbortController: AbortController | null = null;
+
+/** Cache por palavra+frase: reabrir o menu não gasta tokens de novo. */
+const contextSuggestionCache = new Map<string, string[]>();
+const contextSuggestionPending = new Map<string, Promise<string[]>>();
+const contextualSentenceIssueCache = new Map<string, ContextualSentenceSpellingIssue[]>();
+
+type InjectedContextualError = {
+  word: string;
+  span: any;
+  hostElement: any;
+  ownsErrorWordEntry: boolean;
+};
+const injectedContextualErrors = new WeakMap<any, InjectedContextualError[]>();
+
+const contextSuggestionKey = (word: string, sentence: string): string =>
+  `${word.toLocaleLowerCase('pt-BR')}::${sentence}`;
+
+const contextualSentenceKey = (sentence: string): string =>
+  sentence.replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR');
+
+/**
+ * Deduplica a chamada por palavra+frase: dois cliques no mesmo erro (ou o menu
+ * reaberto) reaproveitam a resposta em vez de gerar uma nova cobrança.
+ */
+function getOrStartContextSuggestion(params: {
+  word: string;
+  sentence: string;
+  candidates: Promise<string[]> | string[];
+  signal?: AbortSignal;
+}): Promise<string[]> {
+  const key = contextSuggestionKey(params.word, params.sentence);
+  if (contextSuggestionCache.has(key)) {
+    return Promise.resolve(contextSuggestionCache.get(key) || []);
+  }
+
+  const pending = contextSuggestionPending.get(key);
+  if (pending) return pending;
+
+  const request = Promise.resolve(params.candidates)
+    .then((candidates) => aiService.suggestSpellingInContext({
+      word: params.word,
+      sentence: params.sentence,
+      candidates,
+      signal: params.signal,
+    }))
+    .then((suggestions) => {
+      contextSuggestionCache.set(key, suggestions);
+      return suggestions;
+    })
+    .finally(() => {
+      contextSuggestionPending.delete(key);
+    });
+
+  contextSuggestionPending.set(key, request);
+  return request;
+}
+
+/** Extrai texto inclusive quando o parágrafo está quebrado entre páginas. */
+function paragraphTextOfWidget(paragraph: any): string {
+  if (!paragraph) return '';
+
+  const splitWidgets = typeof paragraph.getSplitWidgets === 'function'
+    ? paragraph.getSplitWidgets()
+    : [paragraph];
+  const widgets = Array.isArray(splitWidgets) && splitWidgets.length ? splitWidgets : [paragraph];
+  const visited = new Set<any>();
+  let text = '';
+  for (const widget of widgets) {
+    if (!widget || visited.has(widget)) continue;
+    visited.add(widget);
+    for (const line of widget.childWidgets || []) {
+      for (const child of line?.children || []) {
+        // ListTextElementBox usa `listLevel`, inclusive 0. O teste antigo com
+        // `!child.listLevel` deixava o marcador da lista vazar para a frase.
+        if (typeof child?.text === 'string' && !('listLevel' in child)) {
+          text += child.text;
+        }
+      }
+    }
+  }
+  return text.replace(/[\u0000-\u001F]/g, '').replace(/\u00A0/g, ' ');
+}
+
+function isSameLogicalParagraph(left: any, right: any): boolean {
+  if (!left || !right) return false;
+  if (left === right) return true;
+
+  const leftWidgets = typeof left.getSplitWidgets === 'function'
+    ? left.getSplitWidgets()
+    : [left];
+  return Array.isArray(leftWidgets) && leftWidgets.includes(right);
+}
+
+/**
+ * O ErrorTextElementBox é o caminho ideal. Os demais candidatos cobrem
+ * versões/estados do Syncfusion em que `findCurretText()` devolve só o texto.
+ */
+function paragraphTextForSpellInfo(editor: any, info: any): string {
+  const candidates = [
+    info?.element?.line?.paragraph,
+    editor?.selectionModule?.start?.paragraph,
+    editor?.documentHelper?.selection?.start?.paragraph,
+    editor?.selection?.start?.paragraph,
+  ];
+
+  for (const paragraph of candidates) {
+    const text = paragraphTextOfWidget(paragraph);
+    if (text.trim()) return text;
+  }
+  return '';
+}
+
+function sentenceAroundPosition(paragraph: string, rawPosition: number): string {
+  if (!paragraph.trim()) return '';
+
+  const position = Math.min(Math.max(Number(rawPosition) || 0, 0), paragraph.length);
+  const before = paragraph.slice(0, position);
+  let start = 0;
+  // Para achar o INÍCIO, pontuação só vira limite quando já há espaço depois.
+  // Assim o "?" final da frase, com o cursor logo após ele, não recorta tudo.
+  const boundaryPattern = /[.!?;]\s+/g;
+  let boundary: RegExpExecArray | null;
+  while ((boundary = boundaryPattern.exec(before)) !== null) {
+    start = boundary.index + boundary[0].length;
+  }
+
+  const after = paragraph.slice(position);
+  const endBoundary = after.match(/[.!?;](?=\s|$)/);
+  const end = endBoundary?.index !== undefined
+    ? position + endBoundary.index + 1
+    : paragraph.length;
+
+  return paragraph.slice(start, end).replace(/\s+/g, ' ').trim().slice(0, 600);
+}
+
+/** Recorta a frase em volta da palavra errada (contexto enviado à IA). */
+function getSentenceForSpellInfo(editor: any, info: any, word: string): string {
+  const paragraph = paragraphTextForSpellInfo(editor, info);
+  if (!paragraph) return '';
+
+  const rawOffset = Number(
+    info?.element?.start?.offset
+    ?? info?.start?.offset
+    ?? editor?.documentHelper?.selection?.start?.offset
+    ?? 0,
+  );
+  const normalizedParagraph = paragraph.toLocaleLowerCase('pt-BR');
+  const normalizedWord = String(word || '').toLocaleLowerCase('pt-BR');
+  const occurrences: number[] = [];
+  let searchFrom = 0;
+  while (normalizedWord && searchFrom < normalizedParagraph.length) {
+    const index = normalizedParagraph.indexOf(normalizedWord, searchFrom);
+    if (index < 0) break;
+    occurrences.push(index);
+    searchFrom = index + Math.max(normalizedWord.length, 1);
+  }
+
+  const position = occurrences.length
+    ? occurrences.reduce((closest, index) => (
+      Math.abs(index - rawOffset) < Math.abs(closest - rawOffset) ? index : closest
+    ))
+    : rawOffset;
+  return sentenceAroundPosition(paragraph, position);
+}
+
+function getCurrentSentenceForAnalysis(editor: any): string {
+  const paragraph = paragraphTextForSpellInfo(editor, null);
+  if (!paragraph) return '';
+  const offset = Number(
+    editor?.documentHelper?.selection?.start?.offset
+    ?? editor?.selectionModule?.start?.offset
+    ?? 0,
+  );
+  return sentenceAroundPosition(paragraph, offset);
+}
+
+function clearInjectedContextualErrors(editor: any, shouldRelayout = true): void {
+  const entries = injectedContextualErrors.get(editor) || [];
+  if (entries.length === 0) return;
+
+  const spellChecker = editor?.spellCheckerModule ?? editor?.spellChecker;
+  for (const entry of entries) {
+    const hostErrors = entry.hostElement?.errorCollection;
+    if (Array.isArray(hostErrors)) {
+      const hostIndex = hostErrors.indexOf(entry.span);
+      if (hostIndex >= 0) hostErrors.splice(hostIndex, 1);
+    }
+
+    const collection = spellChecker?.errorWordCollection;
+    const elements = collection?.containsKey?.(entry.word)
+      ? collection.get(entry.word)
+      : null;
+    if (Array.isArray(elements)) {
+      const collectionIndex = elements.indexOf(entry.span);
+      if (collectionIndex >= 0) elements.splice(collectionIndex, 1);
+      if (entry.ownsErrorWordEntry && elements.length === 0) {
+        collection.remove?.(entry.word);
+      }
+    }
+  }
+
+  injectedContextualErrors.delete(editor);
+  if (shouldRelayout) {
+    try { editor?.editor?.reLayout?.(editor?.selection); } catch { /* visual fallback: badge */ }
+  }
+}
+
+function findSearchResultInParagraph(editor: any, text: string, paragraph: any): {
+  result: any;
+  hostElement: any;
+} | null {
+  const search = editor?.searchModule ?? editor?.search;
+  const results = search?.searchResults;
+  if (!search || !results || typeof search.findAll !== 'function' || !text) return null;
+
+  try {
+    results.clear?.();
+    search.findAll(text, 'CaseSensitive');
+    const innerList = Array.from(results.innerList || []) as any[];
+    const result = innerList.find((candidate) => {
+      const candidateParagraph = candidate?.start?.currentWidget?.paragraph;
+      return isSameLogicalParagraph(candidateParagraph, paragraph);
+    });
+    if (!result) return null;
+    const inline = result.start?.currentWidget?.getInline?.(result.start.offset, 0);
+    return { result, hostElement: inline?.element };
+  } catch {
+    return null;
+  } finally {
+    try { results.clear?.(); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Converte em ErrorTextElementBox os erros que só a leitura do contexto pega.
+ * A palavra recebe o mesmo sublinhado vermelho e o mesmo menu do corretor
+ * nativo — para quem está escrevendo, é o corretor de sempre.
+ *
+ * Palavra que o dicionário JÁ sublinhou não é injetada de novo: a correção fica
+ * no cache e aparece no menu daquele sublinhado, sem risco de linha dupla.
+ */
+function injectContextualSentenceErrors(
+  editor: any,
+  sentence: string,
+  issues: ContextualSentenceSpellingIssue[],
+): number {
+  clearInjectedContextualErrors(editor, false);
+
+  const spellChecker = editor?.spellCheckerModule ?? editor?.spellChecker;
+  const paragraph = editor?.documentHelper?.selection?.start?.paragraph;
+  const injected: InjectedContextualError[] = [];
+
+  for (const issue of issues) {
+    contextSuggestionCache.set(contextSuggestionKey(issue.bad, sentence), [issue.good]);
+    if (
+      !spellChecker
+      || typeof spellChecker.createErrorElementWithInfo !== 'function'
+      || typeof spellChecker.addErrorCollection !== 'function'
+    ) continue;
+
+    const alreadyMarked = typeof spellChecker.manageSpecialCharacters === 'function'
+      ? spellChecker.manageSpecialCharacters(issue.bad, undefined, true)
+      : issue.bad;
+    if (spellChecker.errorWordCollection?.containsKey?.(alreadyMarked)) continue;
+
+    const match = findSearchResultInParagraph(editor, issue.bad, paragraph);
+    if (!match?.hostElement) continue;
+
+    try {
+      const span = spellChecker.createErrorElementWithInfo(match.result, match.hostElement);
+      if (!span?.start || !span?.end) continue;
+
+      if (!Array.isArray(match.hostElement.errorCollection)) {
+        match.hostElement.errorCollection = [];
+      }
+      if (!match.hostElement.errorCollection.includes(span)) {
+        match.hostElement.errorCollection.push(span);
+      }
+
+      const word = typeof spellChecker.manageSpecialCharacters === 'function'
+        ? spellChecker.manageSpecialCharacters(span.text, undefined, true)
+        : issue.bad;
+      const ownsErrorWordEntry = !spellChecker.errorWordCollection?.containsKey?.(word);
+      spellChecker.addErrorCollection(word, span, [issue.good]);
+      injected.push({ word, span, hostElement: match.hostElement, ownsErrorWordEntry });
+    } catch {
+      // Sem sublinhado, a correção ainda chega pelo menu (cache acima).
+    }
+  }
+
+  // Relayout só quando existe sublinhado novo para pintar: repintar a página
+  // sem motivo é exatamente o tipo de trabalho que o usuário sente como travada.
+  if (injected.length > 0) {
+    injectedContextualErrors.set(editor, injected);
+    try { editor?.editor?.reLayout?.(editor?.selection); } catch { /* ignore */ }
+  }
+  return injected.length;
+}
+
+/**
+ * Revalida a ortografia do documento inteiro.
+ *
+ * Necessário depois de QUALQUER troca de texto feita por código (correções do
+ * painel de revisão). O Syncfusion guarda o resultado do check por página em
+ * `uniqueSpelledWords` + `cachedPages` e só reabre esse portão no carregamento
+ * ou na rolagem: sem isto, a palavra corrigida continua sublinhada e a palavra
+ * NOVA (inclusive uma que tenha ficado errada) nunca é verificada.
+ *
+ * O que o usuário mandou ignorar continua ignorado — `ignoreAllItems` é
+ * preservado de propósito.
+ */
+function rescanSpelling(editor: any): void {
+  const documentHelper = editor?.documentHelper;
+  const spellChecker = editor?.spellChecker ?? editor?.spellCheckerModule;
+  if (!documentHelper || !spellChecker || !editor.isSpellCheck) return;
+
+  try {
+    spellChecker.errorWordCollection?.clear?.();
+    spellChecker.uniqueWordsCollection?.clear?.();
+    spellChecker.uniqueSpelledWords = {};
+    documentHelper.cachedPages = [];
+
+    for (const page of documentHelper.pages || []) {
+      for (const body of page?.bodyWidgets || []) {
+        for (const block of body?.childWidgets || []) {
+          for (const line of block?.childWidgets || []) {
+            for (const element of line?.children || []) {
+              if (typeof element?.text !== 'string') continue;
+              element.isSpellChecked = false;
+              element.isSpellCheckTriggered = false;
+              element.canTrigger = true;
+              element.istextCombined = false;
+            }
+          }
+        }
+      }
+    }
+
+    // `triggerElementsOnLoading` é o portão do check por página; sem ele o
+    // repaint acontece e o corretor simplesmente não roda.
+    documentHelper.triggerElementsOnLoading = true;
+    documentHelper.triggerSpellCheck = true;
+    editor.editor?.reLayout?.(editor.selection);
+
+    window.setTimeout(() => {
+      documentHelper.triggerElementsOnLoading = false;
+      documentHelper.triggerSpellCheck = false;
+    }, 1500);
+  } catch (err) {
+    console.warn('[SyncfusionEditor] rescanSpelling erro:', err);
+  }
+}
+
+/**
+ * Localiza, seleciona e rola até a N-ésima ocorrência EXATA de um trecho.
+ *
+ * Base da revisão de texto: o painel guarda uma janela de contexto + o índice
+ * da ocorrência, e a substituição usa o próprio SearchResults do Syncfusion —
+ * que troca o texto preservando a formatação do parágrafo.
+ *
+ * Busca sempre com diferenciação de maiúsculas: correção gramatical depende da
+ * caixa ("Os autor" no início da frase não é "os autor" no meio dela).
+ */
+function focusSearchOccurrence(editor: any, searchText: string, occurrence: number): any | null {
+  const value = String(searchText || '');
+  if (!editor || !value.trim()) return null;
+
+  const search: any = editor.search ?? editor.searchModule;
+  const results: any = search?.searchResults;
+  if (!results || typeof search.findAll !== 'function') return null;
+
+  try {
+    results.clear?.();
+    search.findAll(value, 'CaseSensitive');
+    const count = Number(results.length || 0);
+    if (count === 0) return null;
+
+    // O documento pode ter mudado desde a revisão: com menos ocorrências do
+    // que o esperado, cai na última — melhor que não achar nada.
+    const index = Math.min(Math.max(Number(occurrence) || 0, 0), count - 1);
+    results.index = index; // o setter navega e destaca
+    return results;
+  } catch (err) {
+    console.warn('[SyncfusionEditor] focusSearchOccurrence erro:', err);
+    return null;
+  }
+}
+
+/** Compara offsets do Syncfusion ("secao;bloco;posicao") na ordem do documento. */
+function compareEditorOffsets(a: string, b: string): number {
+  const left = String(a || '').split(';').map((part) => Number(part) || 0);
+  const right = String(b || '').split(';').map((part) => Number(part) || 0);
+  const size = Math.max(left.length, right.length);
+  for (let i = 0; i < size; i++) {
+    const diff = (left[i] ?? 0) - (right[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+const normalizeForAnchor = (value: string): string =>
+  String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * Todas as ocorrências de um trecho, como pares de offsets.
+ *
+ * Base da remoção por intervalo: a busca do editor não atravessa marca de
+ * parágrafo, mas `selection.select(inicio, fim)` atravessa. Localizamos as duas
+ * pontas separadamente e selecionamos tudo que houver entre elas.
+ */
+function collectOccurrenceOffsets(editor: any, value: string, limit = 60): Array<{ start: string; end: string }> {
+  const search: any = editor?.search ?? editor?.searchModule;
+  const results: any = search?.searchResults;
+  const text = String(value || '');
+  if (!search || !results || typeof search.findAll !== 'function' || !text.trim()) return [];
+
+  const findWith = (option: string): number => {
+    try {
+      results.clear?.();
+      search.findAll(text, option);
+      return Number(results.length || 0);
+    } catch {
+      return 0;
+    }
+  };
+
+  try {
+    // Caixa alta importa numa peça ("DOS FATOS" != "dos fatos"); só relaxamos
+    // quando a busca exata não acha nada.
+    let count = findWith('CaseSensitive');
+    if (count === 0) count = findWith('None');
+    if (count === 0) return [];
+
+    const offsets: Array<{ start: string; end: string }> = [];
+    const total = Math.min(count, limit);
+    for (let i = 0; i < total; i++) {
+      results.index = i; // o setter navega e move a seleção
+      const start = String(editor.selection?.startOffset || '');
+      const end = String(editor.selection?.endOffset || '');
+      if (start && end) offsets.push({ start, end });
+    }
+    return offsets;
+  } catch {
+    return [];
+  } finally {
+    try { results.clear?.(); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Junta os parágrafos vazios que sobram no lugar do trecho removido.
+ *
+ * Apagar um bloco inteiro deixa para trás o parágrafo do bloco E o separador
+ * que vinha depois dele — o texto ficaria com um buraco de duas linhas. Cada
+ * passo é um "delete para frente", e só acontece enquanto o parágrafo atual
+ * estiver realmente vazio, então nunca come conteúdo.
+ */
+function collapseEmptyParagraphsAtCursor(editor: any, maxSteps = 2): void {
+  const editorModule = editor?.editorModule ?? editor?.editor;
+  if (typeof editorModule?.delete !== 'function') return;
+  for (let step = 0; step < maxSteps; step++) {
+    if (!isCurrentParagraphEmpty(editor)) return;
+    try { editorModule.delete(); } catch { return; }
+  }
+}
+
+/** O parágrafo onde o cursor está ficou sem texto? */
+function isCurrentParagraphEmpty(editor: any): boolean {
+  const selection = editor?.selection;
+  if (!selection) return false;
+  const cursor = String(selection.startOffset || '');
+  try {
+    selection.selectParagraph?.();
+    const text = String(selection.text || '').replace(/[\u0000-\u001F\u00A0]/g, ' ').trim();
+    if (cursor) selection.select(cursor, cursor);
+    return text.length === 0;
+  } catch {
+    try { if (cursor) selection.select(cursor, cursor); } catch { /* ignore */ }
+    return false;
+  }
+}
+
+/**
+ * Remove (ou substitui) o intervalo entre duas âncoras de texto.
+ *
+ * É o mecanismo que faz "remova este bloco duplicado" funcionar: o bloco tem
+ * vários parágrafos, então nenhum replaceAll o alcança. Devolve false sem
+ * tocar no documento quando as âncoras não delimitam um intervalo coerente —
+ * apagar o pedaço errado de uma petição é pior do que não apagar.
+ */
+function removeEditorRange(
+  editor: any,
+  startAnchor: string,
+  endAnchor: string | undefined,
+  options: { replaceWith?: string; occurrence?: 'first' | 'last'; maxChars?: number } = {},
+): boolean {
+  const selection = editor?.selection;
+  const editorModule = editor?.editorModule ?? editor?.editor;
+  if (!selection || typeof editorModule?.delete !== 'function') return false;
+
+  const heads = collectOccurrenceOffsets(editor, startAnchor);
+  if (!heads.length) return false;
+  const head = options.occurrence === 'last' ? heads[heads.length - 1] : heads[0];
+
+  const tailText = String(endAnchor || '').trim();
+  let tail = head;
+  if (tailText && normalizeForAnchor(tailText) !== normalizeForAnchor(startAnchor)) {
+    const tails = collectOccurrenceOffsets(editor, tailText);
+    if (!tails.length) return false;
+    // Fecha o intervalo na PRIMEIRA ocorrência a partir do início — pegar uma
+    // ocorrência posterior arrastaria texto que não faz parte do trecho.
+    tail = tails.find((candidate) => compareEditorOffsets(candidate.end, head.end) >= 0) ?? tails[tails.length - 1];
+  }
+
+  if (compareEditorOffsets(tail.end, head.start) <= 0) return false;
+
+  const restore = String(selection.startOffset || '');
+  try {
+    selection.select(head.start, tail.end);
+    const covered = String(selection.text || '');
+    const normalizedCover = normalizeForAnchor(covered);
+    if (!normalizedCover) return false;
+
+    // Conferência das duas pontas: a seleção precisa começar e terminar
+    // exatamente onde as âncoras dizem.
+    const expectedStart = normalizeForAnchor(startAnchor);
+    const expectedEnd = normalizeForAnchor(tailText || startAnchor);
+    if (!normalizedCover.startsWith(expectedStart) || !normalizedCover.endsWith(expectedEnd)) {
+      if (restore) selection.select(restore, restore);
+      return false;
+    }
+    if (options.maxChars && covered.length > options.maxChars) {
+      if (restore) selection.select(restore, restore);
+      return false;
+    }
+
+    try { editor.editorHistory?.beginUndoAction?.(); } catch { /* ignore */ }
+    editorModule.delete();
+
+    const replaceWith = String(options.replaceWith ?? '');
+    if (replaceWith) {
+      editorModule.insertText(replaceWith);
+    } else {
+      // Sem isto sobra um buraco de parágrafos vazios no lugar do bloco.
+      collapseEmptyParagraphsAtCursor(editor);
+    }
+
+    try { editor.editorHistory?.endUndoAction?.(); } catch { /* ignore */ }
+    return true;
+  } catch (err) {
+    console.warn('[SyncfusionEditor] removeEditorRange erro:', err);
+    try { editor.editorHistory?.endUndoAction?.(); } catch { /* ignore */ }
+    return false;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────
  * Patch do context menu: adicionar .catch() no caminho assíncrono
  * de spell-check para evitar que o menu nunca abra quando a
  * chamada ao spell checker falha ou retorna JSON inválido.
@@ -456,9 +1065,59 @@ function patchContextMenuForSpellCheck(editor: any): void {
   const activePatchedHandler = (ctxModule as any).__spellPatchHandler;
   if (activePatchedHandler && ctxModule.onContextMenuInternal === activePatchedHandler) return;
 
-  // Helper: injeta sugestões de spell no DOM do menu já aberto.
-  // Word: a palavra com erro. Suggestions: array de strings.
-  const injectSpellSuggestions = (suggestions: string[], word: string) => {
+  /**
+   * Substitui o range real do erro, não apenas a palavra solta. O Syncfusion
+   * às vezes inclui espaço/pontuação no start/end do ErrorTextElementBox; por
+   * isso lemos o range e o reconstruímos antes de inserir.
+   */
+  const replaceSpellingSelection = (
+    info: any,
+    word: string,
+    suggestion: string,
+  ): boolean => {
+    const element = info?.element;
+    const rangeStart = element?.start ?? info?.start;
+    const rangeEnd = element?.end ?? info?.end;
+    const documentHelper = editor?.documentHelper;
+    const selection = documentHelper?.selection;
+    const editorModule = editor?.editorModule ?? editor?.editor;
+    if (
+      !rangeStart?.clone
+      || !rangeEnd?.clone
+      || !selection
+      || typeof editorModule?.insertTextInternal !== 'function'
+    ) return false;
+
+    const start = rangeStart.clone();
+    const end = rangeEnd.clone();
+    const rangeText = typeof selection.getTextInternal === 'function'
+      ? String(selection.getTextInternal(start, end, false) ?? '')
+      : String(element?.text ?? info?.text ?? '');
+    const replacement = replaceSpellingWordInRange(rangeText, word, suggestion);
+    if (replacement === null) return false;
+
+    documentHelper.triggerSpellCheck = true;
+    try {
+      selection.start = start;
+      selection.end = end;
+      if (element) spellChecker?.addRemovedElements?.(false, element);
+      editorModule.insertTextInternal(replacement, true);
+      if (element) spellChecker?.removeErrorsFromCollection?.({ text: word, element });
+      selection.start?.setPositionInternal?.(selection.end);
+      documentHelper.clearSelectionHighlight?.();
+      editorModule.reLayout?.(selection);
+      return true;
+    } finally {
+      documentHelper.triggerSpellCheck = false;
+    }
+  };
+
+  // Helper: injeta sugestões no DOM do menu já aberto.
+  const injectSpellSuggestions = (
+    suggestions: string[],
+    word: string,
+    source: 'ai' | 'dictionary',
+  ) => {
     try {
       // Localizar o wrapper do context menu visível
       const wrappers = Array.from(
@@ -481,14 +1140,18 @@ function patchContextMenuForSpellCheck(editor: any): void {
         const li = document.createElement('li');
         li.className = 'e-menu-item e-disabled';
         li.setAttribute('data-spell-suggestion', '1');
+        li.setAttribute('data-spell-source', source);
         li.setAttribute('role', 'menuitem');
         li.innerHTML = '<span class="e-menu-icon"></span><span class="e-menu-text" style="font-style:italic;color:#888">Nenhuma sugestão</span>';
         items.push(li);
       } else {
-        for (const sug of suggestions.slice(0, 5)) {
+        // O menu é o mesmo para as duas origens: a correção que aparece é a
+        // melhor que o editor tem, sem rótulo de procedência.
+        suggestions.slice(0, 5).forEach((sug) => {
           const li = document.createElement('li');
           li.className = 'e-menu-item';
           li.setAttribute('data-spell-suggestion', '1');
+          li.setAttribute('data-spell-source', source);
           li.setAttribute('role', 'menuitem');
           li.setAttribute('tabindex', '-1');
           const escaped = sug.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
@@ -499,18 +1162,11 @@ function patchContextMenuForSpellCheck(editor: any): void {
             ev.preventDefault();
             ev.stopPropagation();
             try {
-              // Selecionar a palavra e substituir
-              const sel = editor.selection;
-              if (sel) {
-                // Tentar usar a API do spell checker para substituir
-                const info = spellChecker?.currentContextInfo;
-                if (info?.element && typeof spellChecker?.manageReplace === 'function') {
-                  spellChecker.manageReplace(sug, info.element);
-                } else if (typeof editor.editor?.insertText === 'function') {
-                  // Selecionar palavra atual e substituir
-                  sel.selectCurrentWord?.();
-                  editor.editor.insertText(sug);
-                }
+              const info = spellChecker?.currentContextInfo;
+              if (!replaceSpellingSelection(info, word, sug)) {
+                console.warn(
+                  '[SyncfusionEditor] correção cancelada: intervalo da palavra não foi localizado com segurança.',
+                );
               }
             } catch (err) {
               console.warn('[SyncfusionEditor] replace word erro:', err);
@@ -523,7 +1179,7 @@ function patchContextMenuForSpellCheck(editor: any): void {
           li.addEventListener('mouseenter', () => li.classList.add('e-focused'));
           li.addEventListener('mouseleave', () => li.classList.remove('e-focused'));
           items.push(li);
-        }
+        });
       }
 
       // Adicionar separador
@@ -543,70 +1199,6 @@ function patchContextMenuForSpellCheck(editor: any): void {
     }
   };
 
-  // Helper: injeta skeleton de loading enquanto sugestões são buscadas da API
-  const injectLoadingSkeleton = () => {
-    try {
-      const wrappers = Array.from(
-        document.querySelectorAll<HTMLElement>('.e-de-contextmenu-wrapper, .e-contextmenu-wrapper')
-      ).filter((w) => {
-        const s = window.getComputedStyle(w);
-        return s.display !== 'none' && s.visibility !== 'hidden';
-      });
-      if (wrappers.length === 0) return;
-      const wrapper = wrappers[0];
-      const ul = wrapper.querySelector<HTMLElement>('ul.e-menu-parent') || wrapper.querySelector<HTMLElement>('ul');
-      if (!ul) return;
-
-      // Remover sugestões/skeletons antigos
-      ul.querySelectorAll('[data-spell-suggestion]').forEach((el) => el.remove());
-
-      // Injetar keyframes uma vez
-      if (!document.getElementById('spell-skeleton-keyframes')) {
-        const style = document.createElement('style');
-        style.id = 'spell-skeleton-keyframes';
-        style.textContent = `
-          @keyframes spellShimmer {
-            0% { background-position: -200px 0; }
-            100% { background-position: 200px 0; }
-          }
-          .spell-skeleton-bar {
-            display: inline-block;
-            height: 12px;
-            border-radius: 3px;
-            background: linear-gradient(90deg, #f0f0f0 0%, #e0e0e0 50%, #f0f0f0 100%);
-            background-size: 400px 100%;
-            animation: spellShimmer 1.2s ease-in-out infinite;
-          }
-        `;
-        document.head.appendChild(style);
-      }
-
-      // Criar 3 linhas de skeleton com larguras variadas
-      const widths = [80, 100, 70];
-      const items: HTMLElement[] = [];
-      for (const w of widths) {
-        const li = document.createElement('li');
-        li.className = 'e-menu-item e-disabled';
-        li.setAttribute('data-spell-suggestion', '1');
-        li.setAttribute('role', 'menuitem');
-        li.innerHTML = `<span class="e-menu-icon"></span><span class="e-menu-text"><span class="spell-skeleton-bar" style="width:${w}px"></span></span>`;
-        items.push(li);
-      }
-      // Separador
-      const sep = document.createElement('li');
-      sep.className = 'e-separator e-menu-item';
-      sep.setAttribute('data-spell-suggestion', '1');
-      items.push(sep);
-
-      // Inserir no topo
-      for (let i = items.length - 1; i >= 0; i--) {
-        ul.insertBefore(items[i], ul.firstChild);
-      }
-    } catch (err) {
-      console.warn('[SyncfusionEditor] injectLoadingSkeleton erro:', err);
-    }
-  };
-
   // Helper: busca sugestões via callSpellChecker, retorna Promise<string[]>
   const fetchSuggestionsFromAPI = (word: string): Promise<string[]> => {
     if (typeof spellChecker?.callSpellChecker !== 'function') {
@@ -617,7 +1209,7 @@ function patchContextMenuForSpellCheck(editor: any): void {
       .then((data: string) => {
         try {
           const json = JSON.parse(data);
-          return (json.Suggestions || []) as string[];
+          return curateSpellingSuggestions(word, (json.Suggestions || []) as string[]);
         } catch {
           return [];
         }
@@ -625,77 +1217,162 @@ function patchContextMenuForSpellCheck(editor: any): void {
       .catch(() => []);
   };
 
-  // Helper: detecta se o clique foi em palavra errada e busca sugestões
+  /** Busca/hidrata a camada local sem exibi-la antes da análise contextual. */
+  const getDictionarySuggestions = async (word: string): Promise<string[]> => {
+    const sfCache = spellChecker?.errorSuggestions;
+    if (sfCache?.containsKey?.(word)) {
+      return curateSpellingSuggestions(word, (sfCache.get(word) || []).slice());
+    }
+
+    const cached = getCachedSuggestions(word);
+    if (cached !== null) {
+      const curated = curateSpellingSuggestions(word, cached);
+      try { sfCache?.add?.(word, curated.slice()); } catch { /* ignore */ }
+      return curated;
+    }
+
+    const suggestions = await fetchSuggestionsFromAPI(word);
+    setCachedSuggestions(word, suggestions);
+    try { sfCache?.add?.(word, suggestions.slice()); } catch { /* ignore */ }
+    return suggestions;
+  };
+
+  /**
+   * Quando a IA encontrou um falso negativo ainda sem ErrorTextElementBox,
+   * captura a palavra sob o cursor e seu range real sem deixar a seleção
+   * visualmente alterada.
+   */
+  const getCurrentWordInfo = (nativeInfo: any): { info: any; word: string } | null => {
+    if (nativeInfo?.element && nativeInfo?.text) {
+      const nativeWord = typeof spellChecker.manageSpecialCharacters === 'function'
+        ? spellChecker.manageSpecialCharacters(nativeInfo.text, undefined, true)
+        : String(nativeInfo.text).trim();
+      return nativeWord ? { info: nativeInfo, word: nativeWord } : null;
+    }
+
+    const selection = editor?.documentHelper?.selection;
+    if (!selection?.start?.clone || !selection?.end?.clone || typeof selection.selectCurrentWord !== 'function') {
+      return null;
+    }
+
+    const originalStart = selection.start.clone();
+    const originalEnd = selection.end.clone();
+    try {
+      selection.isModifyingSelectionInternally = true;
+      selection.selectCurrentWord();
+      const start = selection.start?.clone?.();
+      const end = selection.end?.clone?.();
+      const rawText = String(
+        selection.text
+        ?? selection.getTextInternal?.(start, end, false)
+        ?? '',
+      );
+      const word = typeof spellChecker.manageSpecialCharacters === 'function'
+        ? spellChecker.manageSpecialCharacters(rawText, undefined, true)
+        : rawText.trim();
+      if (!word || !start || !end) return null;
+      return { info: { text: rawText, start, end }, word };
+    } finally {
+      selection.start = originalStart;
+      selection.end = originalEnd;
+      selection.isModifyingSelectionInternally = false;
+    }
+  };
+
+  /**
+   * Monta as sugestões do menu do botão direito.
+   *
+   * Sequência pensada para parecer com o Word: o menu abre com as sugestões
+   * LOCAIS na hora (sem spinner, sem espera). Se o editor já tiver o veredicto
+   * contextual daquela frase — normalmente tem, porque a revisão rodou durante
+   * a pausa da digitação — ele substitui a lista silenciosamente. A chamada de
+   * modelo no próprio clique só acontece quando o dicionário não tem resposta.
+   */
   const tryFetchSpellSuggestions = () => {
+    const requestId = ++activeSpellRequestId;
+    activeSpellAbortController?.abort();
+    activeSpellAbortController = null;
+
     try {
       if (!spellChecker || !editor.isSpellCheck) return;
       if (!spellChecker.allowSpellCheckAndSuggestion) return;
 
-      const info = typeof spellChecker.findCurretText === 'function' ? spellChecker.findCurretText() : null;
-      if (!info?.text) return;
-      const word = typeof spellChecker.manageSpecialCharacters === 'function'
-        ? spellChecker.manageSpecialCharacters(info.text, undefined, true)
-        : info.text;
-      if (!word) return;
+      const nativeInfo = typeof spellChecker.findCurretText === 'function' ? spellChecker.findCurretText() : null;
+      const currentWord = getCurrentWordInfo(nativeInfo);
+      if (!currentWord) return;
+      const { info, word } = currentWord;
+      const sentence = getSentenceForSpellInfo(editor, info, word);
+      const contextualIssue = (
+        contextualSentenceIssueCache.get(contextualSentenceKey(sentence)) || []
+      ).find((issue) => (
+        issue.bad.toLocaleLowerCase('pt-BR') === word.toLocaleLowerCase('pt-BR')
+      ));
 
-      // Só é palavra errada se está no errorWordCollection
       const errorColl = spellChecker.errorWordCollection;
-      if (!errorColl || typeof errorColl.containsKey !== 'function' || !errorColl.containsKey(word)) return;
+      const isDictionaryError = Boolean(
+        errorColl
+        && typeof errorColl.containsKey === 'function'
+        && errorColl.containsKey(word),
+      );
+      // Palavra que só a análise de contexto reprovou também abre sugestão.
+      if (!isDictionaryError && !contextualIssue) return;
 
       spellChecker.currentContextInfo = info;
 
-      // === Camada 1: cache do Syncfusion (mesma sessão) ===
-      const sfCache = spellChecker.errorSuggestions;
-      if (sfCache?.containsKey?.(word)) {
-        injectSpellSuggestions((sfCache.get(word) || []).slice(), word);
+      // 1. Já sabemos a correção certa para esta palavra nesta frase: aplica na
+      //    hora, sem consultar nada.
+      const cacheKey = contextSuggestionKey(word, sentence);
+      if (contextualIssue) {
+        contextSuggestionCache.set(cacheKey, [contextualIssue.good]);
+        injectSpellSuggestions([contextualIssue.good], word, 'ai');
+        return;
+      }
+      if (contextSuggestionCache.has(cacheKey)) {
+        injectSpellSuggestions(contextSuggestionCache.get(cacheKey) || [], word, 'ai');
         return;
       }
 
-      // === Camada 2: nosso cache (memória + localStorage) ===
-      const cached = getCachedSuggestions(word);
-      if (cached !== null) {
-        // Hidrata cache do Syncfusion também para evitar re-busca posterior
-        try { sfCache?.add?.(word, cached.slice()); } catch { /* ignore */ }
-        injectSpellSuggestions(cached.slice(), word);
-        return;
-      }
+      // 2. Dicionário local: instantâneo, é o que o menu mostra de imediato.
+      void getDictionarySuggestions(word).then((dictionary) => {
+        if (requestId !== activeSpellRequestId) return;
+        injectSpellSuggestions(dictionary, word, 'dictionary');
 
-      // === Camada 3: API (XHR) — mostra skeleton enquanto carrega ===
-      injectLoadingSkeleton();
-      fetchSuggestionsFromAPI(word).then((suggestions) => {
-        setCachedSuggestions(word, suggestions);
-        try { sfCache?.add?.(word, suggestions.slice()); } catch { /* ignore */ }
-        injectSpellSuggestions(suggestions, word);
+        // 3. Só quando o dicionário não resolve é que vale gastar uma chamada:
+        //    o resultado troca a lista sem qualquer aviso na tela.
+        if (dictionary.length > 0 || !aiService.isEnabled()) return;
+
+        const verdict = evaluateContextGate({
+          sentence,
+          suspects: [word],
+          isResolvedLocally: hasHighConfidenceCorrection,
+        });
+        if (!verdict.allow) return;
+
+        registerProofTokens(verdict.estimatedTokens);
+        const controller = new AbortController();
+        activeSpellAbortController = controller;
+        const timeoutId = window.setTimeout(() => controller.abort(), SENTENCE_ANALYSIS_TIMEOUT_MS);
+
+        void getOrStartContextSuggestion({
+          word,
+          sentence: verdict.context,
+          candidates: dictionary,
+          signal: controller.signal,
+        }).then((suggestions) => {
+          if (requestId !== activeSpellRequestId || suggestions.length === 0) return;
+          contextSuggestionCache.set(cacheKey, suggestions);
+          injectSpellSuggestions(suggestions, word, 'ai');
+        }).catch(() => {
+          // O menu já está exibindo o que o dicionário tinha.
+        }).finally(() => {
+          window.clearTimeout(timeoutId);
+          if (activeSpellAbortController === controller) activeSpellAbortController = null;
+        });
       });
     } catch (err) {
       console.warn('[SyncfusionEditor] tryFetchSpellSuggestions erro:', err);
     }
   };
-
-  // Pre-fetch em background: quando o spell-check encontra erros novos, agenda
-  // busca de sugestões antes mesmo do usuário clicar. Hook no spellChecker.handleSpellCheck.
-  const setupPrefetch = () => {
-    if (!spellChecker || (spellChecker as any).__prefetchHooked) return;
-    (spellChecker as any).__prefetchHooked = true;
-
-    // Hook em addInvalidElementsToCollection (chamado quando spell-check marca palavra como erro)
-    const origAdd = spellChecker.addInvalidElementsToCollection;
-    if (typeof origAdd === 'function') {
-      spellChecker.addInvalidElementsToCollection = function (...args: any[]) {
-        const result = origAdd.apply(this, args);
-        try {
-          // args[0] geralmente é a info da palavra; tentar extrair texto
-          const errArg = args[0];
-          const errText = typeof errArg === 'string' ? errArg : errArg?.text || errArg?.Text;
-          if (errText && typeof errText === 'string' && errText.length > 1) {
-            schedulePrefetch(errText, () => fetchSuggestionsFromAPI(errText));
-          }
-        } catch { /* ignore */ }
-        return result;
-      };
-    }
-  };
-  setupPrefetch();
 
   const patchedOnContextMenu = function patchedOnContextMenu(event: any) {
     try {
@@ -941,6 +1618,29 @@ export interface SyncfusionEditorRef {
   getPageInfo: () => { current: number; total: number };
   // Contagem de palavras SEM tocar na seleção (getText usa selectAll e move o cursor)
   getWordCount: () => number;
+  // Parágrafos do corpo do documento, na ordem, SEM mexer na seleção.
+  // Base da revisão de texto (ortografia/gramática/IA).
+  getParagraphs: () => Array<{ index: number; text: string }>;
+  // Seleciona (e rola até) a N-ésima ocorrência EXATA de um trecho.
+  selectOccurrence: (searchText: string, occurrence: number) => boolean;
+  // Substitui a N-ésima ocorrência EXATA preservando a formatação do entorno.
+  replaceOccurrence: (searchText: string, occurrence: number, replaceText: string) => boolean;
+  // Remove (ou substitui) um intervalo delimitado por duas âncoras de texto.
+  // Diferente de replaceAll, ATRAVESSA parágrafos: a busca do editor não
+  // alcança marcas de parágrafo, mas a seleção por offsets sim.
+  deleteRange: (
+    startAnchor: string,
+    endAnchor?: string,
+    options?: {
+      replaceWith?: string;
+      occurrence?: 'first' | 'last';
+      /** Trava de segurança: intervalo maior que isto é recusado. */
+      maxChars?: number;
+    },
+  ) => boolean;
+  // Remove UMA ocorrência de um trecho (por padrão a última) sem tocar nas
+  // demais — o caminho certo para apagar conteúdo duplicado.
+  deleteOccurrence: (searchText: string, occurrence?: 'first' | 'last' | number) => boolean;
 }
 
 interface SyncfusionEditorProps {
@@ -1009,6 +1709,10 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const pinnedRulerCleanupRef = useRef<(() => void) | null>(null);
     const lastContextMenuPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
     const scannerRef = useRef<{ trigger: () => void; cancel: () => void } | null>(null);
+    const sentenceAnalysisTimerRef = useRef<number | null>(null);
+    const sentenceAnalysisIdleRef = useRef<number | null>(null);
+    const sentenceAnalysisAbortRef = useRef<AbortController | null>(null);
+    const sentenceAnalysisRequestIdRef = useRef(0);
     const forcedPasteModeRef = useRef<'smart' | 'source' | 'merge' | 'text' | 'clean' | null>(null);
     // Refs para callbacks de status bar — handleCreated roda uma única vez e
     // capturaria versões antigas das props sem eles.
@@ -1131,6 +1835,17 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       return () => {
         scannerRef.current?.cancel();
         scannerRef.current = null;
+        if (sentenceAnalysisTimerRef.current !== null) {
+          window.clearTimeout(sentenceAnalysisTimerRef.current);
+          sentenceAnalysisTimerRef.current = null;
+        }
+        cancelIdleWork(sentenceAnalysisIdleRef.current);
+        sentenceAnalysisIdleRef.current = null;
+        sentenceAnalysisAbortRef.current?.abort();
+        sentenceAnalysisAbortRef.current = null;
+        sentenceAnalysisRequestIdRef.current += 1;
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (editor) clearInjectedContextualErrors(editor, false);
         scrollStabilizerCleanupRef.current?.();
         scrollStabilizerCleanupRef.current = null;
         pinnedRulerCleanupRef.current?.();
@@ -1567,14 +2282,20 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       },
 
       hasContent: () => {
-        const editor = containerRef.current?.documentEditor;
+        const editor: any = containerRef.current?.documentEditor as any;
         if (!editor) return false;
         try {
           const selection = editor.selection;
           if (!selection) return false;
+          const startOffset = String(selection.startOffset || '');
+          const endOffset = String(selection.endOffset || '');
           selection.selectAll();
           const hasText = (selection.text || '').trim().length > 0;
-          selection.moveToDocumentStart();
+          if (startOffset && endOffset && typeof selection.select === 'function') {
+            selection.select(startOffset, endOffset);
+          } else {
+            selection.moveToDocumentStart();
+          }
           return hasText;
         } catch {
           return false;
@@ -2065,6 +2786,124 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           return 0;
         }
       },
+
+      getParagraphs: () => {
+        // Mesma travessia somente-leitura do getWordCount: nada de selectAll,
+        // que moveria o cursor do usuário a cada revisão.
+        const editor: any = containerRef.current?.documentEditor as any;
+        const paragraphs: Array<{ index: number; text: string }> = [];
+
+        try {
+          const pages = editor?.documentHelper?.pages;
+          if (!Array.isArray(pages)) return paragraphs;
+
+          const lineText = (line: any): string => {
+            let text = '';
+            for (const el of line?.children || []) {
+              // Marcadores de campo (\x13..\x15) e caixas de lista não são texto.
+              // Marcador de lista (ListTextElementBox) tem `listLevel`; testar
+              // pelo nome da classe quebraria no bundle minificado.
+              if (typeof el?.text === 'string' && !el?.listLevel) {
+                text += el.text;
+              }
+            }
+            return text;
+          };
+
+          const pushBlock = (block: any) => {
+            if (!block) return;
+
+            // Tabela/linha/célula: desce até os parágrafos de dentro.
+            const isParagraph = Array.isArray(block.childWidgets)
+              && block.childWidgets.some((child: any) => Array.isArray(child?.children));
+            if (!isParagraph) {
+              for (const child of block?.childWidgets || []) pushBlock(child);
+              return;
+            }
+
+            let text = '';
+            for (const line of block.childWidgets || []) {
+              if (Array.isArray(line?.children)) text += lineText(line);
+            }
+            text = text.replace(/[\u0000-\u001F]/g, '').replace(/\u00A0/g, ' ');
+
+            // Parágrafo quebrado entre páginas volta a ser um só: senão a
+            // frase seria cortada no meio e a gramática analisaria pedaços.
+            if (block.previousSplitWidget && paragraphs.length > 0) {
+              paragraphs[paragraphs.length - 1].text += text;
+              return;
+            }
+            paragraphs.push({ index: paragraphs.length, text });
+          };
+
+          for (const page of pages) {
+            for (const body of page?.bodyWidgets || []) {
+              for (const block of body?.childWidgets || []) pushBlock(block);
+            }
+          }
+        } catch (err) {
+          console.warn('[SyncfusionEditor] getParagraphs erro:', err);
+        }
+
+        return paragraphs;
+      },
+
+      selectOccurrence: (searchText, occurrence) => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        return focusSearchOccurrence(editor, searchText, occurrence) !== null;
+      },
+
+      replaceOccurrence: (searchText, occurrence, replaceText) => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        const results = focusSearchOccurrence(editor, searchText, occurrence);
+        if (!results) return false;
+        try {
+          results.replace(String(replaceText ?? ''));
+          results.clear?.();
+          return true;
+        } catch (err) {
+          console.warn('[SyncfusionEditor] replaceOccurrence erro:', err);
+          return false;
+        }
+      },
+
+      deleteRange: (startAnchor, endAnchor, options) => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        return removeEditorRange(editor, String(startAnchor || ''), endAnchor, options || {});
+      },
+
+      deleteOccurrence: (searchText, occurrence = 'last') => {
+        const editor: any = containerRef.current?.documentEditor as any;
+        const value = String(searchText || '');
+        if (!editor || !value.trim()) return false;
+
+        const offsets = collectOccurrenceOffsets(editor, value);
+        if (!offsets.length) return false;
+
+        const index = typeof occurrence === 'number'
+          ? Math.min(Math.max(occurrence, 0), offsets.length - 1)
+          : occurrence === 'first'
+            ? 0
+            : offsets.length - 1;
+
+        const selection = editor.selection;
+        const editorModule = editor.editorModule ?? editor.editor;
+        if (!selection || typeof editorModule?.delete !== 'function') return false;
+
+        try {
+          selection.select(offsets[index].start, offsets[index].end);
+          if (!String(selection.text || '').trim()) return false;
+          try { editor.editorHistory?.beginUndoAction?.(); } catch { /* ignore */ }
+          editorModule.delete();
+          collapseEmptyParagraphsAtCursor(editor);
+          try { editor.editorHistory?.endUndoAction?.(); } catch { /* ignore */ }
+          return true;
+        } catch (err) {
+          console.warn('[SyncfusionEditor] deleteOccurrence erro:', err);
+          try { editor.editorHistory?.endUndoAction?.(); } catch { /* ignore */ }
+          return false;
+        }
+      },
     }));
 
     useEffect(() => {
@@ -2078,10 +2917,136 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       }
     }, [currentUserName]);
 
+    /**
+     * Agenda a revisão contextual da frase do cursor.
+     *
+     * Três compromissos, nesta ordem:
+     *
+     *   FLUIDEZ  — nada de estado React nem de reLayout por tecla digitada. O
+     *              trabalho pesado (ler o parágrafo, montar a frase, injetar o
+     *              sublinhado) roda em `requestIdleCallback`, fora do frame da
+     *              digitação, e só depois de a pessoa parar de digitar.
+     *   ECONOMIA — a chamada de modelo só acontece quando o dicionário local já
+     *              marcou uma palavra dessa frase (`evaluateContextGate`). Em
+     *              texto correto, o custo é exatamente zero.
+     *   DISCRIÇÃO — o resultado aparece como o sublinhado vermelho de sempre,
+     *              com a correção no menu do botão direito. Nenhum aviso na tela.
+     */
+    const scheduleContextualSentenceAnalysis = () => {
+      const requestId = ++sentenceAnalysisRequestIdRef.current;
+      if (sentenceAnalysisTimerRef.current !== null) {
+        window.clearTimeout(sentenceAnalysisTimerRef.current);
+        sentenceAnalysisTimerRef.current = null;
+      }
+      cancelIdleWork(sentenceAnalysisIdleRef.current);
+      sentenceAnalysisIdleRef.current = null;
+      sentenceAnalysisAbortRef.current?.abort();
+      sentenceAnalysisAbortRef.current = null;
+
+      const editor: any = containerRef.current?.documentEditor as any;
+      if (!editor || readOnly || !aiService.isEnabled()) return;
+
+      // O texto mudou: o diagnóstico anterior aponta para um trecho que talvez
+      // já não exista. Solta os spans SEM relayout — o próprio ato de digitar
+      // já repinta a linha, e um reLayout por tecla é justamente o que travava.
+      clearInjectedContextualErrors(editor, false);
+
+      sentenceAnalysisTimerRef.current = window.setTimeout(() => {
+        sentenceAnalysisTimerRef.current = null;
+        sentenceAnalysisIdleRef.current = scheduleIdleWork(() => {
+          sentenceAnalysisIdleRef.current = null;
+          if (requestId !== sentenceAnalysisRequestIdRef.current) return;
+          runContextualSentenceAnalysis(editor, requestId);
+        });
+      }, SENTENCE_ANALYSIS_IDLE_MS);
+    };
+
+    /** Roda já em tempo ocioso: pode ler o parágrafo e montar a frase. */
+    const runContextualSentenceAnalysis = (editor: any, requestId: number) => {
+      const sentence = getCurrentSentenceForAnalysis(editor);
+      if (!sentence) return;
+
+      const key = contextualSentenceKey(sentence);
+      const cached = contextualSentenceIssueCache.get(key);
+      if (cached) {
+        // Reabrir a mesma frase (voltar o cursor, refazer um trecho) não custa
+        // nada: o veredicto anterior — inclusive "está correta" — vale de novo.
+        applyContextualIssues(editor, requestId, key, sentence, cached);
+        return;
+      }
+
+      const spellChecker = editor?.spellCheckerModule ?? editor?.spellChecker;
+      const errorColl = spellChecker?.errorWordCollection;
+      if (!errorColl || typeof errorColl.containsKey !== 'function') return;
+
+      // Consulta em mapa, palavra por palavra da frase: é o sinal local que
+      // autoriza (ou não) gastar uma chamada.
+      const suspects = collectSuspectWords(sentence, (word) => {
+        const normalized = typeof spellChecker.manageSpecialCharacters === 'function'
+          ? spellChecker.manageSpecialCharacters(word, undefined, true)
+          : word;
+        return Boolean(normalized) && errorColl.containsKey(normalized);
+      });
+
+      const verdict = evaluateContextGate({
+        sentence,
+        suspects,
+        isResolvedLocally: hasHighConfidenceCorrection,
+      });
+      if (!verdict.allow) return;
+
+      registerProofTokens(verdict.estimatedTokens);
+      const controller = new AbortController();
+      sentenceAnalysisAbortRef.current = controller;
+      const timeout = window.setTimeout(() => controller.abort(), SENTENCE_ANALYSIS_TIMEOUT_MS);
+
+      void aiService.analyzeSpellingSentence({
+        sentence: verdict.context,
+        signal: controller.signal,
+      }).then((issues) => {
+        contextualSentenceIssueCache.set(key, issues);
+        if (contextualSentenceIssueCache.size > 120) {
+          const oldestKey = contextualSentenceIssueCache.keys().next().value;
+          if (oldestKey) contextualSentenceIssueCache.delete(oldestKey);
+        }
+        applyContextualIssues(editor, requestId, key, sentence, issues);
+      }).catch((error) => {
+        if (error?.name !== 'AbortError') {
+          console.warn('[SyncfusionEditor] revisão contextual da frase falhou:', error);
+        }
+      }).finally(() => {
+        window.clearTimeout(timeout);
+        if (sentenceAnalysisAbortRef.current === controller) {
+          sentenceAnalysisAbortRef.current = null;
+        }
+      });
+    };
+
+    /** Injeta o sublinhado, sempre em tempo ocioso e só se a frase não mudou. */
+    const applyContextualIssues = (
+      editor: any,
+      requestId: number,
+      key: string,
+      sentence: string,
+      issues: ContextualSentenceSpellingIssue[],
+    ) => {
+      if (requestId !== sentenceAnalysisRequestIdRef.current) return;
+      if (issues.length === 0) return;
+
+      scheduleIdleWork(() => {
+        if (requestId !== sentenceAnalysisRequestIdRef.current) return;
+        if (contextualSentenceKey(getCurrentSentenceForAnalysis(editor)) !== key) return;
+        injectContextualSentenceErrors(editor, sentence, issues);
+      });
+    };
+
     const handleContentChange = () => {
       onContentChange?.();
       // Dispara scanner de issues (espaços duplos, etc.) com debounce
       scannerRef.current?.trigger();
+      // Revisão contextual do trecho do cursor: entra apenas quando o
+      // dicionário local já apontou uma palavra ali.
+      scheduleContextualSentenceAnalysis();
     };
 
     // Aplica todas as correções de issues (espaços duplos, etc.)
@@ -3273,6 +4238,10 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           locale="pt-BR"
           style={{ display: 'block', width: '100%', height: '100%' }}
         />
+
+        {/* A revisão contextual não tem UI própria de propósito: o resultado
+            chega como sublinhado vermelho e correção no menu do botão direito,
+            igual ao corretor do Word. Sem aviso de análise em andamento. */}
 
         {/* Badge de issues — espaços duplos, espaço antes de pontuação, etc. */}
         {scanResult.totalOccurrences > 0 && (

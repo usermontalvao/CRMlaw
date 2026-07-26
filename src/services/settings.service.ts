@@ -837,6 +837,9 @@ export const DEFAULT_AI_TASKS: AiTaskConfig[] = [
   { task_key: 'suggest_actions',       label: 'Sugestão de ações',           provider: 'openai', model: 'gpt-4o-mini', temperature: 0.4, max_tokens: 300  },
   { task_key: 'format_qualification',  label: 'Formatação de qualificação',  provider: 'openai', model: 'gpt-4o-mini', temperature: 0.1, max_tokens: 300  },
   { task_key: 'edit_legal_text',       label: 'Edição de texto jurídico',    provider: 'openai', model: 'gpt-4o-mini', temperature: 0.3, max_tokens: 1200 },
+  { task_key: 'proofread_legal',       label: 'Revisão gramatical contextual', provider: 'openai', model: 'gpt-4o-mini', temperature: 0.1, max_tokens: 2000 },
+  { task_key: 'spell_context',         label: 'Sugestão rápida por contexto', provider: 'openai', model: 'gpt-5-nano', temperature: 0, max_tokens: 90 },
+  { task_key: 'spell_sentence',        label: 'Detecção contextual da frase', provider: 'openai', model: 'gpt-5-nano', temperature: 0, max_tokens: 220 },
 ];
 
 // ── Configuração do módulo Requerimentos ─────────────────────────────────

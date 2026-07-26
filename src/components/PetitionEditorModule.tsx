@@ -84,9 +84,19 @@ import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 import PetitionAiChat from './PetitionAiChat';
 import PetitionStatusBar from './petition/PetitionStatusBar';
 import PetitionFindReplacePanel from './petition/PetitionFindReplacePanel';
+import PetitionProofreaderPanel from './petition/PetitionProofreaderPanel';
 import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+
+// Tipo do documento do editor traduzido para o vocabulário do briefing do
+// Assistente IA (o formulário fala "Petição inicial", não "petition").
+const DOCUMENT_TYPE_BRIEFING_LABELS: Record<string, string> = {
+  petition: 'Petição inicial',
+  contestation: 'Contestação',
+  impugnation: 'Manifestação',
+  appeal: 'Recurso',
+};
 
 const useDebouncedValue = <T,>(value: T, delayMs: number): T => {
   const [debounced, setDebounced] = useState(value);
@@ -1511,6 +1521,108 @@ const EDITOR_STYLES = `
   body.petition-dark .petition-find-field input { color: #e5e7eb; }
   body.petition-dark .petition-find-actions button { background: #303030; border-color: #474747; color: #d4d4d4; }
   body.petition-dark .petition-find-actions button.is-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+
+  /* ── Painel de revisão de texto (ortografia + gramática + IA) ── */
+  .petition-proof-panel {
+    width: 360px; min-width: 300px; max-width: min(400px, 92vw); height: 100%;
+    flex: 0 0 auto; display: flex; flex-direction: column; background: #fff;
+    border-left: 1px solid #e3e6ea; color: #334155; z-index: 24;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .petition-proof-header {
+    height: 46px; flex-shrink: 0; display: flex; align-items: center;
+    justify-content: space-between; border-bottom: 1px solid #e3e6ea; padding: 0 8px 0 14px;
+  }
+  .petition-proof-header > div:first-child { display: flex; flex-direction: column; line-height: 1.25; }
+  .petition-proof-header strong { font-size: 13px; font-weight: 700; color: #1e293b; }
+  .petition-proof-header span { font-size: 10px; color: #94a3b8; }
+  .petition-proof-header-actions { display: flex; gap: 2px; }
+  .petition-proof-header-actions button {
+    width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 6px; background: transparent; color: #64748b; cursor: pointer;
+  }
+  .petition-proof-header-actions button:hover { background: #eef2f7; color: #2563eb; }
+  .petition-proof-header-actions button:disabled { opacity: .45; cursor: default; }
+  .petition-proof-toolbar { padding: 10px 14px 8px; border-bottom: 1px solid #edf0f3; }
+  .petition-proof-switch {
+    display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; cursor: pointer;
+  }
+  .petition-proof-switch input { accent-color: #4338ca; }
+  .petition-proof-switch svg { color: #4338ca; }
+  .petition-proof-switch input:disabled { cursor: not-allowed; }
+  .petition-proof-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 9px; }
+  .petition-proof-filters button {
+    border: 1px solid #e2e8f0; border-radius: 999px; background: #fff; color: #64748b;
+    padding: 2px 9px; font-size: 10px; font-weight: 600; cursor: pointer;
+  }
+  .petition-proof-filters button.is-active { border-color: #2563eb; background: #eff6ff; color: #2563eb; }
+  .petition-proof-status, .petition-proof-warning, .petition-proof-feedback {
+    display: flex; align-items: center; gap: 6px; margin: 0;
+    padding: 8px 14px; font-size: 11px; color: #64748b;
+  }
+  .petition-proof-warning { color: #b45309; background: #fffbeb; }
+  .petition-proof-warning svg { flex-shrink: 0; }
+  .petition-proof-feedback { color: #475569; background: #f8fafc; }
+  .petition-proof-spin { animation: petitionProofSpin 1s linear infinite; }
+  @keyframes petitionProofSpin { to { transform: rotate(360deg); } }
+  .petition-proof-list { flex: 1; overflow-y: auto; padding: 10px 12px 18px; display: flex; flex-direction: column; gap: 9px; }
+  .petition-proof-card {
+    border: 1px solid #e6e9ee; border-radius: 9px; background: #fff; padding: 10px 11px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  }
+  .petition-proof-card > header { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+  .petition-proof-badge {
+    border-radius: 4px; padding: 1px 6px; color: #fff; font-size: 9px; font-weight: 700;
+    letter-spacing: .04em; text-transform: uppercase;
+  }
+  .petition-proof-source { font-size: 9px; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; }
+  .petition-proof-locate {
+    margin-left: auto; width: 22px; height: 22px; display: inline-flex; align-items: center;
+    justify-content: center; border: 0; border-radius: 5px; background: transparent; color: #94a3b8; cursor: pointer;
+  }
+  .petition-proof-locate:hover { background: #eff6ff; color: #2563eb; }
+  .petition-proof-context {
+    margin: 0 0 6px; font-size: 11.5px; line-height: 1.5; color: #64748b; word-break: break-word;
+  }
+  .petition-proof-context mark { background: #fee2e2; color: #b91c1c; font-weight: 600; padding: 0 2px; border-radius: 3px; }
+  .petition-proof-message { margin: 0 0 6px; font-size: 12px; color: #1e293b; }
+  .petition-proof-explain-toggle {
+    display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent;
+    padding: 0; color: #2563eb; font-size: 10.5px; font-weight: 600; cursor: pointer;
+  }
+  .petition-proof-explanation {
+    margin: 5px 0 0; padding: 7px 9px; border-radius: 6px; background: #f8fafc;
+    font-size: 11px; line-height: 1.55; color: #475569;
+  }
+  .petition-proof-suggestions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .petition-proof-apply {
+    display: inline-flex; align-items: center; gap: 4px; border: 1px solid #bbf7d0;
+    border-radius: 6px; background: #f0fdf4; color: #15803d; padding: 3px 8px;
+    font-size: 11.5px; font-weight: 600; cursor: pointer; max-width: 100%; word-break: break-word; text-align: left;
+  }
+  .petition-proof-apply:hover { background: #dcfce7; }
+  .petition-proof-empty { font-size: 10.5px; color: #94a3b8; font-style: italic; }
+  .petition-proof-card > footer { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 9px; }
+  .petition-proof-card > footer button {
+    display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent;
+    padding: 0; color: #64748b; font-size: 10.5px; font-weight: 600; cursor: pointer;
+  }
+  .petition-proof-card > footer button:hover { color: #2563eb; }
+  .petition-proof-card > footer button:disabled { opacity: .5; cursor: default; }
+  .petition-proof-empty-state { margin: 18px 0; text-align: center; font-size: 11.5px; color: #94a3b8; }
+  body.petition-dark .petition-proof-panel { background: #262626; border-left-color: #3d3d3d; color: #e5e7eb; }
+  body.petition-dark .petition-proof-header, body.petition-dark .petition-proof-toolbar { border-color: #3d3d3d; }
+  body.petition-dark .petition-proof-header strong { color: #f1f5f9; }
+  body.petition-dark .petition-proof-card { background: #303030; border-color: #474747; box-shadow: none; }
+  body.petition-dark .petition-proof-message { color: #e5e7eb; }
+  body.petition-dark .petition-proof-context { color: #a3a3a3; }
+  body.petition-dark .petition-proof-context mark { background: #7f1d1d; color: #fecaca; }
+  body.petition-dark .petition-proof-explanation { background: #3a3a3a; color: #cbd5e1; }
+  body.petition-dark .petition-proof-filters button { background: #303030; border-color: #474747; color: #cbd5e1; }
+  body.petition-dark .petition-proof-filters button.is-active { background: #1e3a8a; border-color: #3b82f6; color: #bfdbfe; }
+  body.petition-dark .petition-proof-apply { background: #14532d; border-color: #166534; color: #bbf7d0; }
+  body.petition-dark .petition-proof-feedback { background: #303030; color: #cbd5e1; }
+  body.petition-dark .petition-proof-warning { background: #422006; color: #fcd34d; }
 `;
 
 // Injeta os estilos estruturais do editor (flex do wrapper, container Syncfusion, etc.).
@@ -1641,6 +1753,8 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // Sidebar
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [findReplaceMode, setFindReplaceMode] = useState<'find' | 'replace' | null>(null);
+  // Painel de revisão de texto (ortografia + gramática + regras jurídicas + IA).
+  const [showProofreader, setShowProofreader] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'blocks' | 'clients'>('blocks');
   const [activeWorkspace, setActiveWorkspace] = useState<'editor' | 'blocks'>('editor');
   const [blocksReturnTarget, setBlocksReturnTarget] = useState<'start' | 'editor'>('editor');
@@ -4146,6 +4260,8 @@ Regras:
     layout: 'Pages',
   });
   const [wordCount, setWordCount] = useState(0);
+  const [aiSelectedText, setAiSelectedText] = useState('');
+  const [aiHasDocumentContent, setAiHasDocumentContent] = useState(false);
   const wordCountTimerRef = useRef<number | null>(null);
 
   const refreshDocStatus = useCallback(() => {
@@ -4171,7 +4287,15 @@ Regras:
     if (wordCountTimerRef.current) window.clearTimeout(wordCountTimerRef.current);
     wordCountTimerRef.current = window.setTimeout(() => {
       try {
-        setWordCount(editorRef.current?.getWordCount?.() ?? 0);
+        const editor = editorRef.current;
+        const nextWordCount = editor?.getWordCount?.() ?? 0;
+        const pageCount = editor?.getPageInfo?.().total ?? 1;
+        setWordCount(nextWordCount);
+        setAiHasDocumentContent(
+          nextWordCount > 0
+          || pageCount > 1
+          || Boolean(editor?.hasContent?.())
+        );
       } catch {
         // ignore
       }
@@ -8083,6 +8207,7 @@ Regras:
         onToggleLibrary={() => setSidebarOpen((current) => !current)}
         libraryOpen={sidebarOpen}
         onOpenFindReplace={(mode) => setFindReplaceMode(mode)}
+        onOpenProofreader={() => setShowProofreader((current) => !current)}
       />
 
       <div className="flex-1 flex min-h-0 min-w-0 max-w-full overflow-hidden relative">
@@ -8633,8 +8758,16 @@ Regras:
             // `documentChange` = documento terminou de abrir. Re-arma a janela de
             // acomodação para cobrir os ajustes automáticos que vêm em seguida
             // (margens, fitPage, repaginação), mesmo em documentos grandes.
-            onDocumentChange={() => { beginDocumentSettleWindow(); }}
-            onSelectionChange={() => { refreshDocStatus(); scheduleCursorPersist(); }}
+            onDocumentChange={() => {
+              beginDocumentSettleWindow();
+              refreshDocStatus();
+              scheduleWordCount(350);
+            }}
+            onSelectionChange={() => {
+              refreshDocStatus();
+              scheduleCursorPersist();
+              setAiSelectedText(editorRef.current?.getSelectedText?.() || '');
+            }}
             onViewChange={refreshDocStatus}
             onRequestInsertBlock={() => {
               setBlockSearchQuery('');
@@ -8665,6 +8798,12 @@ Regras:
             insertBlockSfdt={insertAiBlockSfdt}
             disabled={!isOnline || !serverReachable}
             disabledReason="Voce esta offline. Reconecte para usar o assistente."
+            selectedText={aiSelectedText}
+            documentWordCount={wordCount}
+            documentHasContent={aiHasDocumentContent || wordCount > 0 || docStatus.pageCount > 1}
+            documentPageCount={docStatus.pageCount}
+            suggestedArea={selectedLegalArea?.name}
+            suggestedDocumentType={DOCUMENT_TYPE_BRIEFING_LABELS[selectedDocumentType]}
           />
 
         </div>
@@ -8675,6 +8814,14 @@ Regras:
             editorRef={editorRef}
             initialMode={findReplaceMode}
             onClose={() => setFindReplaceMode(null)}
+            onDocumentChanged={() => setHasUnsavedChanges(true)}
+          />
+        )}
+
+        {showProofreader && editorReady && (
+          <PetitionProofreaderPanel
+            editorRef={editorRef}
+            onClose={() => setShowProofreader(false)}
             onDocumentChanged={() => setHasUnsavedChanges(true)}
           />
         )}

@@ -369,19 +369,30 @@ function detectProcessStatus(texto: string, tipoComunicacao?: string): string | 
     return 'instrucao'
   }
 
+  // Contestação — exige defesa efetivamente APRESENTADA.
+  // A menção isolada à palavra "contestação" não serve: o despacho que designa a
+  // audiência inicial já explica de antemão como a defesa deverá ser protocolada
+  // ("A contestação da parte ré [...] deverão ser apresentadas mediante petição"),
+  // e isso fazia o processo pular para 'contestacao' ainda na fase de conciliação.
+  // Vem antes da conciliação porque defesa juntada é fase mais avançada — e o
+  // texto de TRT costuma citar CEJUSC/conciliação em boilerplate.
+  if (/(?:juntada|juntou|apresentad[ao]|apresentou|protocol(?:ou|ada)|ofertada|ofereceu|recebida)[^.\n]{0,40}contesta[çc][ãa]o/.test(textoLower) ||
+      /contesta[çc][ãa]o[^.\n]{0,40}(?:juntada|apresentada|protocolada|ofertada|recebida)/.test(textoLower) ||
+      textoLower.includes('defesa apresentada') ||
+      textoLower.includes('réu contestou')) {
+    return 'contestacao'
+  }
+
   // Conciliação
+  // Na Justiça do Trabalho a AUDIÊNCIA INICIAL é ato conciliatório, realizada no
+  // CEJUSC — por isso conta como fase de conciliação.
   if (textoLower.includes('audiência de conciliação') ||
       textoLower.includes('conciliação virtual') ||
       textoLower.includes('conciliação designada') ||
-      textoLower.includes('pauta de conciliação')) {
+      textoLower.includes('pauta de conciliação') ||
+      textoLower.includes('audiência inicial') ||
+      textoLower.includes('cejusc')) {
     return 'conciliacao'
-  }
-
-  // Contestação
-  if (textoLower.includes('contestação') || 
-      textoLower.includes('defesa apresentada') ||
-      textoLower.includes('juntada de contestação')) {
-    return 'contestacao'
   }
 
   // Citação

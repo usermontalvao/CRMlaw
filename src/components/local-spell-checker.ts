@@ -14,6 +14,7 @@
 
 import affUrl from 'dictionary-pt-br/index.aff?url';
 import dicUrl from 'dictionary-pt-br/index.dic?url';
+import { curateSpellingSuggestions } from './spelling-suggestions';
 
 type Checker = {
   correct: (word: string) => boolean;
@@ -112,9 +113,25 @@ const stripEdges = (word: string) =>
     .replace(/^[#@!$%^&*()\-_+={}[\]:;"”“'’‘,<.>/?`´\s]+/, '')
     .replace(/[#@!$%^&*()\-_+={}[\]:;"”“'’‘,<.>/?`´\s]+$/, '');
 
+/**
+ * Flexão de gênero entre parênteses, onipresente em petição:
+ * "domiciliado(a)", "inscrito(a)", "o(a) requerente", "segurado(as)".
+ * O dicionário não tem essas formas e marcava todas como erro — o parêntese
+ * ainda por cima é aparado pelo stripEdges, sobrando "domiciliado(a".
+ */
+const GENDER_MARK_RE = /\((?:a|as|o|os|à|ã|s|es)\)?/gi;
+
+const stripGenderMark = (word: string): string => word.replace(GENDER_MARK_RE, '');
+
 const isWordCorrect = (spell: Checker, rawWord: string, ignoreUppercase: boolean): boolean => {
   const word = stripEdges(rawWord);
   if (!word || word.length < 2) return true;
+
+  // "domiciliado(a)" é correto se "domiciliado" é correto.
+  const withoutGenderMark = stripGenderMark(word);
+  if (withoutGenderMark !== word) {
+    return !withoutGenderMark.trim() || isWordCorrect(spell, withoutGenderMark, ignoreUppercase);
+  }
   // Números, datas, CEP, "7º", "2ª", artigos de lei, processos CNJ…
   if (/\d/.test(word)) return true;
   // Siglas e cabeçalhos em caixa alta (TST, CLT, RECLAMATÓRIA…)
@@ -146,7 +163,7 @@ const buildSuggestions = (spell: Checker, rawWord: string): string[] => {
   if (suggestions.length === 0 && word !== word.toLowerCase()) {
     suggestions = spell.suggest(word.toLowerCase()) || [];
   }
-  return suggestions.slice(0, 5);
+  return curateSpellingSuggestions(word, suggestions);
 };
 
 // Espelha HelperMethods.getSpellCheckData (split por espaço após normalizar
@@ -163,6 +180,36 @@ const splitPageContent = (content: string): string[] => {
     if (text) unique.add(text);
   }
   return Array.from(unique);
+};
+
+/**
+ * Verifica UMA palavra fora do fluxo do Syncfusion (revisor do documento).
+ * Usa o mesmo Hunspell + dicionário do usuário que o sublinhado da digitação,
+ * então o que o usuário já mandou ignorar continua ignorado no painel.
+ */
+export const checkWordLocally = async (
+  word: string,
+  options?: { ignoreUppercase?: boolean },
+): Promise<{ available: boolean; correct: boolean; suggestions: string[] }> => {
+  const spell = await getChecker();
+  if (!spell) return { available: false, correct: true, suggestions: [] };
+
+  const ignoreUppercase = options?.ignoreUppercase ?? true;
+  const correct = isWordCorrect(spell, word, ignoreUppercase);
+  return {
+    available: true,
+    correct,
+    suggestions: correct ? [] : buildSuggestions(spell, word),
+  };
+};
+
+/** Adiciona a palavra ao dicionário do usuário (persistente no navegador). */
+export const addWordToUserDictionary = async (word: string): Promise<void> => {
+  const clean = stripEdges(word);
+  if (!clean) return;
+  persistUserWord(clean);
+  const spell = await getChecker();
+  try { spell?.add(clean); } catch { /* ignore */ }
 };
 
 /**

@@ -33,10 +33,30 @@ function mapModelToDeepSeek(_model: string): string {
 
 type Provider = 'deepseek' | 'groq' | 'openai';
 
-// Tarefas em que a QUALIDADE manda (redação jurídica): usam o melhor provedor
-// primeiro (OpenAI), com os baratos apenas como fallback. As demais tarefas
-// seguem a cadeia econômica (DeepSeek -> Groq -> OpenAI).
-const PREMIUM_TASKS = new Set(['petition_chat', 'edit_legal_text']);
+// Tarefas em que a qualidade manda usam OpenAI primeiro. Somente redações
+// longas sobem para o modelo completo. A ortografia usa GPT-5 nano: é uma
+// chamada curta, frequente e pré-processada durante a digitação.
+const OPENAI_FIRST_TASKS = new Set([
+  'petition_chat',
+  'edit_legal_text',
+  'proofread_legal',
+  'spell_context',
+  'spell_sentence',
+]);
+const FULL_MODEL_TASKS = new Set(['petition_chat', 'edit_legal_text']);
+
+/**
+ * Teto de saída por tarefa de revisão, aplicado no servidor.
+ *
+ * O front já pede valores baixos; este limite existe para que uma configuração
+ * errada no banco (ou um cliente antigo em cache) não transforme a correção
+ * ortográfica — que roda a cada frase digitada — em uma conta alta.
+ */
+const PROOF_TASK_TOKEN_CEILING: Record<string, number> = {
+  spell_context: 120,
+  spell_sentence: 260,
+  proofread_legal: 2000,
+};
 
 interface CallArgs {
   messages: unknown;
@@ -44,16 +64,38 @@ interface CallArgs {
   max_tokens?: number;
   temperature?: number;
   response_format?: unknown;
+  reasoning_effort?: string;
   task_key?: string;
 }
 
 function buildProviderBody(provider: Provider, args: CallArgs, stream: boolean): Record<string, unknown> {
+  const resolvedModel = resolveModel(
+    provider,
+    args.model,
+    FULL_MODEL_TASKS.has(String(args.task_key || '')),
+  );
+  const isOpenAiGpt5 = provider === 'openai' && resolvedModel.startsWith('gpt-5');
   const body: Record<string, unknown> = {
-    model:       resolveModel(provider, args.model, PREMIUM_TASKS.has(String(args.task_key || ''))),
-    messages:    args.messages,
-    temperature: typeof args.temperature === 'number' ? args.temperature : 0.7,
+    model:    resolvedModel,
+    messages: args.messages,
   };
-  if (args.max_tokens) body.max_tokens = args.max_tokens;
+
+  const ceiling = PROOF_TASK_TOKEN_CEILING[String(args.task_key || '')];
+  const maxTokens = ceiling && args.max_tokens
+    ? Math.min(args.max_tokens, ceiling)
+    : (args.max_tokens ?? (ceiling || undefined));
+
+  // GPT-5 no Chat Completions usa max_completion_tokens e não aceita o
+  // parâmetro temperature. Os provedores OpenAI-compatíveis de fallback ainda
+  // esperam os nomes tradicionais.
+  if (isOpenAiGpt5) {
+    if (maxTokens) body.max_completion_tokens = maxTokens;
+    body.reasoning_effort = args.reasoning_effort || 'minimal';
+  } else {
+    body.temperature = typeof args.temperature === 'number' ? args.temperature : 0.7;
+    if (maxTokens) body.max_tokens = maxTokens;
+  }
+
   if (stream) {
     body.stream = true;
     // response_format é incompatível com o protocolo streaming (markdown +
@@ -73,11 +115,11 @@ function endpointFor(provider: Provider): string {
   }
 }
 
-function resolveModel(provider: Provider, model: string, isPremiumTask = false): string {
+function resolveModel(provider: Provider, model: string, requiresFullModel = false): string {
   if (provider === 'deepseek') return mapModelToDeepSeek(model);
   if (provider === 'groq')     return mapModelToGroq(model);
-  // Tarefa premium nunca roda em modelo "mini" na OpenAI.
-  if (isPremiumTask && (model.startsWith('gpt-4o-mini') || model.startsWith('gpt-3.5'))) {
+  // Redação longa nunca roda em modelo "mini" na OpenAI.
+  if (requiresFullModel && (model.startsWith('gpt-4o-mini') || model.startsWith('gpt-3.5'))) {
     return 'gpt-4o';
   }
   return model;
@@ -94,8 +136,8 @@ async function callProvider(provider: Provider, apiKey: string, args: CallArgs) 
     },
     body: JSON.stringify(body),
     // Timeout para não travar o failover quando um provedor está pendurado.
-    // Tarefas premium geram respostas longas (petições) e precisam de folga.
-    signal: AbortSignal.timeout(PREMIUM_TASKS.has(String(args.task_key || '')) ? 120_000 : 30_000),
+    // Tarefas longas (petições/revisão) precisam de folga.
+    signal: AbortSignal.timeout(FULL_MODEL_TASKS.has(String(args.task_key || '')) ? 120_000 : 30_000),
   });
 
   if (!response.ok) {
@@ -121,7 +163,7 @@ async function openProviderStream(provider: Provider, apiKey: string, args: Call
     },
     body: JSON.stringify(body),
     // Cobre a conexão inteira, inclusive o corpo streamado.
-    signal: AbortSignal.timeout(PREMIUM_TASKS.has(String(args.task_key || '')) ? 180_000 : 60_000),
+    signal: AbortSignal.timeout(FULL_MODEL_TASKS.has(String(args.task_key || '')) ? 180_000 : 60_000),
   });
 
   if (!response.ok || !response.body) {
@@ -209,7 +251,16 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { messages, model = 'gpt-4o-mini', max_tokens, temperature, response_format, task_key, stream } = await req.json();
+    const {
+      messages,
+      model = 'gpt-4o-mini',
+      max_tokens,
+      temperature,
+      response_format,
+      reasoning_effort,
+      task_key,
+      stream,
+    } = await req.json();
 
     const deepseekApiKey = Deno.env.get('DEEPSEEK_API_KEY');
     const groqApiKey   = Deno.env.get('GROQ_API_KEY');
@@ -217,11 +268,11 @@ Deno.serve(async (req: Request) => {
 
     // Cadeia de failover para tarefas de TEXTO.
     // Padrão (econômica): DeepSeek -> Groq -> OpenAI.
-    // Premium (petition_chat etc.): OpenAI -> DeepSeek -> Groq — a redação
-    // jurídica vai sempre para o melhor modelo disponível.
-    const isPremium = PREMIUM_TASKS.has(String(task_key || ''));
+    // Qualidade primeiro: OpenAI -> DeepSeek -> Groq. Em ortografia isso
+    // continua econômico porque o modelo pedido permanece GPT-5 nano.
+    const isOpenAiFirst = OPENAI_FIRST_TASKS.has(String(task_key || ''));
     const chain: { provider: Provider; key: string }[] = [];
-    if (isPremium) {
+    if (isOpenAiFirst) {
       if (openaiApiKey)   chain.push({ provider: 'openai',   key: openaiApiKey });
       if (deepseekApiKey) chain.push({ provider: 'deepseek', key: deepseekApiKey });
       if (groqApiKey)     chain.push({ provider: 'groq',     key: groqApiKey });
@@ -243,7 +294,7 @@ Deno.serve(async (req: Request) => {
           const { upstream, model: resolvedModel } = await openProviderStream(
             link.provider,
             link.key,
-            { messages, model, max_tokens, temperature, task_key },
+            { messages, model, max_tokens, temperature, reasoning_effort, task_key },
           );
           return new Response(normalizeProviderStream(link.provider, resolvedModel, upstream), {
             headers: {
@@ -266,7 +317,15 @@ Deno.serve(async (req: Request) => {
     let lastError: unknown = null;
     for (const link of chain) {
       try {
-        const data = await callProvider(link.provider, link.key, { messages, model, max_tokens, temperature, response_format, task_key });
+        const data = await callProvider(link.provider, link.key, {
+          messages,
+          model,
+          max_tokens,
+          temperature,
+          response_format,
+          reasoning_effort,
+          task_key,
+        });
         return new Response(JSON.stringify(data), {
           headers: {
             ...corsHeaders,

@@ -2,6 +2,19 @@ import type { IntimationAnalysis, DeadlineExtraction } from '../types/ai.types';
 import { supabase } from '../config/supabase';
 import { settingsService, type AiTaskConfig } from './settings.service';
 import { streamChatCompletion } from './aiStream';
+import {
+  normalizeContextualSentenceSpellingIssues,
+  normalizeContextualSpellingSuggestions,
+  type ContextualSentenceSpellingIssue,
+} from '../components/spelling-suggestions';
+import {
+  CONTEXT_RESPONSE_MAX_TOKENS,
+  CONTEXT_WINDOW_MAX_CHARS,
+  DOCUMENT_CONTEXT_MAX_CHARS,
+  WORD_RESPONSE_MAX_TOKENS,
+} from './proofContextBudget';
+
+const CHEAPEST_SPELL_MODEL = 'gpt-5-nano';
 
 // ── Assistente de Petições (chat) ──────────────────────────────────────────
 // Ação estruturada que o assistente pode propor sobre o documento aberto.
@@ -17,13 +30,26 @@ export interface PetitionChatActionReplacement {
 }
 
 export interface PetitionChatAction {
-  type: 'replace' | 'insert' | 'insert_block';
+  type: 'replace' | 'insert' | 'insert_block' | 'delete';
   /** Descrição curta exibida no cartão da ação (ex.: "Corrigir concordância"). */
   label?: string;
-  /** Trecho EXATO do documento a ser substituído (type: 'replace'). */
+  /** Trecho EXATO do documento a ser substituído ou removido ('replace' | 'delete'). */
   search?: string;
   /** Texto que substitui o trecho (type: 'replace'). */
   replace?: string;
+  /**
+   * Fim do intervalo quando o trecho atravessa parágrafos ('replace' | 'delete').
+   * O editor localiza início e fim separadamente e seleciona tudo entre eles —
+   * uma busca única nunca atravessaria a marca de parágrafo.
+   */
+  searchEnd?: string;
+  /**
+   * Qual ocorrência tratar quando o trecho aparece mais de uma vez.
+   * 'last' é o padrão de 'delete': conteúdo duplicado costuma ser o que foi
+   * acrescentado depois, e apagar todas as cópias deixaria o documento sem o
+   * conteúdo original.
+   */
+  occurrence?: 'first' | 'last';
   /** Onde inserir (type: 'insert' | 'insert_block'). */
   position?: 'cursor' | 'end';
   /** Texto a inserir (type: 'insert'). '\n' separa parágrafos. */
@@ -32,6 +58,22 @@ export interface PetitionChatAction {
   blockId?: string;
   /** Substituições de dados do caso aplicadas sobre o modelo (type: 'insert_block'). */
   replacements?: PetitionChatActionReplacement[];
+}
+
+/**
+ * Apontamento de revisão contextual devolvido pela IA (camada 4 do revisor).
+ * `bad` é sempre uma cópia literal de um trecho do parágrafo — é assim que o
+ * orquestrador localiza a correção no documento sem depender de offsets.
+ */
+export interface AiGrammarIssue {
+  /** Índice do parágrafo informado no prompt (-1 = não identificado). */
+  paragraph: number;
+  bad: string;
+  good: string;
+  category: 'concordancia' | 'genero' | 'crase' | 'gramatica' | 'pontuacao' | 'ortografia' | 'estilo' | 'juridico';
+  message: string;
+  /** Regra gramatical aplicada, em uma frase (exibida no painel). */
+  rule: string;
 }
 
 /** Pergunta de esclarecimento que a IA faz antes de redigir (ex.: jornada). */
@@ -63,6 +105,57 @@ export interface PetitionChatKbSnippet {
   /** true quando "snippet" é o texto INTEGRAL do modelo (habilita insert_block). */
   isFull?: boolean;
 }
+
+/**
+ * Trecho vindo do ACERVO (petições reais do escritório no Nextcloud).
+ * É referência de estilo e precedente — não tem blockId, então nunca vira
+ * insert_block: a IA lê, aprende e redige.
+ */
+export interface PetitionChatArchiveSnippet {
+  /** Caminho do arquivo no Nextcloud (fonte exibida no chat). */
+  path: string;
+  title: string;
+  folder?: string;
+  snippet: string;
+}
+
+/** Briefing da peça: o que o assistente precisa saber antes da primeira linha. */
+export interface PetitionChatBriefing {
+  /** Área do Direito (ex.: "Trabalhista"). */
+  area?: string;
+  /** Tipo de peça (ex.: "Petição inicial"). */
+  documentType?: string;
+  /** Polo do cliente (ex.: "Reclamante (autor)"). */
+  party?: string;
+  /** Síntese do caso escrita pelo advogado. */
+  summary?: string;
+  /** Pontos extras marcados no formulário (ex.: "Tutela de urgência"). */
+  highlights?: string[];
+}
+
+/** Formata o briefing para o prompt. Vazio quando nada foi preenchido. */
+const formatBriefing = (briefing?: PetitionChatBriefing): string => {
+  if (!briefing) return '';
+  const lines: string[] = [];
+  if (briefing.area) lines.push(`- Área do Direito: ${briefing.area}`);
+  if (briefing.documentType) lines.push(`- Tipo de peça: ${briefing.documentType}`);
+  if (briefing.party) lines.push(`- Polo do cliente: ${briefing.party}`);
+  if (briefing.highlights?.length) lines.push(`- Pontos marcados: ${briefing.highlights.join('; ')}`);
+  if (briefing.summary) lines.push(`- Síntese do caso: ${briefing.summary}`);
+  if (!lines.length) return '';
+  return `BRIEFING DA PEÇA (definido pelo advogado — NÃO pergunte de novo estes itens):\n${lines.join('\n')}`;
+};
+
+/** Formata os trechos do acervo do Nextcloud para o prompt. */
+const formatArchiveSnippets = (snippets: PetitionChatArchiveSnippet[]): string => {
+  if (!snippets.length) return '';
+  const body = snippets
+    .map((s, i) => (
+      `Peça ${i + 1} — ${s.title}${s.folder ? ` (pasta: ${s.folder})` : ''}\nArquivo: ${s.path}\n"""\n${s.snippet}\n"""`
+    ))
+    .join('\n\n');
+  return `ACERVO DO ESCRITÓRIO (petições reais já protocoladas, vindas do Nextcloud — use como REFERÊNCIA de estilo, estrutura e teses; nunca copie dados de outro cliente e nunca use "insert_block" com elas):\n\n${body}`;
+};
 
 /** Normaliza uma consulta para comparar buscas repetidas (acentos/caixa/espaços). */
 const normalizePtQuery = (value: string): string =>
@@ -261,6 +354,257 @@ Regras obrigatórias:
   }
 
   /**
+   * Revisão CONTEXTUAL de texto jurídico (camada 4 do revisor do editor).
+   *
+   * O Hunspell vê palavra isolada, o LanguageTool vê a frase pelas regras da
+   * comunidade e as regras próprias veem padrões conhecidos. Esta chamada é a
+   * única que entende o parágrafo: regência, ambiguidade, concordância que
+   * depende do sujeito distante e vícios de redação forense.
+   *
+   * Restrição dura no prompt: nunca alterar fato, valor, data, nome, número de
+   * processo ou pedido — só a forma.
+   */
+  async reviewLegalTextGrammar(params: {
+    /** Parágrafos numerados (índice = posição no documento). */
+    paragraphs: Array<{ index: number; text: string }>;
+    /** Achados já encontrados pelas outras camadas, para a IA não repetir. */
+    knownIssues?: string[];
+    signal?: AbortSignal;
+  }): Promise<AiGrammarIssue[]> {
+    if (!this.isEnabled()) return [];
+
+    await this.ensureSettingsLoaded();
+    const taskOpts = this.getTaskOpts('proofread_legal');
+
+    // Teto de contexto: parágrafos curtos e o documento truncado em
+    // DOCUMENT_CONTEXT_MAX_CHARS. Uma petição de 40 páginas não vira um prompt
+    // de 40 páginas — a revisão cobre o começo e o painel pede o resto sob
+    // demanda quando o usuário rolar e revisar novamente.
+    const paragraphs: Array<{ index: number; text: string }> = [];
+    let budget = DOCUMENT_CONTEXT_MAX_CHARS;
+    for (const paragraph of params.paragraphs || []) {
+      const text = paragraph.text.replace(/\s+/g, ' ').trim();
+      if (text.length <= 25) continue;
+      const slice = text.slice(0, 700);
+      if (slice.length > budget) break;
+      budget -= slice.length;
+      paragraphs.push({ index: paragraph.index, text: slice });
+      if (paragraphs.length >= 50) break;
+    }
+    if (!paragraphs.length) return [];
+
+    const defaultSystemPrompt = `Revisor de português em peças processuais brasileiras. Aponte só erros REAIS: concordância (gênero/número), crase, regência, pontuação, palavras trocadas ("a"/"à", "mas"/"mais", "mal"/"mau", "seção"/"sessão", "mandado"/"mandato") e vícios forenses ("a nível de", "o mesmo" como pronome).
+
+REGRAS:
+- Nunca altere fato, valor, data, nome, CPF/CNPJ, processo, artigo de lei, súmula ou pedido.
+- "bad" = cópia LITERAL do menor trecho errado do parágrafo indicado (máx. 12 palavras, mesma acentuação e caixa).
+- "good" = o mesmo trecho corrigido. Nunca reescreva o parágrafo.
+- Parágrafo correto não gera saída. Máximo 20 apontamentos, os mais graves primeiro.
+
+JSON apenas: {"issues":[{"paragraph":0,"bad":"","good":"","category":"concordancia|genero|crase|gramatica|pontuacao|ortografia|estilo|juridico","message":"o erro em uma frase","rule":"a regra aplicada em uma frase"}]}`;
+
+    const systemPrompt = this.getPrompt('proofread_legal', defaultSystemPrompt);
+
+    const body = paragraphs.map((p) => `[${p.index}] ${p.text}`).join('\n\n');
+
+    // Os achados locais entram no prompt para a IA não gastar saída repetindo
+    // o que o Hunspell e as regras próprias já resolveram de graça.
+    const known = (params.knownIssues || []).slice(0, 25);
+    const userPrompt = [
+      'Parágrafos ([n] = campo "paragraph"):',
+      body,
+      known.length ? `Já apontados por outras camadas, não repita: ${known.join(' | ')}` : '',
+    ].filter(Boolean).join('\n\n');
+
+    const content = await this.callOpenAIViaEdgeFunction(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      // Revisão de documento inteiro roda no mini: o trabalho pesado de achar
+      // ortografia e padrões conhecidos já foi feito offline pelas camadas 1-3.
+      taskOpts.model ?? 'gpt-4o-mini',
+      Math.min(Math.max(taskOpts.maxTokens, 1200), 2000),
+      { taskKey: 'proofread_legal', temperature: 0.1, responseFormat: 'json_object', signal: params.signal },
+    );
+
+    if (params.signal?.aborted) return [];
+
+    const jsonText = this.extractJsonObject(String(content || ''));
+    if (!jsonText) return [];
+
+    try {
+      const parsed = JSON.parse(jsonText);
+      const rawIssues = Array.isArray(parsed?.issues) ? parsed.issues : [];
+      const valid = new Set<AiGrammarIssue['category']>([
+        'concordancia', 'genero', 'crase', 'gramatica', 'pontuacao', 'ortografia', 'estilo', 'juridico',
+      ]);
+
+      return rawIssues
+        .map((issue: any): AiGrammarIssue | null => {
+          const bad = String(issue?.bad ?? '').trim();
+          const good = String(issue?.good ?? '').trim();
+          if (!bad || bad === good) return null;
+          const category = valid.has(issue?.category) ? issue.category : 'gramatica';
+          return {
+            paragraph: Number.isFinite(issue?.paragraph) ? Number(issue.paragraph) : -1,
+            bad,
+            good,
+            category,
+            message: String(issue?.message ?? '').trim() || 'Correção sugerida pelo contexto do parágrafo.',
+            rule: String(issue?.rule ?? '').trim(),
+          };
+        })
+        .filter((issue: AiGrammarIssue | null): issue is AiGrammarIssue => issue !== null)
+        .slice(0, 20);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Analisa o contexto em volta de uma palavra suspeita.
+   *
+   * Só é chamada depois que as camadas locais (Hunspell + regras próprias)
+   * apontaram algo naquele trecho — ver `contextualProofGate`. O contexto vem
+   * recortado em CONTEXT_WINDOW_MAX_CHARS: é o teto de tokens de entrada.
+   */
+  async analyzeSpellingSentence(params: {
+    sentence: string;
+    signal?: AbortSignal;
+  }): Promise<ContextualSentenceSpellingIssue[]> {
+    if (!this.isEnabled()) return [];
+
+    const sentence = String(params.sentence || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, CONTEXT_WINDOW_MAX_CHARS);
+    if ((sentence.match(/[\p{L}\p{M}]+/gu) || []).length < 2) return [];
+
+    await this.ensureSettingsLoaded();
+    const taskOpts = this.getTaskOpts('spell_sentence');
+    // Prompt curto de propósito: é a chamada mais frequente do editor e cada
+    // linha aqui é cobrada em toda correção.
+    const defaultSystemPrompt = `Corretor de português brasileiro. No trecho recebido, encontre palavras que existem no dicionário mas estão erradas no contexto (digitação, gênero, número, determinante, possessivo). Ignore estilo. Nunca sugira forma estrangeira ou fora do pt-BR padrão. "bad" copia literalmente o menor trecho errado; "good" é só a correção. Máximo 2 erros. Sem erro real: {"issues":[]}.
+
+Ex.: "Olá mei amigo" → {"issues":[{"bad":"mei","good":"meu","message":"Antes de “amigo”, o possessivo é “meu”."}]}
+
+JSON apenas: {"issues":[{"bad":"","good":"","message":""}]}`;
+    const systemPrompt = this.getPrompt('spell_sentence', defaultSystemPrompt);
+
+    try {
+      const content = await this.callOpenAIViaEdgeFunction(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: sentence },
+        ],
+        CHEAPEST_SPELL_MODEL,
+        Math.min(Math.max(taskOpts.maxTokens, 160), CONTEXT_RESPONSE_MAX_TOKENS),
+        {
+          taskKey: 'spell_sentence',
+          responseFormat: 'json_object',
+          reasoningEffort: 'minimal',
+          signal: params.signal,
+        },
+      );
+      if (params.signal?.aborted) throw new DOMException('Análise da frase cancelada.', 'AbortError');
+
+      const jsonText = this.extractJsonObject(String(content || ''));
+      if (!jsonText) throw new Error('A IA não retornou JSON válido.');
+      const parsed = JSON.parse(jsonText);
+      return normalizeContextualSentenceSpellingIssues(parsed?.issues, sentence);
+    } catch (err) {
+      console.warn('[ai.service] analyzeSpellingSentence falhou:', err);
+      throw err instanceof Error ? err : new Error('Falha na análise contextual da frase.');
+    }
+  }
+
+  /**
+   * Reordena/completa as sugestões do corretor ortográfico usando a FRASE.
+   *
+   * O Hunspell ordena por distância de edição, o que em petição costuma pôr a
+   * palavra errada em primeiro ("prescricão" → "prescrição" só em 3º). Aqui a
+   * IA vê a frase inteira e diz qual candidata cabe no contexto, podendo
+   * propor uma que o dicionário não gerou.
+   */
+  async suggestSpellingInContext(params: {
+    word: string;
+    sentence: string;
+    candidates: string[];
+    signal?: AbortSignal;
+  }): Promise<string[]> {
+    if (!this.isEnabled()) throw new Error('Serviço de IA indisponível.');
+
+    const word = String(params.word || '').trim();
+    const sentence = String(params.sentence || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, CONTEXT_WINDOW_MAX_CHARS);
+    if (!word || !sentence) throw new Error('Palavra ou frase ausente para a análise contextual.');
+
+    const candidates = (params.candidates || [])
+      .map((c) => String(c || '').trim())
+      .filter(Boolean)
+      .slice(0, 5);
+
+    await this.ensureSettingsLoaded();
+    const taskOpts = this.getTaskOpts('spell_context');
+
+    const defaultSystemPrompt = `Corretor ortográfico contextual de português brasileiro. Corrija SOMENTE a palavra entre <<< >>>, sem reescrever o trecho.
+
+- Decida pela concordância com o que está em volta (determinante, possessivo, substantivo, verbo).
+- Os candidatos do dicionário são pistas e podem estar todos errados; proponha uma forma fora da lista quando for claramente a pretendida.
+- Só pt-BR padrão. Alongamento informal ("Oiee") volta à forma convencional. Preserve a caixa.
+- Máximo 3 opções, só de confiança alta ou média. Palavra adequada (nome próprio, termo técnico, latinismo): lista vazia.
+
+JSON apenas: {"suggestions":[]}`;
+
+    const systemPrompt = this.getPrompt('spell_context', defaultSystemPrompt);
+    // A palavra-alvo é marcada dentro do próprio trecho: uma linha em vez de
+    // quatro rótulos, com a mesma informação.
+    const marked = sentence.includes(word)
+      ? sentence.replace(word, `<<<${word}>>>`)
+      : `<<<${word}>>> — ${sentence}`;
+    const userPrompt = candidates.length ? `${marked}\ndicionário: ${candidates.join(', ')}` : marked;
+
+    try {
+      const content = await this.callOpenAIViaEdgeFunction(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        // Correção de uma palavra é uma tarefa curta e frequente. Fixamos o
+        // modelo econômico mesmo se existir configuração antiga com gpt-4o.
+        CHEAPEST_SPELL_MODEL,
+        Math.min(Math.max(taskOpts.maxTokens, 64), WORD_RESPONSE_MAX_TOKENS),
+        {
+          taskKey: 'spell_context',
+          temperature: 0,
+          responseFormat: 'json_object',
+          reasoningEffort: 'minimal',
+          signal: params.signal,
+        },
+      );
+
+      if (params.signal?.aborted) {
+        throw new DOMException('Análise contextual cancelada.', 'AbortError');
+      }
+
+      const jsonText = this.extractJsonObject(String(content || ''));
+      if (!jsonText) throw new Error('A IA não retornou JSON válido.');
+
+      const parsed = JSON.parse(jsonText);
+      if (!Array.isArray(parsed?.suggestions)) {
+        throw new Error('A resposta da IA não contém a lista de sugestões.');
+      }
+      return normalizeContextualSpellingSuggestions(parsed.suggestions, word);
+    } catch (err) {
+      console.warn('[ai.service] suggestSpellingInContext falhou:', err);
+      throw err instanceof Error ? err : new Error('Falha na análise ortográfica contextual.');
+    }
+  }
+
+  /**
    * Chat do assistente do Editor de Petições.
    *
    * Recebe o histórico da conversa, o texto do documento e um callback de
@@ -403,12 +747,21 @@ Regras obrigatórias:
     clientContext?: string;
     /** Busca local na base de conhecimento. Nunca consome tokens. */
     searchKb?: (query: string) => PetitionChatKbSnippet[];
+    /** Busca no acervo do Nextcloud (assíncrona: baixa e lê os arquivos). */
+    searchArchive?: (query: string) => Promise<PetitionChatArchiveSnippet[]>;
+    /** Briefing da peça definido no formulário do widget. */
+    briefing?: PetitionChatBriefing;
+    /**
+     * 'selection' = trabalhar SOMENTE dentro do trecho selecionado (o restante
+     * do documento vai apenas como contexto de leitura).
+     */
+    scope?: 'document' | 'selection';
     /** Cancelamento (botão "Parar"). Mantém o texto parcial, descarta ações. */
     signal?: AbortSignal;
     onProgress?: (stage: 'thinking' | 'searching' | 'streaming', detail?: string) => void;
     /** Texto visível acumulado (sem o bloco json:actions), a cada chunk. */
     onReplyDelta?: (visibleReply: string) => void;
-  }): Promise<PetitionChatResult & { aborted?: boolean }> {
+  }): Promise<PetitionChatResult & { aborted?: boolean; archiveSources?: string[] }> {
     if (!this.isEnabled()) {
       throw new Error('Serviço de IA não está disponível');
     }
@@ -424,6 +777,7 @@ Regras obrigatórias:
 
     const documentText = String(params.documentText || '').replace(/\r\n?/g, '\n').slice(0, 26000);
     const selectedText = String(params.selectedText || '').trim().slice(0, 8000);
+    const scope = params.scope === 'selection' && selectedText ? 'selection' : 'document';
 
     const systemPrompt = this.buildPetitionChatSystemPrompt('stream');
 
@@ -440,6 +794,23 @@ Regras obrigatórias:
       }
     };
 
+    const archiveSources: string[] = [];
+    const runArchiveSearch = async (query: string): Promise<PetitionChatArchiveSnippet[]> => {
+      const q = String(query || '').trim().slice(0, 160);
+      if (!q || !params.searchArchive) return [];
+      params.onProgress?.('searching', `acervo: ${q.slice(0, 40)}`);
+      try {
+        const found = (await params.searchArchive(q)) || [];
+        for (const item of found) {
+          if (item?.path && !archiveSources.includes(item.path)) archiveSources.push(item.path);
+        }
+        return found.slice(0, 3);
+      } catch {
+        // Acervo indisponível nunca derruba a resposta.
+        return [];
+      }
+    };
+
     const userMessages = history.filter((m) => m.role === 'user');
     const previousUser = userMessages.length > 1 ? userMessages[userMessages.length - 2] : undefined;
     const initialQuery = [
@@ -448,13 +819,27 @@ Regras obrigatórias:
       selectedText.slice(0, 120),
     ].filter(Boolean).join(' ');
     const initialSnippets = runSearch(initialQuery);
+    const archiveSnippets = await runArchiveSearch(
+      [params.briefing?.area, params.briefing?.documentType, initialQuery].filter(Boolean).join(' '),
+    );
 
     const clientContext = String(params.clientContext || '').trim().slice(0, 1500);
+    const briefingBlock = formatBriefing(params.briefing);
+    const documentLabel = scope === 'selection'
+      ? 'DOCUMENTO ABERTO NO EDITOR (apenas CONTEXTO DE LEITURA — a tarefa é sobre o trecho selecionado):'
+      : 'DOCUMENTO ABERTO NO EDITOR (texto puro; a formatação real é mantida pelo editor):';
     const contextParts = [
-      `DOCUMENTO ABERTO NO EDITOR (texto puro; a formatação real é mantida pelo editor):\n${documentText || '(documento vazio)'}`,
-      selectedText ? `TRECHO SELECIONADO PELO USUÁRIO:\n${selectedText}` : '',
+      briefingBlock,
+      `${documentLabel}\n${documentText || '(documento vazio)'}`,
+      selectedText
+        ? `TRECHO SELECIONADO PELO USUÁRIO${scope === 'selection' ? ' — ESCOPO EXCLUSIVO DESTA TAREFA' : ''}:\n${selectedText}`
+        : '',
       clientContext ? `DADOS DO CLIENTE VINCULADO (use estes dados em vez de perguntar; NUNCA invente os que faltarem):\n${clientContext}` : '',
       params.searchKb ? formatKbSnippets(initialQuery, initialSnippets) : '',
+      formatArchiveSnippets(archiveSnippets),
+      scope === 'selection'
+        ? 'ESCOPO ATIVO: SELEÇÃO. Toda ação proposta deve incidir DENTRO do trecho selecionado. Não corrija, não reescreva e não comente o restante do documento; se notar algo relevante fora da seleção, apenas avise em uma frase no final, sem criar ação.'
+        : '',
     ].filter(Boolean).join('\n\n====================\n\n');
 
     const messages: Array<{ role: string; content: string }> = [
@@ -499,7 +884,7 @@ Regras obrigatórias:
         aborted = Boolean(result.aborted);
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
-          return { reply: emittedVisible, actions: [], questions: [], searches, aborted: true };
+          return { reply: emittedVisible, actions: [], questions: [], searches, archiveSources, aborted: true };
         }
         // Stream indisponível (rede, function antiga com erro etc.): mesma
         // conversa, resposta completa de uma vez.
@@ -511,7 +896,7 @@ Regras obrigatórias:
       }
 
       if (!raw) {
-        if (aborted) return { reply: emittedVisible, actions: [], questions: [], searches, aborted: true };
+        if (aborted) return { reply: emittedVisible, actions: [], questions: [], searches, archiveSources, aborted: true };
         throw new Error('IA não retornou resposta');
       }
 
@@ -519,13 +904,13 @@ Regras obrigatórias:
 
       if (aborted) {
         // Geração interrompida: mantém o texto parcial, descarta ações.
-        return { reply: parsed.reply, actions: [], questions: [], searches, aborted: true };
+        return { reply: parsed.reply, actions: [], questions: [], searches, archiveSources, aborted: true };
       }
 
       const searchQuery = parsed.search?.trim();
       const alreadySearched = searchQuery ? searches.some((s) => normalizePtQuery(s) === normalizePtQuery(searchQuery)) : true;
       if (!searchQuery || alreadySearched || round >= MAX_SEARCH_ROUNDS || !params.searchKb) {
-        return { reply: parsed.reply, actions: parsed.actions, questions: parsed.questions, searches };
+        return { reply: parsed.reply, actions: parsed.actions, questions: parsed.questions, searches, archiveSources };
       }
 
       const snippets = runSearch(searchQuery);
@@ -611,8 +996,17 @@ O QUE VOCÊ SABE FAZER:
 - Revisar o documento e fazer apontamentos (erros, inconsistências, argumentos frágeis, pedidos faltantes).
 - Corrigir ortografia, gramática, concordância e pontuação.
 - Melhorar a redação de trechos.
+- REMOVER conteúdo: duplicações, parágrafos repetidos, rascunhos e trechos que o advogado mandou tirar (ação "delete").
 - Redigir e inserir conteúdo novo (tópicos, parágrafos, fundamentos, pedidos) no estilo dos modelos do escritório.
+- Estruturar uma peça do zero: definir os tópicos na ordem correta para a área e o tipo de peça.
+- Auditar a coerência interna: fatos × fundamentos × pedidos × valor da causa × documentos citados.
+- Antecipar a defesa: apontar os contra-argumentos prováveis da parte adversa e como blindá-los.
+- Indicar os dispositivos legais, súmulas e teses aplicáveis, SEMPRE marcando o que o advogado precisa conferir.
+- Conferir coerência de datas, prazos, prescrição e decadência a partir do que está no documento.
 - Fazer cálculos trabalhistas/cíveis simples quando o usuário fornecer os dados (ex.: hora extra = salário ÷ divisor × 1,5 × quantidade), sempre declarando as premissas.
+- Padronizar títulos, numeração e formatação dos tópicos conforme o padrão já usado na peça.
+- Reescrever em linguagem simples/acessível quando pedido, sem perder precisão técnica.
+- Resumir a peça, listar as provas necessárias e montar perguntas objetivas para o cliente.
 - Responder dúvidas sobre o conteúdo do documento.
 
 FORMATO DA RESPOSTA — retorne APENAS JSON válido, sem texto fora dele:
@@ -622,7 +1016,8 @@ FORMATO DA RESPOSTA — retorne APENAS JSON válido, sem texto fora dele:
     { "question": "pergunta de esclarecimento", "options": ["opção 1", "opção 2"] }
   ],
   "actions": [
-    { "type": "replace", "label": "descrição curta", "search": "trecho EXATO copiado do documento", "replace": "trecho corrigido" },
+    { "type": "replace", "label": "descrição curta", "search": "trecho EXATO copiado do documento", "replace": "trecho corrigido", "searchEnd": "fim do trecho quando ele atravessa parágrafos (opcional)" },
+    { "type": "delete", "label": "descrição curta", "search": "PRIMEIRA linha EXATA do trecho a remover", "searchEnd": "ÚLTIMA linha EXATA do trecho a remover (obrigatório quando são vários parágrafos)", "occurrence": "last" ou "first" },
     { "type": "insert", "label": "descrição curta", "position": "cursor" ou "end", "text": "texto a inserir" },
     { "type": "insert_block", "label": "descrição curta", "blockId": "id do modelo", "position": "cursor" ou "end", "replacements": [ { "search": "trecho EXATO do modelo", "replace": "valor do caso" } ] }
   ],
@@ -654,16 +1049,43 @@ REGRAS PARA "replace" (CRÍTICAS — preservam a formatação do documento):
 - Correções CIRÚRGICAS: substitua o menor trecho possível. NUNCA reescreva o documento inteiro.
 - Uma ação por correção; várias correções = várias ações. O usuário escolhe quais aplicar por checkbox, então NÃO agrupe correções independentes numa ação só.
 
+REGRAS PARA "delete" (REMOVER conteúdo — use SEMPRE que o pedido for tirar/limpar/apagar algo):
+- NUNCA use "replace" com "replace" vazio para remover: use "delete".
+- "search" é a PRIMEIRA linha do trecho a remover, copiada VERBATIM do documento. Quando o trecho ocupa mais de um parágrafo, "searchEnd" é a ÚLTIMA linha dele, também VERBATIM. O sistema seleciona tudo entre as duas pontas — inclusive as quebras de parágrafo — e apaga de uma vez.
+- Copie as linhas do documento SEM juntar parágrafos e SEM reticências: "…" no meio do trecho faz a remoção falhar.
+- CONTEÚDO DUPLICADO: use "occurrence": "last" para apagar a cópia acrescentada depois e preservar a original. Uma ação por bloco duplicado.
+- Se o trecho a remover for longo, ainda assim informe apenas as duas pontas ("search" + "searchEnd") — não cole o bloco inteiro.
+- Antes de propor a remoção, confirme no DOCUMENTO ABERTO que as duas linhas existem exatamente como você as escreveu.
+
 REGRAS PARA "insert":
 - "position": "cursor" para inserir onde o usuário está; "end" para adicionar ao final (novo tópico, novo pedido). O sistema insere "end" automaticamente ANTES do fecho da petição (Termos em que / data / assinatura) — NUNCA inclua data, local, "Termos em que", "Pede deferimento" ou assinatura no "text".
+- QUEBRA DE LINHA É OBRIGATÓRIA: cada título, cada item e cada parágrafo em uma linha própria, separados por \\n. NUNCA entregue uma estrutura inteira numa linha só ("1. PREÂMBULO - Identificação - Qualificação 2. DOS FATOS ...") — isso vira um parágrafo ilegível no documento.
+- NADA de markdown dentro de "text": sem **, sem ##, sem \`\`\`. O documento é Word, não chat.
+- ANTES DE INSERIR, confira se o conteúdo JÁ EXISTE no documento. Se existir (mesmo com outras palavras), não insira de novo: proponha "replace" para melhorar ou "delete" para limpar, e explique no texto.
 - Em "text", use \\n para separar parágrafos. Títulos de tópicos em MAIÚSCULAS em linha própria (ex.: "DAS HORAS EXTRAS").
 - SIGA O PADRÃO DO DOCUMENTO: se os títulos existentes são numerados (ex.: "2.4 – DA MULTA..."), o novo título continua a sequência ("2.5 – ..."); se usam "DA/DO/DAS/DOS", mantenha; copie o mesmo estilo de caixa alta e pontuação. Um tópico novo entre tópicos existentes deve parecer escrito pelo mesmo autor.
 - Texto puro, sem markdown, sem cercas de código.
 
+DOCUMENTO EM BRANCO — SEMPRE COMECE PELO BRIEFING:
+- Se o documento está vazio (ou praticamente vazio) e você NÃO recebeu um BRIEFING DA PEÇA, é PROIBIDO propor estrutura, tópicos ou texto genérico. Pergunte primeiro, com "questions", nesta ordem de prioridade:
+  1. "Qual a área do Direito?" — options: ["Trabalhista", "Cível", "Previdenciário", "Família", "Consumidor", "Criminal", "Tributário", "Administrativo", "Empresarial"] (escolha as 4 mais prováveis pelo contexto).
+  2. "Que tipo de peça vamos redigir?" — options: ["Petição inicial", "Contestação", "Recurso", "Manifestação/Petição simples", "Parecer", "Notificação extrajudicial"].
+  3. "Nosso cliente está em qual polo?" — options: ["Autor/Reclamante", "Réu/Reclamado", "Terceiro interessado"].
+- Se o briefing responder algum desses itens, NÃO pergunte de novo — pergunte só o que falta e complemente com uma pergunta sobre os FATOS essenciais.
+- Uma peça genérica ("DOS FATOS / DO DIREITO / DOS PEDIDOS" sem conteúdo) não ajuda ninguém: a estrutura só é útil depois que você sabe a área, o tipo e o polo, porque cada combinação tem tópicos próprios (ex.: inicial trabalhista tem "DA JORNADA" e "DO VÍNCULO"; contestação tem "DAS PRELIMINARES" e "DA IMPUGNAÇÃO ESPECÍFICA"; recurso tem "DA TEMPESTIVIDADE" e "DO PREQUESTIONAMENTO").
+
+ACERVO DO ESCRITÓRIO (Nextcloud):
+- Além dos blocos-modelo, você pode receber trechos de PEÇAS REAIS já protocoladas, com o caminho do arquivo. Use-as para acertar o estilo da casa, a estrutura habitual e as teses que o escritório costuma sustentar.
+- NUNCA copie dados de outro cliente (nomes, CPF, valores, datas, número de processo) de uma peça do acervo. Só estrutura, redação e fundamentação.
+- Quando uma peça do acervo embasar a resposta, cite o nome do arquivo no texto ("com base em: <arquivo>").
+- Peça do acervo não tem blockId — nunca use "insert_block" com ela.
+
 REGRAS GERAIS:
 - Não invente fatos, datas, valores, nomes ou números de processo.
 - Pedido de só análise/apontamento/dúvida → "actions": [] e tudo em "reply".
-- Se o usuário selecionou um trecho, priorize trabalhar sobre ele.
+- Se o usuário selecionou um trecho, priorize trabalhar sobre ele. Quando o contexto indicar ESCOPO ATIVO: SELEÇÃO, é PROIBIDO propor ação fora do trecho selecionado.
+- Ao citar lei, súmula, tese ou precedente, escreva o dispositivo por extenso e marque de forma explícita quando a referência precisa ser conferida antes do protocolo. Nunca invente número de súmula, tema repetitivo ou acórdão.
+- Nunca repita uma ação que já foi aplicada nesta conversa. Se o usuário pedir de novo o que você já inseriu, diga que já está no documento e ofereça revisar ou remover.
 - "reply" em português do Brasil, direto e profissional. Não repita em "reply" o texto integral das ações; resuma o que cada uma faz.`;
 
     const qualityRules = `REGRAS DE QUALIDADE E EXECUCAO:
@@ -675,7 +1097,10 @@ REGRAS GERAIS:
 - Dados informados pelo usuario prevalecem sobre qualquer texto do modelo. Se o modelo disser jornada, salario, quantidade, datas ou valores diferentes, substitua pelo dado do usuario ou use variavel.
 - Se faltar salario/base de calculo, nao calcule valores. Use variaveis como [[VALOR_HORAS_EXTRAS]], [[VALOR_REFLEXO_FERIAS]], [[VALOR_REFLEXO_13]], [[VALOR_REFLEXO_AVISO]], [[VALOR_REFLEXO_DSR]] e [[VALOR_TOTAL]].
 - Ao usar insert_block, inclua replacements para TODA informacao conflitante do modelo, principalmente jornada, periodo, salario, quantidade de horas extras e valores monetarios.
-- Quando nao houver dados suficientes, faca perguntas objetivas de uma vez. Nao invente fatos.`;
+- Quando nao houver dados suficientes, faca perguntas objetivas de uma vez. Nao invente fatos.
+- Remocao pedida pelo usuario ("remova", "tire", "esta duplicado", "limpe") = acao "delete" com search + searchEnd. Nunca responda apenas descrevendo o que deveria ser removido.
+- Antes de qualquer insercao, verifique se aquilo ja esta no documento. Conteudo repetido e o erro mais caro nesta ferramenta.
+- Estrutura, sumario e lista SEMPRE com uma quebra de linha por item. Texto de acao nunca sai em uma linha unica.`;
 
     const jsonFormatRule = '- Retorne JSON valido. Sem markdown, sem comentarios, sem texto antes ou depois do JSON.';
 
@@ -733,12 +1158,14 @@ REGRAS GERAIS:
   } {
       const actions: PetitionChatAction[] = Array.isArray(parsed.actions)
         ? parsed.actions
-            .filter((a: any) => a && (a.type === 'replace' || a.type === 'insert' || a.type === 'insert_block'))
+            .filter((a: any) => a && (a.type === 'replace' || a.type === 'insert' || a.type === 'insert_block' || a.type === 'delete'))
             .map((a: any): PetitionChatAction => ({
               type: a.type,
               label: typeof a.label === 'string' ? a.label : undefined,
               search: typeof a.search === 'string' ? a.search : undefined,
               replace: typeof a.replace === 'string' ? a.replace : undefined,
+              searchEnd: typeof a.searchEnd === 'string' && a.searchEnd.trim() ? a.searchEnd : undefined,
+              occurrence: a.occurrence === 'first' || a.occurrence === 'last' ? a.occurrence : undefined,
               position: a.position === 'end' ? 'end' : 'cursor',
               text: typeof a.text === 'string' ? a.text : undefined,
               blockId: typeof a.blockId === 'string' ? a.blockId.trim() : undefined,
@@ -750,6 +1177,9 @@ REGRAS GERAIS:
             }))
             .filter((a: PetitionChatAction) => {
               if (a.type === 'replace') return Boolean(a.search?.trim()) && typeof a.replace === 'string';
+              // Remoção precisa de trecho longo o bastante para ser inequívoco:
+              // apagar "de" pelo documento inteiro seria destrutivo.
+              if (a.type === 'delete') return (a.search?.trim().length || 0) >= 8;
               if (a.type === 'insert_block') return Boolean(a.blockId);
               return Boolean(a.text?.trim());
             })
@@ -824,7 +1254,13 @@ REGRAS GERAIS:
     messages: any[],
     model: string = 'gpt-4o-mini',
     maxTokens?: number,
-    opts?: { taskKey?: string; temperature?: number; responseFormat?: 'json_object' }
+    opts?: {
+      taskKey?: string;
+      temperature?: number;
+      responseFormat?: 'json_object';
+      reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high';
+      signal?: AbortSignal;
+    }
   ): Promise<string> {
     const { data, error } = await supabase.functions.invoke('openai-proxy', {
       body: {
@@ -834,7 +1270,9 @@ REGRAS GERAIS:
         task_key: opts?.taskKey,
         temperature: opts?.temperature,
         response_format: opts?.responseFormat ? { type: opts.responseFormat } : undefined,
+        reasoning_effort: opts?.reasoningEffort,
       },
+      signal: opts?.signal,
     });
 
     if (error) {

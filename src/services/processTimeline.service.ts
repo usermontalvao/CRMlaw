@@ -777,23 +777,34 @@ Regras:
       return 'instrucao';
     }
 
+    // Contestação — exige defesa efetivamente APRESENTADA.
+    // A menção isolada à palavra "contestação" não serve: o despacho que designa
+    // a audiência inicial já explica de antemão como a defesa deverá ser
+    // protocolada ("A contestação da parte ré [...] deverão ser apresentadas
+    // mediante petição"), e isso fazia o processo pular para 'contestacao' ainda
+    // na fase de conciliação, com a audiência marcada para meses à frente.
+    // Vem antes da conciliação porque defesa juntada é fase mais avançada — e o
+    // texto de TRT costuma citar CEJUSC/conciliação em boilerplate.
+    if (/(?:juntada|juntou|apresentad[ao]|apresentou|protocol(?:ou|ada)|ofertada|ofereceu|recebida)[^.\n]{0,40}contesta[çc][ãa]o/.test(recentText) ||
+        /contesta[çc][ãa]o[^.\n]{0,40}(?:juntada|apresentada|protocolada|ofertada|recebida)/.test(recentText) ||
+        recentText.includes('defesa apresentada') ||
+        recentText.includes('réu contestou') ||
+        recentText.includes('reu contestou')) {
+      return 'contestacao';
+    }
+
     // Conciliação (audiência de conciliação designada ou realizada)
-    // Prioridade sobre contestação, pois a audiência geralmente vem antes ou define a fase atual
+    // Na Justiça do Trabalho a AUDIÊNCIA INICIAL é ato conciliatório, realizada
+    // no CEJUSC — por isso conta como fase de conciliação.
     if (recentText.includes('audiência de conciliação') ||
         recentText.includes('audiencia de conciliacao') ||
         recentText.includes('conciliação virtual') ||
         recentText.includes('conciliação designada') ||
-        recentText.includes('pauta de conciliação')) {
+        recentText.includes('pauta de conciliação') ||
+        recentText.includes('audiência inicial') ||
+        recentText.includes('audiencia inicial') ||
+        recentText.includes('cejusc')) {
       return 'conciliacao';
-    }
-
-    // Contestação
-    if (recentText.includes('contestação') || 
-        recentText.includes('contestacao') ||
-        recentText.includes('defesa apresentada') ||
-        recentText.includes('juntada de contestação') ||
-        recentText.includes('réu contestou')) {
-      return 'contestacao';
     }
 
     // Citação

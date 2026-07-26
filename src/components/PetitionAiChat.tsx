@@ -19,7 +19,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Sparkles,
   X,
   Send,
   Check,
@@ -27,8 +26,6 @@ import {
   Loader2,
   Trash2,
   AlertTriangle,
-  Wand2,
-  ListChecks,
   SpellCheck,
   ListPlus,
   HelpCircle,
@@ -39,15 +36,42 @@ import {
   StopCircle,
   RotateCcw,
   ChevronDown,
+  Maximize2,
+  Minimize2,
+  ShieldCheck,
+  MousePointer2,
+  ArrowUpRight,
+  Eraser,
+  Sparkles,
+  Target,
+  Cloud,
+  CloudOff,
+  Settings2,
+  Pencil,
 } from 'lucide-react';
 import {
   aiService,
   type PetitionChatAction,
+  type PetitionChatBriefing,
   type PetitionChatQuestion,
 } from '../services/ai.service';
 import { PetitionKbSearcher, type KbEntry } from '../services/petitionKbSearch';
+import { searchPetitionArchive } from '../services/petitionArchiveKb';
 import { insertPetitionTextSmart } from '../utils/petitionSmartInsert';
+import {
+  normalizeAiInsertText,
+  rangeAnchors,
+  spansParagraphs,
+  splitDeletionChunks,
+} from '../utils/petitionAiText';
 import AiMarkdown from './petition/AiMarkdown';
+import PetitionAiBriefing from './petition/PetitionAiBriefing';
+import {
+  SKILL_GROUP_LABEL,
+  visibleSkills,
+  type PetitionSkill,
+  type SkillGroup,
+} from './petition/petitionAiSkills';
 import type { SyncfusionEditorRef } from './SyncfusionEditor';
 
 type ActionStatus = 'pending' | 'applied' | 'failed';
@@ -68,6 +92,8 @@ interface ChatMessage {
   questions?: PetitionChatQuestion[];
   /** Buscas locais feitas na base de conhecimento para esta resposta. */
   searches?: string[];
+  /** Arquivos do acervo (Nextcloud) que embasaram esta resposta. */
+  archiveSources?: string[];
   isError?: boolean;
   /** Resposta ainda sendo streamada. */
   streaming?: boolean;
@@ -99,34 +125,24 @@ interface PetitionAiChatProps {
   insertBlockSfdt?: (sfdt: string, position: 'cursor' | 'end') => Promise<boolean>;
   disabled?: boolean;
   disabledReason?: string;
+  /** Seleção atual, usada para tornar o escopo das ações visível antes do envio. */
+  selectedText?: string;
+  /** Contagem do editor, usada para indicar se há conteúdo analisável. */
+  documentWordCount?: number;
+  /** Sinal robusto para documentos cujo contador ainda não terminou de indexar. */
+  documentHasContent?: boolean;
+  /** Total de páginas, usado como fallback enquanto a contagem de palavras carrega. */
+  documentPageCount?: number;
+  /** Área jurídica da petição aberta — pré-seleciona o briefing. */
+  suggestedArea?: string;
+  /** Tipo do documento aberto no editor — pré-seleciona o briefing. */
+  suggestedDocumentType?: string;
 }
 
-const QUICK_PROMPTS: Array<{ icon: React.ReactNode; label: string; desc: string; prompt: string }> = [
-  {
-    icon: <ListChecks className="w-4 h-4" />,
-    label: 'Revisar e apontar',
-    desc: 'Erros, riscos e pedidos faltantes',
-    prompt: 'Revise o documento e faça apontamentos: erros, inconsistências, argumentos frágeis e pedidos que possam estar faltando. Não altere nada ainda, só liste os apontamentos.',
-  },
-  {
-    icon: <SpellCheck className="w-4 h-4" />,
-    label: 'Corrigir texto',
-    desc: 'Ortografia, gramática e pontuação',
-    prompt: 'Corrija ortografia, gramática, concordância e pontuação do documento. Proponha cada correção como uma ação separada para eu escolher quais aplicar.',
-  },
-  {
-    icon: <Wand2 className="w-4 h-4" />,
-    label: 'Melhorar seleção',
-    desc: 'Redação mais técnica e clara',
-    prompt: 'Melhore a redação do trecho selecionado, deixando-o mais técnico e claro, preservando o sentido jurídico.',
-  },
-  {
-    icon: <ListPlus className="w-4 h-4" />,
-    label: 'Adicionar tópico',
-    desc: 'Novo fundamento ou pedido',
-    prompt: 'Adicione ao final do documento um tópico sobre ',
-  },
-];
+// O catálogo de habilidades vive em ./petition/petitionAiSkills — inclui todas
+// as ações rápidas originais e as novas (remoção de duplicações, antecipação da
+// defesa, fundamentação, prazos, cálculos, estratégia, consulta ao acervo...).
+type QuickPrompt = PetitionSkill;
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -211,6 +227,36 @@ const diffWords = (oldText: string, newText: string) => {
   };
 };
 
+/**
+ * Janela do documento em volta do trecho selecionado.
+ *
+ * Com escopo de seleção, mandar a peça inteira faz o modelo "resolver o
+ * documento" em vez de resolver o trecho — além de custar tokens à toa. Aqui
+ * vai só o contexto imediatamente antes e depois, com o resto marcado como
+ * omitido para o modelo não achar que a peça acabou ali.
+ */
+const buildSelectionWindow = (documentText: string, selection: string, margin = 1600): string => {
+  const doc = normalizeForSearch(documentText);
+  const needle = String(selection || '').trim();
+  if (!doc || !needle) return doc;
+
+  const exact = resolveExactSearchText(doc, needle);
+  const index = exact ? doc.indexOf(exact) : -1;
+  if (index < 0) {
+    // Seleção não localizada (documento mudou): manda um resumo curto do começo
+    // em vez da peça toda — o escopo continua sendo o trecho.
+    return `${doc.slice(0, margin)}${doc.length > margin ? '\n[...restante do documento omitido: a tarefa é sobre o trecho selecionado...]' : ''}`;
+  }
+
+  const start = Math.max(0, index - margin);
+  const end = Math.min(doc.length, index + (exact?.length || needle.length) + margin);
+  return [
+    start > 0 ? '[...início do documento omitido...]' : '',
+    doc.slice(start, end),
+    end < doc.length ? '[...restante do documento omitido...]' : '',
+  ].filter(Boolean).join('\n');
+};
+
 const clampContext = (text: string, side: 'start' | 'end', max = 48) => {
   if (text.length <= max) return text;
   return side === 'start' ? `…${text.slice(-max)}` : `${text.slice(0, max)}…`;
@@ -223,7 +269,7 @@ const AI_THEME_CSS = `
   --ai-surface:#ffffff; --ai-surface-2:#f6f7f9; --ai-surface-3:#eef0f3;
   --ai-border:#e3e6ea; --ai-border-strong:#d2d6dc;
   --ai-text:#1f2937; --ai-text-2:#6b7280; --ai-text-3:#9ca3af;
-  --ai-accent:#2563eb; --ai-accent-hover:#1d4ed8; --ai-accent-soft:#eff4ff; --ai-accent-border:#c7d7fe;
+  --ai-accent:#e85d14; --ai-accent-hover:#c84a0b; --ai-accent-soft:#fff5eb; --ai-accent-border:#fed1ad;
   --ai-user-bubble:#1f2937; --ai-user-text:#ffffff;
   --ai-ok:#059669; --ai-ok-soft:#ecfdf5; --ai-ok-border:#a7f3d0;
   --ai-del:#dc2626; --ai-del-soft:#fef2f2; --ai-del-border:#fecaca;
@@ -233,7 +279,7 @@ body.petition-dark .pet-ai{
   --ai-surface:#262626; --ai-surface-2:#2f2f2f; --ai-surface-3:#383838;
   --ai-border:#3d3d3d; --ai-border-strong:#4a4a4a;
   --ai-text:#e5e5e5; --ai-text-2:#a3a3a3; --ai-text-3:#737373;
-  --ai-accent:#60a5fa; --ai-accent-hover:#93c5fd; --ai-accent-soft:#1e2a44; --ai-accent-border:#31436b;
+  --ai-accent:#fb923c; --ai-accent-hover:#fdba74; --ai-accent-soft:#3a210f; --ai-accent-border:#7c3d12;
   --ai-user-bubble:#3b4252; --ai-user-text:#f1f5f9;
   --ai-ok:#34d399; --ai-ok-soft:#0d2b22; --ai-ok-border:#14532d;
   --ai-del:#f87171; --ai-del-soft:#2f1a1a; --ai-del-border:#7f1d1d;
@@ -244,9 +290,38 @@ body.petition-dark .pet-ai{
 .pet-ai-scroll::-webkit-scrollbar-track{background:transparent;}
 `;
 
-const PANEL_SIZE_KEY = 'petitionAiChat.size';
+const PANEL_SIZE_KEY = 'petitionAiChat.size.v2';
 const MIN_W = 380;
-const MIN_H = 440;
+const MIN_H = 420;
+const DEFAULT_PANEL_SIZE = { w: 500, h: 520 };
+
+// Acervo do Nextcloud como segunda base de conhecimento. Fica desligado até o
+// escritório escolher a pasta: varrer o drive inteiro na primeira pergunta
+// seria lento e imprevisível.
+const ARCHIVE_KEY = 'petitionAiChat.archive.v1';
+
+interface ArchiveSettings {
+  enabled: boolean;
+  root: string;
+}
+
+const loadArchiveSettings = (): ArchiveSettings => {
+  try {
+    const raw = window.localStorage.getItem(ARCHIVE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        enabled: Boolean(parsed?.enabled),
+        root: typeof parsed?.root === 'string' ? parsed.root : '',
+      };
+    }
+  } catch { /* ignore */ }
+  return { enabled: false, root: '' };
+};
+
+const saveArchiveSettings = (settings: ArchiveSettings) => {
+  try { window.localStorage.setItem(ARCHIVE_KEY, JSON.stringify(settings)); } catch { /* ignore */ }
+};
 
 const loadPanelSize = (): { w: number; h: number } => {
   try {
@@ -258,7 +333,7 @@ const loadPanelSize = (): { w: number; h: number } => {
       }
     }
   } catch { /* ignore */ }
-  return { w: 480, h: 700 };
+  return DEFAULT_PANEL_SIZE;
 };
 
 const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
@@ -269,6 +344,12 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
   insertBlockSfdt,
   disabled = false,
   disabledReason,
+  selectedText = '',
+  documentWordCount = 0,
+  documentHasContent = false,
+  documentPageCount = 1,
+  suggestedArea,
+  suggestedDocumentType,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -278,6 +359,21 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
   const [progress, setProgress] = useState<{ stage: 'thinking' | 'searching' | 'streaming'; detail?: string }>({ stage: 'thinking' });
   const [questionDrafts, setQuestionDrafts] = useState<Record<string, QuestionDraft>>({});
   const [panelSize, setPanelSize] = useState(loadPanelSize);
+  const [isExpanded, setIsExpanded] = useState(false);
+  // Briefing da peça: contexto fixo da conversa, preenchido num formulário
+  // local (custo zero de tokens) e reenviado em todas as mensagens.
+  const [briefing, setBriefing] = useState<PetitionChatBriefing | null>(null);
+  const [showBriefing, setShowBriefing] = useState(false);
+  const [showAllSkills, setShowAllSkills] = useState(false);
+  // Escopo da tarefa. 'auto' segue a seleção do editor; o advogado pode fixar.
+  const [scopePreference, setScopePreference] = useState<'auto' | 'selection' | 'document'>('auto');
+  // Seleção "grudenta": o editor perde a seleção quando o foco vai para o chat
+  // (e quando qualquer rotina interna chama selectAll). Guardar a última
+  // seleção real é o que impede o widget de voltar sozinho ao documento todo.
+  const [stickySelection, setStickySelection] = useState('');
+  const [archiveEnabled, setArchiveEnabled] = useState(loadArchiveSettings().enabled);
+  const [archiveRoot, setArchiveRoot] = useState(loadArchiveSettings().root);
+  const [showArchiveSettings, setShowArchiveSettings] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -287,6 +383,61 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
   const kbSearcher = useMemo(() => new PetitionKbSearcher(kbEntries || []), [kbEntries]);
 
   const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
+  const liveSelection = String(selectedText || '').replace(/\s+/g, ' ').trim();
+  // Enquanto o advogado escreve no chat, o editor pode reportar seleção vazia;
+  // a última seleção real continua valendo até ele trocar ou soltar o escopo.
+  const normalizedSelection = liveSelection || stickySelection;
+  const hasSelection = normalizedSelection.length > 0;
+  const activeScope: 'selection' | 'document' = scopePreference === 'document'
+    ? 'document'
+    : scopePreference === 'selection' && hasSelection
+      ? 'selection'
+      : hasSelection ? 'selection' : 'document';
+  const isSelectionScope = activeScope === 'selection' && hasSelection;
+  const hasDocument = documentHasContent || documentWordCount > 0 || documentPageCount > 1;
+  const selectionPreview = normalizedSelection.length > 92
+    ? `${normalizedSelection.slice(0, 92)}…`
+    : normalizedSelection;
+  const documentContextSummary = documentWordCount > 0
+    ? `${documentWordCount.toLocaleString('pt-BR')} palavras prontas`
+    : hasDocument && documentPageCount > 1
+      ? `${documentPageCount.toLocaleString('pt-BR')} páginas prontas`
+      : 'Documento pronto';
+  const visibleQuickPrompts = useMemo(() => visibleSkills({ hasDocument }), [hasDocument]);
+  const skillsByGroup = useMemo(() => {
+    const groups = new Map<SkillGroup, PetitionSkill[]>();
+    for (const skill of visibleQuickPrompts) {
+      const list = groups.get(skill.group) || [];
+      list.push(skill);
+      groups.set(skill.group, list);
+    }
+    return Array.from(groups.entries());
+  }, [visibleQuickPrompts]);
+  const primaryQuickPrompt = isSelectionScope
+    ? visibleQuickPrompts.find((quickPrompt) => quickPrompt.label === 'Melhorar seleção')
+    : hasDocument
+      ? visibleQuickPrompts.find((quickPrompt) => quickPrompt.label === 'Auditoria completa')
+      : visibleQuickPrompts.find((quickPrompt) => quickPrompt.label === 'Redigir novo tópico');
+  const compactSecondaryIds = isSelectionScope
+    ? ['auditoria', 'revisao-linguistica', 'reforcar-tese', 'novo-topico']
+    : hasDocument
+      ? ['revisao-linguistica', 'melhorar-selecao', 'novo-topico', 'conferir-pedidos']
+      : ['estrutura-inicial', 'consultar-acervo'];
+  const secondaryQuickPrompts = visibleQuickPrompts.filter((quickPrompt) => quickPrompt !== primaryQuickPrompt);
+  const compactSecondaryQuickPrompts = compactSecondaryIds
+    .map((skillId) => visibleQuickPrompts.find((quickPrompt) => quickPrompt.id === skillId))
+    .filter((quickPrompt): quickPrompt is PetitionSkill => Boolean(quickPrompt && quickPrompt !== primaryQuickPrompt));
+  const hiddenSkillsCount = Math.max(0, secondaryQuickPrompts.length - compactSecondaryQuickPrompts.length);
+
+  // Seleção nova do editor vira a seleção ativa; seleção vazia NÃO apaga a
+  // anterior (o editor a perde só por causa do foco no chat).
+  useEffect(() => {
+    if (liveSelection) setStickySelection(liveSelection);
+  }, [liveSelection]);
+
+  useEffect(() => {
+    saveArchiveSettings({ enabled: archiveEnabled, root: archiveRoot });
+  }, [archiveEnabled, archiveRoot]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -297,6 +448,15 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
       window.setTimeout(() => inputRef.current?.focus(), 80);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isSending) setIsOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, isSending]);
 
   // Cancela a geração em andamento se o componente desmontar.
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -309,6 +469,7 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
   // ── Redimensionamento pela alça do canto superior esquerdo ─────────────────
   const handleResizeStart = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
+    setIsExpanded(false);
     const startX = e.clientX;
     const startY = e.clientY;
     const startW = panelSize.w;
@@ -383,9 +544,75 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
         return exactSearch ? editor.replaceAll(exactSearch, replace) : false;
       };
 
+      /**
+       * Aplica sobre um trecho que pode atravessar parágrafos.
+       *
+       * A busca do editor não passa pela marca de parágrafo — é exatamente por
+       * isso que "remova este bloco duplicado" falhava. Aqui o trecho é
+       * localizado por duas âncoras (primeira e última linha) e a seleção
+       * cobre tudo entre elas.
+       */
+      const applyOverRange = (
+        rawSearch: string,
+        options: { replaceWith?: string; occurrence?: 'first' | 'last'; searchEnd?: string },
+      ): boolean => {
+        const anchors = rangeAnchors(rawSearch, options.searchEnd);
+        if (!anchors || typeof editor.deleteRange !== 'function') return false;
+        return editor.deleteRange(anchors.start, anchors.end, {
+          replaceWith: options.replaceWith,
+          occurrence: options.occurrence,
+          // Margem sobre o trecho pedido: impede que uma âncora ambígua
+          // arraste metade da petição junto.
+          maxChars: Math.max(400, Math.round(rawSearch.length * 1.8) + 400),
+        });
+      };
+
       if (action.type === 'replace') {
         const search = String(action.search || '');
-        const ok = replaceTolerant(search, String(action.replace ?? ''));
+        const replacement = String(action.replace ?? '');
+        // Trecho de um parágrafo só: caminho barato de sempre.
+        let ok = !spansParagraphs(search) && !action.searchEnd
+          ? replaceTolerant(search, replacement)
+          : false;
+        if (!ok) {
+          ok = applyOverRange(search, {
+            replaceWith: replacement,
+            searchEnd: action.searchEnd,
+            occurrence: action.occurrence,
+          });
+        }
+        if (!ok) {
+          return { status: 'failed', error: 'Trecho não encontrado no documento (pode ter sido alterado).' };
+        }
+        onDocumentChanged?.();
+        return { status: 'applied' };
+      }
+
+      if (action.type === 'delete') {
+        const search = String(action.search || '');
+        const occurrence = action.occurrence || 'last';
+
+        // 1. Intervalo completo (funciona mesmo com vários parágrafos).
+        let ok = applyOverRange(search, { searchEnd: action.searchEnd, occurrence });
+
+        // 2. Sem intervalo: apaga parágrafo por parágrafo, UMA ocorrência de
+        //    cada — apagar todas removeria também a cópia que deve ficar.
+        if (!ok && typeof editor.deleteOccurrence === 'function') {
+          const chunks = splitDeletionChunks(search);
+          let removed = 0;
+          for (const chunk of chunks) {
+            if (editor.deleteOccurrence(chunk, occurrence)) removed += 1;
+          }
+          ok = removed > 0;
+          if (removed > 0 && removed < chunks.length) {
+            onDocumentChanged?.();
+            return {
+              status: 'applied',
+              error: `Removi ${removed} de ${chunks.length} trechos — confira o restante no documento.`,
+            };
+          }
+        }
+
         if (!ok) {
           return { status: 'failed', error: 'Trecho não encontrado no documento (pode ter sido alterado).' };
         }
@@ -429,7 +656,7 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
         }
 
         // Fallback: texto puro do modelo com as substituições aplicadas
-        let text = String(entry.content || '').trim();
+        let text = normalizeAiInsertText(String(entry.content || ''));
         if (!text) return { status: 'failed', error: 'Modelo sem conteúdo utilizável.' };
         for (const rep of reps) {
           text = text.split(rep.search).join(rep.replace);
@@ -455,7 +682,10 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
       }
 
       // type === 'insert'
-      const text = String(action.text || '');
+      // Markdown fora e quebras de linha de volta: sem isto, uma estrutura
+      // inteira entra no documento como um parágrafo único e ilegível.
+      const text = normalizeAiInsertText(String(action.text || ''));
+      if (!text) return { status: 'failed', error: 'Ação sem texto para inserir.' };
       const hadContent = editor.hasContent();
       editor.focus();
       if (action.position === 'end') {
@@ -539,19 +769,48 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
     abortRef.current = controller;
 
     try {
-      const { documentText, selectedText } = captureEditorContext();
+      const captured = captureEditorContext();
+      // A seleção viva do editor manda; se ele já a perdeu (foco no chat), vale
+      // a última seleção real registrada pelo widget.
+      const effectiveSelection = captured.selectedText.trim() || stickySelection;
+      const useSelectionScope = activeScope === 'selection' && Boolean(effectiveSelection.trim());
+
+      // Escopo de seleção: o documento entra apenas como JANELA em volta do
+      // trecho. É isto que impede o assistente de trabalhar a peça inteira
+      // quando o pedido era sobre um parágrafo.
+      const documentText = useSelectionScope
+        ? buildSelectionWindow(captured.documentText, effectiveSelection)
+        : captured.documentText;
 
       const result = await aiService.petitionAssistantChatStream({
         history: historyMessages
           .filter((m) => !m.isError && m.content.trim())
           .map((m) => ({ role: m.role, content: m.content })),
         documentText,
-        selectedText,
+        selectedText: effectiveSelection,
+        scope: useSelectionScope ? 'selection' : 'document',
+        briefing: briefing || undefined,
         clientContext,
         // Busca local: o melhor modelo vai com texto integral (permite
         // insert_block); os demais vão como trechos curtos.
         searchKb: kbSearcher.size > 0
           ? (query) => kbSearcher.search(query, 5, { fullTopN: 2, fullMaxChars: 9000 })
+          : undefined,
+        // Acervo do Nextcloud: peças reais do escritório como referência.
+        searchArchive: archiveEnabled
+          ? async (query) => {
+              const found = await searchPetitionArchive(query, {
+                root: archiveRoot,
+                maxDocs: 3,
+                signal: controller.signal,
+              });
+              return found.map((item) => ({
+                path: item.path,
+                title: item.title,
+                folder: item.folder,
+                snippet: item.snippet,
+              }));
+            }
           : undefined,
         signal: controller.signal,
         onProgress: (stage, detail) => setProgress({ stage, detail }),
@@ -571,6 +830,7 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
               aborted: result.aborted,
               questions: !result.aborted && result.questions.length ? result.questions : undefined,
               searches: result.searches.length ? result.searches : undefined,
+              archiveSources: result.archiveSources?.length ? result.archiveSources : undefined,
               actions: result.aborted
                 ? undefined
                 : result.actions.map((a) => ({ ...a, status: 'pending' as ActionStatus, selected: true })),
@@ -594,7 +854,18 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
       setIsSending(false);
       window.setTimeout(() => inputRef.current?.focus(), 60);
     }
-  }, [isSending, disabled, captureEditorContext, kbSearcher, clientContext]);
+  }, [
+    isSending,
+    disabled,
+    captureEditorContext,
+    kbSearcher,
+    clientContext,
+    briefing,
+    activeScope,
+    stickySelection,
+    archiveEnabled,
+    archiveRoot,
+  ]);
 
   const sendMessage = useCallback(async (rawText?: string) => {
     const text = String(rawText ?? input).trim();
@@ -616,7 +887,20 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
     void sendMessageWith(base, text);
   }, [messages, sendMessageWith]);
 
-  const handleQuickPrompt = (prompt: string) => {
+  const isQuickPromptDisabled = useCallback((quickPrompt: QuickPrompt) => (
+    disabled
+    || isSending
+    || (quickPrompt.scope === 'selection' && !hasSelection)
+    || (quickPrompt.requiresDocument === true && !hasDocument)
+  ), [disabled, isSending, hasSelection, hasDocument]);
+
+  const handleQuickPrompt = (quickPrompt: QuickPrompt) => {
+    if (isQuickPromptDisabled(quickPrompt)) return;
+    // Habilidade de trecho fixa o escopo na seleção; habilidade de documento
+    // solta o escopo. Sem isso o rótulo diria uma coisa e o envio faria outra.
+    if (quickPrompt.scope === 'selection') setScopePreference('selection');
+    else if (quickPrompt.scope === 'document') setScopePreference('document');
+    const { prompt } = quickPrompt;
     // Prompts terminados em espaço são "abertos": só preenchem o campo para o
     // usuário completar (ex.: "Adicionar tópico sobre ...").
     if (prompt.endsWith(' ')) {
@@ -674,6 +958,7 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
   const actionSummary = (action: ChatActionState) => {
     if (action.label) return action.label;
     if (action.type === 'replace') return 'Substituir trecho';
+    if (action.type === 'delete') return 'Remover trecho do documento';
     if (action.type === 'insert_block') {
       const entry = action.blockId ? kbSearcher.getEntry(action.blockId) : undefined;
       return entry ? `Inserir modelo: ${entry.title}` : 'Inserir modelo da base';
@@ -683,6 +968,7 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
 
   const actionTypeIcon = (action: ChatActionState) => {
     if (action.type === 'replace') return <SpellCheck className="w-3.5 h-3.5" />;
+    if (action.type === 'delete') return <Eraser className="w-3.5 h-3.5" />;
     if (action.type === 'insert_block') return <FileText className="w-3.5 h-3.5" />;
     return <ListPlus className="w-3.5 h-3.5" />;
   };
@@ -745,8 +1031,39 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
     );
   };
 
+  const renderDeletePreview = (action: ChatActionState) => {
+    const start = String(action.search || '').trim();
+    const end = String(action.searchEnd || '').trim();
+    const isRange = Boolean(end) && end !== start;
+
+    return (
+      <div className="mt-2 space-y-1.5">
+        <div className="flex items-center gap-1.5">
+          <span className="rounded bg-[var(--ai-del-soft)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ai-del)] ring-1 ring-[var(--ai-del-border)]">
+            {isRange ? 'Remove o bloco inteiro' : 'Remove este trecho'}
+          </span>
+          {action.occurrence === 'last' && (
+            <span className="text-[10px] text-[var(--ai-text-3)]">mantém a primeira ocorrência</span>
+          )}
+        </div>
+        <div className="rounded-lg border border-[var(--ai-del-border)] bg-[var(--ai-del-soft)] px-2.5 py-1.5 text-[12px] leading-relaxed text-[var(--ai-del)] line-through decoration-[var(--ai-del)]/40 break-words">
+          {start.slice(0, 200)}{start.length > 200 ? '…' : ''}
+        </div>
+        {isRange && (
+          <>
+            <div className="pl-1 text-[10.5px] text-[var(--ai-text-3)]">…até…</div>
+            <div className="rounded-lg border border-[var(--ai-del-border)] bg-[var(--ai-del-soft)] px-2.5 py-1.5 text-[12px] leading-relaxed text-[var(--ai-del)] line-through decoration-[var(--ai-del)]/40 break-words">
+              {end.slice(0, 200)}{end.length > 200 ? '…' : ''}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   const renderActionBody = (action: ChatActionState) => {
     if (action.type === 'replace') return renderReplaceDiff(action);
+    if (action.type === 'delete') return renderDeletePreview(action);
 
     if (action.type === 'insert_block') {
       const entry = action.blockId ? kbSearcher.getEntry(action.blockId) : undefined;
@@ -778,7 +1095,7 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
       );
     }
 
-    return <InsertPreview text={String(action.text || '')} />;
+    return <InsertPreview text={normalizeAiInsertText(String(action.text || ''))} />;
   };
 
   const renderActions = (msg: ChatMessage) => {
@@ -979,6 +1296,14 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
       ? 'Redigindo…'
       : 'Analisando o documento…';
 
+  const toggleExpandedPanel = () => setIsExpanded((current) => !current);
+  const activePanelSize = isExpanded
+    ? {
+        w: Math.min(680, window.innerWidth - 32),
+        h: Math.min(760, window.innerHeight - 72),
+      }
+    : panelSize;
+
   return (
     <>
       <style>{AI_THEME_CSS}</style>
@@ -988,25 +1313,53 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          // bottom-20: deixa livre o canto inferior direito, ocupado pelo widget global "Mensagens" (fixed z-[9999])
-          className="pet-ai absolute bottom-20 right-5 z-[55] group flex items-center gap-2 pl-2.5 pr-3.5 py-2 rounded-full bg-[var(--ai-surface)] text-[var(--ai-text)] border border-[var(--ai-border-strong)] shadow-lg shadow-black/10 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all"
-          title="Assistente IA da petição"
+          className="pet-ai absolute bottom-10 right-5 z-[55] group flex min-w-[58px] items-center gap-3 rounded-2xl border border-[var(--ai-border)] bg-[var(--ai-surface)] py-2 pl-2 pr-2 text-left text-[var(--ai-text)] shadow-[0_14px_34px_-14px_rgba(33,28,24,0.30)] transition-all hover:-translate-y-0.5 hover:border-[var(--ai-accent-border)] hover:shadow-[0_18px_38px_-14px_rgba(203,74,10,0.32)] active:translate-y-0 sm:min-w-[218px] sm:pr-3.5"
+          title="Abrir Júri, assistente jurídico"
+          aria-label="Abrir Júri, assistente jurídico"
+          aria-expanded="false"
         >
-          <span className="w-7 h-7 rounded-full bg-[var(--ai-accent)] flex items-center justify-center group-hover:scale-105 transition-transform">
-            <Sparkles className="w-3.5 h-3.5 text-white" />
+          <span className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[linear-gradient(145deg,#fff8ef,#ffead7)] ring-1 ring-[#f5c79d]">
+            <span className="absolute inset-x-1 bottom-0 h-3 rounded-full bg-orange-300/20 blur-md" aria-hidden />
+            <img
+              src="/brand/juri-mascot.png"
+              alt=""
+              className="relative h-[52px] w-[52px] translate-y-1 object-contain transition-transform duration-300 group-hover:scale-110"
+              draggable={false}
+            />
           </span>
-          <span className="text-[12.5px] font-semibold hidden sm:block">Assistente</span>
+          <span className="hidden min-w-0 flex-1 sm:block">
+            <span className="flex items-center gap-1.5 text-[13px] font-bold leading-tight">
+              Júri
+              <span className="rounded-full bg-[var(--ai-accent-soft)] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.12em] text-[var(--ai-accent)]">IA</span>
+            </span>
+            <span className="mt-1 block truncate text-[10.5px] leading-tight text-[var(--ai-text-2)]">
+              {isSelectionScope
+                ? `${normalizedSelection.length} caracteres selecionados`
+                : hasDocument
+                  ? `${documentContextSummary} para revisão`
+                  : 'Diga do que se trata e eu começo'}
+            </span>
+          </span>
+          <ArrowUpRight className="hidden h-3.5 w-3.5 shrink-0 text-[var(--ai-text-3)] transition-colors group-hover:text-[var(--ai-accent)] sm:block" />
+          {isSelectionScope && (
+            <span className="absolute -left-1 -top-1 flex h-3 w-3">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-50" />
+              <span className="relative inline-flex h-3 w-3 rounded-full border-2 border-white bg-orange-500" />
+            </span>
+          )}
         </button>
       )}
 
       {/* Painel do chat */}
       {isOpen && (
         <div
-          className="pet-ai ai-chat-panel absolute bottom-20 right-4 z-[70] flex flex-col bg-[var(--ai-surface)] rounded-2xl overflow-hidden border border-[var(--ai-border)] shadow-[0_24px_64px_-16px_rgba(15,23,42,0.35)]"
+          className="pet-ai ai-chat-panel absolute bottom-10 right-4 z-[70] flex flex-col overflow-hidden rounded-[20px] border border-[var(--ai-border)] bg-[var(--ai-surface)] shadow-[0_26px_76px_-24px_rgba(32,24,18,0.38)]"
           style={{
-            width: `min(${panelSize.w}px, calc(100% - 2rem))`,
-            height: `min(${panelSize.h}px, calc(100% - 6rem))`,
+            width: `min(${activePanelSize.w}px, calc(100% - 2rem))`,
+            height: `min(${activePanelSize.h}px, calc(100% - 4.5rem))`,
           }}
+          role="dialog"
+          aria-label="Júri, assistente jurídico"
         >
           {/* Alça de redimensionamento (canto superior esquerdo) */}
           <div
@@ -1018,72 +1371,360 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
           </div>
 
           {/* Header */}
-          <header className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-[var(--ai-surface)] border-b border-[var(--ai-border)]">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[var(--ai-accent-soft)] border border-[var(--ai-accent-border)] flex items-center justify-center">
-                <Sparkles className="w-4 h-4 text-[var(--ai-accent)]" />
-              </div>
-              <div>
-                <div className="text-[13px] font-semibold text-[var(--ai-text)] leading-tight">Assistente IA</div>
-                <div className="text-[11px] text-[var(--ai-text-2)] leading-tight mt-0.5">
-                  {kbSearcher.size > 0 ? `${kbSearcher.size} modelos do escritório na base` : 'Pronto para ajudar com o documento'}
+          <header className="shrink-0 border-b border-[var(--ai-border)] bg-[var(--ai-surface)]">
+            <div className="flex items-center justify-between px-3.5 py-2.5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-[linear-gradient(145deg,#fff8ef,#ffead7)] ring-1 ring-[#f5c79d]">
+                  <img
+                    src="/brand/juri-mascot.png"
+                    alt=""
+                    className="h-11 w-11 translate-y-1 object-contain"
+                    draggable={false}
+                  />
+                  <span className={`absolute bottom-1 right-1 h-2 w-2 rounded-full border-2 border-white ${disabled ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[13.5px] font-bold leading-tight text-[var(--ai-text)]">Júri</span>
+                    <span className="rounded-full bg-[var(--ai-accent-soft)] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.12em] text-[var(--ai-accent)]">Assistente IA</span>
+                  </div>
+                  <div className="mt-0.5 truncate text-[10.5px] leading-tight text-[var(--ai-text-2)]">
+                    {kbSearcher.size > 0
+                      ? `${kbSearcher.size} ${kbSearcher.size === 1 ? 'modelo conectado' : 'modelos conectados'} à base`
+                      : 'Revisão e redação jurídica contextual'}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-0.5">
-              {messages.length > 0 && (
+              <div className="flex items-center gap-0.5">
                 <button
                   type="button"
-                  onClick={() => { setMessages([]); setQuestionDrafts({}); }}
+                  onClick={toggleExpandedPanel}
                   className="p-2 text-[var(--ai-text-3)] hover:text-[var(--ai-text)] hover:bg-[var(--ai-surface-2)] rounded-lg transition"
-                  title="Limpar conversa"
+                  title={isExpanded ? 'Voltar ao tamanho compacto' : 'Ampliar painel'}
+                  aria-label={isExpanded ? 'Voltar ao tamanho compacto' : 'Ampliar painel'}
                 >
-                  <Trash2 className="w-4 h-4" />
+                  {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
                 </button>
+                {messages.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setMessages([]); setQuestionDrafts({}); }}
+                    className="p-2 text-[var(--ai-text-3)] hover:text-[var(--ai-text)] hover:bg-[var(--ai-surface-2)] rounded-lg transition"
+                    title="Limpar conversa"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="p-2 text-[var(--ai-text-3)] hover:text-[var(--ai-text)] hover:bg-[var(--ai-surface-2)] rounded-lg transition"
+                  title="Fechar (Esc)"
+                  aria-label="Fechar assistente"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Barra de escopo: o que exatamente o assistente vai tratar. */}
+            <div className="border-t border-[var(--ai-border)] bg-[var(--ai-surface-2)] px-3.5 py-1.5">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${isSelectionScope ? 'bg-[var(--ai-accent-soft)] text-[var(--ai-accent)]' : 'bg-[var(--ai-surface)] text-[var(--ai-text-2)]'}`}>
+                    {isSelectionScope ? <Target className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-[var(--ai-text-3)]">
+                      {isSelectionScope ? 'Escopo: trecho selecionado' : 'Escopo: documento inteiro'}
+                    </div>
+                    <div className="truncate text-[10.5px] font-medium text-[var(--ai-text)]">
+                      {isSelectionScope
+                        ? `“${selectionPreview}”`
+                        : hasDocument
+                          ? `${documentContextSummary} para análise`
+                          : 'Documento em branco — use a redação assistida'}
+                    </div>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--ai-border)] bg-[var(--ai-surface)] px-2 py-1 text-[9.5px] font-semibold text-[var(--ai-text-2)]">
+                  <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                  Você aprova
+                </span>
+              </div>
+
+              {/* Alternância explícita: seleção some do editor com facilidade,
+                  então quem manda no escopo é esta escolha, não o foco. */}
+              {hasSelection && (
+                <div className="mt-1.5 flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setScopePreference('selection')}
+                    className={`rounded-lg px-2 py-1 text-[10px] font-semibold transition ${isSelectionScope ? 'bg-[var(--ai-accent)] text-white shadow-sm' : 'bg-[var(--ai-surface)] text-[var(--ai-text-2)] ring-1 ring-[var(--ai-border)] hover:text-[var(--ai-text)]'}`}
+                  >
+                    Só o trecho ({normalizedSelection.length} car.)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScopePreference('document')}
+                    className={`rounded-lg px-2 py-1 text-[10px] font-semibold transition ${!isSelectionScope ? 'bg-[var(--ai-accent)] text-white shadow-sm' : 'bg-[var(--ai-surface)] text-[var(--ai-text-2)] ring-1 ring-[var(--ai-border)] hover:text-[var(--ai-text)]'}`}
+                  >
+                    Documento inteiro
+                  </button>
+                  {stickySelection && !liveSelection && (
+                    <button
+                      type="button"
+                      onClick={() => { setStickySelection(''); setScopePreference('auto'); }}
+                      className="ml-auto rounded-lg px-1.5 py-1 text-[10px] text-[var(--ai-text-3)] transition hover:text-[var(--ai-del)]"
+                      title="Esquecer o trecho memorizado"
+                    >
+                      limpar
+                    </button>
+                  )}
+                </div>
               )}
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                className="p-2 text-[var(--ai-text-3)] hover:text-[var(--ai-text)] hover:bg-[var(--ai-surface-2)] rounded-lg transition"
-                title="Fechar"
-              >
-                <X className="w-4 h-4" />
-              </button>
+
+              {/* Briefing e acervo: os dois contextos que o assistente carrega. */}
+              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowBriefing((v) => !v)}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9.5px] font-semibold transition ${briefing ? 'bg-[var(--ai-accent-soft)] text-[var(--ai-accent)] ring-1 ring-[var(--ai-accent-border)]' : 'bg-[var(--ai-surface)] text-[var(--ai-text-2)] ring-1 ring-[var(--ai-border)] hover:text-[var(--ai-text)]'}`}
+                  title={briefing ? 'Editar o briefing da peça' : 'Definir área, tipo de peça e polo'}
+                >
+                  {briefing ? <Pencil className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+                  {briefing
+                    ? [briefing.documentType, briefing.area].filter(Boolean).join(' · ')
+                    : 'Definir briefing da peça'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowArchiveSettings((v) => !v)}
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9.5px] font-semibold transition ${archiveEnabled ? 'bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/30' : 'bg-[var(--ai-surface)] text-[var(--ai-text-2)] ring-1 ring-[var(--ai-border)] hover:text-[var(--ai-text)]'}`}
+                  title="Acervo de petições do Nextcloud como base de conhecimento"
+                >
+                  {archiveEnabled ? <Cloud className="h-3 w-3" /> : <CloudOff className="h-3 w-3" />}
+                  {archiveEnabled ? `Acervo: ${archiveRoot || 'todas as pastas'}` : 'Acervo do Nextcloud'}
+                </button>
+              </div>
+
+              {showArchiveSettings && (
+                <div className="mt-1.5 rounded-lg border border-[var(--ai-border)] bg-[var(--ai-surface)] p-2 space-y-2">
+                  <label className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={archiveEnabled}
+                      onChange={(e) => setArchiveEnabled(e.target.checked)}
+                      className="mt-0.5 accent-[var(--ai-accent)]"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-[11px] font-semibold text-[var(--ai-text)]">
+                        Usar as petições do Nextcloud como base
+                      </span>
+                      <span className="mt-0.5 block text-[9.5px] leading-snug text-[var(--ai-text-2)]">
+                        O Júri procura peças reais do escritório por nome, lê só as mais próximas do assunto e usa como referência de estilo e tese. Nenhum dado de outro cliente é copiado.
+                      </span>
+                    </span>
+                  </label>
+                  <div>
+                    <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-[var(--ai-text-3)]">
+                      Pasta do acervo (opcional)
+                    </div>
+                    <input
+                      type="text"
+                      value={archiveRoot}
+                      onChange={(e) => setArchiveRoot(e.target.value)}
+                      placeholder="Ex.: Modelos/Petições — vazio = procurar em tudo"
+                      className="mt-1 w-full rounded-lg border border-[var(--ai-border)] bg-[var(--ai-surface-2)] px-2 py-1.5 text-[11px] text-[var(--ai-text)] outline-none transition placeholder:text-[var(--ai-text-3)] focus:border-[var(--ai-accent)]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1 text-[9.5px] text-[var(--ai-text-3)]">
+                    <Settings2 className="h-3 w-3" />
+                    Buscar em uma pasta específica é mais rápido e mais preciso.
+                  </div>
+                </div>
+              )}
             </div>
           </header>
 
           {/* Mensagens */}
-          <div className="pet-ai-scroll flex-1 overflow-y-auto px-3.5 py-3.5 space-y-3.5 bg-[var(--ai-surface-2)]">
+          <div className="pet-ai-scroll flex-1 overflow-y-auto space-y-3.5 bg-[var(--ai-surface-2)] px-3 py-3" aria-live="polite">
             {messages.length === 0 && (
-              <div className="min-h-full flex flex-col items-center justify-center px-1.5 py-4 text-center">
-                <div className="w-11 h-11 rounded-xl bg-[var(--ai-accent-soft)] border border-[var(--ai-accent-border)] flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-[var(--ai-accent)]" />
+              <div className="flex min-h-full flex-col px-0.5 py-0.5">
+                <div className="flex items-center gap-3 px-1">
+                  <div className="relative flex h-[62px] w-[62px] shrink-0 items-center justify-center">
+                    <span className="absolute inset-2 rounded-full bg-orange-300/20 blur-xl" aria-hidden />
+                    <img
+                      src="/brand/juri-mascot.png"
+                      alt="Júri, mascote do assistente jurídico"
+                      className="relative h-[72px] w-[72px] object-contain drop-shadow-[0_9px_12px_rgba(92,43,12,0.14)]"
+                      draggable={false}
+                    />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <div className="text-[15px] font-bold leading-tight text-[var(--ai-text)]">
+                      {isSelectionScope ? 'Aprimorar o trecho selecionado' : hasDocument ? 'Revisar esta petição' : 'Começar uma nova redação'}
+                    </div>
+                    <p className="mt-1 text-[10.5px] leading-relaxed text-[var(--ai-text-2)]">
+                      {isSelectionScope
+                        ? 'Só o trecho será alterado; o restante da peça entra apenas como contexto de leitura.'
+                        : hasDocument
+                          ? 'Escolha uma análise. As mudanças sempre chegam em prévia.'
+                          : 'Primeiro me diga do que se trata: com a área e o tipo de peça eu monto a estrutura certa.'}
+                    </p>
+                  </div>
                 </div>
-                <div className="mt-3 text-[14.5px] font-semibold text-[var(--ai-text)] leading-tight">Como posso ajudar?</div>
-                <p className="mt-1 text-[11.5px] text-[var(--ai-text-2)] leading-relaxed max-w-[300px]">
-                  Reviso, corrijo e crio tópicos com os modelos do escritório. Você aprova cada alteração antes de aplicar.
-                </p>
 
-                {/* Sugestões */}
-                <div className="mt-4 w-full space-y-1.5">
-                  {QUICK_PROMPTS.map((qp) => (
+                {/* Documento em branco sem briefing: perguntar vem ANTES de
+                    escrever. Estrutura genérica não ajuda ninguém. */}
+                {(showBriefing || (!hasDocument && !briefing)) && (
+                  <div className="mt-3">
+                    <PetitionAiBriefing
+                      value={briefing || undefined}
+                      suggestedArea={suggestedArea}
+                      suggestedDocumentType={suggestedDocumentType}
+                      onCancel={briefing || hasDocument ? () => setShowBriefing(false) : undefined}
+                      submitLabel={hasDocument ? 'Salvar briefing' : 'Montar a estrutura da peça'}
+                      onSubmit={(next) => {
+                        setBriefing(next);
+                        setShowBriefing(false);
+                        if (!hasDocument) {
+                          void sendMessage(
+                            [
+                              `Vamos redigir: ${next.documentType} — área ${next.area}.`,
+                              next.party ? `Nosso cliente é: ${next.party}.` : '',
+                              next.highlights?.length ? `Pontos a contemplar: ${next.highlights.join('; ')}.` : '',
+                              next.summary ? `Resumo do caso: ${next.summary}` : '',
+                              'Monte a estrutura dessa peça com os tópicos próprios desta área e deste tipo, na ordem correta. Depois liste, numa lista única, exatamente quais informações do caso ainda faltam.',
+                            ].filter(Boolean).join('\n'),
+                          );
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
+                {briefing && !showBriefing && (
+                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-[var(--ai-accent-border)] bg-[var(--ai-accent-soft)]/50 px-2.5 py-1.5">
+                    <Sparkles className="h-3.5 w-3.5 shrink-0 text-[var(--ai-accent)]" />
+                    <span className="min-w-0 flex-1 truncate text-[10.5px] text-[var(--ai-text)]">
+                      {[briefing.documentType, briefing.area, briefing.party].filter(Boolean).join(' · ')}
+                    </span>
                     <button
-                      key={qp.label}
                       type="button"
-                      disabled={isSending || disabled}
-                      onClick={() => handleQuickPrompt(qp.prompt)}
-                      className="group w-full flex items-center gap-3 rounded-xl border border-[var(--ai-border)] bg-[var(--ai-surface)] px-3 py-2.5 text-left hover:border-[var(--ai-accent-border)] hover:bg-[var(--ai-accent-soft)]/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => setShowBriefing(true)}
+                      className="shrink-0 text-[10px] font-semibold text-[var(--ai-accent)] hover:underline"
                     >
-                      <span className="inline-flex w-7 h-7 shrink-0 rounded-lg bg-[var(--ai-surface-2)] text-[var(--ai-text-2)] items-center justify-center group-hover:bg-[var(--ai-accent)] group-hover:text-white transition-all">
+                      editar
+                    </button>
+                  </div>
+                )}
+
+                {primaryQuickPrompt && (
+                  <button
+                    type="button"
+                    disabled={isQuickPromptDisabled(primaryQuickPrompt)}
+                    onClick={() => handleQuickPrompt(primaryQuickPrompt)}
+                    className="group mt-3 flex w-full items-center gap-3 rounded-xl border border-[var(--ai-accent-border)] bg-[var(--ai-accent-soft)]/70 px-3 py-2.5 text-left transition-all hover:-translate-y-0.5 hover:bg-[var(--ai-accent-soft)] hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+                  >
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--ai-accent)] text-white shadow-sm">
+                      {primaryQuickPrompt.icon}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-[12px] font-bold leading-tight text-[var(--ai-text)]">{primaryQuickPrompt.label}</span>
+                        <span className="rounded-full bg-[var(--ai-surface)] px-1.5 py-0.5 text-[7.5px] font-bold uppercase tracking-[0.1em] text-[var(--ai-accent)] ring-1 ring-[var(--ai-accent-border)]">
+                          Recomendado
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block text-[10px] leading-snug text-[var(--ai-text-2)]">{primaryQuickPrompt.desc}</span>
+                    </span>
+                    <ArrowUpRight className="h-4 w-4 shrink-0 text-[var(--ai-accent)] transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                  </button>
+                )}
+
+                {/* Ações secundárias visíveis somente quando fazem sentido. */}
+                <div className={`mt-2 grid w-full gap-1.5 ${compactSecondaryQuickPrompts.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                  {compactSecondaryQuickPrompts.map((qp) => (
+                    <button
+                      key={qp.id}
+                      type="button"
+                      disabled={isQuickPromptDisabled(qp)}
+                      onClick={() => handleQuickPrompt(qp)}
+                      className="group flex min-h-[58px] w-full items-center gap-2 rounded-xl border border-[var(--ai-border)] bg-[var(--ai-surface)] px-2.5 py-2 text-left transition-all hover:-translate-y-0.5 hover:border-[var(--ai-accent-border)] hover:bg-[var(--ai-accent-soft)]/35 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:border-[var(--ai-border)] disabled:hover:bg-[var(--ai-surface)] disabled:hover:shadow-none"
+                      title={
+                        qp.scope === 'selection' && !hasSelection
+                          ? 'Selecione um trecho no documento para usar esta ação'
+                          : qp.requiresDocument && !hasDocument
+                            ? 'Insira ou abra um documento para usar esta ação'
+                          : qp.desc
+                      }
+                    >
+                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-[var(--ai-surface-2)] text-[var(--ai-text-2)] transition-all group-hover:bg-[var(--ai-accent)] group-hover:text-white">
                         {qp.icon}
                       </span>
-                      <span className="min-w-0">
-                        <span className="block text-[12px] font-semibold text-[var(--ai-text)] leading-tight">{qp.label}</span>
-                        <span className="block mt-0.5 text-[10.5px] text-[var(--ai-text-2)] leading-snug truncate">{qp.desc}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[10.5px] font-semibold leading-tight text-[var(--ai-text)]">{qp.label}</span>
+                        <span className="mt-0.5 block truncate text-[9px] leading-snug text-[var(--ai-text-2)]">
+                          {qp.scope === 'selection' && !hasSelection ? 'Selecione um trecho para liberar' : qp.desc}
+                        </span>
                       </span>
                     </button>
                   ))}
                 </div>
+
+                {/* Catálogo completo: as habilidades agrupadas por finalidade. */}
+                {hiddenSkillsCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllSkills((v) => !v)}
+                    className="mt-2 inline-flex items-center justify-center gap-1 self-center rounded-lg px-2 py-1 text-[10px] font-semibold text-[var(--ai-accent)] transition hover:bg-[var(--ai-accent-soft)]/50"
+                  >
+                    <ChevronDown className={`h-3 w-3 transition-transform ${showAllSkills ? 'rotate-180' : ''}`} />
+                    {showAllSkills
+                      ? 'Mostrar só as principais'
+                      : `Ver todas as ${visibleQuickPrompts.length} habilidades`}
+                  </button>
+                )}
+
+                {showAllSkills && (
+                  <div className="mt-2 space-y-2">
+                    {skillsByGroup.map(([group, skills]) => (
+                      <div key={group}>
+                        <div className="px-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-[var(--ai-text-3)]">
+                          {SKILL_GROUP_LABEL[group]}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {skills.map((qp) => (
+                            <button
+                              key={qp.id}
+                              type="button"
+                              disabled={isQuickPromptDisabled(qp)}
+                              onClick={() => handleQuickPrompt(qp)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--ai-border)] bg-[var(--ai-surface)] px-2 py-1.5 text-[10.5px] font-medium text-[var(--ai-text)] transition hover:border-[var(--ai-accent-border)] hover:bg-[var(--ai-accent-soft)]/40 hover:text-[var(--ai-accent)] disabled:cursor-not-allowed disabled:opacity-40"
+                              title={
+                                qp.scope === 'selection' && !hasSelection
+                                  ? 'Selecione um trecho no documento para usar esta ação'
+                                  : qp.desc
+                              }
+                            >
+                              <span className="shrink-0 text-[var(--ai-text-3)]">{qp.icon}</span>
+                              {qp.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!hasSelection && hasDocument && (
+                  <div className="mt-2.5 flex items-center justify-center gap-1.5 text-[9.5px] text-[var(--ai-text-3)]">
+                    <MousePointer2 className="h-3 w-3" />
+                    Selecione um trecho no documento para trabalhar só nele.
+                  </div>
+                )}
               </div>
             )}
 
@@ -1096,14 +1737,21 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
                 </div>
               ) : (
                 <div key={msg.id} className="ai-chat-msg flex items-start gap-2">
-                  <div className={`shrink-0 mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center border ${
+                  <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg border ${
                     msg.isError
                       ? 'bg-[var(--ai-del-soft)] border-[var(--ai-del-border)]'
                       : 'bg-[var(--ai-accent-soft)] border-[var(--ai-accent-border)]'
                   }`}>
                     {msg.isError
                       ? <AlertTriangle className="w-3.5 h-3.5 text-[var(--ai-del)]" />
-                      : <Sparkles className="w-3.5 h-3.5 text-[var(--ai-accent)]" />}
+                      : (
+                        <img
+                          src="/brand/juri-mascot.png"
+                          alt=""
+                          className="h-8 w-8 translate-y-0.5 object-contain"
+                          draggable={false}
+                        />
+                      )}
                   </div>
                   <div className={`max-w-[88%] min-w-0 flex-1 rounded-2xl rounded-tl-md px-3.5 py-3 text-[13px] leading-relaxed border ${
                     msg.isError
@@ -1159,6 +1807,28 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
                       </div>
                     )}
 
+                    {/* Peças reais do acervo que embasaram a resposta */}
+                    {msg.archiveSources && msg.archiveSources.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 text-[10.5px] text-[var(--ai-text-3)]">
+                          <Cloud className="w-3 h-3" />
+                          Acervo consultado:
+                        </span>
+                        {msg.archiveSources.slice(0, 3).map((source, i) => (
+                          <span
+                            key={i}
+                            title={source}
+                            className="max-w-[180px] truncate rounded border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-700"
+                          >
+                            {source.split('/').pop()}
+                          </span>
+                        ))}
+                        {msg.archiveSources.length > 3 && (
+                          <span className="text-[10px] text-[var(--ai-text-3)]">+{msg.archiveSources.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+
                     {renderQuestions(msg)}
                     {renderActions(msg)}
                   </div>
@@ -1171,13 +1841,20 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
           {/* Chips rápidos (só com conversa em andamento; no vazio viram cards) */}
           {messages.length > 0 && (
             <div className="px-3 pt-2 pb-1 flex gap-1.5 overflow-x-auto shrink-0 bg-[var(--ai-surface)] border-t border-[var(--ai-border)] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {QUICK_PROMPTS.map((qp) => (
+              {visibleQuickPrompts.map((qp) => (
                 <button
-                  key={qp.label}
+                  key={qp.id}
                   type="button"
-                  disabled={isSending || disabled}
-                  onClick={() => handleQuickPrompt(qp.prompt)}
+                  disabled={isQuickPromptDisabled(qp)}
+                  onClick={() => handleQuickPrompt(qp)}
                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-[var(--ai-border)] bg-[var(--ai-surface)] text-[11.5px] font-medium text-[var(--ai-text-2)] hover:border-[var(--ai-accent-border)] hover:text-[var(--ai-accent)] hover:bg-[var(--ai-accent-soft)]/50 transition whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={
+                    qp.scope === 'selection' && !hasSelection
+                      ? 'Selecione um trecho no documento'
+                      : qp.requiresDocument && !hasDocument
+                        ? 'Abra ou escreva um documento'
+                        : qp.desc
+                  }
                 >
                   {qp.icon}
                   {qp.label}
@@ -1193,8 +1870,21 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
                 {disabledReason || 'Assistente indisponível no momento.'}
               </div>
             )}
+            <div className="mb-1.5 flex items-center justify-between px-0.5">
+              <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-[var(--ai-text-2)]">
+                {isSelectionScope ? <Target className="h-3 w-3 text-[var(--ai-accent)]" /> : <FileText className="h-3 w-3" />}
+                {isSelectionScope
+                  ? 'Só o trecho selecionado será alterado'
+                  : hasDocument
+                    ? 'Documento inteiro como contexto'
+                    : briefing
+                      ? `${briefing.documentType} · ${briefing.area}`
+                      : 'Defina o briefing para começar'}
+              </span>
+              <span className="text-[9px] text-[var(--ai-text-3)]">Enter envia · Shift+Enter quebra linha</span>
+            </div>
             <div className="flex items-end gap-2">
-              <div className="flex-1 rounded-xl bg-[var(--ai-surface-2)] border border-transparent focus-within:bg-[var(--ai-surface)] focus-within:border-[var(--ai-accent)] transition-all px-3 py-2">
+              <div className="flex-1 rounded-xl border border-transparent bg-[var(--ai-surface-2)] px-3 py-2 transition-all focus-within:border-[var(--ai-accent)] focus-within:bg-[var(--ai-surface)] focus-within:shadow-[0_0_0_3px_var(--ai-accent-soft)]">
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -1206,7 +1896,11 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
                     }
                   }}
                   rows={Math.min(4, Math.max(1, input.split('\n').length))}
-                  placeholder="Peça uma revisão, correção, tópico..."
+                  placeholder={isSelectionScope
+                    ? 'Diga o que deseja fazer com o trecho selecionado...'
+                    : hasDocument
+                      ? 'Peça uma análise, revisão, remoção ou novo tópico...'
+                      : 'Descreva o caso ou preencha o briefing acima...'}
                   disabled={disabled}
                   className="w-full bg-transparent resize-none outline-none text-[13px] text-[var(--ai-text)] placeholder:text-[var(--ai-text-3)] py-0.5 disabled:cursor-not-allowed"
                 />
@@ -1232,8 +1926,9 @@ const PetitionAiChat: React.FC<PetitionAiChatProps> = ({
                 </button>
               )}
             </div>
-            <div className="mt-1.5 text-center text-[10px] text-[var(--ai-text-3)] select-none">
-              A IA propõe — você aprova antes de aplicar
+            <div className="mt-1.5 flex items-center justify-center gap-1 text-center text-[10px] text-[var(--ai-text-3)] select-none">
+              <ShieldCheck className="h-3 w-3 text-emerald-600" />
+              O Júri nunca altera o documento sem sua aprovação
             </div>
           </div>
         </div>
