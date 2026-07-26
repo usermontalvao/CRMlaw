@@ -7,6 +7,7 @@ import {
   type CollabPeer,
   type CollabStatus,
 } from './collabPresence';
+import { resolveCollabServiceUrl } from './collabServiceUrl';
 
 /**
  * syncfusionCollab.service
@@ -34,7 +35,13 @@ import {
  * co-edição: cada navegador fica com a sua cópia.
  */
 
-const RAW_COLLAB_URL = (import.meta.env.VITE_SYNCFUSION_COLLAB_URL as string | undefined) || '';
+// A variável de build manda; sem ela, os domínios de produção usam o padrão
+// embutido — ver collabServiceUrl.ts para o porquê (deploy real saiu com a
+// variável vazia e a coedição inteira ficou desligada em silêncio).
+const RAW_COLLAB_URL = resolveCollabServiceUrl(
+  import.meta.env.VITE_SYNCFUSION_COLLAB_URL as string | undefined,
+  typeof window === 'undefined' ? null : window.location.hostname,
+);
 
 /** Base do serviço, sempre com barra no fim (o Syncfusion concatena direto). */
 export const COLLAB_SERVICE_URL = RAW_COLLAB_URL ? `${RAW_COLLAB_URL.replace(/\/+$/, '')}/` : '';
