@@ -5477,12 +5477,29 @@ Regras:
       setDocumentImportLoading(true);
       beginDocumentSettleWindow(DOCUMENT_LOAD_GUARD_MS);
       const initialClient = applyInitialClientIfNeeded();
+      const documentName = fileName || nextcloudPath.split('/').pop() || 'documento.docx';
 
-      const blob = await nextcloudService.readFile(nextcloudPath);
-      const arrayBuffer = await blob.arrayBuffer();
-      if (arrayBuffer.byteLength === 0) {
-        throw new Error('O documento do Nextcloud esta vazio (0 bytes).');
-      }
+      // ESTE é o caminho que abre o documento quando ele vem do explorador do
+      // Nextcloud (janela própria do Editor, `/editor?...initialNextcloudPath`)
+      // — na prática, o caminho mais usado. Ele baixava o .docx direto e nunca
+      // entrava na sala de co-edição: duas pessoas no mesmo arquivo ficavam
+      // cada uma com a sua cópia, sem ver o que a outra digitava, ainda que o
+      // serviço de co-edição estivesse no ar e configurado.
+      const collabActive = isCollabEnabled();
+
+      // Com co-edição, o conteúdo vem do serviço (que já aplica o que os outros
+      // digitaram e ainda não foi gravado). Baixar aqui devolveria uma versão
+      // atrasada.
+      const readFromNextcloud = async () => {
+        const blob = await nextcloudService.readFile(nextcloudPath);
+        const buffer = await blob.arrayBuffer();
+        if (buffer.byteLength === 0) {
+          throw new Error('O documento do Nextcloud esta vazio (0 bytes).');
+        }
+        return buffer;
+      };
+
+      const arrayBuffer = collabActive ? null : await readFromNextcloud();
 
       // ETag da versão aberta: habilita o If-Match do próximo salvamento.
       try {
@@ -5498,14 +5515,42 @@ Regras:
         return;
       }
 
-      await loadDocxWithFallback(editor, arrayBuffer, fileName || 'documento.docx');
+      let joinedCollab = false;
+      let collabFallbackReason: string | null = null;
+
+      if (collabActive) {
+        try {
+          await editor.startCollaboration({
+            path: nextcloudPath,
+            fileName: documentName,
+            userName: userDisplayName,
+            userId: user?.id ?? null,
+          });
+          joinedCollab = true;
+        } catch (collabError) {
+          // Serviço fora do ar não pode impedir de trabalhar: abre normalmente
+          // e DIZ que a edição em conjunto não está valendo para este arquivo.
+          console.error('Falha ao entrar na coedição; abrindo o documento sozinho:', collabError);
+          collabFallbackReason =
+            'Não foi possível entrar na edição em conjunto: você está editando uma cópia própria deste ' +
+            'documento. Se outra pessoa abrir o mesmo arquivo, quem salvar por último sobrescreve o outro.';
+          await loadDocxWithFallback(editor, await readFromNextcloud(), documentName);
+        }
+      } else {
+        await loadDocxWithFallback(editor, arrayBuffer!, documentName);
+      }
+
       captureAndApplyDocFontSoon(editor);
       setShowStartScreen(false);
-      const restoredDraft = await restoreNextcloudDraft(editor);
+      // Rascunho local NÃO entra por cima de um documento em co-edição: o que
+      // ele contém já foi para o servidor operação por operação, e reaplicá-lo
+      // duplicaria o texto.
+      const restoredDraft = joinedCollab ? false : await restoreNextcloudDraft(editor);
       if (!restoredDraft) {
         // Recém-carregado do servidor: sem alterações pendentes ainda.
         setHasUnsavedChanges(false);
       }
+      if (collabFallbackReason) setError(collabFallbackReason);
       restoreCursorPosition();
       await waitForDocumentRendered(editor);
       if (!restoredDraft) {
@@ -5515,7 +5560,7 @@ Regras:
       void trackDocumentActivity({
         source: 'nextcloud',
         sourceKey: nextcloudPath,
-        title: fileName || nextcloudPath.split('/').pop() || 'Documento do Nextcloud',
+        title: documentName,
         clientId: initialClient?.id || initialClientId || null,
         clientName: initialClient?.full_name || null,
         nextcloudPath,
@@ -5534,7 +5579,17 @@ Regras:
         try { window.dispatchEvent(new Event('petition-editor-doc-ready')); } catch { /* ignore */ }
       }, 350);
     }
-  }, [applyInitialClientIfNeeded, initialClientId, petitionTitle, restoreNextcloudDraft, restoreCursorPosition, trackDocumentActivity, updateActiveNextcloudEtag]);
+  }, [
+    applyInitialClientIfNeeded,
+    initialClientId,
+    petitionTitle,
+    restoreNextcloudDraft,
+    restoreCursorPosition,
+    trackDocumentActivity,
+    updateActiveNextcloudEtag,
+    userDisplayName,
+    user?.id,
+  ]);
 
   // Carrega o .docx de uma ORIGEM EXTERNA (template/petição padrão/…) no editor.
   // Espelha o fluxo do Nextcloud; ao salvar, grava de volta (ver savePetition).
