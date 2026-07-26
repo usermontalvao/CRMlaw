@@ -342,6 +342,18 @@ const ROLES = [
   },
 ];
 
+/**
+ * Módulos exibidos na tela de Permissões.
+ *
+ * A `key` precisa bater com DUAS coisas, senão a linha vira enfeite:
+ *   1. `role_permissions.module` no banco (é por ela que a permissão é lida);
+ *   2. a chave usada em `permissionGuardedModules` no App.tsx (é lá que o
+ *      acesso é de fato barrado).
+ *
+ * Por isso "Email" usa `emails` (plural): é assim que está gravado no banco —
+ * com `email` no singular a linha nunca encontrava a permissão salva e os
+ * quatro seletores apareciam desmarcados por mais que fossem configurados.
+ */
 const MODULES = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'leads', label: 'Leads' },
@@ -350,15 +362,21 @@ const MODULES = [
   { key: 'prazos', label: 'Prazos' },
   { key: 'requerimentos', label: 'Requerimentos' },
   { key: 'intimacoes', label: 'Intimações' },
+  { key: 'notificacoes', label: 'Notificações' },
   { key: 'financeiro', label: 'Financeiro' },
   { key: 'documentos', label: 'Documentos' },
+  // Uma permissão só governa os dois: ver App.tsx (`canAccessModule`), onde
+  // `nextcloud` cai na checagem de `cloud`.
+  { key: 'cloud', label: 'Cloud / Nextcloud' },
   { key: 'assinaturas', label: 'Assinaturas' },
   { key: 'agenda', label: 'Agenda' },
   { key: 'tarefas', label: 'Tarefas' },
   { key: 'peticoes', label: 'Petições' },
   { key: 'chat', label: 'Chat' },
   { key: 'whatsapp', label: 'WhatsApp' },
-  { key: 'email', label: 'Email' },
+  { key: 'emails', label: 'Email' },
+  { key: 'usuarios', label: 'Usuários' },
+  { key: 'monitor', label: 'Monitor' },
   { key: 'configuracoes', label: 'Configurações' },
 ];
 
@@ -1266,13 +1284,36 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     if (!pinOk) return;
     try {
       await settingsService.updatePermission(selectedRole, moduleKey, { [field]: value }, currentProfile?.name);
-      setPermissions((prev) =>
-        prev.map((perm) =>
-          perm.role === selectedRole.toLowerCase() && perm.module === moduleKey
-            ? { ...perm, [field]: value }
-            : perm,
-        ),
-      );
+      setPermissions((prev) => {
+        const roleKey = selectedRole.toLowerCase();
+        const alreadyListed = prev.some((perm) => perm.role === roleKey && perm.module === moduleKey);
+        if (alreadyListed) {
+          return prev.map((perm) =>
+            perm.role === roleKey && perm.module === moduleKey
+              ? { ...perm, [field]: value }
+              : perm,
+          );
+        }
+        // Módulo que ainda não tinha linha no banco (os recém-adicionados a
+        // MODULES). Só o `map` acima deixava o seletor "voltar sozinho": a
+        // gravação ia bem, mas não havia entrada local para atualizar. Aqui a
+        // linha é criada espelhando exatamente o que foi gravado.
+        return [
+          ...prev,
+          {
+            id: `local:${roleKey}:${moduleKey}`,
+            role: roleKey,
+            module: moduleKey,
+            can_view: false,
+            can_create: false,
+            can_edit: false,
+            can_delete: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            [field]: value,
+          } as RolePermission,
+        ];
+      });
     } catch (error: any) {
       setFeedback('error', error.message || 'Erro ao atualizar permissão.');
     }

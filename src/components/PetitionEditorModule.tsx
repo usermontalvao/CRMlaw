@@ -57,7 +57,25 @@ import { petitionEditorService } from '../services/petitionEditor.service';
 import { settingsService } from '../services/settings.service';
 import { aiService } from '../services/ai.service';
 import { cloudService } from '../services/cloud.service';
-import { nextcloudService } from '../services/nextcloud.service';
+import {
+  nextcloudService,
+  NextcloudConflictError,
+  getNextcloudErrorMessage,
+} from '../services/nextcloud.service';
+import { resolveFreeName } from '../services/nextcloudConflict.service';
+import NextcloudFileDialog, { type NextcloudSaveTarget } from './nextcloud/NextcloudFileDialog';
+import { sameEntityTag } from '../utils/entityTag';
+import {
+  type ActiveDocumentOrigin,
+  activeNextcloudPath,
+  buildNextcloudFilePath,
+  decideSaveTarget,
+  describeOrigin,
+  fileNameOf,
+  normalizeDocxFileName,
+  parentPathOf,
+  savedLabelFor,
+} from '../utils/editorDocumentOrigin';
 import { type EditorDocSource, loadEditorDocSource, saveEditorDocSource, editorDocSourceSavedLabel, editorDocSourceKey } from '../utils/editorDocSource';
 import {
   documentEditHistoryService,
@@ -87,7 +105,6 @@ import PetitionFindReplacePanel from './petition/PetitionFindReplacePanel';
 import PetitionProofreaderPanel from './petition/PetitionProofreaderPanel';
 import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
-import { events, SYSTEM_EVENTS } from '../utils/events';
 
 // Tipo do documento do editor traduzido para o vocabulário do briefing do
 // Assistente IA (o formulário fala "Petição inicial", não "petition").
@@ -1845,18 +1862,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const saveInFlightRef = useRef(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [showUnsavedHomeDialog, setShowUnsavedHomeDialog] = useState(false);
-
-  useEffect(() => {
-    if (!showUnsavedHomeDialog) return;
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      setShowUnsavedHomeDialog(false);
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [showUnsavedHomeDialog]);
 
   const [isOnline, setIsOnline] = useState(() => {
     try {
@@ -1990,23 +1995,114 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const contentChangeSeqRef = useRef(0);
   const defaultTemplateAutoAppliedRef = useRef(false);
   const autoCreateInFlightRef = useRef(false);
-  const savePetitionActionRef = useRef<(() => Promise<void>) | null>(null);
+  const savePetitionActionRef = useRef<((request?: { auto?: boolean }) => Promise<void>) | null>(null);
   const selectedClientIdRef = useRef<string | null>(null);
   const hasUnsavedChangesRef = useRef(false);
   const isOnlineRef = useRef(true);
   const serverReachableRef = useRef(true);
   const realtimeRefreshTimerRef = useRef<number | null>(null);
+  const cursorPersistTimerRef = useRef<number | null>(null);
+
+  // PetiçÃµes salvas
+  const [savedPetitions, setSavedPetitions] = useState<SavedPetition[]>([]);
+  const [savedPetitionsLoading, setSavedPetitionsLoading] = useState(true);
+  const [documentHistory, setDocumentHistory] = useState<DocumentEditHistoryEntry[]>([]);
+  const [documentHistoryLoading, setDocumentHistoryLoading] = useState(true);
+  const [recentDocumentSearch, setRecentDocumentSearch] = useState('');
+  const [recentDocumentSource, setRecentDocumentSource] = useState<'all' | 'petition' | 'nextcloud'>('all');
+  const [sourceCloudFile, setSourceCloudFile] = useState<CloudFile | null>(null);
+
+  // ORIGEM ATIVA do documento — fonte ÚNICA de verdade para responder "de onde
+  // este documento veio", "onde o Ctrl+S grava", "qual lock/ETag vale". As
+  // propriedades `initial*` só descrevem como o editor foi MONTADO; depois disso
+  // o usuário pode abrir outro arquivo ou salvar em outro lugar, e é esta
+  // origem — não as props — que manda. Ver utils/editorDocumentOrigin.
+  const [activeOrigin, setActiveOriginState] = useState<ActiveDocumentOrigin>(() => {
+    if (initialNextcloudPath) {
+      return {
+        kind: 'nextcloud',
+        path: initialNextcloudPath,
+        fileName: initialDocumentName || fileNameOf(initialNextcloudPath),
+        etag: null,
+      };
+    }
+    if (initialDocSource) {
+      return { kind: 'external', source: initialDocSource, fileName: initialDocumentName || 'documento.docx' };
+    }
+    return { kind: 'new' };
+  });
+  const activeOriginRef = useRef<ActiveDocumentOrigin>(activeOrigin);
+
+  // Refs legados: continuam existindo porque muitos pontos do módulo os leem de
+  // forma síncrona. São ESCRITOS apenas por `setActiveOrigin`, nunca à mão.
+  const sourceNextcloudPathRef = useRef<string | null>(activeNextcloudPath(activeOrigin));
+  const docSourceRef = useRef<EditorDocSource | null>(
+    activeOrigin.kind === 'external' ? activeOrigin.source : null,
+  );
+
+  /** Troca a origem ativa e limpa as referências incompatíveis da anterior. */
+  const setActiveOrigin = useCallback((origin: ActiveDocumentOrigin) => {
+    activeOriginRef.current = origin;
+    sourceNextcloudPathRef.current = activeNextcloudPath(origin);
+    docSourceRef.current = origin.kind === 'external' ? origin.source : null;
+    if (origin.kind === 'nextcloud' || origin.kind === 'external') {
+      // Um arquivo do Nextcloud/origem externa não é uma petição do Jurius:
+      // manter o id faria o próximo save sobrescrever a petição anterior.
+      currentPetitionIdRef.current = null;
+      setCurrentPetitionId(null);
+    }
+    if (origin.kind === 'petition') {
+      currentPetitionIdRef.current = origin.petitionId;
+      setCurrentPetitionId(origin.petitionId);
+    }
+    setActiveOriginState(origin);
+  }, []);
+
+  /** Guarda o ETag confirmado pelo servidor sem trocar a origem. */
+  const updateActiveNextcloudEtag = useCallback((path: string, etag: string | null) => {
+    const current = activeOriginRef.current;
+    if (current.kind !== 'nextcloud' || current.path !== path) return;
+    setActiveOrigin({ ...current, etag });
+  }, [setActiveOrigin]);
+
+  const activeNextcloudPathValue = activeOrigin.kind === 'nextcloud' ? activeOrigin.path : null;
+
+  // Props de montagem -> origem ativa. Só age quando descrevem um documento
+  // DIFERENTE do que já está aberto (senão apagaria o ETag recém-lido).
+  useEffect(() => {
+    if (!initialNextcloudPath) return;
+    const current = activeOriginRef.current;
+    if (current.kind === 'nextcloud' && current.path === initialNextcloudPath) return;
+    setActiveOrigin({
+      kind: 'nextcloud',
+      path: initialNextcloudPath,
+      fileName: initialDocumentName || fileNameOf(initialNextcloudPath),
+      etag: null,
+    });
+  }, [initialNextcloudPath, initialDocumentName, setActiveOrigin]);
+
+  useEffect(() => {
+    if (!initialDocSource) return;
+    const current = activeOriginRef.current;
+    if (current.kind === 'external' && editorDocSourceKey(current.source) === editorDocSourceKey(initialDocSource)) return;
+    setActiveOrigin({
+      kind: 'external',
+      source: initialDocSource,
+      fileName: initialDocumentName || 'documento.docx',
+    });
+  }, [initialDocSource, initialDocumentName, setActiveOrigin]);
+
   // Escopo do documento aberto (Nextcloud ou origem externa). Isola rascunho
   // local e posição do cursor POR DOCUMENTO: sem isso, editar um template
   // gravaria o rascunho na mesma chave da petição comum — e salvar o template
-  // apagaria o rascunho da petição do usuário.
+  // apagaria o rascunho da petição do usuário. Acompanha a ORIGEM ATIVA.
   const documentScopeKey = useMemo(
     () => {
-      if (initialNextcloudPath) return `nextcloud:${encodeURIComponent(initialNextcloudPath)}`;
-      if (initialDocSource) return `src:${encodeURIComponent(editorDocSourceKey(initialDocSource))}`;
+      if (activeOrigin.kind === 'nextcloud') return `nextcloud:${encodeURIComponent(activeOrigin.path)}`;
+      if (activeOrigin.kind === 'external') return `src:${encodeURIComponent(editorDocSourceKey(activeOrigin.source))}`;
       return null;
     },
-    [initialNextcloudPath, initialDocSource],
+    [activeOrigin],
   );
 
   const localDraftStorageKey = useMemo(
@@ -2024,35 +2120,17 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     () => {
       const owner = user?.id || 'anon';
       // Formato legado do Nextcloud mantido: já existem posições salvas assim.
-      if (initialNextcloudPath) return `petition-editor-pos:${owner}:${encodeURIComponent(initialNextcloudPath)}`;
+      if (activeNextcloudPathValue) return `petition-editor-pos:${owner}:${encodeURIComponent(activeNextcloudPathValue)}`;
       return documentScopeKey ? `petition-editor-pos:${owner}:${documentScopeKey}` : null;
     },
-    [documentScopeKey, initialNextcloudPath, user?.id],
+    [documentScopeKey, activeNextcloudPathValue, user?.id],
   );
-  const cursorPersistTimerRef = useRef<number | null>(null);
-
-  // PetiçÃµes salvas
-  const [savedPetitions, setSavedPetitions] = useState<SavedPetition[]>([]);
-  const [savedPetitionsLoading, setSavedPetitionsLoading] = useState(true);
-  const [documentHistory, setDocumentHistory] = useState<DocumentEditHistoryEntry[]>([]);
-  const [documentHistoryLoading, setDocumentHistoryLoading] = useState(true);
-  const [recentDocumentSearch, setRecentDocumentSearch] = useState('');
-  const [recentDocumentSource, setRecentDocumentSource] = useState<'all' | 'petition' | 'nextcloud'>('all');
-  const [sourceCloudFile, setSourceCloudFile] = useState<CloudFile | null>(null);
-  // Caminho de origem no Nextcloud (quando o doc veio do módulo Nextcloud).
-  const sourceNextcloudPathRef = useRef<string | null>(initialNextcloudPath ?? null);
-  useEffect(() => { sourceNextcloudPathRef.current = initialNextcloudPath ?? null; }, [initialNextcloudPath]);
-
-  // Origem externa (template/petição padrão/…). Quando presente, salvar grava
-  // de volta NELA — nunca cria petição. Ver src/utils/editorDocSource.ts.
-  const docSourceRef = useRef<EditorDocSource | null>(initialDocSource ?? null);
-  useEffect(() => { docSourceRef.current = initialDocSource ?? null; }, [initialDocSource]);
 
   // Presença de edição: enquanto um doc do Nextcloud está aberto, registra um
-  // "lock" (heartbeat) para que os outros vejam quem está editando. Libera ao
-  // fechar/trocar de documento ou sair da página.
+  // "lock" (heartbeat) para que os outros vejam quem está editando. Segue a
+  // ORIGEM ATIVA — ao abrir outro arquivo, o lock anterior é liberado aqui.
   useEffect(() => {
-    const p = initialNextcloudPath;
+    const p = activeNextcloudPathValue;
     if (!p) return;
     let active = true;
     const beat = () => { if (active) void nextcloudService.heartbeatLock(p, userDisplayName); };
@@ -2066,7 +2144,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       window.removeEventListener('beforeunload', onUnload);
       void nextcloudService.releaseLock(p);
     };
-  }, [initialNextcloudPath, userDisplayName]);
+  }, [activeNextcloudPathValue, userDisplayName]);
 
   // Clientes
   const [clients, setClients] = useState<Client[]>([]);
@@ -3587,15 +3665,406 @@ Regras:
     };
   }, [initialCloudFileId]);
 
-  // Salvar petiçÃ£o
-  const savePetition = async () => {
+  // ===== Nextcloud dentro do editor: abrir, salvar, salvar como, cópia ======
+
+  /** Qual janela do Nextcloud está aberta e para quê. */
+  type NextcloudDialogState =
+    | { mode: 'open' }
+    | {
+        mode: 'save';
+        /** `save-as` troca a origem ativa; `save-copy` a preserva. */
+        intent: 'save-as' | 'save-copy';
+        initialPath: string;
+        initialFileName: string;
+      };
+
+  const [nextcloudDialog, setNextcloudDialog] = useState<NextcloudDialogState | null>(null);
+  const [nextcloudDialogBusy, setNextcloudDialogBusy] = useState(false);
+  const [saveDestinationOpen, setSaveDestinationOpen] = useState(false);
+  const [overwritePrompt, setOverwritePrompt] = useState<
+    { path: string; adopt: boolean } | null
+  >(null);
+  const [versionConflict, setVersionConflict] = useState<{ path: string; adopt: boolean } | null>(null);
+  const [unsavedPrompt, setUnsavedPrompt] = useState<
+    { title: string; description: string; run: () => void } | null
+  >(null);
+  // Uma operação de rede por vez (evita download/upload duplicados).
+  const nextcloudBusyRef = useRef(false);
+  // Alguma janela do editor está aberta? Enquanto estiver, os atalhos globais
+  // (Ctrl+S) e a faixa de opções ficam fora do caminho.
+  const editorModalOpenRef = useRef(false);
+  // Última pasta visitada no Nextcloud: reabrir a janela já no lugar de antes.
+  const lastNextcloudDirRef = useRef<string>('');
+  // Ação represada por "Salvar e continuar": só roda após a gravação CONFIRMADA.
+  const pendingAfterSaveRef = useRef<(() => void) | null>(null);
+  const flushPendingAfterSave = useCallback(() => {
+    const run = pendingAfterSaveRef.current;
+    if (!run) return;
+    pendingAfterSaveRef.current = null;
+    run();
+  }, []);
+  // File System Access API: enquanto a permissão vale, "baixar" atualiza o mesmo
+  // arquivo local. É melhoria progressiva — nunca é exigida.
+  const localFileHandleRef = useRef<any>(null);
+  const [localFileHandleName, setLocalFileHandleName] = useState<string | null>(null);
+
+  const originBadge = useMemo(() => describeOrigin(activeOrigin), [activeOrigin]);
+
+  useEffect(() => {
+    editorModalOpenRef.current = Boolean(
+      nextcloudDialog || saveDestinationOpen || overwritePrompt || versionConflict || unsavedPrompt,
+    );
+  }, [nextcloudDialog, saveDestinationOpen, overwritePrompt, versionConflict, unsavedPrompt]);
+
+  /** Nome sugerido para o documento atual, sempre terminado em `.docx`. */
+  const suggestedDocxName = useCallback(() => {
+    if (activeOrigin.kind === 'nextcloud') return activeOrigin.fileName;
+    const raw = sanitizePetitionTitleText(petitionTitle, '') || initialDocumentName || 'documento';
+    return normalizeDocxFileName(raw, 'documento');
+  }, [activeOrigin, petitionTitle, initialDocumentName]);
+
+  /** Exporta o documento aberto em DOCX, recusando um arquivo vazio. */
+  const exportCurrentDocx = useCallback(async (fileName: string): Promise<Blob> => {
+    const editor = editorRef.current;
+    if (!editor) throw new Error('Editor nao disponivel');
+    const blob = await editor.exportDocx(normalizeDocxFileName(fileName, 'documento'));
+    if (!blob.size) {
+      throw new Error('O documento exportado veio vazio (0 bytes). Nada foi enviado.');
+    }
+    return blob;
+  }, []);
+
+  /**
+   * Grava o documento em `path` e só então dá o salvamento por concluído.
+   * `adopt` decide se o caminho passa a ser a ORIGEM ATIVA ("Salvar como") ou se
+   * a origem anterior é preservada ("Salvar uma cópia").
+   */
+  const persistToNextcloud = useCallback(async (
+    path: string,
+    options: { adopt: boolean; ifMatch?: string | null },
+  ): Promise<boolean> => {
+    if (nextcloudBusyRef.current) return false;
+    nextcloudBusyRef.current = true;
     const startSeq = contentChangeSeqRef.current;
-    const nextcloudPath = sourceNextcloudPathRef.current;
-    const docSource = docSourceRef.current;
+    setNextcloudDialogBusy(true);
+    setSavingDoc(true);
+    setError(null);
+    try {
+      const fileName = fileNameOf(path);
+      const blob = await exportCurrentDocx(fileName);
+      // Gravação VERIFICADA: relê o arquivo no servidor e compara o tamanho.
+      // Nada de "salvo" antes da confirmação do servidor.
+      const write = (ifMatch: string | null) => nextcloudService.writeFileVerified(path, blob, {
+        ifMatch: ifMatch ?? undefined,
+      });
+
+      let confirmed: { size: number; etag: string | null };
+      try {
+        confirmed = await write(options.ifMatch ?? null);
+      } catch (writeError) {
+        if (!(writeError instanceof NextcloudConflictError)) throw writeError;
+        // 412 NÃO é prova de conflito: confirma contra o servidor antes de
+        // alarmar. Acusar "outra pessoa alterou" quando ninguém alterou é pior
+        // do que não checar — ensina o usuário a ignorar o aviso de verdade.
+        const remote = await nextcloudService.stat(path).catch(() => null);
+        const remoteUnchanged = Boolean(remote?.exists) && sameEntityTag(remote?.etag, options.ifMatch);
+        if (!remoteUnchanged) {
+          setVersionConflict({ path, adopt: options.adopt });
+          return false;
+        }
+        // A versão remota é EXATAMENTE a que abrimos: ninguém mexeu no arquivo
+        // e regravar é seguro.
+        confirmed = await write(null);
+      }
+
+      if (options.adopt) {
+        setActiveOrigin({ kind: 'nextcloud', path, fileName, etag: confirmed.etag });
+        setPetitionTitle(getSanitizedDocumentName(fileName));
+        clearLocalDraft();
+        setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
+        setLastSaved(new Date());
+      } else {
+        // A cópia não muda a origem: o documento aberto continua "sujo" se ainda
+        // não foi gravado no destino original.
+        updateActiveNextcloudEtag(path, confirmed.etag);
+      }
+
+      await trackDocumentActivity({
+        source: 'nextcloud',
+        sourceKey: path,
+        title: fileName,
+        clientId: selectedClient?.id || null,
+        clientName: selectedClient?.full_name || null,
+        nextcloudPath: path,
+        action: 'saved',
+      });
+
+      showSuccessMessage(options.adopt ? 'Salvo no Nextcloud' : `Cópia criada em ${path}`);
+      setNextcloudDialog(null);
+      // "Salvar uma cópia" não resolve a pendência do documento aberto: só o
+      // salvamento na origem ativa libera a ação represada.
+      if (options.adopt) flushPendingAfterSave();
+      return true;
+    } catch (err) {
+      if (err instanceof NextcloudConflictError) {
+        setVersionConflict({ path, adopt: options.adopt });
+        return false;
+      }
+      console.error('Erro ao salvar no Nextcloud:', err);
+      setError(getNextcloudErrorMessage(err, 'salvar o arquivo'));
+      return false;
+    } finally {
+      nextcloudBusyRef.current = false;
+      setNextcloudDialogBusy(false);
+      setSavingDoc(false);
+    }
+  }, [
+    exportCurrentDocx,
+    setActiveOrigin,
+    updateActiveNextcloudEtag,
+    clearLocalDraft,
+    trackDocumentActivity,
+    selectedClient?.id,
+    selectedClient?.full_name,
+  ]);
+
+  /** Confirma no SERVIDOR se o destino já existe antes de gravar. */
+  const requestNextcloudSave = useCallback(async (target: NextcloudSaveTarget, adopt: boolean) => {
+    if (nextcloudBusyRef.current) return;
+    setNextcloudDialogBusy(true);
+    try {
+      const remote = await nextcloudService.stat(target.path);
+      if (remote.exists) {
+        // Nunca sobrescreve em silêncio: a decisão é sempre do usuário.
+        setOverwritePrompt({ path: target.path, adopt });
+        return;
+      }
+    } catch (err) {
+      setError(getNextcloudErrorMessage(err, 'verificar o destino'));
+      return;
+    } finally {
+      setNextcloudDialogBusy(false);
+    }
+    await persistToNextcloud(target.path, { adopt });
+  }, [persistToNextcloud]);
+
+  /** "Salvar uma cópia" a partir de um destino ocupado: resolve um nome livre. */
+  const saveAsFreeCopy = useCallback(async (path: string, adopt: boolean) => {
+    setNextcloudDialogBusy(true);
+    try {
+      const dir = parentPathOf(path);
+      const freeName = await resolveFreeName(dir, fileNameOf(path));
+      const freePath = buildNextcloudFilePath(dir, freeName);
+      setOverwritePrompt(null);
+      setVersionConflict(null);
+      await persistToNextcloud(freePath, { adopt });
+    } catch (err) {
+      setError(getNextcloudErrorMessage(err, 'criar uma cópia'));
+    } finally {
+      setNextcloudDialogBusy(false);
+    }
+  }, [persistToNextcloud]);
+
+  /** Abre um .docx do Nextcloud direto no editor (sem passar pelo módulo Cloud). */
+  const openNextcloudDocument = useCallback(async (entry: { path: string; name: string }) => {
+    if (nextcloudBusyRef.current) return;
+    nextcloudBusyRef.current = true;
+    setNextcloudDialogBusy(true);
+    setDocumentImportLoading(true);
+    setError(null);
+    try {
+      beginDocumentSettleWindow(DOCUMENT_LOAD_GUARD_MS);
+      // PRIMEIRO sair da tela inicial: o SyncfusionEditor só é montado no
+      // workspace do editor. Abrindo a partir da tela de início (Recentes ou
+      // "Abrir do Nextcloud"), esperar pelo editor antes disso estourava o
+      // tempo limite — ele nem existia ainda.
+      setShowStartScreen(false);
+      setActiveWorkspace('editor');
+
+      const blob = await nextcloudService.readFile(entry.path);
+      const arrayBuffer = await blob.arrayBuffer();
+      if (arrayBuffer.byteLength === 0) {
+        throw new Error('O documento do Nextcloud está vazio (0 bytes).');
+      }
+
+      // Margem maior: vindo da tela inicial, o Syncfusion está sendo montado
+      // (e o chunk pode estar sendo baixado) agora.
+      const editor = await waitForEditorReady(80, 150);
+      if (!editor) throw new Error('O editor Syncfusion nao carregou a tempo. Tente recarregar a pagina.');
+
+      // ETag da versão que estamos abrindo: é ele que detecta, no próximo save,
+      // que outra pessoa alterou o arquivo enquanto editávamos.
+      let etag: string | null = null;
+      try {
+        etag = (await nextcloudService.stat(entry.path)).etag ?? null;
+      } catch {
+        // Sem ETag apenas perdemos a checagem otimista — a gravação verificada
+        // continua valendo.
+      }
+
+      await loadDocxWithFallback(editor, arrayBuffer, entry.name);
+      captureAndApplyDocFontSoon(editor);
+
+      // A origem ativa troca AQUI: o lock/heartbeat do documento anterior é
+      // liberado pelo efeito de presença e o novo caminho assume.
+      setActiveOrigin({ kind: 'nextcloud', path: entry.path, fileName: entry.name, etag });
+      setPetitionTitle(getSanitizedDocumentName(entry.name));
+      setSourceCloudFile(null);
+      setNextcloudDialog(null);
+
+      await waitForDocumentRendered(editor);
+      beginDocumentSettleWindow();
+      setHasUnsavedChanges(false);
+      setLastSaved(null);
+
+      void trackDocumentActivity({
+        source: 'nextcloud',
+        sourceKey: entry.path,
+        title: entry.name,
+        clientId: selectedClient?.id || null,
+        clientName: selectedClient?.full_name || null,
+        nextcloudPath: entry.path,
+        action: 'opened',
+      });
+      showSuccessMessage('Documento aberto do Nextcloud.');
+    } catch (err) {
+      console.error('Erro ao abrir documento do Nextcloud:', err);
+      setError(getNextcloudErrorMessage(err, 'abrir o documento'));
+    } finally {
+      nextcloudBusyRef.current = false;
+      setNextcloudDialogBusy(false);
+      setDocumentImportLoading(false);
+    }
+  }, [
+    beginDocumentSettleWindow,
+    setActiveOrigin,
+    trackDocumentActivity,
+    selectedClient?.id,
+    selectedClient?.full_name,
+  ]);
+
+  /** Recarrega a versão do servidor, descartando as alterações locais (escolha explícita). */
+  const reloadFromServer = useCallback(async (path: string) => {
+    setVersionConflict(null);
+    clearLocalDraft();
+    await openNextcloudDocument({ path, name: fileNameOf(path) });
+  }, [clearLocalDraft, openNextcloudDocument]);
+
+  /**
+   * Baixa uma cópia DOCX para o dispositivo. NUNCA altera a origem ativa: um
+   * download comum não dá ao navegador um caminho local reutilizável.
+   * Quando o navegador suporta `showSaveFilePicker`, guardamos o handle para
+   * atualizar o mesmo arquivo durante a sessão.
+   */
+  const downloadDocxCopy = useCallback(async (options: { reuseHandle?: boolean } = {}) => {
+    const fileName = suggestedDocxName();
+    try {
+      const blob = await exportCurrentDocx(fileName);
+      const picker = (window as any).showSaveFilePicker;
+
+      if (options.reuseHandle && localFileHandleRef.current) {
+        const handle = localFileHandleRef.current;
+        const permission = await handle.queryPermission?.({ mode: 'readwrite' });
+        const granted = permission === 'granted'
+          || (await handle.requestPermission?.({ mode: 'readwrite' })) === 'granted';
+        if (granted) {
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          showSuccessMessage(`Arquivo local atualizado: ${handle.name}`);
+          return;
+        }
+      }
+
+      if (typeof picker === 'function') {
+        try {
+          const handle = await picker.call(window, {
+            suggestedName: fileName,
+            types: [{
+              description: 'Documento do Word',
+              accept: { 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'] },
+            }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          localFileHandleRef.current = handle;
+          setLocalFileHandleName(handle.name || fileName);
+          showSuccessMessage(`Cópia salva no dispositivo: ${handle.name || fileName}`);
+          return;
+        } catch (pickerError) {
+          // Cancelou o seletor: não é erro, e nada mais deve acontecer.
+          if ((pickerError as DOMException)?.name === 'AbortError') return;
+          // Qualquer outra falha cai no download comum abaixo.
+        }
+      }
+
+      saveAs(blob, fileName);
+      showSuccessMessage('Download preparado. O arquivo baixado não fica conectado ao Nextcloud.');
+    } catch (err) {
+      console.error('Erro ao baixar cópia:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao baixar o documento');
+    }
+  }, [exportCurrentDocx, suggestedDocxName]);
+
+  /** Abre a janela do Nextcloud no modo salvar. */
+  const openNextcloudSaveDialog = useCallback((intent: 'save-as' | 'save-copy') => {
+    const origin = activeOriginRef.current;
+    setSaveDestinationOpen(false);
+    setNextcloudDialog({
+      mode: 'save',
+      intent,
+      initialPath: origin.kind === 'nextcloud' ? parentPathOf(origin.path) : '',
+      initialFileName: suggestedDocxName(),
+    });
+  }, [suggestedDocxName]);
+
+  // Salvar petiçÃ£o
+  const savePetition = async (request: { auto?: boolean; forceJurius?: boolean } = {}) => {
+    const startSeq = contentChangeSeqRef.current;
+    const origin = activeOriginRef.current;
+
+    // Documento já salvo e sem alterações: nada a gravar. O Ctrl+S segue a
+    // mesma regra do botão (que fica cinza) em vez de refazer um upload igual.
+    // "Salvar como" e "Salvar uma cópia" não passam por aqui e continuam ativos.
+    if (!request.forceJurius && !hasUnsavedChangesRef.current) return;
+    // `forceJurius`: escolha explícita do usuário no diálogo de destino.
+    const decision: ReturnType<typeof decideSaveTarget> = request.forceJurius
+      ? { action: 'petition', petitionId: currentPetitionIdRef.current }
+      : decideSaveTarget(origin, {
+        hasPersistedPetition: Boolean(currentPetitionIdRef.current ?? currentPetitionId),
+      });
+
+    // Sem destino persistente (documento novo, modelo ou DOCX do computador):
+    // o usuário escolhe onde salvar antes de qualquer gravação. Salvamentos
+    // automáticos (sincronização pós-offline) nunca abrem janela.
+    if (decision.action === 'ask') {
+      if (request.auto) return;
+      setSaveDestinationOpen(true);
+      return;
+    }
+
+    const docSource = decision.action === 'external' ? decision.source : null;
+
+    // Origem Nextcloud: grava direto no caminho conhecido, com If-Match.
+    if (decision.action === 'nextcloud') {
+      if (!isOnlineRef.current) {
+        setPendingOfflineSync(true);
+        setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
+        return;
+      }
+      if (isLoadingPetitionRef.current) {
+        setError('Aguarde o carregamento do documento antes de salvar');
+        return;
+      }
+      await persistToNextcloud(decision.path, { adopt: true, ifMatch: decision.etag });
+      return;
+    }
+
     // Regra: salvar apenas documentos vinculados a cliente — exceto quando o
-    // documento veio do Nextcloud ou de uma ORIGEM EXTERNA (template/petição
-    // padrão/…): salvamos de volta na origem, sem criar petição.
-    if (!selectedClient?.id && !nextcloudPath && !docSource) {
+    // documento veio de uma ORIGEM EXTERNA (template/petição padrão/…):
+    // salvamos de volta na origem, sem criar petição.
+    if (!selectedClient?.id && !docSource) {
       if (initialClientId) {
         return;
       }
@@ -3639,26 +4108,6 @@ Regras:
           throw new Error('O documento exportado veio vazio (0 bytes). Nada foi salvo.');
         }
         await saveEditorDocSource(docSource, blob, fileName);
-      } else if (nextcloudPath) {
-        // Origem Nextcloud: salva de volta no servidor, sem criar petição.
-        const exportedName = initialDocumentName || `${title}.docx`;
-        const blob = await editor.exportDocx(exportedName.endsWith('.docx') ? exportedName : `${exportedName}.docx`);
-        if (!blob.size) {
-          throw new Error('O documento exportado veio vazio (0 bytes). Nada foi enviado ao Nextcloud.');
-        }
-
-        // Grava E confirma relendo do servidor: só segue se a versão remota
-        // tiver exatamente o tamanho enviado. Evita o "salvo" falso.
-        await nextcloudService.writeFileVerified(nextcloudPath, blob);
-        await trackDocumentActivity({
-          source: 'nextcloud',
-          sourceKey: nextcloudPath,
-          title: initialDocumentName || `${title}.docx`,
-          clientId,
-          clientName,
-          nextcloudPath,
-          action: 'saved',
-        });
       } else {
         let savedRow: SavedPetition | null = null;
 
@@ -3682,9 +4131,10 @@ Regras:
             client_name: clientName,
           });
           if (savedRow?.id) {
-            // Atualiza ref ANTES do state â€” prÃ³ximos saves leem imediatamente
-            currentPetitionIdRef.current = savedRow.id;
-            setCurrentPetitionId(savedRow.id);
+            // Atualiza ref ANTES do state â€” prÃ³ximos saves leem imediatamente.
+            // A origem ativa passa a ser a petição recém-criada: o próximo
+            // Ctrl+S atualiza este registro em vez de perguntar de novo.
+            setActiveOrigin({ kind: 'petition', petitionId: savedRow.id });
           }
         }
 
@@ -3719,7 +4169,8 @@ Regras:
       setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
       setLastSaved(new Date());
       clearLocalDraft();
-      showSuccessMessage(docSource ? editorDocSourceSavedLabel(docSource) : nextcloudPath ? 'Documento salvo no Nextcloud' : 'Documento salvo com sucesso');
+      showSuccessMessage(docSource ? editorDocSourceSavedLabel(docSource) : savedLabelFor(decision));
+      flushPendingAfterSave();
     } catch (err) {
       console.error('Erro ao salvar:', err);
       setError(err instanceof Error ? err.message : 'Erro ao salvar documento');
@@ -3822,7 +4273,7 @@ Regras:
     if (saveInFlightRef.current) return;
 
     const timer = window.setTimeout(() => {
-      void savePetitionActionRef.current?.();
+      void savePetitionActionRef.current?.({ auto: true });
     }, 1200);
 
     return () => window.clearTimeout(timer);
@@ -3856,9 +4307,10 @@ Regras:
       }
     }
 
-    // Atualizar estados primeiro
-    currentPetitionIdRef.current = petitionToLoad.id;
-    setCurrentPetitionId(petitionToLoad.id);
+    // Atualizar estados primeiro. A origem ativa passa a ser a petição do
+    // Jurius — isso libera o lock de um eventual documento Nextcloud anterior.
+    setActiveOrigin({ kind: 'petition', petitionId: petitionToLoad.id });
+    setSourceCloudFile(null);
     setPetitionTitle(sanitizeText(petitionToLoad.title) || '');
     setLastSaved(petitionToLoad.updated_at ? new Date(petitionToLoad.updated_at) : null);
 
@@ -3948,8 +4400,9 @@ Regras:
       }
     }
 
-    currentPetitionIdRef.current = null;
-    setCurrentPetitionId(null);
+    // Documento em branco: sem destino persistente até o usuário escolher um.
+    setActiveOrigin({ kind: 'new' });
+    setSourceCloudFile(null);
     setPetitionTitle('');
     setLastSaved(null);
 
@@ -4017,6 +4470,12 @@ Regras:
       const arrayBuffer = await file.arrayBuffer();
       await loadDocxWithFallback(editor, arrayBuffer, file.name);
       captureAndApplyDocFontSoon(editor);
+      // Um DOCX do computador não tem caminho reutilizável no navegador: o
+      // documento fica SEM origem persistente e o primeiro "Salvar" pergunta
+      // onde gravar (Nextcloud, Jurius ou download).
+      setActiveOrigin({ kind: 'new' });
+      setSourceCloudFile(null);
+      setPetitionTitle(getSanitizedDocumentName(file.name));
       // Abrir um arquivo a partir da tela inicial estabelece uma nova linha de
       // base limpa. Se já havia uma petição salva aberta, a importação substitui
       // seu conteúdo e deve continuar sendo tratada como alteração.
@@ -4801,6 +5260,10 @@ Regras:
       }
       const nextcloudPath = sourceNextcloudPathRef.current;
       if (nextcloudPath) {
+        // ETag da versão aberta: habilita o If-Match do próximo salvamento.
+        void nextcloudService.stat(nextcloudPath)
+          .then((meta) => updateActiveNextcloudEtag(nextcloudPath, meta.etag ?? null))
+          .catch(() => { /* sem ETag, a gravação verificada ainda protege */ });
         void trackDocumentActivity({
           source: 'nextcloud',
           sourceKey: nextcloudPath,
@@ -4830,7 +5293,7 @@ Regras:
         try { window.dispatchEvent(new Event('petition-editor-doc-ready')); } catch { /* ignore */ }
       }, 350);
     }
-  }, [applyInitialClientIfNeeded, initialClientId, petitionTitle, restoreNextcloudDraft, restoreCursorPosition, trackDocumentActivity]);
+  }, [applyInitialClientIfNeeded, initialClientId, petitionTitle, restoreNextcloudDraft, restoreCursorPosition, trackDocumentActivity, updateActiveNextcloudEtag]);
 
   // Recarrega o .docx direto do Nextcloud pelo caminho de origem. Usado na
   // restauração do widget após um reload da página: a object URL do blob morre
@@ -4845,6 +5308,14 @@ Regras:
       const arrayBuffer = await blob.arrayBuffer();
       if (arrayBuffer.byteLength === 0) {
         throw new Error('O documento do Nextcloud esta vazio (0 bytes).');
+      }
+
+      // ETag da versão aberta: habilita o If-Match do próximo salvamento.
+      try {
+        const meta = await nextcloudService.stat(nextcloudPath);
+        updateActiveNextcloudEtag(nextcloudPath, meta.etag ?? null);
+      } catch {
+        // sem ETag, a gravação verificada ainda protege contra "salvo" falso
       }
 
       const editor = await waitForEditorReady();
@@ -4889,7 +5360,7 @@ Regras:
         try { window.dispatchEvent(new Event('petition-editor-doc-ready')); } catch { /* ignore */ }
       }, 350);
     }
-  }, [applyInitialClientIfNeeded, initialClientId, petitionTitle, restoreNextcloudDraft, restoreCursorPosition, trackDocumentActivity]);
+  }, [applyInitialClientIfNeeded, initialClientId, petitionTitle, restoreNextcloudDraft, restoreCursorPosition, trackDocumentActivity, updateActiveNextcloudEtag]);
 
   // Carrega o .docx de uma ORIGEM EXTERNA (template/petição padrão/…) no editor.
   // Espelha o fluxo do Nextcloud; ao salvar, grava de volta (ver savePetition).
@@ -5127,6 +5598,9 @@ Regras:
 
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
+        // Com uma janela do editor aberta (destino, sobrescrita, conflito,
+        // proteção de alterações), o Ctrl+S pertence a ela — não ao documento.
+        if (editorModalOpenRef.current) return;
         savePetitionActionRef.current?.();
         return;
       }
@@ -6247,34 +6721,90 @@ Regras:
     };
   }, [documentHistory, savedPetitions]);
 
-  const openRecentDocument = (item: RecentDocumentItem) => {
-    if (item.source === 'petition' && item.petition) {
-      void loadPetition(item.petition);
+  /**
+   * Ponte única de proteção contra perda de trabalho. Qualquer ação que troque
+   * o documento aberto (abrir local, abrir do Nextcloud, recente, novo, voltar
+   * ao início) passa por aqui: com alterações pendentes, o usuário escolhe
+   * salvar, descartar ou cancelar — nunca perdemos o trabalho em silêncio.
+   */
+  const guardUnsaved = (
+    prompt: { title: string; description: string },
+    run: () => void,
+  ) => {
+    if (!hasUnsavedChangesRef.current) {
+      run();
       return;
     }
-    if (!item.nextcloudPath) return;
+    setUnsavedPrompt({ ...prompt, run });
+  };
 
-    setOpeningPetitionId(item.key);
-    events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, {
-      clientId: item.clientId || undefined,
-      mode: 'new',
-      initialDocumentName: item.title,
-      initialNextcloudPath: item.nextcloudPath,
-      openRequestId: crypto.randomUUID(),
-    });
+  const openRecentDocument = (item: RecentDocumentItem) => {
+    guardUnsaved(
+      {
+        title: 'Abrir outro documento?',
+        description: `As alterações não salvas serão perdidas ao abrir “${item.title}”.`,
+      },
+      () => {
+        if (item.source === 'petition' && item.petition) {
+          void loadPetition(item.petition);
+          return;
+        }
+        if (!item.nextcloudPath) return;
+        // Abertura NATIVA: o editor lê o arquivo do servidor, assume o caminho
+        // como origem ativa e mantém o lock — sem depender do widget externo.
+        setOpeningPetitionId(item.key);
+        void openNextcloudDocument({
+          path: item.nextcloudPath,
+          name: fileNameOf(item.nextcloudPath) || item.title,
+        }).finally(() => {
+          setOpeningPetitionId((current) => (current === item.key ? null : current));
+        });
+      },
+    );
+  };
 
-    // A abertura de documentos Nextcloud é delegada ao widget flutuante
-    // (PetitionEditorWidget), que roda em outra instância e nunca sinaliza de
-    // volta a conclusão para esta tela. Sem isso o item ficaria preso em
-    // "Abrindo..." indefinidamente. O indicador serve apenas como feedback
-    // breve, então liberamos o estado após um curto intervalo.
-    if (openingResetTimeoutRef.current) {
-      window.clearTimeout(openingResetTimeoutRef.current);
-    }
-    openingResetTimeoutRef.current = window.setTimeout(() => {
-      setOpeningPetitionId((current) => (current === item.key ? null : current));
-      openingResetTimeoutRef.current = null;
-    }, 2500);
+  /** "Abrir do computador…" — mantém o input local existente. */
+  const requestOpenLocalFile = () => {
+    guardUnsaved(
+      {
+        title: 'Abrir um arquivo do computador?',
+        description: 'As alterações não salvas do documento atual serão perdidas.',
+      },
+      () => {
+        setActiveWorkspace('editor');
+        setShowStartScreen(false);
+        window.setTimeout(() => fileInputRef.current?.click(), 150);
+      },
+    );
+  };
+
+  /** "Abrir do Nextcloud…" — janela de navegação/pesquisa dentro do editor. */
+  const requestOpenNextcloud = () => {
+    guardUnsaved(
+      {
+        title: 'Abrir um documento do Nextcloud?',
+        description: 'As alterações não salvas do documento atual serão perdidas.',
+      },
+      () => {
+        setActiveWorkspace('editor');
+        setNextcloudDialog({ mode: 'open' });
+      },
+    );
+  };
+
+  /** "Novo documento" com a mesma proteção. */
+  const requestNewDocument = (options?: { keepClient?: boolean }) => {
+    guardUnsaved(
+      {
+        title: 'Criar um novo documento?',
+        description: 'As alterações não salvas do documento atual serão perdidas.',
+      },
+      () => {
+        newPetition(options);
+        setActiveWorkspace('editor');
+        setShowStartScreen(false);
+      },
+    );
   };
 
   const openBlocksWorkspaceFromStart = () => {
@@ -6293,19 +6823,431 @@ Regras:
   };
 
   const requestGoHome = () => {
-    if (hasUnsavedChanges) {
-      setShowUnsavedHomeDialog(true);
-      return;
-    }
-    setShowStartScreen(true);
+    guardUnsaved(
+      {
+        title: 'Voltar para o início?',
+        description: 'As alterações feitas desde o último salvamento não serão gravadas.',
+      },
+      () => setShowStartScreen(true),
+    );
   };
 
-  const discardChangesAndGoHome = () => {
-    setShowUnsavedHomeDialog(false);
+  /** Descarta as alterações pendentes e executa a ação represada. */
+  const discardAndContinue = () => {
+    const pending = unsavedPrompt;
+    setUnsavedPrompt(null);
+    if (!pending) return;
     clearLocalDraft();
     setHasUnsavedChanges(false);
-    setShowStartScreen(true);
+    pending.run();
   };
+
+  /**
+   * "Salvar e continuar": a ação represada só roda depois da confirmação REAL
+   * do salvamento (ver `flushPendingAfterSave`). Se o documento ainda não tem
+   * destino, o fluxo de escolha abre e a ação espera lá.
+   */
+  const saveAndContinue = async () => {
+    const pending = unsavedPrompt;
+    if (!pending) return;
+    setUnsavedPrompt(null);
+    pendingAfterSaveRef.current = pending.run;
+    await savePetition();
+  };
+
+  /** "Salvar no Jurius" a partir do diálogo de destino (exige cliente). */
+  const savePetitionAsJurius = () => savePetition({ forceJurius: true });
+
+  // ===== Janelas do editor (abrir/salvar no Nextcloud e proteções) =========
+  // Ficam em uma variável para serem renderizadas TANTO na tela inicial quanto
+  // no editor — "Abrir do Nextcloud" precisa funcionar nos dois lugares.
+  const editorDialogs = (
+    <>
+    {unsavedPrompt && typeof document !== 'undefined' && createPortal(
+      <div
+        className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-[2px]"
+        style={{ position: 'fixed', inset: 0, zIndex: 2147483647 }}
+        role="presentation"
+      >
+        <section
+          id="petition-unsaved-guard-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="petition-unsaved-guard-title"
+          aria-describedby="petition-unsaved-guard-description"
+          className={`w-full max-w-[480px] overflow-hidden rounded-xl border shadow-[0_28px_80px_rgba(15,23,42,0.32)] ring-1 ring-black/5 ${
+            darkMode
+              ? 'border-[#484848] bg-[#2b2b2b] text-slate-100'
+              : 'border-slate-200 bg-white text-slate-900'
+          }`}
+        >
+          <header className={`flex items-start gap-3.5 border-b px-5 py-5 ${darkMode ? 'border-[#454545]' : 'border-slate-200'}`}>
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${
+              darkMode
+                ? 'border-amber-400/20 bg-amber-400/10 text-amber-300'
+                : 'border-amber-200 bg-amber-50 text-amber-600'
+            }`}>
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Documento não salvo
+              </div>
+              <h2 id="petition-unsaved-guard-title" className="mt-1 text-[17px] font-semibold leading-6">
+                {unsavedPrompt.title}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setUnsavedPrompt(null)}
+              className={`rounded-md p-1.5 transition-colors ${
+                darkMode ? 'text-slate-400 hover:bg-white/10 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+              }`}
+              aria-label="Fechar aviso"
+              title="Fechar"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </header>
+
+          <div className="px-5 py-5">
+            <div className={`flex items-center gap-3 rounded-lg border px-3.5 py-3 ${
+              darkMode ? 'border-[#484848] bg-[#333333]' : 'border-slate-200 bg-slate-50'
+            }`}>
+              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${
+                darkMode ? 'bg-[#185abd]/25 text-blue-300' : 'bg-blue-100 text-[#185abd]'
+              }`}>
+                {activeOrigin.kind === 'nextcloud'
+                  ? <Cloud className="h-[18px] w-[18px]" />
+                  : <FileText className="h-[18px] w-[18px]" />}
+              </div>
+              <div className="min-w-0">
+                <div className={`text-[10px] font-medium uppercase tracking-[0.1em] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {originBadge.label}
+                </div>
+                <div className="mt-0.5 truncate text-[13px] font-semibold" title={originBadge.detail || petitionTitle || 'Documento sem título'}>
+                  {petitionTitle || 'Documento sem título'}
+                </div>
+              </div>
+            </div>
+
+            <p id="petition-unsaved-guard-description" className={`mt-4 text-[13px] leading-5 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+              {unsavedPrompt.description}
+            </p>
+          </div>
+
+          <footer className={`flex flex-col gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end ${
+            darkMode ? 'border-[#454545] bg-[#303030]' : 'border-slate-200 bg-slate-50/80'
+          }`}>
+            <button
+              type="button"
+              onClick={() => setUnsavedPrompt(null)}
+              className={`h-9 rounded-md border px-4 text-[12px] font-semibold transition-colors ${
+                darkMode
+                  ? 'border-[#565656] bg-transparent text-slate-200 hover:bg-white/10'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={discardAndContinue}
+              className={`h-9 rounded-md border px-4 text-[12px] font-semibold transition-colors ${
+                darkMode
+                  ? 'border-red-400/30 bg-transparent text-red-300 hover:bg-red-400/10'
+                  : 'border-red-200 bg-white text-red-700 hover:bg-red-50'
+              }`}
+            >
+              Descartar alterações
+            </button>
+            <button
+              type="button"
+              autoFocus
+              onClick={() => { void saveAndContinue(); }}
+              className="h-9 rounded-md bg-[#185abd] px-4 text-[12px] font-semibold text-white transition-colors hover:bg-[#144f9f] focus:outline-none focus:ring-2 focus:ring-[#185abd]/30"
+            >
+              Salvar e continuar
+            </button>
+          </footer>
+        </section>
+      </div>,
+      document.body,
+    )}
+
+    {/* Janela do Nextcloud: abrir arquivo ou escolher destino */}
+    <NextcloudFileDialog
+      open={Boolean(nextcloudDialog)}
+      mode={nextcloudDialog?.mode === 'save' ? 'save' : 'open'}
+      darkMode={darkMode}
+      busy={nextcloudDialogBusy}
+      busyLabel={nextcloudDialog?.mode === 'save' ? 'Salvando…' : 'Abrindo…'}
+      initialPath={nextcloudDialog?.mode === 'save' ? nextcloudDialog.initialPath : lastNextcloudDirRef.current}
+      initialFileName={nextcloudDialog?.mode === 'save' ? nextcloudDialog.initialFileName : ''}
+      title={
+        nextcloudDialog?.mode === 'save'
+          ? (nextcloudDialog.intent === 'save-copy' ? 'Salvar uma cópia no Nextcloud' : 'Salvar como — Nextcloud')
+          : 'Abrir do Nextcloud'
+      }
+      description={
+        nextcloudDialog?.mode === 'save'
+          ? (nextcloudDialog.intent === 'save-copy'
+              ? 'Cria outro arquivo e mantém o documento atual conectado à origem de antes.'
+              : 'O caminho escolhido passa a ser a origem deste documento.')
+          : 'Navegue ou pesquise para escolher um documento .docx.'
+      }
+      confirmLabel={nextcloudDialog?.mode === 'save' ? 'Salvar aqui' : 'Abrir'}
+      onClose={() => { if (!nextcloudDialogBusy) { setNextcloudDialog(null); pendingAfterSaveRef.current = null; } }}
+      onSelectFile={(entry) => {
+        lastNextcloudDirRef.current = parentPathOf(entry.path);
+        void openNextcloudDocument({ path: entry.path, name: entry.name });
+      }}
+      onConfirmSave={(target) => {
+        lastNextcloudDirRef.current = target.dir;
+        void requestNextcloudSave(target, nextcloudDialog?.mode === 'save' ? nextcloudDialog.intent === 'save-as' : true);
+      }}
+    />
+
+    {/* Onde salvar este documento? (primeiro salvamento) */}
+    {saveDestinationOpen && typeof document !== 'undefined' && createPortal(
+      <div
+        className="fixed inset-0 z-[2147483646] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]"
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) { setSaveDestinationOpen(false); pendingAfterSaveRef.current = null; }
+        }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="petition-save-destination-title"
+          className={`w-full max-w-[560px] overflow-hidden rounded-xl border shadow-[0_28px_80px_rgba(15,23,42,0.32)] ${
+            darkMode ? 'border-[#484848] bg-[#2b2b2b] text-slate-100' : 'border-slate-200 bg-white text-slate-900'
+          }`}
+        >
+          <header className={`flex items-start gap-3 border-b px-5 py-4 ${darkMode ? 'border-[#454545]' : 'border-slate-200'}`}>
+            <div className="min-w-0 flex-1">
+              <h2 id="petition-save-destination-title" className="text-[16px] font-semibold leading-6">
+                Onde deseja salvar este documento?
+              </h2>
+              <p className={`mt-1 text-[12px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Baixar para o dispositivo cria um arquivo local. Salvar no Nextcloud mantém o documento
+                conectado para atualizações futuras.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setSaveDestinationOpen(false); pendingAfterSaveRef.current = null; }}
+              className={`rounded-md p-1.5 ${darkMode ? 'text-slate-400 hover:bg-white/10' : 'text-slate-400 hover:bg-slate-100'}`}
+              aria-label="Fechar"
+              title="Fechar"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </header>
+
+          <div className="grid gap-3 px-5 py-5 sm:grid-cols-2">
+            <button
+              type="button"
+              autoFocus
+              onClick={() => openNextcloudSaveDialog('save-as')}
+              className={`flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition ${
+                darkMode
+                  ? 'border-[#4d4d4d] bg-[#333333] hover:border-[#0082c9] hover:bg-[#0082c9]/10'
+                  : 'border-slate-200 bg-white hover:border-[#0082c9] hover:bg-[#0082c9]/5'
+              }`}
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#0082c9]/10 text-[#0082c9]">
+                <Cloud className="h-5 w-5" />
+              </span>
+              <span className="text-[13px] font-semibold">Nextcloud</span>
+              <span className={`text-[11px] leading-4 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Escolha uma pasta e mantenha o documento conectado para futuras edições.
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setSaveDestinationOpen(false); pendingAfterSaveRef.current = null; void downloadDocxCopy({ reuseHandle: true }); }}
+              className={`flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition ${
+                darkMode
+                  ? 'border-[#4d4d4d] bg-[#333333] hover:border-[#185abd] hover:bg-[#185abd]/10'
+                  : 'border-slate-200 bg-white hover:border-[#185abd] hover:bg-blue-50'
+              }`}
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#185abd]/10 text-[#185abd]">
+                <Download className="h-5 w-5" />
+              </span>
+              <span className="text-[13px] font-semibold">
+                {localFileHandleName ? `Atualizar “${localFileHandleName}”` : 'Este dispositivo'}
+              </span>
+              <span className={`text-[11px] leading-4 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                Baixe uma cópia DOCX para o seu computador. O arquivo baixado não fica conectado.
+              </span>
+            </button>
+          </div>
+
+          <footer className={`flex items-center justify-between gap-3 border-t px-5 py-3 ${
+            darkMode ? 'border-[#454545] bg-[#303030]' : 'border-slate-200 bg-slate-50/80'
+          }`}>
+            <button
+              type="button"
+              onClick={() => {
+                setSaveDestinationOpen(false);
+                void savePetitionAsJurius();
+              }}
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-[12px] font-medium transition ${
+                darkMode
+                  ? 'border-[#565656] text-slate-200 hover:bg-white/10'
+                  : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+              title="Cria uma petição no Jurius (exige cliente vinculado)"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Salvar como petição no Jurius
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSaveDestinationOpen(false); pendingAfterSaveRef.current = null; }}
+              className={`h-8 rounded-md px-3 text-[12px] font-medium ${darkMode ? 'text-slate-300 hover:bg-white/10' : 'text-slate-600 hover:bg-slate-100'}`}
+            >
+              Cancelar
+            </button>
+          </footer>
+        </section>
+      </div>,
+      document.body,
+    )}
+
+    {/* Confirmação de sobrescrita */}
+    {overwritePrompt && typeof document !== 'undefined' && createPortal(
+      <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]" role="presentation">
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="petition-overwrite-title"
+          className={`w-full max-w-[500px] overflow-hidden rounded-xl border shadow-[0_28px_80px_rgba(15,23,42,0.32)] ${
+            darkMode ? 'border-[#484848] bg-[#2b2b2b] text-slate-100' : 'border-slate-200 bg-white text-slate-900'
+          }`}
+        >
+          <header className={`flex items-start gap-3 border-b px-5 py-4 ${darkMode ? 'border-[#454545]' : 'border-slate-200'}`}>
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+              darkMode ? 'bg-amber-400/10 text-amber-300' : 'bg-amber-50 text-amber-600'
+            }`}>
+              <AlertTriangle className="h-[18px] w-[18px]" />
+            </div>
+            <div className="min-w-0">
+              <h2 id="petition-overwrite-title" className="text-[16px] font-semibold leading-6">Já existe um arquivo com esse nome</h2>
+              <p className={`mt-1 break-all text-[12px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>{overwritePrompt.path}</p>
+            </div>
+          </header>
+          <footer className={`flex flex-col gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end ${
+            darkMode ? 'border-[#454545] bg-[#303030]' : 'border-slate-200 bg-slate-50/80'
+          }`}>
+            <button
+              type="button"
+              onClick={() => setOverwritePrompt(null)}
+              disabled={nextcloudDialogBusy}
+              className={`h-9 rounded-md border px-4 text-[12px] font-semibold disabled:opacity-50 ${
+                darkMode ? 'border-[#565656] text-slate-200 hover:bg-white/10' : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => { void saveAsFreeCopy(overwritePrompt.path, overwritePrompt.adopt); }}
+              disabled={nextcloudDialogBusy}
+              className={`h-9 rounded-md border px-4 text-[12px] font-semibold disabled:opacity-50 ${
+                darkMode ? 'border-[#565656] text-slate-200 hover:bg-white/10' : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              Salvar uma cópia
+            </button>
+            <button
+              type="button"
+              autoFocus
+              onClick={() => {
+                const target = overwritePrompt;
+                setOverwritePrompt(null);
+                void persistToNextcloud(target.path, { adopt: target.adopt });
+              }}
+              disabled={nextcloudDialogBusy}
+              className="h-9 rounded-md bg-red-600 px-4 text-[12px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              Substituir
+            </button>
+          </footer>
+        </section>
+      </div>,
+      document.body,
+    )}
+
+    {/* Conflito de versão (o arquivo remoto mudou) */}
+    {versionConflict && typeof document !== 'undefined' && createPortal(
+      <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]" role="presentation">
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="petition-conflict-title"
+          className={`w-full max-w-[520px] overflow-hidden rounded-xl border shadow-[0_28px_80px_rgba(15,23,42,0.32)] ${
+            darkMode ? 'border-[#484848] bg-[#2b2b2b] text-slate-100' : 'border-slate-200 bg-white text-slate-900'
+          }`}
+        >
+          <header className={`flex items-start gap-3 border-b px-5 py-4 ${darkMode ? 'border-[#454545]' : 'border-slate-200'}`}>
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+              darkMode ? 'bg-amber-400/10 text-amber-300' : 'bg-amber-50 text-amber-600'
+            }`}>
+              <AlertTriangle className="h-[18px] w-[18px]" />
+            </div>
+            <div className="min-w-0">
+              <h2 id="petition-conflict-title" className="text-[16px] font-semibold leading-6">A versão no servidor mudou</h2>
+              <p className={`mt-1 text-[12px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                O arquivo <strong className="break-all">{versionConflict.path}</strong> foi alterado no servidor
+                depois que você o abriu — pode ter sido outra pessoa, outro dispositivo ou outra aba sua.
+                Suas alterações locais continuam aqui — escolha como seguir.
+              </p>
+            </div>
+          </header>
+          <footer className={`flex flex-col gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end ${
+            darkMode ? 'border-[#454545] bg-[#303030]' : 'border-slate-200 bg-slate-50/80'
+          }`}>
+            <button
+              type="button"
+              onClick={() => setVersionConflict(null)}
+              disabled={nextcloudDialogBusy}
+              className={`h-9 rounded-md border px-4 text-[12px] font-semibold disabled:opacity-50 ${
+                darkMode ? 'border-[#565656] text-slate-200 hover:bg-white/10' : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              Continuar editando
+            </button>
+            <button
+              type="button"
+              onClick={() => { void reloadFromServer(versionConflict.path); }}
+              disabled={nextcloudDialogBusy}
+              className={`h-9 rounded-md border px-4 text-[12px] font-semibold disabled:opacity-50 ${
+                darkMode ? 'border-red-400/30 text-red-300 hover:bg-red-400/10' : 'border-red-200 text-red-700 hover:bg-red-50'
+              }`}
+            >
+              Recarregar do servidor
+            </button>
+            <button
+              type="button"
+              autoFocus
+              onClick={() => { void saveAsFreeCopy(versionConflict.path, versionConflict.adopt); }}
+              disabled={nextcloudDialogBusy}
+              className="h-9 rounded-md bg-[#0082c9] px-4 text-[12px] font-semibold text-white hover:bg-[#0069a3] disabled:opacity-50"
+            >
+              Salvar como nova cópia
+            </button>
+          </footer>
+        </section>
+      </div>,
+      document.body,
+    )}
+    </>
+  );
 
   // ========== RENDER ==========
   // Tela de inÃ­cio (quando showStartScreen === true)
@@ -6330,7 +7272,7 @@ Regras:
             </button>
             <button
               type="button"
-              onClick={() => { newPetition(); setActiveWorkspace('editor'); setShowStartScreen(false); }}
+              onClick={() => requestNewDocument()}
               className="flex w-full items-center gap-3 rounded px-3 py-2.5 text-left text-[13px] font-medium text-blue-50 transition hover:bg-white/10"
             >
               <Plus className="h-4 w-4" />
@@ -6338,15 +7280,19 @@ Regras:
             </button>
             <button
               type="button"
-              onClick={() => {
-                setActiveWorkspace('editor');
-                setShowStartScreen(false);
-                window.setTimeout(() => fileInputRef.current?.click(), 150);
-              }}
+              onClick={requestOpenLocalFile}
               className="flex w-full items-center gap-3 rounded px-3 py-2.5 text-left text-[13px] font-medium text-blue-50 transition hover:bg-white/10"
             >
               <FolderOpen className="h-4 w-4" />
-              Abrir arquivo
+              Abrir do computador
+            </button>
+            <button
+              type="button"
+              onClick={requestOpenNextcloud}
+              className="flex w-full items-center gap-3 rounded px-3 py-2.5 text-left text-[13px] font-medium text-blue-50 transition hover:bg-white/10"
+            >
+              <Cloud className="h-4 w-4" />
+              Abrir do Nextcloud
             </button>
             <button
               type="button"
@@ -6438,9 +7384,9 @@ Regras:
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 items-start gap-4 sm:grid-cols-4">
+                <div className="grid grid-cols-2 items-start gap-4 sm:grid-cols-3 lg:grid-cols-5">
                   <button
-                    onClick={() => { newPetition(); setActiveWorkspace('editor'); setShowStartScreen(false); }}
+                    onClick={() => requestNewDocument()}
                     className="group flex w-full flex-col text-left"
                   >
                     <div className="flex h-[120px] items-center justify-center border border-slate-200 bg-white shadow-sm transition group-hover:border-[#185abd] group-hover:shadow-md">
@@ -6504,11 +7450,7 @@ Regras:
                   </div>
 
                   <button
-                    onClick={() => {
-                      setActiveWorkspace('editor');
-                      setShowStartScreen(false);
-                      window.setTimeout(() => fileInputRef.current?.click(), 150);
-                    }}
+                    onClick={requestOpenLocalFile}
                     className="group flex w-full flex-col text-left"
                   >
                     <div className="flex h-[120px] items-center justify-center border border-slate-200 bg-white shadow-sm transition group-hover:border-[#185abd] group-hover:shadow-md">
@@ -6517,6 +7459,19 @@ Regras:
                       </div>
                     </div>
                     <div className="mt-2 text-[12px] font-medium text-slate-700 group-hover:text-[#185abd]">Importar arquivo</div>
+                  </button>
+
+                  <button
+                    onClick={requestOpenNextcloud}
+                    className="group flex w-full flex-col text-left"
+                  >
+                    <div className="flex h-[120px] items-center justify-center border border-slate-200 bg-white shadow-sm transition group-hover:border-[#0082c9] group-hover:shadow-md">
+                      <div className="flex h-[88px] w-[68px] flex-col items-center justify-center border border-cyan-100 bg-cyan-50 text-[#0082c9] shadow-sm">
+                        <Cloud className="h-7 w-7" />
+                        <span className="mt-2 text-[9px] font-semibold uppercase tracking-wide">Nuvem</span>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-[12px] font-medium text-slate-700 group-hover:text-[#0082c9]">Abrir do Nextcloud</div>
                   </button>
 
                   <button
@@ -6686,6 +7641,8 @@ Regras:
             </main>
           </div>
         </div>
+
+        {editorDialogs}
       </div>
     );
   }
@@ -6921,7 +7878,7 @@ Regras:
             Novo
           </button>
           <button
-            onClick={savePetition}
+            onClick={() => { void savePetition(); }}
             disabled={savingDoc}
             className="pet-top-primary-btn"
           >
@@ -6929,7 +7886,7 @@ Regras:
             <span className="hidden sm:inline">Salvar</span>
           </button>
           <button
-            onClick={exportToWord}
+            onClick={() => { void exportToWord(); }}
             className="pet-top-text-btn hidden md:flex"
           >
             <Download className="w-3.5 h-3.5" />
@@ -7008,6 +7965,24 @@ Regras:
           placeholder="Documento sem título"
           aria-label="Nome do documento"
         />
+        {/* Procedência do documento — discreta, sem aumentar a altura da barra. */}
+        <span
+          className={`pet-titlebar-origin ${originBadge.icon === 'cloud' ? 'is-cloud' : ''}`}
+          title={originBadge.detail || originBadge.label}
+        >
+          {originBadge.icon === 'cloud' ? (
+            <Cloud className="w-3 h-3" />
+          ) : originBadge.icon === 'jurius' ? (
+            <FileText className="w-3 h-3" />
+          ) : originBadge.icon === 'external' ? (
+            <Layers className="w-3 h-3" />
+          ) : (
+            <CloudOff className="w-3 h-3" />
+          )}
+          <span className="pet-titlebar-origin-label">
+            {activeOrigin.kind === 'nextcloud' ? activeOrigin.fileName : originBadge.label}
+          </span>
+        </span>
         <span className={`pet-titlebar-state ${(saving || savingDoc) ? 'is-saving' : hasUnsavedChanges ? 'is-dirty' : 'is-saved'}`}>
           {(saving || savingDoc) ? (
             <>
@@ -7032,11 +8007,20 @@ Regras:
         <button
           type="button"
           onClick={() => { void savePetition(); }}
-          disabled={savingDoc}
+          // Documento já salvo e sem alterações: não há o que gravar. O botão
+          // fica cinza e sem ação, em vez de refazer um upload idêntico.
+          disabled={savingDoc || !hasUnsavedChanges}
           className="pet-titlebar-save"
+          title={
+            savingDoc
+              ? 'Salvando…'
+              : hasUnsavedChanges
+                ? 'Salvar alterações'
+                : 'Nada para salvar — o documento está atualizado'
+          }
         >
           {savingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-          <span>Salvar</span>
+          <span>{savingDoc ? 'Salvando…' : hasUnsavedChanges ? 'Salvar' : 'Salvo'}</span>
         </button>
         {!hideMinimize && (
         <button
@@ -7191,108 +8175,7 @@ Regras:
         </div>
       )}
 
-      {showUnsavedHomeDialog && typeof document !== 'undefined' && createPortal(
-        <div
-          className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-[2px]"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 2147483647,
-          }}
-          role="presentation"
-        >
-          <section
-            id="petition-unsaved-home-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="petition-unsaved-home-title"
-            aria-describedby="petition-unsaved-home-description"
-            className={`w-full max-w-[460px] overflow-hidden rounded-xl border shadow-[0_28px_80px_rgba(15,23,42,0.32)] ring-1 ring-black/5 ${
-              darkMode
-                ? 'border-[#484848] bg-[#2b2b2b] text-slate-100'
-                : 'border-slate-200 bg-white text-slate-900'
-            }`}
-          >
-            <header className={`flex items-start gap-3.5 border-b px-5 py-5 ${darkMode ? 'border-[#454545]' : 'border-slate-200'}`}>
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${
-                darkMode
-                  ? 'border-amber-400/20 bg-amber-400/10 text-amber-300'
-                  : 'border-amber-200 bg-amber-50 text-amber-600'
-              }`}>
-                <AlertTriangle className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Documento não salvo
-                </div>
-                <h2 id="petition-unsaved-home-title" className="mt-1 text-[17px] font-semibold leading-6">
-                  Voltar para o início?
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowUnsavedHomeDialog(false)}
-                className={`rounded-md p-1.5 transition-colors ${
-                  darkMode ? 'text-slate-400 hover:bg-white/10 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
-                }`}
-                aria-label="Fechar aviso"
-                title="Fechar"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </header>
-
-            <div className="px-5 py-5">
-              <div className={`flex items-center gap-3 rounded-lg border px-3.5 py-3 ${
-                darkMode ? 'border-[#484848] bg-[#333333]' : 'border-slate-200 bg-slate-50'
-              }`}>
-                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${
-                  darkMode ? 'bg-[#185abd]/25 text-blue-300' : 'bg-blue-100 text-[#185abd]'
-                }`}>
-                  <FileText className="h-[18px] w-[18px]" />
-                </div>
-                <div className="min-w-0">
-                  <div className={`text-[10px] font-medium uppercase tracking-[0.1em] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Documento atual
-                  </div>
-                  <div className="mt-0.5 truncate text-[13px] font-semibold" title={petitionTitle || 'Documento sem título'}>
-                    {petitionTitle || 'Documento sem título'}
-                  </div>
-                </div>
-              </div>
-
-              <p id="petition-unsaved-home-description" className={`mt-4 text-[13px] leading-5 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                As alterações feitas desde o último salvamento não serão gravadas se você voltar agora.
-              </p>
-            </div>
-
-            <footer className={`flex flex-col gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end ${
-              darkMode ? 'border-[#454545] bg-[#303030]' : 'border-slate-200 bg-slate-50/80'
-            }`}>
-              <button
-                type="button"
-                onClick={discardChangesAndGoHome}
-                className={`h-9 rounded-md border px-4 text-[12px] font-semibold transition-colors ${
-                  darkMode
-                    ? 'border-red-400/30 bg-transparent text-red-300 hover:bg-red-400/10'
-                    : 'border-red-200 bg-white text-red-700 hover:bg-red-50'
-                }`}
-              >
-                Voltar sem salvar
-              </button>
-              <button
-                type="button"
-                autoFocus
-                onClick={() => setShowUnsavedHomeDialog(false)}
-                className="h-9 rounded-md bg-[#185abd] px-4 text-[12px] font-semibold text-white transition-colors hover:bg-[#144f9f] focus:outline-none focus:ring-2 focus:ring-[#185abd]/30"
-              >
-                Continuar editando
-              </button>
-            </footer>
-          </section>
-        </div>,
-        document.body,
-      )}
+      {editorDialogs}
 
       {/* Modal: Visualizar ConteÃºdo do Bloco */}
       {showBlockViewModal && viewingBlock && typeof document !== 'undefined' && createPortal(
@@ -8188,12 +9071,23 @@ Regras:
         editorRef={editorRef}
         ready={editorReady}
         topContent={compactRibbonTopContent}
-        shortcutScopeActive={!showBlockModal}
+        shortcutScopeActive={
+          !showBlockModal
+          && !nextcloudDialog
+          && !saveDestinationOpen
+          && !overwritePrompt
+          && !versionConflict
+          && !unsavedPrompt
+        }
         darkMode={darkMode}
         onToggleDarkMode={toggleDarkMode}
-        onNew={() => { editorRef.current?.clear?.(); setHasUnsavedChanges(true); }}
-        onOpen={() => fileInputRef.current?.click()}
+        onNew={() => requestNewDocument({ keepClient: true })}
+        onOpenLocal={requestOpenLocalFile}
+        onOpenNextcloud={requestOpenNextcloud}
         onSave={() => { void savePetition(); }}
+        saveDisabled={savingDoc || !hasUnsavedChanges}
+        onSaveAs={() => openNextcloudSaveDialog('save-as')}
+        onSaveCopyNextcloud={() => openNextcloudSaveDialog('save-copy')}
         onExportDocx={() => { void exportToWord(); }}
         onLoadDefaultTemplate={() => { void loadDefaultTemplate(); }}
         hasDefaultTemplate={hasDefaultTemplate}
@@ -8675,7 +9569,7 @@ Regras:
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={exportToWord}
+                        onClick={() => { void exportToWord(); }}
                         className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-bold rounded-xl transition-all shadow-md bg-amber-500 text-white hover:bg-amber-600"
                       >
                         <Download className="w-4 h-4" />

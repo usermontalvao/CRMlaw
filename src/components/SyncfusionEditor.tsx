@@ -1548,6 +1548,13 @@ export interface SyncfusionEditorRef {
   getText: () => string;
   // Get selected text
   getSelectedText: () => string;
+  /**
+   * Assina o `selectionChange` do Syncfusion SEM roubar o evento de ninguém.
+   * O Syncfusion expõe `selectionChange` como propriedade de UM handler só:
+   * quem atribui por último apaga o anterior. Aqui instalamos um despachante
+   * único e distribuímos para todos os assinantes. Devolve a função de cancelar.
+   */
+  addSelectionChangeListener: (handler: () => void) => () => void;
   // Focus the editor
   focus: () => void;
   // Toggle bold on current selection / next inserted text
@@ -1716,6 +1723,9 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const forcedPasteModeRef = useRef<'smart' | 'source' | 'merge' | 'text' | 'clean' | null>(null);
     // Refs para callbacks de status bar — handleCreated roda uma única vez e
     // capturaria versões antigas das props sem eles.
+    // Assinantes externos do selectionChange (faixa de opções, etc.). Ver o
+    // comentário de `addSelectionChangeListener` na interface do ref.
+    const selectionChangeListenersRef = useRef<Set<() => void>>(new Set());
     const onSelectionChangeRef = useRef(onSelectionChange);
     const onViewChangeRef = useRef(onViewChange);
     onSelectionChangeRef.current = onSelectionChange;
@@ -2312,6 +2322,11 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         const editor = containerRef.current?.documentEditor;
         if (!editor) return '';
         return editor.selection?.text || '';
+      },
+
+      addSelectionChangeListener: (handler: () => void) => {
+        selectionChangeListenersRef.current.add(handler);
+        return () => { selectionChangeListenersRef.current.delete(handler); };
       },
 
       applyParagraphFormat: (firstLineIndent = 113.4, leftIndent = 0) => {
@@ -3406,7 +3421,22 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         // Eventos da status bar customizada (página atual / zoom / rolagem)
         try {
           if (editor) {
-            editor.selectionChange = () => onSelectionChangeRef.current?.();
+            // Despachante ÚNICO: o Syncfusion só guarda um handler aqui, então
+            // ninguém mais pode atribuir `selectionChange` direto — use
+            // `addSelectionChangeListener` no ref. Antes, a faixa de opções
+            // sobrescrevia este handler e derrubava a detecção de seleção
+            // (Assistente IA achava que o escopo era sempre o documento inteiro)
+            // junto com a barra de status e a posição do cursor.
+            editor.selectionChange = () => {
+              onSelectionChangeRef.current?.();
+              selectionChangeListenersRef.current.forEach((listener) => {
+                try {
+                  listener();
+                } catch {
+                  // um assinante com erro não pode derrubar os outros
+                }
+              });
+            };
             editor.viewChange = () => onViewChangeRef.current?.();
           }
         } catch {
@@ -4243,62 +4273,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             chega como sublinhado vermelho e correção no menu do botão direito,
             igual ao corretor do Word. Sem aviso de análise em andamento. */}
 
-        {/* Badge de issues — espaços duplos, espaço antes de pontuação, etc. */}
-        {scanResult.totalOccurrences > 0 && (
-          <button
-            onClick={fixAllIssues}
-            title={scanResult.issues.map((i) => i.label).join(' · ')}
-            style={{
-              position: 'absolute',
-              bottom: 16,
-              right: 24,
-              zIndex: 100,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 14px',
-              borderRadius: 999,
-              border: '1px solid rgba(245, 158, 11, 0.4)',
-              background: 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)',
-              color: '#9a3412',
-              fontSize: 13,
-              fontWeight: 500,
-              cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(245, 158, 11, 0.15)',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-1px)';
-              e.currentTarget.style.boxShadow = '0 6px 16px rgba(245, 158, 11, 0.25)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(245, 158, 11, 0.15)';
-            }}
-          >
-            <span
-              style={{
-                display: 'inline-block',
-                width: 18,
-                height: 18,
-                lineHeight: '18px',
-                textAlign: 'center',
-                borderRadius: '50%',
-                background: '#f59e0b',
-                color: 'white',
-                fontSize: 11,
-                fontWeight: 700,
-              }}
-            >
-              {scanResult.totalOccurrences}
-            </span>
-            <span>
-              {scanResult.totalOccurrences === 1
-                ? 'issue de formatação · corrigir'
-                : 'issues de formatação · corrigir todas'}
-            </span>
-          </button>
-        )}
       </div>
     );
   }

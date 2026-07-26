@@ -21,6 +21,7 @@ import {
   Undo2,
   Redo2,
   Scissors,
+  Cloud,
   Copy,
   ClipboardPaste,
   Eraser,
@@ -167,8 +168,19 @@ interface PetitionRibbonProps {
   shortcutScopeActive?: boolean;
   /** Menu Arquivo â€” ligados Ã s aÃ§Ãµes do mÃ³dulo. */
   onNew?: () => void;
+  /** Abrir genérico (fallback quando o módulo não separa computador/Nextcloud). */
   onOpen?: () => void;
+  /** Abrir um .docx do computador (input local). */
+  onOpenLocal?: () => void;
+  /** Abrir um .docx navegando no Nextcloud. */
+  onOpenNextcloud?: () => void;
   onSave?: () => void;
+  /** Sem alterações pendentes: "Salvar" fica cinza e sem ação. */
+  saveDisabled?: boolean;
+  /** Escolhe outro destino no Nextcloud e PASSA a origem ativa para ele. */
+  onSaveAs?: () => void;
+  /** Cria outro arquivo no Nextcloud MANTENDO a origem ativa atual. */
+  onSaveCopyNextcloud?: () => void;
   onExportDocx?: () => void;
   onLoadDefaultTemplate?: () => void;
   hasDefaultTemplate?: boolean;
@@ -196,7 +208,12 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
   onToggleDarkMode,
   onNew,
   onOpen,
+  onOpenLocal,
+  onOpenNextcloud,
   onSave,
+  saveDisabled = false,
+  onSaveAs,
+  onSaveCopyNextcloud,
   onExportDocx,
   onLoadDefaultTemplate,
   hasDefaultTemplate = false,
@@ -425,10 +442,15 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     }
   }, [getEd]);
 
-  // Conecta o listener de selectionChange quando o editor fica pronto
+  // Conecta o listener de selectionChange quando o editor fica pronto.
+  // ASSINA (addSelectionChangeListener) em vez de atribuir `ed.selectionChange`:
+  // o Syncfusion guarda um handler só, e atribuir aqui apagava o do
+  // SyncfusionEditor — o que derrubava a detecção de seleção do Assistente IA,
+  // a barra de status e a gravação da posição do cursor.
   useEffect(() => {
     if (!ready) return;
     let raf = 0;
+    let unsubscribe: (() => void) | null = null;
     const attach = () => {
       const ed = getEd();
       if (!ed) {
@@ -436,7 +458,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
         return;
       }
       try {
-        ed.selectionChange = syncFmt;
+        unsubscribe = editorRef.current?.addSelectionChangeListener?.(syncFmt) ?? null;
       } catch {
         // ignore
       }
@@ -445,14 +467,13 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
     attach();
     return () => {
       if (raf) window.cancelAnimationFrame(raf);
-      const ed = getEd();
       try {
-        if (ed && ed.selectionChange === syncFmt) ed.selectionChange = undefined;
+        unsubscribe?.();
       } catch {
         // ignore
       }
     };
-  }, [ready, getEd, syncFmt]);
+  }, [ready, getEd, syncFmt, editorRef]);
 
   // Executa uma aÃ§Ã£o sobre o editor e re-sincroniza o estado da faixa
   const run = useCallback(
@@ -1023,17 +1044,42 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                   <FilePlus2 size={15} /> Novo {entityLabel}
                 </button>
               )}
-              {onOpen && (
-                <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onOpen(); }}>
-                  <FolderOpen size={15} /> Abrir / Importar DOCX
+              {(onOpenLocal || onOpen) && (
+                <button
+                  type="button"
+                  className="pet-file-item"
+                  onClick={() => { setFileMenuOpen(false); (onOpenLocal ?? onOpen)?.(); }}
+                >
+                  <FolderOpen size={15} /> {onOpenNextcloud ? 'Abrir do computador…' : 'Abrir / Importar DOCX'}
+                </button>
+              )}
+              {onOpenNextcloud && (
+                <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onOpenNextcloud(); }}>
+                  <Cloud size={15} /> Abrir do Nextcloud…
                 </button>
               )}
               {onSave && (
-                <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onSave(); }}>
-                  <SaveIcon size={15} /> Salvar
+                <button
+                  type="button"
+                  className="pet-file-item"
+                  disabled={saveDisabled}
+                  title={saveDisabled ? 'Nada para salvar — o documento está atualizado' : undefined}
+                  onClick={() => { setFileMenuOpen(false); onSave(); }}
+                >
+                  <SaveIcon size={15} /> {saveDisabled ? 'Salvo' : 'Salvar'}
                 </button>
               )}
-              {(onNew || onOpen || onSave) && <div className="pet-file-sep" />}
+              {onSaveAs && (
+                <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onSaveAs(); }}>
+                  <SaveIcon size={15} /> Salvar como…
+                </button>
+              )}
+              {onSaveCopyNextcloud && (
+                <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onSaveCopyNextcloud(); }}>
+                  <Copy size={15} /> Salvar uma cópia no Nextcloud…
+                </button>
+              )}
+              {(onNew || onOpen || onOpenLocal || onOpenNextcloud || onSave) && <div className="pet-file-sep" />}
               {onExportDocx && (
                 <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onExportDocx(); }}>
                   <Download size={15} /> Exportar DOCX
@@ -2063,11 +2109,19 @@ const RIBBON_CSS = `
 .pet-titlebar-input:hover{border-color:rgba(255,255,255,.28);background:rgba(255,255,255,.10);}
 .pet-titlebar-input:focus{border-color:rgba(255,255,255,.48);background:#fff;color:#1f2937;box-shadow:0 0 0 2px rgba(255,255,255,.16);}
 .pet-titlebar-state{display:inline-flex;align-items:center;gap:5px;flex-shrink:0;white-space:nowrap;font-size:10px;color:rgba(255,255,255,.78);}
+/* Procedência do documento (Jurius / Nextcloud / local / origem externa).
+   Cabe na MESMA linha do título — a barra não cresce. */
+.pet-titlebar-origin{display:inline-flex;align-items:center;gap:4px;flex-shrink:1;min-width:0;max-width:190px;white-space:nowrap;font-size:10px;color:rgba(255,255,255,.72);}
+.pet-titlebar-origin.is-cloud{color:#9ad9ff;}
+.pet-titlebar-origin-label{overflow:hidden;text-overflow:ellipsis;}
 .pet-titlebar-state.is-saving,.pet-titlebar-state.is-dirty,.pet-titlebar-state.is-saved{color:#fff;}
 .pet-titlebar-dot{width:6px;height:6px;border-radius:50%;background:#f59e0b;}
 .pet-titlebar-save{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 11px;border:1px solid rgba(255,255,255,.34);border-radius:3px;background:#fff;color:#185abd;font-size:11px;font-weight:600;cursor:pointer;}
 .pet-titlebar-save:hover{background:#eef5ff;}
-.pet-titlebar-save:disabled{opacity:.55;cursor:not-allowed;}
+/* Sem alterações pendentes o botão não tem ação: cinza explícito, não um azul
+   lavado por opacidade — o usuário precisa ver que não há o que salvar. */
+.pet-titlebar-save:disabled{cursor:default;background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.55);box-shadow:none;}
+.pet-titlebar-save:disabled:hover{background:rgba(255,255,255,.14);}
 .pet-top-group{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:nowrap;}
 .pet-top-group.is-left{justify-content:flex-start;flex:1 1 460px;}
 .pet-top-group.is-center{justify-content:center;flex:0 1 340px;}
@@ -2115,6 +2169,8 @@ const RIBBON_CSS = `
 .pet-file-menu{position:absolute;top:30px;left:0;z-index:9999;min-width:210px;background:#fff;border:1px solid #e3e6ea;border-radius:8px;box-shadow:0 14px 36px rgba(15,23,42,.18);padding:5px;}
 .pet-file-item{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#334155;cursor:pointer;text-align:left;}
 .pet-file-item:hover{background:#eef2f7;}
+.pet-file-item:disabled{color:#98a2b3;cursor:default;}
+.pet-file-item:disabled:hover{background:transparent;}
 .pet-replace-pop{display:flex;flex-direction:column;gap:8px;}
 .pet-input{width:100%;height:32px;padding:0 10px;border:1px solid #d2d6dc;border-radius:8px;background:#fff;font-size:12px;color:#334155;outline:none;}
 .pet-input:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);}
@@ -2244,11 +2300,15 @@ const RIBBON_CSS = `
 .pet-titlebar-input:hover{border-color:#b8c2d0;background:#fff;}
 .pet-titlebar-input:focus{border-color:#5b8def;background:#fff;color:#1f2937;box-shadow:0 0 0 2px rgba(24,90,189,.10);}
 .pet-titlebar-state{color:#667085;}
+.pet-titlebar-origin{color:#8a94a6;}
+.pet-titlebar-origin.is-cloud{color:#0082c9;}
 .pet-titlebar-state.is-saving{color:#185abd;}
 .pet-titlebar-state.is-dirty{color:#b45309;}
 .pet-titlebar-state.is-saved{color:#078348;}
 .pet-titlebar-save{height:28px;padding:0 9px;border-color:#185abd;background:#185abd;color:#fff;border-radius:4px;}
 .pet-titlebar-save:hover{background:#124b9d;}
+.pet-titlebar-save:disabled{background:#eceff3;border-color:#dfe3e8;color:#98a2b3;}
+.pet-titlebar-save:disabled:hover{background:#eceff3;}
 .pet-titlebar-nav .pet-top-icon-btn,
 .pet-titlebar-actions .pet-top-icon-btn{color:#667085;}
 .pet-titlebar-nav .pet-top-icon-btn:hover,
@@ -2371,6 +2431,10 @@ body.petition-dark .pet-ribbon-topslot{background:linear-gradient(180deg,#333333
 body.petition-dark .pet-titlebar-input{color:#eef2f7;}
 body.petition-dark .pet-titlebar-input:hover,body.petition-dark .pet-titlebar-input:focus{background:#333;border-color:#4a4a4a;}
 body.petition-dark .pet-titlebar-state{color:#aeb6c3;}
+body.petition-dark .pet-titlebar-origin{color:#9aa4b2;}
+body.petition-dark .pet-titlebar-save:disabled{background:#3a3a3a;border-color:#4a4a4a;color:#8d949e;}
+body.petition-dark .pet-titlebar-save:disabled:hover{background:#3a3a3a;}
+body.petition-dark .pet-titlebar-origin.is-cloud{color:#7cc9f5;}
 body.petition-dark .pet-titlebar-state.is-saving{color:#93c5fd;}
 body.petition-dark .pet-titlebar-state.is-dirty{color:#fbbf24;}
 body.petition-dark .pet-titlebar-state.is-saved{color:#6ee7b7;}
@@ -2397,6 +2461,8 @@ body.petition-dark .pet-split-caret{border-left-color:#4a4a4a;color:#b5b5b5;}
 body.petition-dark .pet-popover,body.petition-dark .pet-file-menu{background:#2f2f2f;border-color:#454545;box-shadow:0 12px 32px rgba(0,0,0,.5);}
 body.petition-dark .pet-file-item{color:#dcdcdc;}
 body.petition-dark .pet-file-item:hover{background:#3a3a3a;}
+body.petition-dark .pet-file-item:disabled{color:#8d949e;}
+body.petition-dark .pet-file-item:disabled:hover{background:transparent;}
 body.petition-dark .pet-file-sep{background:#454545;}
 body.petition-dark .pet-input{background:#333333;border-color:#4a4a4a;color:#e6e6e6;}
 body.petition-dark .pet-style{background:#333333;border-color:#454545;color:#e6e6e6;}
@@ -2419,6 +2485,7 @@ body.petition-dark .pet-top-primary-btn{background:#2563eb;box-shadow:0 10px 20p
 @media (max-width:900px){
   .pet-titlebar{grid-template-columns:auto minmax(120px,1fr) auto;gap:4px;}
   .pet-titlebar-state{display:none;}
+  .pet-titlebar-origin{display:none;}
   .pet-titlebar-save span{display:none;}
   .pet-titlebar-save{width:30px;padding:0;}
 }
@@ -2431,6 +2498,7 @@ body.petition-dark .pet-top-client-chip{background:linear-gradient(180deg,#33373
 
 @media (max-width:1100px){
   .pet-titlebar-state{display:none;}
+  .pet-titlebar-origin{display:none;}
   .pet-titlebar-document{flex-basis:140px;}
 }
 

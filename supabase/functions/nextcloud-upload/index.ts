@@ -51,7 +51,10 @@ function davUrl(root: string, path: string): string {
 }
 
 Deno.serve(async (req: Request) => {
-  const cors = corsHeadersFor(req, "x-nc-path, x-nc-mime");
+  // `if-match` precisa estar liberado no preflight: a função já o repassa ao
+  // Nextcloud (controle de concorrência otimista), mas sem constar aqui o
+  // navegador barra a requisição antes mesmo de ela sair.
+  const cors = corsHeadersFor(req, "x-nc-path, x-nc-mime, if-match");
 
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: cors });

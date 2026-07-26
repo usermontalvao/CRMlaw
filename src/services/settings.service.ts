@@ -1923,13 +1923,16 @@ class SettingsService {
     permissions: { can_view?: boolean; can_create?: boolean; can_edit?: boolean; can_delete?: boolean },
     userName?: string
   ): Promise<void> {
-    // Buscar permissão atual
+    // Busca a permissão atual para preservar os campos que não estão sendo
+    // alterados. `maybeSingle` (e não `single`): um módulo ainda sem linha é
+    // situação NORMAL — com `single` o PostgREST respondia 406 e sujava o
+    // console a cada primeiro clique num módulo novo.
     const { data: current } = await supabase
       .from('role_permissions')
       .select('*')
       .eq('role', role.toLowerCase())
       .eq('module', module)
-      .single();
+      .maybeSingle();
 
     const { error } = await supabase
       .from('role_permissions')
@@ -2000,12 +2003,13 @@ class SettingsService {
    * Verifica se um papel tem permissão para uma ação em um módulo
    */
   async checkPermission(role: string, module: string, action: 'view' | 'create' | 'edit' | 'delete'): Promise<boolean> {
+    // `maybeSingle`: módulo sem linha significa "sem permissão", não erro 406.
     const { data, error } = await supabase
       .from('role_permissions')
       .select('*')
       .eq('role', role.toLowerCase())
       .eq('module', module)
-      .single();
+      .maybeSingle();
 
     if (error || !data) return false;
 

@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { toEntityTag } from '../utils/entityTag';
 
 /**
  * nextcloud.service
@@ -232,7 +233,10 @@ export const nextcloudService = {
       'x-nc-path': encodeURIComponent(path),
       'x-nc-mime': blob.type || 'application/octet-stream',
     };
-    if (opts.ifMatch) headers['If-Match'] = opts.ifMatch;
+    // O ETag guardado vem SEM aspas do proxy; o If-Match exige uma entity-tag
+    // (`"abc"`). Mandar o valor cru fazia o servidor responder 412 sempre.
+    const ifMatchHeader = toEntityTag(opts.ifMatch);
+    if (ifMatchHeader) headers['If-Match'] = ifMatchHeader;
 
     const { data, error } = await supabase.functions.invoke('nextcloud-upload', {
       body: blob,
@@ -281,7 +285,8 @@ export const nextcloudService = {
       xhr.setRequestHeader('apikey', anon);
       xhr.setRequestHeader('x-nc-path', encodeURIComponent(path));
       xhr.setRequestHeader('x-nc-mime', blob.type || 'application/octet-stream');
-      if (opts.ifMatch) xhr.setRequestHeader('If-Match', opts.ifMatch);
+      const ifMatchHeader = toEntityTag(opts.ifMatch);
+      if (ifMatchHeader) xhr.setRequestHeader('If-Match', ifMatchHeader);
 
       const onAbort = () => xhr.abort();
       if (opts.signal) opts.signal.addEventListener('abort', onAbort);
