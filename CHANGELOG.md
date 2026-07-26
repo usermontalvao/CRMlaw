@@ -1,5 +1,24 @@
 # Changelog
 
+## Coedição — foto de perfil e "eu apareço como outra pessoa"
+- **A foto não aparecia porque não podia trafegar**: `profiles.avatar_url` neste CRM
+  pode ser um `data:image/...;base64` embutido de megabytes (um perfil tem 1,26 MB).
+  Enviá-la na entrada da sala estourava o limite padrão de mensagem do SignalR
+  (32 KB) — e o servidor não rejeita a mensagem, ele **derruba a conexão**. O
+  Presence do Supabase recusa payloads grandes do mesmo jeito. Agora só o `userId`
+  trafega, e cada navegador resolve a foto por ele (`services/userAvatars.ts`,
+  com cache por sessão e consulta só da coluna da foto).
+- **Limite de mensagem do SignalR elevado para 32 MB**: colar uma imagem ou uma
+  tabela grande vira UMA operação bem maior que 32 KB. Antes disso a coedição
+  morria no meio da edição, sem aviso.
+- **"Pedro também está neste documento" quando só havia o Pedro**: uma aba que morre
+  sem avisar fica pendurada na sala com outro id de conexão. Filtrar só pela conexão
+  não pegava. Agora o servidor remove as conexões antigas do mesmo usuário ao
+  reentrar (e a lista de participantes expira em 12 h), e a tela também descarta
+  qualquer participante com o mesmo `userId` do usuário atual.
+- **Falha ao entrar na sala não deixa mais a tela presa em "entrando…"**: o estado
+  volta para "sem coedição" e o documento abre pelo caminho normal, com aviso.
+
 ## Coedição do editor de petições — correção completa
 - **Causa-raiz nº 1 — a coedição nunca esteve ligada**: `VITE_SYNCFUSION_COLLAB_URL`
   não estava configurada, então cada navegador abria a sua própria cópia do `.docx`

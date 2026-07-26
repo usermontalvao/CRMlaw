@@ -23,8 +23,6 @@ export interface NextcloudPresenceUser {
   key: string;
   userId: string;
   userName: string;
-  /** Foto de perfil, para a lista mostrar a pessoa e não só as iniciais. */
-  avatarUrl: string | null;
   /** Caminho do arquivo aberto no Nextcloud. */
   path: string;
   /**
@@ -39,10 +37,15 @@ export interface NextcloudPresenceUser {
   since: number;
 }
 
+/**
+ * O que é publicado no canal de presença. Só o essencial, de propósito: a foto
+ * de perfil do CRM pode ser um `data:` de megabytes e o Realtime recusa
+ * payloads grandes em silêncio — a pessoa simplesmente sumiria da lista. Quem
+ * quiser a foto resolve pelo `userId` (ver `services/userAvatars.ts`).
+ */
 interface TrackedState {
   userId: string;
   userName: string;
-  avatarUrl: string | null;
   path: string;
   typing: boolean;
   since: number;
@@ -73,7 +76,6 @@ function readPresence(): NextcloudPresenceUser[] {
         key,
         userId,
         userName: (typeof meta.userName === 'string' && meta.userName) || 'Alguém',
-        avatarUrl: typeof meta.avatarUrl === 'string' && meta.avatarUrl ? meta.avatarUrl : null,
         path,
         typing: meta.typing === true,
         since: typeof meta.since === 'number' ? meta.since : Date.now(),
@@ -151,12 +153,10 @@ export function startEditingPresence(input: {
   path: string;
   userId: string;
   userName: string;
-  avatarUrl?: string | null;
 }): EditingPresenceHandle {
   const state: TrackedState = {
     userId: input.userId,
     userName: input.userName,
-    avatarUrl: input.avatarUrl ?? null,
     path: input.path,
     typing: false,
     since: Date.now(),

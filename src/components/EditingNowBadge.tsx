@@ -1,5 +1,6 @@
 import React from 'react';
 import type { EditingPeer } from '../hooks/useNextcloudPresence';
+import { useUserAvatars } from '../hooks/useUserAvatars';
 
 /**
  * EditingNowBadge
@@ -63,14 +64,18 @@ function initials(name: string): string {
 }
 
 /** A pessoa aparece pela FOTO; as iniciais são só o plano B. */
-const PeerFace: React.FC<{ peer: EditingPeer; size: string }> = ({ peer, size }) => {
+const PeerFace: React.FC<{ peer: EditingPeer; avatarUrl: string | null; size: string }> = ({
+  peer,
+  avatarUrl,
+  size,
+}) => {
   const [brokenImage, setBrokenImage] = React.useState(false);
-  const showPhoto = Boolean(peer.avatarUrl) && !brokenImage;
+  const showPhoto = Boolean(avatarUrl) && !brokenImage;
 
   if (showPhoto) {
     return (
       <img
-        src={peer.avatarUrl as string}
+        src={avatarUrl as string}
         alt={peer.userName}
         loading="lazy"
         decoding="async"
@@ -94,6 +99,10 @@ const PeerFace: React.FC<{ peer: EditingPeer; size: string }> = ({ peer, size })
 };
 
 export const EditingNowBadge: React.FC<EditingNowBadgeProps> = ({ peers, compact = false, className }) => {
+  // A foto não vem junto com a presença (seria um `data:` de megabytes no
+  // websocket): é buscada aqui pelo id, uma vez por sessão.
+  const avatarOf = useUserAvatars(peers.map((peer) => peer.userId));
+
   if (peers.length === 0) return null;
   const isTyping = peers.some((peer) => peer.typing);
   const faceSize = compact ? 'h-3.5 w-3.5' : 'h-4 w-4';
@@ -112,7 +121,7 @@ export const EditingNowBadge: React.FC<EditingNowBadgeProps> = ({ peers, compact
     >
       <span className="flex shrink-0 -space-x-1">
         {peers.slice(0, 3).map((peer) => (
-          <PeerFace key={peer.userId} peer={peer} size={faceSize} />
+          <PeerFace key={peer.userId} peer={peer} avatarUrl={avatarOf(peer.userId)} size={faceSize} />
         ))}
       </span>
       <span className="truncate">{describe(peers, compact)}</span>

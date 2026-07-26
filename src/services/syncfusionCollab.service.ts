@@ -260,8 +260,13 @@ export async function fetchMissedActions(input: {
 
 export interface CollabMember {
   userName: string;
+  /**
+   * Id do usuário no CRM. Vai para a sala; a FOTO não vai — ela é resolvida por
+   * este id em cada navegador (`services/userAvatars.ts`). Mandar a foto aqui
+   * derruba a conexão: no CRM ela pode ser um `data:` de megabytes e o SignalR
+   * fecha o socket quando a mensagem passa do limite.
+   */
   userId?: string | null;
-  avatarUrl?: string | null;
 }
 
 export interface CollabConnectionCallbacks {
@@ -309,6 +314,7 @@ export async function connectToCollabRoom(input: {
     .build();
 
   const registry = new CollabPeerRegistry();
+  registry.setSelfUserId(member.userId);
   const typingGate = new TypingBroadcastGate();
   let connectionId = '';
   let stopped = false;
@@ -319,7 +325,6 @@ export async function connectToCollabRoom(input: {
     roomName,
     currentUser: member.userName,
     userId: member.userId ?? null,
-    avatarUrl: member.avatarUrl ?? null,
   });
 
   connection.on('dataReceived', (action: string, data: unknown) => {

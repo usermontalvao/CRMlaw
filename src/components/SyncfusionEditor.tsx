@@ -1570,8 +1570,12 @@ export interface SyncfusionEditorRef {
     path: string;
     fileName: string;
     userName: string;
+    /**
+     * Id do usuário no CRM. A FOTO não entra aqui: ela pode ser um `data:` de
+     * megabytes e estoura o limite de mensagem do SignalR, derrubando a sala.
+     * Cada navegador resolve a foto por este id (`services/userAvatars.ts`).
+     */
     userId?: string | null;
-    avatarUrl?: string | null;
   }) => Promise<void>;
   /** Sai da sala de co-edição (ao fechar o documento ou abrir outro). */
   stopCollaboration: () => Promise<void>;
@@ -2199,8 +2203,105 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       })();
     };
 
+    /**
+     * Entra de fato na sala: abre o documento pelo serviço, liga o módulo de
+     * co-edição do Syncfusion e conecta o SignalR. Separado de
+     * `startCollaboration` para que qualquer falha aqui deixe o estado limpo
+     * (e não preso em "entrando…") — ver o `catch` de lá.
+     */
+    const joinCollabRoom = async (
+      editor: any,
+      { path, fileName, userName, userId }: {
+        path: string;
+        fileName: string;
+        userName: string;
+        userId: string | null;
+      },
+    ) => {
+      const roomName = await roomNameForPath(path);
+      const document = await importCollabDocument({ roomName, filePath: path, fileName });
+
+      editor.enableCollaborativeEditing = true;
+      editor.currentUser = userName;
+      // `dataBind()` faz o EJ2 criar AGORA os módulos exigidos pelas
+      // propriedades. Sem esta linha o módulo de co-edição só nasceria no
+      // próximo `setImmediate` — e a leitura logo abaixo pegaria `undefined`.
+      editor.dataBind?.();
+
+      const handler = editor.collaborativeEditingHandlerModule;
+      if (!handler) {
+        throw new Error('O módulo de co-edição do Syncfusion não carregou.');
+      }
+
+      // O `CollaborativeEditingHandler` monta o próprio XMLHttpRequest para
+      // UpdateAction/GetActionsFromServer e só acrescenta o que estiver em
+      // `documentEditor.headers`. O serviço de co-edição exige token do CRM:
+      // sem este remendo, TODA operação voltava 401 e nada sincronizava.
+      // Trocamos só o método desta instância — os headers globais do editor
+      // continuam valendo para o servidor de documentos, que é outro host.
+      if (!handler.__juriusAuthPatched) {
+        const originalSetHeaders = typeof handler.setCustomAjaxHeaders === 'function'
+          ? handler.setCustomAjaxHeaders.bind(handler)
+          : null;
+        handler.setCustomAjaxHeaders = (request: XMLHttpRequest) => {
+          try {
+            originalSetHeaders?.(request);
+          } catch {
+            // headers globais são acessórios aqui
+          }
+          const token = currentAccessToken();
+          if (token) request.setRequestHeader('Authorization', `Bearer ${token}`);
+        };
+        handler.__juriusAuthPatched = true;
+      }
+
+      // A ordem importa: informar sala/versão ANTES de abrir, senão a primeira
+      // edição sai com a versão errada e o servidor a trata como atrasada.
+      handler.updateRoomInfo(roomName, document.version, collabApiUrl());
+      editor.open(document.sfdt);
+
+      collabRoomRef.current = { roomName, filePath: path, fileName };
+      collabHandlerRef.current = handler;
+
+      collabConnectionRef.current = await connectToCollabRoom({
+        roomName,
+        member: { userName, userId: userId ?? null },
+        callbacks: {
+          onData: (action, data) => {
+            if (action === 'connectionId') {
+              const id = String(data ?? '');
+              if (id) collabOwnConnectionIdsRef.current.add(id);
+            } else if (action === 'action') {
+              const author = String((data as { connectionId?: string } | null)?.connectionId || '');
+              // Operação nossa de volta = o servidor recebeu e distribuiu.
+              if (author && collabOwnConnectionIdsRef.current.has(author)) {
+                collabRetryRef.current = 0;
+              }
+            }
+
+            try {
+              handler.applyRemoteAction(action, data);
+            } catch (err) {
+              // Uma operação que não encaixa não pode derrubar a sessão, mas
+              // TAMBÉM não pode passar em silêncio: o documento acabou de
+              // divergir do dos outros.
+              collabLog('falha ao aplicar edição recebida', {
+                room: roomName,
+                action,
+                error: String((err as Error)?.name || err),
+              });
+              console.error('Falha ao aplicar a edição recebida:', err);
+            }
+          },
+          onPeersChange: (peers) => onCollabPeersChangeRef.current?.(peers),
+          onStatusChange: (status) => setCollabStatus(status),
+          onReconnected: () => { void recoverMissedCollabActions(); },
+        },
+      });
+    };
+
     useImperativeHandle(ref, () => ({
-      startCollaboration: async ({ path, fileName, userName, userId, avatarUrl }) => {
+      startCollaboration: async ({ path, fileName, userName, userId }) => {
         if (!isCollabEnabled()) {
           throw new Error('Co-edição não configurada (VITE_SYNCFUSION_COLLAB_URL ausente).');
         }
@@ -2217,88 +2318,21 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         collabRetryRef.current = 0;
         setCollabStatus('connecting');
 
-        const roomName = await roomNameForPath(path);
-        const document = await importCollabDocument({ roomName, filePath: path, fileName });
-
-        editor.enableCollaborativeEditing = true;
-        editor.currentUser = userName;
-        // `dataBind()` faz o EJ2 criar AGORA os módulos exigidos pelas
-        // propriedades. Sem esta linha o módulo de co-edição só nasceria no
-        // próximo `setImmediate` — e a leitura logo abaixo pegaria `undefined`.
-        editor.dataBind?.();
-
-        const handler = editor.collaborativeEditingHandlerModule;
-        if (!handler) {
-          setCollabStatus('disconnected');
-          throw new Error('O módulo de co-edição do Syncfusion não carregou.');
+        try {
+          await joinCollabRoom(editor, { path, fileName, userName, userId: userId ?? null });
+        } catch (error) {
+          // A sala não subiu. NÃO pode ficar em "entrando…" para sempre: quem
+          // chamou vai abrir o documento pelo caminho normal, e a tela precisa
+          // refletir que NÃO há co-edição — nem prometendo, nem alarmando.
+          editor.enableCollaborativeEditing = false;
+          editor.dataBind?.();
+          collabRoomRef.current = null;
+          collabHandlerRef.current = null;
+          setCollabStatus('off');
+          throw error;
         }
-
-        // O `CollaborativeEditingHandler` monta o próprio XMLHttpRequest para
-        // UpdateAction/GetActionsFromServer e só acrescenta o que estiver em
-        // `documentEditor.headers`. O serviço de co-edição exige token do CRM:
-        // sem este remendo, TODA operação voltava 401 e nada sincronizava.
-        // Trocamos só o método desta instância — os headers globais do editor
-        // continuam valendo para o servidor de documentos, que é outro host.
-        if (!handler.__juriusAuthPatched) {
-          const originalSetHeaders = typeof handler.setCustomAjaxHeaders === 'function'
-            ? handler.setCustomAjaxHeaders.bind(handler)
-            : null;
-          handler.setCustomAjaxHeaders = (request: XMLHttpRequest) => {
-            try {
-              originalSetHeaders?.(request);
-            } catch {
-              // headers globais são acessórios aqui
-            }
-            const token = currentAccessToken();
-            if (token) request.setRequestHeader('Authorization', `Bearer ${token}`);
-          };
-          handler.__juriusAuthPatched = true;
-        }
-
-        // A ordem importa: informar sala/versão ANTES de abrir, senão a primeira
-        // edição sai com a versão errada e o servidor a trata como atrasada.
-        handler.updateRoomInfo(roomName, document.version, collabApiUrl());
-        editor.open(document.sfdt);
-
-        collabRoomRef.current = { roomName, filePath: path, fileName };
-        collabHandlerRef.current = handler;
-
-        collabConnectionRef.current = await connectToCollabRoom({
-          roomName,
-          member: { userName, userId: userId ?? null, avatarUrl: avatarUrl ?? null },
-          callbacks: {
-            onData: (action, data) => {
-              if (action === 'connectionId') {
-                const id = String(data ?? '');
-                if (id) collabOwnConnectionIdsRef.current.add(id);
-              } else if (action === 'action') {
-                const author = String((data as { connectionId?: string } | null)?.connectionId || '');
-                // Operação nossa de volta = o servidor recebeu e distribuiu.
-                if (author && collabOwnConnectionIdsRef.current.has(author)) {
-                  collabRetryRef.current = 0;
-                }
-              }
-
-              try {
-                handler.applyRemoteAction(action, data);
-              } catch (err) {
-                // Uma operação que não encaixa não pode derrubar a sessão, mas
-                // TAMBÉM não pode passar em silêncio: o documento acabou de
-                // divergir do dos outros.
-                collabLog('falha ao aplicar edição recebida', {
-                  room: roomName,
-                  action,
-                  error: String((err as Error)?.name || err),
-                });
-                console.error('Falha ao aplicar a edição recebida:', err);
-              }
-            },
-            onPeersChange: (peers) => onCollabPeersChangeRef.current?.(peers),
-            onStatusChange: (status) => setCollabStatus(status),
-            onReconnected: () => { void recoverMissedCollabActions(); },
-          },
-        });
       },
+
 
       stopCollaboration: async () => {
         const connection = collabConnectionRef.current;

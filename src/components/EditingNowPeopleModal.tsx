@@ -3,6 +3,7 @@ import { Users } from 'lucide-react';
 import { Modal, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import type { EditingPeer } from '../hooks/useNextcloudPresence';
+import { useUserAvatars } from '../hooks/useUserAvatars';
 
 /**
  * EditingNowPeopleModal
@@ -51,16 +52,16 @@ function since(peer: EditingPeer): string {
   return hours === 1 ? 'abriu há 1 hora' : `abriu há ${hours} horas`;
 }
 
-const PeerRow: React.FC<{ peer: EditingPeer }> = ({ peer }) => {
+const PeerRow: React.FC<{ peer: EditingPeer; avatarUrl: string | null }> = ({ peer, avatarUrl }) => {
   const [brokenImage, setBrokenImage] = React.useState(false);
-  const showPhoto = Boolean(peer.avatarUrl) && !brokenImage;
+  const showPhoto = Boolean(avatarUrl) && !brokenImage;
 
   return (
     <li className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-800/60">
       <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full">
         {showPhoto ? (
           <img
-            src={peer.avatarUrl as string}
+            src={avatarUrl as string}
             alt={peer.userName}
             loading="lazy"
             decoding="async"
@@ -112,6 +113,8 @@ export const EditingNowPeopleModal: React.FC<EditingNowPeopleModalProps> = ({
   onCancel,
   onConfirm,
 }) => {
+  // A foto é resolvida pelo id: a presença carrega só o essencial.
+  const avatarOf = useUserAvatars(peers.map((peer) => peer.userId));
   const plural = peers.length > 1;
 
   return (
@@ -142,7 +145,7 @@ export const EditingNowPeopleModal: React.FC<EditingNowPeopleModalProps> = ({
       <ModalBody>
         <ul className="space-y-2">
           {peers.map((peer) => (
-            <PeerRow key={peer.userId} peer={peer} />
+            <PeerRow key={peer.userId} peer={peer} avatarUrl={avatarOf(peer.userId)} />
           ))}
         </ul>
 

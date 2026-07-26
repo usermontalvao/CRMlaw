@@ -109,6 +109,8 @@ import { useEditingPresence } from '../hooks/useNextcloudPresence';
 import EditorPresenceBar from './EditorPresenceBar';
 import { isCollabEnabled, type CollabPeer, type CollabStatus } from '../services/syncfusionCollab.service';
 import { profileService } from '../services/profile.service';
+import { useUserAvatars } from '../hooks/useUserAvatars';
+import { primeAvatar } from '../services/userAvatars';
 
 // Tipo do documento do editor traduzido para o vocabulário do briefing do
 // Assistente IA (o formulário fala "Petição inicial", não "petition").
@@ -1756,31 +1758,13 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   const userDisplayName = formatUserDisplayName(rawUserDisplayName) || 'Usuario';
 
-  // Foto de perfil de quem está editando: é ela que aparece na barra de presença
-  // (estilo Google Docs) e é ela que viaja para os outros participantes da sala.
-  const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string | null>(
-    () => (user?.user_metadata as any)?.avatar_url || null,
-  );
-
+  // A foto do PRÓPRIO usuário não precisa de ida ao banco quando já veio no
+  // login: alimenta o cache compartilhado e serve para os componentes que
+  // mostram "você" junto dos demais.
   useEffect(() => {
-    if (!user?.id) {
-      setCurrentUserAvatarUrl(null);
-      return;
-    }
-    let cancelled = false;
-    profileService
-      .getProfile(user.id)
-      .then((profile) => {
-        if (cancelled) return;
-        setCurrentUserAvatarUrl(
-          profile?.avatar_url || (user.user_metadata as any)?.avatar_url || null,
-        );
-      })
-      .catch(() => {
-        // Sem foto a barra cai nas iniciais — não é motivo para erro na tela.
-      });
-    return () => { cancelled = true; };
-  }, [user?.id]);
+    const metadataAvatar = (user?.user_metadata as any)?.avatar_url;
+    if (user?.id && metadataAvatar) primeAvatar(user.id, metadataAvatar);
+  }, [user?.id, (user?.user_metadata as any)?.avatar_url]);
 
   const isCloudImportMode = isFloatingWidget && Boolean(initialDocumentBase64 || initialDocumentUrl || initialNextcloudPath || initialDocSource);
 
@@ -3631,7 +3615,6 @@ Regras:
     path: activeNextcloudPathValue,
     userId: user?.id,
     userName: userDisplayName,
-    userAvatarUrl: currentUserAvatarUrl,
     enabled: !showStartScreen && activeWorkspace === 'editor',
   });
 
@@ -3656,24 +3639,34 @@ Regras:
   const collabSessionActive = collabStatus !== 'off';
 
   /** A barra dentro do papel: sala de co-edição quando existe, presença quando não. */
-  const editingPeers = useMemo(() => {
+  const editingPeersBase = useMemo(() => {
     if (collabSessionActive) {
       return collabPeers.map((peer) => ({
         id: peer.connectionId,
+        userId: peer.userId,
         userName: peer.userName,
-        avatarUrl: peer.avatarUrl,
         typing: peer.typing,
       }));
     }
     return supabasePeers.map((peer) => ({
       id: peer.userId,
+      userId: peer.userId,
       userName: peer.userName,
-      avatarUrl: peer.avatarUrl ?? null,
       // Sem sala de co-edição não existe edição sincronizada: mostrar "digitando"
       // aqui seria prometer o que o sistema não está fazendo.
       typing: false,
     }));
   }, [collabSessionActive, collabPeers, supabasePeers]);
+
+  // A foto NÃO viaja com a presença (pode ser um `data:` de megabytes, que
+  // derruba o SignalR e é recusado pelo Realtime). Ela é resolvida aqui, pelo
+  // id, e fica em cache para a sessão inteira.
+  const avatarOf = useUserAvatars(editingPeersBase.map((peer) => peer.userId));
+
+  const editingPeers = useMemo(
+    () => editingPeersBase.map((peer) => ({ ...peer, avatarUrl: avatarOf(peer.userId) })),
+    [editingPeersBase, avatarOf],
+  );
 
   // Modo escuro do editor (estilo Word). Fonte unica de verdade: alterna a
   // classe `petition-dark` no <body> (cobre a faixa, o chrome do Syncfusion e
@@ -3906,7 +3899,6 @@ Regras:
               fileName,
               userName: userDisplayName,
               userId: user?.id ?? null,
-              avatarUrl: currentUserAvatarUrl,
             });
           } catch (collabError) {
             console.error('Falha ao mover a co-edição para o novo arquivo:', collabError);
@@ -3957,7 +3949,6 @@ Regras:
     selectedClient?.full_name,
     activeNextcloudPathValue,
     userDisplayName,
-    currentUserAvatarUrl,
     user?.id,
   ]);
 
@@ -4054,7 +4045,6 @@ Regras:
             fileName: entry.name,
             userName: userDisplayName,
             userId: user?.id ?? null,
-            avatarUrl: currentUserAvatarUrl,
           });
         } catch (collabError) {
           // O serviço de co-edição fora do ar não pode impedir de trabalhar no
@@ -4118,7 +4108,6 @@ Regras:
     selectedClient?.id,
     selectedClient?.full_name,
     userDisplayName,
-    currentUserAvatarUrl,
     user?.id,
   ]);
 

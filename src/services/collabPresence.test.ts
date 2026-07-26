@@ -74,21 +74,57 @@ test('quando o próprio id chega depois, a pessoa sai da lista', () => {
   assert.deepEqual(registry.list().map((peer) => peer.connectionId), ['ana']);
 });
 
-test('a lista carrega foto e id do usuário', () => {
+test('a lista carrega o id do usuário (a foto é resolvida por ele, não trafegada)', () => {
   const registry = new CollabPeerRegistry();
   registry.setSelfConnectionId('eu');
-  registry.add({
-    connectionId: 'ana',
-    currentUser: 'Ana Souza',
-    userId: 'u-1',
-    avatarUrl: 'https://exemplo.test/ana.png',
-  });
+  registry.add({ connectionId: 'ana', currentUser: 'Ana Souza', userId: 'u-1' });
 
   const [ana] = registry.list();
   assert.equal(ana.userName, 'Ana Souza');
   assert.equal(ana.userId, 'u-1');
-  assert.equal(ana.avatarUrl, 'https://exemplo.test/ana.png');
   assert.equal(ana.typing, false);
+  // Nada de foto no objeto que veio da rede: uma foto do CRM pode ser um
+  // `data:` de megabytes e estoura o limite de mensagem do SignalR.
+  assert.equal('avatarUrl' in (ana as Record<string, unknown>), false);
+});
+
+test('EU MESMO, em outra conexão, NÃO apareço como outra pessoa na sala', () => {
+  // Cenário real: uma aba morreu sem avisar e ficou pendurada na sala. A pessoa
+  // abre o documento sozinha e via o próprio nome em
+  // "fulano também está neste documento".
+  const registry = new CollabPeerRegistry();
+  registry.setSelfConnectionId('conexao-nova');
+  registry.setSelfUserId('u-pedro');
+
+  registry.add({ connectionId: 'conexao-morta', currentUser: 'Pedro', userId: 'u-pedro' });
+
+  assert.equal(registry.count(), 0);
+  assert.equal(describePresence(registry.list()), '');
+});
+
+test('a sobra da própria pessoa some da lista quando o id do usuário chega depois', () => {
+  const registry = new CollabPeerRegistry();
+  // `addUser` com a lista da sala pode chegar antes de sabermos quem somos.
+  registry.add([
+    { connectionId: 'conexao-morta', currentUser: 'Pedro', userId: 'u-pedro' },
+    { connectionId: 'ana', currentUser: 'Ana Souza', userId: 'u-ana' },
+  ]);
+  assert.equal(registry.count(), 2);
+
+  registry.setSelfUserId('u-pedro');
+
+  assert.deepEqual(registry.list().map((peer) => peer.userName), ['Ana Souza']);
+});
+
+test('duas pessoas DIFERENTES continuam aparecendo', () => {
+  const registry = new CollabPeerRegistry();
+  registry.setSelfConnectionId('eu');
+  registry.setSelfUserId('u-pedro');
+
+  registry.add({ connectionId: 'ana', currentUser: 'Ana Souza', userId: 'u-ana' });
+  registry.add({ connectionId: 'carlos', currentUser: 'Carlos Lima', userId: 'u-carlos' });
+
+  assert.equal(registry.count(), 2);
 });
 
 test('sair da sala remove a pessoa da lista', () => {
@@ -139,10 +175,10 @@ test('atualizar alguém que já está na lista preserva o estado de digitação'
   registry.setTyping('ana', true);
 
   // Uma operação da Ana chega e reafirma a presença dela.
-  registry.add({ connectionId: 'ana', currentUser: 'Ana Souza', avatarUrl: 'https://exemplo.test/a.png' });
+  registry.add({ connectionId: 'ana', currentUser: 'Ana Souza', userId: 'u-ana' });
 
   assert.equal(registry.list()[0].typing, true);
-  assert.equal(registry.list()[0].avatarUrl, 'https://exemplo.test/a.png');
+  assert.equal(registry.list()[0].userId, 'u-ana');
   registry.clear();
 });
 

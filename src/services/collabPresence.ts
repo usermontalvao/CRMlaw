@@ -18,13 +18,16 @@
  */
 
 export interface CollabPeer {
-  /** Id da CONEXÃO (a mesma pessoa em duas abas conta duas vezes). */
+  /** Id da CONEXÃO. */
   connectionId: string;
-  /** Id do usuário no CRM, quando conhecido. */
+  /**
+   * Id do usuário no CRM. É por ele que a foto é resolvida (ver
+   * `services/userAvatars.ts`) e é por ele que a própria pessoa é excluída da
+   * lista — filtrar só pela conexão não basta, porque uma aba que morreu sem
+   * avisar deixa a MESMA pessoa na sala com outro id de conexão.
+   */
   userId: string | null;
   userName: string;
-  /** Foto de perfil. Sem ela a tela cai nas iniciais. */
-  avatarUrl: string | null;
   /** Está digitando neste instante. */
   typing: boolean;
 }
@@ -114,7 +117,6 @@ interface RawMember {
   connectionId?: string | null;
   currentUser?: string | null;
   userId?: string | null;
-  avatarUrl?: string | null;
 }
 
 /**
@@ -126,12 +128,37 @@ export class CollabPeerRegistry {
 
   private selfConnectionId = '';
 
+  private selfUserId = '';
+
   private readonly typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   setSelfConnectionId(connectionId: string): void {
     this.selfConnectionId = String(connectionId || '');
     // Se o próprio id chegou depois de um `addUser` com ele dentro, tira da lista.
     if (this.selfConnectionId) this.peers.delete(this.selfConnectionId);
+  }
+
+  /**
+   * Quem é você, do ponto de vista do CRM.
+   *
+   * Filtrar apenas pelo id da CONEXÃO não é suficiente: uma aba que morreu sem
+   * avisar (queda de rede, reinício do serviço, aba fechada à força) fica
+   * pendurada na sala com outro id de conexão. A pessoa abre o documento
+   * sozinha e vê o PRÓPRIO nome como "fulano também está neste documento".
+   * O servidor limpa essas sobras ao reentrar; isto aqui é o cinto de segurança
+   * do lado da tela.
+   */
+  setSelfUserId(userId: string | null | undefined): void {
+    this.selfUserId = String(userId || '');
+    if (!this.selfUserId) return;
+    for (const [connectionId, peer] of this.peers) {
+      if (peer.userId === this.selfUserId) this.peers.delete(connectionId);
+    }
+  }
+
+  private isSelf(connectionId: string, userId: string | null): boolean {
+    if (connectionId && connectionId === this.selfConnectionId) return true;
+    return Boolean(this.selfUserId) && userId === this.selfUserId;
   }
 
   list(): CollabPeer[] {
@@ -154,23 +181,23 @@ export class CollabPeerRegistry {
 
     const member = entry as RawMember | null;
     const connectionId = String(member?.connectionId || '');
-    if (!connectionId || connectionId === this.selfConnectionId) return false;
+    if (!connectionId) return false;
 
     const existing = this.peers.get(connectionId);
+    const userId = member?.userId ? String(member.userId) : existing?.userId ?? null;
+    if (this.isSelf(connectionId, userId)) {
+      // Pode ser uma sobra da própria pessoa que já estava na lista.
+      return this.peers.delete(connectionId);
+    }
+
     const next: CollabPeer = {
       connectionId,
-      userId: member?.userId ? String(member.userId) : existing?.userId ?? null,
+      userId,
       userName: String(member?.currentUser || existing?.userName || 'Alguém'),
-      avatarUrl: member?.avatarUrl ? String(member.avatarUrl) : existing?.avatarUrl ?? null,
       typing: existing?.typing ?? false,
     };
 
-    if (
-      existing &&
-      existing.userName === next.userName &&
-      existing.avatarUrl === next.avatarUrl &&
-      existing.userId === next.userId
-    ) {
+    if (existing && existing.userName === next.userName && existing.userId === next.userId) {
       return false;
     }
 
