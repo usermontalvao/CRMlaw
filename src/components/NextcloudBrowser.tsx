@@ -44,7 +44,9 @@ import { SortablePdfPage } from './nextcloud/SortablePdfPage';
 import { NcThumb, thumbCache } from './nextcloud/NcThumb';
 import { useNextcloudSelection } from '../hooks/useNextcloudSelection';
 import { useNextcloudClipboard } from '../hooks/useNextcloudClipboard';
-import { useNextcloudPresence } from '../hooks/useNextcloudPresence';
+import { useNextcloudPresence, type EditingPeer } from '../hooks/useNextcloudPresence';
+import { isCollabEnabled } from '../services/syncfusionCollab.service';
+import EditingNowPeopleModal from './EditingNowPeopleModal';
 import EditingNowBadge from './EditingNowBadge';
 import { setLocalPdfWorker } from '../utils/pdfWorker';
 import {
@@ -634,6 +636,11 @@ const NextcloudBrowser: React.FC = () => {
   // Presença de edição em tempo real: path -> quem está com o arquivo aberto.
   // Sai da lista no instante em que a pessoa fecha o editor (websocket).
   const { byPath: editingByPath } = useNextcloudPresence();
+
+  /** Documento que alguém já está editando e o usuário pediu para abrir. */
+  const [editingNowPrompt, setEditingNowPrompt] = useState<
+    { entry: NextcloudEntry; peers: EditingPeer[] } | null
+  >(null);
 
   // Ferramentas de PDF (modal por arquivo).
   const [pdfToolFile, setPdfToolFile] = useState<NextcloudEntry | null>(null);
@@ -1479,9 +1486,18 @@ const NextcloudBrowser: React.FC = () => {
   const openInMainEditor = (entry: NextcloudEntry) => {
     const others = othersEditing(entry.path);
     if (others.length > 0) {
-      const names = others.map((o) => o.userName).join(', ');
-      if (!window.confirm(`${names} ${others.length > 1 ? 'estão' : 'está'} com "${entry.name}" aberto no editor agora. Se você salvar por cima, pode sobrescrever o trabalho ${others.length > 1 ? 'deles' : 'dele/dela'}.\n\nAbrir mesmo assim?`)) return;
+      // Antes isto era um `window.confirm`: caixa cinza do navegador, sem foto,
+      // sem nome legível e sem dizer o que muda ao abrir junto. Agora é um
+      // modal com as pessoas que estão no arquivo — a decisão continua sendo do
+      // usuário, mas com a informação na frente.
+      setEditingNowPrompt({ entry, peers: others });
+      return;
     }
+    openInMainEditorNow(entry);
+  };
+
+  /** Abre de fato — usado direto e a partir do modal de "já estão editando". */
+  const openInMainEditorNow = (entry: NextcloudEntry) => {
     // Cliente vinculado à pasta do arquivo (se houver).
     const dir = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
     const linkedClientId = links[dir] || links[entry.path];
@@ -5466,6 +5482,21 @@ const NextcloudBrowser: React.FC = () => {
           </p>
         </ModalBody>
       </Modal>
+
+      <EditingNowPeopleModal
+        open={Boolean(editingNowPrompt)}
+        fileName={editingNowPrompt?.entry.name ?? ''}
+        peers={editingNowPrompt?.peers ?? []}
+        collabAvailable={isCollabEnabled()}
+        onCancel={() => setEditingNowPrompt(null)}
+        onConfirm={() => {
+          const pending = editingNowPrompt;
+          setEditingNowPrompt(null);
+          // Continua dentro do clique do usuário: o `window.open` do editor não
+          // é barrado pelo bloqueador de pop-ups.
+          if (pending) openInMainEditorNow(pending.entry);
+        }}
+      />
 
       <Modal
         open={textConflict}

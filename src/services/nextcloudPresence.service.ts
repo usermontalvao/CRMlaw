@@ -23,9 +23,17 @@ export interface NextcloudPresenceUser {
   key: string;
   userId: string;
   userName: string;
+  /** Foto de perfil, para a lista mostrar a pessoa e não só as iniciais. */
+  avatarUrl: string | null;
   /** Caminho do arquivo aberto no Nextcloud. */
   path: string;
-  /** `true` enquanto a pessoa está realmente digitando no documento. */
+  /**
+   * `true` enquanto a pessoa está realmente digitando no documento.
+   *
+   * ATENÇÃO: isto diz "tem alguém mexendo no teclado", NÃO diz que as edições
+   * estão sendo sincronizadas. Durante uma sessão de co-edição quem responde por
+   * "digitando" é a própria sala (SignalR) — ver `collabPresence.ts`.
+   */
   typing: boolean;
   /** Momento (epoch ms) em que abriu o documento. */
   since: number;
@@ -34,6 +42,7 @@ export interface NextcloudPresenceUser {
 interface TrackedState {
   userId: string;
   userName: string;
+  avatarUrl: string | null;
   path: string;
   typing: boolean;
   since: number;
@@ -64,6 +73,7 @@ function readPresence(): NextcloudPresenceUser[] {
         key,
         userId,
         userName: (typeof meta.userName === 'string' && meta.userName) || 'Alguém',
+        avatarUrl: typeof meta.avatarUrl === 'string' && meta.avatarUrl ? meta.avatarUrl : null,
         path,
         typing: meta.typing === true,
         since: typeof meta.since === 'number' ? meta.since : Date.now(),
@@ -141,10 +151,12 @@ export function startEditingPresence(input: {
   path: string;
   userId: string;
   userName: string;
+  avatarUrl?: string | null;
 }): EditingPresenceHandle {
   const state: TrackedState = {
     userId: input.userId,
     userName: input.userName,
+    avatarUrl: input.avatarUrl ?? null,
     path: input.path,
     typing: false,
     since: Date.now(),

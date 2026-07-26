@@ -107,7 +107,8 @@ import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
 import { useEditingPresence } from '../hooks/useNextcloudPresence';
 import EditorPresenceBar from './EditorPresenceBar';
-import { isCollabEnabled } from '../services/syncfusionCollab.service';
+import { isCollabEnabled, type CollabPeer, type CollabStatus } from '../services/syncfusionCollab.service';
+import { profileService } from '../services/profile.service';
 
 // Tipo do documento do editor traduzido para o vocabulário do briefing do
 // Assistente IA (o formulário fala "Petição inicial", não "petition").
@@ -1704,6 +1705,7 @@ type RecentDocumentItem = {
   lastAction: 'opened' | 'saved';
   petition?: SavedPetition;
   nextcloudPath?: string;
+  nextcloudAvailability?: 'checking' | 'available' | 'missing' | 'unknown';
   clientId?: string | null;
 };
 
@@ -1753,6 +1755,33 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     'Usuario';
 
   const userDisplayName = formatUserDisplayName(rawUserDisplayName) || 'Usuario';
+
+  // Foto de perfil de quem está editando: é ela que aparece na barra de presença
+  // (estilo Google Docs) e é ela que viaja para os outros participantes da sala.
+  const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState<string | null>(
+    () => (user?.user_metadata as any)?.avatar_url || null,
+  );
+
+  useEffect(() => {
+    if (!user?.id) {
+      setCurrentUserAvatarUrl(null);
+      return;
+    }
+    let cancelled = false;
+    profileService
+      .getProfile(user.id)
+      .then((profile) => {
+        if (cancelled) return;
+        setCurrentUserAvatarUrl(
+          profile?.avatar_url || (user.user_metadata as any)?.avatar_url || null,
+        );
+      })
+      .catch(() => {
+        // Sem foto a barra cai nas iniciais — não é motivo para erro na tela.
+      });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
   const isCloudImportMode = isFloatingWidget && Boolean(initialDocumentBase64 || initialDocumentUrl || initialNextcloudPath || initialDocSource);
 
   const getGreeting = () => {
@@ -2011,6 +2040,9 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [savedPetitionsLoading, setSavedPetitionsLoading] = useState(true);
   const [documentHistory, setDocumentHistory] = useState<DocumentEditHistoryEntry[]>([]);
   const [documentHistoryLoading, setDocumentHistoryLoading] = useState(true);
+  const [recentNextcloudAvailability, setRecentNextcloudAvailability] = useState<
+    Record<string, 'checking' | 'available' | 'missing' | 'unknown'>
+  >({});
   const [recentDocumentSearch, setRecentDocumentSearch] = useState('');
   const [recentDocumentSource, setRecentDocumentSource] = useState<'all' | 'petition' | 'nextcloud'>('all');
   const [sourceCloudFile, setSourceCloudFile] = useState<CloudFile | null>(null);
@@ -3595,12 +3627,53 @@ Regras:
   // Word. O estado vive no websocket, não em heartbeat de tabela: fechar a
   // janela derruba a presença sozinho.
   // Segue a ORIGEM ATIVA: ao abrir outro arquivo, a presença migra sozinha.
-  const { peers: editingPeers, signalTyping } = useEditingPresence({
+  const { peers: supabasePeers, signalTyping } = useEditingPresence({
     path: activeNextcloudPathValue,
     userId: user?.id,
     userName: userDisplayName,
+    userAvatarUrl: currentUserAvatarUrl,
     enabled: !showStartScreen && activeWorkspace === 'editor',
   });
+
+  // ---------------------------------------------------------------------------
+  // CO-EDIÇÃO: quem está editando junto vem da SALA, não do canal de presença.
+  //
+  // Havia duas listas concorrentes. A do Supabase diz apenas "esta pessoa está
+  // com o arquivo aberto" — e era ela que pintava o "fulano está digitando…",
+  // dando a entender que as edições estavam sendo sincronizadas mesmo quando
+  // NENHUMA operação chegava ao servidor. Com uma sala de co-edição ativa, a
+  // lista boa é a do SignalR: quem aparece nela está de fato no mesmo documento
+  // e recebendo as mesmas operações.
+  //
+  // A presença do Supabase continua sendo publicada — o explorador do Nextcloud
+  // depende dela para avisar quem está com um arquivo aberto —, mas o aviso de
+  // digitação só passa por ela quando NÃO há co-edição.
+  // ---------------------------------------------------------------------------
+  const [collabPeers, setCollabPeers] = useState<CollabPeer[]>([]);
+  const [collabStatus, setCollabStatus] = useState<CollabStatus>('off');
+  const collabStatusRef = useRef<CollabStatus>('off');
+  collabStatusRef.current = collabStatus;
+  const collabSessionActive = collabStatus !== 'off';
+
+  /** A barra dentro do papel: sala de co-edição quando existe, presença quando não. */
+  const editingPeers = useMemo(() => {
+    if (collabSessionActive) {
+      return collabPeers.map((peer) => ({
+        id: peer.connectionId,
+        userName: peer.userName,
+        avatarUrl: peer.avatarUrl,
+        typing: peer.typing,
+      }));
+    }
+    return supabasePeers.map((peer) => ({
+      id: peer.userId,
+      userName: peer.userName,
+      avatarUrl: peer.avatarUrl ?? null,
+      // Sem sala de co-edição não existe edição sincronizada: mostrar "digitando"
+      // aqui seria prometer o que o sistema não está fazendo.
+      typing: false,
+    }));
+  }, [collabSessionActive, collabPeers, supabasePeers]);
 
   // Modo escuro do editor (estilo Word). Fonte unica de verdade: alterna a
   // classe `petition-dark` no <body> (cobre a faixa, o chrome do Syncfusion e
@@ -3751,12 +3824,41 @@ Regras:
       // CO-EDIÇÃO, mesmo arquivo: NÃO subir o documento daqui. O servidor da sala
       // ainda tem operações a aplicar sobre a versão gravada; se o navegador
       // gravasse por cima agora, essas operações seriam aplicadas de novo depois
-      // e o texto sairia duplicado. A gravação no Nextcloud é do servidor.
-      if (isCollabEnabled() && options.adopt && activeNextcloudPathValue === path) {
+      // e o texto sairia duplicado. Quem escreve no Nextcloud é o servidor —
+      // mas AGORA, a pedido, e só damos o salvamento por feito quando ele
+      // confirma. (Antes esta linha mostrava "tudo sincronizado" sem pedir
+      // gravação nenhuma: o arquivo só era escrito quando a última pessoa saía
+      // do documento, e o usuário achava que tinha salvado.)
+      if (editorRef.current?.isCollaborating?.() && options.adopt && activeNextcloudPathValue === path) {
+        if (collabStatusRef.current === 'disconnected') {
+          setError(
+            'A coedição está desconectada: as últimas edições não chegaram ao servidor. ' +
+            'Reabra o documento para voltar a editar junto — nada do que você escreveu foi perdido.',
+          );
+          return false;
+        }
+
+        const outcome = await editorRef.current.flushCollaboration();
+
         clearLocalDraft();
-        setHasUnsavedChanges(false);
+        setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
         setLastSaved(new Date());
-        showSuccessMessage('Tudo sincronizado com quem está editando junto. A gravação no Nextcloud é automática.');
+
+        await trackDocumentActivity({
+          source: 'nextcloud',
+          sourceKey: path,
+          title: fileName,
+          clientId: selectedClient?.id || null,
+          clientName: selectedClient?.full_name || null,
+          nextcloudPath: path,
+          action: 'saved',
+        });
+
+        showSuccessMessage(
+          outcome.uploaded
+            ? 'Salvo no Nextcloud.'
+            : 'Nada novo para gravar — o documento no Nextcloud já está em dia.',
+        );
         // Libera a ação que estava esperando o salvamento (fechar, abrir outro…).
         flushPendingAfterSave();
         return true;
@@ -3799,7 +3901,13 @@ Regras:
         // o documento antigo.
         if (isCollabEnabled()) {
           try {
-            await editorRef.current?.startCollaboration({ path, fileName, userName: userDisplayName });
+            await editorRef.current?.startCollaboration({
+              path,
+              fileName,
+              userName: userDisplayName,
+              userId: user?.id ?? null,
+              avatarUrl: currentUserAvatarUrl,
+            });
           } catch (collabError) {
             console.error('Falha ao mover a co-edição para o novo arquivo:', collabError);
           }
@@ -3849,6 +3957,8 @@ Regras:
     selectedClient?.full_name,
     activeNextcloudPathValue,
     userDisplayName,
+    currentUserAvatarUrl,
+    user?.id,
   ]);
 
   /** Confirma no SERVIDOR se o destino já existe antes de gravar. */
@@ -3935,12 +4045,33 @@ Regras:
         // continua valendo.
       }
 
+      let collabFallbackReason: string | null = null;
+
       if (collabActive) {
-        await editor.startCollaboration({
-          path: entry.path,
-          fileName: entry.name,
-          userName: userDisplayName,
-        });
+        try {
+          await editor.startCollaboration({
+            path: entry.path,
+            fileName: entry.name,
+            userName: userDisplayName,
+            userId: user?.id ?? null,
+            avatarUrl: currentUserAvatarUrl,
+          });
+        } catch (collabError) {
+          // O serviço de co-edição fora do ar não pode impedir de trabalhar no
+          // documento: cai para a abertura direta do Nextcloud e DIZ que a
+          // edição em conjunto não está valendo para este arquivo.
+          console.error('Falha ao entrar na coedição; abrindo o documento sozinho:', collabError);
+          collabFallbackReason =
+            'Não foi possível entrar na edição em conjunto: você está editando uma cópia própria deste ' +
+            'documento. Se outra pessoa abrir o mesmo arquivo, quem salvar por último sobrescreve o outro.';
+
+          const blob = await nextcloudService.readFile(entry.path);
+          const buffer = await blob.arrayBuffer();
+          if (buffer.byteLength === 0) {
+            throw new Error('O documento do Nextcloud está vazio (0 bytes).');
+          }
+          await loadDocxWithFallback(editor, buffer, entry.name);
+        }
       } else {
         await loadDocxWithFallback(editor, arrayBuffer!, entry.name);
       }
@@ -3967,7 +4098,11 @@ Regras:
         nextcloudPath: entry.path,
         action: 'opened',
       });
-      showSuccessMessage('Documento aberto do Nextcloud.');
+      if (collabFallbackReason) {
+        setError(collabFallbackReason);
+      } else {
+        showSuccessMessage('Documento aberto do Nextcloud.');
+      }
     } catch (err) {
       console.error('Erro ao abrir documento do Nextcloud:', err);
       setError(getNextcloudErrorMessage(err, 'abrir o documento'));
@@ -3983,6 +4118,8 @@ Regras:
     selectedClient?.id,
     selectedClient?.full_name,
     userDisplayName,
+    currentUserAvatarUrl,
+    user?.id,
   ]);
 
   /** Recarrega a versão do servidor, descartando as alterações locais (escolha explícita). */
@@ -4855,8 +4992,12 @@ Regras:
     // Ajustes automáticos logo após abrir o documento (fonte padrão, margens,
     // repaginação) não são edição do usuário — não marcam alterações pendentes.
     if (isProgrammaticContentChange()) return;
-    // Avisa quem mais está no documento que este usuário está digitando agora.
-    signalTyping();
+    // "Está digitando": numa sessão de co-edição quem avisa é a própria SALA
+    // (o SyncfusionEditor chama `notifyTyping` junto com a operação, e só quando
+    // há mais alguém lá). Mandar também pelo canal de presença duplicaria o
+    // aviso — e era esse canal que pintava "fulano digitando" mesmo quando nada
+    // estava sincronizando.
+    if (!collabSessionActive) signalTyping();
     // Marcar o documento como alterado antes de qualquer validação de conectividade.
     // Se a conexão cair no meio da edição, o navegador ainda precisa bloquear a saída.
     contentChangeSeqRef.current += 1;
@@ -6734,6 +6875,7 @@ Regras:
         updatedAt: historyEntry.last_activity_at,
         lastAction: historyEntry.last_action,
         nextcloudPath,
+        nextcloudAvailability: recentNextcloudAvailability[nextcloudPath],
         clientId: historyEntry.client_id,
       });
     }
@@ -6749,7 +6891,63 @@ Regras:
       })
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 40);
-  }, [documentHistory, recentDocumentSearch, recentDocumentSource, savedPetitions]);
+  }, [
+    documentHistory,
+    recentDocumentSearch,
+    recentDocumentSource,
+    recentNextcloudAvailability,
+    savedPetitions,
+  ]);
+
+  useEffect(() => {
+    const paths = Array.from(new Set(
+      documentHistory
+        .filter((entry) => entry.source === 'nextcloud')
+        .map((entry) => entry.nextcloud_path || entry.source_key)
+        .filter((path): path is string => Boolean(path)),
+    ));
+    if (paths.length === 0) {
+      setRecentNextcloudAvailability({});
+      return;
+    }
+
+    let cancelled = false;
+    setRecentNextcloudAvailability((current) => Object.fromEntries(
+      paths.map((path) => [path, current[path] || 'checking']),
+    ));
+
+    let cursor = 0;
+    const checkNext = async () => {
+      while (!cancelled) {
+        const path = paths[cursor++];
+        if (!path) return;
+        try {
+          const metadata = await nextcloudService.stat(path);
+          if (cancelled) return;
+          setRecentNextcloudAvailability((current) => ({
+            ...current,
+            [path]: metadata.exists ? 'available' : 'missing',
+          }));
+        } catch {
+          if (cancelled) return;
+          // Falha de rede ou autenticação não prova que o arquivo foi excluído.
+          setRecentNextcloudAvailability((current) => ({
+            ...current,
+            [path]: 'unknown',
+          }));
+        }
+      }
+    };
+
+    void Promise.all(Array.from(
+      { length: Math.min(4, paths.length) },
+      () => checkNext(),
+    ));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [documentHistory]);
 
   const recentDocumentTotals = useMemo(() => {
     const petitionKeys = new Set(savedPetitions.map((petition) => petition.id));
@@ -7589,31 +7787,44 @@ Regras:
                       {recentDocuments.map((item) => {
                         const isOpening = openingPetitionId === item.petition?.id || openingPetitionId === item.key;
                         const isBusyOpening = openingPetitionId !== null;
-                        const subtitle = item.clientName || item.location || (item.source === 'nextcloud' ? 'Nextcloud' : 'Sem cliente vinculado');
+                        const isMissing = item.source === 'nextcloud' && item.nextcloudAvailability === 'missing';
+                        const subtitle = isMissing
+                          ? 'Arquivo removido do Nextcloud'
+                          : item.clientName || item.location || (item.source === 'nextcloud' ? 'Nextcloud' : 'Sem cliente vinculado');
                         return (
                           <div
                             key={item.key}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => {
+                            role={isMissing ? undefined : 'button'}
+                            tabIndex={isMissing ? undefined : 0}
+                            onClick={isMissing ? undefined : () => {
                               if (!isBusyOpening) openRecentDocument(item);
                             }}
-                            onKeyDown={(event) => {
+                            onKeyDown={isMissing ? undefined : (event) => {
                               if (event.key !== 'Enter' && event.key !== ' ') return;
                               if (isBusyOpening) return;
                               event.preventDefault();
                               openRecentDocument(item);
                             }}
                             className={`group grid min-h-[58px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-slate-100 px-3.5 py-2.5 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_120px_105px_32px] ${
-                              isBusyOpening ? 'cursor-wait opacity-60' : 'cursor-pointer hover:bg-[#f2f6fc]'
+                              isMissing
+                                ? 'cursor-default bg-slate-50 opacity-70'
+                                : isBusyOpening
+                                  ? 'cursor-wait opacity-60'
+                                  : 'cursor-pointer hover:bg-[#f2f6fc]'
                             }`}
                           >
                             <div className="flex min-w-0 items-center gap-3">
                               <div className={`flex h-8 w-8 shrink-0 items-center justify-center ${
-                                item.source === 'nextcloud' ? 'text-cyan-700' : 'text-[#185abd]'
+                                isMissing
+                                  ? 'text-slate-400'
+                                  : item.source === 'nextcloud'
+                                    ? 'text-cyan-700'
+                                    : 'text-[#185abd]'
                               }`}>
                                 {isOpening
                                   ? <Loader2 className="h-4 w-4 animate-spin" />
+                                  : isMissing
+                                    ? <CloudOff className="h-[18px] w-[18px]" />
                                   : item.source === 'nextcloud'
                                     ? <Cloud className="h-[18px] w-[18px]" />
                                     : <FileText className="h-[18px] w-[18px]" />}
@@ -7627,8 +7838,12 @@ Regras:
                             </div>
 
                             <div className="hidden text-[10px] text-slate-500 sm:flex sm:items-center sm:gap-1.5">
-                              {item.source === 'nextcloud' ? <Cloud className="h-3 w-3 text-cyan-700" /> : <FileText className="h-3 w-3 text-[#185abd]" />}
-                              {item.source === 'nextcloud' ? 'Nextcloud' : 'Jurius'}
+                              {isMissing
+                                ? <CloudOff className="h-3 w-3 text-slate-400" />
+                                : item.source === 'nextcloud'
+                                  ? <Cloud className="h-3 w-3 text-cyan-700" />
+                                  : <FileText className="h-3 w-3 text-[#185abd]" />}
+                              {isMissing ? 'Removido' : item.source === 'nextcloud' ? 'Nextcloud' : 'Jurius'}
                             </div>
 
                             <div
@@ -9664,10 +9879,11 @@ Regras:
               </div>
             </div>
           )}
-          {/* Quem mais está neste documento agora (e quem está digitando). */}
-          {editingPeers.length > 0 && (
+          {/* Quem mais está neste documento agora — e, quando a coedição cai, o
+              aviso de que as edições PARARAM de ser sincronizadas. */}
+          {(editingPeers.length > 0 || collabStatus === 'disconnected' || collabStatus === 'reconnecting') && (
             <div className="pointer-events-none absolute right-4 top-3 z-[45] flex justify-end">
-              <EditorPresenceBar peers={editingPeers} />
+              <EditorPresenceBar peers={editingPeers} collabStatus={collabStatus} />
             </div>
           )}
 
@@ -9676,6 +9892,8 @@ Regras:
             id="petition-main-editor"
             height="100%"
             currentUserName={userDisplayName}
+            onCollabPeersChange={setCollabPeers}
+            onCollabStatusChange={setCollabStatus}
             readOnly={!isOnline || !serverReachable}
             enableToolbar={false}
             showPropertiesPane={false}

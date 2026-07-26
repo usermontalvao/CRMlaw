@@ -9,12 +9,22 @@ import type { EditingPeer } from '../hooks/useNextcloudPresence';
  * logadas ao mesmo tempo.
  */
 
-const peer = (userName: string, typing = false): EditingPeer => ({
+const peer = (userName: string, typing = false, avatarUrl: string | null = null): EditingPeer => ({
   userId: userName,
   userName,
+  avatarUrl,
   typing,
   since: Date.now() - 60_000,
 });
+
+/** A barra do editor fala em "conexão"; a presença do Nextcloud fala em usuário. */
+const toBarPeers = (peers: EditingPeer[]) =>
+  peers.map((item) => ({
+    id: item.userId,
+    userName: item.userName,
+    avatarUrl: item.avatarUrl,
+    typing: item.typing,
+  }));
 
 const cases: Array<{ title: string; peers: EditingPeer[] }> = [
   { title: 'Uma pessoa com o documento aberto', peers: [peer('Lisliandra Cerqueira Inocêncio Montalvão')] },
@@ -61,11 +71,22 @@ const EditingPresencePreview: React.FC = () => (
             </div>
             <div>
               <p className="mb-2 text-[11px] text-slate-400">Dentro do editor</p>
-              <EditorPresenceBar peers={item.peers} />
+              <EditorPresenceBar peers={toBarPeers(item.peers)} collabStatus="connected" />
             </div>
           </div>
         </div>
       ))}
+
+      {/* Os dois estados que NÃO podem parecer "tudo certo". */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Coedição com problema (a barra troca de assunto)
+        </p>
+        <div className="mt-4 flex flex-wrap gap-4">
+          <EditorPresenceBar peers={toBarPeers([peer('Ana Paula Souza', true)])} collabStatus="reconnecting" />
+          <EditorPresenceBar peers={toBarPeers([peer('Ana Paula Souza', true)])} collabStatus="disconnected" />
+        </div>
+      </div>
     </div>
   </div>
 );

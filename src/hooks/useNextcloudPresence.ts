@@ -17,7 +17,9 @@ import {
 export interface EditingPeer {
   userId: string;
   userName: string;
-  /** Está digitando neste instante. */
+  /** Foto de perfil (a lista mostra a pessoa; as iniciais são só o plano B). */
+  avatarUrl: string | null;
+  /** Está com o teclado ativo neste instante — NÃO é prova de sincronização. */
   typing: boolean;
   /** Abriu o documento em (epoch ms). */
   since: number;
@@ -33,12 +35,14 @@ function toMap(list: NextcloudPresenceUser[]): NextcloudPresenceMap {
     const existing = peers.find((peer) => peer.userId === entry.userId);
     if (existing) {
       existing.typing = existing.typing || entry.typing;
+      existing.avatarUrl = existing.avatarUrl || entry.avatarUrl;
       existing.since = Math.min(existing.since, entry.since);
       continue;
     }
     peers.push({
       userId: entry.userId,
       userName: entry.userName,
+      avatarUrl: entry.avatarUrl,
       typing: entry.typing,
       since: entry.since,
     });
@@ -64,9 +68,10 @@ export function useEditingPresence(input: {
   path: string | null | undefined;
   userId: string | null | undefined;
   userName: string;
+  userAvatarUrl?: string | null;
   enabled?: boolean;
 }) {
-  const { path, userId, userName, enabled = true } = input;
+  const { path, userId, userName, userAvatarUrl = null, enabled = true } = input;
   const [peers, setPeers] = useState<EditingPeer[]>([]);
   const handleRef = useRef<EditingPresenceHandle | null>(null);
   const active = Boolean(enabled && path && userId);
@@ -76,7 +81,7 @@ export function useEditingPresence(input: {
       setPeers([]);
       return;
     }
-    const handle = startEditingPresence({ path, userId, userName });
+    const handle = startEditingPresence({ path, userId, userName, avatarUrl: userAvatarUrl });
     handleRef.current = handle;
     const unsubscribe = subscribeNextcloudPresence((list) => {
       const map = toMap(list.filter((entry) => entry.path === path && entry.userId !== userId));
@@ -87,7 +92,7 @@ export function useEditingPresence(input: {
       handle.stop();
       handleRef.current = null;
     };
-  }, [active, path, userId, userName]);
+  }, [active, path, userId, userName, userAvatarUrl]);
 
   /** Chame a cada alteração de conteúdo: marca "digitando" para os outros. */
   const signalTyping = useCallback(() => {

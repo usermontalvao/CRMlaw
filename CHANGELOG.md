@@ -1,5 +1,35 @@
 # Changelog
- 
+
+## Coedição do editor de petições — correção completa
+- **Causa-raiz nº 1 — a coedição nunca esteve ligada**: `VITE_SYNCFUSION_COLLAB_URL`
+  não estava configurada, então cada navegador abria a sua própria cópia do `.docx`
+  direto do Nextcloud. É preciso definir a variável **também no build de produção**.
+- **Causa-raiz nº 2 — toda operação voltava 401**: o `CollaborativeEditingHandler` da
+  Syncfusion monta o próprio `XMLHttpRequest` para `UpdateAction`/`GetActionsFromServer`
+  e não levava o token do CRM. O WebSocket conectava (token pela query string) e o
+  painel mostrava gente na sala, mas nenhuma letra atravessava. Pior: depois de uma
+  recusa o handler para de enviar qualquer operação pelo resto da sessão.
+- **Causa-raiz nº 3 — o módulo de coedição não existia na hora de usar**: `Inject()` +
+  `enableCollaborativeEditing = true` só criam o módulo no `dataBind()` seguinte
+  (`setImmediate`); o código lia `collaborativeEditingHandlerModule` na linha de baixo.
+  A injeção passou para o topo do módulo e o `dataBind()` é forçado.
+- **Salvar agora salva**: novo endpoint autenticado `SaveToSource` grava as operações
+  pendentes no Nextcloud na hora e o botão só diz "Salvo" com a confirmação do
+  servidor. Antes a tela mostrava "Tudo sincronizado" sem pedir gravação nenhuma.
+- **Presença sem promessa falsa**: "quem está editando junto" e "digitando" passaram a
+  vir da SALA de coedição (SignalR). O canal do Supabase continua avisando quem está
+  com o arquivo aberto, mas não pinta mais "digitando" quando nada sincroniza. Sozinho
+  na sala, nenhum aviso de digitação é transmitido.
+- **Queda de conexão é dita com todas as letras**: a barra mostra "Coedição
+  desconectada", as alterações locais são preservadas e o que foi perdido é recuperado
+  com `GetActionsFromServer` na reconexão.
+- **Fotos em vez de iniciais**: barra do editor, badge do Nextcloud e o novo modal de
+  "documento já aberto" mostram a foto de perfil; o nome aparece no texto
+  ("Ana está digitando…"), no estilo do Google Docs.
+- **`window.confirm` virou modal**: abrir um documento que outra pessoa já está
+  editando agora mostra quem está lá, com foto, e explica o que muda ao abrir junto.
+- Versão do Syncfusion pinada em **32.1.21** nos dois lados (front e servidor).
+
 ## 1.10.016
 - **Petições/Blocos**: Modal de edição de blocos com layout compacto e maior área de edição.
   - Layout redesenhado para maximizar espaço do editor de conteúdo

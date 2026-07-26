@@ -4,7 +4,9 @@
 // (não há framework de testes no stack — node:test embutido + ts-node).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isReconnectPendingError } from './reconnectDetection';
+// A extensão explícita é exigida pelo carregador ESM do `npm test`
+// (ts-node/esm); sem ela este arquivo nem chegava a rodar.
+import { isReconnectPendingError } from './reconnectDetection.ts';
 
 test('flag estruturada reconnect_pending entra na fila', () => {
   assert.equal(isReconnectPendingError({ reconnectPending: true }), true);

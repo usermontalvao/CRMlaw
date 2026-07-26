@@ -46,9 +46,57 @@ interface EditingNowBadgeProps {
   className?: string;
 }
 
+/** Cor estável por pessoa, para quando não houver foto. */
+const AVATAR_COLORS = ['bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500'];
+
+function colorFor(key: string): string {
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/** A pessoa aparece pela FOTO; as iniciais são só o plano B. */
+const PeerFace: React.FC<{ peer: EditingPeer; size: string }> = ({ peer, size }) => {
+  const [brokenImage, setBrokenImage] = React.useState(false);
+  const showPhoto = Boolean(peer.avatarUrl) && !brokenImage;
+
+  if (showPhoto) {
+    return (
+      <img
+        src={peer.avatarUrl as string}
+        alt={peer.userName}
+        loading="lazy"
+        decoding="async"
+        onError={() => setBrokenImage(true)}
+        className={`${size} shrink-0 rounded-full object-cover ring-1 ring-white/80 dark:ring-slate-900/80`}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={[
+        size,
+        'flex shrink-0 items-center justify-center rounded-full text-[8px] font-bold text-white ring-1 ring-white/80 dark:ring-slate-900/80',
+        colorFor(peer.userId || peer.userName),
+      ].join(' ')}
+    >
+      {initials(peer.userName)}
+    </span>
+  );
+};
+
 export const EditingNowBadge: React.FC<EditingNowBadgeProps> = ({ peers, compact = false, className }) => {
   if (peers.length === 0) return null;
   const isTyping = peers.some((peer) => peer.typing);
+  const faceSize = compact ? 'h-3.5 w-3.5' : 'h-4 w-4';
 
   return (
     <span
@@ -62,19 +110,10 @@ export const EditingNowBadge: React.FC<EditingNowBadgeProps> = ({ peers, compact
         className || '',
       ].join(' ')}
     >
-      <span className="relative flex h-2 w-2 shrink-0">
-        <span
-          className={[
-            'absolute inline-flex h-full w-full animate-ping rounded-full opacity-70',
-            isTyping ? 'bg-emerald-400' : 'bg-amber-400',
-          ].join(' ')}
-        />
-        <span
-          className={[
-            'relative inline-flex h-2 w-2 rounded-full',
-            isTyping ? 'bg-emerald-500' : 'bg-amber-500',
-          ].join(' ')}
-        />
+      <span className="flex shrink-0 -space-x-1">
+        {peers.slice(0, 3).map((peer) => (
+          <PeerFace key={peer.userId} peer={peer} size={faceSize} />
+        ))}
       </span>
       <span className="truncate">{describe(peers, compact)}</span>
     </span>
