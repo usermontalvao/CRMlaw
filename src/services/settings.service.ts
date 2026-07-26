@@ -836,7 +836,13 @@ export const DEFAULT_AI_TASKS: AiTaskConfig[] = [
   { task_key: 'classify_urgency',      label: 'Classificação de urgência',   provider: 'openai', model: 'gpt-4o-mini', temperature: 0.2, max_tokens: 10   },
   { task_key: 'suggest_actions',       label: 'Sugestão de ações',           provider: 'openai', model: 'gpt-4o-mini', temperature: 0.4, max_tokens: 300  },
   { task_key: 'format_qualification',  label: 'Formatação de qualificação',  provider: 'openai', model: 'gpt-4o-mini', temperature: 0.1, max_tokens: 300  },
-  { task_key: 'edit_legal_text',       label: 'Edição de texto jurídico',    provider: 'openai', model: 'gpt-4o-mini', temperature: 0.3, max_tokens: 1200 },
+  // Redação/edição de texto jurídico NUNCA roda em modelo "mini": é a tarefa
+  // que escreve dentro da petição. Teto folgado — um tópico de fundamentação
+  // com jurisprudência passa fácil de 1200 tokens e chegava truncado.
+  { task_key: 'edit_legal_text',       label: 'Edição de texto jurídico',    provider: 'openai', model: 'gpt-4o',      temperature: 0.3, max_tokens: 2500 },
+  // O chat do assistente de petições (Júri). Antes não estava nesta lista e
+  // rodava com um default fabricado — invisível na tela de configurações.
+  { task_key: 'petition_chat',         label: 'Assistente de petições (Júri)', provider: 'openai', model: 'gpt-4o',    temperature: 0.15, max_tokens: 4000 },
   { task_key: 'proofread_legal',       label: 'Revisão gramatical contextual', provider: 'openai', model: 'gpt-4o-mini', temperature: 0.1, max_tokens: 2000 },
   { task_key: 'spell_context',         label: 'Sugestão rápida por contexto', provider: 'openai', model: 'gpt-5-nano', temperature: 0, max_tokens: 90 },
   { task_key: 'spell_sentence',        label: 'Detecção contextual da frase', provider: 'openai', model: 'gpt-5-nano', temperature: 0, max_tokens: 220 },

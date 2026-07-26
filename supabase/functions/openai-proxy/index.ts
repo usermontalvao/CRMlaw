@@ -271,11 +271,16 @@ Deno.serve(async (req: Request) => {
     // Qualidade primeiro: OpenAI -> DeepSeek -> Groq. Em ortografia isso
     // continua econômico porque o modelo pedido permanece GPT-5 nano.
     const isOpenAiFirst = OPENAI_FIRST_TASKS.has(String(task_key || ''));
+    // Redação jurídica NUNCA cai no Groq: o fallback ali é Llama 8B/70B, que
+    // escreve português jurídico ruim — era a origem das respostas fracas
+    // aleatórias do assistente quando a OpenAI oscilava. Melhor tentar só
+    // OpenAI -> DeepSeek e, se ambos falharem, mostrar o erro de verdade.
+    const isLongFormLegal = FULL_MODEL_TASKS.has(String(task_key || ''));
     const chain: { provider: Provider; key: string }[] = [];
     if (isOpenAiFirst) {
       if (openaiApiKey)   chain.push({ provider: 'openai',   key: openaiApiKey });
       if (deepseekApiKey) chain.push({ provider: 'deepseek', key: deepseekApiKey });
-      if (groqApiKey)     chain.push({ provider: 'groq',     key: groqApiKey });
+      if (groqApiKey && !isLongFormLegal) chain.push({ provider: 'groq', key: groqApiKey });
     } else {
       if (deepseekApiKey) chain.push({ provider: 'deepseek', key: deepseekApiKey });
       if (groqApiKey)     chain.push({ provider: 'groq',     key: groqApiKey });
