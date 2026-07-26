@@ -19,16 +19,16 @@ export function usePresence() {
       profileService.setOnline(user.id).catch(console.error);
     }, 2 * 60 * 1000);
 
-    // Marcar como offline ao desmontar
-    const handleBeforeUnload = () => {
-      // Usar sendBeacon para garantir que a requisição seja enviada
-      navigator.sendBeacon(
-        '/api/presence/offline',
-        JSON.stringify({ user_id: user.id })
-      );
+    // A aplicação não possui uma rota /api/presence/offline. Usamos o mesmo
+    // serviço de presença do restante do sistema ao ocultar/fechar a página.
+    const handlePageHide = () => {
+      void profileService.setOffline(user.id).catch(() => {
+        // A navegação pode encerrar a requisição; a expiração de presença
+        // continua sendo a garantia final no servidor.
+      });
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
 
     // Detectar inatividade (ausente após 5 minutos)
     let inactivityTimer: NodeJS.Timeout;
@@ -50,7 +50,7 @@ export function usePresence() {
     return () => {
       clearInterval(intervalId);
       clearTimeout(inactivityTimer);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
       activityEvents.forEach((event) => {
         window.removeEventListener(event, resetInactivityTimer);
       });

@@ -9,6 +9,7 @@ import type {
   GeneratedPetitionDocument,
   CreateGeneratedPetitionDocumentDTO,
 } from '../types/standardPetition.types';
+import { blobContentsEqual } from '../utils/blobIntegrity';
 
 const STORAGE_BUCKET = 'standard-petitions';
 
@@ -221,31 +222,72 @@ class StandardPetitionService {
     return data;
   }
 
-  // Sobrescrever o conteúdo do .docx da petição (edição no editor Syncfusion).
-  // Mantém o mesmo file_path/registro — apenas substitui o binário e o tamanho.
+  // Substituir o conteúdo do .docx da petição (edição no editor Syncfusion).
+  //
+  // ⚠️ NÃO sobrescreve o mesmo caminho. Gravar por cima do mesmo objeto fazia a
+  // 2ª edição em diante parecer perdida: o objeto continua sendo servido pelo
+  // CDN/cache do navegador com o conteúdo ANTIGO, então reabrir a petição
+  // mostrava a primeira versão. Cada save vai para um caminho novo (igual ao
+  // fluxo de templates) e o registro passa a apontar para ele.
   async replacePetitionContent(petition: StandardPetition, blob: Blob): Promise<StandardPetition> {
     if (!petition.file_path) {
       throw new Error('Petição não possui arquivo.');
     }
 
     const contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const previousPath = petition.file_path;
+    const extension = previousPath.split('.').pop()?.toLowerCase() || 'docx';
+    const versionedPath = `${crypto.randomUUID()}.${extension}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(petition.file_path, blob, { contentType, upsert: true });
+    const bucket = supabase.storage.from(STORAGE_BUCKET);
+    const { error: uploadError } = await bucket.upload(versionedPath, blob, {
+      contentType,
+      cacheControl: '0',
+      upsert: false,
+    });
 
     if (uploadError) {
       throw new Error(uploadError.message);
     }
 
+    // Confirma relendo do servidor: só anuncia sucesso se o objeto gravado for
+    // byte a byte o documento exportado.
+    try {
+      const { data: storedBlob, error: downloadError } = await bucket.download(versionedPath);
+      if (downloadError || !storedBlob) {
+        throw new Error(downloadError?.message ?? 'Não foi possível confirmar o arquivo enviado.');
+      }
+      if (!(await blobContentsEqual(blob, storedBlob))) {
+        throw new Error('A versão armazenada não corresponde ao documento editado.');
+      }
+    } catch (error) {
+      await bucket.remove([versionedPath]);
+      throw error;
+    }
+
     const { data, error } = await supabase
       .from(this.tableName)
-      .update({ file_size: blob.size, mime_type: contentType })
+      .update({
+        file_path: versionedPath,
+        file_size: blob.size,
+        mime_type: contentType,
+      })
       .eq('id', petition.id)
+      .eq('file_path', previousPath)
       .select()
-      .single();
+      .maybeSingle();
 
-    if (error) throw new Error(error.message);
+    if (error || !data) {
+      await bucket.remove([versionedPath]);
+      if (error) throw new Error(error.message);
+      throw new Error('Esta petição foi atualizada em outra janela. Reabra-a antes de salvar novamente.');
+    }
+
+    const { error: cleanupError } = await bucket.remove([previousPath]);
+    if (cleanupError) {
+      console.warn('Não foi possível remover a versão anterior da petição:', cleanupError.message);
+    }
+
     return data;
   }
 

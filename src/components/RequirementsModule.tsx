@@ -60,7 +60,8 @@ import { clientService } from '../services/client.service';
 import { signatureService } from '../services/signature.service';
 import { requirementDocumentService } from '../services/requirementDocument.service';
 import { documentTemplateService } from '../services/documentTemplate.service';
-import TemplateDocxEditorModal from './TemplateDocxEditorModal';
+import { openDocInEditorWindow } from '../utils/openEditorWindow';
+import { subscribeEditorDocSourceSaved } from '../utils/editorDocSourceEvents';
 import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { useAuth } from '../contexts/AuthContext';
 import { useToastContext } from '../contexts/ToastContext';
@@ -690,7 +691,6 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [msTemplate, setMsTemplate] = useState<DocumentTemplate | null>(null);
   const [msTemplates, setMsTemplates] = useState<DocumentTemplate[]>([]);
   const [msTemplateUploadFile, setMsTemplateUploadFile] = useState<File | null>(null);
-  const [msTemplateEditing, setMsTemplateEditing] = useState<DocumentTemplate | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [schedulePromptId, setSchedulePromptId] = useState<string | null>(null);
   const [exigencyModal, setExigencyModal] = useState<ExigencyModalState | null>(null);
@@ -1427,6 +1427,17 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     }
   };
 
+  // O Template MS é editado no EDITOR PRINCIPAL, em janela própria. Quando ele
+  // grava de volta, recarregamos a lista para refletir tamanho/data do arquivo.
+  useEffect(() => {
+    if (!msTemplateModalOpen) return;
+    return subscribeEditorDocSourceSaved((detail) => {
+      if (detail.source.type !== 'template-main') return;
+      void loadMsTemplates();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [msTemplateModalOpen]);
+
   const handleOpenMsTemplateModal = async () => {
     setMsTemplateUploadFile(null);
     setMsTemplateModalOpen(true);
@@ -1574,7 +1585,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       toast.error('Este modelo não possui arquivo .docx para editar.');
       return;
     }
-    setMsTemplateEditing(templateToEdit);
+    // Abre no editor principal (nova janela); salva de volta no template.
+    openDocInEditorWindow({ type: 'template-main', templateId: templateToEdit.id }, templateToEdit.file_name || `${templateToEdit.name}.docx`);
   };
 
   const buildMsPlaceholders = (requirement: Requirement, client: Client) => {
@@ -5718,19 +5730,6 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </div>
           </div>
         </div>
-      )}
-
-      {msTemplateEditing && (
-        <TemplateDocxEditorModal
-          isOpen={!!msTemplateEditing}
-        onClose={() => setMsTemplateEditing(null)}
-        fileName={msTemplateEditing.file_name || `${msTemplateEditing.name}.docx`}
-        badge="Modelo MS"
-        persistenceKey={`ms-template:${msTemplateEditing.id}`}
-        load={() => documentTemplateService.downloadTemplateFile(msTemplateEditing)}
-        save={(blob) => documentTemplateService.replaceTemplateContent(msTemplateEditing, blob).then(() => undefined)}
-        onSaved={() => { loadMsTemplates(); }}
-        />
       )}
 
       {msSelectTemplateModalOpen && (

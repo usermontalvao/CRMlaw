@@ -20,7 +20,7 @@ import { planAutoLinks, type AutoLinkPlan } from '../utils/nextcloudAutoLink';
 import type { Client } from '../types/client.types';
 import { Modal, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
-import { events, SYSTEM_EVENTS } from '../utils/events';
+import { openEditorWindowWithPayload } from '../utils/openEditorWindow';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import {
@@ -50,6 +50,7 @@ import {
   isDocx, isPdf, isImage, isVideo, isAudio, isMedia, isTextFile,
   fileTypeLabel, extIcon, baseName, fileExtension,
 } from '../utils/nextcloudFile';
+import { formatRelativeTime, relativeTimeRefreshDelay } from '../utils/relativeTime';
 
 // Worker do PDF.js empacotado localmente (sem depender do unpkg em runtime).
 setLocalPdfWorker(pdfjs);
@@ -290,13 +291,6 @@ function formatBytes(bytes: number): string {
   return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
-function formatDate(mtime: string | null): string {
-  if (!mtime) return '';
-  const d = new Date(mtime);
-  if (isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
 function formatDateTime(mtime: string | null): string {
   if (!mtime) return 'Não informado';
   const date = new Date(mtime);
@@ -307,8 +301,46 @@ function formatDateTime(mtime: string | null): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
   });
 }
+
+const RelativeModifiedTime: React.FC<{ mtime: string | null }> = React.memo(({ mtime }) => {
+  const [, refresh] = useState(0);
+
+  useEffect(() => {
+    let timer: number | undefined;
+
+    const scheduleRefresh = () => {
+      const delay = relativeTimeRefreshDelay(mtime);
+      if (delay === null) return;
+      timer = window.setTimeout(() => {
+        refresh((value) => value + 1);
+        scheduleRefresh();
+      }, delay);
+    };
+
+    scheduleRefresh();
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [mtime]);
+
+  const relative = formatRelativeTime(mtime);
+  if (relative === '—') return <span>—</span>;
+
+  const exact = formatDateTime(mtime);
+  return (
+    <time
+      dateTime={mtime ?? undefined}
+      title={`Modificado em ${exact}`}
+      aria-label={`Modificado ${relative}. Data exata: ${exact}`}
+      className="whitespace-nowrap"
+    >
+      {relative}
+    </time>
+  );
+});
 
 function extensionBadgeClass(extension: string): string {
   if (extension === 'PDF') return 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300';
@@ -1451,27 +1483,15 @@ const NextcloudBrowser: React.FC = () => {
     // Cliente vinculado à pasta do arquivo (se houver).
     const dir = entry.path.includes('/') ? entry.path.slice(0, entry.path.lastIndexOf('/')) : '';
     const linkedClientId = links[dir] || links[entry.path];
-    const payload = {
+    // Abre na casca MÍNIMA do Editor (/editor), numa NOVA JANELA dedicada (sem o
+    // CRM completo atrás). Se o popup for bloqueado, o util cai no editor inline.
+    openEditorWindowWithPayload({
       clientId: linkedClientId,
-      mode: 'new' as const,
+      mode: 'new',
       initialDocumentName: entry.name,
       initialNextcloudPath: entry.path,
       openRequestId: crypto.randomUUID(),
-    };
-    try {
-      const token = crypto.randomUUID();
-      const key = `petition-editor-open:${token}`;
-      localStorage.setItem(key, JSON.stringify(payload));
-      const target = `${window.location.pathname}${window.location.search}#editor-doc=${token}`;
-      const win = window.open(target, '_blank');
-      if (!win) {
-        // Popup bloqueado → fallback: abre na mesma aba (comportamento antigo).
-        localStorage.removeItem(key);
-        events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, payload);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao abrir no editor.');
-    }
+    });
   };
 
   const openTextEditor = async (entry?: NextcloudEntry) => {
@@ -3718,7 +3738,9 @@ const NextcloudBrowser: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-4 py-2.5 text-right text-gray-500 hidden sm:table-cell">{entry.isDir ? '—' : formatBytes(entry.size)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-500 hidden md:table-cell">{formatDate(entry.mtime)}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-500 hidden md:table-cell">
+                      <RelativeModifiedTime mtime={entry.mtime} />
+                    </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center justify-end">
                         <button

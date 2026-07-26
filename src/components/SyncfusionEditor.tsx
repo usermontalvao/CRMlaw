@@ -69,9 +69,25 @@ const MAX_PROPERTIES_PANE_WIDTH = 420;
 const PROPERTIES_PANE_PINNED_KEY = 'syncfusion-properties-pane-pinned-v1';
 const PROPERTIES_PANE_COLLAPSED_WIDTH = 64;
 
+const normalizeSyncfusionServiceUrl = (value: unknown) => {
+  const normalized = String(value || '').trim().replace(/\/+$/, '');
+  return normalized ? `${normalized}/` : '';
+};
+
+const configuredSyncfusionServiceUrl = normalizeSyncfusionServiceUrl(import.meta.env.VITE_SYNC_FUSION);
+const supabaseProjectUrl = String(import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+const supabaseSyncfusionProxyUrl = supabaseProjectUrl
+  ? `${supabaseProjectUrl}/functions/v1/syncfusion-proxy/`
+  : '';
+
+// Servidor dedicado de documentos do Jurius (Syncfusion DocumentEditor self-hosted).
+// A Edge Function `syncfusion-proxy` apenas repassa para o endpoint público de
+// demonstração da Syncfusion, que responde 403 de forma intermitente — por isso
+// ela fica como último recurso, e nunca usamos o demo público diretamente.
+const DEFAULT_SYNCFUSION_SERVICE_URL = 'https://docs.jurius-api.com/api/documenteditor/';
+
 const SYNCFUSION_SERVICE_URL =
-  String(import.meta.env.VITE_SYNC_FUSION || '').trim() ||
-  'https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/';
+  configuredSyncfusionServiceUrl || DEFAULT_SYNCFUSION_SERVICE_URL || supabaseSyncfusionProxyUrl;
 
 const SYNCFUSION_SUPABASE_API_KEY = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
@@ -104,7 +120,7 @@ const buildDocxImportError = (error: unknown) => {
     raw.includes('ERR_FAILED')
   ) {
     return new Error(
-      'Não foi possível importar o DOCX porque o serviço de conversão bloqueou a requisição (CORS/rede). Configure `VITE_SYNC_FUSION` com um endpoint próprio do DocumentEditor acessível pelo navegador.'
+      'Não foi possível acessar o servidor dedicado de documentos (CORS/rede). Verifique a disponibilidade do `syncfusion-proxy` ou o endereço configurado em `VITE_SYNC_FUSION`.'
     );
   }
 
@@ -116,7 +132,7 @@ const buildDocxImportError = (error: unknown) => {
 
   if (message.includes('404') || raw.includes('404')) {
     return new Error(
-      'O proxy de importação do Syncfusion não foi encontrado. Verifique se a Edge Function `syncfusion-import` está publicada no Supabase ou configure `VITE_SYNC_FUSION` com um endpoint válido.'
+      'O servidor dedicado de documentos não foi encontrado. Verifique se a Edge Function `syncfusion-proxy` está publicada ou configure `VITE_SYNC_FUSION` com um endpoint válido.'
     );
   }
 
@@ -433,11 +449,12 @@ function patchContextMenuForSpellCheck(editor: any): void {
   const spellChecker = editor.spellCheckerModule ?? editor.spellChecker;
   if (!ctxModule) return;
 
-  // Só patchear uma vez
-  if ((ctxModule as any).__spellPatchApplied) return;
-  (ctxModule as any).__spellPatchApplied = true;
-
   if (typeof ctxModule.onContextMenuInternal !== 'function') return;
+  // editor.open() pode restaurar onContextMenuInternal na MESMA instância do
+  // módulo. Só consideramos o patch válido enquanto o handler instalado ainda
+  // for exatamente o handler atual.
+  const activePatchedHandler = (ctxModule as any).__spellPatchHandler;
+  if (activePatchedHandler && ctxModule.onContextMenuInternal === activePatchedHandler) return;
 
   // Helper: injeta sugestões de spell no DOM do menu já aberto.
   // Word: a palavra com erro. Suggestions: array de strings.
@@ -680,7 +697,7 @@ function patchContextMenuForSpellCheck(editor: any): void {
   };
   setupPrefetch();
 
-  ctxModule.onContextMenuInternal = function patchedOnContextMenu(event: any) {
+  const patchedOnContextMenu = function patchedOnContextMenu(event: any) {
     try {
       // 1) Abrir o menu normal IMEDIATAMENTE (sem esperar spell check)
       if (typeof ctxModule.hideSpellContextItems === 'function') {
@@ -710,6 +727,8 @@ function patchContextMenuForSpellCheck(editor: any): void {
       console.warn('[SyncfusionEditor] onContextMenuInternal erro:', err);
     }
   };
+  ctxModule.onContextMenuInternal = patchedOnContextMenu;
+  (ctxModule as any).__spellPatchHandler = patchedOnContextMenu;
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -982,6 +1001,8 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
   ) => {
     const containerRef = useRef<DocumentEditorContainerComponent | null>(null);
     const contextMenuInitRef = useRef(false);
+    const contextMenuModuleRef = useRef<any>(null);
+    const contextMenuRecoveryTimersRef = useRef<number[]>([]);
     const createdRef = useRef(false);
     const pendingActionsRef = useRef<(() => void)[]>([]);
     const scrollStabilizerCleanupRef = useRef<(() => void) | null>(null);
@@ -1287,10 +1308,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
                 editor.fitPage(pageFit as any);
               }
             }, 50);
-            setTimeout(() => {
-              try { initContextMenu(); } catch { /* ignore */ }
-              try { (editor as any).focusIn?.(); } catch { /* ignore */ }
-            }, 300);
+            scheduleContextMenuRecovery();
           } catch (err) {
             console.error('Erro ao carregar SFDT:', err);
           }
@@ -1339,11 +1357,9 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           });
           const file = new File([blob], fileName, { type: blob.type });
           await editor.open(file);
-          // Após carregar DOCX: re-registrar menu de contexto e restaurar foco
-          setTimeout(() => {
-            try { initContextMenu(); } catch { /* ignore */ }
-            try { editor.focusIn?.(); } catch { /* ignore */ }
-          }, 300);
+          // Após carregar DOCX: o Syncfusion pode recriar o menu em múltiplos
+          // ticks. A recuperação acompanha toda essa janela.
+          scheduleContextMenuRecovery();
         };
 
         if (createdRef.current && containerRef.current?.documentEditor) {
@@ -1384,7 +1400,10 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           await new Promise<void>((resolve, reject) => {
             try {
               editor.open(file);
-              window.setTimeout(() => resolve(), 150);
+              window.setTimeout(() => {
+                scheduleContextMenuRecovery();
+                resolve();
+              }, 150);
             } catch (error) {
               reject(buildDocxImportError(error));
             }
@@ -2081,14 +2100,10 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       const editor: any = containerRef.current?.documentEditor as any;
       if (!editor) return;
 
-      // Re-registra handlers e restaura foco após document load.
-      // O Syncfusion reseta customContextMenuSelect / customContextMenuBeforeOpen
-      // quando editor.open() é chamado — sem foco o clique direito não abre.
-      window.setTimeout(() => {
-        try { initContextMenu(); } catch { /* ignore */ }
-        try { patchContextMenuForSpellCheck(editor); } catch { /* ignore */ }
-        try { editor.focusIn?.(); } catch { /* ignore */ }
-      }, 250);
+      // editor.open() restaura partes do menu em momentos diferentes conforme
+      // o tamanho do arquivo. Revalidamos módulo, instância e handlers durante
+      // toda a janela de estabilização, sem depender de um único timeout.
+      scheduleContextMenuRecovery();
 
       window.setTimeout(() => {
         try {
@@ -2115,9 +2130,32 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       if (!enableCustomContextMenu || readOnly) return true;
       const editor = containerRef.current?.documentEditor as any;
       if (!editor?.contextMenu || !editor?.element?.id) return false;
+      const contextMenu = editor.contextMenu as any;
 
-      // Adiciona os itens apenas uma vez (addCustomMenu gera duplicatas se chamado de novo)
-      if (!contextMenuInitRef.current) {
+      // Alguns carregamentos substituem o módulo; outros preservam o objeto,
+      // mas recriam sua instância/handlers. Não usamos apenas um booleano React
+      // para decidir se o menu existe: validamos o estado real do Syncfusion.
+      if (contextMenuModuleRef.current !== contextMenu) {
+        contextMenuModuleRef.current = contextMenu;
+        contextMenuInitRef.current = false;
+      }
+
+      const expectedCustomIds = [
+        'crm_insert_block',
+        'crm_add_block',
+        'crm_company_lookup',
+        'crm_format_qualification',
+      ];
+      const currentCustomItems = Array.isArray(contextMenu.customMenuItems)
+        ? contextMenu.customMenuItems
+        : [];
+      const hasCurrentCustomItems = expectedCustomIds.every((expectedId) =>
+        currentCustomItems.some((item: any) => String(item?.id || '').endsWith(expectedId)),
+      );
+
+      // Recria apenas quando os itens realmente desapareceram; addCustomMenu
+      // destrói/reconstrói a instância e geraria duplicatas se chamado às cegas.
+      if (!hasCurrentCustomItems) {
         const menuItemsDef: MenuItemModel[] = [
           {
             text: 'Inserir bloco...',
@@ -2140,8 +2178,23 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             iconCss: 'e-icons e-de-copypaste',
           },
         ];
-        editor.contextMenu.addCustomMenu(menuItemsDef, false, true);
+        try {
+          contextMenu.addCustomMenu(menuItemsDef, false, true);
+          contextMenuInitRef.current = true;
+        } catch {
+          contextMenuInitRef.current = false;
+          return false;
+        }
+      } else {
         contextMenuInitRef.current = true;
+        if (!contextMenu.contextMenuInstance && typeof contextMenu.initContextMenu === 'function') {
+          // O objeto sobreviveu, mas a instância DOM foi descartada durante open().
+          try {
+            contextMenu.initContextMenu(contextMenu.locale);
+          } catch {
+            return false;
+          }
+        }
       }
 
       // Handlers são re-registrados sempre — editor.open() pode resetá-los
@@ -2302,8 +2355,52 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         }
       };
 
-      return true;
+      // O spell-checker também pode restaurar o handler nativo durante open().
+      // A função detecta se o patch atual foi substituído e o reinstala.
+      try { patchContextMenuForSpellCheck(editor); } catch { /* ignore */ }
+
+      return Boolean(contextMenu.contextMenuInstance);
     };
+
+    const scheduleContextMenuRecovery = () => {
+      contextMenuRecoveryTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      contextMenuRecoveryTimersRef.current = [0, 80, 220, 500, 900, 1500].map((delay) =>
+        window.setTimeout(() => {
+          const editor = containerRef.current?.documentEditor as any;
+          if (!editor) return;
+          try { initContextMenu(); } catch { /* tenta novamente no próximo tick */ }
+          try { patchContextMenuForSpellCheck(editor); } catch { /* ignore */ }
+          if (delay === 220) {
+            try { editor.focusIn?.(); } catch { /* ignore */ }
+          }
+        }, delay),
+      );
+    };
+
+    useEffect(() => {
+      return () => {
+        contextMenuRecoveryTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+        contextMenuRecoveryTimersRef.current = [];
+      };
+    }, []);
+
+    // Última linha de defesa: antes de cada clique direito, confirma de forma
+    // síncrona que o menu e o patch pertencem à instância atual do documento.
+    useEffect(() => {
+      if (!isCreated || !enableCustomContextMenu || readOnly) return;
+      const root = containerRef.current?.element;
+      if (!root) return;
+
+      const ensureContextMenu = () => {
+        const editor = containerRef.current?.documentEditor as any;
+        if (!editor) return;
+        try { initContextMenu(); } catch { /* ignore */ }
+        try { patchContextMenuForSpellCheck(editor); } catch { /* ignore */ }
+      };
+
+      root.addEventListener('contextmenu', ensureContextMenu, true);
+      return () => root.removeEventListener('contextmenu', ensureContextMenu, true);
+    }, [enableCustomContextMenu, isCreated, readOnly]);
 
     const handleCreated = () => {
       createdRef.current = true;

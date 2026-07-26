@@ -1,0 +1,30 @@
+{
+  "id": "/editor",
+  "name": "Editor",
+  "short_name": "Editor",
+  "start_url": "/editor",
+  "scope": "/editor",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#f97316",
+  "description": "Editor de petições — redação e formatação de petições jurídicas.",
+  "lang": "pt-BR",
+  "orientation": "landscape",
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "icons": [
+    {
+      "src": "/editor-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/editor-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

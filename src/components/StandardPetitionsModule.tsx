@@ -28,7 +28,8 @@ import { clientService } from '../services/client.service';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { ClientSearchSelect } from './ClientSearchSelect';
-import TemplateDocxEditorModal from './TemplateDocxEditorModal';
+import { openDocInEditorWindow } from '../utils/openEditorWindow';
+import { subscribeEditorDocSourceSaved } from '../utils/editorDocSourceEvents';
 import type {
   StandardPetition,
   StandardPetitionField,
@@ -98,7 +99,6 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
 
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingPetition, setEditingPetition] = useState<StandardPetition | null>(null);
-  const [docxEditingPetition, setDocxEditingPetition] = useState<StandardPetition | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -186,6 +186,16 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
       setLoading(false);
     }
   };
+
+  // O .docx é editado no EDITOR PRINCIPAL, em janela própria. Quando ele grava
+  // de volta, recarregamos a lista para refletir tamanho/data do arquivo.
+  useEffect(() => {
+    return subscribeEditorDocSourceSaved((detail) => {
+      if (detail.source.type !== 'standard-petition') return;
+      void loadPetitions();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredPetitions = useMemo(() => {
     return petitions.filter((p) => {
@@ -855,7 +865,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
                           toast.error('Esta petição não possui arquivo .docx para editar.');
                           return;
                         }
-                        setDocxEditingPetition(petition);
+                        openDocInEditorWindow({ type: 'standard-petition', petitionId: petition.id }, petition.file_name || `${petition.name}.docx`);
                       }}
                       title="Editar documento (.docx)"
                       className="inline-flex items-center justify-center rounded-lg border border-amber-200 p-2 text-amber-600 hover:bg-amber-50 dark:border-amber-900/60 dark:hover:bg-amber-950/30"
@@ -1280,18 +1290,6 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
         )}
       </Modal>
 
-      {docxEditingPetition && (
-        <TemplateDocxEditorModal
-          isOpen={!!docxEditingPetition}
-        onClose={() => setDocxEditingPetition(null)}
-        fileName={docxEditingPetition.file_name || `${docxEditingPetition.name}.docx`}
-        badge="Petição"
-        persistenceKey={`standard-petition:${docxEditingPetition.id}`}
-        load={() => standardPetitionService.downloadPetitionFile(docxEditingPetition)}
-        save={(blob) => standardPetitionService.replacePetitionContent(docxEditingPetition, blob).then(() => undefined)}
-        onSaved={() => { loadPetitions(); }}
-        />
-      )}
     </div>
   );
 };

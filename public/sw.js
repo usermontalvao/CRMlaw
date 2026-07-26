@@ -3,11 +3,15 @@
 // ⚠️ IMPORTANTE: index.html e sw.js NÃO são cacheados pelo SW.
 // O _headers do Netlify já instrui o browser a nunca cachear index.html,
 // garantindo que após novo deploy os chunks corretos sejam carregados.
-const CACHE_NAME = 'crm-cache-v8'; // Incrementar aqui a cada mudança na estratégia de cache
+const CACHE_NAME = 'crm-cache-v9'; // Incrementar aqui a cada mudança na estratégia de cache
 const PRECACHE_URLS = [
   '/manifest.webmanifest',
   '/favicon.svg',
   '/apple-touch-icon.png',
+  // App dedicado "Editor" (PWA instalável separado)
+  '/editor.webmanifest',
+  '/editor-icon-192.png',
+  '/editor-icon-512.png',
 ];
 
 // Install event — não pré-cacheia index.html para evitar stale chunks

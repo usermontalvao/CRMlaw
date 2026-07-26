@@ -3,8 +3,12 @@ import { createPortal } from 'react-dom';
 import { X, Trash2, FileText, Loader2, GripVertical, PenTool, Upload, AlertCircle, FileDown, Pencil } from 'lucide-react';
 import { saveAs } from 'file-saver';
 import { documentTemplateService } from '../services/documentTemplate.service';
+import { openDocInEditorWindow } from '../utils/openEditorWindow';
+import {
+  subscribeEditorDocSourceSaved,
+  type EditorDocSourceSavedDetail,
+} from '../utils/editorDocSourceEvents';
 import SignaturePositionDesigner from './SignaturePositionDesigner';
-import TemplateDocxEditorModal from './TemplateDocxEditorModal';
 import type { DocumentTemplate, TemplateFile, SignatureFieldConfigValue } from '../types/document.types';
 
 interface TemplateFilesManagerProps {
@@ -29,8 +33,6 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   const [draggedFileId, setDraggedFileId] = useState<string | null>(null);
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
   const [designerFileId, setDesignerFileId] = useState<string | null>(null);
-  const [editingFile, setEditingFile] = useState<TemplateFile | null>(null);
-  const [editingMain, setEditingMain] = useState(false);
   const [downloadingMain, setDownloadingMain] = useState(false);
   const [updatingMain, setUpdatingMain] = useState(false);
   const [updatingModel, setUpdatingModel] = useState(false);
@@ -68,6 +70,21 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
     }
   }, [template.id]);
 
+  const refreshDocumentsAfterEditorSave = useCallback(async () => {
+    try {
+      const [updatedTemplate, updatedFiles] = await Promise.all([
+        documentTemplateService.getTemplate(template.id),
+        documentTemplateService.listTemplateFiles(template.id),
+      ]);
+      if (updatedTemplate) setLocalTemplate(updatedTemplate);
+      setFiles(updatedFiles);
+      setError(null);
+      onUpdate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao atualizar os documentos salvos');
+    }
+  }, [onUpdate, template.id]);
+
   useEffect(() => {
     setLocalTemplate(template);
   }, [template]);
@@ -77,6 +94,29 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
       loadFiles();
     }
   }, [isOpen, loadFiles]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const sourceBelongsToCurrentTemplate = (detail: EditorDocSourceSavedDetail) => {
+      const source = detail.source;
+      if (source.type === 'template-main') {
+        return source.templateId === template.id;
+      }
+      if (source.type === 'template-file') {
+        // Há apenas um Gerenciar Documentos aberto por vez. Atualizar também
+        // cobre o caso em que o save chega antes de a lista inicial terminar de
+        // carregar e, portanto, ainda não conhecemos o fileId localmente.
+        return true;
+      }
+      return false;
+    };
+
+    return subscribeEditorDocSourceSaved((detail) => {
+      if (!sourceBelongsToCurrentTemplate(detail)) return;
+      void refreshDocumentsAfterEditorSave();
+    });
+  }, [isOpen, refreshDocumentsAfterEditorSave, template.id]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -331,7 +371,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                     )}
                   </button>
                   <button
-                    onClick={() => setEditingMain(true)}
+                    onClick={() => openDocInEditorWindow({ type: 'template-main', templateId: localTemplate.id }, localTemplate.file_name || `${localTemplate.name}.docx`)}
                     disabled={updatingMain}
                     className="p-2 hover:bg-amber-100 rounded-lg transition disabled:opacity-50"
                     title="Editar documento principal"
@@ -510,7 +550,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                       )}
                     </button>
                     <button
-                      onClick={() => setEditingFile(file)}
+                      onClick={() => openDocInEditorWindow({ type: 'template-file', fileId: file.id }, file.file_name || 'documento.docx')}
                       className="p-2 hover:bg-amber-100 rounded-lg transition"
                       title="Editar documento"
                     >
@@ -596,30 +636,6 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
         onUpdate();
       }}
     />
-    {editingFile && (
-      <TemplateDocxEditorModal
-        isOpen={!!editingFile}
-        onClose={() => setEditingFile(null)}
-        fileName={editingFile.file_name || 'documento.docx'}
-        badge="Anexo"
-        persistenceKey={`template-file:${editingFile.id}`}
-        load={() => documentTemplateService.downloadTemplateFileById(editingFile.id)}
-        save={(blob) => documentTemplateService.replaceTemplateFileContent(editingFile.id, blob).then(() => undefined)}
-        onSaved={() => { loadFiles(); onUpdate(); }}
-      />
-    )}
-    {editingMain && (
-      <TemplateDocxEditorModal
-        isOpen={editingMain}
-        onClose={() => setEditingMain(false)}
-        fileName={localTemplate.file_name || `${localTemplate.name}.docx`}
-        badge="Principal"
-        persistenceKey={`template-main:${localTemplate.id}`}
-        load={() => documentTemplateService.downloadTemplateFile(localTemplate)}
-        save={(blob) => documentTemplateService.replaceTemplateContent(localTemplate, blob).then(() => undefined)}
-        onSaved={() => { onUpdate(); }}
-      />
-    )}
     </>,
     document.body
   );

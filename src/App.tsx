@@ -108,6 +108,7 @@ import {
   PETITION_EDITOR_WIDGET_STATE_EVENT,
   PETITION_EDITOR_WIDGET_STATE_STORAGE_KEY,
 } from './utils/events';
+import { openBlankEditorWindow } from './utils/openEditorWindow';
 import { useTheme } from './contexts/ThemeContext';
 import { useSidebarMode } from './contexts/SidebarModeContext';
 import { CacheProvider } from './contexts/CacheContext';
@@ -124,6 +125,7 @@ import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
 import { DocumentRequestsTracker } from './components/DocumentRequestsTracker';
 import { DISPLAY_APP_VERSION_LABEL } from './utils/appVersion';
+import { isEditorAppLocation } from './utils/editorAppRoute';
 import { settingsService, type ModulesConfig, FLOATING_WINDOW_MODULE_DEFAULTS } from './services/settings.service';
 import { useToastContext } from './contexts/ToastContext';
 
@@ -1166,10 +1168,13 @@ const MainApp: React.FC = () => {
     return () => window.removeEventListener(PETITION_EDITOR_WIDGET_STATE_EVENT, onWidgetState as EventListener);
   }, []);
   const { user, loading: authLoading, signIn, signOut, resetPassword, isAccountBlocked } = useAuth();
-  const [minLoadingElapsed, setMinLoadingElapsed] = useState(false);
+  // No app dedicado "Editor" pulamos o mínimo cinematográfico de 2,6s do boot do
+  // CRM — o usuário quer o editor o mais rápido possível (o loader dedicado já
+  // cobre até o editor ficar pronto).
+  const [minLoadingElapsed, setMinLoadingElapsed] = useState(() => isEditorAppLocation());
   const [fontsReady, setFontsReady] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setMinLoadingElapsed(true), 2600);
+    const t = isEditorAppLocation() ? undefined : setTimeout(() => setMinLoadingElapsed(true), 2600);
     // Espera fontes carregarem para evitar FOUT/reflow na wordmark
     const anyDoc = document as unknown as { fonts?: { ready?: Promise<unknown> } };
     if (anyDoc.fonts?.ready) {
@@ -1177,7 +1182,7 @@ const MainApp: React.FC = () => {
     } else {
       setFontsReady(true);
     }
-    return () => clearTimeout(t);
+    return () => { if (t) clearTimeout(t); };
   }, []);
   const loading = authLoading || !minLoadingElapsed;
 
@@ -1186,8 +1191,14 @@ const MainApp: React.FC = () => {
   // e o mantemos até o editor abrir — evitando o flash do dashboard atrás.
   const editorDocBoot = useMemo(() => {
     try {
+      // App dedicado "Editor" (/editor ou #/editor legado): loader próprio
+      // "Abrindo editor" em vez do boot padrão do CRM, cobrindo até o editor
+      // ficar pronto — evita o flash do splash geral e do dashboard.
+      if (isEditorAppLocation()) {
+        return { active: true, name: '', title: 'Abrindo editor' };
+      }
       const match = window.location.hash.match(/editor-doc=([\w-]+)/);
-      if (!match) return { active: false, name: '' as string };
+      if (!match) return { active: false, name: '' as string, title: 'Abrindo documento' };
       let name = '';
       try {
         const raw = window.localStorage.getItem(`petition-editor-open:${match[1]}`);
@@ -1195,9 +1206,9 @@ const MainApp: React.FC = () => {
       } catch {
         // ignore
       }
-      return { active: true, name };
+      return { active: true, name, title: 'Abrindo documento' };
     } catch {
-      return { active: false, name: '' };
+      return { active: false, name: '', title: 'Abrindo documento' };
     }
   }, []);
 
@@ -2006,7 +2017,7 @@ useEffect(() => {
 
       {/* Legenda */}
       <div className="mt-7 flex flex-col items-center text-center px-6" style={{ animation: 'edl-rise .6s cubic-bezier(.16,1,.3,1) both', animationDelay: '.08s' }}>
-        <p className="text-[15px] font-semibold text-amber-50 tracking-tight">Abrindo documento</p>
+        <p className="text-[15px] font-semibold text-amber-50 tracking-tight">{editorDocBoot.title}</p>
         {editorDocBoot.name && (
           <p className="mt-1 text-amber-100/60 text-xs max-w-[300px] truncate">{editorDocBoot.name}</p>
         )}
@@ -2198,6 +2209,21 @@ useEffect(() => {
         </Suspense>
       );
     }
+  }
+
+  // Janela do app "Editor" (/editor) SEM sessão: redireciona ao login SEM apagar
+  // tokens. Apagar o token do localStorage (compartilhado) dispararia SIGNED_OUT
+  // nas outras janelas/abas — deslogando o CRM inteiro em cascata. Como uma
+  // sessão VÁLIDA sempre popula `user` (o getSession resolve antes de loading
+  // virar false), só chegamos aqui sem token de fato utilizável; a limpeza do
+  // token inválido, se necessária, acontece na rota "/" (abaixo).
+  if (!user && !loggingIn && !loggingOut && isEditorAppLocation()) {
+    window.location.replace('/');
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f8f7f5]">
+        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+      </div>
+    );
   }
 
   // Login unificado: o único login do sistema é o PortalLogin (staff + cliente).
@@ -2466,7 +2492,14 @@ useEffect(() => {
           {!permissionsLoading && canAccessModule('peticoes') && (
             <SidebarModuleBtn moduleKey="peticoes" label="Petições" Icon={FileText}
               isActive={false}
-              onClick={() => { setIsMobileNavOpen(false); events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN); }} />
+              onClick={() => {
+                setIsMobileNavOpen(false);
+                // Abre o Editor numa NOVA JANELA do navegador (janela dedicada,
+                // sem barra de abas). Mesma origem → compartilha a sessão do
+                // localStorage, então continua logado. Se o popup for bloqueado,
+                // cai no editor inline como fallback.
+                openBlankEditorWindow();
+              }} />
           )}
           {!permissionsLoading && canAccessModule('financeiro') && isModuleEnabled('financeiro') && (
             <SidebarModuleBtn moduleKey="financeiro" label="Financeiro" Icon={PiggyBank}

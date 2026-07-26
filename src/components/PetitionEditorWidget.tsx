@@ -14,11 +14,28 @@ import {
   PETITION_EDITOR_WIDGET_STATE_STORAGE_KEY as WIDGET_STATE_KEY,
 } from '../utils/events';
 import type { Client } from '../types/client.types';
+import { isEditorAppLocation } from '../utils/editorAppRoute';
+import type { EditorDocSource } from '../utils/editorDocSource';
 
 const PetitionEditorModule = lazy(() => import('./PetitionEditorModule'));
 
-// Storage keys
-const WIDGET_CLIENT_KEY = 'petition-editor-widget-client';
+/**
+ * Onde o estado do widget é persistido.
+ *
+ * - CRM (editor inline): localStorage — sobrevive a reload/reabertura do CRM.
+ * - Janela dedicada (/editor): sessionStorage — sobrevive ao RELOAD da janela,
+ *   mas é exclusivo dela. Sem isso, todas as janelas do editor (e o CRM)
+ *   compartilhariam a mesma chave: fechar a janela do editor com um template
+ *   aberto faria o CRM reabrir esse template inline no próximo carregamento, e
+ *   duas janelas do editor sobrescreveriam o estado uma da outra.
+ */
+const getWidgetStateStorage = (): Storage | null => {
+  try {
+    return isEditorAppLocation() ? window.sessionStorage : window.localStorage;
+  } catch {
+    return null;
+  }
+};
 
 export interface PetitionEditorOpenPayload {
   clientId?: string;
@@ -30,6 +47,7 @@ export interface PetitionEditorOpenPayload {
   initialDocumentName?: string;
   initialCloudFileId?: string;
   initialNextcloudPath?: string;
+  docSource?: EditorDocSource;
   openRequestId?: string;
 }
 
@@ -44,6 +62,7 @@ interface PersistedState {
   initialDocumentName?: string;
   initialCloudFileId?: string;
   initialNextcloudPath?: string;
+  docSource?: EditorDocSource;
   openRequestId?: string;
 }
 
@@ -62,7 +81,7 @@ const PetitionEditorWidget: React.FC = () => {
   // Restaurar estado do localStorage ao montar
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(WIDGET_STATE_KEY);
+      const saved = getWidgetStateStorage()?.getItem(WIDGET_STATE_KEY) ?? null;
       if (saved) {
         const parsed: PersistedState = JSON.parse(saved);
         // Restaurar estado minimizado ou aberto
@@ -71,7 +90,7 @@ const PetitionEditorWidget: React.FC = () => {
           // Restaurar payload se existir. Inclui documentos do Nextcloud, que
           // só guardam o caminho (a object URL do blob morre no reload e é
           // reaberta pelo editor a partir de initialNextcloudPath).
-          if (parsed.clientId || parsed.petitionId || parsed.initialNextcloudPath || parsed.initialDocumentUrl || parsed.initialDocumentBase64) {
+          if (parsed.clientId || parsed.petitionId || parsed.initialNextcloudPath || parsed.initialDocumentUrl || parsed.initialDocumentBase64 || parsed.docSource) {
             setPendingPayload({
               clientId: parsed.clientId,
               petitionId: parsed.petitionId,
@@ -81,6 +100,7 @@ const PetitionEditorWidget: React.FC = () => {
               initialDocumentName: parsed.initialDocumentName,
               initialCloudFileId: parsed.initialCloudFileId,
               initialNextcloudPath: parsed.initialNextcloudPath,
+              docSource: parsed.docSource,
               openRequestId: parsed.openRequestId,
             });
           }
@@ -108,9 +128,10 @@ const PetitionEditorWidget: React.FC = () => {
         initialDocumentName: pendingPayload?.initialDocumentName,
         initialCloudFileId: pendingPayload?.initialCloudFileId,
         initialNextcloudPath: pendingPayload?.initialNextcloudPath,
+        docSource: pendingPayload?.docSource,
         openRequestId: pendingPayload?.openRequestId,
       };
-      localStorage.setItem(WIDGET_STATE_KEY, JSON.stringify(toSave));
+      getWidgetStateStorage()?.setItem(WIDGET_STATE_KEY, JSON.stringify(toSave));
     } catch (e) {
       console.warn('Erro ao salvar estado do widget:', e);
     }
@@ -227,6 +248,18 @@ const PetitionEditorWidget: React.FC = () => {
     }
   }, [handleOpen]);
 
+  // App dedicado "Editor" (PWA instalável, start_url = /editor): ao montar nesta
+  // rota, abrimos o editor automaticamente e o marcamos como janela dedicada.
+  // Usamos o CAMINHO /editor (não hash) para o PWA ter escopo próprio. NÃO
+  // alteramos a URL — assim um reload (ou reabrir o app instalado) sempre reabre
+  // o editor. Se houver um rascunho restaurado do localStorage, ele é mantido;
+  // senão, abre em branco.
+  useEffect(() => {
+    if (!isEditorAppLocation()) return;
+    openedAsDedicatedTabRef.current = true;
+    setWidgetState('open');
+  }, []);
+
   // Callback para o editor informar mudanças não salvas
   const handleUnsavedChanges = useCallback((hasChanges: boolean) => {
     setHasUnsavedChanges(hasChanges);
@@ -270,10 +303,12 @@ const PetitionEditorWidget: React.FC = () => {
               initialDocumentName={pendingPayload?.initialDocumentName}
               initialCloudFileId={pendingPayload?.initialCloudFileId}
               initialNextcloudPath={pendingPayload?.initialNextcloudPath}
+              initialDocSource={pendingPayload?.docSource}
               initialDocumentRequestId={pendingPayload?.openRequestId}
               onUnsavedChanges={handleUnsavedChanges}
               onRequestClose={handleClose}
               onRequestMinimize={handleMinimize}
+              hideMinimize={isEditorAppLocation()}
             />
           </Suspense>
         </div>

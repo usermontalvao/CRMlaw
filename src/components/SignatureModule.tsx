@@ -1486,17 +1486,28 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       let ghost: HTMLElement;
 
       if (sourceElement) {
-        ghost = sourceElement.cloneNode(true) as HTMLElement;
+        const previewScale = Math.min(0.6, 280 / Math.max(sourceElement.offsetWidth, 1));
+        const preview = sourceElement.cloneNode(true) as HTMLElement;
+        ghost = document.createElement('div');
         ghost.style.position = 'fixed';
         ghost.style.top = '0px';
         ghost.style.left = '0px';
-        ghost.style.transform = 'translate(-9999px, -9999px) rotate(-2deg)';
-        ghost.style.width = `${sourceElement.offsetWidth}px`;
-        ghost.style.height = `${sourceElement.offsetHeight}px`;
+        ghost.style.transform = 'translate(-9999px, -9999px)';
+        ghost.style.width = `${sourceElement.offsetWidth * previewScale}px`;
+        ghost.style.height = `${sourceElement.offsetHeight * previewScale}px`;
+        ghost.style.overflow = 'hidden';
+        ghost.style.borderRadius = '10px';
         ghost.style.pointerEvents = 'none';
         ghost.style.zIndex = '999999';
-        ghost.style.opacity = '0.95';
-        ghost.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.4)';
+        ghost.style.opacity = '0.2';
+        ghost.style.boxShadow = '0 12px 24px -14px rgba(0, 0, 0, 0.2)';
+
+        preview.style.width = `${sourceElement.offsetWidth}px`;
+        preview.style.height = `${sourceElement.offsetHeight}px`;
+        preview.style.transform = `scale(${previewScale})`;
+        preview.style.transformOrigin = 'top left';
+        preview.style.pointerEvents = 'none';
+        ghost.appendChild(preview);
       } else {
         ghost = document.createElement('div');
         ghost.style.position = 'fixed';
@@ -1505,7 +1516,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         ghost.style.transform = 'translate(-9999px, -9999px)';
         ghost.style.padding = '10px 12px';
         ghost.style.borderRadius = '14px';
-        ghost.style.background = 'rgba(15, 23, 42, 0.92)';
+        ghost.style.background = 'rgba(15, 23, 42, 0.38)';
         ghost.style.color = 'white';
         ghost.style.fontSize = '12px';
         ghost.style.fontWeight = '600';
@@ -1522,8 +1533,8 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       document.body.appendChild(ghost);
       dragImageElRef.current = ghost as HTMLDivElement;
 
-      const offsetX = sourceElement ? sourceElement.offsetWidth / 2 : 16;
-      const offsetY = sourceElement ? sourceElement.offsetHeight / 2 : 14;
+      const offsetX = sourceElement ? ghost.offsetWidth / 2 : 16;
+      const offsetY = sourceElement ? ghost.offsetHeight / 2 : 14;
       e.dataTransfer.setDragImage(ghost, offsetX, offsetY);
     } catch {
       // ignore
@@ -4544,7 +4555,17 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
         <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
           {/* Pastas — abas lado a lado (mesmo estilo das abas de status). Arrastar documento -> aba move. */}
-          <div className="flex items-center justify-between gap-3 rounded-xl bg-[#f8f7f5] px-2 py-1.5" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.04)' }}>
+          <div
+            className={`sticky top-0 z-20 flex items-center justify-between gap-3 rounded-xl bg-[#f8f7f5]/95 px-2 py-1.5 backdrop-blur-md transition-shadow ${
+              isDraggingExplorer && draggingExplorer?.type === 'item' ? 'shadow-lg' : ''
+            }`}
+            style={{
+              border: '1px solid #e2e8f0',
+              boxShadow: isDraggingExplorer && draggingExplorer?.type === 'item'
+                ? '0 14px 30px rgba(15,23,42,0.14), 0 2px 8px rgba(15,23,42,0.08)'
+                : '0 4px 12px rgba(15,23,42,0.08)',
+            }}
+          >
             <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide min-w-0 py-0.5">
               {[{ id: null as string | null, label: 'Caixa de Entrada', count: rootItemCount, parentId: null as string | null }]
                 .concat(orderedFolders.map((f) => ({ id: f.id, label: f.name, count: folderItemCountById.get(f.id) ?? 0, parentId: f.parent_id ?? null })))

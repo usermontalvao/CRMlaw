@@ -44,70 +44,81 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onDismiss }) => {
     switch (toast.type) {
       case 'success':
         return (
-          <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
-            <CheckCircle className="w-5 h-5 text-white" />
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-600">
+            <CheckCircle className="h-[18px] w-[18px]" />
           </div>
         );
       case 'error':
         return (
-          <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
-            <XCircle className="w-5 h-5 text-white" />
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600">
+            <XCircle className="h-[18px] w-[18px]" />
           </div>
         );
       case 'warning':
         return (
-          <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
-            <AlertCircle className="w-5 h-5 text-white" />
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600">
+            <AlertCircle className="h-[18px] w-[18px]" />
           </div>
         );
       case 'info':
         return (
-          <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
-            <Info className="w-5 h-5 text-white" />
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-blue-50 text-[#185abd]">
+            <Info className="h-[18px] w-[18px]" />
           </div>
         );
       case 'loading':
         return (
-          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
-            <Loader2 className="w-5 h-5 text-slate-600 animate-spin" />
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+            <Loader2 className="h-[18px] w-[18px] animate-spin" />
           </div>
         );
       case 'whatsapp':
         return (
-          <div className="w-9 h-9 rounded-full bg-[#25D366] flex items-center justify-center flex-shrink-0 shadow-sm">
-            <MessageCircle className="w-5 h-5 text-white" fill="white" />
+          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#1da851]">
+            <MessageCircle className="h-[18px] w-[18px]" />
           </div>
         );
     }
   };
 
   const getStyles = () => {
-    if (toast.type === 'whatsapp') {
-      return 'bg-white shadow-lg rounded-xl border border-[#e7e5df] border-l-4 border-l-[#25D366]';
+    switch (toast.type) {
+      case 'success':
+        return 'border-l-emerald-500';
+      case 'error':
+        return 'border-l-red-500';
+      case 'warning':
+        return 'border-l-amber-500';
+      case 'info':
+        return 'border-l-[#185abd]';
+      case 'loading':
+        return 'border-l-slate-400';
+      case 'whatsapp':
+        return 'border-l-[#25D366]';
     }
-    return 'bg-white shadow-lg rounded-lg border border-[#e7e5df]';
   };
 
   return (
     <div
-      className={`${getStyles()} mb-2 w-[min(100vw-24px,22rem)] p-3 transition-all duration-300 ${
-        isExiting ? 'opacity-0 transform translate-x-4' : 'opacity-100 transform translate-x-0'
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      className={`${getStyles()} pointer-events-auto relative mb-2 w-[min(calc(100vw-24px),25rem)] overflow-hidden rounded-lg border border-l-[3px] border-slate-200 bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] transition-all duration-300 ${
+        isExiting ? 'translate-y-3 scale-[0.98] opacity-0' : 'translate-y-0 scale-100 opacity-100'
       }`}
       style={{
-        animation: isExiting ? 'none' : 'slideInRight 0.3s ease-out',
+        animation: isExiting ? 'none' : 'toastIn 0.24s cubic-bezier(.2,.8,.2,1)',
       }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         {getIcon()}
         <div className="flex-1 min-w-0">
-          <p className={`text-sm text-slate-900 truncate ${toast.type === 'whatsapp' ? 'font-bold' : 'font-medium'}`}>{toast.message}</p>
+          <p className="text-[13px] font-semibold leading-5 text-slate-800">{toast.message}</p>
           {toast.description && (
-            <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{toast.description}</p>
+            <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-slate-500">{toast.description}</p>
           )}
           {toast.action && (
             <button
               onClick={toast.action.onClick}
-              className={`text-xs font-semibold mt-1.5 ${toast.type === 'whatsapp' ? 'text-[#1da851] hover:text-[#15803d]' : 'text-blue-600 hover:text-blue-700'}`}
+              className={`mt-1.5 text-[11px] font-semibold ${toast.type === 'whatsapp' ? 'text-[#1da851] hover:text-[#15803d]' : 'text-[#185abd] hover:text-[#124b9d]'}`}
             >
               {toast.action.label}
             </button>
@@ -116,12 +127,19 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onDismiss }) => {
         {toast.type !== 'loading' && (
           <button
             onClick={handleDismiss}
-            className="text-slate-400 hover:text-slate-600 transition flex-shrink-0 p-1 hover:bg-slate-100 rounded"
+            className="flex-shrink-0 rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Fechar notificação"
           >
-            <X className="w-4 h-4" />
+            <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
+      {toast.type !== 'loading' && toast.duration && toast.duration > 0 && (
+        <div
+          className="absolute inset-x-0 bottom-0 h-0.5 origin-left bg-current opacity-20"
+          style={{ animation: `toastProgress ${toast.duration}ms linear forwards` }}
+        />
+      )}
     </div>
   );
 };
@@ -136,29 +154,33 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
     <>
       <style>
         {`
-          @keyframes slideInRight {
+          @keyframes toastIn {
             from {
-              transform: translateX(110%);
+              transform: translateY(12px) scale(.98);
               opacity: 0;
             }
             to {
-              transform: translateX(0);
+              transform: translateY(0) scale(1);
               opacity: 1;
             }
           }
 
-          @keyframes shrink {
+          @keyframes toastProgress {
             from {
-              width: 100%;
+              transform: scaleX(1);
             }
             to {
-              width: 0%;
+              transform: scaleX(0);
             }
           }
         `}
       </style>
-      <div className="fixed top-4 right-4 z-[2147483647] max-w-[calc(100vw-24px)] px-0 pointer-events-none">
-        <div className="pointer-events-auto flex flex-col items-end">
+      <div
+        aria-live="polite"
+        aria-atomic="false"
+        className="pointer-events-none fixed inset-x-0 bottom-11 z-[2147483647] flex justify-center px-3"
+      >
+        <div className="flex max-w-full flex-col items-center">
           {toasts.map((toast) => (
             <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
           ))}

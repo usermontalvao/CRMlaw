@@ -58,6 +58,7 @@ import { settingsService } from '../services/settings.service';
 import { aiService } from '../services/ai.service';
 import { cloudService } from '../services/cloud.service';
 import { nextcloudService } from '../services/nextcloud.service';
+import { type EditorDocSource, loadEditorDocSource, saveEditorDocSource, editorDocSourceSavedLabel, editorDocSourceKey } from '../utils/editorDocSource';
 import {
   documentEditHistoryService,
   type DocumentEditHistoryEntry,
@@ -492,7 +493,7 @@ const EDITOR_STYLES = `
     min-width: 0 !important;
     max-width: 100% !important;
     overflow: auto !important;
-    background: #ffffff !important;
+    background: #eef0f3 !important;
   }
 
   /* Viewer interno */
@@ -520,12 +521,16 @@ const EDITOR_STYLES = `
   }
 
   #petition-main-editor [id$="_viewerContainer"] {
-    background: #ffffff !important;
+    background: #eef0f3 !important;
   }
 
   #petition-main-editor .e-de-background {
-    background: #ffffff !important;
+    background: #eef0f3 !important;
     min-height: 100% !important;
+  }
+
+  #petition-main-editor .e-de-background canvas {
+    filter: drop-shadow(0 2px 5px rgba(15, 23, 42, 0.16));
   }
 
   .syncfusion-editor-wrapper .e-de-page-container {
@@ -1255,6 +1260,80 @@ const EDITOR_STYLES = `
     width: 16px; border-radius: 0; color: #98a2b3; background: transparent;
   }
   .petition-sidebar-category-count { color: #98a2b3; font-weight: 600; }
+
+  /* V3 — densidade de painel lateral do Word, sem cartões ou focos excessivos. */
+  .petition-sidebar-category-button {
+    min-height: 36px !important;
+    padding: 0 10px !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: none !important;
+    box-shadow: none !important;
+    font-size: 10.5px !important;
+  }
+  .petition-sidebar-category-button:focus,
+  .petition-sidebar-category-button:focus-visible {
+    outline: none !important;
+    box-shadow: inset 2px 0 0 #2563eb !important;
+    background: #f5f8fc !important;
+  }
+  .petition-sidebar-category-chevron {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  .petition-sidebar-block {
+    min-height: 38px;
+    margin: 1px 0;
+    padding: 6px 7px !important;
+    border: 0 !important;
+    border-radius: 4px !important;
+    outline: none !important;
+  }
+  .petition-sidebar-block:hover {
+    border: 0 !important;
+    background: #f3f6fa !important;
+    box-shadow: none !important;
+  }
+  .petition-sidebar-block-icon {
+    width: 22px !important;
+    height: 22px !important;
+    border-radius: 4px !important;
+    color: #7c8797 !important;
+    background: transparent !important;
+  }
+  .petition-sidebar-block:hover .petition-sidebar-block-icon {
+    color: #185abd !important;
+    background: #eaf2fd !important;
+  }
+  .petition-sidebar-block [class~="text-[12px]"] {
+    font-size: 11px !important;
+    font-weight: 550 !important;
+  }
+  .petition-sidebar-block button {
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 !important;
+  }
+  .petition-sidebar-block-tags {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 17px;
+    margin: 1px 0 0 30px;
+    overflow: hidden;
+  }
+  .petition-sidebar-block-tags > span {
+    max-width: 150px !important;
+    padding: 1px 5px !important;
+    border-color: #e1e6ed !important;
+    border-radius: 3px !important;
+    background: #f4f6f8 !important;
+    font-size: 8.5px !important;
+    line-height: 13px !important;
+  }
   body.petition-dark .petition-sidebar-header .petition-sidebar-tabs { background: transparent; }
   body.petition-dark .petition-sidebar-tab:hover { background: transparent; }
   body.petition-dark .petition-sidebar-tab.is-active { color: #93c5fd; background: transparent; }
@@ -1459,11 +1538,18 @@ interface PetitionEditorModuleProps {
   /** Caminho no Nextcloud (relativo à raiz). Quando presente, o documento é
    *  salvo de volta no Nextcloud em vez de criar registro de petição. */
   initialNextcloudPath?: string;
+  /** Origem externa (template principal/anexo, petição padrão, …): quando
+   *  presente, o documento é carregado dessa origem e o "Salvar" grava de volta
+   *  NELA, sem criar petição. Ver src/utils/editorDocSource.ts. */
+  initialDocSource?: EditorDocSource;
   initialDocumentRequestId?: string;
   onUnsavedChanges?: (hasChanges: boolean) => void;
   onWidgetInfoChange?: (payload: { lastSaved: Date | null; selectedClient: Client | null }) => void;
   onRequestClose?: () => void;
   onRequestMinimize?: () => void;
+  /** Oculta (só visualmente) o botão Minimizar — usado na janela dedicada do
+   *  Editor, onde minimizar não faz sentido (usa-se a janela do SO). */
+  hideMinimize?: boolean;
 }
 
 type LocalPetitionDraft = {
@@ -1500,11 +1586,13 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   initialDocumentName,
   initialCloudFileId,
   initialNextcloudPath,
+  initialDocSource,
   initialDocumentRequestId,
   onUnsavedChanges,
   onWidgetInfoChange,
   onRequestClose,
   onRequestMinimize,
+  hideMinimize = false,
 }) => {
   const { user } = useAuth();
   const { confirmDelete, notifyDeleted } = useDeleteConfirm();
@@ -1533,7 +1621,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     'Usuario';
 
   const userDisplayName = formatUserDisplayName(rawUserDisplayName) || 'Usuario';
-  const isCloudImportMode = isFloatingWidget && Boolean(initialDocumentBase64 || initialDocumentUrl || initialNextcloudPath);
+  const isCloudImportMode = isFloatingWidget && Boolean(initialDocumentBase64 || initialDocumentUrl || initialNextcloudPath || initialDocSource);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -1551,7 +1639,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [documentImportLoading, setDocumentImportLoading] = useState(false);
 
   // Sidebar
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [findReplaceMode, setFindReplaceMode] = useState<'find' | 'replace' | null>(null);
   const [sidebarTab, setSidebarTab] = useState<'blocks' | 'clients'>('blocks');
   const [activeWorkspace, setActiveWorkspace] = useState<'editor' | 'blocks'>('editor');
@@ -1643,6 +1731,19 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const saveInFlightRef = useRef(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showUnsavedHomeDialog, setShowUnsavedHomeDialog] = useState(false);
+
+  useEffect(() => {
+    if (!showUnsavedHomeDialog) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setShowUnsavedHomeDialog(false);
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showUnsavedHomeDialog]);
+
   const [isOnline, setIsOnline] = useState(() => {
     try {
       return typeof navigator !== 'undefined' ? navigator.onLine : true;
@@ -1742,7 +1843,16 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     if (reconnectFailedTimerRef.current) window.clearTimeout(reconnectFailedTimerRef.current);
   }, []);
   const [openingPetitionId, setOpeningPetitionId] = useState<string | null>(null);
+  const openingResetTimeoutRef = useRef<number | null>(null);
   const [pendingPetitionLoadKey, setPendingPetitionLoadKey] = useState(0);
+
+  useEffect(() => {
+    return () => {
+      if (openingResetTimeoutRef.current) {
+        window.clearTimeout(openingResetTimeoutRef.current);
+      }
+    };
+  }, []);
   const editorRef = useRef<SyncfusionEditorRef>(null);
   const blockConvertEditorRef = useRef<SyncfusionEditorRef>(null);
   const [editorReady, setEditorReady] = useState(false);
@@ -1772,26 +1882,38 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const isOnlineRef = useRef(true);
   const serverReachableRef = useRef(true);
   const realtimeRefreshTimerRef = useRef<number | null>(null);
+  // Escopo do documento aberto (Nextcloud ou origem externa). Isola rascunho
+  // local e posição do cursor POR DOCUMENTO: sem isso, editar um template
+  // gravaria o rascunho na mesma chave da petição comum — e salvar o template
+  // apagaria o rascunho da petição do usuário.
+  const documentScopeKey = useMemo(
+    () => {
+      if (initialNextcloudPath) return `nextcloud:${encodeURIComponent(initialNextcloudPath)}`;
+      if (initialDocSource) return `src:${encodeURIComponent(editorDocSourceKey(initialDocSource))}`;
+      return null;
+    },
+    [initialNextcloudPath, initialDocSource],
+  );
+
   const localDraftStorageKey = useMemo(
     () => {
       const owner = user?.id || 'anon';
-      const documentScope = initialNextcloudPath
-        ? `:nextcloud:${encodeURIComponent(initialNextcloudPath)}`
-        : '';
-      return `${PETITION_LOCAL_DRAFT_STORAGE_KEY_PREFIX}${owner}${documentScope}`;
+      return `${PETITION_LOCAL_DRAFT_STORAGE_KEY_PREFIX}${owner}${documentScopeKey ? `:${documentScopeKey}` : ''}`;
     },
-    [initialNextcloudPath, user?.id],
+    [documentScopeKey, user?.id],
   );
 
-  // Chave (localStorage) da última posição de leitura/edição por arquivo do
-  // Nextcloud — usada para reabrir exatamente onde o usuário parou, sem voltar
-  // ao topo. Só existe quando o documento veio do Nextcloud.
+  // Chave (localStorage) da última posição de leitura/edição por documento —
+  // usada para reabrir exatamente onde o usuário parou, sem voltar ao topo. Só
+  // existe quando o documento veio de uma origem externa (Nextcloud/template/…).
   const cursorPositionStorageKey = useMemo(
-    () =>
-      initialNextcloudPath
-        ? `petition-editor-pos:${user?.id || 'anon'}:${encodeURIComponent(initialNextcloudPath)}`
-        : null,
-    [initialNextcloudPath, user?.id],
+    () => {
+      const owner = user?.id || 'anon';
+      // Formato legado do Nextcloud mantido: já existem posições salvas assim.
+      if (initialNextcloudPath) return `petition-editor-pos:${owner}:${encodeURIComponent(initialNextcloudPath)}`;
+      return documentScopeKey ? `petition-editor-pos:${owner}:${documentScopeKey}` : null;
+    },
+    [documentScopeKey, initialNextcloudPath, user?.id],
   );
   const cursorPersistTimerRef = useRef<number | null>(null);
 
@@ -1806,6 +1928,11 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // Caminho de origem no Nextcloud (quando o doc veio do módulo Nextcloud).
   const sourceNextcloudPathRef = useRef<string | null>(initialNextcloudPath ?? null);
   useEffect(() => { sourceNextcloudPathRef.current = initialNextcloudPath ?? null; }, [initialNextcloudPath]);
+
+  // Origem externa (template/petição padrão/…). Quando presente, salvar grava
+  // de volta NELA — nunca cria petição. Ver src/utils/editorDocSource.ts.
+  const docSourceRef = useRef<EditorDocSource | null>(initialDocSource ?? null);
+  useEffect(() => { docSourceRef.current = initialDocSource ?? null; }, [initialDocSource]);
 
   // Presença de edição: enquanto um doc do Nextcloud está aberto, registra um
   // "lock" (heartbeat) para que os outros vejam quem está editando. Libera ao
@@ -1886,7 +2013,45 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     });
   };
 
+  // Abrir um documento dispara `contentChange` várias vezes DEPOIS que o load
+  // termina: aplicação da fonte padrão (+180ms), margens/fitPage aplicados pelo
+  // SyncfusionEditor no `documentChange` e a repaginação do layout. Sem uma
+  // janela de acomodação, um documento recém-aberto e intocado já aparecia como
+  // "Alterações pendentes".
+  const DOCUMENT_SETTLE_MS = 3000;
+  const DOCUMENT_LOAD_GUARD_MS = 30000;
+  const settleWindowStartRef = useRef(0);
+  const settleWindowEndRef = useRef(0);
+  const lastUserInputAtRef = useRef(0);
+
+  const beginDocumentSettleWindow = useCallback((settleMs: number = DOCUMENT_SETTLE_MS) => {
+    const now = Date.now();
+    settleWindowStartRef.current = now;
+    settleWindowEndRef.current = now + settleMs;
+  }, []);
+
+  const isProgrammaticContentChange = useCallback(() => {
+    if (Date.now() >= settleWindowEndRef.current) return false;
+    // Apenas entradas que podem alterar conteúdo quebram a proteção. Um clique
+    // para selecionar texto, fechar o editor ou usar a navegação não é edição.
+    return lastUserInputAtRef.current < settleWindowStartRef.current;
+  }, []);
+
+  useEffect(() => {
+    const markUserInput = () => {
+      lastUserInputAtRef.current = Date.now();
+    };
+    const events: Array<keyof DocumentEventMap> = ['beforeinput', 'keydown', 'paste', 'cut', 'drop'];
+    events.forEach((event) => document.addEventListener(event, markUserInput, true));
+    return () => {
+      events.forEach((event) => document.removeEventListener(event, markUserInput, true));
+    };
+  }, []);
+
   const captureAndApplyDocFontSoon = (editor: SyncfusionEditorRef) => {
+    // Todo carregamento programático de documento passa por aqui: é o ponto
+    // certo para abrir a janela de acomodação pós-load.
+    beginDocumentSettleWindow();
     window.setTimeout(() => {
       try {
         editor.moveToDocumentStart?.();
@@ -1972,6 +2137,16 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     const draft = loadLocalDraftFromStorage();
     if (!draft) return false;
 
+    // Uma detecção falsa de alteração em versões anteriores podia gravar como
+    // rascunho exatamente o mesmo SFDT recém-aberto. Não restauramos nem
+    // sinalizamos pendência quando não há diferença real de conteúdo.
+    const openedContent = String(editor.getSfdt?.() || '').trim();
+    const draftContent = String(draft.content || '').trim();
+    if (openedContent && openedContent === draftContent) {
+      clearLocalDraft();
+      return false;
+    }
+
     await Promise.resolve(editor.loadSfdt(draft.content));
     editor.focus();
     setRestorableLocalDraft(draft);
@@ -1980,7 +2155,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     setHasUnsavedChanges(true);
     showSuccessMessage('Rascunho local recuperado. Clique em Salvar para atualizar o arquivo no Nextcloud.');
     return true;
-  }, [loadLocalDraftFromStorage]);
+  }, [clearLocalDraft, loadLocalDraftFromStorage]);
 
   // Guarda a posição atual do cursor (índice hierárquico do Syncfusion, ex.:
   // "3;0;12") para reabrir o documento exatamente onde o usuário parou.
@@ -2304,6 +2479,17 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [blockViewUseFallback, setBlockViewUseFallback] = useState(false);
   const [blockViewDocxLoading, setBlockViewDocxLoading] = useState(false);
   const [blockViewDocxError, setBlockViewDocxError] = useState('');
+
+  useEffect(() => {
+    if (!showBlockSearchModal) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setShowBlockSearchModal(false);
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showBlockSearchModal]);
 
   useEffect(() => {
     if (!showBlockSearchModal) return;
@@ -2664,6 +2850,31 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
     setShowBlockModal(true);
   };
+
+  const closeBlockView = useCallback(() => {
+    blockViewDocxTokenRef.current += 1;
+    setShowBlockViewModal(false);
+    setViewingBlock(null);
+    setViewingBlockMatchPct(null);
+    setBlockViewFallbackText('');
+    setBlockViewUseFallback(false);
+    setBlockViewDocxError('');
+    setBlockViewDocxLoading(false);
+    if (blockViewDocxContainerRef.current) {
+      blockViewDocxContainerRef.current.innerHTML = '';
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showBlockViewModal) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeBlockView();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [closeBlockView, showBlockViewModal]);
 
   const openViewBlock = (block: PetitionBlock, matchPct?: number) => {
     const token = (blockViewDocxTokenRef.current += 1);
@@ -3201,7 +3412,7 @@ Regras:
   // Modal fullscreen
   const [isFullscreen, setIsFullscreen] = useState(true);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [showStartScreen, setShowStartScreen] = useState<boolean>(() => isFloatingWidget && !initialPetitionId && !initialDocumentBase64 && !initialDocumentUrl && !initialNextcloudPath);
+  const [showStartScreen, setShowStartScreen] = useState<boolean>(() => isFloatingWidget && !initialPetitionId && !initialDocumentBase64 && !initialDocumentUrl && !initialNextcloudPath && !initialDocSource);
 
   // Modo escuro do editor (estilo Word). Fonte unica de verdade: alterna a
   // classe `petition-dark` no <body> (cobre a faixa, o chrome do Syncfusion e
@@ -3266,9 +3477,11 @@ Regras:
   const savePetition = async () => {
     const startSeq = contentChangeSeqRef.current;
     const nextcloudPath = sourceNextcloudPathRef.current;
+    const docSource = docSourceRef.current;
     // Regra: salvar apenas documentos vinculados a cliente — exceto quando o
-    // documento veio do Nextcloud (salvamos de volta no servidor, sem petição).
-    if (!selectedClient?.id && !nextcloudPath) {
+    // documento veio do Nextcloud ou de uma ORIGEM EXTERNA (template/petição
+    // padrão/…): salvamos de volta na origem, sem criar petição.
+    if (!selectedClient?.id && !nextcloudPath && !docSource) {
       if (initialClientId) {
         return;
       }
@@ -3303,7 +3516,16 @@ Regras:
       const clientId = selectedClient?.id || null;
       const clientName = selectedClient?.full_name || null;
 
-      if (nextcloudPath) {
+      if (docSource) {
+        // Origem externa: exporta e grava de volta na origem, sem petição.
+        const exportedName = initialDocumentName || `${title}.docx`;
+        const fileName = exportedName.endsWith('.docx') ? exportedName : `${exportedName}.docx`;
+        const blob = await editor.exportDocx(fileName);
+        if (!blob.size) {
+          throw new Error('O documento exportado veio vazio (0 bytes). Nada foi salvo.');
+        }
+        await saveEditorDocSource(docSource, blob, fileName);
+      } else if (nextcloudPath) {
         // Origem Nextcloud: salva de volta no servidor, sem criar petição.
         const exportedName = initialDocumentName || `${title}.docx`;
         const blob = await editor.exportDocx(exportedName.endsWith('.docx') ? exportedName : `${exportedName}.docx`);
@@ -3383,7 +3605,7 @@ Regras:
       setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
       setLastSaved(new Date());
       clearLocalDraft();
-      showSuccessMessage(nextcloudPath ? 'Documento salvo no Nextcloud' : 'Documento salvo com sucesso');
+      showSuccessMessage(docSource ? editorDocSourceSavedLabel(docSource) : nextcloudPath ? 'Documento salvo no Nextcloud' : 'Documento salvo com sucesso');
     } catch (err) {
       console.error('Erro ao salvar:', err);
       setError(err instanceof Error ? err.message : 'Erro ao salvar documento');
@@ -3499,6 +3721,7 @@ Regras:
   const loadPetition = async (petition: SavedPetition) => {
     if (isLoadingPetitionRef.current) return;
     isLoadingPetitionRef.current = true;
+    beginDocumentSettleWindow(DOCUMENT_LOAD_GUARD_MS);
     setOpeningPetitionId(petition.id);
 
     let petitionToLoad = petition;
@@ -3550,6 +3773,7 @@ Regras:
       try {
         await editor.loadSfdt(petitionToLoad.content);
         captureAndApplyDocFontSoon(editor);
+        setHasUnsavedChanges(false);
         setShowStartScreen(false);
       } catch (err) {
         console.error('Erro ao carregar conteudo:', err);
@@ -3582,6 +3806,7 @@ Regras:
         if (petition.content) {
           await editor.loadSfdt(petition.content);
           captureAndApplyDocFontSoon(editor);
+          setHasUnsavedChanges(false);
           showSuccessMessage('Documento carregado');
         }
       } catch (err) {
@@ -3601,6 +3826,7 @@ Regras:
   const newPetition = (options?: { keepClient?: boolean }) => {
     const editor = editorRef.current;
     if (editor) {
+      beginDocumentSettleWindow();
       editor.clear();
       const f = defaultDocFontRef.current;
       if (f) {
@@ -3664,6 +3890,7 @@ Regras:
   const handleImportTemplate = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const replacingSavedDocument = Boolean(currentPetitionIdRef.current);
 
     try {
       const editor = editorRef.current;
@@ -3672,9 +3899,14 @@ Regras:
         return;
       }
 
+      beginDocumentSettleWindow(DOCUMENT_LOAD_GUARD_MS);
       const arrayBuffer = await file.arrayBuffer();
       await loadDocxWithFallback(editor, arrayBuffer, file.name);
       captureAndApplyDocFontSoon(editor);
+      // Abrir um arquivo a partir da tela inicial estabelece uma nova linha de
+      // base limpa. Se já havia uma petição salva aberta, a importação substitui
+      // seu conteúdo e deve continuar sendo tratada como alteração.
+      setHasUnsavedChanges(replacingSavedDocument);
 
       try {
         // Importar um documento no editor NAO deve alterar o modelo padrao global.
@@ -3995,6 +4227,9 @@ Regras:
     refreshDocStatus();
     scheduleWordCount();
     if (isLoadingPetitionRef.current) return;
+    // Ajustes automáticos logo após abrir o documento (fonte padrão, margens,
+    // repaginação) não são edição do usuário — não marcam alterações pendentes.
+    if (isProgrammaticContentChange()) return;
     // Marcar o documento como alterado antes de qualquer validação de conectividade.
     // Se a conexão cair no meio da edição, o navegador ainda precisa bloquear a saída.
     contentChangeSeqRef.current += 1;
@@ -4319,9 +4554,57 @@ Regras:
     return null;
   };
 
+  // editor.open() resolve assim que o DOCX vira modelo interno, mas o Syncfusion
+  // ainda pagina e pinta o conteúdo depois. Sem esperar por isso, o overlay
+  // "Preparando documento" sumia cedo demais e o usuário via o editor em branco
+  // por alguns instantes. Aqui aguardamos a paginação estabilizar (documentos
+  // grandes paginam em etapas) e um frame de pintura antes de liberar.
+  const waitForDocumentRendered = async (
+    editor: SyncfusionEditorRef,
+    maxWaitMs = 15000,
+    intervalMs = 120,
+  ) => {
+    const startedAt = Date.now();
+    let lastPageCount = -1;
+    let stableTicks = 0;
+
+    while (Date.now() - startedAt < maxWaitMs) {
+      const instance = (editor as any)?.getEditor?.();
+      const viewer = instance?.documentHelper ?? instance?.viewer;
+      const pageCount = Number(instance?.pageCount ?? 0);
+      const renderedPages = Number(viewer?.pages?.length ?? 0);
+
+      if (pageCount > 0 && renderedPages > 0) {
+        if (pageCount === lastPageCount) {
+          stableTicks += 1;
+          if (stableTicks >= 2) break;
+        } else {
+          stableTicks = 0;
+        }
+        lastPageCount = pageCount;
+      }
+
+      await new Promise<void>((resolve) => window.setTimeout(resolve, intervalMs));
+    }
+
+    // Um frame para o canvas efetivamente pintar. Aba em segundo plano não
+    // dispara rAF, então mantemos um timeout como saída garantida.
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      window.requestAnimationFrame(finish);
+      window.setTimeout(finish, 200);
+    });
+  };
+
   const importInitialDocument = useCallback(async (dataBase64: string, fileName?: string) => {
     try {
       setDocumentImportLoading(true);
+      beginDocumentSettleWindow(DOCUMENT_LOAD_GUARD_MS);
       applyInitialClientIfNeeded();
       const editor = await waitForEditorReady();
       if (!editor) {
@@ -4333,8 +4616,10 @@ Regras:
       await loadDocxWithFallback(editor, arrayBuffer, fileName || 'documento.docx');
       captureAndApplyDocFontSoon(editor);
       setShowStartScreen(false);
-      setHasUnsavedChanges(true);
-      showSuccessMessage('Documento importado. As alteracoes ficam em rascunho ate voce salvar manualmente.');
+      await waitForDocumentRendered(editor);
+      beginDocumentSettleWindow();
+      setHasUnsavedChanges(false);
+      showSuccessMessage('Documento aberto');
       if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
         setPetitionTitle(getSanitizedDocumentName(fileName));
       }
@@ -4353,6 +4638,7 @@ Regras:
     const isObjectUrl = documentUrl.startsWith('blob:');
     try {
       setDocumentImportLoading(true);
+      beginDocumentSettleWindow(DOCUMENT_LOAD_GUARD_MS);
       const initialClient = applyInitialClientIfNeeded();
 
       const response = await fetch(documentUrl);
@@ -4378,10 +4664,17 @@ Regras:
       const restoredDraft = await restoreNextcloudDraft(editor);
       if (!restoredDraft) {
         const openedFromNextcloud = Boolean(sourceNextcloudPathRef.current);
-        setHasUnsavedChanges(!openedFromNextcloud);
+        setHasUnsavedChanges(false);
         showSuccessMessage(openedFromNextcloud ? 'Documento aberto do Nextcloud.' : 'Documento importado com sucesso.');
       }
       restoreCursorPosition();
+      // Depois do rascunho restaurado (que repagina o documento), só então o
+      // conteúdo final está na tela — é aqui que a animação pode parar.
+      await waitForDocumentRendered(editor);
+      if (!restoredDraft) {
+        beginDocumentSettleWindow();
+        setHasUnsavedChanges(false);
+      }
       const nextcloudPath = sourceNextcloudPathRef.current;
       if (nextcloudPath) {
         void trackDocumentActivity({
@@ -4421,6 +4714,7 @@ Regras:
   const importInitialDocumentFromNextcloud = useCallback(async (nextcloudPath: string, fileName?: string) => {
     try {
       setDocumentImportLoading(true);
+      beginDocumentSettleWindow(DOCUMENT_LOAD_GUARD_MS);
       const initialClient = applyInitialClientIfNeeded();
 
       const blob = await nextcloudService.readFile(nextcloudPath);
@@ -4444,6 +4738,11 @@ Regras:
         setHasUnsavedChanges(false);
       }
       restoreCursorPosition();
+      await waitForDocumentRendered(editor);
+      if (!restoredDraft) {
+        beginDocumentSettleWindow();
+        setHasUnsavedChanges(false);
+      }
       void trackDocumentActivity({
         source: 'nextcloud',
         sourceKey: nextcloudPath,
@@ -4467,6 +4766,48 @@ Regras:
       }, 350);
     }
   }, [applyInitialClientIfNeeded, initialClientId, petitionTitle, restoreNextcloudDraft, restoreCursorPosition, trackDocumentActivity]);
+
+  // Carrega o .docx de uma ORIGEM EXTERNA (template/petição padrão/…) no editor.
+  // Espelha o fluxo do Nextcloud; ao salvar, grava de volta (ver savePetition).
+  const importInitialDocumentFromSource = useCallback(async (src: EditorDocSource, fileName?: string) => {
+    try {
+      setDocumentImportLoading(true);
+      beginDocumentSettleWindow(DOCUMENT_LOAD_GUARD_MS);
+
+      const blob = await loadEditorDocSource(src);
+      const arrayBuffer = await blob.arrayBuffer();
+      if (arrayBuffer.byteLength === 0) {
+        throw new Error('O documento está vazio (0 bytes).');
+      }
+
+      const editor = await waitForEditorReady();
+      if (!editor) {
+        setError('O editor Syncfusion nao carregou a tempo. Tente recarregar a pagina.');
+        return;
+      }
+
+      await loadDocxWithFallback(editor, arrayBuffer, fileName || 'documento.docx');
+      captureAndApplyDocFontSoon(editor);
+      setShowStartScreen(false);
+      setHasUnsavedChanges(false);
+      restoreCursorPosition();
+      await waitForDocumentRendered(editor);
+      beginDocumentSettleWindow();
+      setHasUnsavedChanges(false);
+      if (!petitionTitle || petitionTitle === 'Nova Peticao Trabalhista') {
+        setPetitionTitle(getSanitizedDocumentName(fileName));
+      }
+    } catch (err: any) {
+      console.error('Erro ao abrir documento da origem externa:', err);
+      const msg = err?.message || 'Erro desconhecido';
+      setError(`Nao foi possivel abrir o documento: ${msg}`);
+    } finally {
+      setDocumentImportLoading(false);
+      window.setTimeout(() => {
+        try { window.dispatchEvent(new Event('petition-editor-doc-ready')); } catch { /* ignore */ }
+      }, 350);
+    }
+  }, [petitionTitle, restoreCursorPosition]);
 
   const loadDefaultTemplate = async () => {
     if (!isOnlineRef.current) {
@@ -5207,6 +5548,20 @@ Regras:
     void importInitialDocumentFromNextcloud(initialNextcloudPath, initialDocumentName);
   }, [isFloatingWidget, initialNextcloudPath, initialDocumentBase64, initialDocumentUrl, initialDocumentName, initialDocumentRequestId, importInitialDocumentFromNextcloud]);
 
+  // Origem externa: carrega o documento no editor (uma vez).
+  useEffect(() => {
+    if (!isFloatingWidget) return;
+    if (!initialDocSource) return;
+    const key = `src:${initialDocumentRequestId || editorDocSourceKey(initialDocSource)}`;
+    if (lastImportedRequestIdRef.current === key) return;
+    if (lastHandledInitialDocumentRequestId === key) return;
+
+    lastHandledInitialDocumentRequestId = key;
+    lastImportedRequestIdRef.current = key;
+    setShowStartScreen(false);
+    void importInitialDocumentFromSource(initialDocSource, initialDocumentName);
+  }, [isFloatingWidget, initialDocSource, initialDocumentName, initialDocumentRequestId, importInitialDocumentFromSource]);
+
   const blockIndexMap = useMemo(() => {
     const map = new Map<
       string,
@@ -5783,6 +6138,19 @@ Regras:
       initialNextcloudPath: item.nextcloudPath,
       openRequestId: crypto.randomUUID(),
     });
+
+    // A abertura de documentos Nextcloud é delegada ao widget flutuante
+    // (PetitionEditorWidget), que roda em outra instância e nunca sinaliza de
+    // volta a conclusão para esta tela. Sem isso o item ficaria preso em
+    // "Abrindo..." indefinidamente. O indicador serve apenas como feedback
+    // breve, então liberamos o estado após um curto intervalo.
+    if (openingResetTimeoutRef.current) {
+      window.clearTimeout(openingResetTimeoutRef.current);
+    }
+    openingResetTimeoutRef.current = window.setTimeout(() => {
+      setOpeningPetitionId((current) => (current === item.key ? null : current));
+      openingResetTimeoutRef.current = null;
+    }, 2500);
   };
 
   const openBlocksWorkspaceFromStart = () => {
@@ -5798,6 +6166,21 @@ Regras:
     if (blocksReturnTarget === 'start') {
       setShowStartScreen(true);
     }
+  };
+
+  const requestGoHome = () => {
+    if (hasUnsavedChanges) {
+      setShowUnsavedHomeDialog(true);
+      return;
+    }
+    setShowStartScreen(true);
+  };
+
+  const discardChangesAndGoHome = () => {
+    setShowUnsavedHomeDialog(false);
+    clearLocalDraft();
+    setHasUnsavedChanges(false);
+    setShowStartScreen(true);
   };
 
   // ========== RENDER ==========
@@ -5887,7 +6270,7 @@ Regras:
                 <Layers className="h-3.5 w-3.5" />
                 Blocos
               </button>
-              {isFloatingWidget && (
+              {isFloatingWidget && !hideMinimize && (
                 <button
                   onClick={() => onRequestMinimize?.()}
                   className="rounded p-2 text-slate-500 transition hover:bg-slate-100"
@@ -6228,19 +6611,7 @@ Regras:
           </div>
 
           <button
-            onClick={() => {
-              if (hasUnsavedChanges) {
-                const what = [
-                  petitionTitle ? `Documento: "${petitionTitle}"` : '',
-                  selectedClient?.full_name ? `Cliente: ${selectedClient.full_name}` : '',
-                ]
-                  .filter(Boolean)
-                  .join('\n');
-                const msg = `Ha alteracoes nao salvas.${what ? `\n\n${what}` : ''}\n\nDeseja voltar para a tela inicial mesmo assim?`;
-                if (!confirm(msg)) return;
-              }
-              setShowStartScreen(true);
-            }}
+            onClick={requestGoHome}
             className="pet-top-icon-btn"
             title="Voltar para a tela inicial"
           >
@@ -6460,6 +6831,7 @@ Regras:
         </div>
 
         <div className="pet-top-cluster is-utility">
+        {!hideMinimize && (
         <button
           onClick={() => {
             if (isFloatingWidget) {
@@ -6473,6 +6845,7 @@ Regras:
         >
           <Minimize2 className="w-4 h-4" />
         </button>
+        )}
         {!isFloatingWidget && (
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
@@ -6483,25 +6856,10 @@ Regras:
           </button>
         )}
         <button
-          onClick={() => {
-            if (hasUnsavedChanges) {
-              const what = [
-                petitionTitle ? `Documento: "${petitionTitle}"` : '',
-                selectedClient?.full_name ? `Cliente: ${selectedClient.full_name}` : '',
-              ]
-                .filter(Boolean)
-                .join('\n');
-              const msg = `Ha alteracoes nao salvas.${what ? `\n\n${what}` : ''}\n\nDeseja fechar mesmo assim?`;
-              if (!confirm(msg)) return;
-            }
-            if (isFloatingWidget) {
-              onRequestClose?.();
-            } else {
-              setIsMinimized(true);
-            }
-          }}
+          onClick={requestGoHome}
           className="pet-top-icon-btn is-danger"
-          title="Fechar editor"
+          title="Voltar ao início"
+          aria-label="Voltar ao início"
         >
           <XCircle className="w-4 h-4" />
         </button>
@@ -6512,32 +6870,7 @@ Regras:
 
   const compactRibbonTopContent = (
     <div className="pet-titlebar">
-      <div className="pet-titlebar-nav">
-        <button
-          type="button"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="pet-top-icon-btn"
-          title={sidebarOpen ? 'Ocultar painel lateral' : 'Mostrar painel lateral'}
-          aria-label={sidebarOpen ? 'Ocultar painel lateral' : 'Mostrar painel lateral'}
-        >
-          {sidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (hasUnsavedChanges) {
-              const message = `Há alterações não salvas em "${petitionTitle || 'Documento sem título'}". Deseja voltar mesmo assim?`;
-              if (!confirm(message)) return;
-            }
-            setShowStartScreen(true);
-          }}
-          className="pet-top-icon-btn"
-          title="Voltar para a tela inicial"
-          aria-label="Voltar para a tela inicial"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-      </div>
+      <div className="pet-titlebar-nav" />
 
       <div className="pet-titlebar-document">
         <input
@@ -6581,6 +6914,7 @@ Regras:
           {savingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
           <span>Salvar</span>
         </button>
+        {!hideMinimize && (
         <button
           type="button"
           onClick={() => {
@@ -6596,6 +6930,7 @@ Regras:
         >
           <Minimize2 className="w-4 h-4" />
         </button>
+        )}
         {!isFloatingWidget && (
           <button
             type="button"
@@ -6609,14 +6944,10 @@ Regras:
         )}
         <button
           type="button"
-          onClick={() => {
-            if (hasUnsavedChanges && !confirm('Há alterações não salvas. Deseja fechar mesmo assim?')) return;
-            if (isFloatingWidget) onRequestClose?.();
-            else setIsMinimized(true);
-          }}
+          onClick={requestGoHome}
           className="pet-top-icon-btn is-danger"
-          title="Fechar editor"
-          aria-label="Fechar editor"
+          title="Voltar ao início"
+          aria-label="Voltar ao início"
         >
           <XCircle className="w-4 h-4" />
         </button>
@@ -6708,201 +7039,411 @@ Regras:
   return (
     <div className={`petition-editor-root ${isFloatingWidget ? 'h-full' : 'h-screen'} relative flex flex-col overflow-hidden bg-[#f5f6f8]`}>
       {documentImportLoading && (
-        <div className="absolute inset-0 z-[140] flex items-center justify-center bg-slate-950/35 backdrop-blur-sm">
-          <div className="w-full max-w-md mx-4 rounded-2xl border border-slate-200 bg-white shadow-2xl ring-1 ring-black/10 p-6">
-            <div className="flex items-center gap-4">
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
-                <Loader2 className="w-6 h-6 animate-spin" />
+        <div className="absolute inset-0 z-[140] flex items-center justify-center bg-slate-950/30 backdrop-blur-[2px]">
+          <div className="petition-import-progress w-full max-w-md mx-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_64px_rgba(15,23,42,0.24)] ring-1 ring-black/5">
+            <div className="flex items-start gap-3 px-5 pt-5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-[#185abd]">
+                <FileUp className="h-[18px] w-[18px]" />
               </div>
               <div className="min-w-0">
-                <div className="text-base font-semibold text-slate-900">Carregando documento...</div>
-                <div className="mt-1 text-sm text-slate-600">Importando o arquivo no editor de peticoes e aplicando o vinculo do cliente da pasta.</div>
+                <div className="text-[14px] font-semibold text-slate-900">Preparando documento</div>
+                <div className="mt-1 text-[11px] leading-4 text-slate-500">Aguarde enquanto o conteúdo e o vínculo do cliente são configurados.</div>
               </div>
             </div>
-            <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-blue-100">
-              <div className="h-full w-1/2 rounded-full bg-blue-500 animate-pulse" />
+            <div className="mx-5 mt-4 grid grid-cols-2 gap-2 pb-5">
+              <div className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-[10px] font-medium text-slate-600">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-[#185abd]" />
+                Importando conteúdo
+              </div>
+              <div className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-[10px] font-medium text-slate-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+                Vinculando cliente
+              </div>
+            </div>
+            <div className="h-1 overflow-hidden bg-slate-100">
+              <div className="petition-import-progress-bar h-full w-1/3 bg-[#185abd]" />
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal: Visualizar ConteÃºdo do Bloco */}
-      {showBlockViewModal && viewingBlock && (
-        <aside id="petition-editor-backdrop" className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main id="block-editor-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-4xl max-h-[92vh] my-2 overflow-hidden flex flex-col mx-auto transition-all duration-300">
-            <div className="h-1 w-full shrink-0 bg-blue-500" />
+      {showUnsavedHomeDialog && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-[2px]"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 2147483647,
+          }}
+          role="presentation"
+        >
+          <section
+            id="petition-unsaved-home-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="petition-unsaved-home-title"
+            aria-describedby="petition-unsaved-home-description"
+            className={`w-full max-w-[460px] overflow-hidden rounded-xl border shadow-[0_28px_80px_rgba(15,23,42,0.32)] ring-1 ring-black/5 ${
+              darkMode
+                ? 'border-[#484848] bg-[#2b2b2b] text-slate-100'
+                : 'border-slate-200 bg-white text-slate-900'
+            }`}
+          >
+            <header className={`flex items-start gap-3.5 border-b px-5 py-5 ${darkMode ? 'border-[#454545]' : 'border-slate-200'}`}>
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${
+                darkMode
+                  ? 'border-amber-400/20 bg-amber-400/10 text-amber-300'
+                  : 'border-amber-200 bg-amber-50 text-amber-600'
+              }`}>
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Documento não salvo
+                </div>
+                <h2 id="petition-unsaved-home-title" className="mt-1 text-[17px] font-semibold leading-6">
+                  Voltar para o início?
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUnsavedHomeDialog(false)}
+                className={`rounded-md p-1.5 transition-colors ${
+                  darkMode ? 'text-slate-400 hover:bg-white/10 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+                }`}
+                aria-label="Fechar aviso"
+                title="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </header>
 
-            <header className="relative px-3 sm:px-4 py-2 sm:py-3 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
-              <div>
-                <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400 leading-none">Visualizar Bloco</div>
-                <div className="mt-1 flex items-center gap-2">
-                  <h3 className="text-sm sm:text-base font-semibold text-slate-900 leading-tight">{viewingBlock.title}</h3>
+            <div className="px-5 py-5">
+              <div className={`flex items-center gap-3 rounded-lg border px-3.5 py-3 ${
+                darkMode ? 'border-[#484848] bg-[#333333]' : 'border-slate-200 bg-slate-50'
+              }`}>
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${
+                  darkMode ? 'bg-[#185abd]/25 text-blue-300' : 'bg-blue-100 text-[#185abd]'
+                }`}>
+                  <FileText className="h-[18px] w-[18px]" />
+                </div>
+                <div className="min-w-0">
+                  <div className={`text-[10px] font-medium uppercase tracking-[0.1em] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Documento atual
+                  </div>
+                  <div className="mt-0.5 truncate text-[13px] font-semibold" title={petitionTitle || 'Documento sem título'}>
+                    {petitionTitle || 'Documento sem título'}
+                  </div>
+                </div>
+              </div>
+
+              <p id="petition-unsaved-home-description" className={`mt-4 text-[13px] leading-5 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                As alterações feitas desde o último salvamento não serão gravadas se você voltar agora.
+              </p>
+            </div>
+
+            <footer className={`flex flex-col gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end ${
+              darkMode ? 'border-[#454545] bg-[#303030]' : 'border-slate-200 bg-slate-50/80'
+            }`}>
+              <button
+                type="button"
+                onClick={discardChangesAndGoHome}
+                className={`h-9 rounded-md border px-4 text-[12px] font-semibold transition-colors ${
+                  darkMode
+                    ? 'border-red-400/30 bg-transparent text-red-300 hover:bg-red-400/10'
+                    : 'border-red-200 bg-white text-red-700 hover:bg-red-50'
+                }`}
+              >
+                Voltar sem salvar
+              </button>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setShowUnsavedHomeDialog(false)}
+                className="h-9 rounded-md bg-[#185abd] px-4 text-[12px] font-semibold text-white transition-colors hover:bg-[#144f9f] focus:outline-none focus:ring-2 focus:ring-[#185abd]/30"
+              >
+                Continuar editando
+              </button>
+            </footer>
+          </section>
+        </div>,
+        document.body,
+      )}
+
+      {/* Modal: Visualizar ConteÃºdo do Bloco */}
+      {showBlockViewModal && viewingBlock && typeof document !== 'undefined' && createPortal(
+        <div
+          id="petition-block-view-backdrop"
+          className="fixed inset-0 flex items-center justify-center bg-slate-950/45 p-3 backdrop-blur-[2px] sm:p-6"
+          style={{ zIndex: 2147483600 }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeBlockView();
+          }}
+          role="presentation"
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="petition-block-view-title"
+            className={`flex max-h-[92vh] w-full max-w-[1120px] flex-col overflow-hidden rounded-xl border shadow-[0_30px_90px_rgba(15,23,42,0.34)] ring-1 ring-black/5 ${
+              darkMode
+                ? 'border-[#464646] bg-[#252525] text-slate-100'
+                : 'border-slate-200 bg-white text-slate-900'
+            }`}
+          >
+            <header className={`flex min-h-[72px] shrink-0 items-center gap-3 border-b px-5 py-4 sm:px-6 ${
+              darkMode ? 'border-[#454545] bg-[#2b2b2b]' : 'border-slate-200 bg-white'
+            }`}>
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${
+                darkMode
+                  ? 'border-blue-400/20 bg-blue-400/10 text-blue-300'
+                  : 'border-blue-100 bg-blue-50 text-[#185abd]'
+              }`}>
+                <Layers className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                  darkMode ? 'text-slate-400' : 'text-slate-500'
+                }`}>
+                  Biblioteca de blocos
+                </div>
+                <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                  <h2 id="petition-block-view-title" className="truncate text-[16px] font-semibold leading-5 sm:text-[17px]">
+                    {viewingBlock.title}
+                  </h2>
+                  <span className={`rounded-md border px-2 py-0.5 text-[10px] font-medium ${
+                    darkMode
+                      ? 'border-[#505050] bg-[#333333] text-slate-300'
+                      : 'border-slate-200 bg-slate-50 text-slate-600'
+                  }`}>
+                    {getCategoryLabel(String(viewingBlock.category || 'outros'))}
+                  </span>
                   {typeof viewingBlockMatchPct === 'number' && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold">
-                      {viewingBlockMatchPct}%
+                    <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${
+                      darkMode
+                        ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    }`}>
+                      {viewingBlockMatchPct}% de correspondência
                     </span>
                   )}
                 </div>
               </div>
               <button
-                onClick={() => {
-                  blockViewDocxTokenRef.current += 1;
-                  setShowBlockViewModal(false);
-                  setViewingBlock(null);
-                  setViewingBlockMatchPct(null);
-                  setBlockViewFallbackText('');
-                  setBlockViewUseFallback(false);
-                  setBlockViewDocxError('');
-                  setBlockViewDocxLoading(false);
-                  if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
-                }}
-                className="absolute top-1.5 sm:top-2 right-1.5 sm:right-2 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                type="button"
+                onClick={closeBlockView}
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors ${
+                  darkMode
+                    ? 'text-slate-400 hover:bg-white/10 hover:text-white'
+                    : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+                }`}
                 title="Fechar"
+                aria-label="Fechar visualização"
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </button>
             </header>
 
-            <div className="p-4 space-y-4 overflow-y-auto">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-[12px] font-medium text-slate-600 mb-2">Titulo do Bloco *</label>
-                  <input
-                    type="text"
-                    value={viewingBlock.title}
-                    readOnly
-                    className="w-full px-3 py-2.5 text-sm border border-[#e3e6ea] rounded-lg bg-slate-50 font-medium text-slate-600"
-                  />
+            <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_270px]">
+              <div className={`flex min-h-[420px] min-w-0 flex-col ${
+                darkMode ? 'bg-[#202020]' : 'bg-[#eef0f3]'
+              }`}>
+                <div className={`flex h-11 shrink-0 items-center justify-between border-b px-4 sm:px-5 ${
+                  darkMode ? 'border-[#414141] bg-[#2b2b2b]' : 'border-slate-200 bg-white'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <Eye className={`h-4 w-4 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+                    <span className="text-[12px] font-semibold">Pré-visualização</span>
+                  </div>
+                  <span className={`text-[10px] ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                    Somente leitura
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-[12px] font-medium text-slate-600 mb-2">Categoria</label>
-                  <select
-                    value={viewingBlock.category}
-                    disabled
-                    className="w-full px-3 py-2.5 text-sm border border-[#e3e6ea] rounded-lg bg-slate-50 font-medium text-slate-600 cursor-not-allowed"
-                  >
-                    <option value={viewingBlock.category}>{getCategoryLabel(String(viewingBlock.category || 'outros'))}</option>
-                  </select>
+                <div className="petition-block-docx-preview relative min-h-0 flex-1 overflow-auto">
+                  <div className="min-h-full px-3 py-5 sm:px-6 sm:py-6">
+                    <div
+                      ref={(node) => {
+                        blockViewDocxContainerRef.current = node;
+                      }}
+                    />
+                  </div>
+
+                  {blockViewDocxLoading && (
+                    <div className={`absolute inset-0 flex items-center justify-center ${
+                      darkMode ? 'bg-[#202020]/90' : 'bg-[#eef0f3]/90'
+                    }`}>
+                      <div className={`w-full max-w-[310px] rounded-lg border px-5 py-4 shadow-sm ${
+                        darkMode
+                          ? 'border-[#484848] bg-[#2b2b2b]'
+                          : 'border-slate-200 bg-white'
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-9 w-9 items-center justify-center rounded-md ${
+                            darkMode ? 'bg-blue-400/10 text-blue-300' : 'bg-blue-50 text-[#185abd]'
+                          }`}>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          </div>
+                          <div>
+                            <div className="text-[12px] font-semibold">Preparando visualização</div>
+                            <div className={`mt-0.5 text-[10px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                              Aplicando a formatação do documento
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!blockViewDocxLoading && blockViewDocxError && !blockViewUseFallback && (
+                    <div className={`absolute inset-0 flex items-center justify-center px-6 ${
+                      darkMode ? 'bg-[#202020]' : 'bg-[#eef0f3]'
+                    }`}>
+                      <div className="max-w-sm text-center">
+                        <AlertTriangle className="mx-auto h-6 w-6 text-amber-500" />
+                        <div className="mt-2 text-[12px] font-semibold">{blockViewDocxError}</div>
+                        <div className={`mt-1 text-[10px] ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                          Você ainda pode editar ou inserir este bloco.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {!blockViewDocxLoading && blockViewUseFallback && (
+                    <div className={`absolute inset-0 overflow-y-auto p-5 sm:p-8 ${
+                      darkMode ? 'bg-[#202020]' : 'bg-[#eef0f3]'
+                    }`}>
+                      <article className="mx-auto min-h-full max-w-[720px] bg-white px-[8%] py-12 text-slate-800 shadow-[0_2px_8px_rgba(15,23,42,0.18)]">
+                        <pre className="whitespace-pre-wrap font-serif text-[13px] leading-6">
+                          {(() => {
+                            const text = (blockViewFallbackText || '').trim();
+                            if (!text || text.startsWith('{') || text.startsWith('[')) {
+                              return 'Pré-visualização indisponível';
+                            }
+                            return text;
+                          })()}
+                        </pre>
+                      </article>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[12px] font-medium text-slate-600 mb-1">Conteudo SFDT *</label>
-                <div className="border border-[#e3e6ea] rounded-2xl overflow-hidden bg-[#f7f8fa] shadow-inner">
-                  <div className="relative w-full h-[620px] overflow-auto bg-[#f7f8fa] petition-block-docx-preview">
-                    <div className="min-h-[620px] p-4">
-                      <div
-                        ref={(node) => {
-                          blockViewDocxContainerRef.current = node;
-                        }}
-                      />
+              <aside className={`min-h-0 overflow-y-auto border-t p-5 lg:border-l lg:border-t-0 ${
+                darkMode
+                  ? 'border-[#454545] bg-[#292929]'
+                  : 'border-slate-200 bg-slate-50/80'
+              }`}>
+                <section>
+                  <div className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                    darkMode ? 'text-slate-400' : 'text-slate-500'
+                  }`}>
+                    Informações
+                  </div>
+                  <dl className="mt-3 space-y-3">
+                    <div>
+                      <dt className={`text-[10px] ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Categoria</dt>
+                      <dd className="mt-0.5 text-[12px] font-medium">
+                        {getCategoryLabel(String(viewingBlock.category || 'outros'))}
+                      </dd>
                     </div>
+                    <div>
+                      <dt className={`text-[10px] ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Inserção automática</dt>
+                      <dd className="mt-1 flex items-center gap-1.5 text-[12px] font-medium">
+                        <span className={`h-1.5 w-1.5 rounded-full ${
+                          viewingBlock.is_default ? 'bg-emerald-500' : darkMode ? 'bg-slate-600' : 'bg-slate-300'
+                        }`} />
+                        {viewingBlock.is_default ? 'Ativada' : 'Desativada'}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
 
-                    {blockViewDocxLoading && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-[#f7f8fa]/80">
-                        <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Carregando...</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {!blockViewDocxLoading && blockViewDocxError && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-[#f7f8fa]/80">
-                        <div className="text-slate-500 text-sm font-medium">{blockViewDocxError}</div>
-                      </div>
-                    )}
-
-                    {!blockViewDocxLoading && !blockViewDocxError && blockViewUseFallback && (
-                      <div className="absolute inset-0 bg-[#f7f8fa]">
-                        <div className="h-full w-full p-4 overflow-y-auto">
-                          <pre className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed">
-                            {(() => {
-                              const t = (blockViewFallbackText || '').trim();
-                              if (!t) return 'Pre-visualizacao indisponivel';
-                              if (t.startsWith('{') || t.startsWith('[')) return 'Pre-visualizacao indisponivel';
-                              return t;
-                            })()}
-                          </pre>
-                        </div>
-                      </div>
+                <section className={`mt-5 border-t pt-5 ${darkMode ? 'border-[#454545]' : 'border-slate-200'}`}>
+                  <div className="flex items-center gap-2">
+                    <Hash className={`h-3.5 w-3.5 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+                    <div className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                      darkMode ? 'text-slate-400' : 'text-slate-500'
+                    }`}>
+                      Tags
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {getBlockTagsForUI(viewingBlock).length > 0 ? (
+                      getBlockTagsForUI(viewingBlock).map((tag) => (
+                        <span
+                          key={tag}
+                          className={`max-w-full truncate rounded-md border px-2 py-1 text-[10px] font-medium ${
+                            darkMode
+                              ? 'border-[#4b4b4b] bg-[#333333] text-slate-300'
+                              : 'border-slate-200 bg-white text-slate-600'
+                          }`}
+                          title={tag}
+                        >
+                          {tag}
+                        </span>
+                      ))
+                    ) : (
+                      <span className={`text-[11px] ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                        Nenhuma tag cadastrada
+                      </span>
                     )}
                   </div>
-                </div>
-                <div className="mt-2 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Variaveis disponiveis</span>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    [[NOME_CLIENTE]], [[CPF]], [[RG]], [[NACIONALIDADE]], [[ESTADO_CIVIL]], [[PROFISSAO]], [[ENDERECO]], [[CIDADE]], [[UF]], [[CEP]], [[EMAIL]], [[TELEFONE]]
-                  </p>
-                </div>
-              </div>
+                </section>
 
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-3 sm:col-span-2 space-y-2">
-                  <label className="block text-[12px] font-medium text-slate-600">Tags</label>
-                  {(() => {
-                    const tags = getBlockTagsForUI(viewingBlock);
-                    if (tags.length === 0) {
-                      return <p className="text-[11px] text-slate-400">Nenhuma tag cadastrada</p>;
-                    }
-                    return (
-                      <div className="flex flex-wrap gap-2">
-                        {tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="inline-flex items-center gap-0.5 px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-100 text-slate-700 border border-slate-200 max-w-[260px] truncate"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                  <p className="text-[11px] text-slate-400">Tags usadas para facilitar a busca de blocos.</p>
-                </div>
-              </div>
-
-              <label className="group flex items-center gap-4 cursor-pointer p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                <div className="relative flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={viewingBlock.is_default}
-                    disabled
-                    className="peer w-5 h-5 text-blue-600 rounded-lg border-blue-300 focus:ring-blue-500 transition-all cursor-pointer appearance-none border-2 checked:bg-blue-500 opacity-60"
-                  />
-                  <CheckCircle2 className="w-3 h-3 text-white absolute left-1 opacity-0 peer-checked:opacity-100 transition-opacity pointer-events-none" />
-                </div>
-                <div>
-                  <span className="text-sm font-bold text-blue-900 uppercase tracking-tight">Incluir por padrao</span>
-                  <p className="text-xs text-blue-700/70 font-medium">Este bloco sera inserido automaticamente ao criar uma nova peticao</p>
-                </div>
-              </label>
+                <section className={`mt-5 border-t pt-5 ${darkMode ? 'border-[#454545]' : 'border-slate-200'}`}>
+                  <div className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                    darkMode ? 'text-slate-400' : 'text-slate-500'
+                  }`}>
+                    Variáveis compatíveis
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-1.5">
+                    {['NOME_CLIENTE', 'CPF', 'RG', 'ENDERECO', 'CIDADE', 'UF', 'CEP', 'EMAIL', 'TELEFONE'].map((variable) => (
+                      <code
+                        key={variable}
+                        className={`truncate rounded border px-1.5 py-1 text-[9px] ${
+                          darkMode
+                            ? 'border-[#484848] bg-[#303030] text-blue-300'
+                            : 'border-blue-100 bg-blue-50/70 text-[#185abd]'
+                        }`}
+                        title={`[[${variable}]]`}
+                      >
+                        {variable}
+                      </code>
+                    ))}
+                  </div>
+                </section>
+              </aside>
             </div>
 
-            <footer className="px-4 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50 gap-2">
-              <div className="flex items-center gap-2">
+            <footer className={`flex shrink-0 flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 ${
+              darkMode ? 'border-[#454545] bg-[#2b2b2b]' : 'border-slate-200 bg-white'
+            }`}>
+              <div className={`hidden items-center gap-2 text-[10px] sm:flex ${
+                darkMode ? 'text-slate-500' : 'text-slate-400'
+              }`}>
+                <FileText className="h-3.5 w-3.5" />
+                O conteúdo será inserido na posição atual do cursor.
+              </div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
                 <button
+                  type="button"
                   onClick={() => {
-                    // Abrir modal de ediçÃ£o com o bloco atual
-                    if (viewingBlock) {
-                      openBlockModal(viewingBlock);
-                      setShowBlockViewModal(false);
-                      setViewingBlock(null);
-                      setViewingBlockMatchPct(null);
-                      setBlockViewFallbackText('');
-                      setBlockViewUseFallback(false);
-                      setBlockViewDocxError('');
-                      setBlockViewDocxLoading(false);
-                      if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
-                    }
+                    const block = viewingBlock;
+                    closeBlockView();
+                    openBlockModal(block);
                   }}
-                  className="px-4 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider petition-btn-orange"
+                  className={`inline-flex h-9 items-center justify-center gap-2 rounded-md border px-4 text-[12px] font-semibold transition-colors ${
+                    darkMode
+                      ? 'border-[#505050] bg-[#333333] text-slate-200 hover:bg-[#3a3a3a]'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
                 >
-                  <Edit3 className="w-4 h-4" />
-                  <span>Editar</span>
+                  <Edit3 className="h-3.5 w-3.5" />
+                  Editar bloco
                 </button>
                 <button
+                  type="button"
                   onClick={async () => {
                     if (!isOnlineRef.current) {
                       setError('Voce esta offline. O Peticionamento e 100% online: reconecte para editar/salvar.');
@@ -6910,41 +7451,18 @@ Regras:
                     }
                     await insertBlock(viewingBlock);
                     setShowBlockSearchModal(false);
-                    blockViewDocxTokenRef.current += 1;
-                    setShowBlockViewModal(false);
-                    setViewingBlock(null);
-                    setViewingBlockMatchPct(null);
-                    setBlockViewFallbackText('');
-                    setBlockViewUseFallback(false);
-                    setBlockViewDocxError('');
-                    setBlockViewDocxLoading(false);
-                    if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
+                    closeBlockView();
                   }}
-                  className="px-6 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider petition-btn-orange"
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#185abd] px-5 text-[12px] font-semibold text-white transition-colors hover:bg-[#144f9f] focus:outline-none focus:ring-2 focus:ring-[#185abd]/30"
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>Adicionar no documento</span>
+                  <Plus className="h-3.5 w-3.5" />
+                  Adicionar ao documento
                 </button>
               </div>
-              <button
-                onClick={() => {
-                  blockViewDocxTokenRef.current += 1;
-                  setShowBlockViewModal(false);
-                  setViewingBlock(null);
-                  setViewingBlockMatchPct(null);
-                  setBlockViewFallbackText('');
-                  setBlockViewUseFallback(false);
-                  setBlockViewDocxError('');
-                  setBlockViewDocxLoading(false);
-                  if (blockViewDocxContainerRef.current) blockViewDocxContainerRef.current.innerHTML = '';
-                }}
-                className="px-8 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 bg-white rounded-xl transition-all duration-200 shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]"
-              >
-                Fechar
-              </button>
             </footer>
-          </main>
-        </aside>
+          </section>
+        </div>,
+        document.body,
       )}
 
       {/* ConteÃºdo Principal */}
@@ -7561,6 +8079,9 @@ Regras:
           setBlocksReturnTarget('editor');
           setActiveWorkspace('blocks');
         }}
+        onGoHome={requestGoHome}
+        onToggleLibrary={() => setSidebarOpen((current) => !current)}
+        libraryOpen={sidebarOpen}
         onOpenFindReplace={(mode) => setFindReplaceMode(mode)}
       />
 
@@ -7575,29 +8096,12 @@ Regras:
         {sidebarOpen && (
           <div className="petition-sidebar fixed sm:relative inset-y-0 left-0 z-[31] sm:z-[20] flex flex-col flex-shrink-0" style={{ width: Math.min(sidebarWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : sidebarWidth) }}>
             <div className="petition-sidebar-header">
-              <div className="petition-sidebar-tabs" role="tablist" aria-label="Conteúdo do documento">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={sidebarTab === 'blocks'}
-                  onClick={() => setSidebarTab('blocks')}
-                  className={`petition-sidebar-tab ${sidebarTab === 'blocks' ? 'is-active' : ''}`}
-                >
-                  <Layers className="h-3.5 w-3.5" />
-                  Blocos
-                  <span className="petition-sidebar-tab-count">{filteredBlocks.length}</span>
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={sidebarTab === 'clients'}
-                  onClick={() => setSidebarTab('clients')}
-                  className={`petition-sidebar-tab ${sidebarTab === 'clients' ? 'is-active' : ''}`}
-                >
-                  <Users className="h-3.5 w-3.5" />
-                  Clientes
-                  <span className="petition-sidebar-tab-count">{filteredClients.length}</span>
-                </button>
+              <div className="petition-sidebar-heading">
+                <span className="petition-sidebar-heading-icon"><Layers className="h-4 w-4" /></span>
+                <div>
+                  <strong>Biblioteca</strong>
+                  <span>Conteúdo do documento</span>
+                </div>
               </div>
               <button
                 type="button"
@@ -7607,6 +8111,30 @@ Regras:
                 aria-label="Ocultar biblioteca"
               >
                 <PanelLeftClose className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="petition-sidebar-tabs" role="tablist" aria-label="Conteúdo do documento">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={sidebarTab === 'blocks'}
+                onClick={() => setSidebarTab('blocks')}
+                className={`petition-sidebar-tab ${sidebarTab === 'blocks' ? 'is-active' : ''}`}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                Blocos
+                <span className="petition-sidebar-tab-count">{filteredBlocks.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={sidebarTab === 'clients'}
+                onClick={() => setSidebarTab('clients')}
+                className={`petition-sidebar-tab ${sidebarTab === 'clients' ? 'is-active' : ''}`}
+              >
+                <Users className="h-3.5 w-3.5" />
+                Clientes
+                <span className="petition-sidebar-tab-count">{filteredClients.length}</span>
               </button>
             </div>
 
@@ -7866,10 +8394,10 @@ Regras:
                                 {(() => {
                                   const tags = getBlockTagsForUI(block);
                                   if (!tags.length) return null;
-                                  const visible = tags.slice(0, 5);
+                                  const visible = tags.slice(0, 1);
                                   const remaining = tags.length - visible.length;
                                   return (
-                                    <div className="ml-[34px] flex flex-wrap gap-1 mt-1">
+                                    <div className="petition-sidebar-block-tags">
                                       {visible.map((t) => (
                                         <span key={t} className="inline-flex max-w-[120px] items-center truncate rounded border border-[#e2e8f0] bg-[#f1f5f9] px-1.5 py-0.5 text-[9px] font-medium text-slate-500">
                                           {t}
@@ -8056,35 +8584,19 @@ Regras:
 
           {/* Overlay de formataçÃ£o com IA */}
           {formattingWithAI && (
-            <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-              <div className="bg-[#f7f8fa] rounded-2xl border border-[#e3e6ea] shadow-2xl p-8 max-w-xs w-full mx-4">
-                <div className="flex flex-col items-center text-center space-y-4">
-                  {/* Ãcone animado */}
-                  <div className="relative">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-amber-500 flex items-center justify-center">
-                      <div className="w-8 h-8 text-white">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
-                          <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                        </svg>
-                      </div>
-                    </div>
-                    {/* AnÃ©is de onda */}
-                    <div className="absolute inset-0 rounded-full border-2 border-amber-400/30 animate-ping"></div>
-                    <div className="absolute inset-0 rounded-full border-2 border-amber-400/20 animate-ping" style={{ animationDelay: '200ms' }}></div>
+            <div className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-950/30 backdrop-blur-[2px]">
+              <div className="petition-import-progress mx-4 w-full max-w-sm overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_24px_64px_rgba(15,23,42,0.24)]">
+                <div className="flex items-start gap-3 px-5 py-5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-[#185abd]">
+                    <Pencil className="h-[18px] w-[18px]" />
                   </div>
-                  
-                  {/* Texto */}
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-semibold text-slate-900">Formatando com IA</h3>
-                    <p className="text-sm text-slate-600">Aplicando formatacao inteligente...</p>
+                  <div>
+                    <h3 className="text-[14px] font-semibold text-slate-900">Processando seleção</h3>
+                    <p className="mt-1 text-[11px] leading-4 text-slate-500">A IA está revisando o texto e preparando a nova versão.</p>
                   </div>
-                  
-                  {/* Dots animados */}
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"></div>
-                    <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '100ms' }}></div>
-                    <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '200ms' }}></div>
-                  </div>
+                </div>
+                <div className="h-1 overflow-hidden bg-slate-100">
+                  <div className="petition-import-progress-bar h-full w-1/3 bg-[#185abd]" />
                 </div>
               </div>
             </div>
@@ -8100,6 +8612,10 @@ Regras:
             showNavigationPane={false}
             onReady={() => {
               setEditorReady(true);
+              // Avisa o loader de boot (app /editor ou nova aba) que o editor já
+              // está interativo — cobre também a petição EM BRANCO, que não passa
+              // pelos fluxos de carregamento de documento que emitem este evento.
+              try { window.dispatchEvent(new Event('petition-editor-doc-ready')); } catch { /* ignore */ }
               editorRef.current?.setZoom(DEFAULT_EDITOR_ZOOM);
               // Recalcula o layout apÃ³s o wrapper assumir a largura final (evita folha comprimida)
               window.setTimeout(() => {
@@ -8114,6 +8630,10 @@ Regras:
               }, 320);
             }}
             onContentChange={handleContentChange}
+            // `documentChange` = documento terminou de abrir. Re-arma a janela de
+            // acomodação para cobrir os ajustes automáticos que vêm em seguida
+            // (margens, fitPage, repaginação), mesmo em documentos grandes.
+            onDocumentChange={() => { beginDocumentSettleWindow(); }}
             onSelectionChange={() => { refreshDocStatus(); scheduleCursorPersist(); }}
             onViewChange={refreshDocStatus}
             onRequestInsertBlock={() => {
@@ -8201,13 +8721,16 @@ Regras:
       {/* Modal de Busca de Empresa (CNPJ) */}
       {showCompanyLookupModal && (
         <aside id="petition-lookup-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main id="company-lookup-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
-            <div className="h-1 w-full shrink-0 bg-blue-500" />
-
-            <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
-              <div>
-                <div className="text-[10px] sm:text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400 leading-none">Qualificacao Juridica</div>
-                <h3 className="mt-2 text-base sm:text-lg font-semibold text-slate-900 leading-tight">Buscar Empresa (CNPJ)</h3>
+          <main id="company-lookup-modal" className="bg-white rounded-xl shadow-[0_28px_80px_rgba(15,23,42,0.26)] ring-1 ring-black/10 w-full max-w-2xl my-4 overflow-hidden flex flex-col mx-auto">
+            <header className="relative px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-white">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-[#185abd]">
+                  <Search className="h-[18px] w-[18px]" />
+                </div>
+                <div>
+                  <h3 className="text-[15px] font-semibold text-slate-900 leading-tight">Consultar empresa</h3>
+                  <div className="mt-1 text-[11px] text-slate-500">Busque os dados cadastrais e gere a qualificação jurídica.</div>
+                </div>
               </div>
               <button
                 onClick={() => setShowCompanyLookupModal(false)}
@@ -8218,25 +8741,22 @@ Regras:
               </button>
             </header>
 
-            <div className="px-6 py-6 space-y-6">
+            <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-[220px_minmax(0,1fr)]">
               <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-2">Informe o CNPJ</label>
+                <label className="mb-2 block text-[11px] font-semibold text-slate-600">CNPJ da empresa</label>
                 <input
                   type="text"
                   value={companyCnpjInput}
                   onChange={(e) => setCompanyCnpjInput(e.target.value)}
                   placeholder="00.000.000/0000-00"
-                  className="w-full px-4 py-3 text-sm border border-[#e3e6ea] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50 transition-all font-medium placeholder:text-slate-300"
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-medium outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10 placeholder:text-slate-300"
                   autoFocus
                 />
-                <p className="mt-2 text-[11px] text-slate-400 italic">Aceita CNPJ com ponto, barra e hifen. O sistema considera apenas numeros.</p>
-              </div>
-
-              <div className="flex gap-3">
+                <p className="mt-2 text-[10px] leading-4 text-slate-400">Digite com ou sem pontuação.</p>
                 <button
                   onClick={handleCompanyLookup}
                   disabled={companyLookupLoading}
-                  className="flex-1 font-bold px-4 py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md petition-btn-orange"
+                  className="petition-btn-orange mt-4 flex h-9 w-full items-center justify-center gap-2 px-4 text-[11px]"
                 >
                   {companyLookupLoading ? (
                     <>
@@ -8250,34 +8770,38 @@ Regras:
                     </>
                   )}
                 </button>
-                <button
-                  onClick={() => setShowCompanyLookupModal(false)}
-                  className="px-6 py-3 text-sm font-bold rounded-xl transition-all shadow-md petition-btn-slate"
-                >
-                  <span>Cancelar</span>
-                </button>
               </div>
 
-              {companyLookupResultText && (
-                <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                  <label className="block text-[11px] font-medium text-slate-500 mb-2">Resultado da Qualificacao</label>
+              <div className="min-w-0">
+                <label className="mb-2 block text-[11px] font-semibold text-slate-600">Qualificação gerada</label>
+              {companyLookupResultText ? (
                   <textarea
                     value={companyLookupResultText}
                     onChange={(e) => setCompanyLookupResultText(e.target.value)}
                     rows={6}
-                    className="w-full px-4 py-3 text-sm border border-[#e3e6ea] rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-[#f7f8fa] transition-all leading-relaxed text-slate-700 font-medium"
+                    className="min-h-[150px] w-full resize-none rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-[12px] font-medium leading-relaxed text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10"
                   />
+              ) : (
+                <div className="flex min-h-[150px] items-center justify-center rounded-md border border-dashed border-slate-200 bg-slate-50 px-5 text-center text-[11px] leading-5 text-slate-400">
+                  O resultado da consulta aparecerá aqui para revisão antes da inserção.
                 </div>
               )}
+              </div>
             </div>
 
-            <footer className="px-6 py-5 border-t border-slate-100 flex justify-end bg-slate-50">
+            <footer className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+              <button
+                onClick={() => setShowCompanyLookupModal(false)}
+                className="petition-btn-slate h-9 px-4 text-[11px]"
+              >
+                Cancelar
+              </button>
               <button
                 onClick={insertCompanyText}
                 disabled={!companyLookupResultText}
-                className="w-full sm:w-auto font-bold px-10 py-3.5 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider text-xs petition-btn-emerald"
+                className="petition-btn-emerald flex h-9 items-center justify-center gap-2 px-4 text-[11px] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Plus className="w-5 h-5" />
+                <Plus className="h-4 w-4" />
                 <span>Inserir no documento</span>
               </button>
             </footer>
@@ -8287,18 +8811,16 @@ Regras:
 
       {/* Modal de Busca de Bloco */}
       {showBlockSearchModal && (
-        <aside id="petition-search-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
-          <main id="block-search-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto">
-            <div className="h-1 w-full shrink-0 bg-blue-500" />
-
-            <header className="px-5 sm:px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-3 bg-white">
+        <aside id="petition-search-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/45 backdrop-blur-sm overflow-y-auto">
+          <main id="block-search-modal" className="bg-white rounded-xl shadow-[0_28px_80px_rgba(15,23,42,0.28)] ring-1 ring-black/10 w-full max-w-5xl my-4 overflow-hidden flex flex-col mx-auto">
+            <header className="px-5 sm:px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-3 bg-white">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-blue-100 bg-blue-50 text-[#185abd]">
                   <Layers className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400 leading-none">Biblioteca de textos</div>
-                  <h3 className="mt-1 text-base font-semibold text-slate-900 leading-tight">Adicionar bloco</h3>
+                  <h3 className="text-[15px] font-semibold text-slate-900 leading-tight">Biblioteca de conteúdo</h3>
+                  <div className="mt-1 text-[11px] text-slate-500">Localize, revise e insira textos padronizados no documento.</div>
                 </div>
               </div>
               <button
@@ -8310,18 +8832,18 @@ Regras:
               </button>
             </header>
 
-            <div className="px-5 sm:px-6 py-5">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[12px] font-medium text-slate-500">Escopo</div>
-                <div className="petition-scope-toggle inline-flex items-center p-0.5 rounded-lg border border-slate-200 bg-slate-50">
+            <div className="grid min-h-[520px] grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)]">
+              <aside className="border-b border-slate-200 bg-slate-50 p-4 md:border-b-0 md:border-r">
+                <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Pesquisar em</div>
+                <div className="petition-scope-toggle flex flex-col gap-1 rounded-lg border border-slate-200 bg-white p-1">
                   {selectedStandardTypeId && (
                     <button
                       type="button"
                       onClick={() => setBlockSearchScope('type')}
-                      className={`petition-scope-toggle-btn px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
+                      className={`petition-scope-toggle-btn w-full px-3 py-2 text-left text-[11px] font-semibold rounded-md transition-colors ${
                         blockSearchScope === 'type'
-                          ? 'bg-blue-500 text-white shadow-sm'
-                          : 'text-slate-600 hover:bg-white'
+                          ? 'bg-blue-50 text-[#185abd]'
+                          : 'text-slate-600 hover:bg-slate-50'
                       }`}
                       title="Buscar apenas nos blocos vinculados a Peticao Padrao"
                     >
@@ -8331,10 +8853,10 @@ Regras:
                   <button
                     type="button"
                     onClick={() => setBlockSearchScope('area')}
-                    className={`petition-scope-toggle-btn px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
+                    className={`petition-scope-toggle-btn w-full px-3 py-2 text-left text-[11px] font-semibold rounded-md transition-colors ${
                       blockSearchScope === 'area'
-                        ? 'bg-blue-500 text-white shadow-sm'
-                        : 'text-slate-600 hover:bg-white'
+                        ? 'bg-blue-50 text-[#185abd]'
+                        : 'text-slate-600 hover:bg-slate-50'
                     }`}
                     title="Buscar nos blocos da Area Juridica selecionada"
                   >
@@ -8343,32 +8865,48 @@ Regras:
                   <button
                     type="button"
                     onClick={() => setBlockSearchScope('global')}
-                    className={`petition-scope-toggle-btn px-3 py-1.5 text-[11px] font-semibold rounded-md transition-colors ${
+                    className={`petition-scope-toggle-btn w-full px-3 py-2 text-left text-[11px] font-semibold rounded-md transition-colors ${
                       blockSearchScope === 'global'
-                        ? 'bg-slate-700 text-white shadow-sm'
-                        : 'text-slate-600 hover:bg-white'
+                        ? 'bg-blue-50 text-[#185abd]'
+                        : 'text-slate-600 hover:bg-slate-50'
                     }`}
                     title="Buscar em todos os blocos (consulta global)"
                   >
                     Global
                   </button>
                 </div>
-              </div>
+                <div className="mt-5 border-t border-slate-200 pt-4">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Contexto atual</div>
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="text-[11px] font-semibold text-slate-700">{selectedLegalArea?.name || 'Todas as áreas'}</div>
+                    <div className="mt-1 text-[10px] leading-relaxed text-slate-400">
+                      {selectedStandardTypeId ? 'Modelo de petição selecionado' : 'Biblioteca da área jurídica'}
+                    </div>
+                  </div>
+                </div>
+              </aside>
 
-              <div className="relative mt-3">
+              <section className="flex min-w-0 flex-col p-4 sm:p-5">
+              <div className="relative">
                 <Search className="w-[18px] h-[18px] text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Buscar bloco..."
+                  placeholder="Pesquisar por título, conteúdo ou palavra-chave"
                   value={blockSearchQuery}
                   onChange={(e) => setBlockSearchQuery(e.target.value)}
-                  className="w-full pl-11 pr-4 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400 bg-slate-50 focus:bg-white transition"
+                  className="w-full pl-11 pr-24 py-2.5 text-sm border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500/15 focus:border-blue-400 bg-white transition"
                   autoFocus
                 />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-medium text-slate-400">ESC</span>
               </div>
 
-              <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
-                <div className="max-h-[65vh] overflow-y-auto">
+              <div className="mt-3 flex items-center justify-between border-b border-slate-200 pb-2">
+                <span className="text-[11px] font-semibold text-slate-600">Resultados</span>
+                <span className="text-[10px] tabular-nums text-slate-400">{searchFilteredBlocks.length} itens encontrados</span>
+              </div>
+
+              <div className="mt-2 flex-1 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                <div className="max-h-[58vh] overflow-y-auto p-2">
                   {blockSearchLoading ? (
                     <div className="p-6 text-center text-slate-400">
                       <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin" />
@@ -8388,7 +8926,7 @@ Regras:
                       return (
                       <div
                         key={b.id}
-                        className="px-4 py-3 border-b border-slate-100 last:border-b-0 hover:bg-slate-50 cursor-pointer transition-colors"
+                        className="mb-2 rounded-md border border-slate-200 bg-white px-4 py-3 shadow-sm last:mb-0 hover:border-blue-200 hover:shadow-md cursor-pointer transition"
                         onClick={() => {
                           openViewBlock(b, showMatchPct ? matchPct : undefined);
                         }}
@@ -8456,6 +8994,11 @@ Regras:
                   )}
                 </div>
               </div>
+              <div className="mt-3 flex items-center justify-between text-[10px] text-slate-400">
+                <span>Clique em um item para visualizar antes de inserir.</span>
+                <span>Biblioteca Jurius</span>
+              </div>
+              </section>
             </div>
           </main>
         </aside>
@@ -8463,7 +9006,7 @@ Regras:
 
       {showAiEditModal && (
         <aside className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main id="ai-edit-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-1 w-full shrink-0 bg-blue-500" />
 
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
@@ -8843,7 +9386,7 @@ Regras:
       {/* Modal de PetiçÃµes Padroes */}
       {showStandardTypeModal && (
         <aside className="fixed inset-0 z-[120] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <main className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
+          <main id="standard-type-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-1 w-full shrink-0 bg-blue-500" />
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
               <div className="flex items-center gap-3">
@@ -9198,6 +9741,60 @@ Regras:
 
 // Estilos injetados para vencer regras globais do index.css
 const petitionModalStyles = `
+  @keyframes petitionImportProgress {
+    0% { transform: translateX(-130%); }
+    55% { transform: translateX(120%); }
+    100% { transform: translateX(300%); }
+  }
+  .petition-import-progress-bar {
+    animation: petitionImportProgress 2.4s cubic-bezier(.4,0,.2,1) infinite;
+  }
+
+  /* Linguagem visual única para os diálogos auxiliares do editor. */
+  main#company-lookup-modal,
+  main#block-search-modal,
+  main#petition-categories-modal,
+  main#legal-area-modal,
+  main#standard-type-modal,
+  main#ai-edit-modal {
+    border-radius: 12px !important;
+    border: 1px solid rgba(15,23,42,.08) !important;
+    box-shadow: 0 28px 72px rgba(15,23,42,.24) !important;
+  }
+  main#petition-categories-modal > div:first-child[class*="h-1"],
+  main#legal-area-modal > div:first-child[class*="h-1"],
+  main#standard-type-modal > div:first-child[class*="h-1"],
+  main#ai-edit-modal > div:first-child[class*="h-1"] {
+    display: none !important;
+  }
+  main#petition-categories-modal header,
+  main#legal-area-modal header,
+  main#standard-type-modal header,
+  main#ai-edit-modal header {
+    min-height: 64px;
+    padding: 14px 20px !important;
+    border-bottom-color: #dfe4ea !important;
+  }
+  main#petition-categories-modal footer,
+  main#legal-area-modal footer,
+  main#standard-type-modal footer,
+  main#ai-edit-modal footer {
+    padding: 12px 20px !important;
+    border-top-color: #dfe4ea !important;
+  }
+  main#petition-categories-modal input,
+  main#petition-categories-modal textarea,
+  main#legal-area-modal input,
+  main#legal-area-modal textarea,
+  main#standard-type-modal input,
+  main#standard-type-modal textarea,
+  main#standard-type-modal select,
+  main#ai-edit-modal input,
+  main#ai-edit-modal textarea {
+    border-radius: 6px !important;
+    box-shadow: none !important;
+  }
+
   /* BotÃµes dos modais de petiçÃ£o â€” flat, consistentes, sem caixa alta */
   .petition-btn-orange, .petition-btn-emerald, .petition-btn-slate, .petition-btn-red {
     text-transform: none !important;
@@ -9239,7 +9836,7 @@ const petitionModalStyles = `
     animation: petitionStripes 0.7s linear infinite;
   }
   @media (prefers-reduced-motion: reduce) {
-    .petition-shake, .petition-progress-stripes { animation: none !important; }
+    .petition-shake, .petition-progress-stripes, .petition-import-progress-bar { animation: none !important; }
   }
 
   /* Garantir que o painel do modal nÃ£o seja sequestrado */

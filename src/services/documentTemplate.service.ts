@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import type { DocumentTemplate, CreateDocumentTemplateDTO, GeneratedDocument, CreateGeneratedDocumentDTO, SignatureFieldConfigValue, TemplateFile, CustomField, CreateCustomFieldDTO, UpdateCustomFieldDTO, TemplateCustomField, UpsertTemplateCustomFieldDTO } from '../types/document.types';
+import { blobContentsEqual } from '../utils/blobIntegrity';
 
 const STORAGE_BUCKET = 'document-templates';
 const GENERATED_STORAGE_BUCKET = 'generated-documents';
@@ -22,6 +23,52 @@ class DocumentTemplateService {
     } catch (error) {
       // ignore bucket creation errors on client (likely due to permissions)
       console.warn('Bucket check/creation skipped:', error);
+    }
+  }
+
+  private createVersionedFilePath(scope: string, currentPath: string): string {
+    const pathFileName = currentPath.split('/').pop() || 'documento.docx';
+    const extensionMatch = pathFileName.match(/\.([a-z0-9]+)$/i);
+    const extension = extensionMatch?.[1]?.toLowerCase() || 'docx';
+    return `${scope}/${crypto.randomUUID()}.${extension}`;
+  }
+
+  /**
+   * Envia para um caminho novo e confirma o conteúdo relendo o objeto.
+   *
+   * O Supabase recomenda evitar overwrite do mesmo caminho para arquivos que
+   * mudam com frequência, pois CDN/browser podem entregar a versão anterior.
+   * A releitura integral também impede que a UI anuncie sucesso após um upload
+   * incompleto ou divergente.
+   */
+  private async uploadVersionedFileVerified(
+    filePath: string,
+    blob: Blob,
+    contentType: string,
+  ): Promise<void> {
+    const bucket = supabase.storage.from(STORAGE_BUCKET);
+    const { error: uploadError } = await bucket.upload(filePath, blob, {
+      contentType,
+      cacheControl: '0',
+      upsert: false,
+    });
+
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    try {
+      const { data: storedBlob, error: downloadError } = await bucket.download(filePath);
+      if (downloadError || !storedBlob) {
+        throw new Error(downloadError?.message ?? 'Não foi possível confirmar o arquivo enviado.');
+      }
+
+      if (!(await blobContentsEqual(blob, storedBlob))) {
+        throw new Error('A versão armazenada não corresponde ao documento editado.');
+      }
+    } catch (error) {
+      await bucket.remove([filePath]);
+      throw error;
     }
   }
 
@@ -475,23 +522,36 @@ class DocumentTemplateService {
     }
 
     const contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const previousPath = template.file_path;
+    const versionedPath = this.createVersionedFilePath(template.id, previousPath);
 
-    const { error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(template.file_path, blob, { contentType, upsert: true });
-
-    if (uploadError) {
-      throw new Error(uploadError.message);
-    }
+    await this.uploadVersionedFileVerified(versionedPath, blob, contentType);
 
     const { data, error } = await supabase
       .from(this.tableName)
-      .update({ file_size: blob.size, mime_type: contentType })
+      .update({
+        file_path: versionedPath,
+        file_size: blob.size,
+        mime_type: contentType,
+      })
       .eq('id', template.id)
+      .eq('file_path', previousPath)
       .select()
-      .single();
+      .maybeSingle();
 
-    if (error) throw new Error(error.message);
+    if (error || !data) {
+      await supabase.storage.from(STORAGE_BUCKET).remove([versionedPath]);
+      if (error) throw new Error(error.message);
+      throw new Error('Este documento foi atualizado em outra janela. Reabra-o antes de salvar novamente.');
+    }
+
+    const { error: cleanupError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .remove([previousPath]);
+    if (cleanupError) {
+      console.warn('Não foi possível remover a versão anterior do template:', cleanupError.message);
+    }
+
     return data;
   }
 
@@ -523,12 +583,12 @@ class DocumentTemplateService {
     return data;
   }
 
-  // Sobrescrever o conteúdo de um arquivo de template (edição no editor Syncfusion).
-  // Mantém o mesmo file_path/registro — apenas substitui o binário e o tamanho.
+  // Substituir o conteúdo de um arquivo de template (edição no editor Syncfusion).
+  // Mantém o registro e aponta-o para um objeto versionado e já verificado.
   async replaceTemplateFileContent(fileId: string, blob: Blob, fileName?: string): Promise<TemplateFile> {
     const { data: file, error: fetchError } = await supabase
       .from('template_files')
-      .select('file_path, file_name')
+      .select('file_path, file_name, template_id')
       .eq('id', fileId)
       .single();
 
@@ -537,16 +597,16 @@ class DocumentTemplateService {
     }
 
     const contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const previousPath = file.file_path;
+    const versionedPath = this.createVersionedFilePath(
+      file.template_id || fileId,
+      previousPath,
+    );
 
-    const { error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(file.file_path, blob, { contentType, upsert: true });
-
-    if (uploadError) {
-      throw new Error(uploadError.message);
-    }
+    await this.uploadVersionedFileVerified(versionedPath, blob, contentType);
 
     const updates: Record<string, unknown> = {
+      file_path: versionedPath,
       file_size: blob.size,
       mime_type: contentType,
     };
@@ -556,10 +616,23 @@ class DocumentTemplateService {
       .from('template_files')
       .update(updates)
       .eq('id', fileId)
+      .eq('file_path', previousPath)
       .select()
-      .single();
+      .maybeSingle();
 
-    if (error) throw new Error(error.message);
+    if (error || !data) {
+      await supabase.storage.from(STORAGE_BUCKET).remove([versionedPath]);
+      if (error) throw new Error(error.message);
+      throw new Error('Este anexo foi atualizado em outra janela. Reabra-o antes de salvar novamente.');
+    }
+
+    const { error: cleanupError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .remove([previousPath]);
+    if (cleanupError) {
+      console.warn('Não foi possível remover a versão anterior do anexo:', cleanupError.message);
+    }
+
     return data;
   }
 

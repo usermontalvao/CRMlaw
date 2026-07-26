@@ -2,6 +2,7 @@ import './utils/consoleGuard'; // 1º: silencia console em prod (só erro) + avi
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { registerVersionedServiceWorker } from './utils/serviceWorker';
+import { isEditorAppLocation } from './utils/editorAppRoute';
 
 // -- Stale-chunk auto-reload ------------------------------------------------
 window.addEventListener('unhandledrejection', (event) => {
@@ -91,6 +92,23 @@ function hasStaffSessionExpiredNotice(): boolean {
 //   � Qualquer outra situação        ? Portal do Cliente (PortalApp)
 const currentHash = window.location.hash;
 const currentPath = window.location.pathname;
+
+// App "Editor" (PWA instalável separado): quando aberto no caminho /editor, este
+// é o app dedicado do Editor de Petições. Usamos um CAMINHO real (não hash) para
+// que o PWA tenha escopo próprio (/editor) — só assim o navegador consegue abrir
+// ESTE app instalado (e não o CRM) ao seguir um link /editor. Trocamos o
+// <link rel="manifest"> para o manifest próprio (ícone/nome próprios) e tratamos
+// a rota como staff (abre o login se não houver sessão, em vez do Portal).
+const isEditorAppRoute = isEditorAppLocation(currentPath, currentHash);
+if (isEditorAppRoute) {
+  try {
+    const link = document.querySelector('link[rel="manifest"]');
+    if (link) link.setAttribute('href', '/editor.webmanifest');
+  } catch {
+    // ignore
+  }
+}
+
 const isPublicSignature = isPublicSignatureRoute(currentHash, currentPath);
 const isStaffSessionExpired = hasStaffSessionExpiredNotice();
 
@@ -98,8 +116,9 @@ if (isPublicSignature) {
   disablePwaForPublicSignatureRoute();
 }
 
-// Normaliza qualquer path estranho para "/"
-if (currentPath !== '/') {
+// Normaliza qualquer path estranho para "/" — exceto /editor, que é o caminho
+// próprio do app do Editor (precisa ser preservado para o escopo do PWA).
+if (currentPath !== '/' && !isEditorAppRoute) {
   window.history.replaceState({}, '', `/${currentHash}`);
 }
 
@@ -129,7 +148,7 @@ const isPublicCrmRoute =
   currentHash.includes('/docs') ||
   currentPath.includes('/docs');
 
-const isStaff = hasSupabaseSession() || isStaffSessionExpired || isDocRoute || isCronRoute || isPublicCrmRoute;
+const isStaff = hasSupabaseSession() || isStaffSessionExpired || isDocRoute || isCronRoute || isPublicCrmRoute || isEditorAppRoute;
 
 async function renderRoot() {
   let rootElement: React.ReactNode;
@@ -148,6 +167,17 @@ async function renderRoot() {
     const { default: PetitionAiChatPreview } = await import('./dev/PetitionAiChatPreview');
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <PetitionAiChatPreview />,
+    );
+    return;
+  }
+
+  // App dedicado "Editor" (/editor): casca MÍNIMA — só o editor, sem o CRM
+  // completo (sidebar, dashboard, módulos). Providers próprios dentro de EditorApp.
+  if (isEditorAppRoute) {
+    const { default: EditorApp } = await import('./EditorApp');
+    rootElement = <EditorApp />;
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <React.StrictMode>{rootElement}</React.StrictMode>,
     );
     return;
   }
