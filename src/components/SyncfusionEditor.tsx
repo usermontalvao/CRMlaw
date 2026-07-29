@@ -35,11 +35,13 @@ import {
   evaluateContextGate,
   registerProofTokens,
 } from '../services/proofContextBudget';
+import { resetSyncfusionHistoryAfterDocumentLoad } from '../utils/syncfusionHistory';
 import { aiService } from '../services/ai.service';
 import { supabase } from '../config/supabase';
 import {
   collabApiUrl,
   collabLog,
+  CollabSaveConflictError,
   connectToCollabRoom,
   currentAccessToken,
   fetchMissedActions,
@@ -1764,6 +1766,25 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
      * como se fossem "de outra pessoa" — aplicadas de novo, duplicando o texto.
      */
     const collabOwnConnectionIdsRef = useRef<Set<string>>(new Set());
+    /**
+     * Resolver de uma única vez: liga o `documentChange` do editor ao fim do
+     * `editor.open()` da co-edição. Enquanto o layout do open está pendente,
+     * NÃO podemos alimentar operações remotas — elas entram na fila de layout do
+     * Syncfusion e, ao rodar em `onDocumentChanged`, tentam posicionar a seleção
+     * num parágrafo ainda sem estrutura de linhas (o crash `nextSplitWidget`,
+     * que trava a carga do arquivo). Ver `joinCollabRoom`.
+     */
+    const collabDocSettledRef = useRef<null | (() => void)>(null);
+    /**
+     * Quantas operações REMOTAS a blindagem descartou nesta sessão.
+     *
+     * A blindagem existe para o editor não morrer com uma operação inaplicável
+     * (ver `applyRemoteAction` em `joinCollabRoom`), mas cada descarte deixa este
+     * navegador com um documento INCOMPLETO: falta nele o que a outra pessoa
+     * escreveu. Gravar esse documento no Nextcloud apagaria o texto dela — então o
+     * salvamento é recusado enquanto este contador não for zero.
+     */
+    const collabDroppedRemoteOpsRef = useRef(0);
     const onCollabPeersChangeRef = useRef(onCollabPeersChange);
     const onCollabStatusChangeRef = useRef(onCollabStatusChange);
     const onCollabSavedRef = useRef(onCollabSaved);
@@ -2094,11 +2115,17 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
      * Depois de uma queda de conexão: busca no servidor as operações que este
      * cliente perdeu e aplica na ordem. Sem isto o editor volta com um documento
      * defasado e a próxima letra digitada entra na posição errada.
+     *
+     * Devolve `true` só quando TODAS as operações perdidas entraram. A versão do
+     * handler avança operação por operação, e PARA na primeira que não puder ser
+     * aplicada: dizer ao servidor "estou na versão N" sem ter o conteúdo da
+     * versão N é o que faria o salvamento gravar um documento sem a edição da
+     * outra pessoa — apagando o trabalho dela.
      */
-    const recoverMissedCollabActions = async () => {
+    const recoverMissedCollabActions = async (): Promise<boolean> => {
       const room = collabRoomRef.current;
       const handler: any = collabHandlerRef.current;
-      if (!room || !handler) return;
+      if (!room || !handler) return false;
 
       try {
         const actions = await fetchMissedActions({
@@ -2107,26 +2134,52 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         });
 
         let applied = 0;
+        let syncedVersion = collabHandlerVersion();
+        let complete = true;
+
         for (const action of actions) {
+          const actionVersion = Number((action as { version?: number } | null)?.version);
           const author = String((action as { connectionId?: string } | null)?.connectionId || '');
+
           // As nossas já estão aplicadas localmente desde antes da queda.
-          if (author && collabOwnConnectionIdsRef.current.has(author)) continue;
+          if (author && collabOwnConnectionIdsRef.current.has(author)) {
+            if (Number.isFinite(actionVersion)) syncedVersion = Math.max(syncedVersion, actionVersion);
+            continue;
+          }
+
+          const droppedBefore = collabDroppedRemoteOpsRef.current;
           try {
             handler.applyRemoteAction('action', action);
-            applied += 1;
           } catch (err) {
             collabLog('falha ao reaplicar edição perdida', {
               room: room.roomName,
               error: String((err as Error)?.name || err),
             });
+            complete = false;
+            break;
           }
+          // A blindagem de `applyRemoteAction` engole o erro para não derrubar o
+          // editor; é por este contador que se sabe que a operação NÃO entrou.
+          if (collabDroppedRemoteOpsRef.current !== droppedBefore) {
+            complete = false;
+            break;
+          }
+
+          applied += 1;
+          if (Number.isFinite(actionVersion)) syncedVersion = Math.max(syncedVersion, actionVersion);
         }
+
+        handler.updateVersion?.(syncedVersion);
 
         collabLog('edições recuperadas após reconexão', {
           room: room.roomName,
           recebidas: actions.length,
           aplicadas: applied,
+          completo: complete,
         });
+
+        if (!complete) setCollabStatus('disconnected');
+        return complete;
       } catch (err) {
         collabLog('não foi possível recuperar as edições perdidas', {
           room: room.roomName,
@@ -2135,6 +2188,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         // Sem recuperar, este editor NÃO está em dia com os outros — e a tela
         // não pode sugerir que está.
         setCollabStatus('disconnected');
+        return false;
       }
     };
 
@@ -2229,10 +2283,71 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         handler.__juriusAuthPatched = true;
       }
 
+      // BLINDAGEM do crash `nextSplitWidget`.
+      //
+      // O `CollaborativeEditingHandler` NÃO aplica a operação remota na hora: ele
+      // a agenda em `executeAfterLayout`. Quando o layout assenta (inclusive o do
+      // próprio `editor.open()`), o Syncfusion REINVOCA `applyRemoteAction` a
+      // partir de `onDocumentChanged`. Se essa operação apontar para uma posição
+      // que não existe no documento carregado — uma edição já embutida no SFDT
+      // que o servidor devolveu, ou de uma versão defasada — o `Selection.select`
+      // lê `undefined.nextSplitWidget` e ESTOURA. Como o disparo é deferido, o
+      // `try/catch` de quem chamou `applyRemoteAction` não alcança: o erro vira
+      // `Uncaught (in promise)` e congela a tela em "carregando".
+      //
+      // Envolvendo o método NA INSTÂNCIA, tanto a chamada síncrona quanto a
+      // reinvocação deferida passam por aqui — uma operação inaplicável é
+      // descartada e a sessão continua, em vez de derrubar o editor inteiro.
+      if (!handler.__juriusApplyGuardPatched) {
+        const originalApplyRemoteAction = typeof handler.applyRemoteAction === 'function'
+          ? handler.applyRemoteAction.bind(handler)
+          : null;
+        if (originalApplyRemoteAction) {
+          handler.applyRemoteAction = (action: string, data: unknown) => {
+            try {
+              return originalApplyRemoteAction(action, data);
+            } catch (err) {
+              // Só operação de EDIÇÃO deixa o documento incompleto. `connectionId`
+              // e `removeUser` são recados de presença: descartá-los não muda uma
+              // letra do texto e não pode bloquear o salvamento.
+              if (action === 'action') collabDroppedRemoteOpsRef.current += 1;
+              collabLog('operação remota inaplicável descartada', {
+                action,
+                error: String((err as Error)?.name || err),
+                descartadas: collabDroppedRemoteOpsRef.current,
+              });
+              return undefined;
+            }
+          };
+        }
+        handler.__juriusApplyGuardPatched = true;
+      }
+
+      // Sessão nova, contagem nova: o que foi descartado na sala anterior não tem
+      // nada a ver com o documento que está sendo aberto agora.
+      collabDroppedRemoteOpsRef.current = 0;
+
       // A ordem importa: informar sala/versão ANTES de abrir, senão a primeira
       // edição sai com a versão errada e o servidor a trata como atrasada.
       handler.updateRoomInfo(roomName, document.version, collabApiUrl());
+
+      // `editor.open()` dispara um layout ASSÍNCRONO. Se conectarmos e começarmos
+      // a aplicar operações remotas antes dele terminar, elas entram na fila de
+      // layout do Syncfusion e, ao rodar, quebram a seleção contra um parágrafo
+      // ainda sem linhas (`nextSplitWidget` undefined) — o crash que impedia o
+      // arquivo de carregar. Esperamos o `documentChange` assentar; o timeout é a
+      // rede de segurança para um .docx que não dispare o evento.
+      const opened = new Promise<void>((resolve) => {
+        collabDocSettledRef.current = resolve;
+        window.setTimeout(() => {
+          if (collabDocSettledRef.current === resolve) {
+            collabDocSettledRef.current = null;
+            resolve();
+          }
+        }, 4000);
+      });
       editor.open(document.sfdt);
+      await opened;
 
       collabRoomRef.current = { roomName, filePath: path, fileName };
       collabHandlerRef.current = handler;
@@ -2333,7 +2448,85 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         if (collabStatusRef.current === 'disconnected') {
           throw new Error('A coedição está desconectada — o servidor não recebeu as últimas edições.');
         }
-        return flushCollabRoom({ roomName: room.roomName, filePath: room.filePath });
+
+        const handler: any = collabHandlerRef.current;
+        const editor: any = containerRef.current?.documentEditor as any;
+        if (!handler || !editor) throw new Error('O editor ainda não está pronto para gravar.');
+
+        // O QUE ESTA JANELA GRAVA É O DOCUMENTO DESTA TELA. Se alguma operação
+        // remota foi descartada, falta aqui o que a outra pessoa escreveu — e
+        // gravar assim apagaria o texto dela no Nextcloud. Recusar é a única saída
+        // honesta: nada foi perdido, o servidor continua com tudo.
+        const assertDocumentIsComplete = () => {
+          if (collabDroppedRemoteOpsRef.current === 0) return;
+          throw new Error(
+            'Esta janela não recebeu todas as edições em conjunto, então gravar agora ' +
+            'apagaria o texto de quem está editando com você. Feche e reabra o documento ' +
+            'para sincronizar — nada do que foi escrito se perdeu.',
+          );
+        };
+
+        const waitForAcknowledgements = async () => {
+          const deadline = Date.now() + 10_000;
+          while (
+            handler.acknowledgmentPending != null ||
+            (Array.isArray(handler.pendingOps) && handler.pendingOps.length > 0)
+          ) {
+            if (collabStatusRef.current === 'disconnected') {
+              throw new Error(
+                'A coedição desconectou antes de confirmar todas as alterações.',
+              );
+            }
+            if (Date.now() >= deadline) {
+              throw new Error(
+                'O servidor ainda não confirmou todas as alterações. Tente salvar novamente.',
+              );
+            }
+            await new Promise((resolve) => { window.setTimeout(resolve, 50); });
+          }
+        };
+
+        // Se uma operação remota entrar entre serializar e o servidor tirar a
+        // foto atômica do Redis, SaveToSource responde 409. Recuperamos o que
+        // faltou, serializamos outra vez e tentamos uma única vez com a versão
+        // nova — nunca gravamos um snapshot defasado.
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          await waitForAcknowledgements();
+          assertDocumentIsComplete();
+          await new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()));
+          });
+
+          const sfdt = String(editor.serialize?.() || '');
+          if (!sfdt) throw new Error('Não foi possível preparar o documento para gravação.');
+
+          // A versão é lida DEPOIS de serializar, e é a que o servidor confere
+          // contra a versão atômica da sala: uma operação que entrar daqui em
+          // diante faz o servidor responder 409 em vez de gravar por cima dela.
+          const version = collabHandlerVersion();
+
+          try {
+            return await flushCollabRoom({
+              roomName: room.roomName,
+              filePath: room.filePath,
+              sfdt,
+              version,
+            });
+          } catch (error) {
+            if (!(error instanceof CollabSaveConflictError) || attempt > 0) throw error;
+            // Chegou edição nova durante o preparo. Só vale tentar de novo depois
+            // de recuperar TUDO o que faltava: com o documento incompleto, a
+            // segunda tentativa gravaria por cima do texto do outro.
+            if (!(await recoverMissedCollabActions())) {
+              throw new Error(
+                'Chegaram novas edições e esta janela não conseguiu sincronizá-las. ' +
+                'Reabra o documento e salve de novo — nada foi perdido.',
+              );
+            }
+          }
+        }
+
+        throw new Error('Não foi possível obter uma versão estável do documento para gravar.');
       },
 
       notifyCollabTyping: () => {
@@ -3432,9 +3625,24 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     };
 
     const handleDocumentChange = () => {
+      const editor: any = containerRef.current?.documentEditor as any;
+
+      // EJ2 32.1.21 destrói as pilhas ao trocar de documento, mas conserva
+      // ponteiros transitórios para os BaseHistoryInfo já destruídos. Com a
+      // coedição ligada, o próximo fireContentChange tenta serializar esse
+      // lastOperation sem owner e quebra em `editorHistoryModule`.
+      resetSyncfusionHistoryAfterDocumentLoad(editor);
+
+      // Um `open()` da co-edição está esperando o layout assentar: libera-o antes
+      // de qualquer outra coisa, para só então conectar e receber operações.
+      const settle = collabDocSettledRef.current;
+      if (settle) {
+        collabDocSettledRef.current = null;
+        settle();
+      }
+
       onDocumentChange?.();
 
-      const editor: any = containerRef.current?.documentEditor as any;
       if (!editor) return;
 
       // editor.open() restaura partes do menu em momentos diferentes conforme

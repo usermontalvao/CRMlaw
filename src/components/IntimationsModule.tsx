@@ -37,6 +37,7 @@ import {
 import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
 import { DeadlineFormModal } from './DeadlineFormModal';
+import { ProcessQuickViewModal } from './ProcessQuickViewModal';
 import { clientService } from '../services/client.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { Modal, ModalBody, IntimationsSkeleton } from './ui';
@@ -66,6 +67,7 @@ import type { CreateDeadlineDTO, DeadlineType, DeadlinePriority, DeadlineStatus 
 import type { CreateCalendarEventDTO, CalendarEventType } from '../types/calendar.types';
 import type { Profile } from '../services/profile.service';
 import type { IntimationAnalysis } from '../types/ai.types';
+import { addMinutesToWallTime } from '../utils/officeTime';
 
 interface ModuleSettings {
   defaultGroupByProcess: boolean;
@@ -158,6 +160,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [intimations, setIntimations] = useState<DjenComunicacaoLocal[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [processes, setProcesses] = useState<Process[]>([]);
+  const [quickViewProcessId, setQuickViewProcessId] = useState<string | null>(null);
   const [members, setMembers] = useState<Profile[]>([]);
   const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1426,6 +1429,33 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     return processes.find((p) => p.id === processId)?.process_code || 'Processo não encontrado';
   };
 
+  const getLinkedProcess = (intimation: DjenComunicacaoLocal): Process | undefined => {
+    if (intimation.process_id) {
+      const linkedProcess = processes.find((process) => process.id === intimation.process_id);
+      if (linkedProcess) return linkedProcess;
+    }
+
+    const intimationNumber = (
+      intimation.numero_processo_mascara || intimation.numero_processo || ''
+    ).replace(/\D/g, '');
+    if (!intimationNumber) return undefined;
+
+    return processes.find(
+      (process) => (process.process_code || '').replace(/\D/g, '') === intimationNumber,
+    );
+  };
+
+  const openLinkedProcess = (
+    event: React.MouseEvent,
+    intimation: DjenComunicacaoLocal,
+  ) => {
+    event.stopPropagation();
+    const linkedProcess = getLinkedProcess(intimation);
+    if (!linkedProcess) return;
+
+    setQuickViewProcessId(linkedProcess.id);
+  };
+
   const formatDate = (dateStr: string) => {
     try {
       return formatDateValue(dateStr);
@@ -2249,7 +2279,18 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       <FileText className="w-3.5 h-3.5 text-slate-400" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-slate-900 font-mono font-bold text-sm truncate leading-tight">{processNum}</p>
+                      {getLinkedProcess(group[0]) ? (
+                        <button
+                          type="button"
+                          onClick={(event) => openLinkedProcess(event, group[0])}
+                          className="block max-w-full truncate text-left text-slate-900 hover:text-blue-700 hover:underline underline-offset-2 font-mono font-bold text-sm leading-tight transition-colors cursor-pointer"
+                          title="Abrir detalhes do processo"
+                        >
+                          {processNum}
+                        </button>
+                      ) : (
+                        <p className="text-slate-900 font-mono font-bold text-sm truncate leading-tight">{processNum}</p>
+                      )}
                       {group[0].client_id && (
                         <p className="text-slate-400 text-[11px] truncate leading-tight">{getClientName(group[0].client_id)}</p>
                       )}
@@ -2581,11 +2622,24 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     </span>
 
                     {/* Número do processo */}
-                    <span className={`font-mono text-[12px] sm:text-[13px] tabular-nums flex-shrink-0 truncate max-w-[140px] sm:max-w-[180px] ${
-                      !intimation.lida ? 'font-bold text-[#031636]' : 'font-medium text-slate-500'
-                    }`}>
-                      {intimation.numero_processo_mascara || intimation.numero_processo || 'Sem número'}
-                    </span>
+                    {getLinkedProcess(intimation) ? (
+                      <button
+                        type="button"
+                        onClick={(event) => openLinkedProcess(event, intimation)}
+                        className={`font-mono text-[12px] sm:text-[13px] tabular-nums flex-shrink-0 truncate max-w-[140px] sm:max-w-[180px] hover:text-blue-700 hover:underline underline-offset-2 transition-colors ${
+                          !intimation.lida ? 'font-bold text-[#031636]' : 'font-medium text-slate-500'
+                        }`}
+                        title="Abrir detalhes do processo"
+                      >
+                        {intimation.numero_processo_mascara || intimation.numero_processo}
+                      </button>
+                    ) : (
+                      <span className={`font-mono text-[12px] sm:text-[13px] tabular-nums flex-shrink-0 truncate max-w-[140px] sm:max-w-[180px] ${
+                        !intimation.lida ? 'font-bold text-[#031636]' : 'font-medium text-slate-500'
+                      }`}>
+                        {intimation.numero_processo_mascara || intimation.numero_processo || 'Sem número'}
+                      </span>
+                    )}
 
                     {/* Sigiloso — destaque de atenção (DJEN não traz o inteiro teor) */}
                     {sig && (
@@ -3018,6 +3072,22 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               )}
         </ModalBody>
       </Modal>
+
+      <ProcessQuickViewModal
+        processId={quickViewProcessId}
+        onClose={() => setQuickViewProcessId(null)}
+        onProcessUpdated={(updatedProcess) => {
+          setProcesses((current) => current.map((item) => (
+            item.id === updatedProcess.id ? { ...item, ...updatedProcess } : item
+          )));
+        }}
+        onOpenModule={(processId) => {
+          setQuickViewProcessId(null);
+          const params = { mode: 'details', entityId: processId };
+          if (onNavigateToModule) onNavigateToModule('processos', params);
+          else navigateTo('processos', params);
+        }}
+      />
 
       {/* Modal de Criação de Prazo */}
       {currentIntimationForAction && (() => {
@@ -3706,7 +3776,8 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
       const durationMin: Record<string, number> = {
         deadline: 60, hearing: 120, requirement: 60, payment: 30, meeting: 60, pericia: 180, personal: 60,
       };
-      const endAt = new Date(new Date(startAt).getTime() + (durationMin[formData.type] ?? 60) * 60 * 1000).toISOString();
+      // Hora de parede: o serviço ancora start/end no fuso do escritório.
+      const endAt = addMinutesToWallTime(startAt, durationMin[formData.type] ?? 60);
 
       const payload: CreateCalendarEventDTO = {
         title: formData.title,

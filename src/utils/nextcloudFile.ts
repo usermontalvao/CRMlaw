@@ -2,6 +2,7 @@ import {
   Folder,
   File as FileIcon,
   FileText,
+  FileType2,
   Image as ImageIcon,
   Film,
   Music,
@@ -64,6 +65,19 @@ export function extIcon(entry: NextcloudEntry) {
   if (isImage(entry)) return ImageIcon;
   if (isVideo(entry)) return Film;
   if (isAudio(entry)) return Music;
-  if (isDocx(entry) || isPdf(entry) || isTextFile(entry)) return FileText;
+  if (isPdf(entry) || isTextFile(entry)) return FileText;
+  if (isDocx(entry)) return FileType2;
   return FileIcon;
+}
+
+/** Cor padronizada para o ícone em todas as superfícies do Nextcloud. */
+export function fileIconColorClass(entry: NextcloudEntry): string {
+  if (entry.isDir) return 'text-blue-500';
+  if (isPdf(entry)) return 'text-red-500';
+  if (isDocx(entry)) return 'text-blue-600';
+  if (isImage(entry)) return 'text-violet-500';
+  if (isVideo(entry)) return 'text-fuchsia-500';
+  if (isAudio(entry)) return 'text-amber-500';
+  if (isTextFile(entry)) return 'text-slate-500';
+  return 'text-gray-400';
 }

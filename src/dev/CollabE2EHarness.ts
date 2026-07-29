@@ -124,7 +124,12 @@ async function start(): Promise<void> {
       editor.selection.moveToDocumentEnd();
       return value;
     },
-    flush: () => flushCollabRoom({ roomName, filePath }),
+    flush: () => flushCollabRoom({
+      roomName,
+      filePath,
+      sfdt: editor.serialize(),
+      version: Number((handler as any).version) || 0,
+    }),
     stop: async () => connection?.stop(),
   };
   window.__collab = api;

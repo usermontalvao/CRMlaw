@@ -22,6 +22,7 @@ import ClientForm from './ClientForm';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
+import { addMinutesToWallTime } from '../utils/officeTime';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -259,11 +260,10 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
         ? form.requirement_id : null;
 
       const computedStartAt = computeStartAt(form.date, form.time);
+      // Fim calculado sobre a hora de parede: `new Date()` leria a string no
+      // fuso do navegador e deslocaria o evento para quem cadastra de fora.
       const computedEndAt   = form.time
-        ? (() => {
-            const dur = (eventTypeDurations[form.type] ?? 60) + bufferMin;
-            return new Date(new Date(computedStartAt).getTime() + dur * 60000).toISOString();
-          })()
+        ? addMinutesToWallTime(computedStartAt, (eventTypeDurations[form.type] ?? 60) + bufferMin)
         : null;
 
       const payload = {

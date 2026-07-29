@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   Search, X, FileText, Users, Loader2, ChevronRight, ChevronLeft, ArrowRight,
-  File,
+  File, FileType2,
   ClipboardList, Calendar, CheckSquare, AlarmClock, DollarSign, FolderOpen,
   Clock, Zap, Gavel, PenTool, Sparkles, CornerDownLeft, LayoutGrid,
   Phone, Mail, Hash, Building2, Tag, User, CreditCard, Copy, Check,
@@ -133,6 +133,8 @@ interface SearchResult {
   clientPhotoPath?: string | null;
   icon?: React.ElementType;
   typeLabel?: string;
+  iconColor?: string;
+  iconBackground?: string;
 }
 
 interface GlobalSearchModalProps {
@@ -957,14 +959,21 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
             const isPdf = !entry.isDir && (
               entry.mime === 'application/pdf' || entry.name.toLowerCase().endsWith('.pdf')
             );
+            const isWord = !entry.isDir && (
+              entry.mime.includes('word') || /\.docx?$/i.test(entry.name)
+            );
             return {
               id: entry.path,
               type: 'nextcloud' as const,
               title: entry.name,
               subtitle: parent || 'Início',
               meta: entry.isDir ? 'Pasta' : size || undefined,
-              icon: entry.isDir ? FolderOpen : (isPdf ? FileText : File),
-              typeLabel: entry.isDir ? 'Pasta' : (isPdf ? 'Documento PDF' : 'Arquivo'),
+              icon: entry.isDir ? FolderOpen : (isPdf ? FileText : (isWord ? FileType2 : File)),
+              typeLabel: entry.isDir
+                ? 'Pasta'
+                : (isPdf ? 'Documento PDF' : (isWord ? 'Documento Word' : 'Arquivo')),
+              iconColor: isPdf ? '#dc2626' : (isWord ? '#2563eb' : (entry.isDir ? '#2563eb' : '#64748b')),
+              iconBackground: isPdf ? '#fef2f2' : (isWord || entry.isDir ? '#eff6ff' : '#f8fafc'),
               score: 50,
               navModule: 'nextcloud',
               // Arquivo abre a pasta que o contém; pasta abre ela mesma.
@@ -2195,7 +2204,11 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                                   {/* Demais tipos: ícone quadrado */}
                                   <span
                                     className={`search-result-icon ${TYPE_ICON_COLOR[r.type as ResultType]}`}
-                                    style={iconBoxStyle(r.type as ResultType)}
+                                    style={{
+                                      ...iconBoxStyle(r.type as ResultType),
+                                      ...(r.iconBackground ? { background: r.iconBackground } : {}),
+                                      ...(r.iconColor ? { color: r.iconColor } : {}),
+                                    }}
                                   >
                                     <Icon style={{ width: 17, height: 17 }} />
                                   </span>
@@ -2381,7 +2394,13 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                           {initials(previewItem.title)}
                         </div>
                       ) : (
-                        <div className={`preview-avatar-icon ${TYPE_ICON_COLOR[previewItem.type]}`} style={{ background: TYPE_ICON_BG[previewItem.type] }}>
+                        <div
+                          className={`preview-avatar-icon ${TYPE_ICON_COLOR[previewItem.type]}`}
+                          style={{
+                            background: previewItem.iconBackground ?? TYPE_ICON_BG[previewItem.type],
+                            ...(previewItem.iconColor ? { color: previewItem.iconColor } : {}),
+                          }}
+                        >
                           {(() => {
                             const PreviewIcon = previewItem.icon ?? previewCfg.icon;
                             return <PreviewIcon style={{ width: 36, height: 36 }} />;

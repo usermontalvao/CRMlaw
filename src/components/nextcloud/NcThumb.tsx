@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { pdfjs } from 'react-pdf';
 import { Loader2 } from 'lucide-react';
 import { nextcloudService, type NextcloudEntry } from '../../services/nextcloud.service';
-import { isImage, isPdf, extIcon } from '../../utils/nextcloudFile';
+import { isImage, isPdf, extIcon, fileIconColorClass } from '../../utils/nextcloudFile';
 import { setLocalPdfWorker } from '../../utils/pdfWorker';
 
 setLocalPdfWorker(pdfjs);
@@ -62,7 +62,7 @@ export const NcThumb: React.FC<{ entry: NextcloudEntry }> = ({ entry }) => {
 
   const Icon = extIcon(entry);
   if (!eligible || failed) {
-    return <div className="w-full h-24 flex items-center justify-center"><Icon className={`w-12 h-12 ${entry.isDir ? 'text-blue-500' : 'text-gray-400'}`} /></div>;
+    return <div className="w-full h-24 flex items-center justify-center"><Icon className={`w-12 h-12 ${fileIconColorClass(entry)}`} /></div>;
   }
   if (!url) {
     return <div className="w-full h-24 flex items-center justify-center bg-slate-100 dark:bg-gray-800 rounded-lg"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>;

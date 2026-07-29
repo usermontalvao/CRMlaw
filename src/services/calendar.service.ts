@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import { syncBus } from '../lib/syncBus';
+import { toOfficeTimestamp } from '../utils/officeTime';
 import type {
   CalendarEvent,
   CalendarEventAudit,
@@ -11,25 +12,18 @@ import type {
 class CalendarService {
   private tableName = 'calendar_events';
 
-  // Converte data/hora local para formato com timezone
+  /**
+   * Ancora a data/hora digitada no fuso do ESCRITÓRIO.
+   *
+   * Antes esta função carimbava o offset do navegador (`getTimezoneOffset()`),
+   * partindo do pressuposto de que quem cadastra está sempre no Brasil. Quem
+   * cadastrasse de fora gravava um instante deslocado sem perceber: "14:00"
+   * digitado na Suíça virava 08:00 em Cuiabá, e um evento de dia inteiro
+   * pulava para as 18:00 do dia anterior. Uma audiência às 14:00 em Cuiabá é
+   * 14:00 em Cuiabá, independentemente de onde está o relógio de quem digita.
+   */
   private toLocalTimestamp(dateTimeString: string): string {
-    // Se já tem timezone (positivo, negativo ou Z), retorna como está
-    if (dateTimeString.includes('+') || dateTimeString.includes('Z')) {
-      return dateTimeString;
-    }
-    // Offset negativo no final, ex: "2026-07-17T16:00:00-04:00"
-    if (/T\d{2}:\d{2}:\d{2}-\d{2}:\d{2}$/.test(dateTimeString)) {
-      return dateTimeString;
-    }
-
-    // Adiciona o timezone local (ex: -03:00 para Brasília)
-    const date = new Date(dateTimeString);
-    const offset = -date.getTimezoneOffset();
-    const offsetHours = Math.floor(Math.abs(offset) / 60).toString().padStart(2, '0');
-    const offsetMinutes = (Math.abs(offset) % 60).toString().padStart(2, '0');
-    const sign = offset >= 0 ? '+' : '-';
-
-    return `${dateTimeString}${sign}${offsetHours}:${offsetMinutes}`;
+    return toOfficeTimestamp(dateTimeString);
   }
 
   async listEvents(typeFilters?: CalendarEventType[]): Promise<CalendarEvent[]> {

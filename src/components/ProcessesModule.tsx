@@ -1655,7 +1655,7 @@ Não use outros títulos além de "Próximo Passo Recomendado". Sem sufixos entr
             if (hearingEvent) {
               const hearingUpdatePayload: Record<string, any> = { user_id: hearingResponsibleId || null };
               if (formData.hearing_date) {
-                hearingUpdatePayload.start_at = `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00-04:00`;
+                hearingUpdatePayload.start_at = `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00`;
               }
               await calendarService.updateEvent(hearingEvent.id, hearingUpdatePayload);
             }
@@ -1717,7 +1717,7 @@ Não use outros títulos além de "Próximo Passo Recomendado". Sem sufixos entr
               description: formData.court ? `Audiência do processo ${newProcess.process_code || ''} • ${formData.court}` : undefined,
               event_type: 'hearing',
               status: 'pendente',
-              start_at: `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00-04:00`,
+              start_at: `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00`,
               process_id: newProcess.id,
               client_id: (newProcess as any).client_id || null,
               user_id: hearingResponsibleId || null,

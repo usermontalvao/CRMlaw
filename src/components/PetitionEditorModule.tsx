@@ -108,7 +108,14 @@ import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
 import { useEditingPresence } from '../hooks/useNextcloudPresence';
 import EditorPresenceBar from './EditorPresenceBar';
-import { isCollabEnabled, type CollabPeer, type CollabSaveOutcome, type CollabStatus } from '../services/syncfusionCollab.service';
+import {
+  isCollabEnabled,
+  isNothingToSave,
+  isSaveConfirmed,
+  type CollabPeer,
+  type CollabSaveOutcome,
+  type CollabStatus,
+} from '../services/syncfusionCollab.service';
 import { decideCollabSave, describeOtherEditors } from '../services/collabSaveScope';
 import { profileService } from '../services/profile.service';
 import { useUserAvatars } from '../hooks/useUserAvatars';
@@ -3668,8 +3675,10 @@ Regras:
     // Sobraram operações fora da gravação (chegaram durante o upload): a
     // pendência continua verdadeira até o próximo flush.
     if (outcome.stillPending > 0) return;
-    // Havia operações e o upload não aconteceu: nada a comemorar.
-    if (!outcome.uploaded && outcome.operations > 0) return;
+    // Só duas situações liberam a pendência: o arquivo foi gravado E CONFERIDO no
+    // Nextcloud, ou não havia nada para gravar. Qualquer outra coisa — inclusive um
+    // PUT que voltou 2xx sem a releitura conferir — continua sendo pendência.
+    if (!isSaveConfirmed(outcome) && !isNothingToSave(outcome)) return;
     setHasUnsavedChanges(false);
     setLastSaved(outcome.savedAt ? new Date(outcome.savedAt) : new Date());
   }, []);
@@ -3912,6 +3921,18 @@ Regras:
 
         const outcome = await collabEditor.flushCollaboration();
 
+        // O serviço só responde 200 depois de gravar E RELER o arquivo no
+        // Nextcloud. Ainda assim, conferimos aqui: "Salvo" não pode sair de um
+        // resultado que não confirmou a gravação — era exatamente essa confiança
+        // no 2xx que fazia a tela dizer "Salvo no Nextcloud" com o arquivo intacto.
+        if (!isSaveConfirmed(outcome) && !isNothingToSave(outcome)) {
+          setError(
+            'O serviço não confirmou a gravação do documento no Nextcloud. ' +
+            'Nada foi perdido: as edições continuam na sala. Tente salvar novamente.',
+          );
+          return false;
+        }
+
         clearLocalDraft();
         setHasUnsavedChanges(contentChangeSeqRef.current !== startSeq);
         setLastSaved(new Date());
@@ -3927,7 +3948,7 @@ Regras:
         });
 
         showSuccessMessage(
-          outcome.uploaded
+          isSaveConfirmed(outcome)
             ? 'Salvo no Nextcloud.'
             : 'Nada novo para gravar — o documento no Nextcloud já está em dia.',
         );

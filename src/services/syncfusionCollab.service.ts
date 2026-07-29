@@ -1,4 +1,4 @@
-import { HubConnectionBuilder, HttpTransportType, type HubConnection } from '@microsoft/signalr';
+import { HubConnectionBuilder, HttpTransportType, LogLevel, type HubConnection } from '@microsoft/signalr';
 import { supabase } from '../config/supabase';
 import {
   CollabPeerRegistry,
@@ -189,9 +189,32 @@ export interface CollabSaveOutcome {
   version: number;
   /** `true` quando o arquivo foi realmente enviado ao Nextcloud. */
   uploaded: boolean;
+  /**
+   * `true` quando o serviço RELEU o arquivo no Nextcloud depois de gravar e os
+   * bytes conferiram. Um PUT com 2xx não prova que o arquivo mudou — é este
+   * campo, e só ele, que autoriza a tela a dizer "Salvo".
+   */
+  verified: boolean;
   /** Operações que chegaram durante a gravação e continuam pendentes. */
   stillPending: number;
   savedAt: string | null;
+}
+
+/** O documento gravado no Nextcloud foi conferido byte a byte depois da gravação. */
+export function isSaveConfirmed(outcome: CollabSaveOutcome): boolean {
+  return outcome.uploaded && outcome.verified;
+}
+
+/** Não havia nada pendente: o arquivo no Nextcloud já estava em dia. */
+export function isNothingToSave(outcome: CollabSaveOutcome): boolean {
+  return !outcome.uploaded && outcome.operations === 0;
+}
+
+export class CollabSaveConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CollabSaveConflictError';
+  }
 }
 
 /**
@@ -205,34 +228,49 @@ export interface CollabSaveOutcome {
 export async function flushCollabRoom(input: {
   roomName: string;
   filePath?: string;
+  sfdt: string;
+  version: number;
 }): Promise<CollabSaveOutcome> {
   const response = await authorizedFetch('SaveToSource', {
     roomName: input.roomName,
     filePath: input.filePath,
+    sfdt: input.sfdt,
+    version: input.version,
   });
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
+    if (response.status === 409) {
+      throw new CollabSaveConflictError(
+        detail?.trim() || 'Chegaram novas edições durante o salvamento.',
+      );
+    }
     throw new Error(
       detail?.trim() || `O serviço de co-edição respondeu ${response.status} ao gravar o documento.`,
     );
   }
 
-  const data = (await response.json()) as Partial<CollabSaveOutcome>;
-  const outcome: CollabSaveOutcome = {
-    operations: Number(data?.operations) || 0,
-    version: Number(data?.version) || 0,
-    uploaded: data?.uploaded === true,
-    stillPending: Number(data?.stillPending) || 0,
-    savedAt: typeof data?.savedAt === 'string' ? data.savedAt : null,
-  };
+  const outcome = readSaveOutcome(await response.json());
   collabLog('gravação confirmada', {
     room: input.roomName,
     operations: outcome.operations,
     uploaded: outcome.uploaded,
+    verified: outcome.verified,
     stillPending: outcome.stillPending,
   });
   return outcome;
+}
+
+function readSaveOutcome(payload: unknown): CollabSaveOutcome {
+  const data = (payload ?? {}) as Partial<CollabSaveOutcome>;
+  return {
+    operations: Number(data?.operations) || 0,
+    version: Number(data?.version) || 0,
+    uploaded: data?.uploaded === true,
+    verified: data?.verified === true,
+    stillPending: Number(data?.stillPending) || 0,
+    savedAt: typeof data?.savedAt === 'string' ? data.savedAt : null,
+  };
 }
 
 /**
@@ -324,6 +362,10 @@ export async function connectToCollabRoom(input: {
       skipNegotiation: true,
       transport: HttpTransportType.WebSockets,
     })
+    // O nível Information do SignalR imprime a URL completa do WebSocket.
+    // Como o transporte WebSocket autentica por query string, isso expunha o
+    // access_token do usuário no console e em qualquer log copiado dali.
+    .configureLogging(LogLevel.Warning)
     .withAutomaticReconnect()
     .build();
 
@@ -359,17 +401,11 @@ export async function connectToCollabRoom(input: {
       // O aviso de digitação NÃO é operação: nunca vai para o editor.
       return;
     } else if (action === 'saved') {
-      const payload = data as Partial<CollabSaveOutcome> | null;
-      const outcome: CollabSaveOutcome = {
-        operations: Number(payload?.operations) || 0,
-        version: Number(payload?.version) || 0,
-        uploaded: payload?.uploaded === true,
-        stillPending: Number(payload?.stillPending) || 0,
-        savedAt: typeof payload?.savedAt === 'string' ? payload.savedAt : null,
-      };
+      const outcome = readSaveOutcome(data);
       collabLog('sala avisada da gravação', {
         room: roomName,
         uploaded: outcome.uploaded,
+        verified: outcome.verified,
         stillPending: outcome.stillPending,
       });
       callbacks.onSaved?.(outcome);

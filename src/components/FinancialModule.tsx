@@ -637,6 +637,20 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     return upcoming || pending[0];
   }, [allInstallments, today, operationalAgreementIds]);
 
+  // Fonte única do painel de inadimplência. Parcelas de lançamentos cancelados
+  // ou em "aguardando definição" permanecem no histórico, mas não são cobrança
+  // ativa e não podem aparecer como vencidas nem oferecer a ação "Dar baixa".
+  const overdueOperationalInstallments = useMemo(
+    () => allInstallments
+      .filter(inst =>
+        (inst.status === 'pendente' || inst.status === 'vencido') &&
+        inst.due_date < serverToday &&
+        operationalAgreementIds.has(inst.agreement_id),
+      )
+      .sort((a, b) => a.due_date.localeCompare(b.due_date)),
+    [allInstallments, operationalAgreementIds, serverToday],
+  );
+
   const nextDueInfo = useMemo(() => {
     if (!nextDueInstallment) return null;
     const dueDateObj = new Date(`${nextDueInstallment.due_date}T00:00:00`);
@@ -3835,7 +3849,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       </Modal>
 
       {/* Parcelas Vencidas */}
-      {stats && stats.overdue_installments > 0 && (
+      {overdueOperationalInstallments.length > 0 && (
         <div className="bg-[#f8f7f5] border border-red-200 rounded-xl overflow-hidden shadow-sm">
           <div className="border-b border-red-100 px-4 py-3.5 flex flex-col gap-3 @sm:flex-row @sm:items-center @sm:justify-between bg-gradient-to-r from-red-50 to-rose-50">
             <div className="flex items-center gap-3">
@@ -3844,7 +3858,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
               </div>
               <div>
                 <p className="text-sm font-bold text-red-900">
-                  {stats.overdue_installments} parcela{stats.overdue_installments > 1 ? 's' : ''} em atraso
+                  {overdueOperationalInstallments.length} parcela{overdueOperationalInstallments.length > 1 ? 's' : ''} em atraso
                 </p>
                 <p className="text-xs text-red-500">Regularize para evitar inadimplência</p>
               </div>
@@ -3860,10 +3874,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 
           {showOverdueOnly && (
             <div className="divide-y divide-slate-100">
-              {allInstallments
-                .filter(inst => pendingStatuses.includes(inst.status as InstallmentStatus) && inst.due_date < serverToday)
-                .sort((a, b) => a.due_date.localeCompare(b.due_date))
-                .map(inst => {
+              {overdueOperationalInstallments.map(inst => {
                   const dueMidnight = parseLocalDate(inst.due_date);
                   const now = new Date();
                   const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -6361,5 +6372,3 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
 };
 
 export default FinancialModule;
-
-

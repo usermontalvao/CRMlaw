@@ -267,7 +267,8 @@ export const ProcessFormModal: React.FC<ProcessFormModalProps> = ({
             const hearingEvent = await calendarService.getEventByAutoKey(`hearing:${editingProcess.id}`);
             if (hearingEvent) {
               const up: Record<string, any> = { user_id: hearingResponsibleId || null };
-              if (formData.hearing_date) up.start_at = `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00-04:00`;
+              // Hora de parede: quem ancora no fuso do escritório é o calendarService.
+              if (formData.hearing_date) up.start_at = `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00`;
               await calendarService.updateEvent(hearingEvent.id, up);
             }
           } catch { /* sync agenda best-effort */ }
@@ -299,7 +300,8 @@ export const ProcessFormModal: React.FC<ProcessFormModalProps> = ({
               description: formData.court ? `Audiência do processo ${newProcess.process_code || ''} • ${formData.court}` : undefined,
               event_type: 'hearing',
               status: 'pendente',
-              start_at: `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00-04:00`,
+              // Hora de parede: quem ancora no fuso do escritório é o calendarService.
+              start_at: `${formData.hearing_date}T${formData.hearing_time || '09:00'}:00`,
               process_id: newProcess.id,
               client_id: (newProcess as any).client_id || null,
               user_id: hearingResponsibleId || null,

@@ -35,6 +35,25 @@ import RepresentativesPanel from './RepresentativesPanel';
 import { Modal, ModalBody, ModuleSkeleton } from './ui';
 import { useSyncTick } from '../lib/syncBus';
 import { matchesCalendarSearch } from '../utils/calendarSearch.utils';
+import { intlTimeZonePlugin } from '../utils/fullCalendarTimeZone';
+import {
+  describeBrowserZone,
+  describeOfficeZone,
+  formatBrowserDate,
+  formatBrowserDateTime,
+  formatBrowserTime,
+  formatOfficeDate,
+  getBrowserTimeZone,
+  getOfficeParts,
+  addMinutesToWallTime,
+  toOfficeTimestamp,
+  isBrowserOutsideOfficeZone,
+  isOfficeMidnight,
+  officeDayStart,
+  officeTodayKey,
+  toOfficeDateKey,
+  toOfficeMinuteKey,
+} from '../utils/officeTime';
 
 declare global {
   interface Window {
@@ -85,18 +104,21 @@ const getProcessHearingStartDateTime = (process: Process) => {
 
 const normalizeHearingTitle = (title?: string | null) => (title || '').trim().toUpperCase();
 
+/**
+ * Instante de um `start` do calendário. Strings que já trazem fuso são
+ * respeitadas; as que vêm só com data (prazos, requerimentos) são ancoradas na
+ * meia-noite do escritório, e não na do navegador.
+ */
+const toEventInstant = (startStr: string): Date => new Date(toOfficeTimestamp(startStr));
+
 const toMinuteKey = (value?: string | null) => {
   if (!value) return null;
 
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) {
-    const year = parsed.getFullYear();
-    const month = `${parsed.getMonth() + 1}`.padStart(2, '0');
-    const day = `${parsed.getDate()}`.padStart(2, '0');
-    const hours = `${parsed.getHours()}`.padStart(2, '0');
-    const minutes = `${parsed.getMinutes()}`.padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-  }
+  // Chave de deduplicação sempre no fuso do escritório: no fuso do navegador,
+  // a mesma audiência gera chaves diferentes conforme o país de quem abre o CRM
+  // e as duplicatas deixam de ser reconhecidas.
+  const officeKey = toOfficeMinuteKey(value);
+  if (officeKey) return officeKey;
 
   return value.trim().replace(' ', 'T').slice(0, 16);
 };
@@ -227,10 +249,24 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [eventTypeLabels, setEventTypeLabels] = useState<Record<string, string>>(EVENT_TYPE_LABELS);
   const [eventTypeHexColors, setEventTypeHexColors] = useState<Record<string, string>>({});
   const [inactiveEventTypeKeys, setInactiveEventTypeKeys] = useState<Set<string>>(new Set());
+  const [timeZoneInfoOpen, setTimeZoneInfoOpen] = useState(false);
   const [bufferMin, setBufferMin] = useState(0);
   const [eventTypeDurations, setEventTypeDurations] = useState<Record<string, number>>({
     deadline: 60, hearing: 120, requirement: 60, payment: 30, meeting: 60, pericia: 180, personal: 60,
   });
+
+  // Ao entrar na Agenda fora do fuso do escritório, apresenta o modo viagem
+  // brevemente e recolhe para o globo. Reabrir manualmente repete o mesmo ciclo.
+  useEffect(() => {
+    if (!isBrowserOutsideOfficeZone()) return;
+    setTimeZoneInfoOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!timeZoneInfoOpen) return;
+    const timer = window.setTimeout(() => setTimeZoneInfoOpen(false), 6000);
+    return () => window.clearTimeout(timer);
+  }, [timeZoneInfoOpen]);
 
   useEffect(() => {
     settingsService.getResponsibilityConfig().then(cfgs => {
@@ -459,7 +495,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   }, [calendarEventsData, clientMap, focusEventId, onParamConsumed, representativeAppointmentsMap]);
 
   const currentMonthName = useMemo(() => {
-    return calendarTitle || new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    return calendarTitle || new Date().toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone(), month: 'long', year: 'numeric' });
   }, [calendarTitle]);
 
   useEffect(() => {
@@ -469,22 +505,30 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   }, [feedback]);
   // Calcular estatísticas
   const stats = useMemo(() => {
-    // Usar timezone de Cuiabá (UTC-4)
-    const now = new Date();
-    const cuiabaOffset = -4 * 60; // UTC-4 em minutos
-    const localOffset = now.getTimezoneOffset();
-    const diff = (cuiabaOffset - localOffset) * 60 * 1000;
-    
-    const today = new Date(now.getTime() + diff);
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const weekEnd = new Date(today);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-    
-    // Mês atual (do dia 1 até o último dia do mês)
-    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59);
+    // "Hoje", "esta semana" e "este mês" são sempre o dia do ESCRITÓRIO. A conta
+    // antiga somava a diferença de offset ao relógio e depois chamava
+    // setHours(0,0,0,0) no fuso do navegador — fora do Brasil, os contadores
+    // erravam a virada do dia.
+    const todayKey = officeTodayKey();
+    const [todayYear, todayMonth] = todayKey.split('-').map(Number);
+
+    const today = officeDayStart(todayKey);
+    const shiftDays = (days: number) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() + days);
+      return d;
+    };
+    const tomorrow = shiftDays(1);
+    const weekEnd = shiftDays(7);
+
+    // Mês atual (do dia 1 até o último dia do mês), no calendário do escritório
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const monthStart = officeDayStart(`${todayYear}-${pad(todayMonth)}-01`);
+    const lastDay = new Date(Date.UTC(todayYear, todayMonth, 0)).getUTCDate();
+    const monthEnd = new Date(
+      officeDayStart(`${todayYear}-${pad(todayMonth)}-${pad(lastDay)}`).getTime()
+        + 24 * 60 * 60 * 1000 - 1000,
+    );
 
     let todayCount = 0;
     let weekCount = 0;
@@ -569,14 +613,20 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     [responsibilityConfig, user],
   );
 
+  // Cadastro e edição usam a hora oficial do foro/escritório. A conversão para
+  // o fuso do navegador acontece somente na visualização da agenda.
   const formatDateInputValue = useCallback((date: Date) => {
     const pad = (value: number) => value.toString().padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    const parts = getOfficeParts(date);
+    if (!parts) return '';
+    return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
   }, []);
 
   const formatTimeInputValue = useCallback((date: Date) => {
     const pad = (value: number) => value.toString().padStart(2, '0');
-    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    const parts = getOfficeParts(date);
+    if (!parts) return '';
+    return `${pad(parts.hour)}:${pad(parts.minute)}`;
   }, []);
 
   const mapPriorityClass = (priority: Deadline['priority']) => {
@@ -603,26 +653,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     [],
   );
 
-  const formatDateTime = useCallback((value?: string | null) => {
-    if (!value) return '';
-    try {
-      const date = new Date(value);
-      if (isNaN(date.getTime())) return '';
-      const day = date.getDate().toString().padStart(2, '0');
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const year = date.getFullYear();
-      const hour = date.getHours().toString().padStart(2, '0');
-      const minute = date.getMinutes().toString().padStart(2, '0');
-      return `${day}/${month}/${year} às ${hour}:${minute}`;
-    } catch {
-      return '';
-    }
-  }, []);
+  const formatDateTime = useCallback((value?: string | null) => formatBrowserDateTime(value), []);
 
   const toLogIsoFromLocal = useCallback((dateOnly: string, timeOnly?: string) => {
     if (!dateOnly) return '';
     const time = timeOnly?.trim() ? timeOnly.trim() : '00:00';
-    const dt = new Date(`${dateOnly}T${time}:00`);
+    const dt = new Date(toOfficeTimestamp(`${dateOnly}T${time}:00`));
     if (Number.isNaN(dt.getTime())) return '';
     return dt.toISOString();
   }, []);
@@ -1159,8 +1195,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       if (!item.start_at.includes('T')) {
         hasTime = false; // string apenas com data, sem hora
       } else {
-        const sd = new Date(item.start_at);
-        hasTime = isNaN(sd.getTime()) ? false : !(sd.getHours() === 0 && sd.getMinutes() === 0);
+        // "Dia inteiro" é uma característica do compromisso no fuso do foro.
+        // Um evento das 18h em Cuiabá pode cair exatamente à meia-noite no fuso
+        // de quem visualiza e, ainda assim, continua sendo um evento com horário.
+        hasTime = !isOfficeMidnight(item.start_at);
       }
       const linkedRepresentativeAppointments = representativeAppointmentsMap.get(item.id) || [];
       // Nome do cliente: cadastrado > nome livre digitado
@@ -1317,7 +1355,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       .filter((ev) => {
         const startStr = typeof ev.start === 'string' ? ev.start : '';
         if (!startStr) return false;
-        const d = new Date(startStr.includes('T') ? startStr : startStr + 'T00:00:00');
+        const d = toEventInstant(startStr);
         if (d < todayStart) return false;
         if (!deferredSearchQuery.trim()) return false; // sem query = sem resultados
         return matchesCalendarSearch(ev, deferredSearchQuery, getResponsavel);
@@ -1337,7 +1375,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     const filtered = allEvents.filter(ev => {
       const startStr = typeof ev.start === 'string' ? ev.start : '';
       if (!startStr) return false;
-      const d = new Date(startStr.includes('T') ? startStr : startStr + 'T00:00:00');
+      const d = toEventInstant(startStr);
       if (d < start || d > end) return false;
       // Respeita os filtros de tipo do calendário
       const evType = (ev.extendedProps?.type as EventType) || 'meeting';
@@ -1393,7 +1431,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
     const startStr = typeof ev.start === 'string' ? ev.start : '';
     if (startStr) {
-      const d = new Date(startStr.includes('T') ? startStr : startStr + 'T00:00:00');
+      const d = toEventInstant(startStr);
       setShowCronograma(false);
       setTimeout(() => {
         calendarRef.current?.getApi().gotoDate(d);
@@ -1423,14 +1461,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       const [jspdfModule, logoDataUrl] = await Promise.all([loadJsPdf(), getLogoDataUrl()]);
       const doc = new jspdfModule.jsPDF('landscape', 'pt', 'a4');
       const now = new Date();
-      const todayStr = now.toLocaleDateString('pt-BR');
-      const timeStr  = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const todayStr = now.toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone() });
+      const timeStr  = now.toLocaleTimeString('pt-BR', { timeZone: getBrowserTimeZone(), hour: '2-digit', minute: '2-digit' });
       const pageWidth  = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const M = 30;
 
       const { start, end } = cronogramaRange;
-      const periodLabel = `${start.toLocaleDateString('pt-BR')} a ${end.toLocaleDateString('pt-BR')}`;
+      const periodLabel = `${start.toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone() })} a ${end.toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone() })}`;
       const issuedBy = userName || 'Usuário do Sistema';
 
       // Monta linhas a partir do cronogramaByDay (já filtrado por período + "apenas meus")
@@ -1451,9 +1489,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         evs.forEach(ev => {
           const startStr = typeof ev.start === 'string' ? ev.start : '';
           const hasTime  = (ev.extendedProps as any)?._hasTime === true;
-          const d = startStr ? new Date(startStr.includes('T') ? startStr : startStr + 'T00:00:00') : null;
-          const dayPart  = d ? d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
-          const timePart = hasTime && d ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—';
+          const d = startStr ? toEventInstant(startStr) : null;
+          const dayPart  = d ? d.toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone(), weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+          const timePart = hasTime && d ? d.toLocaleTimeString('pt-BR', { timeZone: getBrowserTimeZone(), hour: '2-digit', minute: '2-digit' }) : '—';
           const typeKey  = (ev.extendedProps?.type as string) || 'meeting';
           const typeLabel = eventTypeLabels[typeKey] ?? typeKey;
           rows.push([
@@ -1716,19 +1754,21 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         ? newEventForm.requirement_id : null;
 
       const computedStartAt = computeStartAt(newEventForm.date, newEventForm.time);
+      const persistedStartAt = toOfficeTimestamp(computedStartAt);
       const computedEndAt = newEventForm.time
-        ? (() => {
-            const durationMin = (eventTypeDurations[newEventForm.type] ?? 60) + bufferMin;
-            const endMs = new Date(computedStartAt).getTime() + durationMin * 60 * 1000;
-            return new Date(endMs).toISOString();
-          })()
+        ? toOfficeTimestamp(
+            addMinutesToWallTime(
+              computedStartAt,
+              (eventTypeDurations[newEventForm.type] ?? 60) + bufferMin,
+            ),
+          )
         : null;
 
       const basePayload = {
         title: newEventForm.title.trim(),
         description: newEventForm.description.trim() || null,
         event_type: newEventForm.type,
-        start_at: computedStartAt,
+        start_at: persistedStartAt,
         end_at: computedEndAt,
         notify_minutes_before: null as number | null,
         client_id: newEventForm.client_id || null,
@@ -1770,7 +1810,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         if (user?.id && updatedEvent) {
           const oldEvent = calendarEventsData.find(e => e.id === editingEventId);
           const eventDate = new Date(updatedEvent.start_at);
-          const formattedDate = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+          const formattedDate = eventDate.toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone(), day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
           const notifyBase = { appointment_id: updatedEvent.id, metadata: { event_type: updatedEvent.event_type, start_at: updatedEvent.start_at } };
           const assignerName = members.find(m => m.user_id === user.id)?.name || 'Alguém';
           const typeLabel = eventTypeLabels[updatedEvent.event_type as EventType] || 'Compromisso';
@@ -1816,7 +1856,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         // 🔔 Notificações do novo compromisso
         if (user?.id && createdEvent) {
           const eventDate = new Date(createdEvent.start_at);
-          const formattedDate = eventDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+          const formattedDate = eventDate.toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone(), day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
           const notifyBase = { appointment_id: createdEvent.id, metadata: { event_type: newEventForm.type, start_at: createdEvent.start_at } };
           const assignerName = members.find(m => m.user_id === user.id)?.name || 'Alguém';
           const typeLabel = eventTypeLabels[newEventForm.type as EventType] || 'Compromisso';
@@ -2082,7 +2122,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               if (item.created_at) {
                 const date = new Date(item.created_at);
                 if (!isNaN(date.getTime())) {
-                  parts.push(`(${date.toLocaleDateString('pt-BR')})`);
+                  parts.push(`(${date.toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone() })})`);
                 }
               }
               return parts.join(' ');
@@ -2280,11 +2320,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   };
 
   const handleOpenExportModal = (format: 'excel' | 'pdf' = 'excel') => {
-    const today = new Date();
-    setExportStartDate(today.toISOString().split('T')[0]);
-    const endDate = new Date(today);
+    // Datas sugeridas no calendário do escritório (`toISOString` daria o dia em UTC)
+    const todayKey = officeTodayKey();
+    setExportStartDate(todayKey);
+    const endDate = officeDayStart(todayKey);
     endDate.setDate(endDate.getDate() + 30);
-    setExportEndDate(endDate.toISOString().split('T')[0]);
+    setExportEndDate(toOfficeDateKey(endDate));
     setExportFormat(format);
     setIsExportModalOpen(true);
   };
@@ -2299,15 +2340,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           setFeedback({ type: 'error', message: 'Selecione as datas de início e fim.' });
           return;
         }
-        // Corrigir timezone: adicionar 'T00:00:00' para forçar horário local
-        startDate = new Date(exportStartDate + 'T00:00:00');
-        endDate = new Date(exportEndDate + 'T23:59:59');
+        // O período escolhido é o do escritório, não o do relógio de quem exporta
+        startDate = new Date(toOfficeTimestamp(`${exportStartDate}T00:00:00`));
+        endDate = new Date(toOfficeTimestamp(`${exportEndDate}T23:59:59`));
       } else {
-        startDate = new Date();
-        startDate.setHours(0, 0, 0, 0);
-        endDate = new Date();
+        startDate = officeDayStart(officeTodayKey());
+        endDate = new Date(startDate);
         endDate.setDate(endDate.getDate() + parseInt(exportPeriod));
-        endDate.setHours(23, 59, 59, 999);
+        endDate = new Date(endDate.getTime() + 24 * 60 * 60 * 1000 - 1);
       }
 
       const rows = buildAgendaRows(startDate, endDate);
@@ -2321,8 +2361,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         const [jspdfModule, logoDataUrl] = await Promise.all([loadJsPdf(), getLogoDataUrl()]);
         const doc = new jspdfModule.jsPDF('landscape', 'pt', 'a4');
         const now = new Date();
-        const today = now.toLocaleDateString('pt-BR');
-        const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const today = now.toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone() });
+        const timeStr = now.toLocaleTimeString('pt-BR', { timeZone: getBrowserTimeZone(), hour: '2-digit', minute: '2-digit' });
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
         const exportedBy = userName || 'Usuário do Sistema';
@@ -2393,7 +2433,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
           // Período e meta numa linha só
           const periodText = exportPeriod === 'custom'
-            ? `${new Date(exportStartDate + 'T00:00:00').toLocaleDateString('pt-BR')} a ${new Date(exportEndDate + 'T00:00:00').toLocaleDateString('pt-BR')}`
+            ? `${formatOfficeDate(toOfficeTimestamp(`${exportStartDate}T00:00:00`))} a ${formatOfficeDate(toOfficeTimestamp(`${exportEndDate}T00:00:00`))}`
             : `Próximos ${exportPeriod} dias`;
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(9);
@@ -2825,6 +2865,67 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
           {/* Ações secundárias — desktop only */}
           <div className="hidden sm:flex items-center gap-1 shrink-0">
+            {isBrowserOutsideOfficeZone() && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setTimeZoneInfoOpen((open) => !open)}
+                  className={`relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                    timeZoneInfoOpen
+                      ? 'border-slate-300 bg-slate-100 text-slate-900'
+                      : 'border-[#e7e5df] bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                  }`}
+                  title="Informações de fuso horário"
+                  aria-label="Abrir assistente de fuso horário"
+                  aria-expanded={timeZoneInfoOpen}
+                >
+                  <Globe className="h-4 w-4" />
+                </button>
+
+                {timeZoneInfoOpen && (
+                  <div className="absolute right-0 top-[calc(100%+8px)] z-[100] w-[320px] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white shadow-lg animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="p-3.5">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                          <Globe className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">Fuso horário ajustado</p>
+                              <p className="mt-0.5 text-[11px] text-slate-500">Os horários exibidos seguem sua localização atual.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setTimeZoneInfoOpen(false)}
+                              className="-mr-1 -mt-1 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                              aria-label="Recolher assistente de fuso"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-100 bg-slate-50/70 px-3">
+                        <div className="flex items-center justify-between gap-3 py-2">
+                          <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Exibição local</span>
+                          <span className="truncate text-[11px] font-semibold text-slate-700">{describeBrowserZone()}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 py-2">
+                          <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Cadastro oficial</span>
+                          <span className="truncate text-[11px] font-semibold text-slate-700">{describeOfficeZone()}</span>
+                        </div>
+                      </div>
+
+                      <p className="mt-2.5 text-[11px] leading-relaxed text-slate-500">
+                        Criação e edição permanecem no horário oficial do foro em Cuiabá.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <button type="button" onClick={() => setIsSearchOpen(true)}
               className="inline-flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-[#e7e5df] text-slate-500 hover:bg-slate-100 transition-colors"
               aria-label="Buscar compromissos">
@@ -3089,9 +3190,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 </p>
               </div>
             ) : cronogramaByDay.map(([dayKey, evs]) => {
-              const dayDate = new Date(dayKey + 'T12:00:00');
-              const isToday = dayKey === new Date().toISOString().slice(0, 10);
-              const dayLabel = dayDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+              const dayDate = new Date(toOfficeTimestamp(`${dayKey}T12:00:00`));
+              const isToday = dayKey === officeTodayKey();
+              const dayLabel = dayDate.toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone(), weekday: 'long', day: '2-digit', month: 'long' });
 
               const TYPE_COLORS: Record<string, string> = {
                 deadline: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -3137,7 +3238,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                       const startStr = typeof ev.start === 'string' ? ev.start : '';
                       const hasTime = (ev.extendedProps as any)?._hasTime === true;
                       const timeStr = hasTime
-                        ? new Date(startStr).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                        ? new Date(startStr).toLocaleTimeString('pt-BR', { timeZone: getBrowserTimeZone(), hour: '2-digit', minute: '2-digit' })
                         : null;
                       const client = ev.extendedProps?.clientName as string | undefined;
                       const resp   = getResponsavel(ev);
@@ -3206,14 +3307,21 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       )}
 
       {/* Calendário */}
-      <div className={`bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden${showCronograma ? ' hidden' : ''}`}>
+      <div className={`relative bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden${showCronograma ? ' hidden' : ''}`}>
         <div className="calendar-container">
           <FullCalendar
               ref={calendarRef}
-              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
+              // intlTimeZonePlugin é obrigatório para o timeZone nomeado abaixo:
+              // sem ele o FullCalendar aceita só "local"/"UTC" e cai em UTC calado.
+              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin, intlTimeZonePlugin]}
               initialView="dayGridMonth"
               locale={ptLocale}
-              timeZone="local"
+              timeZone={getBrowserTimeZone()}
+              eventTimeFormat={{
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+              }}
               headerToolbar={false}
               contentHeight="auto"
               aspectRatio={1.35}
@@ -3517,12 +3625,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           {['hearing', 'pericia'].includes(selectedEvent.extendedProps.type ?? '') && (() => {
             const djenStatus = selectedEvent.extendedProps.djenStatus as string | undefined;
             const eventDateObj = selectedEvent.start ? new Date(selectedEvent.start) : null;
-            const eventDate = eventDateObj
-              ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(eventDateObj)
-              : null;
-            const eventTime = eventDateObj
-              ? new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Cuiaba' }).format(eventDateObj)
-              : null;
+            // Data e hora no mesmo fuso do resto da tela. Antes só a hora era
+            // fixada em Cuiabá: o card mostrava um horário e este bloco outro.
+            const eventDate = eventDateObj ? formatBrowserDate(eventDateObj) : null;
+            const eventTime = eventDateObj ? formatBrowserTime(eventDateObj) : null;
             const eventMode = (selectedEvent.extendedProps.data as any)?.event_mode as string | null | undefined;
             const eventData = selectedEvent.extendedProps.data as any;
             const calendarEventId = selectedEvent.extendedProps.calendarEventId as string | undefined;
@@ -5117,11 +5223,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     .slice()
                     .sort((a, b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime());
 
-                  const pad = (n: number) => String(n).padStart(2, '0');
-                  const toDayKey = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-                  const today = new Date();
-                  const todayKey = toDayKey(today);
-                  const yesterday = new Date(today);
+                  // O log é do escritório: "Hoje" e "Ontem" seguem o dia do foro.
+                  const toDayKey = (date: Date) => toOfficeDateKey(date);
+                  const todayKey = officeTodayKey();
+                  const yesterday = officeDayStart(todayKey);
                   yesterday.setDate(yesterday.getDate() - 1);
                   const yesterdayKey = toDayKey(yesterday);
 
@@ -5137,9 +5242,9 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   const formatDayLabel = (key: string) => {
                     if (key === todayKey) return 'Hoje';
                     if (key === yesterdayKey) return 'Ontem';
-                    const dt = new Date(`${key}T00:00:00`);
+                    const dt = officeDayStart(key);
                     if (Number.isNaN(dt.getTime())) return key;
-                    return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    return formatOfficeDate(dt);
                   };
                   if (filtered.length === 0) {
                     return (
@@ -5259,13 +5364,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   {searchModalResults.map((ev, idx) => {
                     const ep = (ev.extendedProps ?? {}) as any;
                     const startStr = typeof ev.start === 'string' ? ev.start : '';
-                    const d = startStr ? new Date(startStr.includes('T') ? startStr : startStr + 'T00:00:00') : null;
+                    const d = startStr ? toEventInstant(startStr) : null;
                     const hasTime = ep._hasTime === true;
                     const dateLabel = d
-                      ? d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+                      ? d.toLocaleDateString('pt-BR', { timeZone: getBrowserTimeZone(), weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
                       : '';
                     const timeLabel = hasTime && d
-                      ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                      ? d.toLocaleTimeString('pt-BR', { timeZone: getBrowserTimeZone(), hour: '2-digit', minute: '2-digit' })
                       : '';
 
                     const typeKey = ep.type as string;
