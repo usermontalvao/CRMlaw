@@ -7,7 +7,7 @@ import {
   MoreVertical, FolderInput, List, LayoutGrid, GripVertical, RotateCcw, Layers,
   ClipboardPaste, ShieldAlert, ArrowUpDown, ChevronDown, PanelLeftClose,
   PanelLeftOpen, NotebookPen, ZoomIn, ZoomOut, Maximize2, Info, MapPin, Clock3, HardDrive,
-  Wand2, Link2,
+  Wand2, Link2, ArrowUp, Zap, BookmarkPlus,
 } from 'lucide-react';
 import {
   getNextcloudErrorMessage,
@@ -27,6 +27,8 @@ import {
   watermarkPdf, numberPdfPages, splitPdf, mergePdfs, rotatePdf, imagesToPdf,
   pdfBytesToBlob, getPdfPageCount, normalizeRotation, type PageNumberPosition,
   splitPdfByRanges, explodePdfToPages, parsePageList, type PageNumberFormat,
+  optimizePdf, insertSeparatorPage, readPdfMetadata, writePdfMetadata,
+  type PdfMetadata,
 } from '../utils/pdfTools';
 import { resolveFreeName } from '../services/nextcloudConflict.service';
 import type { BatchItemResult, PdfToolScope } from '../types/nextcloud.types';
@@ -34,9 +36,7 @@ import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type D
 import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable';
 import { Document, Page, pdfjs } from 'react-pdf';
 import JSZip from 'jszip';
-import { renderAsync } from 'docx-preview';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
+import { docxToPdf } from '../utils/docxToPdf';
 import { Document as DocxDocument, Packer, Paragraph } from 'docx';
 import { NextcloudIcon } from './icons/NextcloudIcon';
 import { NcModalCloseButton } from './nextcloud/NcModalCloseButton';
@@ -51,12 +51,26 @@ import EditingNowBadge from './EditingNowBadge';
 import { setLocalPdfWorker } from '../utils/pdfWorker';
 import {
   isDocx, isPdf, isImage, isVideo, isAudio, isMedia, isTextFile,
-  fileTypeLabel, extIcon, baseName, fileExtension,
+  fileTypeLabel, extIcon, fileIconColorClass, baseName, fileExtension,
 } from '../utils/nextcloudFile';
 import { formatRelativeTime, relativeTimeRefreshDelay } from '../utils/relativeTime';
+import {
+  canGoBack as historyCanGoBack,
+  canGoForward as historyCanGoForward,
+  createFolderHistory,
+  normalizeFolderPath,
+  parentFolderPath,
+  parseNextcloudNavParams,
+  pushFolderHistory,
+  stepFolderHistory,
+  type FolderHistory,
+} from '../utils/nextcloudNavigation';
 
 // Worker do PDF.js empacotado localmente (sem depender do unpkg em runtime).
 setLocalPdfWorker(pdfjs);
+
+/** Quantas páginas a pré-visualização das ferramentas de PDF renderiza. */
+const PDF_PREVIEW_MAX_PAGES = 4;
 
 /** Vídeos/áudios são carregados via base64 no proxy; acima disso, só download. */
 const MEDIA_MAX_BYTES = 60 * 1024 * 1024;
@@ -119,7 +133,9 @@ type UploadDropReport = {
   failures: Array<{ path: string; message: string }>;
 };
 
-type NextcloudPdfToolMode = 'home' | 'watermark' | 'pagenumber' | 'split' | 'merge';
+type NextcloudPdfToolMode =
+  | 'home' | 'watermark' | 'pagenumber' | 'split' | 'merge'
+  | 'optimize' | 'separator' | 'metadata';
 type PdfPageState = { sourceIndex: number; rotation: number };
 
 const NextcloudTreeNode: React.FC<{
@@ -359,10 +375,20 @@ const NextcloudBrowser: React.FC = () => {
   const { user } = useAuth();
   const { moduleParams, clearModuleParams } = useNavigation();
   const myId = user?.id;
-  const restoredSessionRef = useRef<Partial<NextcloudBrowserSession>>(readNextcloudBrowserSession(myId));
-  const [path, setPath] = useState<string>(() =>
-    typeof restoredSessionRef.current.path === 'string' ? restoredSessionRef.current.path : '',
+  // Link direto (ex.: "Pastas do Nextcloud" no perfil do cliente). É lido JÁ na
+  // montagem: se ficasse só no efeito, o módulo abriria na pasta da sessão
+  // anterior, carregaria aquela lista e só depois pularia para a pasta pedida —
+  // era isso que fazia o usuário clicar no arquivo errado.
+  const navParamsRef = useRef(parseNextcloudNavParams(moduleParams.nextcloud));
+  const restoredSessionRef = useRef<Partial<NextcloudBrowserSession>>(
+    // Com link direto, a sessão salva é ignorada por completo: caminho, busca,
+    // seleção e rolagem eram de outra pasta e só atrapalham.
+    navParamsRef.current ? {} : readNextcloudBrowserSession(myId),
   );
+  const [path, setPath] = useState<string>(() => normalizeFolderPath(
+    navParamsRef.current?.path ?? (typeof restoredSessionRef.current.path === 'string' ? restoredSessionRef.current.path : ''),
+  ));
+  const [folderHistory, setFolderHistory] = useState<FolderHistory>(() => createFolderHistory(path));
   const [entries, setEntries] = useState<NextcloudEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -422,21 +448,8 @@ const NextcloudBrowser: React.FC = () => {
   const [textConflict, setTextConflict] = useState(false);
   const [inlineRename, setInlineRename] = useState<{ path: string; value: string; extension?: string } | null>(null);
 
-  useEffect(() => {
-    const rawParams = moduleParams.nextcloud;
-    if (!rawParams) return;
-    try {
-      const params = JSON.parse(rawParams) as { path?: string };
-      if (typeof params.path === 'string') {
-        setSearch('');
-        setPath(params.path);
-      }
-    } catch {
-      // Parâmetros inválidos não devem impedir a abertura do módulo.
-    } finally {
-      clearModuleParams('nextcloud');
-    }
-  }, [clearModuleParams, moduleParams.nextcloud]);
+  // (O link direto é consumido mais abaixo, depois de tudo que ele precisa
+  // fechar estar declarado — veja o efeito "link direto para uma pasta".)
 
   // Busca (recursiva, tipo Windows Explorer) e menu de contexto.
   const [search, setSearch] = useState(() =>
@@ -657,9 +670,30 @@ const NextcloudBrowser: React.FC = () => {
   const [pdfPageNumTemplate, setPdfPageNumTemplate] = useState('Fls. {n}');
   const [pdfPageNumRange, setPdfPageNumRange] = useState('');
   const [pdfWatermarkRange, setPdfWatermarkRange] = useState('');
-  // Pré-visualização real da marca d'água (bytes gerados sob demanda).
+  // Pré-visualização real da ferramenta ativa (bytes de verdade, não simulação).
   const [pdfWatermarkPreviewUrl, setPdfWatermarkPreviewUrl] = useState<string | null>(null);
   const [pdfWatermarkPreviewBusy, setPdfWatermarkPreviewBusy] = useState(false);
+  // Erro só do painel de pré-visualização (ex.: intervalo ainda incompleto).
+  const [pdfPreviewError, setPdfPreviewError] = useState<string | null>(null);
+  // Atualização automática ao mexer nos controles; pode ser desligada em PDFs
+  // grandes, onde reprocessar a cada ajuste incomoda mais do que ajuda.
+  const [pdfPreviewLive, setPdfPreviewLive] = useState(true);
+  const [pdfPreviewPage, setPdfPreviewPage] = useState(1);
+
+  // Otimizar: relatório do último resultado (antes/depois).
+  const [pdfOptimizeReport, setPdfOptimizeReport] = useState<
+    { originalSize: number; optimizedSize: number; savedPercent: number } | null
+  >(null);
+  // Separador: página de rosto inserida entre documentos anexados.
+  const [pdfSeparatorTitle, setPdfSeparatorTitle] = useState('DOC. 01');
+  const [pdfSeparatorSubtitle, setPdfSeparatorSubtitle] = useState('');
+  const [pdfSeparatorAt, setPdfSeparatorAt] = useState(1);
+  // Metadados: formulário carregado do arquivo ativo.
+  const [pdfMetadata, setPdfMetadata] = useState<PdfMetadata | null>(null);
+  const [pdfMetadataForm, setPdfMetadataForm] = useState({
+    title: '', author: '', subject: '', keywords: '',
+  });
+  const [pdfMetadataLoading, setPdfMetadataLoading] = useState(false);
   const [pdfSplitAt, setPdfSplitAt] = useState(1);
   const [pdfSaveAsCopy, setPdfSaveAsCopy] = useState(true);
   const [mergePdfName, setMergePdfName] = useState('documentos-unificados');
@@ -1125,30 +1159,97 @@ const NextcloudBrowser: React.FC = () => {
     }
   };
 
+  // Sequenciador das listagens. Duas listagens podem estar no ar ao mesmo tempo
+  // (troca rápida de pasta, link direto, refresh de fundo) e o WebDAV não
+  // responde na ordem em que foi chamado. Sem este contador, a resposta ANTIGA
+  // chegando depois sobrescrevia a lista da pasta atual — o usuário via os
+  // arquivos da pasta anterior com o caminho novo na barra e abria o arquivo
+  // errado. Cada listagem só publica o resultado se ainda for a mais recente.
+  const loadTicketRef = useRef(0);
+  const loadedPathRef = useRef<string | null>(null);
+
   const load = useCallback(async (target: string, opts?: { silent?: boolean }) => {
     // `silent`: refresh de fundo (realtime/foco/polling) — não mostra o spinner
     // de carregamento nem apaga a lista/erro atual em caso de falha transitória.
     const silent = opts?.silent === true;
+    const ticket = loadTicketRef.current + 1;
+    loadTicketRef.current = ticket;
     if (!silent) { setLoading(true); setError(null); }
     try {
       const list = await nextcloudService.list(target);
+      if (loadTicketRef.current !== ticket) return;
       list.sort((a, b) => {
         if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
         return a.name.localeCompare(b.name, 'pt-BR');
       });
       setEntries(list);
+      loadedPathRef.current = target;
       if (!target) setSidebarRoots(list.filter((item) => item.isDir).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
     } catch (err) {
+      if (loadTicketRef.current !== ticket) return;
       if (!silent) {
         setError(err instanceof Error ? err.message : 'Falha ao carregar do Nextcloud.');
         setEntries([]);
+        loadedPathRef.current = target;
       }
     } finally {
-      if (!silent) setLoading(false);
+      if (loadTicketRef.current === ticket && !silent) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(path); }, [path, load]);
+  useEffect(() => {
+    // Troca de pasta: esvazia a lista antes de carregar. Mostrar os arquivos da
+    // pasta anterior sob o caminho novo é pior do que mostrar o carregamento —
+    // é clicável, e o clique abre o arquivo de outra pasta.
+    if (loadedPathRef.current !== null && loadedPathRef.current !== path) setEntries([]);
+    load(path);
+  }, [path, load]);
+
+  // ── Navegação entre pastas (com histórico voltar/avançar) ───────────────────
+  // Todo lugar que troca de pasta passa por aqui: breadcrumb, árvore lateral,
+  // duplo clique, menu de contexto e link direto. Assim o caminho é sempre
+  // normalizado, a busca da pasta anterior não vaza para a nova e o histórico
+  // fica coerente.
+  const navigateToFolder = useCallback((nextPath: string, opts?: { recordHistory?: boolean }) => {
+    const normalized = normalizeFolderPath(nextPath);
+    setSearch('');
+    setSearchResults(null);
+    setPath(normalized);
+    if (opts?.recordHistory !== false) {
+      setFolderHistory((current) => {
+        const next = pushFolderHistory(current, normalized);
+        folderHistoryRef.current = next;
+        return next;
+      });
+    }
+  }, []);
+
+  // O passo do histórico é calculado FORA do updater do estado: chamar
+  // `navigateToFolder` dentro dele navegaria duas vezes no modo estrito do React
+  // (que invoca o updater em dobro para detectar efeitos colaterais).
+  const folderHistoryRef = useRef(folderHistory);
+  useEffect(() => { folderHistoryRef.current = folderHistory; }, [folderHistory]);
+
+  const stepHistory = useCallback((direction: -1 | 1) => {
+    const step = stepFolderHistory(folderHistoryRef.current, direction);
+    if (!step) return;
+    folderHistoryRef.current = step.history;
+    setFolderHistory(step.history);
+    navigateToFolder(step.path, { recordHistory: false });
+  }, [navigateToFolder]);
+
+  const goBackFolder = useCallback(() => stepHistory(-1), [stepHistory]);
+  const goForwardFolder = useCallback(() => stepHistory(1), [stepHistory]);
+
+  const parentPath = parentFolderPath(path);
+  const goUpFolder = useCallback(() => {
+    const parent = parentFolderPath(path);
+    if (parent === null) return;
+    navigateToFolder(parent);
+  }, [navigateToFolder, path]);
+
+  const canGoBack = historyCanGoBack(folderHistory);
+  const canGoForward = historyCanGoForward(folderHistory);
 
   // ── Realtime: mudanças externas no Nextcloud (webhook → Supabase → aqui) ────
   // Mantém a pasta aberta sincronizada quando alguém altera arquivos direto no
@@ -1203,7 +1304,7 @@ const NextcloudBrowser: React.FC = () => {
         ? (evt.nodePath ?? evt.sourcePath)
         : evt.eventClass.includes('NodeRenamed') ? evt.sourcePath : null;
       if (removed && removed === pathRef.current) {
-        setPath(parentOf(removed) ?? '');
+        navigateToFolder(parentOf(removed) ?? '');
       } else if (removed) {
         // Remove da seleção o item que deixou de existir.
         setSelected((prev) => { if (!prev[removed]) return prev; const next = { ...prev }; delete next[removed]; return next; });
@@ -1672,7 +1773,7 @@ const NextcloudBrowser: React.FC = () => {
   });
 
   const openEntry = (entry: NextcloudEntry) => {
-    if (entry.isDir) { setSearch(''); setPath(entry.path); return; }
+    if (entry.isDir) { navigateToFolder(entry.path); return; }
     if (isDocx(entry)) { openInMainEditor(entry); return; }
     if (isTextFile(entry)) { void openTextEditor(entry); return; }
     if (isMedia(entry) && entry.size > MEDIA_MAX_BYTES) {
@@ -2397,6 +2498,15 @@ const NextcloudBrowser: React.FC = () => {
       if (previewFile || pdfToolFile || organizeFile || imagesPdfTargets || versionsFile || linkTarget || pendingMovement) return;
       const k = e.key.toLowerCase();
       const command = e.ctrlKey || e.metaKey;
+      // Navegação de explorador: Alt+← volta, Alt+→ avança, Alt+↑ sobe um nível.
+      // Vem antes do resto para não ser engolido pelas setas de seleção.
+      if (e.altKey && !command && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        if (e.key === 'ArrowLeft') goBackFolder();
+        else if (e.key === 'ArrowRight') goForwardFolder();
+        else goUpFolder();
+        return;
+      }
       if (command && k === 'c' && selectedEntries.length) { e.preventDefault(); copyEntries(selectedEntries); }
       else if (command && k === 'x' && selectedEntries.length) { e.preventDefault(); cutEntries(selectedEntries); }
       else if (command && k === 'v' && clipboard) { e.preventDefault(); void paste(); }
@@ -2430,95 +2540,55 @@ const NextcloudBrowser: React.FC = () => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEntries, clipboard, previewFile, pdfToolFile, organizeFile, imagesPdfTargets, versionsFile, linkTarget, pendingMovement, path, entries, displayEntries, focusedEntryPath, viewMode, selectionAnchorPath]);
+  }, [selectedEntries, clipboard, previewFile, pdfToolFile, organizeFile, imagesPdfTargets, versionsFile, linkTarget, pendingMovement, path, entries, displayEntries, focusedEntryPath, viewMode, selectionAnchorPath, goBackFolder, goForwardFolder, goUpFolder]);
 
   // Diretório de um arquivo (para gravar derivados na mesma pasta).
   const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 
-  const docxBlobToPdf = async (docxBlob: Blob): Promise<Blob> => {
-    const container = document.createElement('div');
-    container.className = 'nextcloud-docx-to-pdf-render';
-    container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:white;font-family:\"Times New Roman\",Times,serif;';
-    const style = document.createElement('style');
-    style.textContent = `
-      .nextcloud-docx-to-pdf-render .docx-wrapper-wrapper{background:transparent!important;padding:0!important;display:flex!important;justify-content:center!important}
-      .nextcloud-docx-to-pdf-render .docx-wrapper{background:transparent!important;padding:0!important;width:auto!important;max-width:none!important}
-      .nextcloud-docx-to-pdf-render .docx-wrapper>section,
-      .nextcloud-docx-to-pdf-render .docx-wrapper>article,
-      .nextcloud-docx-to-pdf-render .docx-wrapper>section>article{width:794px!important;min-width:794px!important;max-width:794px!important;margin:0 auto 20px!important;background:white!important;box-shadow:none!important;border:0!important;border-radius:0!important}
-    `;
-    document.head.appendChild(style);
-    document.body.appendChild(container);
-    try {
-      await renderAsync(docxBlob, container, undefined, {
-        className: 'docx-wrapper',
-        inWrapper: true,
-        ignoreWidth: false,
-        ignoreHeight: false,
-        breakPages: true,
-        renderHeaders: true,
-        renderFooters: true,
-        renderFootnotes: true,
-      });
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
-      const wrapper = (container.querySelector('.docx-wrapper') as HTMLElement | null) ?? container;
-      const candidates = Array.from(wrapper.children).filter((node) => {
-        if (!(node instanceof HTMLElement)) return false;
-        const tag = node.tagName.toLowerCase();
-        return tag === 'section' || tag === 'article' || node.classList.contains('docx');
-      }) as HTMLElement[];
-      const pages = candidates.length ? candidates : [wrapper];
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-      for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
-        const canvas = await html2canvas(pages[pageIndex], {
-          scale: 1.5,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          width: pages[pageIndex].scrollWidth || 794,
-          windowWidth: pages[pageIndex].scrollWidth || 794,
-          imageTimeout: 0,
-        });
-        const image = canvas.toDataURL('image/jpeg', 0.88);
-        const imageHeight = (canvas.height * 210) / canvas.width;
-        const slices = Math.max(1, Math.ceil(imageHeight / 297));
-        for (let slice = 0; slice < slices; slice += 1) {
-          if (pageIndex > 0 || slice > 0) pdf.addPage();
-          pdf.addImage(image, 'JPEG', 0, -(slice * 297), 210, imageHeight, undefined, 'FAST');
-        }
-      }
-      return pdf.output('blob');
-    } finally {
-      style.remove();
-      container.remove();
-    }
-  };
-
+  // Conversão Word -> PDF: pipeline único em `utils/docxToPdf.ts`, que respeita
+  // o tamanho e a orientação de cada folha do documento (A4, Carta, Ofício,
+  // paisagem) em vez de forçar A4 retrato.
   const convertDocxEntriesToPdf = async (targets: NextcloudEntry[]) => {
     if (!targets.length || convertingDocxPaths.length) return;
     setConvertingDocxPaths(targets.map((entry) => entry.path));
     setError(null);
     let converted = 0;
-    const failures: string[] = [];
+    const failures: Array<{ name: string; message: string }> = [];
     try {
       for (let index = 0; index < targets.length; index += 1) {
         const entry = targets[index];
+        const prefix = targets.length > 1 ? `Convertendo ${index + 1} de ${targets.length}: ` : 'Convertendo ';
         try {
-          setBusy(`Convertendo ${index + 1} de ${targets.length}: ${entry.name}`);
+          setBusy(`${prefix}${entry.name}`);
           const source = await nextcloudService.readFile(entry.path);
-          const pdf = await docxBlobToPdf(source);
-          const target = [dirOf(entry.path), `${baseName(entry.name)}.pdf`].filter(Boolean).join('/');
-          await nextcloudService.writeFile(target, pdf);
+          const { blob } = await docxToPdf(source, {
+            onProgress: ({ page, totalPages }) => {
+              setBusy(`${prefix}${entry.name} — folha ${page} de ${totalPages}`);
+            },
+          });
+          // Não sobrescreve um PDF já existente com o mesmo nome sem avisar:
+          // resolve um nome livre no servidor, como as ferramentas de PDF.
+          const dir = dirOf(entry.path);
+          const targetName = await resolveFreeName(dir, `${baseName(entry.name)}.pdf`);
+          await nextcloudService.writeFile([dir, targetName].filter(Boolean).join('/'), blob);
           converted += 1;
-        } catch {
-          failures.push(entry.name);
+        } catch (err) {
+          failures.push({ name: entry.name, message: getNextcloudErrorMessage(err, 'converter o documento') });
         }
       }
       clearSelection();
       await load(path);
-      if (failures.length) setError(`${converted} DOCX convertido(s); falha em ${failures.length}: ${failures.join(', ')}`);
-      else showTransient(`${converted} documento(s) Word convertido(s) em PDF.`);
+      if (failures.length) {
+        // Mostra o motivo do primeiro erro: "falhou" sozinho não ajuda ninguém.
+        const detail = failures.length === 1
+          ? `${failures[0].name}: ${failures[0].message}`
+          : `${failures.map((item) => item.name).join(', ')} — ${failures[0].message}`;
+        setError(converted
+          ? `${converted} documento(s) convertido(s); falha em ${failures.length} (${detail})`
+          : `Não foi possível converter: ${detail}`);
+      } else {
+        showTransient(`${converted} documento(s) Word convertido(s) em PDF.`);
+      }
     } finally {
       setBusy(null);
       setConvertingDocxPaths([]);
@@ -2705,6 +2775,72 @@ const NextcloudBrowser: React.FC = () => {
     await runPdfToolOn(targets, label, fn, suffix, asCopy);
   };
 
+  /**
+   * Otimizar: reescreve o PDF de forma mais compacta.
+   * Guarda o antes/depois para mostrar o ganho real — sem isso o usuário não tem
+   * como saber se valeu a pena.
+   */
+  const handleOptimize = async () => {
+    setPdfOptimizeReport(null);
+    let report: { originalSize: number; optimizedSize: number; savedPercent: number } | null = null;
+    await runPdfTool('Otimização', async (bytes) => {
+      const result = await optimizePdf(bytes);
+      report = {
+        originalSize: result.originalSize,
+        optimizedSize: result.optimizedSize,
+        savedPercent: result.savedPercent,
+      };
+      return result.bytes;
+    }, 'otimizado');
+    setPdfOptimizeReport(report);
+  };
+
+  /** Separador: página de rosto antes de um anexo ("DOC. 03 — Contrato"). */
+  const handleSeparator = () => {
+    const title = pdfSeparatorTitle.trim();
+    if (!title) { setError('Informe o título do separador.'); return; }
+    // O usuário informa a página em 1-based; a função recebe índice 0-based.
+    const atIndex = Math.max(0, (Number(pdfSeparatorAt) || 1) - 1);
+    void runPdfTool('Separador', (bytes) => insertSeparatorPage(bytes, {
+      title,
+      subtitle: pdfSeparatorSubtitle.trim() || undefined,
+      atIndex,
+    }), 'com separador');
+  };
+
+  /** Carrega os metadados do arquivo ativo no formulário. */
+  const loadPdfMetadata = useCallback(async (entry: NextcloudEntry) => {
+    setPdfMetadataLoading(true);
+    try {
+      const meta = await readPdfMetadata(await readPdfBytes(entry));
+      setPdfMetadata(meta);
+      setPdfMetadataForm({
+        title: meta.title, author: meta.author, subject: meta.subject, keywords: meta.keywords,
+      });
+    } catch (err) {
+      setPdfMetadata(null);
+      setError(err instanceof Error ? err.message : 'Não foi possível ler as propriedades do PDF.');
+    } finally {
+      setPdfMetadataLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleMetadata = () => {
+    void runPdfTool('Propriedades', (bytes) => writePdfMetadata(bytes, {
+      title: pdfMetadataForm.title,
+      author: pdfMetadataForm.author,
+      subject: pdfMetadataForm.subject,
+      keywords: pdfMetadataForm.keywords,
+    }), 'propriedades');
+  };
+
+  // Abrir a aba de propriedades carrega o que está gravado no arquivo.
+  useEffect(() => {
+    if (pdfToolMode !== 'metadata' || !pdfToolFile) return;
+    void loadPdfMetadata(pdfToolFile);
+  }, [loadPdfMetadata, pdfToolFile, pdfToolMode]);
+
   // Re-executa a última operação SOMENTE nos itens que falharam.
   const retryFailedPdfBatch = async () => {
     const op = lastPdfBatchOpRef.current;
@@ -2734,25 +2870,122 @@ const NextcloudBrowser: React.FC = () => {
 
   // Gera a pré-visualização REAL da marca d'água no documento ativo (aplica o
   // watermark de verdade e mostra o PDF resultante antes de salvar).
-  const generateWatermarkPreview = async () => {
-    if (!pdfToolFile || !pdfWatermarkText.trim()) return;
-    let pages: number[] | undefined;
-    try { pages = rangeToIndices(pdfWatermarkRange); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Intervalo inválido.'); return; }
-    setPdfWatermarkPreviewBusy(true);
-    setError(null);
-    try {
-      const bytes = await readPdfBytes(pdfToolFile);
-      const out = await watermarkPdf(bytes, {
+  /**
+   * Pré-visualização do resultado REAL da ferramenta ativa.
+   *
+   * Aplica a operação de verdade (as mesmas funções do "Aplicar") sobre os bytes
+   * do documento e devolve o PDF resultante — nada de simulação em CSS. Assim o
+   * que aparece na tela é exatamente o que vai ser gravado no Nextcloud, e o
+   * usuário não descobre um erro de posição/intervalo depois de sobrescrever o
+   * arquivo.
+   *
+   * Retorna `null` quando a ferramenta atual não tem o que pré-visualizar.
+   */
+  const buildToolPreviewBytes = useCallback(async (): Promise<Uint8Array | null> => {
+    if (!pdfToolFile) return null;
+
+    if (pdfToolMode === 'watermark') {
+      if (!pdfWatermarkText.trim()) return null;
+      const pages = rangeToIndices(pdfWatermarkRange);
+      return watermarkPdf(await readPdfBytes(pdfToolFile), {
         text: pdfWatermarkText, opacity: pdfWatermarkOpacity, diagonal: pdfWatermarkDiagonal, pages,
       });
-      setPdfWatermarkPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(pdfBytesToBlob(out)); });
+    }
+
+    if (pdfToolMode === 'pagenumber') {
+      const pages = rangeToIndices(pdfPageNumRange);
+      return numberPdfPages(await readPdfBytes(pdfToolFile), {
+        position: pdfPageNumPosition,
+        startNumber: pdfPageNumStart,
+        format: pdfPageNumFormat,
+        template: pdfPageNumTemplate,
+        pages,
+      });
+    }
+
+    if (pdfToolMode === 'split') {
+      // Mostra a PRIMEIRA parte do corte: é ela que revela se o ponto de divisão
+      // está no lugar certo.
+      const bytes = await readPdfBytes(pdfToolFile);
+      const total = pdfPageCount ?? 0;
+      if (total < 2) return null;
+      if (pdfSplitMode === 'ranges') {
+        if (!pdfSplitRanges.trim()) return null;
+        const parts = await splitPdfByRanges(bytes, pdfSplitRanges);
+        return parts[0] ?? null;
+      }
+      if (pdfSplitMode === 'pages') return explodePdfToPages(bytes).then((parts) => parts[0] ?? null);
+      const cut = Math.max(1, Math.min(total - 1, pdfSplitAt));
+      const parts = await splitPdfByRanges(bytes, `1-${cut}`);
+      return parts[0] ?? null;
+    }
+
+    if (pdfToolMode === 'merge') {
+      if (pdfToolFiles.length < 2) return null;
+      const sources = await Promise.all(pdfToolFiles.map((entry) => readPdfBytes(entry)));
+      return mergePdfs(sources);
+    }
+
+    if (pdfToolMode === 'separator') {
+      if (!pdfSeparatorTitle.trim()) return null;
+      return insertSeparatorPage(await readPdfBytes(pdfToolFile), {
+        title: pdfSeparatorTitle.trim(),
+        subtitle: pdfSeparatorSubtitle.trim() || undefined,
+        atIndex: Math.max(0, (Number(pdfSeparatorAt) || 1) - 1),
+      });
+    }
+
+    if (pdfToolMode === 'optimize') {
+      // Pré-visualizar a otimização também MEDE o ganho antes de gravar: o
+      // usuário decide com o número na tela, não no escuro.
+      const result = await optimizePdf(await readPdfBytes(pdfToolFile));
+      setPdfOptimizeReport({
+        originalSize: result.originalSize,
+        optimizedSize: result.optimizedSize,
+        savedPercent: result.savedPercent,
+      });
+      return result.bytes;
+    }
+
+    // Propriedades não mudam nada visível: a própria página basta como prévia.
+    if (pdfToolMode === 'metadata') return new Uint8Array(await readPdfBytes(pdfToolFile));
+
+    return null;
+  }, [
+    pdfToolFile, pdfToolFiles, pdfToolMode, pdfPageCount,
+    pdfWatermarkText, pdfWatermarkOpacity, pdfWatermarkDiagonal, pdfWatermarkRange,
+    pdfPageNumPosition, pdfPageNumStart, pdfPageNumFormat, pdfPageNumTemplate, pdfPageNumRange,
+    pdfSplitMode, pdfSplitRanges, pdfSplitAt,
+    pdfSeparatorTitle, pdfSeparatorSubtitle, pdfSeparatorAt,
+  ]);
+
+  const generateToolPreview = useCallback(async () => {
+    if (!pdfToolFile) return;
+    setPdfWatermarkPreviewBusy(true);
+    setPdfPreviewError(null);
+    try {
+      const bytes = await buildToolPreviewBytes();
+      setPdfWatermarkPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return bytes ? URL.createObjectURL(pdfBytesToBlob(bytes)) : null;
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao gerar a pré-visualização.');
+      // Erro de pré-visualização é do PAINEL, não da barra de erros do módulo:
+      // um intervalo digitado pela metade ("1-") não deve parecer falha grave.
+      setPdfPreviewError(err instanceof Error ? err.message : 'Não foi possível gerar a pré-visualização.');
+      setPdfWatermarkPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
     } finally {
       setPdfWatermarkPreviewBusy(false);
     }
-  };
+  }, [buildToolPreviewBytes, pdfToolFile]);
+
+  // Pré-visualização automática: acompanha o que o usuário digita, com atraso
+  // para não reprocessar o PDF a cada tecla.
+  useEffect(() => {
+    if (!pdfToolFile || pdfToolMode === 'home' || !pdfPreviewLive) return;
+    const timer = window.setTimeout(() => { void generateToolPreview(); }, 450);
+    return () => window.clearTimeout(timer);
+  }, [generateToolPreview, pdfPreviewLive, pdfToolFile, pdfToolMode]);
 
   const handlePageNumbers = () => {
     let pages: number[] | undefined;
@@ -2907,6 +3140,58 @@ const NextcloudBrowser: React.FC = () => {
     closeOrganizer(false);
     if (entry) void openPdfTools(entry, targets);
   };
+
+  // ── Link direto para uma pasta ──────────────────────────────────────────────
+  // Vem de "Pastas do Nextcloud" no perfil do cliente (e de qualquer
+  // `navigateTo('nextcloud', { path })`). A pasta pedida já entrou no estado
+  // inicial na montagem; este efeito trata o caso de o pedido chegar com o
+  // módulo JÁ ABERTO — por exemplo pela busca global.
+  //
+  // O problema que ele resolve: o que estava aberto antes (visualização de PDF,
+  // Hub de PDF, organizador de páginas, versões, propriedades, seleção, busca)
+  // continuava por cima da pasta nova. O usuário via a tela anterior, achava que
+  // nada tinha atualizado e mexia nos arquivos da pasta errada.
+  const consumedNavParamsRef = useRef(navParamsRef.current !== null);
+  useEffect(() => {
+    const raw = moduleParams.nextcloud;
+    if (!raw) return;
+    const params = parseNextcloudNavParams(raw);
+
+    // Na montagem, o pedido já foi atendido pelo estado inicial: só limpar.
+    if (consumedNavParamsRef.current) {
+      consumedNavParamsRef.current = false;
+      clearModuleParams('nextcloud');
+      return;
+    }
+    if (!params) { clearModuleParams('nextcloud'); return; }
+
+    // Fecha o que ficou aberto da navegação anterior. O bloco de notas e o
+    // organizador de páginas ficam de fora quando têm alteração não salva:
+    // descartar o trabalho de alguém é pior do que deixar a janela aberta.
+    setCtxMenu(null);
+    setPreviewFile(null);
+    setVersionsFile(null);
+    setLinkTarget(null);
+    setPropertiesTargets([]);
+    setDeleteTargets([]);
+    setNameDialog(null);
+    setInlineRename(null);
+    setImagesPdfTargets(null);
+    setUploadDropReport(null);
+    setPendingMovement(null);
+    setEditingNowPrompt(null);
+    setAutoLinkPlan(null);
+    closePdfTools();
+    if (!organizerDirty) closeOrganizer();
+    if (textEditorOpen && textEditorContent === textEditorSavedContent) closeTextEditor(true);
+    clearSelection();
+
+    navigateToFolder(params.path);
+    clearModuleParams('nextcloud');
+    // Dependências propositalmente enxutas: o efeito reage ao PEDIDO de
+    // navegação, não a cada mudança das janelas que ele fecha.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moduleParams.nextcloud]);
 
   const requestOrganizerExit = (intent: 'back' | 'close') => {
     if (organizerDirty) {
@@ -3205,7 +3490,7 @@ const NextcloudBrowser: React.FC = () => {
 
             <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
               <p className="mb-1 flex items-center gap-1 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400"><ChevronDown className="h-3 w-3" /> Acesso rápido</p>
-              <button type="button" onClick={() => { setSearch(''); setPath(''); }} className={`flex h-8 w-full items-center gap-2 rounded-lg px-3 text-[13px] transition ${path === '' ? 'bg-blue-100 font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-200' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800'}`}>
+              <button type="button" onClick={() => navigateToFolder('')} className={`flex h-8 w-full items-center gap-2 rounded-lg px-3 text-[13px] transition ${path === '' ? 'bg-blue-100 font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-200' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800'}`}>
                 <Home className="h-4 w-4 text-blue-600" /> Início
               </button>
 
@@ -3219,7 +3504,7 @@ const NextcloudBrowser: React.FC = () => {
                     name={folder.name}
                     nodePath={folder.path}
                     activePath={path}
-                    onNavigate={(nextPath) => { setSearch(''); setPath(nextPath); }}
+                    onNavigate={(nextPath) => navigateToFolder(nextPath)}
                     dropEnabled={Boolean(draggedEntries?.length)}
                     onDropItems={(event, targetPath) => { void dropDraggedItemsIntoPath(event, targetPath); }}
                   />
@@ -3361,9 +3646,41 @@ const NextcloudBrowser: React.FC = () => {
         </div>
       </div>
 
-      {/* Breadcrumb */}
+      {/* Breadcrumb, com voltar / avançar / subir um nível (como no explorador) */}
       <div className="flex items-center gap-1 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800 overflow-x-auto">
-        <button onClick={() => setPath('')} className="inline-flex items-center gap-1 hover:text-blue-600">
+        <div className="mr-1.5 flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={goBackFolder}
+            disabled={!canGoBack}
+            title="Voltar (Alt+←)"
+            aria-label="Voltar"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-white"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={goForwardFolder}
+            disabled={!canGoForward}
+            title="Avançar (Alt+→)"
+            aria-label="Avançar"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-white"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={goUpFolder}
+            disabled={parentPath === null}
+            title="Subir um nível (Alt+↑)"
+            aria-label="Subir um nível"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-white"
+          >
+            <ArrowUp className="h-4 w-4" />
+          </button>
+        </div>
+        <button onClick={() => navigateToFolder('')} className="inline-flex items-center gap-1 hover:text-blue-600">
           <Home className="w-4 h-4" /> Início
         </button>
         {segments.map((seg, i) => {
@@ -3371,7 +3688,7 @@ const NextcloudBrowser: React.FC = () => {
           return (
             <React.Fragment key={target}>
               <ChevronRight className="w-4 h-4 opacity-50 shrink-0" />
-              <button onClick={() => setPath(target)} className="hover:text-blue-600 whitespace-nowrap">{seg}</button>
+              <button onClick={() => navigateToFolder(target)} className="hover:text-blue-600 whitespace-nowrap">{seg}</button>
             </React.Fragment>
           );
         })}
@@ -3703,7 +4020,7 @@ const NextcloudBrowser: React.FC = () => {
                           <span data-nextcloud-drag-visual className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all ${isDropTarget ? 'animate-pulse bg-blue-600 text-white shadow-md ring-2 ring-blue-300' : ''}`}>
                             {isDropTarget
                               ? <FolderInput className="h-4.5 w-4.5" />
-                              : <Icon className={`h-5 w-5 ${entry.isDir ? 'text-blue-500' : 'text-gray-400'}`} />}
+                              : <Icon className={`h-5 w-5 ${fileIconColorClass(entry)}`} />}
                           </span>
                           <span className="flex flex-col min-w-0">
                             {inlineRename?.path === entry.path ? (
@@ -3833,7 +4150,7 @@ const NextcloudBrowser: React.FC = () => {
               </p>
             </div>
 
-            {!isMultiContext && entry.isDir && item(<Folder className="w-4 h-4 text-blue-500" />, 'Abrir pasta', () => setPath(entry.path))}
+            {!isMultiContext && entry.isDir && item(<Folder className="w-4 h-4 text-blue-500" />, 'Abrir pasta', () => navigateToFolder(entry.path))}
             {!isMultiContext && isDocx(entry) && item(<Pencil className="w-4 h-4 text-blue-600" />, 'Editar no editor', () => openInMainEditor(entry))}
             {!isMultiContext && isDocx(entry) && item(<FileText className="w-4 h-4 text-red-500" />, 'Converter Word em PDF', () => { void convertDocxEntriesToPdf([entry]); })}
             {isMultiContext && contextEntries.some(isDocx) && item(<FileText className="w-4 h-4 text-red-500" />, `Converter ${contextEntries.filter(isDocx).length} Word em PDF`, () => { void convertDocxEntriesToPdf(contextEntries.filter(isDocx)); })}
@@ -4046,7 +4363,7 @@ const NextcloudBrowser: React.FC = () => {
                       const ItemIcon = extIcon(entry);
                       return (
                         <div key={entry.path} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-slate-700 dark:text-slate-200">
-                          <ItemIcon className={`h-4 w-4 shrink-0 ${entry.isDir ? 'text-blue-500' : 'text-slate-400'}`} />
+                          <ItemIcon className={`h-4 w-4 shrink-0 ${fileIconColorClass(entry)}`} />
                           <span className="min-w-0 flex-1 truncate">{entry.name}</span>
                           <span className="shrink-0 text-[10px] text-slate-400">{entry.isDir ? 'Pasta' : formatBytes(entry.size)}</span>
                         </div>
@@ -4840,6 +5157,16 @@ const NextcloudBrowser: React.FC = () => {
                   <Combine className="h-4 w-4 text-orange-600" /> Juntar ({pdfToolFiles.length})
                 </button>
                 <span className="mx-1 h-6 w-px bg-[#d8d8d8]" />
+                <button type="button" onClick={() => setPdfToolMode('optimize')} title="Reduzir o tamanho do arquivo sem perder qualidade" className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-xs font-medium transition ${pdfToolMode === 'optimize' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-700 hover:bg-[#e9e9e9]'}`}>
+                  <Zap className="h-4 w-4 text-emerald-600" /> Otimizar
+                </button>
+                <button type="button" onClick={() => setPdfToolMode('separator')} title="Inserir uma página de rosto entre documentos" className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-xs font-medium transition ${pdfToolMode === 'separator' ? 'bg-blue-100 text-blue-800' : 'text-slate-700 hover:bg-[#e9e9e9]'}`}>
+                  <BookmarkPlus className="h-4 w-4 text-blue-600" /> Separador
+                </button>
+                <button type="button" onClick={() => setPdfToolMode('metadata')} title="Título, autor e assunto gravados no arquivo" className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-xs font-medium transition ${pdfToolMode === 'metadata' ? 'bg-slate-200 text-slate-900' : 'text-slate-700 hover:bg-[#e9e9e9]'}`}>
+                  <Info className="h-4 w-4 text-slate-600" /> Propriedades
+                </button>
+                <span className="mx-1 h-6 w-px bg-[#d8d8d8]" />
                 <button type="button" onClick={() => download(pdfToolFile)} className="inline-flex h-9 items-center gap-2 rounded-md px-3 text-xs font-medium text-slate-700 transition hover:bg-[#e9e9e9]">
                   <Download className="h-4 w-4 text-slate-500" /> Baixar
                 </button>
@@ -4884,6 +5211,18 @@ const NextcloudBrowser: React.FC = () => {
                     <span className="flex-1 text-left"><span className="block text-[13px] font-semibold text-slate-800">Juntar PDFs</span><span className="block text-[11px] text-slate-400">{pdfToolFiles.length >= 2 ? `${pdfToolFiles.length} PDFs carregados` : 'Selecione 2+ PDFs'}</span></span>
                     <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
                   </button>
+                  <p className="mt-1 px-5 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Arquivo</p>
+                  {[
+                    { label: 'Otimizar', desc: 'Reduzir o tamanho sem perder qualidade', icon: <Zap className="h-5 w-5" />, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', action: () => setPdfToolMode('optimize' as const) },
+                    { label: 'Separador', desc: 'Folha de rosto entre anexos', icon: <BookmarkPlus className="h-5 w-5" />, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', action: () => setPdfToolMode('separator' as const) },
+                    { label: 'Propriedades', desc: 'Título, autor e assunto', icon: <Info className="h-5 w-5" />, color: 'text-slate-600', bg: 'bg-slate-100 border-slate-200', action: () => setPdfToolMode('metadata' as const) },
+                  ].map((tool) => (
+                    <button key={tool.label} type="button" onClick={tool.action} className="group mx-3 mb-0.5 flex items-center gap-3.5 rounded-xl px-3 py-2.5 transition hover:bg-slate-50">
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${tool.bg} ${tool.color}`}>{tool.icon}</span>
+                      <span className="min-w-0 flex-1 text-left"><span className="block text-[13px] font-semibold text-slate-800">{tool.label}</span><span className="block truncate text-[11px] text-slate-400">{tool.desc}</span></span>
+                      <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
+                    </button>
+                  ))}
                   <div className="mt-auto border-t border-slate-100 px-4 py-4">
                     <button onClick={() => download(pdfToolFile)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-[13px] text-slate-600 transition hover:bg-white"><Download className="h-4 w-4 text-slate-400" />Baixar PDF original</button>
                   </div>
@@ -4961,8 +5300,24 @@ const NextcloudBrowser: React.FC = () => {
               <div className="flex min-h-0 flex-1">
                 <div className="flex w-full flex-col border-r border-slate-100 bg-white lg:w-[400px] lg:shrink-0">
                   <div className="border-b border-slate-100 px-6 pb-4 pt-6">
-                    <h4 className="text-base font-bold text-slate-900">{pdfToolMode === 'watermark' ? 'Marca d’água' : pdfToolMode === 'pagenumber' ? 'Numeração de páginas' : pdfToolMode === 'merge' ? 'Juntar PDFs' : 'Dividir PDF'}</h4>
-                    <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500">{pdfToolMode === 'watermark' ? `Texto aplicado em todas as ${pdfPageCount ?? 0} páginas.` : pdfToolMode === 'pagenumber' ? 'Adiciona a numeração em todas as páginas.' : pdfToolMode === 'merge' ? `${pdfToolFiles.length} arquivos serão reunidos na ordem abaixo.` : 'Escolha o ponto de corte do documento.'}</p>
+                    <h4 className="text-base font-bold text-slate-900">{
+                      pdfToolMode === 'watermark' ? 'Marca d’água'
+                        : pdfToolMode === 'pagenumber' ? 'Numeração de páginas'
+                        : pdfToolMode === 'merge' ? 'Juntar PDFs'
+                        : pdfToolMode === 'optimize' ? 'Otimizar arquivo'
+                        : pdfToolMode === 'separator' ? 'Página separadora'
+                        : pdfToolMode === 'metadata' ? 'Propriedades do documento'
+                        : 'Dividir PDF'
+                    }</h4>
+                    <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500">{
+                      pdfToolMode === 'watermark' ? `Texto aplicado em todas as ${pdfPageCount ?? 0} páginas.`
+                        : pdfToolMode === 'pagenumber' ? 'Adiciona a numeração em todas as páginas.'
+                        : pdfToolMode === 'merge' ? `${pdfToolFiles.length} arquivos serão reunidos na ordem abaixo.`
+                        : pdfToolMode === 'optimize' ? 'Reduz o tamanho do arquivo sem rasterizar nem perder qualidade.'
+                        : pdfToolMode === 'separator' ? 'Insere uma folha de rosto — útil para identificar cada anexo.'
+                        : pdfToolMode === 'metadata' ? 'Título, autor e assunto gravados dentro do arquivo.'
+                        : 'Escolha o ponto de corte do documento.'
+                    }</p>
                   </div>
                   <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
                     {pdfToolMode === 'watermark' && <>
@@ -5037,6 +5392,121 @@ const NextcloudBrowser: React.FC = () => {
                         </div>
                       </>
                     )}
+                    {pdfToolMode === 'optimize' && (
+                      <>
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs leading-relaxed text-emerald-900">
+                          <p className="font-semibold">O que a otimização faz</p>
+                          <p className="mt-1">
+                            Descarta o que ficou para trás de edições anteriores (objetos órfãos,
+                            dicionários repetidos) e regrava o arquivo comprimido.
+                            <strong> Não mexe nas imagens</strong>, então nada perde qualidade — e o
+                            texto continua pesquisável.
+                          </p>
+                          <p className="mt-1.5">
+                            O ganho é maior em PDF que já passou por assinatura, marca d’água ou
+                            numeração. Se não houver ganho, o arquivo original é mantido.
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-3 text-xs text-slate-600">
+                          <div className="flex items-center justify-between">
+                            <span>Tamanho atual</span>
+                            <span className="font-semibold text-slate-800">{formatBytes(pdfToolFile.size)}</span>
+                          </div>
+                          {pdfOptimizeReport && (
+                            <>
+                              <div className="mt-2 flex items-center justify-between border-t border-[#e7e5df] pt-2">
+                                <span>Depois de otimizar</span>
+                                <span className="font-semibold text-emerald-700">{formatBytes(pdfOptimizeReport.optimizedSize)}</span>
+                              </div>
+                              <div className="mt-1 flex items-center justify-between">
+                                <span>Redução</span>
+                                <span className="font-bold text-emerald-700">
+                                  {pdfOptimizeReport.savedPercent > 0
+                                    ? `${pdfOptimizeReport.savedPercent}%`
+                                    : 'sem ganho — original preservado'}
+                                </span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )}
+                    {pdfToolMode === 'separator' && (
+                      <>
+                        <label className="block text-xs font-semibold text-slate-600">
+                          Título do separador
+                          <input
+                            value={pdfSeparatorTitle}
+                            onChange={(event) => setPdfSeparatorTitle(event.target.value)}
+                            placeholder="ex.: DOC. 03 — Contrato de trabalho"
+                            className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm font-semibold outline-none focus:border-blue-400"
+                          />
+                        </label>
+                        <label className="block text-xs font-semibold text-slate-600">
+                          Subtítulo (opcional)
+                          <input
+                            value={pdfSeparatorSubtitle}
+                            onChange={(event) => setPdfSeparatorSubtitle(event.target.value)}
+                            placeholder="ex.: assinado em 12/03/2024"
+                            className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-blue-400"
+                          />
+                        </label>
+                        <label className="block text-xs font-semibold text-slate-600">
+                          Inserir antes da página
+                          <input
+                            type="number"
+                            min={1}
+                            max={Math.max(1, (pdfPageCount ?? 1) + 1)}
+                            value={pdfSeparatorAt}
+                            onChange={(event) => setPdfSeparatorAt(Math.max(1, Number(event.target.value) || 1))}
+                            className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-blue-400"
+                          />
+                          <span className="mt-1 block text-[11px] font-normal text-slate-400">
+                            1 coloca o separador como primeira folha. O documento tem {pdfPageCount ?? '?'} página(s).
+                          </span>
+                        </label>
+                      </>
+                    )}
+                    {pdfToolMode === 'metadata' && (
+                      <>
+                        {pdfMetadataLoading ? (
+                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                            <Loader2 className="h-4 w-4 animate-spin" /> Lendo as propriedades do arquivo…
+                          </div>
+                        ) : (
+                          <>
+                            <label className="block text-xs font-semibold text-slate-600">
+                              Título
+                              <input value={pdfMetadataForm.title} onChange={(event) => setPdfMetadataForm((form) => ({ ...form, title: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-slate-400" />
+                            </label>
+                            <label className="block text-xs font-semibold text-slate-600">
+                              Autor
+                              <input value={pdfMetadataForm.author} onChange={(event) => setPdfMetadataForm((form) => ({ ...form, author: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-slate-400" />
+                            </label>
+                            <label className="block text-xs font-semibold text-slate-600">
+                              Assunto
+                              <input value={pdfMetadataForm.subject} onChange={(event) => setPdfMetadataForm((form) => ({ ...form, subject: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-slate-400" />
+                            </label>
+                            <label className="block text-xs font-semibold text-slate-600">
+                              Palavras-chave (separadas por vírgula)
+                              <input value={pdfMetadataForm.keywords} onChange={(event) => setPdfMetadataForm((form) => ({ ...form, keywords: event.target.value }))} placeholder="ex.: trabalhista, rescisão" className="mt-1.5 w-full rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-slate-400" />
+                            </label>
+                            {pdfMetadata && (
+                              <div className="rounded-xl border border-[#e7e5df] bg-slate-50 px-3.5 py-3 text-[11px] leading-relaxed text-slate-500">
+                                <p><span className="font-semibold text-slate-700">Programa de origem:</span> {pdfMetadata.producer || pdfMetadata.creator || '—'}</p>
+                                <p><span className="font-semibold text-slate-700">Criado em:</span> {pdfMetadata.createdAt ? new Date(pdfMetadata.createdAt).toLocaleString('pt-BR') : '—'}</p>
+                                <p><span className="font-semibold text-slate-700">Modificado em:</span> {pdfMetadata.modifiedAt ? new Date(pdfMetadata.modifiedAt).toLocaleString('pt-BR') : '—'}</p>
+                                <p><span className="font-semibold text-slate-700">Páginas:</span> {pdfMetadata.pageCount}</p>
+                              </div>
+                            )}
+                            <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs leading-relaxed text-blue-800">
+                              Deixar um campo vazio limpa o dado do arquivo. Útil quando o PDF vem de
+                              um modelo e carrega o autor de outra pessoa.
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
                     {(pdfToolMode === 'watermark' || pdfToolMode === 'pagenumber') && (
                       <>
                         {(pdfToolFiles.length > 1) && (
@@ -5092,47 +5562,120 @@ const NextcloudBrowser: React.FC = () => {
                   <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
                     <button onClick={() => setPdfToolMode('home')} className="flex-1 rounded-xl border border-[#e7e5df] py-2.5 text-sm font-medium text-slate-700">Cancelar</button>
                     <button
-                      onClick={() => pdfToolMode === 'watermark' ? handleWatermark() : pdfToolMode === 'pagenumber' ? handlePageNumbers() : pdfToolMode === 'merge' ? void mergePdfEntries(pdfToolFiles, mergePdfName) : void handleSplit()}
-                      disabled={applyingTool || (pdfToolMode === 'watermark' && !pdfWatermarkText.trim()) || (pdfToolMode === 'split' && ((pdfPageCount ?? 0) < 2 || (pdfSplitMode === 'ranges' && !pdfSplitRanges.trim()))) || (pdfToolMode === 'merge' && (pdfToolFiles.length < 2 || !mergePdfName.trim()))}
-                      className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ${pdfToolMode === 'merge' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-red-500 hover:bg-red-600'}`}
+                      onClick={() => {
+                        if (pdfToolMode === 'watermark') return handleWatermark();
+                        if (pdfToolMode === 'pagenumber') return handlePageNumbers();
+                        if (pdfToolMode === 'merge') return void mergePdfEntries(pdfToolFiles, mergePdfName);
+                        if (pdfToolMode === 'optimize') return void handleOptimize();
+                        if (pdfToolMode === 'separator') return handleSeparator();
+                        if (pdfToolMode === 'metadata') return handleMetadata();
+                        return void handleSplit();
+                      }}
+                      disabled={
+                        applyingTool
+                        || (pdfToolMode === 'watermark' && !pdfWatermarkText.trim())
+                        || (pdfToolMode === 'split' && ((pdfPageCount ?? 0) < 2 || (pdfSplitMode === 'ranges' && !pdfSplitRanges.trim())))
+                        || (pdfToolMode === 'merge' && (pdfToolFiles.length < 2 || !mergePdfName.trim()))
+                        || (pdfToolMode === 'separator' && !pdfSeparatorTitle.trim())
+                        || (pdfToolMode === 'metadata' && pdfMetadataLoading)
+                      }
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ${
+                        pdfToolMode === 'merge' ? 'bg-orange-500 hover:bg-orange-600'
+                          : pdfToolMode === 'optimize' ? 'bg-emerald-600 hover:bg-emerald-700'
+                          : pdfToolMode === 'separator' ? 'bg-blue-600 hover:bg-blue-700'
+                          : pdfToolMode === 'metadata' ? 'bg-slate-700 hover:bg-slate-800'
+                          : 'bg-red-500 hover:bg-red-600'
+                      }`}
                     >
-                      {applyingTool || busy ? <Loader2 className="h-4 w-4 animate-spin" /> : pdfToolMode === 'merge' ? <Combine className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                      {applyingTool || busy ? 'Processando…' : pdfToolMode === 'merge' ? `Juntar ${pdfToolFiles.length} PDFs` : 'Aplicar'}
+                      {applyingTool || busy ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : pdfToolMode === 'merge' ? <Combine className="h-4 w-4" />
+                        : pdfToolMode === 'optimize' ? <Zap className="h-4 w-4" />
+                        : pdfToolMode === 'separator' ? <BookmarkPlus className="h-4 w-4" />
+                        : <Save className="h-4 w-4" />}
+                      {applyingTool || busy ? 'Processando…'
+                        : pdfToolMode === 'merge' ? `Juntar ${pdfToolFiles.length} PDFs`
+                        : pdfToolMode === 'optimize' ? 'Otimizar'
+                        : pdfToolMode === 'separator' ? 'Inserir separador'
+                        : pdfToolMode === 'metadata' ? 'Salvar propriedades'
+                        : 'Aplicar'}
                     </button>
                   </div>
                 </div>
-                {pdfToolMode === 'watermark' ? (
-                  <div className="hidden min-h-0 flex-1 flex-col bg-[#f8f9fb] lg:flex">
-                    <div className="flex items-center justify-between border-b border-slate-100 bg-white px-5 py-3">
-                      <div>
-                        <p className="text-sm font-bold text-slate-900">Pré-visualização</p>
-                        <p className="text-xs text-slate-400">Resultado real da marca d'água no documento ativo.</p>
-                      </div>
-                      <button type="button" onClick={() => void generateWatermarkPreview()} disabled={pdfWatermarkPreviewBusy || !pdfWatermarkText.trim()} className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-purple-700 disabled:opacity-50">
-                        {pdfWatermarkPreviewBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
-                        {pdfWatermarkPreviewUrl ? 'Atualizar' : 'Pré-visualizar'}
+                {/* Pré-visualização — agora em TODAS as ferramentas, não só na
+                    marca d'água. Mostra o resultado real antes de gravar. */}
+                <div className="hidden min-h-0 flex-1 flex-col bg-[#f8f9fb] lg:flex">
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-white px-5 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-900">Pré-visualização</p>
+                      <p className="truncate text-xs text-slate-400">
+                        {pdfToolMode === 'watermark' ? 'Marca d’água aplicada no documento ativo.'
+                          : pdfToolMode === 'pagenumber' ? 'Numeração aplicada no documento ativo.'
+                          : pdfToolMode === 'split' ? 'Primeira parte resultante do corte.'
+                          : pdfToolMode === 'merge' ? `Resultado da união dos ${pdfToolFiles.length} arquivos.`
+                          : 'Resultado real antes de salvar.'}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-medium text-slate-500" title="Atualizar a pré-visualização automaticamente ao mudar as opções">
+                        <input type="checkbox" checked={pdfPreviewLive} onChange={(event) => setPdfPreviewLive(event.target.checked)} className="rounded" />
+                        Ao vivo
+                      </label>
+                      <button type="button" onClick={() => void generateToolPreview()} disabled={pdfWatermarkPreviewBusy} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50">
+                        {pdfWatermarkPreviewBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                        Atualizar
                       </button>
                     </div>
-                    <div className="min-h-0 flex-1 overflow-auto bg-[#f5f5f5] p-5">
-                      {pdfWatermarkPreviewUrl ? (
-                        <Document file={pdfWatermarkPreviewUrl} loading={<div className="py-12 text-center text-sm text-slate-400"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Renderizando…</div>}>
-                          <div className="flex flex-col items-center gap-4">
-                            {Array.from({ length: Math.min(pdfPageCount ?? 1, 5) }, (_, index) => (
-                              <div key={index} className="overflow-hidden rounded-lg border border-[#cfcfcf] bg-white shadow-sm">
-                                <Page pageNumber={index + 1} width={340} renderTextLayer={false} renderAnnotationLayer={false} />
-                              </div>
-                            ))}
-                            {(pdfPageCount ?? 0) > 5 && <p className="text-xs text-slate-400">Mostrando as 5 primeiras de {pdfPageCount} páginas.</p>}
-                          </div>
-                        </Document>
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-center"><div><div className="mx-auto mb-4 flex h-20 w-16 items-center justify-center rounded-xl bg-white shadow-md"><Stamp className="h-7 w-7 text-purple-300" /></div><p className="max-w-[240px] text-sm leading-relaxed text-slate-400">Clique em "Pré-visualizar" para ver a marca d'água aplicada antes de salvar.</p></div></div>
-                      )}
-                    </div>
                   </div>
-                ) : (
-                  <div className="hidden flex-1 items-center justify-center bg-[#f8f9fb] p-10 lg:flex"><div className="text-center"><div className="mx-auto mb-4 flex h-20 w-16 items-center justify-center rounded-xl bg-white shadow-md"><FileText className="h-7 w-7 text-slate-300" /></div><p className="max-w-[220px] text-sm leading-relaxed text-slate-400">O resultado será salvo diretamente no Nextcloud.</p></div></div>
-                )}
+                  {pdfPreviewError && (
+                    <p className="border-b border-amber-100 bg-amber-50 px-5 py-2 text-xs text-amber-800">{pdfPreviewError}</p>
+                  )}
+                  <div className="min-h-0 flex-1 overflow-auto bg-[#f5f5f5] p-5">
+                    {pdfWatermarkPreviewUrl ? (
+                      <Document
+                        file={pdfWatermarkPreviewUrl}
+                        onLoadSuccess={({ numPages }) => setPdfPreviewPage(Math.min(pdfPreviewPage, numPages) || 1)}
+                        loading={<div className="py-12 text-center text-sm text-slate-400"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Renderizando…</div>}
+                        error={<div className="py-12 text-center text-sm text-rose-500">Não foi possível abrir a pré-visualização.</div>}
+                      >
+                        <div className="flex flex-col items-center gap-4">
+                          {Array.from({ length: PDF_PREVIEW_MAX_PAGES }, (_, index) => (
+                            <div key={index} className="overflow-hidden rounded-lg border border-[#cfcfcf] bg-white shadow-sm">
+                              <Page
+                                pageNumber={index + 1}
+                                width={340}
+                                renderTextLayer={false}
+                                renderAnnotationLayer={false}
+                                // Página inexistente no resultado (ex.: corte com
+                                // menos páginas) simplesmente não aparece.
+                                noData=""
+                                error=""
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </Document>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-center">
+                        <div>
+                          <div className="mx-auto mb-4 flex h-20 w-16 items-center justify-center rounded-xl bg-white shadow-md">
+                            {pdfWatermarkPreviewBusy
+                              ? <Loader2 className="h-7 w-7 animate-spin text-slate-300" />
+                              : pdfToolMode === 'watermark' ? <Stamp className="h-7 w-7 text-purple-300" />
+                              : pdfToolMode === 'pagenumber' ? <Hash className="h-7 w-7 text-teal-300" />
+                              : pdfToolMode === 'split' ? <Scissors className="h-7 w-7 text-amber-300" />
+                              : pdfToolMode === 'merge' ? <Combine className="h-7 w-7 text-orange-300" />
+                              : <FileText className="h-7 w-7 text-slate-300" />}
+                          </div>
+                          <p className="max-w-[240px] text-sm leading-relaxed text-slate-400">
+                            {pdfWatermarkPreviewBusy
+                              ? 'Gerando a pré-visualização…'
+                              : 'Ajuste as opções ao lado para ver aqui o resultado antes de salvar.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>

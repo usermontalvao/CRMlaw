@@ -28,9 +28,7 @@ import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { saveAs } from 'file-saver';
 import { Document as DocxDocument, Packer, Paragraph, TextRun } from 'docx';
-import { renderAsync } from 'docx-preview';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
+import { docxBlobToPdf } from '../utils/docxToPdf';
 import { matchesNormalizedSearch } from '../utils/search';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { clientService } from '../services/client.service';
@@ -1240,74 +1238,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     }
   };
 
-  // Converter DOCX para PDF usando docx-preview + html2canvas + jsPDF
-  const convertDocxToPdf = async (docxBlob: Blob): Promise<Blob> => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        // Criar container temporário
-        const container = document.createElement('div');
-        container.style.cssText = `
-          position: fixed;
-          left: -9999px;
-          top: 0;
-          width: 794px;
-          background: white;
-          font-family: 'Times New Roman', Times, serif;
-        `;
-        document.body.appendChild(container);
-
-        // Renderizar DOCX
-        await renderAsync(docxBlob, container, undefined, {
-          className: 'docx-wrapper',
-          inWrapper: true,
-          ignoreWidth: false,
-          ignoreHeight: false,
-        });
-
-        // Aguardar renderização
-        await new Promise(r => setTimeout(r, 300));
-
-        // Capturar como canvas (escala reduzida para diminuir tamanho)
-        const canvas = await html2canvas(container, {
-          scale: 1.5, // Reduzido de 2 para 1.5
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          width: 794,
-          windowWidth: 794,
-        });
-
-        // Criar PDF com JPEG (menor que PNG)
-        const pageWidth = 210;
-        const pageHeight = 297;
-        const imgData = canvas.toDataURL('image/jpeg', 0.85); // JPEG com 85% qualidade
-        const imgWidth = pageWidth;
-        const imgHeight = (canvas.height * pageWidth) / canvas.width;
-
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'mm',
-          format: 'a4',
-          compress: true, // Habilitar compressão
-        });
-
-        // Dividir em páginas se necessário
-        const totalPages = Math.ceil(imgHeight / pageHeight);
-        
-        for (let page = 0; page < totalPages; page++) {
-          if (page > 0) pdf.addPage();
-          const yOffset = -(page * pageHeight);
-          pdf.addImage(imgData, 'JPEG', 0, yOffset, imgWidth, imgHeight, undefined, 'FAST');
-        }
-
-        document.body.removeChild(container);
-        resolve(pdf.output('blob'));
-      } catch (error) {
-        reject(error);
-      }
-    });
-  };
+  // Converter DOCX para PDF: pipeline único em `utils/docxToPdf.ts`, que faz o
+  // layout folha por folha e monta o PDF no tamanho/orientação de cada folha.
+  // A versão anterior rasterizava o documento inteiro em uma imagem e cortava a
+  // cada 297 mm — o corte caía no meio das linhas.
+  const convertDocxToPdf = async (docxBlob: Blob): Promise<Blob> => docxBlobToPdf(docxBlob);
 
   // Converter múltiplos DOCXs e juntar em um único PDF
   const convertAndMergeDocxToPdf = async (mainDocx: Blob, attachmentBlobs: Blob[]): Promise<Blob> => {

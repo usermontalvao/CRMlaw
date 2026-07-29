@@ -1,9 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import JSZip from 'jszip';
-import { renderAsync } from 'docx-preview';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
+import { docxToPdf } from '../utils/docxToPdf';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -2276,126 +2274,15 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       if (!response.ok) throw new Error('Não foi possível baixar o arquivo Word.');
       const docxBlob = await response.blob();
 
-      const container = document.createElement('div');
-      container.className = 'cloud-docx-to-pdf-render';
-      container.style.cssText = `
-        position: fixed;
-        left: -9999px;
-        top: 0;
-        width: 794px;
-        background: white;
-        font-family: 'Times New Roman', Times, serif;
-      `;
-      const style = document.createElement('style');
-      style.textContent = `
-        .cloud-docx-to-pdf-render .docx-wrapper-wrapper {
-          background: transparent !important;
-          padding: 0 !important;
-          display: flex !important;
-          justify-content: center !important;
-        }
-        .cloud-docx-to-pdf-render .docx-wrapper {
-          background: transparent !important;
-          padding: 0 !important;
-          width: auto !important;
-          max-width: none !important;
-        }
-        .cloud-docx-to-pdf-render .docx-wrapper > section,
-        .cloud-docx-to-pdf-render .docx-wrapper > article,
-        .cloud-docx-to-pdf-render .docx-wrapper > section > article {
-          width: 794px !important;
-          min-width: 794px !important;
-          max-width: 794px !important;
-          margin: 0 auto 20px auto !important;
-          background: white !important;
-          box-shadow: none !important;
-          border: none !important;
-          border-radius: 0 !important;
-        }
-      `;
-      document.head.appendChild(style);
-      document.body.appendChild(container);
+      // Pipeline único de conversão (utils/docxToPdf.ts): preserva o tamanho e a
+      // orientação de cada folha do documento em vez de forçar A4 retrato.
+      const { blob: pdfBlob } = await docxToPdf(docxBlob);
+      const nextName = `${file.original_name.replace(/\.[^/.]+$/i, '')}.pdf`;
+      const pdfFile = new window.File([pdfBlob], nextName, { type: 'application/pdf' });
 
-      try {
-        await renderAsync(docxBlob, container, undefined, {
-          className: 'docx-wrapper',
-          inWrapper: true,
-          ignoreWidth: false,
-          ignoreHeight: false,
-          breakPages: true,
-          renderHeaders: true,
-          renderFooters: true,
-          renderFootnotes: true,
-        });
-
-        const pageWidth = 210;
-        const pageHeight = 297;
-
-        const pdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'mm',
-          format: 'a4',
-          compress: true,
-        });
-
-        await new Promise((resolve) => window.setTimeout(resolve, 350));
-
-        const docxWrapper = (container.querySelector('.docx-wrapper') as HTMLElement | null) ?? container;
-        const topLevelPages = Array.from(docxWrapper.children).filter((node) => {
-          if (!(node instanceof HTMLElement)) return false;
-          const tag = node.tagName.toLowerCase();
-          return tag === 'section' || tag === 'article' || node.classList.contains('docx');
-        }) as HTMLElement[];
-        const pages = topLevelPages.length > 0 ? topLevelPages : [docxWrapper];
-
-        for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
-          const pageElement = pages[pageIndex];
-          const originalBoxShadow = pageElement.style.boxShadow;
-          pageElement.style.boxShadow = 'none';
-
-          const canvas = await html2canvas(pageElement, {
-            scale: 1.5,
-            useCORS: true,
-            allowTaint: true,
-            backgroundColor: '#ffffff',
-            logging: false,
-            width: pageElement.scrollWidth || 794,
-            windowWidth: pageElement.scrollWidth || 794,
-            imageTimeout: 0,
-          });
-
-          pageElement.style.boxShadow = originalBoxShadow;
-
-          const imgData = canvas.toDataURL('image/jpeg', 0.88);
-          const imgWidth = pageWidth;
-          const imgHeight = (canvas.height * pageWidth) / canvas.width;
-
-          if (pageIndex > 0) pdf.addPage();
-
-          if (imgHeight <= pageHeight) {
-            pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight, undefined, 'FAST');
-            continue;
-          }
-
-          const totalSlices = Math.max(1, Math.ceil(imgHeight / pageHeight));
-          for (let sliceIndex = 0; sliceIndex < totalSlices; sliceIndex += 1) {
-            if (sliceIndex > 0) pdf.addPage();
-            const yOffset = -(sliceIndex * pageHeight);
-            pdf.addImage(imgData, 'JPEG', 0, yOffset, imgWidth, imgHeight, undefined, 'FAST');
-          }
-        }
-
-        const pdfBlob = pdf.output('blob');
-        const nextName = `${file.original_name.replace(/\.[^/.]+$/i, '')}.pdf`;
-        const pdfFile = new window.File([pdfBlob], nextName, { type: 'application/pdf' });
-
-        await cloudService.uploadFiles(file.folder_id, [pdfFile], file.client_id || null);
-        toast.success('Cloud', 'Arquivo Word convertido em PDF com sucesso.');
-        await loadData();
-      } finally {
-        document.head.removeChild(style);
-        document.body.removeChild(container);
-      }
+      await cloudService.uploadFiles(file.folder_id, [pdfFile], file.client_id || null);
+      toast.success('Cloud', 'Arquivo Word convertido em PDF com sucesso.');
+      await loadData();
     } catch (error: any) {
       toast.error('Cloud', error?.message || 'Erro ao converter Word em PDF.');
     } finally {
