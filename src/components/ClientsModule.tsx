@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Plus, Users, User, Building2, ShieldAlert, Search, Filter, Download, Upload, Loader2, Edit, Trash2, AlertTriangle, CheckCircle2, X, Phone, Mail, FileText, Copy, FilePlus, UserPlus, Calendar, ChevronRight, Pencil, Clock, Merge } from 'lucide-react';
+import { Plus, Users, User, Building2, ShieldAlert, Search, Filter, Download, Upload, Loader2, Edit, Trash2, AlertTriangle, CheckCircle2, X, Phone, Mail, FileText, Copy, FilePlus, UserPlus, Calendar, ChevronRight, Pencil, Clock, Merge, Sparkles } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { clientService } from '../services/client.service';
 import { signatureService } from '../services/signature.service';
@@ -16,7 +16,8 @@ import type { Requirement } from '../types/requirement.types';
 
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { Modal, ModalBody } from './ui';
-import { buildDuplicateGroups, buildDuplicateSummaryMap, pickPrimaryClient, type DuplicateGroup } from '../utils/clientDuplicates';
+import { buildDuplicateGroups, buildDuplicateSummaryMap, isCertainDuplicate, needsAiJudgement, pickPrimaryClient, type DuplicateGroup } from '../utils/clientDuplicates';
+import { clientMergeAIService, MERGE_THRESHOLD, type DuplicateVerdict } from '../services/clientMergeAI.service';
 import { useSelectionState } from '../hooks/useSelectionState';
 import { getClientMissingFields, isOutdatedClientRecord, OUTDATED_THRESHOLD_DAYS } from '../utils/clientQuality';
 import { settingsService, CLIENT_MODULE_DEFAULTS } from '../services/settings.service';
@@ -220,6 +221,9 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const [showOutdatedOnly, setShowOutdatedOnly] = useState(false);
   const [showMissingBanner, setShowMissingBanner] = useState(true);
   const [showDuplicateBanner, setShowDuplicateBanner] = useState(true);
+  const [aiMergeLoading, setAiMergeLoading] = useState(false);
+  const [aiMergeProgress, setAiMergeProgress] = useState<{ done: number; total: number } | null>(null);
+  const [aiMergeVerdicts, setAiMergeVerdicts] = useState<Map<string, DuplicateVerdict>>(new Map());
   const [showFilters, setShowFilters] = useState<boolean>(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
   const [mergeLoading, setMergeLoading] = useState(false);
@@ -464,6 +468,75 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
 
   const handleMergeAllDuplicates = async () => {
     await executeMergeGroups(duplicateGroups.map((group) => ({ group })), 'mesclar');
+  };
+
+  /**
+   * Mesclagem assistida por IA.
+   *
+   * A IA entra só aqui, e só nos grupos que a heurística já marcou como
+   * suspeitos — nunca varrendo a base inteira. Grupos com CPF idêntico são
+   * mesclados por regra, sem gastar chamada. Nos demais, a IA responde se é a
+   * mesma pessoa; mescla sozinho apenas acima de {MERGE_THRESHOLD}% de
+   * confiança, e o resto fica listado para você decidir.
+   */
+  const handleAiMergeDuplicates = async () => {
+    const candidates = duplicateGroups.filter((g) => isCertainDuplicate(g) || needsAiJudgement(g));
+    if (candidates.length === 0) {
+      alert('Nenhum grupo com indício suficiente para análise.');
+      return;
+    }
+    if (!clientMergeAIService.isAvailable() && candidates.every((g) => !isCertainDuplicate(g))) {
+      alert('A IA não está habilitada nas configurações — sem ela, só consigo mesclar automaticamente grupos de CPF idêntico.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Analisar ${candidates.length} grupo(s) de contatos possivelmente duplicados com a IA?\n\n` +
+      `Só serão mesclados sozinhos os grupos confirmados como a mesma pessoa acima de ${MERGE_THRESHOLD}% de confiança. ` +
+      'Os dados mais recentes prevalecem, campos vazios não sobrescrevem os preenchidos e todo valor substituído fica no histórico do cadastro.',
+    );
+    if (!confirmed) return;
+
+    setAiMergeLoading(true);
+    setAiMergeProgress({ done: 0, total: candidates.length });
+    setAiMergeVerdicts(new Map());
+    try {
+      const verdicts = await clientMergeAIService.judgeGroups(candidates, (done, total) =>
+        setAiMergeProgress({ done, total }),
+      );
+      setAiMergeVerdicts(verdicts);
+
+      const toMerge = candidates.filter((group) => {
+        const verdict = verdicts.get(group.key);
+        return verdict?.samePerson === true && verdict.confidence >= MERGE_THRESHOLD;
+      });
+
+      let merged = 0;
+      for (const group of toMerge) {
+        const primary = pickPrimaryClient(group.clients);
+        const sourceIds = group.clients.filter((c) => c.id !== primary.id).map((c) => c.id);
+        if (sourceIds.length === 0) continue;
+        try {
+          await clientService.mergeClients(primary.id, sourceIds);
+          merged += 1;
+        } catch (err) {
+          console.error('Erro ao mesclar grupo confirmado pela IA:', err);
+        }
+      }
+
+      await loadClients();
+      const pending = candidates.length - merged;
+      alert(
+        `${merged} grupo(s) mesclado(s) automaticamente.` +
+        (pending > 0 ? `\n${pending} grupo(s) ficaram para você conferir — o parecer da IA aparece em cada um.` : ''),
+      );
+    } catch (error: any) {
+      console.error('Erro na análise de duplicados com IA:', error);
+      alert(error?.message || 'Erro ao analisar duplicados com a IA');
+    } finally {
+      setAiMergeLoading(false);
+      setAiMergeProgress(null);
+    }
   };
 
   const handleMergeSelectedDuplicates = async () => {
@@ -734,21 +807,9 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     ? <Building2 className="w-5 h-5" />
     : <User className="w-5 h-5" />;
 
-  const detailModalSubtitle = selectedClient ? (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-      <span className="font-medium text-slate-700">{selectedClient.client_type === 'pessoa_juridica' ? 'Pessoa jurídica' : 'Pessoa física'}</span>
-      {selectedClient.cpf_cnpj && (
-        <>
-          <span className="text-slate-300">•</span>
-          <span>{selectedClient.cpf_cnpj}</span>
-        </>
-      )}
-      <span className="text-slate-300">•</span>
-      <span className={selectedClient.status === 'ativo' ? 'text-emerald-700' : 'text-slate-500'}>
-        {selectedClient.status === 'ativo' ? 'Cadastro ativo' : 'Cadastro inativo'}
-      </span>
-    </div>
-  ) : undefined;
+  // O cabeçalho do modal não repete mais tipo/CPF/status: a própria ficha já abre
+  // com esses dados no topo, e ler a mesma coisa duas vezes seguidas era o que
+  // deixava a tela com cara de rascunho.
 
   return (
     <>
@@ -842,18 +903,33 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                     <div>
                       <p className="font-semibold text-sm">Aviso: {duplicateGroups.length} grupo(s) de contatos possivelmente duplicados</p>
                       <p className="text-xs mt-1">
-                        Encontramos {duplicateClientIds.size} contato(s) com indícios de se tratar da mesma pessoa. O sistema detecta por <strong>CPF igual</strong>, <strong>e-mail igual</strong>, <strong>nome + telefone</strong> ou <strong>nome idêntico</strong>.
+                        Encontramos {duplicateClientIds.size} contato(s) com indícios de se tratar da mesma pessoa: <strong>CPF igual</strong>, <strong>CPF com um dígito errado</strong>, <strong>e-mail igual</strong>, <strong>nome + telefone</strong> ou <strong>nome idêntico</strong>.
+                      </p>
+                      <p className="text-xs mt-1 text-red-700/80">
+                        Na mesclagem o dado mais recente prevalece, campo vazio não apaga campo preenchido e todo valor substituído fica no histórico do cadastro.
                       </p>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto">
                     <button
                       type="button"
-                      onClick={() => void handleMergeAllDuplicates()}
-                      disabled={mergeLoading}
-                      className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:opacity-60"
+                      onClick={() => void handleAiMergeDuplicates()}
+                      disabled={aiMergeLoading || mergeLoading}
+                      title="A IA analisa só os grupos já marcados como suspeitos e mescla sozinha os que confirmar como a mesma pessoa"
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:opacity-60"
                     >
-                      {mergeLoading ? 'Mesclando...' : 'Mesclar todos'}
+                      <Sparkles className="w-3.5 h-3.5" />
+                      {aiMergeLoading
+                        ? `Analisando ${aiMergeProgress?.done ?? 0}/${aiMergeProgress?.total ?? 0}...`
+                        : 'Analisar e mesclar com IA'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleMergeAllDuplicates()}
+                      disabled={mergeLoading || aiMergeLoading}
+                      className="inline-flex items-center justify-center px-3 py-1.5 text-xs font-semibold text-red-900 bg-red-100 hover:bg-red-200 rounded-md transition-colors disabled:opacity-60"
+                    >
+                      {mergeLoading ? 'Mesclando...' : 'Mesclar todos sem IA'}
                     </button>
                     <button
                       type="button"
@@ -894,6 +970,29 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                         <p className="text-[11px] text-red-700 mt-1">
                           {group.reasons.join(', ')}.
                         </p>
+                        {(() => {
+                          const verdict = aiMergeVerdicts.get(group.key);
+                          if (!verdict) return null;
+                          const merged = verdict.samePerson && verdict.confidence >= MERGE_THRESHOLD;
+                          return (
+                            <div className={`mt-2 rounded-md px-2 py-1.5 text-[11px] ${
+                              merged ? 'bg-emerald-50 text-emerald-800'
+                                : verdict.samePerson ? 'bg-amber-50 text-amber-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              <span className="font-semibold">
+                                {verdict.decidedBy === 'erro'
+                                  ? 'IA indisponível'
+                                  : merged
+                                    ? 'IA: mesma pessoa — mesclado'
+                                    : verdict.samePerson
+                                      ? `IA: provável mesma pessoa (${verdict.confidence}%) — confira`
+                                      : `IA: pessoas diferentes (${verdict.confidence}%)`}
+                              </span>
+                              <span className="block mt-0.5">{verdict.reason}</span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })}
@@ -1390,11 +1489,10 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           isOpen={isDetailsModalOpen}
           onClose={closeDetailsModal}
           title="Detalhes do cliente"
-          subtitle={detailModalSubtitle}
           icon={detailModalIcon}
           size="xl"
         >
-          <div className="p-3">
+          <div className="bg-[#f8f7f5] p-3 sm:p-4">
             <ClientDetails
               client={selectedClient}
               processes={clientProcesses}

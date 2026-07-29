@@ -9,6 +9,8 @@ import type { ClientFilters } from '../types/client.types.js';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { syncBus } from '../lib/syncBus';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+import { clientChangeHistoryService, type ClientChangeSource } from './clientChangeHistory.service';
+import { areClientValuesEquivalent } from '../utils/clientValueEquivalence';
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 // Cache em memória por chave de filtros server-side (status, client_type).
@@ -105,7 +107,13 @@ export class ClientService {
           throw new Error(`Erro ao listar clientes: ${error.message}`);
         }
 
-        rows = (data as Client[]) ?? [];
+        // Cadastros absorvidos numa mesclagem não são clientes: existem só para
+        // auditoria. Ficam fora da listagem e, por tabela, da busca global.
+        // O corte é feito aqui e não no `select` de propósito — se a coluna
+        // ainda não estiver no cache de schema do PostgREST, um filtro na query
+        // derrubaria a listagem inteira, e ficar sem clientes é pior que ver um
+        // duplicado.
+        rows = ((data as Client[]) ?? []).filter((client) => !client.merged_into_client_id);
         this._cache.set(cacheKey, { data: rows, timestamp: Date.now() });
       } catch (error) {
         console.error('Erro ao listar clientes:', error);
@@ -251,29 +259,80 @@ export class ClientService {
           new Date(a.updated_at || a.created_at || '0').getTime()
       );
 
+      // Campo a campo, vence o dado mais recente que NÃO esteja em branco.
+      // Ou seja: um cadastro novo e incompleto atualiza só o que ele traz
+      // preenchido — o resto permanece como estava no cadastro antigo.
+      //
+      // E se o valor que venceu for o MESMO dado do principal escrito de outro
+      // jeito ("Advogado"/"advogado", "65984046375"/"(65) 98404-6375"), o
+      // principal fica como está: não é atualização, é troca de máscara, e não
+      // tem por que virar linha no histórico.
       const mergedPayload: Partial<CreateClientDTO> = {};
+      const origins = new Map<string, Client>();
 
       for (const field of clientMergeFields) {
         if (field === 'notes') continue;
         for (const client of allClients) {
           const candidate = client[field];
-          if (!isBlankValue(candidate)) {
+          if (isBlankValue(candidate)) continue;
+          if (areClientValuesEquivalent(field as string, target[field], candidate)) {
+            // Mesmo dado: preserva exatamente o que já estava no principal.
+            if (!isBlankValue(target[field])) mergedPayload[field] = target[field] as any;
+            else mergedPayload[field] = candidate as any;
+          } else {
             mergedPayload[field] = candidate as any;
-            break;
+            origins.set(field, client);
           }
+          break;
         }
       }
 
       const notes = allClients
         .map((c) => String(c.notes || '').trim())
         .filter(Boolean);
-      const uniqueNotes = Array.from(new Set(notes));
+      const uniqueNotes = notes.filter(
+        (note, index) => notes.findIndex((other) => areClientValuesEquivalent('notes', other, note)) === index,
+      );
       if (uniqueNotes.length > 0) {
         mergedPayload.notes = uniqueNotes.join(' | ');
+        origins.set('notes', allClients.find((c) => String(c.notes || '').trim()) ?? target);
       }
 
       if (!mergedPayload.status) {
         mergedPayload.status = target.status || 'ativo';
+      }
+
+      // O que o cadastro principal perdeu na mesclagem fica registrado — nada
+      // do valor antigo é descartado, ele só sai da tela.
+      const historyEntries = clientMergeFields
+        .filter((field) => !isBlankValue(mergedPayload[field]))
+        .filter((field) => !areClientValuesEquivalent(field as string, target[field], mergedPayload[field]))
+        .map((field) => {
+          const from = origins.get(field as string);
+          return {
+            field: field as string,
+            oldValue: target[field],
+            newValue: mergedPayload[field],
+            sourceClientId: from && from.id !== targetId ? from.id : null,
+            sourceLabel: from && from.id !== targetId ? from.full_name : null,
+          };
+        });
+
+      // Antes de esvaziar o duplicado, leva junto tudo que estava pendurado
+      // nele — processos, prazos, pastas do Nextcloud, acordos, assinaturas.
+      // Sem isso o trabalho do cliente ficava órfão num cadastro inativo.
+      const movedRelations: Record<string, number> = {};
+      for (const source of sources) {
+        const { data: moved, error: relError } = await supabase.rpc('merge_client_relations', {
+          p_target: targetId,
+          p_source: source.id,
+        });
+        if (relError) {
+          throw new Error(`Erro ao transferir os vínculos do contato duplicado: ${relError.message}`);
+        }
+        for (const [key, value] of Object.entries((moved ?? {}) as Record<string, number>)) {
+          movedRelations[key] = (movedRelations[key] ?? 0) + Number(value || 0);
+        }
       }
 
       for (const source of sources) {
@@ -307,6 +366,8 @@ export class ClientService {
         throw new Error(`Erro ao atualizar cliente principal: ${updateError.message}`);
       }
 
+      await clientChangeHistoryService.record(targetId, 'mesclagem', historyEntries);
+
       for (const source of sources) {
         const mergeNote = `Mesclado com ${updatedTarget.full_name} (${updatedTarget.id}) em ${new Date().toLocaleString('pt-BR')}`;
         const sourceNotes = [source.notes, mergeNote]
@@ -319,6 +380,10 @@ export class ClientService {
           .update({
             status: 'inativo',
             notes: sourceNotes,
+            // Marca o cadastro como absorvido: ele continua existindo para
+            // auditoria, mas some das listagens e da busca — antes ficava
+            // aparecendo e dava a impressão de que a mesclagem não rodou.
+            merged_into_client_id: targetId,
             updated_at: new Date().toISOString(),
           })
           .eq('id', source.id);
@@ -335,6 +400,7 @@ export class ClientService {
         targetId,
         sourceIds: uniqueSourceIds,
         client: updatedTarget,
+        movedRelations,
       });
 
       return updatedTarget as Client;
@@ -389,7 +455,15 @@ export class ClientService {
   /**
    * Atualiza um cliente existente
    */
-  async updateClient(id: string, updates: Partial<CreateClientDTO>): Promise<Client> {
+  /**
+   * Atualiza o cadastro. `source` diz de onde veio a alteração — é o que a
+   * ficha mostra no histórico ("Edição manual", "Dados da assinatura"...).
+   */
+  async updateClient(
+    id: string,
+    updates: Partial<CreateClientDTO>,
+    source: ClientChangeSource = 'edicao',
+  ): Promise<Client> {
     try {
       if (updates.full_name) {
         updates = { ...updates, full_name: updates.full_name.toUpperCase() };
@@ -418,6 +492,14 @@ export class ClientService {
         console.error('Erro ao atualizar cliente:', error);
         throw new Error(`Erro ao atualizar cliente: ${error.message}`);
       }
+
+      // Guarda o valor anterior de cada campo tocado. A ficha do cliente mostra
+      // essa trilha, então nenhum dado sobrescrito se perde.
+      await clientChangeHistoryService.record(
+        id,
+        source,
+        clientChangeHistoryService.diff(existing as any, data as any, Object.keys(updates)),
+      );
 
       this.invalidateCache();
       localStorage.removeItem('crm-dashboard-cache');

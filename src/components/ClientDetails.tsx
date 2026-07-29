@@ -26,6 +26,12 @@ import { pdfSignatureService } from '../services/pdfSignature.service';
 import { petitionEditorService } from '../services/petitionEditor.service';
 import { clientOverviewService } from '../services/clientOverview.service';
 import { nextcloudService } from '../services/nextcloud.service';
+import {
+  clientChangeHistoryService,
+  CLIENT_CHANGE_SOURCE_LABELS,
+  CLIENT_FIELD_LABELS,
+  type ClientChangeEntry,
+} from '../services/clientChangeHistory.service';
 import { financialService } from '../services/financial.service';
 import { SELFIE_PROFILE_CONSENT_LABEL } from '../constants/signatureTerms';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
@@ -33,7 +39,10 @@ import type { SavedPetition } from '../types/petitionEditor.types';
 import type { CloudFolder } from '../types/cloud.types';
 import type { ChatRoom } from '../types/chat.types';
 
-type Tab = 'data' | 'casos' | 'financial' | 'deadlines' | 'documents' | 'assinaturas' | 'overview' | 'agenda' | 'atendimento' | 'portal';
+// Assinaturas virou seção da aba Documentos (as duas liam a mesma
+// `signature_requests`) e Atendimento virou seção da aba Portal — eram dez abas
+// para o que cabe em sete.
+type Tab = 'data' | 'casos' | 'financial' | 'deadlines' | 'documents' | 'overview' | 'agenda' | 'portal';
 
 interface ClientDetailsProps {
   client: Client;
@@ -74,6 +83,13 @@ const formatPhone = (v: string) => {
   if (n.length <= 7) return `(${n.slice(0, 2)}) ${n.slice(2)}`;
   if (n.length <= 10) return `(${n.slice(0, 2)}) ${n.slice(2, 6)}-${n.slice(6)}`;
   return `(${n.slice(0, 2)}) ${n.slice(2, 3)} ${n.slice(3, 7)}-${n.slice(7, 11)}`;
+};
+
+/** Link do WhatsApp com DDI. Números salvos sem o 55 recebem o prefixo. */
+const buildWhatsappLink = (raw: string) => {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return null;
+  return `https://wa.me/${digits.length <= 11 ? `55${digits}` : digits}`;
 };
 
 const formatDate = (d?: string | null) => fmtDateG(d);
@@ -132,11 +148,11 @@ const PRIORITY_LABEL: Record<string, string> = {
   low: 'Baixa',
 };
 
-const AGREEMENT_STATUS_COLOR: Record<string, string> = {
-  pendente: 'bg-amber-100 text-amber-700',
-  ativo: 'bg-emerald-100 text-emerald-700',
-  concluido: 'bg-blue-100 text-blue-700',
-  cancelado: 'bg-slate-100 text-slate-500',
+const AGREEMENT_STATUS_TONE: Record<string, Tone> = {
+  pendente: 'amber',
+  ativo: 'emerald',
+  concluido: 'blue',
+  cancelado: 'slate',
 };
 
 const AGREEMENT_STATUS_LABEL: Record<string, string> = {
@@ -574,33 +590,133 @@ function buildStructuredTimeline(
 // compat: keep old buildTimeline for useMemo (unused after refactor)
 function buildTimeline() { return []; }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Design primitives ────────────────────────────────────────────────────────
+// Uma única definição de superfície, título de seção, campo, chip e estado vazio
+// para a ficha inteira. Antes cada aba inventava a sua (rótulos de 9px em uma,
+// 11px em outra, card branco aqui, card cinza ali) — era isso que dava à tela um
+// aspecto remendado, mesmo com tudo funcionando.
 
-const KpiCard = ({
+/** Superfície padrão de card/linha sobre o papel branco da ficha. */
+const SURFACE = 'rounded-xl bg-[#f8f7f5] ring-1 ring-black/[0.04]';
+/** Realce ao passar o mouse em cards clicáveis. */
+const SURFACE_HOVER = 'transition-all duration-150 hover:ring-black/[0.10] hover:shadow-[0_2px_10px_rgba(15,23,42,0.06)]';
+
+type Tone = 'slate' | 'emerald' | 'amber' | 'rose' | 'violet' | 'blue' | 'sky' | 'orange';
+
+const TONE_CHIP: Record<Tone, string> = {
+  slate:   'bg-slate-100 text-slate-600',
+  emerald: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/70',
+  amber:   'bg-amber-50 text-amber-700 ring-1 ring-amber-200/70',
+  rose:    'bg-rose-50 text-rose-700 ring-1 ring-rose-200/70',
+  violet:  'bg-violet-50 text-violet-700 ring-1 ring-violet-200/70',
+  blue:    'bg-blue-50 text-blue-700 ring-1 ring-blue-200/70',
+  sky:     'bg-sky-50 text-sky-700 ring-1 ring-sky-200/70',
+  orange:  'bg-orange-50 text-orange-700 ring-1 ring-orange-200/70',
+};
+
+const TONE_ICON: Record<Tone, string> = {
+  slate:   'bg-slate-100 text-slate-400',
+  emerald: 'bg-emerald-50 text-emerald-600',
+  amber:   'bg-amber-50 text-amber-600',
+  rose:    'bg-rose-50 text-rose-500',
+  violet:  'bg-violet-50 text-violet-600',
+  blue:    'bg-blue-50 text-blue-600',
+  sky:     'bg-sky-50 text-sky-600',
+  orange:  'bg-orange-50 text-orange-600',
+};
+
+/** Selo curto de status. Um formato só, em toda a ficha. */
+const Chip = ({ tone = 'slate', children }: { tone?: Tone; children: React.ReactNode }) => (
+  <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-semibold ${TONE_CHIP[tone]}`}>
+    {children}
+  </span>
+);
+
+/** Ícone redondo à esquerda de uma linha. */
+const RowIcon = ({ tone = 'slate', children }: { tone?: Tone; children: React.ReactNode }) => (
+  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${TONE_ICON[tone]}`}>{children}</div>
+);
+
+/** Cabeçalho de seção: ícone + título + contagem + ação à direita. */
+const Section = ({
+  icon: Icon,
+  title,
+  count,
+  tone = 'slate',
+  action,
+  children,
+}: {
+  icon?: React.ElementType;
+  title: string;
+  count?: number;
+  tone?: Tone;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) => (
+  <section className="space-y-2.5">
+    <div className="flex items-center gap-2">
+      {Icon && <Icon className={`h-4 w-4 shrink-0 ${TONE_ICON[tone].split(' ')[1]}`} strokeWidth={1.75} />}
+      <h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{title}</h3>
+      {count !== undefined && count > 0 && (
+        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-slate-500">{count}</span>
+      )}
+      {action && <div className="ml-auto">{action}</div>}
+    </div>
+    {children}
+  </section>
+);
+
+/** Par rótulo/valor. Rótulo legível (11px, sem caixa alta espremida). */
+const Field = ({
   label,
   value,
-  sub,
-  color,
-  icon: Icon,
+  mono,
+  span,
 }: {
   label: string;
-  value: React.ReactNode;
-  sub?: string;
-  color: string;
-  icon: React.ElementType;
+  value?: React.ReactNode;
+  mono?: boolean;
+  span?: boolean;
 }) => (
-  <div className={`rounded-2xl border p-4 flex flex-col gap-1 ${color}`}>
-    <div className="flex items-center justify-between">
-      <span className="text-[10px] font-semibold tracking-[0.18em] uppercase opacity-70">{label}</span>
-      <Icon className="w-4 h-4 opacity-60" />
-    </div>
-    <p className="text-2xl font-bold">{value}</p>
-    {sub && <p className="text-[11px] opacity-70">{sub}</p>}
+  <div className={span ? 'col-span-2' : undefined}>
+    <p className="text-[11px] font-medium text-slate-400">{label}</p>
+    <p className={`mt-0.5 text-[13px] font-medium text-slate-800 ${mono ? 'font-mono tabular-nums' : ''}`}>
+      {value || <span className="text-slate-300">Não informado</span>}
+    </p>
   </div>
 );
 
-const SectionEmpty = ({ text }: { text: string }) => (
-  <p className="text-slate-400 text-sm py-4 text-center">{text}</p>
+/** Estado vazio único — antes havia três variações diferentes por aba. */
+const Empty = ({
+  icon: Icon,
+  title,
+  hint,
+  action,
+}: {
+  icon?: React.ElementType;
+  title: string;
+  hint?: string;
+  action?: React.ReactNode;
+}) => (
+  <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[#e7e5df] px-4 py-10 text-center">
+    {Icon && <Icon className="mb-2 h-7 w-7 text-slate-200" strokeWidth={1.5} />}
+    <p className="text-[13px] font-medium text-slate-500">{title}</p>
+    {hint && <p className="mx-auto mt-1 max-w-xs text-xs text-slate-400">{hint}</p>}
+    {action && <div className="mt-3">{action}</div>}
+  </div>
+);
+
+/** Ação "Abrir no módulo" — mesmo gesto e mesmo peso em todas as listas. */
+const OpenLink = ({ onClick, label = 'Abrir', title }: { onClick: () => void; label?: string; title?: string }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    title={title ?? 'Abrir no módulo'}
+    className="inline-flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold text-slate-400 transition hover:bg-orange-50 hover:text-orange-600"
+  >
+    <ExternalLink className="h-3.5 w-3.5" />
+    <span className="hidden sm:inline">{label}</span>
+  </button>
 );
 
 const ModuleItem = ({
@@ -611,72 +727,27 @@ const ModuleItem = ({
   muted,
   leading,
   dense,
+  tone,
 }: {
   children: React.ReactNode;
   onOpen: () => void;
-  badge?: { label: string; color: string };
+  badge?: { label: string; tone: Tone };
   urgent?: boolean;
   muted?: boolean;
   accentClass?: string;
   leading?: React.ReactNode;
   dense?: boolean;
+  tone?: Tone;
 }) => (
-  <div className={`rounded-xl border bg-[#f8f7f5] shadow-sm transition-all duration-150 hover:shadow-md ${
-    urgent
-      ? 'border-rose-200 bg-rose-50/40'
-      : muted
-      ? 'border-slate-100 hover:border-[#e7e5df]'
-      : 'border-[#e7e5df] hover:border-slate-300'
-  }`}>
-    <div className={`px-3.5 flex items-center gap-3 ${dense ? 'py-2' : 'py-2.5'}`}>
-      {leading && <div className="flex-shrink-0">{leading}</div>}
-      <div className="flex-1 min-w-0">{children}</div>
-      <div className="flex-shrink-0 flex items-center gap-2.5">
-        {badge && (
-          <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md whitespace-nowrap ${badge.color}`}>{badge.label}</span>
-        )}
-        <button
-          onClick={onOpen}
-          className={`inline-flex items-center gap-1 text-[11px] font-semibold transition-colors duration-100 ${
-            urgent
-              ? 'text-rose-400 hover:text-rose-600'
-              : 'text-slate-400 hover:text-orange-600'
-          }`}
-          title="Abrir no módulo"
-        >
-          <ExternalLink className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Abrir</span>
-          <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
-        </button>
+  <div className={`${SURFACE} ${SURFACE_HOVER} ${urgent ? 'ring-rose-200' : ''} ${muted ? 'opacity-70' : ''}`}>
+    <div className={`flex items-center gap-3 px-3.5 ${dense ? 'py-2' : 'py-2.5'}`}>
+      {leading ?? (tone && <RowIcon tone={tone}><Clock className="h-4 w-4" /></RowIcon>)}
+      <div className="min-w-0 flex-1">{children}</div>
+      <div className="flex shrink-0 items-center gap-2">
+        {badge && <Chip tone={badge.tone}>{badge.label}</Chip>}
+        <OpenLink onClick={onOpen} />
       </div>
     </div>
-  </div>
-);
-
-// Ícone de status redondo para linhas de módulo
-const StatusIcon = ({ tone, children }: { tone: 'rose' | 'amber' | 'emerald' | 'slate'; children: React.ReactNode }) => {
-  const map = {
-    rose: 'bg-rose-50 text-rose-500',
-    amber: 'bg-amber-50 text-amber-600',
-    emerald: 'bg-emerald-50 text-emerald-600',
-    slate: 'bg-slate-100 text-slate-400',
-  } as const;
-  return (
-    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${map[tone]}`}>{children}</div>
-  );
-};
-
-const InfoItem = ({ label, value }: { label: string; value?: React.ReactNode }) => (
-  <div>
-    <p className="text-[10px] font-semibold tracking-[0.2em] uppercase text-slate-400">{label}</p>
-    <p className="text-sm font-semibold text-slate-900 mt-0.5">{value ?? 'Não informado'}</p>
-  </div>
-);
-
-const MiniField = ({ label, value }: { label: string; value?: React.ReactNode }) => (
-  <div>
-    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">{label}</p>
-    <p className="text-xs font-medium text-slate-800">{value ?? <span className="text-slate-400">—</span>}</p>
   </div>
 );
 
@@ -699,6 +770,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const { navigateTo } = useNavigation();
   const [activeTab, setActiveTab] = useState<Tab>('data');
   const [historySearch, setHistorySearch] = useState('');
+  const [docCopied, setDocCopied] = useState(false);
 
   // ── Signatures
   const [signatureRequests, setSignatureRequests] = useState<SignatureRequestWithSigners[]>([]);
@@ -807,6 +879,11 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const [cloudFoldersLoading, setCloudFoldersLoading] = useState(false);
   const [clientNextcloudPaths, setClientNextcloudPaths] = useState<string[]>([]);
   const [nextcloudPathsLoading, setNextcloudPathsLoading] = useState(false);
+
+  // ── Histórico de alterações do cadastro (valores antigos preservados)
+  const [changeHistory, setChangeHistory] = useState<ClientChangeEntry[]>([]);
+  const [changeHistoryLoading, setChangeHistoryLoading] = useState(false);
+  const [showAllChanges, setShowAllChanges] = useState(false);
 
   // ── Deadlines
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
@@ -999,6 +1076,16 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     return () => { active = false; };
   }, [client.id]);
 
+  useEffect(() => {
+    let active = true;
+    setChangeHistoryLoading(true);
+    clientChangeHistoryService.list(client.id)
+      .then((rows) => { if (active) setChangeHistory(rows); })
+      .catch(() => { if (active) setChangeHistory([]); })
+      .finally(() => { if (active) setChangeHistoryLoading(false); });
+    return () => { active = false; };
+  }, [client.id]);
+
   // ── Load installments eagerly so Honorários KPI is accurate from the start
   useEffect(() => {
     if (installmentsLoaded || agreements.length === 0) return;
@@ -1111,7 +1198,25 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const handleApproveProfileReq = async (id: string) => {
     setProfileReqProcessing(id);
     try {
+      // A aprovação roda por RPC (não passa pelo clientService), então o
+      // histórico é registrado aqui — senão a alteração vinda do portal seria a
+      // única que sobrescreveria dados sem deixar rastro.
+      const approved = profileReqs.find((r) => r.id === id);
       await supabase.rpc('admin_approve_profile_update', { p_request_id: id });
+      if (approved) {
+        await clientChangeHistoryService.record(
+          client.id,
+          'portal',
+          Object.entries(approved.changes)
+            .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '')
+            .map(([field, value]) => ({
+              field,
+              oldValue: (client as unknown as Record<string, unknown>)[field],
+              newValue: value,
+            })),
+        );
+        setChangeHistory(await clientChangeHistoryService.list(client.id).catch(() => []));
+      }
       const { data } = await supabase.rpc('admin_list_profile_update_requests', { p_client_id: client.id, p_status: null });
       setProfileReqs(Array.isArray(data) ? data : []);
       events.emit(SYSTEM_EVENTS.CLIENT_UPDATED, { id: client.id });
@@ -1534,13 +1639,30 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   // ── Header info
   const primaryPhone = client.phone || client.mobile || '';
   const formattedPhone = primaryPhone ? formatPhone(primaryPhone) : '';
-  const whatsappLink = primaryPhone ? `https://wa.me/${primaryPhone.replace(/\D/g, '')}` : null;
+  // O wa.me exige o número com DDI. O link da aba Dados ia sem o 55 e não abria
+  // a conversa — agora os dois pontos usam o mesmo helper.
+  const whatsappLink = primaryPhone ? buildWhatsappLink(primaryPhone) : null;
   const rawCpfCnpj = client.cpf_cnpj || '';
   const formattedDoc = client.client_type === 'pessoa_fisica' ? formatCpf(rawCpfCnpj) : formatCnpj(rawCpfCnpj);
 
   const portalNotifUnread = portalNotifsLoaded
     ? portalNotifications.filter((n) => !n.is_read && n.type !== 'chat_reply').length
     : undefined;
+
+  // Conversa em que o cliente falou e ninguém assumiu ainda.
+  const waitingChatRoom = useMemo(() => {
+    const room = clientChatRooms[0];
+    if (!room) return null;
+    return !room.accepted_by && !!room.last_message_at && room.last_is_system !== true ? room : null;
+  }, [clientChatRooms]);
+
+  const copyDoc = () => {
+    if (!formattedDoc) return;
+    void navigator.clipboard.writeText(formattedDoc).then(() => {
+      setDocCopied(true);
+      window.setTimeout(() => setDocCopied(false), 1600);
+    }).catch(() => { /* clipboard bloqueado pelo navegador */ });
+  };
 
   const toggleRoom = (roomId: string) => {
     setExpandedRooms((prev) => {
@@ -1566,233 +1688,286 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     });
   };
 
-  const TABS: { id: Tab; label: string; count?: number }[] = [
-    { id: 'data', label: 'Dados' },
+  // `alert` acende um ponto na aba quando há algo vencido/parado lá dentro.
+  const TABS: { id: Tab; label: string; count?: number; alert?: boolean }[] = [
+    { id: 'data', label: 'Dados', alert: missingFields.length > 0 || isOutdated },
     { id: 'casos', label: 'Casos', count: processes.length + requirements.length },
-    { id: 'financial', label: 'Financeiro', count: agreements.length },
-    { id: 'deadlines', label: 'Prazos', count: deadlines.length },
+    { id: 'deadlines', label: 'Prazos', count: deadlines.length, alert: overdueDeadlines.length > 0 },
     { id: 'agenda', label: 'Compromissos', count: calendarEvents.length },
-    { id: 'assinaturas', label: 'Assinaturas', count: signatureRequests.length },
-    { id: 'documents', label: 'Documentos', count: pendingUploadsCount > 0 ? pendingUploadsCount : undefined },
-    { id: 'atendimento', label: 'Atendimento' },
-    { id: 'portal', label: 'Portal', count: portalNotifUnread && portalNotifUnread > 0 ? portalNotifUnread : undefined },
+    { id: 'financial', label: 'Financeiro', count: agreements.length, alert: installmentsLoaded && overdueAmount > 0 },
+    { id: 'documents', label: 'Documentos', count: signatureRequests.length + clientPetitions.length, alert: pendingUploadsCount > 0 },
+    { id: 'portal', label: 'Portal', count: portalNotifUnread && portalNotifUnread > 0 ? portalNotifUnread : undefined, alert: waitingChatRoom != null },
     { id: 'overview', label: 'Histórico' },
   ];
 
+  // ── Pendências: uma pilha só, no topo. Antes o aviso de cadastro ficava dentro
+  //    da aba Dados, o de parcela vencida dentro da coluna "Sistema", o de doc
+  //    aguardando revisão virava um chip no cabeçalho — cada um com uma cara.
+  const alerts: Array<{
+    id: string; tone: Tone; icon: React.ElementType; text: React.ReactNode;
+    actionLabel: string; onAction: () => void;
+  }> = [];
+  if (missingFields.length > 0 || isOutdated) {
+    alerts.push({
+      id: 'cadastro', tone: 'amber', icon: AlertTriangle,
+      text: (
+        <>
+          {missingFields.length > 0 && <><strong className="font-semibold">{missingFields.length} campo{missingFields.length !== 1 ? 's' : ''}</strong> do cadastro em branco. </>}
+          {isOutdated && 'Cadastro sem revisão há mais de um ano.'}
+        </>
+      ),
+      actionLabel: 'Editar', onAction: onEdit,
+    });
+  }
+  if (overdueDeadlines.length > 0) {
+    alerts.push({
+      id: 'prazos', tone: 'rose', icon: AlarmClock,
+      text: <><strong className="font-semibold">{overdueDeadlines.length} prazo{overdueDeadlines.length !== 1 ? 's' : ''}</strong> vencido{overdueDeadlines.length !== 1 ? 's' : ''}.</>,
+      actionLabel: 'Ver prazos', onAction: () => setActiveTab('deadlines'),
+    });
+  }
+  if (installmentsLoaded && overdueAmount > 0) {
+    alerts.push({
+      id: 'financeiro', tone: 'rose', icon: DollarSign,
+      text: <><strong className="font-semibold">{formatCurrency(overdueAmount)}</strong> em parcelas vencidas.</>,
+      actionLabel: 'Ver financeiro', onAction: () => setActiveTab('financial'),
+    });
+  }
+  if (pendingUploadsCount > 0) {
+    alerts.push({
+      id: 'uploads', tone: 'amber', icon: FileText,
+      text: <><strong className="font-semibold">{pendingUploadsCount} documento{pendingUploadsCount !== 1 ? 's' : ''}</strong> enviado{pendingUploadsCount !== 1 ? 's' : ''} pelo portal aguardando revisão.</>,
+      actionLabel: 'Revisar', onAction: () => setActiveTab('documents'),
+    });
+  }
+  if (waitingChatRoom) {
+    alerts.push({
+      id: 'atendimento', tone: 'amber', icon: MessageCircle,
+      text: <>Cliente aguardando atendimento no chat do portal.</>,
+      actionLabel: 'Abrir conversa', onAction: () => navigateTo('chat', { roomId: waitingChatRoom.id } as any),
+    });
+  }
+
   return (
-    <div className="w-full text-xs sm:text-sm rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
+    <div className="w-full overflow-hidden rounded-xl bg-white text-xs shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] sm:text-sm">
 
       {/* ══════════════════════════════════════════════════════════════════
-          HERO — Identidade + Stats (seção, superfície única)
+          HERO — identidade à esquerda, números embaixo.
+          A identidade não repete mais o cabeçalho do modal, e a faixa de
+          números deixou de ser um grid fixo de 4 colunas que espremia no
+          celular: agora são 2 colunas no estreito, 4 no largo.
       ══════════════════════════════════════════════════════════════════ */}
-      <div className="border-b border-slate-100">
+      <div className="border-b border-[#e7e5df]">
 
-        {/* ── Linha + identidade (esq.) + stats 4-col (dir.) ── */}
-        <div className="flex items-start justify-between gap-5 px-5 py-4">
+        <div className="flex items-start gap-4 px-4 py-4 sm:px-5">
 
-          {/* ─── Esquerda: avatar + identidade ─── */}
-          <div className="flex items-start gap-3 flex-1 min-w-0">
-
-            {/* Avatar */}
-            <div className="flex-shrink-0 flex flex-col items-center gap-1">
-              {selfies.length > 0 ? (() => {
-                const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0];
-                return (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setPreviewSelfie(profileSelfie)}
-                      className="group relative w-14 h-14 rounded-xl overflow-hidden ring-2 ring-slate-200 hover:ring-orange-300 shadow-sm transition focus:outline-none"
-                      title="Ampliar foto"
-                    >
-                      <img src={profileSelfie.url} alt={client.full_name} className="w-full h-full object-cover" />
-                      <span className="absolute bottom-0 left-0 right-0 bg-emerald-500 text-white text-[7px] font-bold text-center leading-none py-[3px] tracking-wider">ID</span>
-                    </button>
-                    {selfies.length > 1 && (
-                      <button type="button" onClick={() => setSelfiePickerOpen(true)}
-                        className="text-[9px] font-semibold text-slate-400 hover:text-orange-500 transition leading-none mt-0.5">
-                        {selfies.length} fotos
-                      </button>
-                    )}
-                  </>
-                );
-              })() : (() => {
-                const isPj = client.client_type === 'pessoa_juridica';
-                const stringHue = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i); return Math.abs(h) % 360; };
-                const initials = (() => { const parts = client.full_name.trim().split(/\s+/).filter(Boolean); if (!parts.length) return '?'; if (parts.length === 1) return (parts[0][0] || '?').toUpperCase(); return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase(); })();
-                const hue = stringHue(client.full_name);
-                return (
-                  <div
-                    className="flex-shrink-0 w-14 h-14 rounded-xl flex items-center justify-center font-bold text-base ring-2 ring-inset shadow-sm"
-                    style={isPj ? { background: '#f1f5f9', color: '#64748b' } : { background: `hsl(${hue}, 55%, 94%)`, color: `hsl(${hue}, 50%, 32%)` }}
-                  >
-                    {isPj ? <Building2 className="w-6 h-6" strokeWidth={1.5} /> : initials}
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Identidade */}
-            <div className="flex-1 min-w-0">
-              <h2 className="text-[17px] font-bold text-slate-800 leading-tight truncate">{client.full_name}</h2>
-
-              {/* CPF + status + tipo + desde */}
-              <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => { if (formattedDoc) { void navigator.clipboard.writeText(formattedDoc); } }}
-                  className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 transition rounded px-2 py-0.5"
-                  title="Clique para copiar"
-                >
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'}</span>
-                  <span className="font-semibold text-slate-700 tabular-nums text-xs">{formattedDoc || '—'}</span>
-                </button>
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                  client.status === 'ativo' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' :
-                  client.status === 'inativo' ? 'bg-slate-100 text-slate-500 ring-1 ring-slate-200' :
-                  'bg-red-50 text-red-700 ring-1 ring-red-200'
-                }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${client.status === 'ativo' ? 'bg-emerald-500' : client.status === 'inativo' ? 'bg-slate-400' : 'bg-red-500'}`} />
-                  {client.status === 'ativo' ? 'Ativo' : client.status === 'inativo' ? 'Inativo' : 'Arquivado'}
-                </span>
-                <span className="text-[11px] text-slate-400">{client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'}</span>
-                {client.created_at && (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
-                    <CalendarIcon className="w-3 h-3" />desde {formatDate(client.created_at)}
-                  </span>
-                )}
-              </div>
-
-              {/* Contatos */}
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                {client.email && (
-                  <a href={`mailto:${client.email}`} className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-orange-500 transition truncate max-w-[240px]">
-                    <Mail className="w-3 h-3 text-slate-400 flex-shrink-0" />{client.email}
-                  </a>
-                )}
-                {primaryPhone && (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                    <Phone className="w-3 h-3 text-slate-400" />
-                    <a href={`tel:${primaryPhone}`} className="hover:text-orange-500 transition">{formattedPhone}</a>
-                    <a href={`https://wa.me/55${primaryPhone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition" title="WhatsApp">
-                      <MessageCircle className="w-2.5 h-2.5" />
-                    </a>
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ─── Direita: stats 4-col com divisor ─── */}
-          {(() => {
-            const hearingDateObj = nextHearing ? new Date(nextHearing.date) : null;
-            const hearingDateStr = hearingDateObj && !isNaN(hearingDateObj.getTime())
-              ? hearingDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-              : null;
-            return (
-              <div className="flex-shrink-0 grid grid-cols-4 gap-x-6 border-l border-slate-100 pl-6 py-1">
-                {/* Casos */}
-                <div className="flex flex-col gap-0.5 cursor-default">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Casos</span>
-                  <p className="text-xl font-extrabold text-slate-800 tabular-nums leading-none">{relationsLoading ? '…' : activeProcesses.length + activeRequirements.length}</p>
-                  <p className="text-[10px] text-slate-400">{activeProcesses.length}p · {activeRequirements.length}r</p>
-                </div>
-
-                {/* Honorários */}
-                <div className="flex flex-col gap-0.5 cursor-default">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Honorários</span>
-                  <p className={`text-sm font-extrabold tabular-nums leading-tight mt-0.5 ${totalRevenue > 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
-                    {financialLoading ? '…' : formatCurrency(totalRevenue)}
-                  </p>
-                  <p className="text-[10px] text-slate-400 italic">{totalRevenue > 0 ? 'recebido' : 'sem baixa'}</p>
-                </div>
-
-                {/* Prazos */}
-                <div className="flex flex-col gap-0.5 cursor-default">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Prazos</span>
-                  <p className={`text-xl font-extrabold tabular-nums leading-none ${overdueDeadlines.length > 0 ? 'text-rose-600' : 'text-slate-800'}`}>
-                    {deadlinesLoading ? '…' : pendingDeadlines.length + overdueDeadlines.length}
-                  </p>
-                  <p className="text-[10px]">{overdueDeadlines.length > 0 ? <span className="text-rose-500 font-bold">{overdueDeadlines.length} vencido{overdueDeadlines.length !== 1 ? 's' : ''}</span> : <span className="text-emerald-500 font-bold uppercase tracking-wide">Em dia</span>}</p>
-                </div>
-
-                {/* Próx. */}
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Próx.</span>
-                  {nextHearing ? (
-                    <button
-                      type="button"
-                      onClick={() => navigateTo('agenda', { entityId: nextHearing.id } as any)}
-                      className="text-left"
-                      title="Abrir na Agenda"
-                    >
-                      <p className="text-sm font-extrabold text-slate-800 tabular-nums hover:text-orange-600 transition-colors leading-tight">
-                        {hearingDateStr}
-                      </p>
-                      <p className="text-[10px] text-slate-500 leading-tight mt-0.5">
-                        {nextHearing.time && <span className="font-semibold">{nextHearing.time} · </span>}
-                        {nextHearing.label}
-                      </p>
-                    </button>
-                  ) : (
-                    <p className="text-xl font-extrabold text-slate-300 leading-none">—</p>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* ── Status badges do portal ── */}
-        {portalUser && !portalDataLoading && (
-          <div className="px-5 pb-4 pt-1 flex flex-wrap gap-2">
-            <button
-              onClick={() => setActiveTab('portal')}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-emerald-100 bg-emerald-50 text-emerald-700 text-[10px] font-semibold hover:bg-emerald-100 transition"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
-              Portal ativo
-              {portalUser.last_login_at && (
-                <span className="font-normal text-emerald-600/80">
-                  · {new Date(portalUser.last_login_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-                </span>
-              )}
-            </button>
-            {clientChatRooms.length > 0 && (() => {
-              const room = clientChatRooms[0];
-              const isWaiting = !room.accepted_by && !!room.last_message_at && room.last_is_system !== true;
+          {/* Avatar */}
+          <div className="flex flex-shrink-0 flex-col items-center gap-1">
+            {selfies.length > 0 ? (() => {
+              const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0];
               return (
-                <button
-                  onClick={() => setActiveTab('atendimento')}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-[10px] font-semibold transition ${
-                    isWaiting
-                      ? 'border-amber-100 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                      : 'border-[#e7e5df] bg-slate-50 text-slate-600 hover:bg-slate-100'
-                  }`}
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewSelfie(profileSelfie)}
+                    className="group relative h-16 w-16 overflow-hidden rounded-2xl shadow-sm ring-1 ring-black/[0.06] transition focus:outline-none hover:ring-2 hover:ring-orange-300"
+                    title="Ampliar foto"
+                  >
+                    <img src={profileSelfie.url} alt={client.full_name} className="h-full w-full object-cover" />
+                    <span className="absolute inset-x-0 bottom-0 bg-emerald-500 py-[3px] text-center text-[8px] font-bold leading-none tracking-wider text-white">ID</span>
+                  </button>
+                  {selfies.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelfiePickerOpen(true)}
+                      className="text-[10px] font-semibold leading-none text-slate-400 transition hover:text-orange-500"
+                    >
+                      {selfies.length} fotos
+                    </button>
+                  )}
+                </>
+              );
+            })() : (() => {
+              const isPj = client.client_type === 'pessoa_juridica';
+              const stringHue = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i); return Math.abs(h) % 360; };
+              const initials = (() => { const parts = client.full_name.trim().split(/\s+/).filter(Boolean); if (!parts.length) return '?'; if (parts.length === 1) return (parts[0][0] || '?').toUpperCase(); return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase(); })();
+              const hue = stringHue(client.full_name);
+              return (
+                <div
+                  className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl text-lg font-bold ring-1 ring-inset ring-black/[0.06]"
+                  style={isPj ? { background: '#f1f5f9', color: '#64748b' } : { background: `hsl(${hue}, 55%, 94%)`, color: `hsl(${hue}, 50%, 32%)` }}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isWaiting ? 'bg-amber-400' : 'bg-slate-400'}`} />
-                  {isWaiting ? 'Atendimento aguardando' : room.accepted_by ? 'Em atendimento' : 'Chat portal'}
-                </button>
+                  {isPj ? <Building2 className="h-7 w-7" strokeWidth={1.5} /> : initials}
+                </div>
               );
             })()}
-            {pushActive && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-sky-100 bg-sky-50 text-sky-700 text-[10px] font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-sky-400 flex-shrink-0" /> Push ativo
-              </span>
-            )}
-            {pendingUploadsCount > 0 && (
-              <button
-                onClick={() => setActiveTab('documents')}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-rose-100 bg-rose-50 text-rose-700 text-[10px] font-semibold hover:bg-rose-100 transition"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 flex-shrink-0" />
-                {pendingUploadsCount} doc{pendingUploadsCount !== 1 ? 's' : ''} aguardando revisão
-              </button>
-            )}
           </div>
-        )}
+
+          {/* Identidade */}
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <h2 className="text-[19px] font-bold leading-tight text-slate-900">{client.full_name}</h2>
+              <Chip tone={client.status === 'ativo' ? 'emerald' : client.status === 'inativo' ? 'slate' : 'rose'}>
+                <span className={`h-1.5 w-1.5 rounded-full ${client.status === 'ativo' ? 'bg-emerald-500' : client.status === 'inativo' ? 'bg-slate-400' : 'bg-rose-500'}`} />
+                {client.status === 'ativo' ? 'Ativo' : client.status === 'inativo' ? 'Inativo' : 'Arquivado'}
+              </Chip>
+            </div>
+
+            {/* Documento + tipo + desde */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <button
+                type="button"
+                onClick={copyDoc}
+                disabled={!formattedDoc}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-2 py-1 transition enabled:hover:bg-slate-200 disabled:cursor-default"
+                title={formattedDoc ? 'Clique para copiar' : undefined}
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'}</span>
+                <span className="text-[13px] font-semibold tabular-nums text-slate-700">{formattedDoc || '—'}</span>
+                {formattedDoc && (docCopied
+                  ? <Check className="h-3 w-3 text-emerald-500" />
+                  : <ClipboardList className="h-3 w-3 text-slate-300" />)}
+              </button>
+              <span className="text-[12px] text-slate-400">
+                {client.client_type === 'pessoa_fisica' ? 'Pessoa física' : 'Pessoa jurídica'}
+                {client.created_at && <> · cliente desde {formatDate(client.created_at)}</>}
+              </span>
+            </div>
+
+            {/* Contatos */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+              {client.email ? (
+                <a href={`mailto:${client.email}`} className="inline-flex max-w-full items-center gap-1.5 text-[12px] text-slate-600 transition hover:text-orange-600">
+                  <Mail className="h-3.5 w-3.5 flex-shrink-0 text-slate-300" />
+                  <span className="truncate">{client.email}</span>
+                </a>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-300">
+                  <Mail className="h-3.5 w-3.5" /> sem e-mail
+                </span>
+              )}
+              {primaryPhone ? (
+                <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-600">
+                  <Phone className="h-3.5 w-3.5 flex-shrink-0 text-slate-300" />
+                  <a href={`tel:${primaryPhone}`} className="tabular-nums transition hover:text-orange-600">{formattedPhone}</a>
+                  {whatsappLink && (
+                    <a
+                      href={whatsappLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100"
+                      title="Abrir no WhatsApp"
+                    >
+                      <MessageCircle className="h-3 w-3" />
+                    </a>
+                  )}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-300">
+                  <Phone className="h-3.5 w-3.5" /> sem telefone
+                </span>
+              )}
+              {portalUser && !portalDataLoading && (
+                <button type="button" onClick={() => setActiveTab('portal')} className="inline-flex items-center gap-1.5 text-[12px] text-slate-600 transition hover:text-orange-600">
+                  <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
+                  Portal ativo{pushActive && ' · push'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Faixa de números — cada célula leva à aba correspondente ── */}
+        {(() => {
+          const hearingDateObj = nextHearing ? new Date(nextHearing.date) : null;
+          const hearingDateStr = hearingDateObj && !isNaN(hearingDateObj.getTime())
+            ? hearingDateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+            : null;
+          const cell = 'flex flex-col gap-0.5 px-4 py-3 text-left transition sm:px-5';
+          return (
+            <div className="grid grid-cols-2 divide-x divide-y divide-[#e7e5df] border-t border-[#e7e5df] sm:grid-cols-4 sm:divide-y-0">
+              <button type="button" onClick={() => setActiveTab('casos')} className={`${cell} hover:bg-slate-50`}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Casos</span>
+                <span className="text-[22px] font-bold leading-none tabular-nums text-slate-900">
+                  {relationsLoading ? '—' : activeProcesses.length + activeRequirements.length}
+                </span>
+                <span className="text-[11px] text-slate-400">{activeProcesses.length} processos · {activeRequirements.length} requerimentos</span>
+              </button>
+
+              <button type="button" onClick={() => setActiveTab('deadlines')} className={`${cell} hover:bg-slate-50`}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Prazos</span>
+                <span className={`text-[22px] font-bold leading-none tabular-nums ${overdueDeadlines.length > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                  {deadlinesLoading ? '—' : pendingDeadlines.length + overdueDeadlines.length}
+                </span>
+                <span className="text-[11px]">
+                  {overdueDeadlines.length > 0
+                    ? <span className="font-semibold text-rose-500">{overdueDeadlines.length} vencido{overdueDeadlines.length !== 1 ? 's' : ''}</span>
+                    : <span className="text-emerald-600">em dia</span>}
+                </span>
+              </button>
+
+              <button type="button" onClick={() => setActiveTab('financial')} className={`${cell} hover:bg-slate-50`}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Honorários</span>
+                <span className={`text-[18px] font-bold leading-tight tabular-nums ${totalRevenue > 0 ? 'text-emerald-600' : 'text-slate-900'}`}>
+                  {financialLoading ? '—' : formatCurrency(totalRevenue)}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {overdueAmount > 0
+                    ? <span className="font-semibold text-rose-500">{formatCurrency(overdueAmount)} em atraso</span>
+                    : totalRevenue > 0 ? 'recebido' : 'nada recebido ainda'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => (nextHearing ? navigateTo('agenda', { entityId: nextHearing.id } as any) : setActiveTab('agenda'))}
+                className={`${cell} hover:bg-slate-50`}
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Próximo compromisso</span>
+                {nextHearing ? (
+                  <>
+                    <span className="text-[18px] font-bold leading-tight tabular-nums text-slate-900">{hearingDateStr}</span>
+                    <span className="truncate text-[11px] text-slate-500">
+                      {nextHearing.time && <span className="font-semibold">{nextHearing.time} · </span>}
+                      {nextHearing.label}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[22px] font-bold leading-none text-slate-200">—</span>
+                    <span className="text-[11px] text-slate-400">nada agendado</span>
+                  </>
+                )}
+              </button>
+            </div>
+          );
+        })()}
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          PENDÊNCIAS — tudo que precisa de ação, em um lugar só
+      ══════════════════════════════════════════════════════════════════ */}
+      {alerts.length > 0 && (
+        <div className="divide-y divide-[#e7e5df] border-b border-[#e7e5df]">
+          {alerts.map((a) => (
+            <div key={a.id} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+              <a.icon className={`h-4 w-4 flex-shrink-0 ${a.tone === 'rose' ? 'text-rose-500' : 'text-amber-500'}`} strokeWidth={1.75} />
+              <p className="min-w-0 flex-1 text-[12px] text-slate-600">{a.text}</p>
+              <button
+                type="button"
+                onClick={a.onAction}
+                className={`flex-shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                  a.tone === 'rose'
+                    ? 'text-rose-600 hover:bg-rose-50'
+                    : 'text-amber-700 hover:bg-amber-50'
+                }`}
+              >
+                {a.actionLabel} →
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════
           AUTO-IMPORT — Dados detectados em assinaturas digitais
@@ -1849,7 +2024,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
             if (suggestEmail) updates.email = sigEmail;
             if (suggestPhone) updates.phone = sigPhone;
             if (suggestCpf) updates.cpf_cnpj = sigCpfDigits;
-            await clientService.updateClient(client.id, updates);
+            await clientService.updateClient(client.id, updates, 'assinatura');
             // mutate prop in-place + force refresh (matches existing pattern for photo_path)
             Object.assign(client, updates);
             forceRefresh((x) => x + 1);
@@ -1863,7 +2038,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         const handleImportField = async (field: 'email' | 'phone' | 'cpf_cnpj', value: string) => {
           setSyncingSignatureData(true);
           try {
-            await clientService.updateClient(client.id, { [field]: value } as any);
+            await clientService.updateClient(client.id, { [field]: value } as any, 'assinatura');
             (client as any)[field] = value;
             forceRefresh((x) => x + 1);
           } catch (err: any) {
@@ -1873,93 +2048,59 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           }
         };
 
+        const suggestions: Array<{ key: string; icon: React.ElementType; label: string; shown: string; apply: () => void }> = [];
+        if (suggestEmail) suggestions.push({ key: 'email', icon: Mail, label: 'E-mail', shown: sigEmail, apply: () => handleImportField('email', sigEmail) });
+        if (suggestPhone) suggestions.push({ key: 'phone', icon: Phone, label: 'Telefone', shown: formatPhone(sigPhone), apply: () => handleImportField('phone', sigPhone) });
+        if (suggestCpf) suggestions.push({ key: 'cpf', icon: User, label: 'CPF', shown: formatCpf(sigCpfDigits), apply: () => handleImportField('cpf_cnpj', sigCpfDigits) });
+
         return (
-          <div className="border-b border-amber-100 bg-amber-50/60">
-            <div className="flex items-start gap-3 px-4 py-3">
-              <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-amber-900">Dados detectados na assinatura digital</p>
-                    <p className="text-[11px] text-amber-700/70 mt-0.5">
-                      Encontramos informações fornecidas pelo cliente ao assinar
-                      {latest.signed_at && (
-                        <> em <strong className="font-semibold">{formatDate(latest.signed_at)}</strong></>
-                      )}. Importe direto para o cadastro.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="border-b border-[#e7e5df] bg-amber-50/40 px-4 py-3 sm:px-5">
+            <div className="flex items-start gap-3">
+              <Sparkles className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" strokeWidth={1.75} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-[12px] text-slate-600">
+                    O cliente informou dados ao assinar
+                    {latest?.signed_at && <> em <strong className="font-semibold">{formatDate(latest.signed_at)}</strong></>}
+                    {' '}que ainda não estão no cadastro.
+                  </p>
+                  <div className="flex flex-shrink-0 items-center gap-1">
                     <button
                       type="button"
                       onClick={handleImportAll}
                       disabled={syncingSignatureData}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold shadow-sm transition disabled:opacity-60"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-60"
                     >
-                      {syncingSignatureData ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Check className="w-3.5 h-3.5" />
-                      )}
+                      {syncingSignatureData ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                       Importar tudo
                     </button>
                     <button
                       type="button"
                       onClick={() => setSignatureSyncDismissed(true)}
-                      className="text-amber-500 hover:text-amber-700 hover:bg-amber-100 rounded p-1 transition text-sm"
+                      className="rounded-lg p-1 text-slate-300 transition hover:bg-slate-100 hover:text-slate-500"
                       title="Dispensar"
                     >
-                      ×
+                      <X className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
 
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {suggestEmail && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {suggestions.map((s) => (
                     <button
+                      key={s.key}
                       type="button"
-                      onClick={() => handleImportField('email', sigEmail)}
+                      onClick={s.apply}
                       disabled={syncingSignatureData}
-                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-[#f8f7f5] hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
+                      className="group inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-[12px] ring-1 ring-amber-200/70 transition hover:ring-orange-300 disabled:opacity-60"
                       title="Importar apenas este campo"
                     >
-                      <Mail className="w-3 h-3 text-amber-500" />
-                      <span className="text-slate-500">Email:</span>
-                      <strong className="text-slate-900 font-semibold">{sigEmail}</strong>
-                      <span className="text-orange-500 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
+                      <s.icon className="h-3 w-3 text-amber-500" />
+                      <span className="text-slate-400">{s.label}</span>
+                      <strong className="font-semibold text-slate-800">{s.shown}</strong>
+                      <span className="ml-0.5 text-[10px] font-bold text-orange-500 opacity-0 transition group-hover:opacity-100">usar →</span>
                     </button>
-                  )}
-                  {suggestPhone && (
-                    <button
-                      type="button"
-                      onClick={() => handleImportField('phone', sigPhone)}
-                      disabled={syncingSignatureData}
-                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-[#f8f7f5] hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
-                      title="Importar apenas este campo"
-                    >
-                      <Phone className="w-3 h-3 text-amber-500" />
-                      <span className="text-slate-500">Telefone:</span>
-                      <strong className="text-slate-900 font-semibold tabular-nums">{sigPhone}</strong>
-                      <span className="text-orange-500 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
-                    </button>
-                  )}
-                  {suggestCpf && (
-                    <button
-                      type="button"
-                      onClick={() => handleImportField('cpf_cnpj', sigCpfDigits)}
-                      disabled={syncingSignatureData}
-                      className="group inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-200 bg-[#f8f7f5] hover:bg-amber-50 transition text-xs shadow-sm disabled:opacity-60"
-                      title="Importar apenas este campo"
-                    >
-                      <User className="w-3 h-3 text-amber-500" />
-                      <span className="text-slate-500">CPF:</span>
-                      <strong className="text-slate-900 font-semibold tabular-nums">
-                        {`${sigCpfDigits.slice(0,3)}.${sigCpfDigits.slice(3,6)}.${sigCpfDigits.slice(6,9)}-${sigCpfDigits.slice(9)}`}
-                      </strong>
-                      <span className="text-orange-500 opacity-0 group-hover:opacity-100 transition text-[10px] font-semibold ml-1">Usar →</span>
-                    </button>
-                  )}
+                  ))}
                 </div>
               </div>
             </div>
@@ -2201,101 +2342,90 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         </div>
       , document.body)}
 
-      {/* ── Ações rápidas (toolbar integrada) ── */}
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50/60 border-b border-slate-100 px-4 py-2.5">
-        {/* Criação */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {onCreateProcess && (
-            <button onClick={onCreateProcess}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
-              <Plus className="w-3 h-3" /> Processo
-            </button>
-          )}
-          {onCreateRequirement && (
-            <button onClick={onCreateRequirement}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
-              <Plus className="w-3 h-3" /> Requerimento
-            </button>
-          )}
-          {onCreateDeadline && (
-            <button onClick={onCreateDeadline}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap">
-              <Plus className="w-3 h-3" /> Prazo
-            </button>
-          )}
-          <button
-            onClick={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id })}
-            className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
-          >
-            <PenTool className="w-3 h-3" /> Petição
-          </button>
-          <button
-            onClick={() => navigateTo('agenda', { mode: 'create', prefill: { client_id: client.id, client_name: client.full_name } } as any)}
-            className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-600 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
-          >
-            <CalendarPlus className="w-3 h-3" /> Compromisso
-          </button>
-        </div>
-        {/* Registro */}
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={handleExport}
-            className="inline-flex items-center gap-1 px-3 py-1.5 border border-[#e7e5df] text-slate-500 rounded-lg text-[11px] font-semibold hover:bg-slate-50 active:scale-95 transition whitespace-nowrap"
-            title="Exportar ficha"
-          >
-            <Printer className="w-3 h-3" /> Exportar
-          </button>
-          <button
-            onClick={onEdit}
-            className="inline-flex items-center gap-1 px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-[11px] font-bold shadow-sm active:scale-95 transition whitespace-nowrap"
-          >
-            <Edit className="w-3 h-3" /> Editar
-          </button>
-        </div>
-      </div>
-
-      {/* ── Tabs ── */}
-      <div className="bg-[#f8f7f5]">
-        <div className="flex overflow-x-auto border-b border-[#e7e5df]/70 px-4 scrollbar-none sticky top-0 bg-[#f8f7f5]/80 backdrop-blur-md z-10">
-          {TABS.map((tab) => (
+      {/* ── Ações ── */}
+      {(() => {
+        const quiet = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 ring-1 ring-[#e7e5df] transition hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98]';
+        return (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-[#e7e5df] px-4 py-2.5 sm:px-5">
+            <span className="mr-0.5 hidden text-[11px] font-medium text-slate-400 sm:inline">Criar</span>
+            {onCreateProcess && (
+              <button onClick={onCreateProcess} className={quiet}><Scale className="h-3.5 w-3.5 text-slate-400" /> Processo</button>
+            )}
+            {onCreateRequirement && (
+              <button onClick={onCreateRequirement} className={quiet}><ClipboardList className="h-3.5 w-3.5 text-slate-400" /> Requerimento</button>
+            )}
+            {onCreateDeadline && (
+              <button onClick={onCreateDeadline} className={quiet}><AlarmClock className="h-3.5 w-3.5 text-slate-400" /> Prazo</button>
+            )}
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-3.5 py-2.5 text-[11px] font-semibold transition whitespace-nowrap border-b-2 -mb-px ${
-                activeTab === tab.id
-                  ? 'border-orange-500 text-orange-600 font-bold'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-              }`}
+              onClick={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id })}
+              className={quiet}
             >
-              <span className="inline-flex items-center gap-1.5">
-                {tab.label}
-                {tab.count !== undefined && tab.count > 0 && (
-                  <span className={`min-w-[16px] h-[15px] px-1 rounded-full text-[9px] font-bold tabular-nums flex items-center justify-center ${
-                    activeTab === tab.id ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-500'
-                  }`}>{tab.count}</span>
-                )}
-              </span>
+              <PenTool className="h-3.5 w-3.5 text-slate-400" /> Petição
             </button>
-          ))}
+            <button
+              onClick={() => navigateTo('agenda', { mode: 'create', prefill: { client_id: client.id, client_name: client.full_name } } as any)}
+              className={quiet}
+            >
+              <CalendarPlus className="h-3.5 w-3.5 text-slate-400" /> Compromisso
+            </button>
+
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={handleExport} className={quiet} title="Exportar ficha em PDF">
+                <Printer className="h-3.5 w-3.5 text-slate-400" /> Exportar
+              </button>
+              <button
+                onClick={onEdit}
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-orange-500 px-3.5 py-1.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[0.98]"
+              >
+                <Edit className="h-3.5 w-3.5" /> Editar cadastro
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Abas ── */}
+      <div className="bg-[#f8f7f5]">
+        <div className="scrollbar-none sticky top-0 z-10 flex overflow-x-auto border-b border-[#e7e5df] bg-white/85 px-2 backdrop-blur-md sm:px-3">
+          {TABS.map((tab) => {
+            const on = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative -mb-px whitespace-nowrap border-b-2 px-3 py-3 text-[12px] transition ${
+                  on
+                    ? 'border-orange-500 font-bold text-orange-600'
+                    : 'border-transparent font-semibold text-slate-500 hover:border-slate-200 hover:text-slate-800'
+                }`}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  {tab.label}
+                  {tab.count !== undefined && tab.count > 0 && (
+                    <span className={`flex h-4 min-w-[17px] items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums ${
+                      on ? 'bg-orange-100 text-orange-700' : 'bg-slate-200/80 text-slate-500'
+                    }`}>{tab.count}</span>
+                  )}
+                  {tab.alert && <span className="h-1.5 w-1.5 rounded-full bg-rose-500" title="Há pendências nesta aba" />}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        <div className="p-4 space-y-4">
+        {/* O painel tem altura mínima própria: sem isso o modal encolhia numa
+            aba vazia e esticava na seguinte, e a caixa ficava pulando de
+            tamanho a cada clique. */}
+        <div className="min-h-[420px] space-y-5 p-4 sm:p-5">
 
           {/* ════════════════════════════════��══════════════════════════════════
               TAB: DADOS (padrão)
           ═══════════════════════════════════════════════════════════════════ */}
           {activeTab === 'data' && (
-            <div className="space-y-4">
-              {(missingFields.length > 0 || isOutdated) && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-2 text-amber-700 text-sm">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                  {missingFields.length > 0 && <span>{missingFields.length} campo(s) pendente(s). </span>}
-                  {isOutdated && <span>Dados desatualizados.</span>}
-                  <button onClick={onEdit} className="ml-auto text-xs font-semibold underline">Editar</button>
-                </div>
-              )}
+            <div className="space-y-5">
 
-              {/* ── Solicitações de atualização cadastral do portal ── */}
+              {/* ── Solicitações de atualização cadastral vindas do portal ── */}
               {!profileReqLoading && profileReqs.filter((r) => r.status === 'pending').map((req) => {
                 const FIELD_LABELS: Record<string, string> = {
                   full_name: 'Nome completo', email: 'E-mail', phone: 'Telefone',
@@ -2312,200 +2442,281 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 const displayValue = (k: string, v: string) => {
                   if (k === 'marital_status') return MARITAL_LABELS[v] || v;
                   if (k === 'birth_date') return new Date(v).toLocaleDateString('pt-BR');
-                  if (k === 'phone') {
-                    const d = v.replace(/\D/g, '');
-                    if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
-                    if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
-                  }
+                  if (k === 'phone') return formatPhone(v);
                   return v;
                 };
                 return (
-                <div key={req.id} className="rounded-xl border border-orange-200 bg-orange-50/60 px-4 py-3 space-y-2.5">
-                  {/* Header compacto */}
-                  <div className="flex items-center gap-2">
-                    <UserCheck className="w-3.5 h-3.5 shrink-0 text-orange-500" />
-                    <p className="text-xs font-semibold text-slate-800 flex-1">Atualização cadastral solicitada via Portal</p>
-                    <span className="text-[10px] text-slate-400">{new Date(req.requested_at).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
-                  </div>
-
-                  {/* Campos em linha */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {Object.entries(req.changes).map(([k, v]) => v && (
-                      <span key={k} className="inline-flex items-center gap-1 rounded-md bg-[#f8f7f5] px-2 py-1 text-[11px] ring-1 ring-orange-100">
-                        <span className="font-medium text-slate-500">{FIELD_LABELS[k] || k}:</span>
-                        <span className="font-semibold text-slate-800">{displayValue(k, String(v))}</span>
+                  <div key={req.id} className="space-y-3 rounded-xl bg-orange-50/60 p-4 ring-1 ring-orange-200/70">
+                    <div className="flex items-center gap-2">
+                      <UserCheck className="h-4 w-4 shrink-0 text-orange-500" strokeWidth={1.75} />
+                      <p className="flex-1 text-[13px] font-semibold text-slate-800">O cliente pediu para atualizar o cadastro</p>
+                      <span className="text-[11px] tabular-nums text-slate-400">
+                        {new Date(req.requested_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       </span>
-                    ))}
-                  </div>
+                    </div>
 
-                  {/* Ações compactas */}
-                  {rejectInputId === req.id ? (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={rejectReason}
-                        onChange={(e) => setRejectReason(e.target.value)}
-                        placeholder="Motivo (opcional)"
-                        className="flex-1 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-orange-200"
-                      />
-                      <button onClick={() => { setRejectInputId(null); setRejectReason(''); }}
-                        className="rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                        Cancelar
-                      </button>
-                      <button disabled={!!profileReqProcessing} onClick={() => handleRejectProfileReq(req.id)}
-                        className="rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-600 disabled:opacity-60">
-                        {profileReqProcessing === req.id ? '...' : 'Confirmar'}
-                      </button>
+                    <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                      {Object.entries(req.changes).map(([k, v]) => v && (
+                        <div key={k} className="flex items-baseline gap-2 text-[12px]">
+                          <span className="w-28 shrink-0 text-slate-400">{FIELD_LABELS[k] || k}</span>
+                          <span className="min-w-0 flex-1 font-semibold text-slate-800">{displayValue(k, String(v))}</span>
+                        </div>
+                      ))}
                     </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <button disabled={!!profileReqProcessing}
-                        onClick={() => { setRejectInputId(req.id); setRejectReason(''); }}
-                        className="flex items-center gap-1 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60">
-                        <UserX className="w-3 h-3" /> Rejeitar
-                      </button>
-                      <button disabled={!!profileReqProcessing}
-                        onClick={() => handleApproveProfileReq(req.id)}
-                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-orange-600 disabled:opacity-60">
-                        {profileReqProcessing === req.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}
-                        Aprovar e aplicar
-                      </button>
-                    </div>
-                  )}
-                </div>
+
+                    {rejectInputId === req.id ? (
+                      <div className="flex flex-wrap gap-2">
+                        <input
+                          type="text"
+                          value={rejectReason}
+                          onChange={(e) => setRejectReason(e.target.value)}
+                          placeholder="Motivo da recusa (opcional)"
+                          className="min-w-0 flex-1 rounded-lg bg-white px-3 py-1.5 text-[12px] ring-1 ring-[#e7e5df] focus:outline-none focus:ring-2 focus:ring-orange-200"
+                        />
+                        <button
+                          onClick={() => { setRejectInputId(null); setRejectReason(''); }}
+                          className="rounded-lg bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 ring-1 ring-[#e7e5df] transition hover:bg-slate-50"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          disabled={!!profileReqProcessing}
+                          onClick={() => handleRejectProfileReq(req.id)}
+                          className="rounded-lg bg-rose-500 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-rose-600 disabled:opacity-60"
+                        >
+                          {profileReqProcessing === req.id ? '...' : 'Confirmar recusa'}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button
+                          disabled={!!profileReqProcessing}
+                          onClick={() => { setRejectInputId(req.id); setRejectReason(''); }}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[11px] font-semibold text-rose-600 ring-1 ring-[#e7e5df] transition hover:bg-rose-50 disabled:opacity-60"
+                        >
+                          <UserX className="h-3.5 w-3.5" /> Recusar
+                        </button>
+                        <button
+                          disabled={!!profileReqProcessing}
+                          onClick={() => handleApproveProfileReq(req.id)}
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-orange-600 disabled:opacity-60"
+                        >
+                          {profileReqProcessing === req.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCheck className="h-3.5 w-3.5" />}
+                          Aprovar e aplicar ao cadastro
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
 
-              {/* Grid 2×2 de seções */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+              {/* ── Cadastro em duas colunas: quem é / como falar / onde mora / o que tem ── */}
+              <div className="grid gap-5 lg:grid-cols-2">
 
-                {/* Identificação */}
-                <div className="space-y-3">
-                  <h3 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-1.5">Identificação</h3>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                    <MiniField label={client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'} value={formattedDoc || '—'} />
-                    {client.client_type === 'pessoa_fisica' && <MiniField label="RG" value={client.rg} />}
-                    {client.client_type === 'pessoa_fisica' && <MiniField label="Nascimento" value={formatDate(client.birth_date)} />}
-                    {client.client_type === 'pessoa_fisica' && <MiniField label="Estado civil" value={client.marital_status} />}
-                    <MiniField label="Nacionalidade" value={client.nationality} />
-                    <MiniField label="Profissão" value={client.profession} />
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Status</p>
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                        client.status === 'ativo' ? 'bg-emerald-100 text-emerald-700' :
-                        client.status === 'inativo' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${client.status === 'ativo' ? 'bg-emerald-500' : client.status === 'inativo' ? 'bg-slate-400' : 'bg-amber-500'}`} />
-                        {client.status.charAt(0).toUpperCase() + client.status.slice(1)}
-                      </span>
-                    </div>
-                    <MiniField label="Tipo" value={client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica'} />
+                <Section icon={User} title="Identificação">
+                  <div className={`${SURFACE} grid grid-cols-2 gap-x-5 gap-y-3.5 p-4`}>
+                    <Field label={client.client_type === 'pessoa_fisica' ? 'CPF' : 'CNPJ'} value={formattedDoc} mono />
+                    {client.client_type === 'pessoa_fisica' && <Field label="RG" value={client.rg} />}
+                    {client.client_type === 'pessoa_fisica' && <Field label="Nascimento" value={client.birth_date ? formatDate(client.birth_date) : undefined} />}
+                    {client.client_type === 'pessoa_fisica' && <Field label="Estado civil" value={client.marital_status} />}
+                    <Field label="Nacionalidade" value={client.nationality} />
+                    <Field label="Profissão" value={client.profession} />
                   </div>
-                </div>
+                </Section>
 
-                {/* Endereço */}
-                <div className="space-y-3">
-                  <h3 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-1.5">Endereço</h3>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                    <div className="col-span-2"><MiniField label="Rua" value={client.address_street} /></div>
-                    <MiniField label="Número" value={client.address_number} />
-                    <MiniField label="Bairro" value={client.address_neighborhood} />
-                    <MiniField label="Cidade" value={client.address_city} />
-                    <MiniField label="UF" value={client.address_state} />
-                    <MiniField label="CEP" value={client.address_zip_code} />
+                <Section icon={Phone} title="Contato">
+                  <div className={`${SURFACE} grid grid-cols-2 gap-x-5 gap-y-3.5 p-4`}>
+                    <Field
+                      span
+                      label="E-mail"
+                      value={client.email
+                        ? <a href={`mailto:${client.email}`} className="break-all text-orange-600 hover:underline">{client.email}</a>
+                        : undefined}
+                    />
+                    <Field label="Telefone" value={client.phone ? formatPhone(client.phone) : undefined} mono />
+                    <Field label="Celular" value={client.mobile ? formatPhone(client.mobile) : undefined} mono />
+                    <Field
+                      span
+                      label="WhatsApp"
+                      value={whatsappLink
+                        ? (
+                          <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-emerald-600 hover:underline">
+                            <MessageCircle className="h-3.5 w-3.5" /> Abrir conversa
+                          </a>
+                        )
+                        : undefined}
+                    />
                   </div>
-                </div>
+                </Section>
 
-                {/* Contato */}
-                <div className="space-y-3">
-                  <h3 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-1.5">Contato</h3>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                    <div className="col-span-2">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">E-mail</p>
-                      {client.email
-                        ? <a href={`mailto:${client.email}`} className="text-xs font-medium text-orange-500 hover:underline truncate block">{client.email}</a>
-                        : <span className="text-xs text-slate-400">—</span>}
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Telefone</p>
-                      <p className="text-xs font-medium text-slate-800">{formattedPhone || '—'}</p>
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">WhatsApp</p>
-                      {whatsappLink
-                        ? <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-emerald-600 hover:underline">Abrir →</a>
-                        : <span className="text-xs text-slate-400">—</span>}
-                    </div>
-                    <MiniField label="Celular" value={client.mobile ? formatPhone(client.mobile) : undefined} />
+                <Section icon={MapPin} title="Endereço">
+                  <div className={`${SURFACE} space-y-3.5 p-4`}>
+                    {(() => {
+                      const line1 = [client.address_street, client.address_number].filter(Boolean).join(', ');
+                      const line2 = [client.address_neighborhood, client.address_city, client.address_state].filter(Boolean).join(' · ');
+                      const full = [line1, line2, client.address_zip_code].filter(Boolean).join(' — ');
+                      if (!full) return <p className="text-[13px] text-slate-300">Endereço não informado</p>;
+                      return (
+                        <>
+                          <div>
+                            <p className="text-[13px] font-medium leading-relaxed text-slate-800">{line1 || '—'}</p>
+                            {line2 && <p className="text-[12px] text-slate-500">{line2}</p>}
+                            {client.address_zip_code && <p className="text-[12px] tabular-nums text-slate-400">CEP {client.address_zip_code}</p>}
+                          </div>
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(full)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 transition hover:text-orange-600"
+                          >
+                            <MapPin className="h-3.5 w-3.5" /> Ver no mapa
+                          </a>
+                        </>
+                      );
+                    })()}
                   </div>
-                </div>
+                </Section>
 
-                {/* Sistema */}
-                <div className="space-y-3">
-                  <h3 className="text-[9px] font-bold uppercase tracking-widest text-slate-400 border-b border-slate-100 pb-1.5">Sistema</h3>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">ID</p>
-                      <p className="text-xs font-mono text-slate-500">{client.id.slice(0, 8).toUpperCase()}</p>
-                    </div>
-                    <MiniField label="Cliente desde" value={formatDate(client.created_at)} />
-                    <MiniField label="Atualizado em" value={formatDate(client.updated_at)} />
-                    <div className="col-span-2">
-                      <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-slate-400">Pasta Nextcloud</p>
+                {/* ── Pastas do cliente ─────────────────────────────────────────
+                    Um cliente pode ter várias pastas no Nextcloud (uma por caso,
+                    por ano, por assunto). A ficha mostrava só a primeira e dizia
+                    "Pasta" no singular — agora lista todas. */}
+                <Section
+                  icon={FolderPlus}
+                  title="Pastas"
+                  count={clientNextcloudPaths.length + clientCloudFolders.length}
+                  tone="blue"
+                >
+                  <div className={`${SURFACE} space-y-3 p-4`}>
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-medium text-slate-400">
+                        Nextcloud
+                        {clientNextcloudPaths.length > 1 && <span className="ml-1 text-slate-300">· {clientNextcloudPaths.length} pastas</span>}
+                      </p>
                       {nextcloudPathsLoading ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
-                      ) : clientNextcloudPaths.length > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => { onBack(); navigateTo('nextcloud', { path: clientNextcloudPaths[0] }); }}
-                          className="flex max-w-full items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1.5 text-left text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
-                          title={clientNextcloudPaths[0]}
-                        >
-                          <FolderPlus className="h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate">{clientNextcloudPaths[0]}</span>
-                          <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
-                        </button>
+                      ) : clientNextcloudPaths.length === 0 ? (
+                        <p className="text-[13px] text-slate-300">Nenhuma pasta vinculada</p>
                       ) : (
-                        <span className="text-xs text-slate-400">Nenhuma pasta vinculada</span>
+                        <div className="space-y-1">
+                          {clientNextcloudPaths.map((folderPath) => (
+                            <button
+                              key={folderPath}
+                              type="button"
+                              onClick={() => { onBack(); navigateTo('nextcloud', { path: folderPath }); }}
+                              className="group flex w-full max-w-full items-center gap-2 rounded-lg bg-blue-50/70 px-2.5 py-1.5 text-left transition hover:bg-blue-100"
+                              title={folderPath}
+                            >
+                              <FolderPlus className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13px] font-semibold text-blue-800">
+                                  {folderPath.split('/').filter(Boolean).pop() || 'Início'}
+                                </span>
+                                <span className="block truncate text-[11px] text-blue-600/60">{folderPath}</span>
+                              </span>
+                              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-blue-300 transition group-hover:text-blue-500" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5 border-t border-[#e7e5df] pt-3">
+                      <p className="text-[11px] font-medium text-slate-400">Cloud interno</p>
+                      {cloudFoldersLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-500" />
+                      ) : clientCloudFolders.length === 0 ? (
+                        <p className="text-[13px] text-slate-300">Nenhuma pasta vinculada</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {clientCloudFolders.map((f) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => { onBack(); navigateTo('cloud', { folderId: f.id } as any); }}
+                              className="group flex w-full items-center gap-2 rounded-lg bg-sky-50/70 px-2.5 py-1.5 text-left transition hover:bg-sky-100"
+                            >
+                              <FolderPlus className="h-3.5 w-3.5 shrink-0 text-sky-500" />
+                              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-sky-800">{f.name}</span>
+                              {f.archived_at && <Chip tone="amber">Arquivada</Chip>}
+                              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-sky-300 transition group-hover:text-sky-500" />
+                            </button>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>
+                </Section>
+              </div>
 
-                  {/* Alertas + notas + próximos eventos */}
-                  <div className="space-y-1.5">
-                    {installmentsLoaded && overdueAmount > 0 && (
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200">
-                        <AlertTriangle className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
-                        <p className="text-xs text-rose-700 font-medium flex-1">{formatCurrency(overdueAmount)} em atraso</p>
-                        <button onClick={() => setActiveTab('financial')} className="text-[10px] font-bold text-rose-600 hover:underline">Ver →</button>
-                      </div>
-                    )}
-                    {client.notes && (
-                      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
-                        <StickyNote className="w-3 h-3 text-amber-500 flex-shrink-0 mt-0.5" />
-                        <p className="text-xs text-slate-700 line-clamp-3">{client.notes}</p>
-                      </div>
-                    )}
-                    {upcomingEvents.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => navigateTo('agenda', { entityId: upcomingEvents[0].id } as any)}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-100 hover:border-violet-300 hover:bg-violet-100 transition text-left group"
-                      >
-                        <CalendarIcon className="w-3 h-3 text-violet-500 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-slate-800 truncate group-hover:text-violet-700 transition-colors">{upcomingEvents[0].title}</p>
-                          <p className="text-[10px] text-slate-500">{formatDateTime(upcomingEvents[0].start_at)}</p>
-                        </div>
-                        {upcomingEvents.length > 1
-                          ? <span className="text-[10px] text-violet-600 font-semibold flex-shrink-0">+{upcomingEvents.length - 1}</span>
-                          : <ChevronRight className="w-3 h-3 text-violet-400 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                        }
-                      </button>
-                    )}
+              {/* ── Observações ── */}
+              {client.notes && (
+                <Section icon={StickyNote} title="Observações" tone="amber">
+                  <div className={`${SURFACE} p-4`}>
+                    <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700">{client.notes}</p>
                   </div>
-                </div>
+                </Section>
+              )}
 
+              {/* ── Histórico de alterações ───────────────────────────────────
+                  Dado novo entra, dado antigo não some: tudo que foi
+                  sobrescrito — na edição, na mesclagem de duplicados, na
+                  aprovação do portal — fica registrado aqui com a origem. */}
+              {(changeHistoryLoading || changeHistory.length > 0) && (
+                <Section
+                  icon={Clock}
+                  title="Histórico de alterações"
+                  count={changeHistory.length}
+                  action={changeHistory.length > 6 ? (
+                    <button
+                      onClick={() => setShowAllChanges((v) => !v)}
+                      className="text-[11px] font-semibold text-orange-500 transition hover:text-orange-700"
+                    >
+                      {showAllChanges ? 'Ver menos' : 'Ver tudo'}
+                    </button>
+                  ) : undefined}
+                >
+                  {changeHistoryLoading ? (
+                    <div className="flex items-center gap-2 py-3 text-[13px] text-slate-400">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {(showAllChanges ? changeHistory : changeHistory.slice(0, 6)).map((entry) => (
+                        <div key={entry.id} className={`${SURFACE} px-3.5 py-2.5`}>
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                            <span className="text-[13px] font-semibold text-slate-800">
+                              {CLIENT_FIELD_LABELS[entry.field] ?? entry.field}
+                            </span>
+                            <Chip tone={entry.source === 'mesclagem' ? 'violet' : entry.source === 'portal' ? 'orange' : 'slate'}>
+                              {CLIENT_CHANGE_SOURCE_LABELS[entry.source] ?? entry.source}
+                            </Chip>
+                            <span className="ml-auto text-[11px] tabular-nums text-slate-400">
+                              {formatDateTime(entry.changed_at)}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px]">
+                            <span className="text-slate-400 line-through decoration-slate-300">
+                              {entry.old_value ?? 'em branco'}
+                            </span>
+                            <ChevronRight className="h-3 w-3 text-slate-300" />
+                            <span className="font-medium text-slate-800">{entry.new_value ?? 'em branco'}</span>
+                          </div>
+                          {entry.source_label && (
+                            <p className="mt-1 text-[11px] text-slate-400">Veio do cadastro "{entry.source_label}"</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Section>
+              )}
+
+              {/* ── Rodapé de registro: metadados que ninguém precisa em destaque ── */}
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-[#e7e5df] pt-3 text-[11px] text-slate-400">
+                <span>ID <span className="font-mono text-slate-500">{client.id.slice(0, 8).toUpperCase()}</span></span>
+                <span>Cadastrado em {formatDate(client.created_at)}</span>
+                <span>Atualizado em {formatDate(client.updated_at)}</span>
               </div>
             </div>
           )}
@@ -2523,12 +2734,12 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
                   placeholder="Buscar no histórico..."
-                  className="w-full pl-8 pr-3 py-2 rounded-xl border border-[#e7e5df] text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-300"
+                  className="w-full rounded-xl bg-[#f8f7f5] py-2 pl-8 pr-3 text-[13px] text-slate-700 ring-1 ring-[#e7e5df] transition placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-200"
                 />
               </div>
 
               {structuredTimeline.length === 0 ? (
-                <SectionEmpty text="Nenhuma atividade registrada." />
+                <Empty icon={Clock} title="Nenhuma atividade registrada" hint="O histórico se preenche sozinho conforme processos, prazos e documentos acontecem." />
               ) : (() => {
                 const q = historySearch.trim().toLowerCase();
                 const roots = q
@@ -2550,7 +2761,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   : structuredTimeline;
 
                 if (roots.length === 0)
-                  return <SectionEmpty text="Nenhum resultado encontrado." />;
+                  return <Empty icon={Search} title="Nenhum resultado" hint={`Nada no histórico corresponde a "${historySearch.trim()}".`} />;
 
                 return (
                   <div className="relative">
@@ -2675,17 +2886,14 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           {activeTab === 'casos' && (
             <div className="space-y-5">
               {relationsLoading ? (
-                <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
+                <div className="flex items-center gap-2 py-4 text-[13px] text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>
               ) : (
                 <>
                   {/* ── Processos ── */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Scale className="w-3.5 h-3.5 text-slate-400" />
-                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Processos · {processes.length}</p>
-                    </div>
+                  <Section icon={Scale} title="Processos judiciais" count={processes.length}>
+                    <div className="space-y-2">
                     {processes.length === 0 ? (
-                      <SectionEmpty text="Nenhum processo vinculado." />
+                      <Empty icon={Scale} title="Nenhum processo vinculado" />
                     ) : (
                       processes.map((p) => {
                         const statusColor = PROCESS_STATUS_COLOR[p.status] ?? 'bg-slate-100 text-slate-600';
@@ -2696,11 +2904,11 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         return (
                           <div
                             key={p.id}
-                            className={`rounded-xl border bg-[#f8f7f5] shadow-sm transition-all duration-150 hover:shadow-md group cursor-default ${isMuted ? 'border-slate-100 opacity-60' : 'border-[#e7e5df] hover:border-slate-300'}`}
+                            className={`${SURFACE} ${SURFACE_HOVER} group ${isMuted ? 'opacity-60' : ''}`}
                           >
                             <div className="px-4 py-3 flex items-start gap-3">
                               <div className="flex-shrink-0 mt-0.5">
-                                <StatusIcon tone={isMuted ? 'slate' : 'amber'}><Scale className="w-4 h-4" /></StatusIcon>
+                                <RowIcon tone={isMuted ? 'slate' : 'amber'}><Scale className="h-4 w-4" /></RowIcon>
                               </div>
                               <div className="flex-1 min-w-0">
                               {/* Row 1 — number + open action */}
@@ -2708,23 +2916,16 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                 <p className={`text-[13px] font-bold font-mono tracking-tight leading-snug truncate flex-1 min-w-0 ${isMuted ? 'text-slate-400' : 'text-slate-900'}`}>
                                   {p.process_code || <span className="font-sans font-normal italic text-slate-400">Sem número</span>}
                                 </p>
-                                <button
+                                <OpenLink
                                   onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'processos', params: { entityId: p.id } })}
-                                  className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-orange-600 transition-colors duration-100 mt-0.5"
                                   title="Abrir processo"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                  <span className="hidden sm:inline">Abrir</span>
-                                  <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
-                                </button>
+                                />
                               </div>
 
                               {/* Row 2 — status badge + área chip */}
                               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md ${statusColor}`}>{statusLabel}</span>
-                                {practiceLabel && (
-                                  <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-slate-100 text-slate-500">{practiceLabel}</span>
-                                )}
+                                <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${statusColor}`}>{statusLabel}</span>
+                                {practiceLabel && <Chip>{practiceLabel}</Chip>}
                               </div>
 
                               {/* Row 3 — vara/comarca + advogado */}
@@ -2759,16 +2960,14 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         );
                       })
                     )}
-                  </div>
+                    </div>
+                  </Section>
 
                   {/* ── Requerimentos ── */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <ClipboardList className="w-3.5 h-3.5 text-slate-400" />
-                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Requerimentos · {requirements.length}</p>
-                    </div>
+                  <Section icon={ClipboardList} title="Requerimentos administrativos" count={requirements.length}>
+                    <div className="space-y-2">
                     {requirements.length === 0 ? (
-                      <SectionEmpty text="Nenhum requerimento administrativo vinculado." />
+                      <Empty icon={ClipboardList} title="Nenhum requerimento administrativo vinculado" />
                     ) : (
                       requirements.map((r) => {
                         const linkedEvents = calendarEvents.filter((e) => e.requirement_id === r.id);
@@ -2780,11 +2979,11 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         return (
                           <div
                             key={r.id}
-                            className={`rounded-xl border bg-[#f8f7f5] shadow-sm transition-all duration-150 hover:shadow-md group cursor-default ${hasAlert ? 'border-rose-200' : 'border-[#e7e5df] hover:border-slate-300'}`}
+                            className={`${SURFACE} ${SURFACE_HOVER} group ${hasAlert ? 'ring-rose-200' : ''}`}
                           >
                             <div className="px-4 py-3 flex items-start gap-3">
                               <div className="flex-shrink-0 mt-0.5">
-                                <StatusIcon tone={hasAlert ? 'rose' : 'amber'}><ClipboardList className="w-4 h-4" /></StatusIcon>
+                                <RowIcon tone={hasAlert ? 'rose' : 'amber'}><ClipboardList className="h-4 w-4" /></RowIcon>
                               </div>
                               <div className="flex-1 min-w-0">
                               {/* Row 1 — protocolo + open action */}
@@ -2792,27 +2991,15 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                 <p className="text-[13px] font-bold text-slate-900 leading-snug truncate flex-1 min-w-0">
                                   {r.protocol ?? <span className="font-normal italic text-slate-400">Sem protocolo</span>}
                                 </p>
-                                <button
-                                  onClick={() => navigateTo('requerimentos', { entityId: r.id })}
-                                  className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-orange-600 transition-colors duration-100 mt-0.5"
-                                  title="Abrir requerimento"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                  <span className="hidden sm:inline">Abrir</span>
-                                  <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
-                                </button>
+                                <OpenLink onClick={() => navigateTo('requerimentos', { entityId: r.id })} title="Abrir requerimento" />
                               </div>
 
                               {/* Row 2 — status + benefício */}
                               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md ${badgeColor}`}>
-                                  {r.status ? r.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Pendente'}
+                                <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${badgeColor}`}>
+                                  {REQ_STATUS_LABEL[r.status] ?? (r.status ? r.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Pendente')}
                                 </span>
-                                {r.benefit_type && (
-                                  <span className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-slate-100 text-slate-500">
-                                    {r.benefit_type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-                                  </span>
-                                )}
+                                {r.benefit_type && <Chip>{BENEFIT_LABEL[r.benefit_type] ?? r.benefit_type.replace(/_/g, ' ')}</Chip>}
                               </div>
 
                               {/* Row 3 — beneficiário */}
@@ -2861,7 +3048,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         );
                       })
                     )}
-                  </div>
+                    </div>
+                  </Section>
                 </>
               )}
             </div>
@@ -2873,36 +3061,26 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           {activeTab === 'financial' && (
             <div className="space-y-4">
               {financialLoading ? (
-                <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
+                <div className="flex items-center gap-2 py-4 text-[13px] text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>
               ) : agreements.length === 0 ? (
-                <SectionEmpty text="Nenhum acordo financeiro vinculado a este cliente." />
+                <Empty icon={DollarSign} title="Nenhum acordo financeiro" hint="Acordos e honorários deste cliente aparecem aqui." />
               ) : (
                 <>
-                  {/* Banner inadimplência */}
-                  {installmentsLoaded && overdueAmount > 0 && (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex items-center gap-3">
-                      <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                      <div>
-                        <p className="text-sm font-bold text-rose-800">Inadimplente</p>
-                        <p className="text-xs text-rose-600">{formatCurrency(overdueAmount)} em parcelas vencidas</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Summary row */}
+                  {/* Resumo — o aviso de inadimplência já está na pilha de
+                      pendências no topo da ficha; aqui basta o número. */}
                   {installmentsLoaded && (
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 text-center">
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-600">Recebido</p>
-                        <p className="text-base font-bold text-emerald-700 mt-1">{formatCurrency(paidAmount)}</p>
+                    <div className={`${SURFACE} grid grid-cols-3 divide-x divide-[#e7e5df] overflow-hidden`}>
+                      <div className="px-4 py-3">
+                        <p className="text-[11px] font-medium text-slate-400">Recebido</p>
+                        <p className="mt-0.5 text-[17px] font-bold tabular-nums text-emerald-600">{formatCurrency(paidAmount)}</p>
                       </div>
-                      <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-center">
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-600">Pendente</p>
-                        <p className="text-base font-bold text-amber-700 mt-1">{formatCurrency(Math.max(0, totalRevenue - paidAmount - overdueAmount))}</p>
+                      <div className="px-4 py-3">
+                        <p className="text-[11px] font-medium text-slate-400">A receber</p>
+                        <p className="mt-0.5 text-[17px] font-bold tabular-nums text-slate-800">{formatCurrency(Math.max(0, totalRevenue - paidAmount - overdueAmount))}</p>
                       </div>
-                      <div className="rounded-xl border border-rose-100 bg-rose-50 p-3 text-center">
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-rose-600">Em atraso</p>
-                        <p className="text-base font-bold text-rose-700 mt-1">{formatCurrency(overdueAmount)}</p>
+                      <div className="px-4 py-3">
+                        <p className="text-[11px] font-medium text-slate-400">Em atraso</p>
+                        <p className={`mt-0.5 text-[17px] font-bold tabular-nums ${overdueAmount > 0 ? 'text-rose-600' : 'text-slate-300'}`}>{formatCurrency(overdueAmount)}</p>
                       </div>
                     </div>
                   )}
@@ -2914,7 +3092,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     const overdue = insts.filter((i) => i.status === 'vencido').length;
 
                     return (
-                      <div key={a.id} className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] overflow-hidden hover:border-slate-300 hover:shadow-md transition-all duration-150">
+                      <div key={a.id} className={`${SURFACE} ${SURFACE_HOVER} overflow-hidden`}>
                         <div className="px-4 pt-3.5 pb-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
@@ -2925,18 +3103,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                               </p>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md ${AGREEMENT_STATUS_COLOR[a.status] ?? 'bg-slate-100 text-slate-600'}`}>
-                                {AGREEMENT_STATUS_LABEL[a.status] ?? a.status}
-                              </span>
-                              <button
-                                onClick={() => navigateTo('financeiro', { entityId: a.id })}
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-orange-600 transition-colors duration-100"
-                                title="Abrir no módulo Financeiro"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Abrir</span>
-                                <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
-                              </button>
+                              <Chip tone={AGREEMENT_STATUS_TONE[a.status] ?? 'slate'}>{AGREEMENT_STATUS_LABEL[a.status] ?? a.status}</Chip>
+                              <OpenLink onClick={() => navigateTo('financeiro', { entityId: a.id })} title="Abrir no módulo Financeiro" />
                             </div>
                           </div>
 
@@ -3024,7 +3192,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                                 type="date"
                                                 value={payForm.date}
                                                 onChange={(e) => setPayForm((f) => ({ ...f, date: e.target.value }))}
-                                                className="w-full px-2 py-1.5 rounded-lg border border-[#e7e5df] text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
+                                                className="w-full rounded-lg bg-white px-2 py-1.5 text-xs ring-1 ring-[#e7e5df] focus:outline-none focus:ring-2 focus:ring-emerald-300"
                                               />
                                             </div>
                                             <div>
@@ -3032,7 +3200,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                               <select
                                                 value={payForm.method}
                                                 onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value as PaymentMethod }))}
-                                                className="w-full px-2 py-1.5 rounded-lg border border-[#e7e5df] text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
+                                                className="w-full rounded-lg bg-white px-2 py-1.5 text-xs ring-1 ring-[#e7e5df] focus:outline-none focus:ring-2 focus:ring-emerald-300"
                                               >
                                                 <option value="pix">PIX</option>
                                                 <option value="transferencia">Transferência</option>
@@ -3049,7 +3217,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                                 step="0.01"
                                                 value={payForm.value}
                                                 onChange={(e) => setPayForm((f) => ({ ...f, value: parseFloat(e.target.value) || 0 }))}
-                                                className="w-full px-2 py-1.5 rounded-lg border border-[#e7e5df] text-xs focus:outline-none focus:ring-1 focus:ring-emerald-300"
+                                                className="w-full rounded-lg bg-white px-2 py-1.5 text-xs ring-1 ring-[#e7e5df] focus:outline-none focus:ring-2 focus:ring-emerald-300"
                                               />
                                             </div>
                                           </div>
@@ -3083,26 +3251,23 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               TAB: PRAZOS
           ═══════════════════════════════════════════════════════════════════ */}
           {activeTab === 'deadlines' && (
-            <div className="space-y-3">
+            <div className="space-y-5">
               {deadlinesLoading ? (
-                <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando prazos...</div>
+                <div className="flex items-center gap-2 py-4 text-[13px] text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando prazos...</div>
               ) : deadlines.length === 0 ? (
-                <SectionEmpty text="Nenhum prazo vinculado a este cliente." />
+                <Empty icon={AlarmClock} title="Nenhum prazo cadastrado" hint="Prazos deste cliente e dos seus processos aparecem aqui." />
               ) : (
                 <>
                   {overdueDeadlines.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0" />
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-rose-500">Vencidos · {overdueDeadlines.length}</p>
-                      </div>
+                    <Section icon={AlertTriangle} tone="rose" title="Vencidos" count={overdueDeadlines.length}>
+                      <div className="space-y-2">
                       {overdueDeadlines.map((d) => (
                         <ModuleItem
                           key={d.id}
                           urgent
                           onOpen={() => navigateTo('prazos', { entityId: d.id })}
-                          badge={{ label: 'Vencido', color: 'bg-rose-100 text-rose-700' }}
-                          leading={<StatusIcon tone="rose"><AlertTriangle className="w-4 h-4" /></StatusIcon>}
+                          badge={{ label: 'Vencido', tone: 'rose' }}
+                          leading={<RowIcon tone="rose"><AlertTriangle className="h-4 w-4" /></RowIcon>}
                         >
                           <p className="text-[13px] font-semibold text-rose-800 leading-snug truncate">{d.title}</p>
                           <p className="text-[11px] text-rose-500 mt-0.5 font-medium">
@@ -3111,15 +3276,13 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           </p>
                         </ModuleItem>
                       ))}
-                    </div>
+                      </div>
+                    </Section>
                   )}
 
                   {upcomingDeadlines.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Pendentes · {upcomingDeadlines.length}</p>
-                      </div>
+                    <Section icon={Clock} tone="amber" title="Pendentes" count={upcomingDeadlines.length}>
+                      <div className="space-y-2">
                       {upcomingDeadlines.map((d) => {
                         const daysLeft = Math.ceil((new Date(d.due_date).getTime() - Date.now()) / 86400000);
                         const isUrgent = daysLeft <= 7;
@@ -3129,10 +3292,10 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             key={d.id}
                             onOpen={() => navigateTo('prazos', { entityId: d.id })}
                             accentClass={priorityAccent}
-                            leading={<StatusIcon tone={isUrgent ? 'amber' : 'slate'}><Clock className="w-4 h-4" /></StatusIcon>}
+                            leading={<RowIcon tone={isUrgent ? 'amber' : 'slate'}><Clock className="h-4 w-4" /></RowIcon>}
                             badge={{
                               label: d.priority === 'urgente' ? 'Urgente' : d.priority === 'alta' ? 'Alta' : d.priority === 'media' ? 'Média' : 'Baixa',
-                              color: d.priority === 'urgente' || d.priority === 'alta' ? 'bg-rose-100 text-rose-700' : d.priority === 'media' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600',
+                              tone: d.priority === 'urgente' || d.priority === 'alta' ? 'rose' : d.priority === 'media' ? 'amber' : 'slate',
                             }}
                           >
                             <p className="text-[13px] font-semibold text-slate-900 leading-snug truncate">{d.title}</p>
@@ -3142,23 +3305,21 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           </ModuleItem>
                         );
                       })}
-                    </div>
+                      </div>
+                    </Section>
                   )}
 
                   {deadlines.filter((d) => d.status === 'cumprido').length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
-                        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Cumpridos · {deadlines.filter((d) => d.status === 'cumprido').length}</p>
-                      </div>
+                    <Section icon={Check} tone="emerald" title="Cumpridos" count={deadlines.filter((d) => d.status === 'cumprido').length}>
+                      <div className="space-y-2">
                       {deadlines.filter((d) => d.status === 'cumprido').map((d) => (
                         <ModuleItem
                           key={d.id}
                           muted
                           dense
                           onOpen={() => navigateTo('prazos', { entityId: d.id })}
-                          badge={{ label: 'Cumprido', color: 'bg-emerald-50 text-emerald-600' }}
-                          leading={<StatusIcon tone="emerald"><Check className="w-4 h-4" /></StatusIcon>}
+                          badge={{ label: 'Cumprido', tone: 'emerald' }}
+                          leading={<RowIcon tone="emerald"><Check className="h-4 w-4" /></RowIcon>}
                         >
                           <div className="flex items-baseline gap-2 min-w-0">
                             <p className="text-[13px] font-medium text-slate-500 truncate">{d.title}</p>
@@ -3166,13 +3327,13 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           </div>
                         </ModuleItem>
                       ))}
-                    </div>
+                      </div>
+                    </Section>
                   )}
                 </>
               )}
             </div>
           )}
-
 
           {/* ═══════════════════════════════════════════════════════════════════
               TAB: COMPROMISSOS (AGENDA)
@@ -3292,14 +3453,12 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 <button
                   type="button"
                   onClick={onClick}
-                  className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-150 group ${
-                    isFuture
-                      ? 'bg-[#f8f7f5] border-[#e7e5df] hover:border-slate-300 hover:shadow-md'
-                      : 'bg-slate-50 border-slate-100 opacity-60 hover:opacity-80'
+                  className={`group flex w-full items-center gap-3 px-4 py-3 text-left ${SURFACE} ${
+                    isFuture ? SURFACE_HOVER : 'opacity-60 transition hover:opacity-90'
                   }`}
                 >
                   {/* Tipo */}
-                  <span className={`flex-shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-md ${tc.bg} ${tc.text} whitespace-nowrap`}>{label}</span>
+                  <span className={`shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-semibold ${tc.bg} ${tc.text}`}>{label}</span>
 
                   {/* Título + subtítulo */}
                   <div className="flex-1 min-w-0">
@@ -3310,7 +3469,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   {/* Data + hora + status */}
                   <div className="flex-shrink-0 text-right space-y-0.5">
                     {statusCls && (
-                      <p><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${statusCls.cls}`}>{statusCls.label}</span></p>
+                      <p><span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${statusCls.cls}`}>{statusCls.label}</span></p>
                     )}
                     <p className={`text-xs font-semibold tabular-nums ${isFuture ? 'text-slate-700' : 'text-slate-400'}`}>
                       {u.date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
@@ -3326,23 +3485,20 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
             return (
               <div className="space-y-5">
                 {calendarLoading || relationsLoading ? (
-                  <div className="flex items-center gap-2 text-slate-400 py-6"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
+                  <div className="flex items-center gap-2 py-4 text-[13px] text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>
                 ) : unified.length === 0 ? (
-                  <div className="text-center py-10">
-                    <CalendarIcon className="w-10 h-10 text-slate-200 mx-auto mb-2" />
-                    <p className="text-sm text-slate-400">Nenhum compromisso vinculado a este cliente.</p>
-                  </div>
+                  <Empty icon={CalendarIcon} title="Nenhum compromisso vinculado" hint="Audiências, perícias e reuniões deste cliente aparecem aqui." />
                 ) : (
                   <>
                     {upcoming.length > 0 && (
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Próximos ({upcoming.length})</p>
+                        <div className="mb-2 flex items-center gap-2"><CalendarIcon className="h-4 w-4 text-violet-600" strokeWidth={1.75} /><h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Próximos</h3><span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-slate-500">{upcoming.length}</span></div>
                         <div className="space-y-2">{upcoming.map((u, i) => <Row key={i} u={u} />)}</div>
                       </div>
                     )}
                     {past.length > 0 && (
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Passados / Concluídos ({past.length})</p>
+                        <div className="mb-2 flex items-center gap-2"><Check className="h-4 w-4 text-slate-400" strokeWidth={1.75} /><h3 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Passados e concluídos</h3><span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-slate-500">{past.length}</span></div>
                         <div className="space-y-2">{past.map((u, i) => <Row key={i} u={u} />)}</div>
                       </div>
                     )}
@@ -3353,549 +3509,382 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
           })()}
 
           {/* ═══════════════════════════════════════════════════════════════════
-              TAB: ASSINATURAS
+              TAB: DOCUMENTOS — assinaturas, petições, pastas e envios do portal.
+              A aba "Assinaturas" foi absorvida aqui: ela e a seção "Contratos
+              assinados" liam a mesma `signature_requests` e mostravam a mesma
+              coisa em dois lugares, com aparências diferentes.
           ═══════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'assinaturas' && (() => {
-            const SIG_STATUS: Record<string, { label: string; cls: string; strip: string }> = {
-              pending:   { label: 'Pendente',  cls: 'bg-amber-100 text-amber-700',   strip: 'bg-amber-400' },
-              signed:    { label: 'Assinado',  cls: 'bg-emerald-100 text-emerald-700', strip: 'bg-emerald-400' },
-              expired:   { label: 'Expirado',  cls: 'bg-red-100 text-red-600',       strip: 'bg-red-400' },
-              cancelled: { label: 'Cancelado', cls: 'bg-slate-100 text-slate-500',   strip: 'bg-slate-300' },
+          {activeTab === 'documents' && (() => {
+            const SIG_TONE: Record<string, { label: string; tone: Tone }> = {
+              pending:   { label: 'Aguardando assinatura', tone: 'amber' },
+              signed:    { label: 'Assinado',              tone: 'emerald' },
+              expired:   { label: 'Expirado',              tone: 'rose' },
+              cancelled: { label: 'Cancelado',             tone: 'slate' },
             };
+            const novaAssinatura = () => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'assinaturas', params: { prefill: { client_id: client.id } } });
+
             return (
-              <div className="space-y-3">
-                {/* CTA criar */}
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'assinaturas', params: { prefill: { client_id: client.id } } })}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition shadow-sm"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Nova assinatura
-                  </button>
-                </div>
+              <div className="space-y-6">
+                {/* Solicitações de documentos — sempre no topo */}
+                <DocumentRequestsAdmin client={client} />
 
-                {signatureLoading ? (
-                  <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando...</div>
-                ) : signatureRequests.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-[#e7e5df] py-10 text-center">
-                    <PenTool className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm text-slate-400">Nenhuma assinatura digital vinculada a este cliente.</p>
-                    <button
-                      onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'assinaturas', params: { prefill: { client_id: client.id } } })}
-                      className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-violet-600 hover:text-violet-800 hover:bg-violet-50 border border-violet-200 transition"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Criar primeira assinatura
-                    </button>
-                  </div>
+                {signatureLoading || petitionsLoading || cloudFoldersLoading ? (
+                  <div className="flex items-center gap-2 py-4 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando documentos...</div>
                 ) : (
-                  signatureRequests.map((r) => {
-                    const sc = SIG_STATUS[r.status] ?? SIG_STATUS.pending;
-                    const signers = r.signers ?? [];
-                    const signersSigned = signers.filter(s => s.status === 'signed').length;
-                    const allSigned = signers.length > 0 && signersSigned === signers.length;
-                    const accentBorder = r.status === 'signed' ? 'border-l-emerald-400' : r.status === 'pending' ? 'border-l-amber-400' : r.status === 'expired' ? 'border-l-red-400' : 'border-l-slate-300';
-                    return (
-                      <div key={r.id} className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] transition-all duration-150 hover:shadow-md hover:border-slate-300">
-                        <div className="px-4 pt-3.5 pb-3">
-                          {/* Row 1 — nome + status + abrir */}
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                              {allSigned
-                                ? <FileCheck className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                                : <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                              }
-                              <p className="text-[13px] font-bold text-slate-900 leading-snug truncate">{r.document_name ?? 'Documento'}</p>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-md whitespace-nowrap ${sc.cls}`}>{sc.label}</span>
-                              <button
-                                onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'assinaturas', params: { mode: 'details', requestId: r.id } })}
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-orange-600 transition-colors duration-100"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                Abrir
-                                <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
-                              </button>
-                            </div>
-                          </div>
+                  <>
+                    {/* ── Assinaturas digitais ── */}
+                    <Section
+                      icon={PenTool}
+                      tone="violet"
+                      title="Assinaturas digitais"
+                      count={signatureRequests.length}
+                      action={
+                        <button
+                          onClick={novaAssinatura}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm transition hover:bg-violet-700"
+                        >
+                          <Plus className="h-3 w-3" /> Nova
+                        </button>
+                      }
+                    >
+                      {signatureRequests.length === 0 ? (
+                        <Empty
+                          icon={PenTool}
+                          title="Nenhuma assinatura digital"
+                          hint="Contratos e procurações enviados para assinatura aparecem aqui."
+                          action={
+                            <button
+                              onClick={novaAssinatura}
+                              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold text-violet-600 ring-1 ring-violet-200 transition hover:bg-violet-50"
+                            >
+                              <Plus className="h-3.5 w-3.5" /> Criar a primeira
+                            </button>
+                          }
+                        />
+                      ) : (
+                        <div className="space-y-2">
+                          {signatureRequests.map((r) => {
+                            const sc = SIG_TONE[r.status] ?? SIG_TONE.pending;
+                            const signers = r.signers ?? [];
+                            const signersSigned = signers.filter((s) => s.status === 'signed').length;
+                            const allSigned = signers.length > 0 && signersSigned === signers.length;
+                            const signedFile = signers.find((s) => Boolean(s.signed_document_path)) ?? null;
+                            const signedAt = r.signed_at ?? signedFile?.signed_at ?? null;
+                            return (
+                              <div key={r.id} className={`${SURFACE} ${SURFACE_HOVER} p-3.5`}>
+                                <div className="flex items-start gap-3">
+                                  <RowIcon tone={allSigned ? 'emerald' : r.status === 'expired' ? 'rose' : 'amber'}>
+                                    {allSigned ? <FileCheck className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                                  </RowIcon>
 
-                          {/* Row 2 — número processo + data */}
-                          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                            {r.process_number && (
-                              <span className="text-[11px] font-mono text-slate-400">{r.process_number}</span>
-                            )}
-                            <span className="text-[11px] text-slate-400">
-                              {r.status === 'signed' && r.signed_at
-                                ? `Assinado em ${formatDate(r.signed_at)}`
-                                : `Criado em ${formatDate(r.created_at)}`}
-                            </span>
-                          </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <p className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug text-slate-900">
+                                        {r.document_name ?? 'Documento'}
+                                      </p>
+                                      <div className="flex shrink-0 items-center gap-2">
+                                        <Chip tone={sc.tone}>{sc.label}</Chip>
+                                        <OpenLink onClick={() => events.emit(SYSTEM_EVENTS.NAVIGATE_REQUEST, { module: 'assinaturas', params: { mode: 'details', requestId: r.id } })} />
+                                      </div>
+                                    </div>
 
-                          {/* Row 3 — signatários */}
-                          {signers.length > 0 && (
-                            <div className="mt-2.5">
-                              <div className="flex items-center gap-2 mb-1.5">
-                                <div className="flex gap-0.5 flex-1">
-                                  {signers.map(s => (
-                                    <div
-                                      key={s.id}
-                                      title={`${s.name ?? 'Signatário'}: ${s.status}`}
-                                      className={`h-1.5 flex-1 rounded-full ${
-                                        s.status === 'signed' ? 'bg-emerald-400' : s.status === 'cancelled' ? 'bg-slate-200' : 'bg-amber-200'
-                                      }`}
-                                    />
-                                  ))}
+                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
+                                      {r.process_number && <span className="font-mono">{r.process_number}</span>}
+                                      <span>
+                                        {signedAt ? `Assinado em ${formatDate(signedAt)}` : `Criado em ${formatDate(r.created_at)}`}
+                                      </span>
+                                    </div>
+
+                                    {signers.length > 0 && (
+                                      <div className="mt-2.5">
+                                        <div className="mb-1.5 flex items-center gap-2">
+                                          <div className="flex flex-1 gap-0.5">
+                                            {signers.map((s) => (
+                                              <div
+                                                key={s.id}
+                                                title={`${s.name ?? 'Signatário'}: ${s.status}`}
+                                                className={`h-1.5 flex-1 rounded-full ${
+                                                  s.status === 'signed' ? 'bg-emerald-400' : s.status === 'cancelled' ? 'bg-slate-200' : 'bg-amber-200'
+                                                }`}
+                                              />
+                                            ))}
+                                          </div>
+                                          <span className="shrink-0 text-[10px] font-bold tabular-nums text-slate-400">{signersSigned}/{signers.length}</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {signers.map((s) => (
+                                            <span
+                                              key={s.id}
+                                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                                s.status === 'signed'
+                                                  ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/70'
+                                                  : s.status === 'cancelled'
+                                                  ? 'bg-slate-50 text-slate-400 line-through ring-1 ring-[#e7e5df]'
+                                                  : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200/70'
+                                              }`}
+                                            >
+                                              {s.status === 'signed' ? <Check className="h-2.5 w-2.5 shrink-0" /> : <Clock className="h-2.5 w-2.5 shrink-0" />}
+                                              {s.name ?? 'Signatário'}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {signedFile?.signed_document_path && (
+                                      <button
+                                        onClick={async () => {
+                                          const url = await pdfSignatureService.getSignedPdfUrl(signedFile.signed_document_path!);
+                                          if (url) window.open(url, '_blank');
+                                        }}
+                                        className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200 transition hover:bg-emerald-50"
+                                      >
+                                        <FileText className="h-3.5 w-3.5" /> Ver PDF assinado
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                                <span className="text-[10px] font-bold text-slate-400 tabular-nums flex-shrink-0">{signersSigned}/{signers.length}</span>
                               </div>
-                              <div className="flex flex-wrap gap-1.5">
-                                {signers.map(s => (
-                                  <span key={s.id} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                                    s.status === 'signed'
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                      : s.status === 'cancelled'
-                                      ? 'bg-slate-50 text-slate-400 border-[#e7e5df] line-through'
-                                      : 'bg-amber-50 text-amber-700 border-amber-200'
-                                  }`}>
-                                    {s.status === 'signed'
-                                      ? <Check className="w-2.5 h-2.5 flex-shrink-0" />
-                                      : <Clock className="w-2.5 h-2.5 flex-shrink-0" />
-                                    }
-                                    {s.name ?? 'Signatário'}
-                                  </span>
-                                ))}
+                            );
+                          })}
+                        </div>
+                      )}
+                    </Section>
+
+                    {/* ── Petições ── */}
+                    <Section icon={PenTool} tone="amber" title="Petições" count={clientPetitions.length}>
+                      {clientPetitions.length === 0 ? (
+                        <Empty icon={PenTool} title="Nenhuma petição vinculada" />
+                      ) : (
+                        <div className="space-y-2">
+                          {clientPetitions.map((p) => (
+                            <div key={p.id} className={`${SURFACE} ${SURFACE_HOVER} group flex items-center justify-between gap-3 p-3.5`}>
+                              <div className="min-w-0">
+                                <p className="truncate text-[13px] font-semibold text-slate-900">{p.title ?? 'Sem título'}</p>
+                                <p className="mt-0.5 text-[11px] text-slate-400">Atualizada em {formatDateTime(p.updated_at)}</p>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <button
+                                  onClick={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id, petitionId: p.id })}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 ring-1 ring-[#e7e5df] transition hover:bg-slate-50"
+                                >
+                                  <PenTool className="h-3.5 w-3.5" /> Abrir
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    const ok = await confirmDelete({ title: 'Excluir petição', entityName: p.title ?? '', message: `Deseja excluir "${p.title}"?`, confirmLabel: 'Excluir' });
+                                    if (!ok) return;
+                                    await petitionEditorService.deletePetition(p.id);
+                                    notifyDeleted(p.title ?? undefined);
+                                    setClientPetitions((prev) => prev.filter((x) => x.id !== p.id));
+                                  }}
+                                  className="rounded-lg p-1.5 text-slate-300 opacity-0 transition-all hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
+                                  title="Excluir petição"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
                               </div>
                             </div>
-                          )}
+                          ))}
                         </div>
-                      </div>
-                    );
-                  })
+                      )}
+                    </Section>
+
+                    {/* ── Pastas do Nextcloud — todas, não só a primeira ── */}
+                    <Section icon={FolderPlus} tone="blue" title="Pastas do Nextcloud" count={clientNextcloudPaths.length}>
+                      {nextcloudPathsLoading ? (
+                        <div className="flex items-center gap-2 py-3 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando pastas...</div>
+                      ) : clientNextcloudPaths.length === 0 ? (
+                        <Empty icon={FolderPlus} title="Nenhuma pasta do Nextcloud vinculada" hint="Vincule pastas pelo módulo Nextcloud — um cliente pode ter quantas precisar." />
+                      ) : (
+                        <div className="space-y-2">
+                          {clientNextcloudPaths.map((folderPath) => (
+                            <button
+                              key={folderPath}
+                              type="button"
+                              onClick={() => { onBack(); navigateTo('nextcloud', { path: folderPath }); }}
+                              className={`${SURFACE} ${SURFACE_HOVER} flex w-full items-center justify-between gap-3 p-3.5 text-left`}
+                            >
+                              <span className="flex min-w-0 items-center gap-3">
+                                <RowIcon tone="blue"><FolderPlus className="h-4 w-4" /></RowIcon>
+                                <span className="min-w-0">
+                                  <span className="block truncate text-[13px] font-semibold text-slate-900">
+                                    {folderPath.split('/').filter(Boolean).pop() || 'Início'}
+                                  </span>
+                                  <span className="block truncate text-[11px] text-slate-400">{folderPath}</span>
+                                </span>
+                              </span>
+                              <ExternalLink className="h-4 w-4 shrink-0 text-slate-300" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </Section>
+
+                    {/* ── Pastas do Cloud interno ── */}
+                    <Section icon={FolderPlus} tone="sky" title="Pastas do Cloud" count={clientCloudFolders.length}>
+                      {clientCloudFolders.length === 0 ? (
+                        <Empty icon={FolderPlus} title="Nenhuma pasta do Cloud vinculada" />
+                      ) : (
+                        <div className="space-y-2">
+                          {clientCloudFolders.map((f) => (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => { onBack(); navigateTo('cloud', { folderId: f.id } as any); }}
+                              className={`${SURFACE} ${SURFACE_HOVER} flex w-full items-center justify-between gap-3 p-3.5 text-left`}
+                            >
+                              <span className="flex min-w-0 items-center gap-3">
+                                <RowIcon tone="sky"><FolderPlus className="h-4 w-4" /></RowIcon>
+                                <span className="min-w-0">
+                                  <span className="block truncate text-[13px] font-semibold text-slate-900">{f.name}</span>
+                                  <span className="block truncate text-[11px] text-slate-400">Atualizada em {formatDateTime(f.updated_at)}</span>
+                                </span>
+                              </span>
+                              <Chip tone={f.archived_at ? 'amber' : 'emerald'}>{f.archived_at ? 'Arquivada' : 'Ativa'}</Chip>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </Section>
+
+                    {/* ── Enviados pelo scanner / portal ── */}
+                    {portalUser && (
+                      <Section icon={FileText} tone="violet" title="Enviados pelo cliente" count={scannerUploadsLoaded ? scannerUploads.length : undefined}>
+                        {scannerUploadsLoading ? (
+                          <div className="flex items-center gap-2 py-3 text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>
+                        ) : !scannerUploadsLoaded ? (
+                          <Empty icon={FileText} title="Envios ainda não carregados" />
+                        ) : scannerUploads.length === 0 ? (
+                          <Empty icon={FileText} title="Nenhum envio pelo scanner do portal" />
+                        ) : (
+                          <div className="space-y-1.5">
+                            {scannerUploads.map((u) => {
+                              const sizeLabel = u.size
+                                ? u.size > 1_048_576 ? `${(u.size / 1_048_576).toFixed(1)} MB` : `${Math.round(u.size / 1024)} KB`
+                                : null;
+                              return (
+                                <div key={u.messageId} className={`${SURFACE} flex items-center justify-between gap-3 px-3.5 py-2.5`}>
+                                  <div className="flex min-w-0 items-center gap-2.5">
+                                    <FileText className="h-4 w-4 shrink-0 text-violet-400" />
+                                    <div className="min-w-0">
+                                      <p className="truncate text-[13px] font-semibold text-slate-800">{u.fileName}</p>
+                                      <p className="mt-0.5 text-[11px] tabular-nums text-slate-400">
+                                        {new Date(u.sentAt).toLocaleString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                        {sizeLabel && <span className="ml-1.5">· {sizeLabel}</span>}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {u.signedUrl && (
+                                    <a
+                                      href={u.signedUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-semibold text-slate-400 transition hover:bg-violet-50 hover:text-violet-600"
+                                    >
+                                      <ExternalLink className="h-3.5 w-3.5" /> Ver
+                                    </a>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </Section>
+                    )}
+                  </>
                 )}
               </div>
             );
           })()}
 
           {/* ═══════════════════════════════════════════════════════════════════
-              TAB: DOCUMENTOS
-          ═══════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'documents' && (
-            <div className="space-y-6">
-              {/* Solicitações de documentos — sempre no topo */}
-              <DocumentRequestsAdmin client={client} />
-
-              {signatureLoading || petitionsLoading || cloudFoldersLoading ? (
-                <div className="flex items-center gap-2 text-slate-400 py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando documentos...</div>
-              ) : (
-                <>
-                  {/* Assinados — seção em destaque */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <FileCheck className="w-4 h-4 text-emerald-600" />
-                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Contratos / Docs Assinados</p>
-                      {signedDocuments.length > 0 && (
-                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">{signedDocuments.length}</span>
-                      )}
-                    </div>
-                    {signedDocuments.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
-                        Nenhum documento assinado registrado
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {signedDocuments.map((r) => {
-                          const signer = (r.signers ?? []).find((s) => Boolean(s.signed_document_path)) ?? null;
-                          const signedAt = r.signed_at ?? signer?.signed_at ?? null;
-                          return (
-                            <div key={r.id} className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3.5 flex items-center justify-between gap-3 hover:border-slate-300 hover:shadow-md transition-all duration-150">
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-slate-900 truncate">{r.document_name ?? 'Documento'}</p>
-                                <p className="text-xs text-emerald-700 mt-0.5">
-                                  <FileCheck className="w-3 h-3 inline mr-1" />
-                                  Assinado{signedAt ? ` em ${formatDateTime(signedAt)}` : ''}
-                                </p>
-                              </div>
-                              {signer?.signed_document_path && (
-                                <button
-                                  onClick={async () => {
-                                    const url = await pdfSignatureService.getSignedPdfUrl(signer.signed_document_path!);
-                                    if (url) window.open(url, '_blank');
-                                  }}
-                                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-[#f8f7f5] text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
-                                >
-                                  <FileText className="w-3.5 h-3.5" /> Ver PDF
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Gerados — aguardando assinatura */}
-                  {generatedDocuments.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-amber-500" />
-                        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Aguardando Assinatura</p>
-                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">{generatedDocuments.length}</span>
-                      </div>
-                      <div className="space-y-2">
-                        {generatedDocuments.map((r) => (
-                          <div
-                            key={r.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => { onBack(); navigateTo('assinaturas', { mode: 'details', requestId: r.id } as any); }}
-                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onBack(); navigateTo('assinaturas', { mode: 'details', requestId: r.id } as any); } }}
-                            className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all duration-150"
-                          >
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-slate-900 truncate">{r.document_name ?? 'Documento'}</p>
-                              <p className="text-xs text-slate-500 mt-0.5">Gerado em {formatDateTime(r.created_at)}</p>
-                            </div>
-                            <span className="flex-shrink-0 px-2.5 py-1 text-[11px] font-semibold rounded-full bg-amber-100 text-amber-700">
-                              Pendente
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Petições */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <PenTool className="w-4 h-4 text-amber-600" />
-                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Petições</p>
-                      {clientPetitions.length > 0 && (
-                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">{clientPetitions.length}</span>
-                      )}
-                    </div>
-                    {clientPetitions.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
-                        Nenhuma petição vinculada
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {clientPetitions.map((p) => (
-                          <div key={p.id} className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3.5 flex items-center justify-between gap-3 group hover:border-slate-300 hover:shadow-md transition-all duration-150">
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-slate-900 truncate">{p.title ?? 'Sem título'}</p>
-                              <p className="text-xs text-slate-400 mt-0.5">Atualizada em {formatDateTime(p.updated_at)}</p>
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <button
-                                onClick={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_OPEN, { clientId: client.id, petitionId: p.id })}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#e7e5df] text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                              >
-                                <PenTool className="w-3.5 h-3.5" /> Abrir
-                              </button>
-                              <button
-                                onClick={async () => {
-                                  const ok = await confirmDelete({ title: 'Excluir petição', entityName: p.title ?? '', message: `Deseja excluir "${p.title}"?`, confirmLabel: 'Excluir' });
-                                  if (!ok) return;
-                                  await petitionEditorService.deletePetition(p.id);
-                                  notifyDeleted(p.title ?? undefined);
-                                  setClientPetitions((prev) => prev.filter((x) => x.id !== p.id));
-                                }}
-                                className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded opacity-0 group-hover:opacity-100 transition-all"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Cloud */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <FolderPlus className="w-4 h-4 text-sky-500" />
-                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Pastas do Cloud</p>
-                      {clientCloudFolders.length > 0 && (
-                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-700">{clientCloudFolders.length}</span>
-                      )}
-                    </div>
-                    {clientCloudFolders.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
-                        Nenhuma pasta vinculada
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {clientCloudFolders.map((f) => (
-                          <div
-                            key={f.id}
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => { onBack(); navigateTo('cloud', { folderId: f.id } as any); }}
-                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onBack(); navigateTo('cloud', { folderId: f.id } as any); } }}
-                            className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:border-slate-300 hover:shadow-md transition-all duration-150"
-                          >
-                            <div className="min-w-0 flex items-center gap-2.5">
-                              <FolderPlus className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">{f.name}</p>
-                                <p className="text-xs text-slate-400">Atualizada em {formatDateTime(f.updated_at)}</p>
-                              </div>
-                            </div>
-                            <span className={`flex-shrink-0 px-2.5 py-1 text-[11px] font-semibold rounded-full ${f.archived_at ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                              {f.archived_at ? 'Arquivada' : 'Ativa'}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Nextcloud */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <FolderPlus className="w-4 h-4 text-blue-500" />
-                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Pastas do Nextcloud</p>
-                      {clientNextcloudPaths.length > 0 && (
-                        <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">{clientNextcloudPaths.length}</span>
-                      )}
-                    </div>
-                    {nextcloudPathsLoading ? (
-                      <div className="flex items-center justify-center rounded-xl border border-dashed border-[#e7e5df] py-4 text-slate-400">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      </div>
-                    ) : clientNextcloudPaths.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-sm text-slate-400">
-                        Nenhuma pasta do Nextcloud vinculada
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {clientNextcloudPaths.map((folderPath) => (
-                          <button
-                            key={folderPath}
-                            type="button"
-                            onClick={() => { onBack(); navigateTo('nextcloud', { path: folderPath }); }}
-                            className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#f8f7f5] p-3.5 text-left shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] transition-all duration-150 hover:bg-blue-50 hover:shadow-md"
-                          >
-                            <span className="flex min-w-0 items-center gap-2.5">
-                              <FolderPlus className="h-4 w-4 shrink-0 text-blue-500" />
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-semibold text-slate-900">{folderPath.split('/').filter(Boolean).pop() || 'Início'}</span>
-                                <span className="block truncate text-xs text-slate-400">{folderPath}</span>
-                              </span>
-                            </span>
-                            <ExternalLink className="h-4 w-4 shrink-0 text-slate-300" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Scanner uploads do portal */}
-                  {portalUser && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-indigo-500" />
-                        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Enviados pelo Scanner/Portal</p>
-                        {scannerUploadsLoaded && scannerUploads.length > 0 && (
-                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700">{scannerUploads.length}</span>
-                        )}
-                      </div>
-                      {scannerUploadsLoading ? (
-                        <div className="flex items-center gap-2 text-slate-400 py-3">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...
-                        </div>
-                      ) : scannerUploadsLoaded && scannerUploads.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
-                          Nenhum envio pelo scanner registrado
-                        </div>
-                      ) : scannerUploadsLoaded ? (
-                        <div className="space-y-1.5">
-                          {scannerUploads.map((u) => {
-                            const sizeLabel = u.size
-                              ? u.size > 1_048_576 ? `${(u.size / 1_048_576).toFixed(1)} MB` : `${Math.round(u.size / 1024)} KB`
-                              : null;
-                            return (
-                              <div key={u.messageId} className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2.5 flex items-center justify-between gap-3 group">
-                                <div className="min-w-0 flex items-center gap-2.5">
-                                  <FileText className="w-4 h-4 text-indigo-400 flex-shrink-0" />
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-semibold text-slate-800 truncate">{u.fileName}</p>
-                                    <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
-                                      {new Date(u.sentAt).toLocaleString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                      {sizeLabel && <span className="ml-1.5">{sizeLabel}</span>}
-                                    </p>
-                                  </div>
-                                </div>
-                                {u.signedUrl && (
-                                  <a
-                                    href={u.signedUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-indigo-600 transition-colors duration-100"
-                                  >
-                                    <ExternalLink className="w-3.5 h-3.5" /> Ver
-                                    <ChevronRight className="w-3.5 h-3.5 -ml-0.5" />
-                                  </a>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
-                          Abra esta aba para carregar os envios
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* ═══════════════════════════════════════════════════════════════════
-              TAB: ATENDIMENTO
-          ═══════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'atendimento' && (
-            <div className="space-y-3">
-              {portalDataLoading ? (
-                <div className="flex items-center gap-2 text-slate-400 py-4">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
-                </div>
-              ) : !portalUser ? (
-                <div className="rounded-2xl border border-dashed border-[#e7e5df] py-10 text-center">
-                  <MessageCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-slate-500">Portal não ativado</p>
-                  <p className="text-xs text-slate-400 mt-1">Este cliente não possui acesso ao portal do cliente.</p>
-                </div>
-              ) : clientChatRooms.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[#e7e5df] py-10 text-center">
-                  <MessageCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-slate-500">Nenhuma conversa iniciada</p>
-                  <p className="text-xs text-slate-400 mt-1">O cliente ainda não abriu uma conversa pelo portal.</p>
-                  <button
-                    onClick={() => navigateTo('chat')}
-                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-orange-600 hover:text-orange-800 hover:bg-orange-50 border border-orange-200 transition"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" /> Abrir Chat
-                  </button>
-                </div>
-              ) : (() => {
-                const room = clientChatRooms[0];
-                const isWaiting = !room.accepted_by && !!room.last_message_at && room.last_is_system !== true;
-                const isOpen = !!room.accepted_by;
-                const statusLabel = isWaiting ? 'Aguardando atendimento' : isOpen ? 'Em atendimento' : 'Sem conversas';
-                const statusCls = isWaiting
-                  ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200'
-                  : isOpen
-                    ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200'
-                    : 'bg-slate-100 text-slate-500 ring-1 ring-slate-200';
-                const stripCls = isWaiting ? 'bg-amber-400' : isOpen ? 'bg-emerald-400' : 'bg-slate-300';
-
-                return (
-                  <div className="rounded-xl bg-[#f8f7f5] shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] hover:border-slate-300 hover:shadow-md transition-all duration-150">
-                    <div className="px-4 pt-3.5 pb-3">
-                      {/* Row 1 — nome + status */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <MessageCircle className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                          <p className="text-[13px] font-bold text-slate-900 truncate">
-                            {room.name || 'Atendimento portal'}
-                          </p>
-                        </div>
-                        <span className={`flex-shrink-0 px-2 py-0.5 text-[10px] font-semibold rounded-md ${statusCls}`}>
-                          {statusLabel}
-                        </span>
-                      </div>
-
-                      {/* Row 2 — última atividade */}
-                      {room.last_message_at && (
-                        <div className="mt-2 flex items-center gap-1 text-[11px] text-slate-400">
-                          <Clock className="w-3 h-3 flex-shrink-0 text-slate-300" />
-                          {new Date(room.last_message_at).toLocaleString('pt-BR', {
-                            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                          })}
-                        </div>
-                      )}
-
-                      {/* Row 3 — ação */}
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          onClick={() => navigateTo('chat', { roomId: room.id } as any)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold transition"
-                        >
-                          <MessageCircle className="w-3.5 h-3.5" /> Abrir conversa
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* ═══════════════════════════════════════════════════════════════════
-              TAB: PORTAL
+              TAB: PORTAL — acesso, atendimento, conversas e notificações.
+              A aba "Atendimento" era um card só; virou a primeira seção daqui.
           ═══════════════════════════════════════════════════════════════════ */}
           {activeTab === 'portal' && (
-            <div className="space-y-4">
-              {/* ── Acesso ao portal ── */}
+            <div className="space-y-6">
               {portalDataLoading ? (
-                <div className="flex items-center gap-2 text-slate-400 py-4">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Carregando...
+                <div className="flex items-center gap-2 py-4 text-slate-400">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
                 </div>
               ) : !portalUser ? (
-                <div className="rounded-2xl border border-dashed border-[#e7e5df] py-10 text-center">
-                  <ShieldCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-slate-500">Portal não ativado</p>
-                  <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-                    Este cliente não possui cadastro no portal. O acesso é criado automaticamente no primeiro login.
-                  </p>
-                </div>
+                <Empty
+                  icon={ShieldCheck}
+                  title="Portal não ativado"
+                  hint="Este cliente ainda não tem cadastro no portal. O acesso é criado sozinho no primeiro login dele."
+                />
               ) : (
                 <>
-                  {/* ── Status compacto ── */}
-                  <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] px-4 py-3">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                          portalUser.is_active ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-100 text-red-600 ring-1 ring-red-200'
-                        }`}>
-                          {portalUser.is_active ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
-                          Portal {portalUser.is_active ? 'ativo' : 'inativo'}
-                        </span>
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                          pushActive ? 'bg-sky-100 text-sky-700 ring-1 ring-sky-200' : 'bg-slate-100 text-slate-500 ring-1 ring-slate-200'
-                        }`}>
-                          {pushActive ? <Bell className="w-3 h-3" /> : <BellOff className="w-3 h-3" />}
-                          Push {pushActive ? 'ativo' : 'inativo'}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] text-slate-400">Último acesso</p>
-                        <p className="text-xs font-semibold text-slate-700">
-                          {portalUser.last_login_at
-                            ? new Date(portalUser.last_login_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-                            : '—'}
-                        </p>
-                      </div>
+                  {/* ── Acesso ── */}
+                  <div className={`${SURFACE} flex flex-wrap items-center justify-between gap-3 px-4 py-3`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Chip tone={portalUser.is_active ? 'emerald' : 'rose'}>
+                        {portalUser.is_active ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                        Portal {portalUser.is_active ? 'ativo' : 'inativo'}
+                      </Chip>
+                      <Chip tone={pushActive ? 'sky' : 'slate'}>
+                        {pushActive ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
+                        Push {pushActive ? 'ativo' : 'inativo'}
+                      </Chip>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[11px] text-slate-400">Último acesso</p>
+                      <p className="text-[13px] font-semibold text-slate-700">
+                        {portalUser.last_login_at
+                          ? new Date(portalUser.last_login_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : '—'}
+                      </p>
                     </div>
                   </div>
 
-                  {/* ── Histórico de Conversas ── */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <MessageCircle className="w-4 h-4 text-slate-400" />
-                      <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Conversas</p>
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
-                        {clientChatRooms.length}
-                      </span>
-                    </div>
+                  {/* ── Atendimento em andamento ── */}
+                  <Section icon={MessageCircle} tone="orange" title="Atendimento">
                     {clientChatRooms.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
-                        Nenhuma conversa ainda
-                      </div>
+                      <Empty
+                        icon={MessageCircle}
+                        title="Nenhuma conversa iniciada"
+                        hint="O cliente ainda não abriu uma conversa pelo portal."
+                        action={
+                          <button
+                            onClick={() => navigateTo('chat')}
+                            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold text-orange-600 ring-1 ring-orange-200 transition hover:bg-orange-50"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" /> Abrir o Chat
+                          </button>
+                        }
+                      />
+                    ) : (() => {
+                      const room = clientChatRooms[0];
+                      const isWaiting = waitingChatRoom?.id === room.id;
+                      const isOpen = !!room.accepted_by;
+                      return (
+                        <div className={`${SURFACE} ${isWaiting ? 'ring-amber-200' : ''} flex flex-wrap items-center gap-3 p-3.5`}>
+                          <RowIcon tone={isWaiting ? 'amber' : isOpen ? 'emerald' : 'slate'}>
+                            <MessageCircle className="h-4 w-4" />
+                          </RowIcon>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-semibold text-slate-900">{room.name || 'Atendimento pelo portal'}</p>
+                            <p className="mt-0.5 text-[11px] text-slate-400">
+                              {isWaiting ? 'Cliente aguardando resposta' : isOpen ? 'Em atendimento' : 'Sem mensagens novas'}
+                              {room.last_message_at && <> · {new Date(room.last_message_at).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</>}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => navigateTo('chat', { roomId: room.id } as any)}
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition hover:bg-orange-600"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" /> Abrir conversa
+                          </button>
+                        </div>
+                      );
+                    })()}
+                  </Section>
+
+                  {/* ── Histórico de Conversas ── */}
+                  <Section icon={MessageCircle} title="Histórico de conversas" count={clientChatRooms.length}>
+                    {clientChatRooms.length === 0 ? (
+                      <Empty icon={MessageCircle} title="Nenhuma conversa ainda" />
                     ) : (
                       <div className="space-y-1.5">
                         {clientChatRooms.map((room, idx) => {
@@ -3912,7 +3901,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                               ? 'bg-emerald-100 text-emerald-700'
                               : 'bg-slate-100 text-slate-500';
                           return (
-                            <div key={room.id} className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] overflow-hidden">
+                            <div key={room.id} className={`${SURFACE} overflow-hidden`}>
                               <div
                                 role="button"
                                 tabIndex={0}
@@ -3988,48 +3977,31 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         })}
                       </div>
                     )}
-                  </div>
+                  </Section>
 
                   {/* ── Notificações do portal ── */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Bell className="w-4 h-4 text-slate-400" />
-                        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Notificações</p>
-                        {portalNotifsLoaded && (() => {
-                          const c = portalNotifications.filter(n => n.type !== 'chat_reply').length;
-                          return c > 0 ? (
-                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">{c}</span>
-                          ) : null;
-                        })()}
-                      </div>
-                      {portalNotifsLoaded && (() => {
-                        const c = portalNotifications.filter(n => n.type !== 'chat_reply').length;
-                        return c > 6 ? (
-                          <button onClick={() => setShowAllNotifs((v) => !v)} className="text-[11px] text-orange-500 hover:text-orange-700 font-semibold">
-                            {showAllNotifs ? 'Ver menos' : `Ver todas (${c})`}
-                          </button>
-                        ) : null;
-                      })()}
-                    </div>
+                  <Section
+                    icon={Bell}
+                    title="Notificações enviadas"
+                    count={portalNotifsLoaded ? portalNotifications.filter((n) => n.type !== 'chat_reply').length : undefined}
+                    action={portalNotifsLoaded && portalNotifications.filter((n) => n.type !== 'chat_reply').length > 6 ? (
+                      <button onClick={() => setShowAllNotifs((v) => !v)} className="text-[11px] font-semibold text-orange-500 transition hover:text-orange-700">
+                        {showAllNotifs ? 'Ver menos' : 'Ver todas'}
+                      </button>
+                    ) : undefined}
+                  >
                     {portalNotifsLoading ? (
-                      <div className="flex items-center gap-2 text-slate-400 py-3">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...
+                      <div className="flex items-center gap-2 py-3 text-slate-400">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
                       </div>
                     ) : portalNotifsLoaded && portalNotifications.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
-                        Nenhuma notificação enviada
-                      </div>
+                      <Empty icon={Bell} title="Nenhuma notificação enviada" />
                     ) : (
                       <div className="space-y-1">
                         {(() => {
                           const filtered = portalNotifications.filter((n) => n.type !== 'chat_reply');
                           const visible = showAllNotifs ? filtered : filtered.slice(0, 6);
-                          if (filtered.length === 0) return (
-                            <div className="rounded-xl border border-dashed border-[#e7e5df] py-4 text-center text-slate-400 text-sm">
-                              Nenhuma notificação relevante
-                            </div>
-                          );
+                          if (filtered.length === 0) return <Empty icon={Bell} title="Nenhuma notificação relevante" />;
                           return visible.map((n) => {
                           const NOTIF_ICONS: Record<string, string> = {
                             profile_update_approved: '✅',
@@ -4068,23 +4040,14 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         })()}
                       </div>
                     )}
-                  </div>
+                  </Section>
 
                   {/* ── Solicitações de atualização cadastral ── */}
                   {(profileReqLoading || profileReqs.length > 0) && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <UserCheck className="w-4 h-4 text-slate-400" />
-                        <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Solicitações Cadastrais</p>
-                        {profileReqs.length > 0 && (
-                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
-                            {profileReqs.filter((r) => r.status === 'pending').length} pendente{profileReqs.filter((r) => r.status === 'pending').length !== 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </div>
+                    <Section icon={UserCheck} title="Solicitações cadastrais" count={profileReqs.length}>
                       {profileReqLoading ? (
-                        <div className="flex items-center gap-2 text-slate-400 py-3">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando...
+                        <div className="flex items-center gap-2 py-3 text-slate-400">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Carregando...
                         </div>
                       ) : (
                         <div className="space-y-1.5">
@@ -4097,7 +4060,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             const reqStatusLabel = req.status === 'pending' ? 'Pendente' : req.status === 'approved' ? 'Aprovado' : 'Rejeitado';
                             const changedFields = Object.keys(req.changes).length;
                             return (
-                              <div key={req.id} className="rounded-xl border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2.5 flex items-center justify-between gap-3">
+                              <div key={req.id} className={`${SURFACE} flex items-center justify-between gap-3 px-3.5 py-2.5`}>
                                 <div className="min-w-0">
                                   <p className="text-xs font-semibold text-slate-800">
                                     {changedFields} campo{changedFields !== 1 ? 's' : ''} alterado{changedFields !== 1 ? 's' : ''}
@@ -4114,7 +4077,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                           })}
                         </div>
                       )}
-                    </div>
+                    </Section>
                   )}
                 </>
               )}

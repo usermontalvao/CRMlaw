@@ -202,46 +202,6 @@ const forceRulerVisibility = (container: any, show: boolean) => {
   }
 };
 
-const stabilizeDarkModeScrollRendering = (editor: any): (() => void) | null => {
-  try {
-    const helper = editor?.documentHelper as any;
-    const viewer = helper?.viewerContainer as HTMLElement | undefined;
-    if (!helper || !viewer || typeof helper.clearContent !== 'function') return null;
-
-    const originalClearContent = helper.clearContent.bind(helper);
-    let handlingScroll = false;
-    let releaseFrame = 0;
-
-    // O listener em capture roda antes do handler interno do Syncfusion.
-    // Durante esse mesmo evento preservamos o canvas anterior até que
-    // updateScrollBars pinte a nova região visível.
-    const markScrollFrame = () => {
-      handlingScroll = true;
-      if (releaseFrame) window.cancelAnimationFrame(releaseFrame);
-      releaseFrame = window.requestAnimationFrame(() => {
-        handlingScroll = false;
-        releaseFrame = 0;
-      });
-    };
-
-    const stableClearContent = (...args: any[]) => {
-      if (handlingScroll && document.body.classList.contains('petition-dark')) return;
-      return originalClearContent(...args);
-    };
-
-    viewer.addEventListener('scroll', markScrollFrame, { capture: true, passive: true });
-    helper.clearContent = stableClearContent;
-
-    return () => {
-      viewer.removeEventListener('scroll', markScrollFrame, true);
-      if (releaseFrame) window.cancelAnimationFrame(releaseFrame);
-      if (helper.clearContent === stableClearContent) helper.clearContent = originalClearContent;
-    };
-  } catch {
-    return null;
-  }
-};
-
 const pinHorizontalRulerToViewport = (editor: any): (() => void) | null => {
   try {
     const root = editor?.element as HTMLElement | undefined;
@@ -1822,8 +1782,8 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const contextMenuRecoveryTimersRef = useRef<number[]>([]);
     const createdRef = useRef(false);
     const pendingActionsRef = useRef<(() => void)[]>([]);
-    const scrollStabilizerCleanupRef = useRef<(() => void) | null>(null);
     const pinnedRulerCleanupRef = useRef<(() => void) | null>(null);
+    const resizeObserverRef = useRef<(() => void) | null>(null);
     const lastContextMenuPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
     const scannerRef = useRef<{ trigger: () => void; cancel: () => void } | null>(null);
     const sentenceAnalysisTimerRef = useRef<number | null>(null);
@@ -1966,10 +1926,10 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         sentenceAnalysisRequestIdRef.current += 1;
         const editor: any = containerRef.current?.documentEditor as any;
         if (editor) clearInjectedContextualErrors(editor, false);
-        scrollStabilizerCleanupRef.current?.();
-        scrollStabilizerCleanupRef.current = null;
         pinnedRulerCleanupRef.current?.();
         pinnedRulerCleanupRef.current = null;
+        resizeObserverRef.current?.();
+        resizeObserverRef.current = null;
         // Fechar a aba sem sair da sala deixaria o servidor achando que ainda
         // há alguém editando (e adiaria a gravação no Nextcloud).
         void collabConnectionRef.current?.stop();
@@ -3798,7 +3758,22 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           if (editor?.spellChecker) {
             editor.spellChecker.languageID = 1046; // Português (Brasil)
             editor.spellChecker.allowSpellCheckAndSuggestion = true;
-            editor.spellChecker.doOptimizedSpellCheck = true;
+            // CHECK POR PÁGINA DESLIGADO — é o que fazia a página "sumir" no scroll.
+            //
+            // Com `enableOptimizedSpellCheck` (padrão do Syncfusion), `addVisiblePage`
+            // NÃO desenha a página: ela só é pintada dentro do `.then()` do check da
+            // página inteira. Como o handler de rolagem apaga o canvas ANTES disso
+            // (`clearContent` → `updateScrollBars`), a faixa que acabou de entrar na
+            // tela fica em branco até a resposta chegar — topo e rodapé sumindo,
+            // exatamente o sintoma relatado. Medido na bancada `src/dev/scrollRepro.ts`:
+            // tinta no canvas ao fim do handler = 0 com o modo otimizado e = valor
+            // final sem ele, com o mesmo resultado depois de assentar.
+            //
+            // Sem o modo otimizado o Syncfusion volta a checar palavra a palavra —
+            // que é como o nosso Hunspell local trabalha —, o sublinhado chega igual
+            // (abertura do documento, digitação e `rescanSpelling`) e o desenho da
+            // página deixa de esperar por corretor nenhum.
+            editor.spellChecker.enableOptimizedSpellCheck = false;
             // Peças jurídicas têm muitas siglas/cabeçalhos em caixa alta (TST,
             // CLT, RECLAMATÓRIA…) — não marcar palavras 100% maiúsculas.
             editor.spellChecker.ignoreUppercase = true;
@@ -3856,11 +3831,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           // ignore
         }
 
-        // Evita o flash/vazio do canvas em rolagens rápidas no modo escuro.
-        // O Syncfusion limpa o conteúdo antes de recalcular as páginas visíveis;
-        // em zoom alto esse intervalo se torna perceptível.
-        scrollStabilizerCleanupRef.current?.();
-        scrollStabilizerCleanupRef.current = stabilizeDarkModeScrollRendering(editor);
         pinnedRulerCleanupRef.current?.();
         pinnedRulerCleanupRef.current = pinHorizontalRulerToViewport(editor);
 
@@ -4028,20 +3998,44 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
 
       // ResizeObserver: observa o container E seus wrappers externos, para remedir a folha
       // sempre que o layout mudar (sidebar, fullscreen, ribbon, janela) — não só o elemento interno.
+      //
+      // `resize()` é caro: refaz o layout do documento inteiro. Como três
+      // elementos são observados, o callback chegava até três vezes por
+      // mudança, cada uma disparando um relayout completo. Aqui ele só roda
+      // quando as dimensões MUDARAM de verdade, e no máximo uma vez por quadro
+      // — nunca no meio de uma rolagem, que não altera dimensão nenhuma.
       const rootEl = containerRef.current?.element;
       if (rootEl && typeof ResizeObserver !== 'undefined') {
+        let lastWidth = 0;
+        let lastHeight = 0;
+        let scheduled = 0;
+
         const observer = new ResizeObserver(() => {
-          const ed: any = containerRef.current?.documentEditor as any;
-          if (ed && typeof ed.resize === 'function') {
+          const width = rootEl.clientWidth;
+          const height = rootEl.clientHeight;
+          if (width === lastWidth && height === lastHeight) return;
+          lastWidth = width;
+          lastHeight = height;
+
+          if (scheduled) window.cancelAnimationFrame(scheduled);
+          scheduled = window.requestAnimationFrame(() => {
+            scheduled = 0;
+            const ed: any = containerRef.current?.documentEditor as any;
+            if (!ed || typeof ed.resize !== 'function') return;
             ed.resize();
             if (pageFit && typeof ed.fitPage === 'function') {
               ed.fitPage(pageFit as any);
             }
-          }
+          });
         });
+
         observer.observe(rootEl);
         if (rootEl.parentElement) observer.observe(rootEl.parentElement);
         if (rootEl.parentElement?.parentElement) observer.observe(rootEl.parentElement.parentElement);
+        resizeObserverRef.current = () => {
+          observer.disconnect();
+          if (scheduled) window.cancelAnimationFrame(scheduled);
+        };
       }
 
       // Alguns builds do Syncfusion iniciam o contextMenu alguns ticks depois

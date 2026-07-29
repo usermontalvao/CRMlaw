@@ -100,7 +100,8 @@ import { useToastContext } from '../contexts/ToastContext';
 import { supabase } from '../config/supabase';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 import PetitionAiChat from './PetitionAiChat';
-import PetitionStatusBar from './petition/PetitionStatusBar';
+import PetitionLiveStatusBar from './petition/PetitionLiveStatusBar';
+import { createPetitionDocStatusStore } from './petition/petitionDocStatus';
 import PetitionFindReplacePanel from './petition/PetitionFindReplacePanel';
 import PetitionProofreaderPanel from './petition/PetitionProofreaderPanel';
 import { moveCursorToSmartEnd } from '../utils/petitionSmartInsert';
@@ -521,12 +522,18 @@ const EDITOR_STYLES = `
 
   /* ========== VIEWER DA FOLHA (Area Central) ========== */
   
-  /* Container do viewer - deve encolher para caber */
+  /* Container do viewer - deve encolher para caber.
+     overflow: hidden de propósito: QUEM ROLA O DOCUMENTO É UM CONTAINER SÓ,
+     o viewerContainer do Syncfusion. Com "auto" aqui, este elemento — que é
+     ancestral do viewer — vira um segundo container rolável; na rolagem por
+     inércia do macOS a rolagem encadeia entre os dois e a folha se desloca em
+     relação à régua. */
   .syncfusion-editor-wrapper .e-de-ctn {
     flex: 1 1 auto !important;
     min-width: 0 !important;
+    min-height: 0 !important;
     max-width: 100% !important;
-    overflow: auto !important;
+    overflow: hidden !important;
     background: #eef0f3 !important;
   }
 
@@ -563,9 +570,22 @@ const EDITOR_STYLES = `
     min-height: 100% !important;
   }
 
-  #petition-main-editor .e-de-background canvas {
-    filter: drop-shadow(0 2px 5px rgba(15, 23, 42, 0.16));
-  }
+  /* NÃO aplicar filter (drop-shadow, blur…) neste canvas.
+     -----------------------------------------------------------------------
+     Era a causa da deformação das bordas na rolagem rápida com inversão de
+     sentido. O Syncfusion repinta este canvas a CADA evento de rolagem, e o
+     canvas é TRANSPARENTE fora da folha — medido: 18,5 px totalmente
+     transparentes no vão entre duas páginas. Um drop-shadow é calculado a
+     partir dessa silhueta de transparência, então a sombra existe exatamente
+     na borda superior, na borda inferior e no vão entre páginas. Como o filtro
+     obriga o Chrome a rasterizar uma camada composta à parte a cada repintura,
+     nas rolagens rápidas a sombra e o conteúdo do canvas chegam à tela em
+     quadros diferentes — a borda aparece esticada/duplicada/deslocada,
+     enquanto o texto (no miolo, longe da sombra) continua correto.
+
+     A folha continua delimitada pelo contorno que o próprio Syncfusion desenha
+     DENTRO do canvas (pageOutline, um strokeRect por página): mesma função
+     visual, sem camada de filtro e sem custo por quadro. */
 
   .syncfusion-editor-wrapper .e-de-page-container {
     width: 100% !important;
@@ -807,6 +827,11 @@ const EDITOR_STYLES = `
   body.petition-dark .syncfusion-editor-wrapper .e-de-background {
     background: #252525 !important;
   }
+  /* Único filter que sobrevive no canvas — e só porque é per-pixel puro
+     (invert/hue-rotate não leem pixels vizinhos, não criam geometria fora do
+     canvas e por isso não deslocam borda nenhuma). NÃO acrescentar aqui nada
+     baseado em desfoque — drop-shadow, blur — pelo motivo explicado na regra
+     do modo claro. */
   body.petition-dark .syncfusion-editor-wrapper .e-de-background canvas {
     filter: invert(0.92) hue-rotate(180deg);
   }
@@ -2574,17 +2599,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [blockEditorReady, setBlockEditorReady] = useState(false);
   const [blockEditorDirty, setBlockEditorDirty] = useState(false);
   const [blockFindReplaceMode, setBlockFindReplaceMode] = useState<'find' | 'replace' | null>(null);
-  const [blockDocStatus, setBlockDocStatus] = useState<{
-    page: number;
-    pageCount: number;
-    zoom: number;
-    layout: 'Pages' | 'Continuous';
-  }>({
-    page: 1,
-    pageCount: 1,
-    zoom: 1,
-    layout: 'Pages',
-  });
+  const blockDocStatusStore = useRef(createPetitionDocStatusStore()).current;
   const [blockWordCount, setBlockWordCount] = useState(0);
   const blockWordCountTimerRef = useRef<number | null>(null);
   const [selectionToCreateBlock, setSelectionToCreateBlock] = useState<{ sfdt: string; text: string } | null>(null);
@@ -2755,7 +2770,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     setBlockEditorReady(false);
     setBlockEditorDirty(false);
     setBlockFindReplaceMode(null);
-    setBlockDocStatus({ page: 1, pageCount: 1, zoom: 1, layout: 'Pages' });
+    blockDocStatusStore.set({ page: 1, pageCount: 1, zoom: 1, layout: 'Pages' });
     setBlockWordCount(0);
     setBlockStandardTypeLoading(false);
 
@@ -4946,13 +4961,11 @@ Regras:
 
   // Handler de mudança de conteudo do editor
   // ── Status bar (página, palavras, zoom, modo) ─────────────────────────────
-  const [docStatus, setDocStatus] = useState<{ page: number; pageCount: number; zoom: number; layout: 'Pages' | 'Continuous' }>({
-    page: 1,
-    pageCount: 1,
-    zoom: 1,
-    layout: 'Pages',
-  });
+  const docStatusStore = useRef(createPetitionDocStatusStore()).current;
   const [wordCount, setWordCount] = useState(0);
+  /** Total de páginas para o assistente de IA — atualizado no debounce da
+   *  contagem de palavras, NÃO a cada rolagem (ver petitionDocStatus.ts). */
+  const [aiPageCount, setAiPageCount] = useState(1);
   const [aiSelectedText, setAiSelectedText] = useState('');
   const [aiHasDocumentContent, setAiHasDocumentContent] = useState(false);
   const wordCountTimerRef = useRef<number | null>(null);
@@ -4964,15 +4977,11 @@ Regras:
       const info = editor.getPageInfo();
       const zoom = editor.getZoom();
       const layout = editor.getLayoutType();
-      setDocStatus((prev) => (
-        prev.page === info.current && prev.pageCount === info.total && prev.zoom === zoom && prev.layout === layout
-          ? prev
-          : { page: info.current, pageCount: info.total, zoom, layout }
-      ));
+      docStatusStore.set({ page: info.current, pageCount: info.total, zoom, layout });
     } catch {
       // ignore
     }
-  }, []);
+  }, [docStatusStore]);
 
   /** Recontagem de palavras com debounce — a travessia do modelo é barata, mas
    *  não precisa rodar a cada tecla. */
@@ -4984,6 +4993,7 @@ Regras:
         const nextWordCount = editor?.getWordCount?.() ?? 0;
         const pageCount = editor?.getPageInfo?.().total ?? 1;
         setWordCount(nextWordCount);
+        setAiPageCount(pageCount);
         setAiHasDocumentContent(
           nextWordCount > 0
           || pageCount > 1
@@ -5006,18 +5016,11 @@ Regras:
       const info = editor.getPageInfo();
       const zoom = editor.getZoom();
       const layout = editor.getLayoutType();
-      setBlockDocStatus((prev) => (
-        prev.page === info.current
-        && prev.pageCount === info.total
-        && prev.zoom === zoom
-        && prev.layout === layout
-          ? prev
-          : { page: info.current, pageCount: info.total, zoom, layout }
-      ));
+      blockDocStatusStore.set({ page: info.current, pageCount: info.total, zoom, layout });
     } catch {
       // ignore
     }
-  }, []);
+  }, [blockDocStatusStore]);
 
   const scheduleBlockWordCount = useCallback((delayMs = 500) => {
     if (blockWordCountTimerRef.current) window.clearTimeout(blockWordCountTimerRef.current);
@@ -9897,9 +9900,12 @@ Regras:
         )}
 
         {/* Area do Editor Syncfusion */}
+        {/* min-h-0: sem isso um filho de coluna flex nunca encolhe abaixo do
+            conteúdo, e a área do editor passa da altura do pai — quem tem de
+            rolar é só o viewer do Syncfusion, nunca um wrapper. */}
         <div
-          className="syncfusion-editor-wrapper relative flex-1 min-w-0 flex flex-col overflow-hidden"
-          style={{ flex: '1 1 0%', minWidth: 0, width: '100%' }}
+          className="syncfusion-editor-wrapper relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
+          style={{ flex: '1 1 0%', minWidth: 0, minHeight: 0, width: '100%' }}
         >
           {/* Banner de conexao: internet caiu ou servidor inacessivel */}
           {(!isOnline || !serverReachable) && (
@@ -10074,8 +10080,8 @@ Regras:
             disabledReason="Voce esta offline. Reconecte para usar o assistente."
             selectedText={aiSelectedText}
             documentWordCount={wordCount}
-            documentHasContent={aiHasDocumentContent || wordCount > 0 || docStatus.pageCount > 1}
-            documentPageCount={docStatus.pageCount}
+            documentHasContent={aiHasDocumentContent || wordCount > 0 || aiPageCount > 1}
+            documentPageCount={aiPageCount}
             suggestedArea={selectedLegalArea?.name}
             suggestedDocumentType={DOCUMENT_TYPE_BRIEFING_LABELS[selectedDocumentType]}
           />
@@ -10104,16 +10110,13 @@ Regras:
 
         {/* Status bar estilo Word: página, palavras, modos e zoom */}
         {activeWorkspace === 'editor' && editorReady && (
-          <PetitionStatusBar
-            page={docStatus.page}
-            pageCount={docStatus.pageCount}
+          <PetitionLiveStatusBar
+            store={docStatusStore}
             words={wordCount}
-            zoom={docStatus.zoom}
             onZoomChange={(zoom) => {
               editorRef.current?.setZoom(zoom);
               refreshDocStatus();
             }}
-            layout={docStatus.layout}
             onLayoutChange={(layout) => {
               editorRef.current?.setLayoutType(layout);
               refreshDocStatus();
@@ -11137,16 +11140,13 @@ Regras:
             </div>
 
             {blockEditorReady && (
-              <PetitionStatusBar
-                page={blockDocStatus.page}
-                pageCount={blockDocStatus.pageCount}
+              <PetitionLiveStatusBar
+                store={blockDocStatusStore}
                 words={blockWordCount}
-                zoom={blockDocStatus.zoom}
                 onZoomChange={(zoom) => {
                   blockEditorRef.current?.setZoom(zoom);
                   refreshBlockDocStatus();
                 }}
-                layout={blockDocStatus.layout}
                 onLayoutChange={(layout) => {
                   blockEditorRef.current?.setLayoutType(layout);
                   refreshBlockDocStatus();

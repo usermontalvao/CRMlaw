@@ -1,7 +1,18 @@
 import type { Client } from '../types/client.types';
 import { normalizeSearchText } from './search';
+import { isCertainDuplicate, looksLikeCpfTypo, needsAiJudgement } from './clientDuplicateGating';
 
-export type DuplicateReason = 'CPF igual' | 'Telefone igual' | 'Nome igual' | 'E-mail igual';
+// A decisão de quando acionar a IA mora em `clientDuplicateGating` (módulo sem
+// dependências, coberto por testes) e é reexportada daqui por conveniência.
+export { isCertainDuplicate, needsAiJudgement, cpfTypoDistance } from './clientDuplicateGating';
+
+export type DuplicateReason =
+  | 'CPF igual'
+  | 'Telefone igual'
+  | 'Nome igual'
+  | 'E-mail igual'
+  /** Mesma pessoa provável com CPF digitado errado (difere por 1 ou 2 dígitos). */
+  | 'CPF parecido';
 
 export interface DuplicateGroup {
   key: string;
@@ -98,9 +109,8 @@ export const buildDuplicateGroups = (clients: Client[], includeInactive = false)
       const cpfB = normalizeDigits(b.cpf_cnpj);
       // CPFs must be at least 11 digits to count (avoid matching empty strings)
       const sameCpf = cpfA.length >= 11 && cpfA === cpfB;
-      // Explicit CPF conflict → definitely different people, skip entirely
-      const differentCpf = cpfA.length >= 11 && cpfB.length >= 11 && cpfA !== cpfB;
-      if (differentCpf) continue;
+      const bothHaveCpf = cpfA.length >= 11 && cpfB.length >= 11;
+      const differentCpf = bothHaveCpf && cpfA !== cpfB;
 
       const samePhone = getPrimaryPhone(a) !== '' && getPrimaryPhone(a) === getPrimaryPhone(b);
       const sameName = normalizeSearchText(a.full_name) !== '' && normalizeSearchText(a.full_name) === normalizeSearchText(b.full_name);
@@ -109,7 +119,16 @@ export const buildDuplicateGroups = (clients: Client[], includeInactive = false)
         !isBlank(b.email) &&
         a.email!.toLowerCase().trim() === b.email!.toLowerCase().trim();
 
+      // CPF diferente normalmente significa gente diferente — mas quando o nome
+      // bate exatamente E o contato bate, o mais provável é CPF digitado errado
+      // (um dígito trocado). Esse caso não é decidido no chute: entra no grupo
+      // marcado como suspeita, para a IA julgar antes de qualquer mesclagem.
+      const likelyCpfTypo =
+        differentCpf && looksLikeCpfTypo({ cpfA, cpfB, sameName, sameContact: samePhone || sameEmail });
+      if (differentCpf && !likelyCpfTypo) continue;
+
       if (sameCpf) reasons.push('CPF igual');
+      if (likelyCpfTypo) reasons.push('CPF parecido');
       if (samePhone) reasons.push('Telefone igual');
       if (sameName) reasons.push('Nome igual');
       if (sameEmail) reasons.push('E-mail igual');
@@ -118,7 +137,7 @@ export const buildDuplicateGroups = (clients: Client[], includeInactive = false)
       // • Same CPF (strong signal)
       // • Same name + another signal (phone or email)
       // • Same name alone — very common in legal systems with same person entered multiple times
-      const shouldGroup = sameCpf || sameEmail || (sameName && samePhone) || sameName;
+      const shouldGroup = sameCpf || sameEmail || (sameName && samePhone) || sameName || likelyCpfTypo;
       if (!shouldGroup) continue;
 
       union(a.id, b.id);
@@ -150,9 +169,12 @@ export const buildDuplicateGroups = (clients: Client[], includeInactive = false)
 
       const reasonsArr = Array.from(reasons);
 
-      // Confidence: alta if CPF or email match, media if name+phone, baixa if name only
+      // Confidence: alta if CPF or email match, media if name+phone, baixa if name only.
+      // 'CPF parecido' nunca é alta: é suspeita de erro de digitação, não certeza.
       let confidence: 'alta' | 'media' | 'baixa' = 'baixa';
-      if (reasonsArr.includes('CPF igual') || reasonsArr.includes('E-mail igual')) {
+      if (reasonsArr.includes('CPF parecido')) {
+        confidence = 'media';
+      } else if (reasonsArr.includes('CPF igual') || reasonsArr.includes('E-mail igual')) {
         confidence = 'alta';
       } else if (reasonsArr.includes('Telefone igual')) {
         confidence = 'media';

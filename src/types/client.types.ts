@@ -49,6 +49,10 @@ export interface Client {
   updated_at: string;
   created_by?: string;
   updated_by?: string;
+
+  /** Preenchido quando este cadastro foi absorvido por outro na mesclagem de
+   *  duplicados. Registros assim ficam fora das listagens e da busca. */
+  merged_into_client_id?: string | null;
 }
 
 export interface CreateClientDTO {

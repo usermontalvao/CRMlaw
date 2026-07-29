@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   Search, X, FileText, Users, Loader2, ChevronRight, ChevronLeft, ArrowRight,
+  File,
   ClipboardList, Calendar, CheckSquare, AlarmClock, DollarSign, FolderOpen,
   Clock, Zap, Gavel, PenTool, Sparkles, CornerDownLeft, LayoutGrid,
   Phone, Mail, Hash, Building2, Tag, User, CreditCard, Copy, Check,
@@ -20,6 +21,8 @@ import { deadlineService } from '../services/deadline.service';
 import { financialService } from '../services/financial.service';
 import { cloudService } from '../services/cloud.service';
 import { signatureService } from '../services/signature.service';
+import { nextcloudService } from '../services/nextcloud.service';
+import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch } from '../utils/search';
 import type { Client } from '../types/client.types';
 
@@ -83,6 +86,17 @@ async function getSearchData(force = false): Promise<SearchData> {
 // Invalidar cache ao abrir (pre-warm na abertura)
 export function invalidateSearchCache() { _cache = null; }
 
+// A busca guardava os dados por 5 minutos e ninguém derrubava esse cache quando
+// algo mudava. Depois de mesclar dois clientes duplicados, por exemplo, a busca
+// continuava listando os dois até o cache vencer sozinho — parecia que a
+// mesclagem não tinha funcionado. Agora qualquer mudança nas entidades
+// pesquisáveis invalida o cache na hora.
+[
+  SYSTEM_EVENTS.CLIENTS_CHANGED,
+  SYSTEM_EVENTS.PROCESSES_CHANGED,
+  SYSTEM_EVENTS.CLOUD_CHANGED,
+].forEach((evt) => events.on(evt, () => { _cache = null; }));
+
 // Invalida automaticamente o cache quando o tab fica visível após longa inatividade (>4 min)
 let _hiddenAt = 0;
 if (typeof document !== 'undefined') {
@@ -101,7 +115,8 @@ if (typeof document !== 'undefined') {
 
 type ResultType =
   | 'cliente' | 'processo' | 'processo-via-cliente' | 'intimacao'
-  | 'requerimento' | 'prazo' | 'agenda' | 'tarefa' | 'financeiro' | 'cloud' | 'assinatura';
+  | 'requerimento' | 'prazo' | 'agenda' | 'tarefa' | 'financeiro' | 'cloud' | 'assinatura'
+  | 'nextcloud';
 
 interface DetailRow { icon: React.ElementType; label: string; value: string }
 
@@ -116,6 +131,8 @@ interface SearchResult {
   navParams?: Record<string, string>;
   details?: DetailRow[];
   clientPhotoPath?: string | null;
+  icon?: React.ElementType;
+  typeLabel?: string;
 }
 
 interface GlobalSearchModalProps {
@@ -191,12 +208,13 @@ const TYPE_CONFIG: Record<ResultType, {
   financeiro:            { label: 'Financeiro',   icon: DollarSign,    color: 'text-emerald-600 bg-emerald-50', border: 'border-emerald-200', group: 'Financeiro'    },
   cloud:                 { label: 'Pasta',        icon: FolderOpen,    color: 'text-indigo-600 bg-indigo-50',   border: 'border-indigo-200',  group: 'Cloud'         },
   assinatura:            { label: 'Assinatura',   icon: PenTool,       color: 'text-violet-600 bg-violet-50',   border: 'border-violet-200',  group: 'Assinaturas'   },
+  nextcloud:             { label: 'Arquivo',      icon: FolderOpen,    color: 'text-blue-600 bg-blue-50',       border: 'border-blue-200',    group: 'Nextcloud'     },
 };
 
 // Intimações removidas da exibição (ainda carregadas para extrair partes dos processos)
 const GROUP_ORDER: ResultType[] = [
   'cliente', 'processo', 'processo-via-cliente', 'requerimento', 'prazo',
-  'agenda', 'tarefa', 'financeiro', 'cloud', 'assinatura',
+  'agenda', 'tarefa', 'financeiro', 'cloud', 'nextcloud', 'assinatura',
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -219,6 +237,16 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
 
 const fmtDate = (iso?: string | null) =>
   iso ? new Date(iso + (iso.length === 10 ? 'T12:00:00' : '')).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+
+const fmtDateTime = (iso?: string | null) => {
+  if (!iso) return '';
+  const date = new Date(iso + (iso.length === 10 ? 'T12:00:00' : ''));
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+};
 
 const AVATAR_PALETTE = [
   '#475569','#6366f1','#0891b2','#059669','#7c3aed',
@@ -326,6 +354,7 @@ const TYPE_MODULE: Record<string, string> = {
   tarefa:               'tarefas',
   financeiro:           'financeiro',
   cloud:                'documentos',
+  nextcloud:            'cloud',
   assinatura:           'assinaturas',
 };
 
@@ -340,6 +369,7 @@ const TYPE_NAV: Record<string, string> = {
   tarefa:               'tarefas',
   financeiro:           'financeiro',
   cloud:                'cloud',
+  nextcloud:            'nextcloud',
   assinatura:           'assinaturas',
 };
 
@@ -355,6 +385,7 @@ const SIDEBAR_MODULES: Array<{ key: ResultType | 'all'; label: string; icon: Rea
   { key: 'tarefa',       label: 'Tarefas',       icon: CheckSquare,   mod: 'tarefas' },
   { key: 'financeiro',   label: 'Financeiro',    icon: DollarSign,    mod: 'financeiro' },
   { key: 'cloud',        label: 'Cloud',         icon: FolderOpen,    mod: 'cloud' },
+  { key: 'nextcloud',    label: 'Nextcloud',     icon: FolderOpen,    mod: 'nextcloud' },
   { key: 'assinatura',   label: 'Assinaturas',   icon: PenTool,       mod: 'assinaturas' },
 ];
 
@@ -384,6 +415,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   const [activeFilter, setActiveFilter] = useState<ResultType | 'all'>('all');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
+  // Resultados do Nextcloud chegam por fora (busca remota), depois dos locais.
+  const [ncResults, setNcResults] = useState<SearchResult[]>([]);
+  const [ncLoading, setNcLoading] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState<boolean>(() => {
     try { return localStorage.getItem('gsLayout_sidebar') !== 'false'; } catch { return true; }
   });
@@ -428,6 +462,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     if (open) {
       setQuery('');
       setResults([]);
+      setNcResults([]);
+      setNcLoading(false);
       setSelected(0);
       setActiveFilter('all');
       setRecentSearches(loadRecent(userId));
@@ -492,6 +528,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
             c.cpf_cnpj ? { icon: CreditCard, label: c.cpf_cnpj.replace(/\D/g,'').length === 14 ? 'CNPJ' : 'CPF', value: fmtCPF(c.cpf_cnpj) } : null,
             c.phone    ? { icon: Phone,      label: 'Telefone',  value: fmtPhone(c.phone) }  : null,
             c.email    ? { icon: Mail,        label: 'E-mail',    value: c.email }             : null,
+            c.created_at ? { icon: Clock, label: 'Cadastrado em', value: fmtDateTime(c.created_at) } : null,
           ].filter(Boolean) as DetailRow[],
           clientPhotoPath: c.photo_path ?? null,
         }));
@@ -545,6 +582,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
               pts?.polo_passivo                       ? { icon: Scale,    label: 'Polo Passivo', value: pts.polo_passivo }                            : null,
               p.court                                 ? { icon: Building2, label: 'Comarca',      value: p.court }                                     : null,
               p.status                                ? { icon: Tag,       label: 'Status',       value: p.status }                                     : null,
+              p.practice_area                         ? { icon: Gavel,     label: 'Área',         value: p.practice_area }                              : null,
+              p.distributed_at                        ? { icon: Calendar,  label: 'Distribuído em', value: fmtDate(p.distributed_at) }                   : null,
+              p.created_at                            ? { icon: Clock,     label: 'Criado em',     value: fmtDateTime(p.created_at) }                    : null,
             ].filter(Boolean) as DetailRow[],
           };
         });
@@ -580,6 +620,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                 pts2?.polo_passivo                       ? { icon: Scale,     label: 'Polo Passivo', value: pts2.polo_passivo }                            : null,
                 p.court                                  ? { icon: Building2, label: 'Comarca',      value: p.court }                                       : null,
                 p.status                                 ? { icon: Tag,       label: 'Status',       value: p.status }                                       : null,
+                p.practice_area                          ? { icon: Gavel,     label: 'Área',         value: p.practice_area }                                : null,
+                p.distributed_at                         ? { icon: Calendar,  label: 'Distribuído em', value: fmtDate(p.distributed_at) }                     : null,
+                p.created_at                             ? { icon: Clock,     label: 'Criado em',     value: fmtDateTime(p.created_at) }                      : null,
               ].filter(Boolean) as DetailRow[];
             })(),
           };
@@ -615,6 +658,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
             r.cpf          ? { icon: CreditCard, label: 'CPF',       value: fmtCPF(r.cpf) }                      : null,
             r.benefit_type ? { icon: Tag,        label: 'Benefício', value: BENEFIT_LABELS[r.benefit_type] ?? r.benefit_type } : null,
             r.protocol     ? { icon: Hash,       label: 'Protocolo', value: r.protocol }                          : null,
+            r.status       ? { icon: Tag,        label: 'Status',    value: r.status }                            : null,
+            r.entry_date   ? { icon: Calendar,   label: 'Entrada',   value: fmtDate(r.entry_date) }               : null,
+            r.created_at   ? { icon: Clock,      label: 'Criado em', value: fmtDateTime(r.created_at) }           : null,
           ].filter(Boolean) as DetailRow[],
         }));
 
@@ -646,34 +692,81 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
               client?.full_name ? { icon: User,      label: 'Cliente',     value: client.full_name }                                : null,
               { icon: AlarmClock, label: 'Vencimento', value: fmtDate(d.due_date) + (isOverdue ? ' · VENCIDO ⚠' : '') },
               d.status          ? { icon: Tag,         label: 'Status',      value: d.status }                                       : null,
+              d.priority        ? { icon: Zap,         label: 'Prioridade',  value: d.priority }                                     : null,
+              d.description     ? { icon: FileText,    label: 'Descrição',   value: d.description }                                  : null,
+              d.created_at      ? { icon: Clock,       label: 'Criado em',   value: fmtDateTime(d.created_at) }                       : null,
             ].filter(Boolean) as DetailRow[],
           };
         });
 
-      // ── Agenda (apenas futuros) ───────────────────────────────────────────
+      // ── Agenda ────────────────────────────────────────────────────────────
+      // Antes: só compromissos futuros, e o dedup usava título+data+cliente —
+      // duas audiências no mesmo dia em horários diferentes viravam uma só.
+      // Agora a hora entra na chave (e na tela), e os passados também aparecem,
+      // depois dos futuros.
+      const eventTime = (e: { start_at: string }) => {
+        if (!e.start_at.includes('T')) return null;
+        const d = new Date(e.start_at);
+        if (isNaN(d.getTime())) return null;
+        if (d.getHours() === 0 && d.getMinutes() === 0) return null;
+        return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      };
       const agendaResults: SearchResult[] = events
-        .filter(e => e.start_at.slice(0, 10) >= today)
-        .map(e => ({
-          e,
-          s: topScore([e.title ?? '', e.description ?? '', e.client_name ?? '', EVENT_TYPE_LABELS[e.event_type] ?? ''], q2),
-        }))
-        .filter(x => x.s > 0)
-        .sort((a, b) => b.s - a.s)
-        // Dedup: same title+date+client → keep first
-        .filter((x, i, arr) => {
-          const key = `${nrm(x.e.title ?? '')}|${x.e.start_at.slice(0, 10)}|${x.e.client_name ?? ''}`;
-          return arr.findIndex(y => `${nrm(y.e.title ?? '')}|${y.e.start_at.slice(0, 10)}|${y.e.client_name ?? ''}` === key) === i;
+        .map(e => {
+          const client = clientById.get(e.client_id ?? '');
+          return {
+            e,
+            client,
+            // Também casa pelo nome do cliente vinculado: um compromisso pode
+            // ter título genérico ("Audiência") e ser do cliente procurado.
+            s: topScore([
+              e.title ?? '', e.description ?? '', e.client_name ?? '',
+              client?.full_name ?? '', EVENT_TYPE_LABELS[e.event_type] ?? '',
+            ], q2),
+          };
         })
-        .slice(0, 4)
-        .map(({ e, s }) => ({
-          id: e.id, type: 'agenda' as const,
-          title: e.title ?? 'Compromisso',
-          subtitle: [EVENT_TYPE_LABELS[e.event_type], e.client_name].filter(Boolean).join(' · ') || undefined,
-          meta: fmtDate(e.start_at),
-          score: s,
-          navModule: 'agenda',
-          navParams: { mode: 'event', entityId: e.id },
-        }));
+        .filter(x => x.s > 0)
+        .sort((a, b) => {
+          const aFuture = a.e.start_at.slice(0, 10) >= today;
+          const bFuture = b.e.start_at.slice(0, 10) >= today;
+          if (aFuture !== bFuture) return aFuture ? -1 : 1;
+          if (b.s !== a.s) return b.s - a.s;
+          return a.e.start_at.localeCompare(b.e.start_at);
+        })
+        // Dedup: só quando é o mesmo compromisso mesmo — título, data, HORA e cliente.
+        .filter((x, i, arr) => {
+          const keyOf = (y: typeof x) =>
+            `${nrm(y.e.title ?? '')}|${y.e.start_at}|${y.e.client_id ?? y.e.client_name ?? ''}`;
+          return arr.findIndex(y => keyOf(y) === keyOf(x)) === i;
+        })
+        .slice(0, 6)
+        .map(({ e, client, s }) => {
+          const hora = eventTime(e);
+          const isPast = e.start_at.slice(0, 10) < today;
+          const quem = client?.full_name ?? e.client_name ?? null;
+          return {
+            id: e.id, type: 'agenda' as const,
+            title: e.title ?? 'Compromisso',
+            subtitle: [EVENT_TYPE_LABELS[e.event_type], quem].filter(Boolean).join(' · ') || undefined,
+            meta: hora ? `${fmtDate(e.start_at)} · ${hora}` : fmtDate(e.start_at),
+            score: s,
+            navModule: 'agenda',
+            navParams: { mode: 'event', entityId: e.id },
+            details: [
+              quem ? { icon: User, label: 'Cliente', value: quem } : null,
+              {
+                icon: Calendar,
+                label: 'Quando',
+                value: `${fmtDate(e.start_at)}${hora ? ` às ${hora}` : ''}${isPast ? ' · já passou' : ''}`,
+              },
+              { icon: Tag, label: 'Tipo', value: EVENT_TYPE_LABELS[e.event_type] ?? e.event_type },
+              e.status ? { icon: Tag, label: 'Situação', value: e.status } : null,
+              e.event_mode ? { icon: Navigation, label: 'Modalidade', value: e.event_mode } : null,
+              e.description ? { icon: FileText, label: 'Descrição', value: e.description } : null,
+              e.created_at ? { icon: Clock, label: 'Criado em', value: fmtDateTime(e.created_at) } : null,
+            ].filter(Boolean) as DetailRow[],
+          };
+        });
 
       // ── Tarefas ───────────────────────────────────────────────────────────
       const tarefaResults: SearchResult[] = tasks
@@ -698,6 +791,10 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           details: [
             client?.full_name ? { icon: User,     label: 'Cliente',     value: client.full_name }  : null,
             t.due_date        ? { icon: Calendar,  label: 'Vencimento',  value: fmtDate(t.due_date) } : null,
+            t.status          ? { icon: Tag,       label: 'Status',      value: t.status } : null,
+            t.priority        ? { icon: Zap,       label: 'Prioridade',  value: t.priority } : null,
+            t.description     ? { icon: FileText,  label: 'Descrição',   value: t.description } : null,
+            t.created_at      ? { icon: Clock,     label: 'Criado em',   value: fmtDateTime(t.created_at) } : null,
           ].filter(Boolean) as DetailRow[],
         }));
 
@@ -725,6 +822,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
             client?.full_name ? { icon: User,       label: 'Cliente', value: client.full_name }                                              : null,
             { icon: DollarSign, label: 'Total',   value: `R$ ${a.total_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
             a.status          ? { icon: Tag,        label: 'Status',  value: a.status }                                                       : null,
+            a.agreement_date  ? { icon: Calendar,   label: 'Data do acordo', value: fmtDate(a.agreement_date) }                               : null,
+            a.payment_type    ? { icon: CreditCard, label: 'Pagamento', value: a.payment_type === 'upfront' ? 'À vista' : `${a.installments_count} parcelas` } : null,
+            a.created_at      ? { icon: Clock,      label: 'Criado em', value: fmtDateTime(a.created_at) }                                    : null,
           ].filter(Boolean) as DetailRow[],
         }));
 
@@ -748,11 +848,17 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           score: s,
           navModule: 'cloud',
           navParams: { folderId: f.id },
+          details: [
+            client?.full_name ? { icon: User, label: 'Cliente', value: client.full_name } : null,
+            f.created_at ? { icon: Clock, label: 'Criado em', value: fmtDateTime(f.created_at) } : null,
+            f.updated_at ? { icon: RefreshCw, label: 'Atualizado em', value: fmtDateTime(f.updated_at) } : null,
+          ].filter(Boolean) as DetailRow[],
         }));
 
       // ── Assinaturas ───────────────────────────────────────────────────────
       const STATUS_LABELS: Record<string, string> = {
-        pending: 'Pendente', signed: 'Assinado', expired: 'Expirado', cancelled: 'Cancelado',
+        pending: 'Pendente', signed: 'Assinado', expired: 'Expirado',
+        cancelled: 'Cancelado', refused: 'Recusado',
       };
       const assinaturaResults: SearchResult[] = signatures
         .map(r => {
@@ -765,19 +871,33 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         .filter(x => x.s > 0)
         .sort((a, b) => b.s - a.s)
         .slice(0, 4)
-        .map(({ r, client, s }) => ({
-          id: r.id, type: 'assinatura' as const,
-          title: r.document_name ?? 'Documento',
-          subtitle: (client?.full_name ?? r.client_name) || undefined,
-          meta: STATUS_LABELS[r.status] ?? r.status,
-          score: s,
-          navModule: 'assinaturas',
-          navParams: { mode: 'details', requestId: r.id },
-          details: [
-            (client?.full_name ?? r.client_name) ? { icon: User,     label: 'Cliente', value: client?.full_name ?? r.client_name ?? '' } : null,
-            { icon: Tag, label: 'Status', value: STATUS_LABELS[r.status] ?? r.status },
-          ].filter(Boolean) as DetailRow[],
-        }));
+        .map(({ r, client, s }) => {
+          const signedAt = r.signed_at ? fmtDateTime(r.signed_at) : '';
+          const createdAt = fmtDateTime(r.created_at);
+          return {
+            id: r.id, type: 'assinatura' as const,
+            title: r.document_name ?? 'Documento',
+            subtitle: (client?.full_name ?? r.client_name) || undefined,
+            meta: [
+              STATUS_LABELS[r.status] ?? r.status,
+              signedAt ? `assinado em ${fmtDate(r.signed_at)}` : (createdAt ? `criado em ${fmtDate(r.created_at)}` : ''),
+            ].filter(Boolean).join(' · '),
+            score: s,
+            navModule: 'assinaturas',
+            navParams: { mode: 'details', requestId: r.id },
+            details: [
+              (client?.full_name ?? r.client_name) ? { icon: User, label: 'Cliente', value: client?.full_name ?? r.client_name ?? '' } : null,
+              { icon: Tag, label: 'Status', value: STATUS_LABELS[r.status] ?? r.status },
+              signedAt
+                ? { icon: PenTool, label: 'Assinado em', value: signedAt }
+                : (createdAt ? { icon: Clock, label: 'Criado em', value: createdAt } : null),
+              signedAt && createdAt ? { icon: Clock, label: 'Solicitação criada', value: createdAt } : null,
+              r.expires_at ? { icon: AlarmClock, label: 'Expira em', value: fmtDateTime(r.expires_at) } : null,
+              r.process_number ? { icon: FileText, label: 'Processo', value: r.process_number } : null,
+              r.requirement_number ? { icon: ClipboardList, label: 'Requerimento', value: r.requirement_number } : null,
+            ].filter(Boolean) as DetailRow[],
+          };
+        });
 
       // ── Merge + dedup ─────────────────────────────────────────────────────
       const merged = [
@@ -807,12 +927,77 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     }
   }, []);
 
+  // ── Nextcloud ───────────────────────────────────────────────────────────────
+  // Arquivos e pastas do Nextcloud não cabem no cache da busca: são milhares e
+  // vivem fora do banco. A varredura é remota (WebDAV), então roda em separado,
+  // sem segurar o resto dos resultados — chega depois e se junta à lista.
+  const ncQueryRef = useRef('');
+  const searchNextcloud = useCallback(async (q: string) => {
+    const q2 = q.trim();
+    ncQueryRef.current = q2;
+    if (q2.length < 3) { setNcResults([]); setNcLoading(false); return; }
+
+    setNcLoading(true);
+    try {
+      const entries = await nextcloudService.search(q2);
+      // Descarta resposta de uma busca que já não é a atual.
+      if (ncQueryRef.current !== q2) return;
+
+      const fmtSize = (bytes: number) =>
+        bytes > 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB`
+          : bytes > 0 ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+          : '';
+
+      setNcResults(
+        entries
+          .slice(0, 6)
+          .map((entry) => {
+            const parent = entry.path.split('/').slice(0, -1).filter(Boolean).join('/');
+            const size = entry.isDir ? '' : fmtSize(entry.size);
+            const isPdf = !entry.isDir && (
+              entry.mime === 'application/pdf' || entry.name.toLowerCase().endsWith('.pdf')
+            );
+            return {
+              id: entry.path,
+              type: 'nextcloud' as const,
+              title: entry.name,
+              subtitle: parent || 'Início',
+              meta: entry.isDir ? 'Pasta' : size || undefined,
+              icon: entry.isDir ? FolderOpen : (isPdf ? FileText : File),
+              typeLabel: entry.isDir ? 'Pasta' : (isPdf ? 'Documento PDF' : 'Arquivo'),
+              score: 50,
+              navModule: 'nextcloud',
+              // Arquivo abre a pasta que o contém; pasta abre ela mesma.
+              navParams: { path: entry.isDir ? entry.path : parent },
+              details: [
+                { icon: FolderOpen, label: 'Local', value: parent || 'Início' },
+                { icon: Tag, label: 'Tipo', value: entry.isDir ? 'Pasta' : (entry.mime || 'Arquivo') },
+                size ? { icon: Hash, label: 'Tamanho', value: size } : null,
+                entry.mtime ? { icon: Clock, label: 'Modificado', value: fmtDate(entry.mtime) } : null,
+              ].filter(Boolean) as DetailRow[],
+            };
+          }),
+      );
+    } catch {
+      // Nextcloud fora do ar não pode derrubar a busca do CRM.
+      if (ncQueryRef.current === q2) setNcResults([]);
+    } finally {
+      if (ncQueryRef.current === q2) setNcLoading(false);
+    }
+  }, []);
+
   // Debounce
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => search(query), 200);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query, search]);
+
+  // O Nextcloud espera um pouco mais: cada tecla vira uma varredura no servidor.
+  useEffect(() => {
+    const timer = setTimeout(() => void searchNextcloud(query), 450);
+    return () => clearTimeout(timer);
+  }, [query, searchNextcloud]);
 
   // Resolve client photos: 1) localStorage cache (instant) → 2) signed URL fetch
   useEffect(() => {
@@ -925,8 +1110,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   // Filtro de permissão aplicado no render — reage automaticamente quando
   // permissionsLoading muda de true→false sem precisar rebuscar
   const permitted = useMemo(
-    () => results.filter(r => canSeeModule(TYPE_MODULE[r.type] ?? r.navModule)),
-    [results, canSeeModule],
+    () => [...results, ...ncResults].filter(r => canSeeModule(TYPE_MODULE[r.type] ?? r.navModule)),
+    [results, ncResults, canSeeModule],
   );
 
   if (!open) return null;
@@ -943,6 +1128,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     tarefa:                 'text-sky-600',
     financeiro:             'text-emerald-600',
     cloud:                  'text-indigo-600',
+    nextcloud:              'text-blue-600',
     assinatura:             'text-purple-600',
   };
   const TYPE_ICON_BG: Record<ResultType, string> = {
@@ -956,6 +1142,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     tarefa:                 '#f0f9ff',
     financeiro:             '#f0fdf4',
     cloud:                  '#eef2ff',
+    nextcloud:              '#eff6ff',
     assinatura:             '#faf5ff',
   };
   const ICON_BOX_STYLE: React.CSSProperties = {
@@ -1009,10 +1196,11 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
   const previewItem = flatResults[safeSelected];
 
   const isEmpty = query.trim().length === 0;
-  const noResults = query.trim().length >= 2 && !loading && permitted.length === 0;
+  // Não anuncia "nada encontrado" enquanto o Nextcloud ainda está respondendo.
+  const noResults = query.trim().length >= 2 && !loading && !ncLoading && permitted.length === 0;
 
   const previewCfg = previewItem ? TYPE_CONFIG[previewItem.type] : null;
-  const showResults = !isEmpty && results.length > 0;
+  const showResults = !isEmpty && (results.length > 0 || ncResults.length > 0);
 
   return (
     <div className="global-search-overlay" onClick={onClose}>
@@ -1153,7 +1341,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         /* Body grid */
         .global-search-body {
           flex: 1; min-height: 0; display: grid;
-          grid-template-columns: minmax(0,1fr) 380px;
+          grid-template-columns: minmax(0,1fr) 300px;
         }
         .global-search-body.no-preview { grid-template-columns: 1fr; }
 
@@ -1233,8 +1421,11 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
         }
 
         /* Content */
-        .search-result-content { min-width: 0; flex: 1; }
+        .search-result-content {
+          min-width: 0; flex: 1 1 auto; overflow: hidden;
+        }
         .search-result-title {
+          display: block; width: 100%;
           font-size: 14px; font-weight: 650; color: #191c1e;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3;
         }
@@ -1257,7 +1448,8 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
 
         /* Meta / right column */
         .search-result-meta {
-          display: flex; align-items: center; gap: 6px; flex-shrink: 0; color: #94a3b8;
+          display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+          flex: 0 0 auto; color: #94a3b8;
         }
         .search-result-badge {
           height: 22px; padding: 0 8px;
@@ -1925,6 +2117,14 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                 ) : showResults ? (
                   /* ── Search results ── */
                   <>
+                    {/* A varredura do Nextcloud é remota e chega depois: avisa
+                        em vez de deixar o usuário achar que não há arquivos. */}
+                    {ncLoading && (activeFilter === 'all' || activeFilter === 'nextcloud') && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px 10px', fontSize: 12, color: '#94a3b8' }}>
+                        <Loader2 className="animate-spin" style={{ width: 13, height: 13 }} />
+                        Procurando arquivos no Nextcloud...
+                      </div>
+                    )}
                     {grouped.map(({ type, cfg, items }) => (
                       <div key={type} className="search-section">
                         <div className="search-section-header">
@@ -1945,7 +2145,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                         {items.map((r, rIdx) => {
                           const fi = flatIdx.get(`${r.type}:${r.id}`) ?? -1;
                           const isSel = fi === safeSelected;
-                          const Icon = cfg.icon;
+                          const Icon = r.icon ?? cfg.icon;
                           return (
                             <button
                               key={`${r.type}-${r.id}`}
@@ -2182,11 +2382,14 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                         </div>
                       ) : (
                         <div className={`preview-avatar-icon ${TYPE_ICON_COLOR[previewItem.type]}`} style={{ background: TYPE_ICON_BG[previewItem.type] }}>
-                          <previewCfg.icon style={{ width: 36, height: 36 }} />
+                          {(() => {
+                            const PreviewIcon = previewItem.icon ?? previewCfg.icon;
+                            return <PreviewIcon style={{ width: 36, height: 36 }} />;
+                          })()}
                         </div>
                       )}
                       <div>
-                        <div className="preview-type">{previewCfg.label}</div>
+                        <div className="preview-type">{previewItem.typeLabel ?? previewCfg.label}</div>
                         <div className="preview-name">{previewItem.title}</div>
                       </div>
                     </div>
