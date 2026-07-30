@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Repro — estado da faixa de opções</title>
+    <style>
+      html, body { margin: 0; height: 100%; font-family: ui-monospace, Menlo, monospace; }
+      #host { position: absolute; inset: 0 0 220px 0; }
+      #out { position: absolute; left: 0; right: 0; bottom: 0; height: 220px; margin: 0; padding: 10px 14px;
+             overflow: auto; background: #0f172a; color: #e2e8f0; font-size: 12px; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div id="host"></div>
+    <pre id="out">rodando…</pre>
+    <script type="module" src="/src/dev/ribbonStateRepro.ts"></script>
+  </body>
+</html>
