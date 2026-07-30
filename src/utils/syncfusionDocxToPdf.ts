@@ -35,6 +35,7 @@ import {
   registerSyncfusionLicenseOnce,
   resolveSyncfusionServiceUrl,
 } from './syncfusionRuntime';
+import { extractPageWidgetTextRuns } from './syncfusionTextRuns';
 
 /**
  * Nitidez do raster de cada página: 2 ≈ 192 dpi.
@@ -189,104 +190,26 @@ async function waitForStablePageCount(
 // Andamos na árvore JÁ PAGINADA do Syncfusion: os mesmos widgets que geraram a
 // imagem da página. Por isso o texto cai exatamente sobre o desenho.
 //
-// A árvore é API interna do EJ2, então tudo aqui é defensivo e por "duck
-// typing": se a estrutura mudar numa atualização, a extração devolve vazio e a
-// conversão continua produzindo o PDF (só sem camada de texto), em vez de falhar.
-
-type UnknownRecord = Record<string, unknown>;
-
-const asRecord = (value: unknown): UnknownRecord | null =>
-  value && typeof value === 'object' ? (value as UnknownRecord) : null;
-
-const asNumber = (value: unknown): number | null =>
-  typeof value === 'number' && Number.isFinite(value) ? value : null;
-
-/** Percorre widgets recursivamente juntando os parágrafos (inclusive de tabela). */
-function collectParagraphs(node: unknown, output: UnknownRecord[], depth = 0): void {
-  if (depth > 40) return; // trava contra estrutura circular
-  const record = asRecord(node);
-  if (!record) return;
-
-  const children = record.childWidgets;
-  if (Array.isArray(children)) {
-    // Parágrafo: os filhos são LineWidget (têm `children` de elementos).
-    const isParagraph = children.some((child) => {
-      const line = asRecord(child);
-      return Boolean(line && Array.isArray(line.children));
-    });
-    if (isParagraph) {
-      output.push(record);
-      return;
-    }
-    for (const child of children) collectParagraphs(child, output, depth + 1);
-  }
-
-  // Tabela: linhas -> células -> parágrafos ficam em `childWidgets`, já cobertos
-  // acima. `rows`/`cells` aparecem em versões diferentes do EJ2.
-  for (const key of ['rows', 'cells', 'bodyWidgets']) {
-    const list = record[key];
-    if (Array.isArray(list)) for (const item of list) collectParagraphs(item, output, depth + 1);
-  }
-}
+// A geometria (a conta que o renderizador do EJ2 faz para desenhar cada trecho)
+// fica em `syncfusionTextRuns.ts`, coberta por testes. Aqui só convertemos px
+// para mm, normalizamos o texto e juntamos os trechos vizinhos.
 
 /** Texto posicionado de uma página, em milímetros. */
 function extractPageTextRuns(page: unknown): TextLayerRun[] {
   const runs: TextLayerRun[] = [];
-  const pageRecord = asRecord(page);
-  if (!pageRecord) return runs;
 
-  const containers: unknown[] = [];
-  if (Array.isArray(pageRecord.bodyWidgets)) containers.push(...pageRecord.bodyWidgets);
-  // Cabeçalho e rodapé também precisam ser pesquisáveis (nº de processo, OAB).
-  for (const key of ['headerWidget', 'footerWidget', 'headerWidgetIn', 'footerWidgetIn']) {
-    if (pageRecord[key]) containers.push(pageRecord[key]);
-  }
-
-  const paragraphs: UnknownRecord[] = [];
-  for (const container of containers) collectParagraphs(container, paragraphs);
-
-  for (const paragraph of paragraphs) {
-    const lines = Array.isArray(paragraph.childWidgets) ? paragraph.childWidgets : [];
-    for (const rawLine of lines) {
-      const line = asRecord(rawLine);
-      if (!line || !Array.isArray(line.children)) continue;
-      const lineX = asNumber(line.x);
-      const lineY = asNumber(line.y);
-      const lineHeight = asNumber(line.height) ?? 0;
-      if (lineX === null || lineY === null) continue;
-
-      let cursorX = lineX;
-      for (const rawElement of line.children) {
-        const element = asRecord(rawElement);
-        if (!element) continue;
-        const width = asNumber(element.width) ?? 0;
-        const margin = asRecord(element.margin);
-        const marginLeft = asNumber(margin?.left) ?? 0;
-        const marginTop = asNumber(margin?.top) ?? 0;
-
-        const text = typeof element.text === 'string' ? element.text : null;
-        if (text !== null && !isEmptyRun(text) && width > 0) {
-          const format = asRecord(element.characterFormat);
-          // `baselineOffset` é o que o renderizador usa; sem ele, aproxima-se
-          // pela altura da linha (a camada é invisível, então basta cair sobre
-          // a palavra para a seleção do leitor de PDF funcionar).
-          const baselineOffset = asNumber(element.baselineOffset)
-            ?? (asNumber(element.height) ?? lineHeight) * 0.82;
-
-          runs.push({
-            text: normalizeRunText(text),
-            xMm: pxToMm(cursorX + marginLeft),
-            baselineMm: pxToMm(lineY + marginTop + baselineOffset),
-            widthMm: pxToMm(width),
-            fontSizePt: asNumber(format?.fontSize) ?? 12,
-            bold: format?.bold === true,
-            italic: format?.italic === true,
-            family: mapFontFamily(typeof format?.fontFamily === 'string' ? format.fontFamily : null),
-          });
-        }
-        cursorX += width + marginLeft;
-      }
-    }
+  for (const run of extractPageWidgetTextRuns(page)) {
+    if (isEmptyRun(run.text)) continue;
+    runs.push({
+      text: normalizeRunText(run.text),
+      xMm: pxToMm(run.xPx),
+      baselineMm: pxToMm(run.baselinePx),
+      widthMm: pxToMm(run.widthPx),
+      fontSizePt: run.fontSizePt,
+      bold: run.bold,
+      italic: run.italic,
+      family: mapFontFamily(run.fontFamily),
+    });
   }
 
   return mergeAdjacentRuns(runs);

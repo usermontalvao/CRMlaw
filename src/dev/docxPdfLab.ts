@@ -137,6 +137,25 @@ async function inspectPdf(blob: Blob): Promise<string[]> {
       .replace(/\s+/g, ' ')
       .trim();
 
+    // ONDE o texto caiu, não só quanto: a camada pode existir e estar toda
+    // empilhada num canto (foi o defeito de ler `line.x`/`line.y` do Syncfusion,
+    // que o layout nunca preenche). O PDF fica com contagem de caracteres alta e
+    // nada selecionável sobre o documento — igual a digitalizado sem OCR.
+    const spread = (() => {
+      const positions = textContent.items
+        .filter((item): item is typeof item & { transform: number[]; width: number } => 'transform' in item)
+        .map((item) => ({ x: item.transform[4], y: item.transform[5] }));
+      if (!positions.length) return null;
+      const xs = positions.map((position) => position.x);
+      const ys = positions.map((position) => position.y);
+      const ptToMm = (pt: number) => (pt * 25.4) / 72;
+      return {
+        count: positions.length,
+        widthMm: ptToMm(Math.max(...xs) - Math.min(...xs)),
+        heightMm: ptToMm(Math.max(...ys) - Math.min(...ys)),
+      };
+    })();
+
     const { data: pixels } = context.getImageData(0, 0, canvas.width, canvas.height);
     let inked = 0;
     for (let i = 0; i < pixels.length; i += 4) {
@@ -152,7 +171,16 @@ async function inspectPdf(blob: Blob): Promise<string[]> {
       + `(${widthPt > heightPt ? 'paisagem' : 'retrato'}) — tinta ${percent}%`
       + (inked === 0 ? '  <<< PÁGINA BRANCA' : '')
       + `; texto ${extracted.length} car.`
-      + (extracted.length === 0 ? '  <<< SEM CAMADA DE TEXTO' : ` → "${extracted.slice(0, 70)}…"`),
+      + (extracted.length === 0 ? '  <<< SEM CAMADA DE TEXTO' : ` → "${extracted.slice(0, 70)}…"`)
+      + (spread
+        ? `\n         texto espalhado em ${spread.widthMm.toFixed(0)}×${spread.heightMm.toFixed(0)} mm`
+          + ` (${spread.count} trechos)`
+          // Um documento real ocupa dezenas de mm em cada eixo. Área minúscula
+          // com muitos trechos = camada empilhada num ponto.
+          + (spread.count > 3 && spread.widthMm < 10 && spread.heightMm < 10
+            ? '  <<< TEXTO EMPILHADO NUM CANTO'
+            : '')
+        : ''),
     );
   }
   return report;

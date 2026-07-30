@@ -2553,6 +2553,10 @@ const NextcloudBrowser: React.FC = () => {
     setConvertingDocxPaths(targets.map((entry) => entry.path));
     setError(null);
     let converted = 0;
+    // Conversão que sai sem camada de texto gera um PDF que PARECE certo e não é
+    // pesquisável — o peticionamento eletrônico exige texto localizável. Avisar
+    // é o que impede o defeito de passar em silêncio.
+    let notSearchable = 0;
     const failures: Array<{ name: string; message: string }> = [];
     try {
       for (let index = 0; index < targets.length; index += 1) {
@@ -2561,11 +2565,12 @@ const NextcloudBrowser: React.FC = () => {
         try {
           setBusy(`${prefix}${entry.name}`);
           const source = await nextcloudService.readFile(entry.path);
-          const { blob } = await docxToPdf(source, {
+          const { blob, searchable } = await docxToPdf(source, {
             onProgress: ({ page, totalPages }) => {
               setBusy(`${prefix}${entry.name} — folha ${page} de ${totalPages}`);
             },
           });
+          if (!searchable) notSearchable += 1;
           // Não sobrescreve um PDF já existente com o mesmo nome sem avisar:
           // resolve um nome livre no servidor, como as ferramentas de PDF.
           const dir = dirOf(entry.path);
@@ -2586,6 +2591,9 @@ const NextcloudBrowser: React.FC = () => {
         setError(converted
           ? `${converted} documento(s) convertido(s); falha em ${failures.length} (${detail})`
           : `Não foi possível converter: ${detail}`);
+      } else if (notSearchable) {
+        setError(`${converted} documento(s) convertido(s), mas ${notSearchable} sem camada de texto`
+          + ' (o PDF abre igual ao Word, porém não é pesquisável).');
       } else {
         showTransient(`${converted} documento(s) Word convertido(s) em PDF.`);
       }
