@@ -4,6 +4,7 @@ import {
   ArrowUpAZ,
   Check,
   Info,
+  Keyboard,
   LayoutGrid,
   List,
   MoreVertical,
@@ -41,6 +42,9 @@ interface NextcloudMoreMenuProps {
   onSortByChange: (value: 'name' | 'date' | 'size') => void;
   sortDir: 'asc' | 'desc';
   onSortDirChange: (value: 'asc' | 'desc') => void;
+  /** Atalho de teclado é recurso que ninguém acha sozinho: precisa de um item
+      visível levando até a lista, além da tecla "?". */
+  onShowShortcuts: () => void;
 }
 
 const SORT_LABELS: Array<{ value: 'name' | 'date' | 'size'; label: string }> = [
@@ -64,6 +68,7 @@ export const NextcloudMoreMenu: React.FC<NextcloudMoreMenuProps> = ({
   onSortByChange,
   sortDir,
   onSortDirChange,
+  onShowShortcuts,
 }) => {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -103,6 +108,9 @@ export const NextcloudMoreMenu: React.FC<NextcloudMoreMenuProps> = ({
         </NcMenuItem>
         <NcMenuItem icon={<RefreshCw className="h-4 w-4 text-slate-500" />} onClick={run(onRefresh)}>
           Atualizar
+        </NcMenuItem>
+        <NcMenuItem icon={<Keyboard className="h-4 w-4 text-slate-500" />} onClick={run(onShowShortcuts)} hint="?">
+          Atalhos de teclado
         </NcMenuItem>
 
         <NcMenuSeparator />

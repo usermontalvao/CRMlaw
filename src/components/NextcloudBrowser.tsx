@@ -49,6 +49,7 @@ import { NextcloudMoreMenu } from './nextcloud/NextcloudMoreMenu';
 import { NextcloudSelectionToolbar } from './nextcloud/NextcloudSelectionToolbar';
 import { NextcloudDetailsPanel } from './nextcloud/NextcloudDetailsPanel';
 import { NextcloudEmptyState } from './nextcloud/NextcloudEmptyState';
+import { NextcloudShortcutsHelp } from './nextcloud/NextcloudShortcutsHelp';
 import {
   NextcloudFilterChips,
   matchesTypeFilter,
@@ -498,6 +499,7 @@ const NextcloudBrowser: React.FC = () => {
   const [detailsOpen, setDetailsOpen] = useState(() => {
     try { return localStorage.getItem('nextcloud-details-open') === '1'; } catch { return false; }
   });
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Filtro por tipo (chips). NÃO é persistido de propósito: voltar ao módulo e
   // encontrar metade dos arquivos escondidos por um filtro esquecido parece
   // arquivo sumido.
@@ -846,6 +848,20 @@ const NextcloudBrowser: React.FC = () => {
     () => (typeFilter === 'all' ? sortedEntries : sortedEntries.filter((entry) => matchesTypeFilter(entry, typeFilter))),
     [sortedEntries, typeFilter],
   );
+
+  // Cabeçalhos "Pastas"/"Arquivos" só quando os dois tipos convivem: um título
+  // sozinho sobre a lista inteira não separa nada, só ocupa linha. A ordem não
+  // muda — `displayEntries` já vem com as pastas primeiro, então os cabeçalhos
+  // são injetados no meio da mesma lista e a navegação por teclado, o marquee e
+  // o Ctrl+A continuam enxergando um único conjunto na mesma ordem.
+  const folderCount = useMemo(() => displayEntries.filter((entry) => entry.isDir).length, [displayEntries]);
+  const showGroupHeadings = folderCount > 0 && folderCount < displayEntries.length;
+  const groupHeadingFor = (entry: NextcloudEntry, index: number): string | null => {
+    if (!showGroupHeadings) return null;
+    if (index === 0) return `Pastas · ${folderCount}`;
+    if (!entry.isDir && displayEntries[index - 1].isDir) return `Arquivos · ${displayEntries.length - folderCount}`;
+    return null;
+  };
 
   useLayoutEffect(() => {
     if (loading || searching || restoredScrollKeyRef.current === browserScrollKey) return;
@@ -2560,8 +2576,12 @@ const NextcloudBrowser: React.FC = () => {
       const ae = document.activeElement as HTMLElement | null;
       if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return;
       if (previewFile || pdfToolFile || organizeFile || imagesPdfTargets || versionsFile || linkTarget || pendingMovement) return;
+      if (shortcutsOpen) return;
       const k = e.key.toLowerCase();
       const command = e.ctrlKey || e.metaKey;
+      // "?" abre a lista de atalhos. Antes de tudo: é a saída de quem está
+      // perdido, então não pode depender de haver seleção ou foco em item.
+      if (e.key === '?') { e.preventDefault(); setShortcutsOpen(true); return; }
       // Navegação de explorador: Alt+← volta, Alt+→ avança, Alt+↑ sobe um nível.
       // Vem antes do resto para não ser engolido pelas setas de seleção.
       if (e.altKey && !command && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp')) {
@@ -2597,6 +2617,19 @@ const NextcloudBrowser: React.FC = () => {
           e.preventDefault();
           openEntry(focused);
         }
+      } else if (e.key === ' ') {
+        // Espaço = ESPIAR, não abrir: mostra o arquivo sem tirar você da lista.
+        // Diferente do Enter, nunca baixa nem manda para o editor — a tecla que
+        // serve para dar uma olhada rápida não pode ter efeito colateral.
+        const focused = displayEntries.find((entry) => entry.path === focusedEntryPath)
+          ?? (selectedEntries.length === 1 ? selectedEntries[0] : undefined);
+        if (!focused || focused.isDir) return;
+        const previewable = isPdf(focused)
+          || isImage(focused)
+          || (isMedia(focused) && focused.size <= MEDIA_MAX_BYTES);
+        if (!previewable) return;
+        e.preventDefault();
+        setPreviewFile(focused);
       } else if (e.key === 'Escape' && selectedEntries.length) {
         clearSelection();
       }
@@ -2604,7 +2637,7 @@ const NextcloudBrowser: React.FC = () => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEntries, clipboard, previewFile, pdfToolFile, organizeFile, imagesPdfTargets, versionsFile, linkTarget, pendingMovement, path, entries, displayEntries, focusedEntryPath, viewMode, selectionAnchorPath, goBackFolder, goForwardFolder, goUpFolder]);
+  }, [selectedEntries, clipboard, previewFile, pdfToolFile, organizeFile, imagesPdfTargets, versionsFile, linkTarget, pendingMovement, shortcutsOpen, path, entries, displayEntries, focusedEntryPath, viewMode, selectionAnchorPath, goBackFolder, goForwardFolder, goUpFolder]);
 
   // Diretório de um arquivo (para gravar derivados na mesma pasta).
   const dirOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
@@ -3817,6 +3850,7 @@ const NextcloudBrowser: React.FC = () => {
                     onSortByChange={setSortBy}
                     sortDir={sortDir}
                     onSortDirChange={setSortDir}
+                    onShowShortcuts={() => setShortcutsOpen(true)}
                   />
                 </div>
               </>
@@ -3862,7 +3896,7 @@ const NextcloudBrowser: React.FC = () => {
           ) : viewMode === 'grid' ? (
             /* ── Grade ── */
             <div className="grid gap-3 p-3 sm:p-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
-              {displayEntries.map((entry) => {
+              {displayEntries.map((entry, index) => {
                 const Icon = extIcon(entry);
                 // Pasta vinculada mostra o próprio vínculo; arquivo mostra o da
                 // pasta em que está — na busca recursiva é essa a informação que
@@ -3871,14 +3905,20 @@ const NextcloudBrowser: React.FC = () => {
                 const isSel = !!selected[entry.path];
                 const extension = entry.isDir ? null : fileExtension(entry.name);
                 const isDropTarget = entry.isDir && dragTargetPath === entry.path;
+                const heading = groupHeadingFor(entry, index);
                 return (
-                  <div
-                    key={entry.path}
-                    data-nextcloud-entry-path={entry.path}
-                    onContextMenu={(e) => openCtxMenu(e, entry)}
-                    onDoubleClick={() => openEntry(entry)}
-                    onClick={(event) => handleEntryClick(event, entry)}
-                    draggable
+                  <React.Fragment key={entry.path}>
+                    {heading && (
+                      <h3 className={`col-span-full mb-0.5 mt-3 text-[10px] font-bold uppercase tracking-[0.14em] first:mt-0 ${NC_TEXT_FAINT}`}>
+                        {heading}
+                      </h3>
+                    )}
+                    <div
+                      data-nextcloud-entry-path={entry.path}
+                      onContextMenu={(e) => openCtxMenu(e, entry)}
+                      onDoubleClick={() => openEntry(entry)}
+                      onClick={(event) => handleEntryClick(event, entry)}
+                      draggable
                     onDragStart={(event) => handleInternalDragStart(event, entry)}
                     onDragEnd={finishInternalDrag}
                     onDragEnter={(event) => {
@@ -3971,7 +4011,8 @@ const NextcloudBrowser: React.FC = () => {
                         <UserPlus className="h-2.5 w-2.5 shrink-0" /> <span className="truncate">{linkedClient}</span>
                       </span>
                     )}
-                  </div>
+                    </div>
+                  </React.Fragment>
                 );
               })}
             </div>
@@ -4001,15 +4042,23 @@ const NextcloudBrowser: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {displayEntries.map((entry) => {
+                {displayEntries.map((entry, index) => {
                 const Icon = extIcon(entry);
                 const linkedClient = clientNameById(links[entry.isDir ? entry.path : dirOf(entry.path)]);
                 const isSel = !!selected[entry.path];
                 const extension = entry.isDir ? null : fileExtension(entry.name);
                 const isDropTarget = entry.isDir && dragTargetPath === entry.path;
+                const heading = groupHeadingFor(entry, index);
                 return (
+                  <React.Fragment key={entry.path}>
+                    {heading && (
+                      <tr>
+                        <td colSpan={6} className={`px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.14em] ${NC_TEXT_FAINT}`}>
+                          {heading}
+                        </td>
+                      </tr>
+                    )}
                     <tr
-                      key={entry.path}
                       data-nextcloud-entry-path={entry.path}
                       onContextMenu={(e) => openCtxMenu(e, entry)}
                       onDoubleClick={() => openEntry(entry)}
@@ -4135,6 +4184,7 @@ const NextcloudBrowser: React.FC = () => {
                         </div>
                       </td>
                     </tr>
+                  </React.Fragment>
                   );
                 })}
               </tbody>
@@ -4194,6 +4244,8 @@ const NextcloudBrowser: React.FC = () => {
           )}
         </div>
       )}
+
+      <NextcloudShortcutsHelp open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       {/* Menu de contexto (botão direito / kebab) */}
       {ctxMenu && (() => {
