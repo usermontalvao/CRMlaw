@@ -15,6 +15,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { NcMenu, NcMenuItem, NcMenuLabel, NcMenuSeparator } from './NcMenu';
+import { SORT_OPTIONS, type NextcloudSortBy } from './NextcloudSortMenu';
 import { NC_FOCUS_RING, NC_HOVER, NC_TEXT_MUTED } from './ncTokens';
 
 /**
@@ -38,20 +39,14 @@ interface NextcloudMoreMenuProps {
   onToggleSidebar: () => void;
   viewMode: 'list' | 'grid';
   onViewModeChange: (mode: 'list' | 'grid') => void;
-  sortBy: 'name' | 'date' | 'size';
-  onSortByChange: (value: 'name' | 'date' | 'size') => void;
+  sortBy: NextcloudSortBy;
+  onSortByChange: (value: NextcloudSortBy) => void;
   sortDir: 'asc' | 'desc';
   onSortDirChange: (value: 'asc' | 'desc') => void;
   /** Atalho de teclado é recurso que ninguém acha sozinho: precisa de um item
       visível levando até a lista, além da tecla "?". */
   onShowShortcuts: () => void;
 }
-
-const SORT_LABELS: Array<{ value: 'name' | 'date' | 'size'; label: string }> = [
-  { value: 'name', label: 'Nome' },
-  { value: 'date', label: 'Última modificação' },
-  { value: 'size', label: 'Tamanho' },
-];
 
 export const NextcloudMoreMenu: React.FC<NextcloudMoreMenuProps> = ({
   onAutoLink,
@@ -135,8 +130,8 @@ export const NextcloudMoreMenu: React.FC<NextcloudMoreMenuProps> = ({
           <span className="inline-flex items-center gap-2"><LayoutGrid className="h-4 w-4 text-slate-400" /> Grade</span>
         </NcMenuItem>
 
-        <NcMenuLabel>Ordenar por</NcMenuLabel>
-        {SORT_LABELS.map((option) => (
+        <NcMenuLabel>Classificar por</NcMenuLabel>
+        {SORT_OPTIONS.map((option) => (
           <NcMenuItem key={option.value} icon={mark(sortBy === option.value)} onClick={() => onSortByChange(option.value)}>
             {option.label}
           </NcMenuItem>

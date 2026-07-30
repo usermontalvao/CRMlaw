@@ -50,6 +50,8 @@ import { NextcloudSelectionToolbar } from './nextcloud/NextcloudSelectionToolbar
 import { NextcloudDetailsPanel } from './nextcloud/NextcloudDetailsPanel';
 import { NextcloudEmptyState } from './nextcloud/NextcloudEmptyState';
 import { NextcloudShortcutsHelp } from './nextcloud/NextcloudShortcutsHelp';
+import { NextcloudSortMenu, type NextcloudSortBy } from './nextcloud/NextcloudSortMenu';
+import { NextcloudRecentActivity } from './nextcloud/NextcloudRecentActivity';
 import {
   NextcloudFilterChips,
   matchesTypeFilter,
@@ -486,10 +488,10 @@ const NextcloudBrowser: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
     try { return localStorage.getItem('nextcloud-view-mode') === 'grid' ? 'grid' : 'list'; } catch { return 'list'; }
   });
-  const [sortBy, setSortBy] = useState<'name' | 'date' | 'size'>(() => {
+  const [sortBy, setSortBy] = useState<NextcloudSortBy>(() => {
     try {
       const saved = localStorage.getItem('nextcloud-sort-by');
-      return saved === 'date' || saved === 'size' ? saved : 'name';
+      return saved === 'date' || saved === 'size' || saved === 'type' ? saved : 'name';
     } catch { return 'name'; }
   });
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => {
@@ -500,6 +502,7 @@ const NextcloudBrowser: React.FC = () => {
     try { return localStorage.getItem('nextcloud-details-open') === '1'; } catch { return false; }
   });
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [changeFeedRevision, setChangeFeedRevision] = useState(0);
   // Filtro por tipo (chips). NÃO é persistido de propósito: voltar ao módulo e
   // encontrar metade dos arquivos escondidos por um filtro esquecido parece
   // arquivo sumido.
@@ -836,7 +839,14 @@ const NextcloudBrowser: React.FC = () => {
       let comparison = 0;
       if (sortBy === 'date') comparison = new Date(a.mtime || 0).getTime() - new Date(b.mtime || 0).getTime();
       else if (sortBy === 'size') comparison = a.size - b.size;
+      else if (sortBy === 'type') comparison = fileTypeLabel(a).localeCompare(fileTypeLabel(b), 'pt-BR', { sensitivity: 'base' });
       else comparison = a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base', numeric: true });
+      // Mesmo tipo (ou mesma data/tamanho) cai no nome: sem desempate, a ordem
+      // dentro do grupo fica ao sabor do que o servidor devolveu e muda sozinha
+      // entre um carregamento e outro.
+      if (comparison === 0 && sortBy !== 'name') {
+        comparison = a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base', numeric: true });
+      }
       return sortDir === 'asc' ? comparison : -comparison;
     });
   }, [entries, isSearchActive, searchResults, sortBy, sortDir]);
@@ -1354,6 +1364,10 @@ const NextcloudBrowser: React.FC = () => {
     const unsub = nextcloudService.subscribeFileChanges((evt) => {
       // Miniaturas: conteúdo pode ter mudado (write) ou o caminho sumiu (rename).
       for (const p of [evt.nodePath, evt.sourcePath, evt.targetPath]) if (p) thumbCache.delete(p);
+
+      // "Últimas alterações" lê a mesma fila de eventos: qualquer evento a
+      // torna desatualizada, inclusive de pasta que não está aberta.
+      setChangeFeedRevision((revision) => revision + 1);
 
       // Se a pasta ATUALMENTE aberta foi apagada/renomeada, sobe para a pai.
       const removed = evt.eventClass.includes('NodeDeleted')
@@ -3779,27 +3793,12 @@ const NextcloudBrowser: React.FC = () => {
                     </div>
                   )}
 
-                  <div className={`hidden items-center rounded-full border pl-2.5 lg:flex ${NC_BORDER}`}>
-                    <ArrowUpDown className={`h-3.5 w-3.5 ${NC_TEXT_FAINT}`} />
-                    <select
-                      value={sortBy}
-                      onChange={(event) => setSortBy(event.target.value as 'name' | 'date' | 'size')}
-                      aria-label="Ordenar por"
-                      className={`h-8 cursor-pointer bg-transparent px-1.5 text-xs outline-none ${NC_TEXT}`}
-                    >
-                      <option value="name">Nome</option>
-                      <option value="date">Modificação</option>
-                      <option value="size">Tamanho</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setSortDir((current) => current === 'asc' ? 'desc' : 'asc')}
-                      title={sortDir === 'asc' ? 'Ordem crescente' : 'Ordem decrescente'}
-                      className={`h-8 rounded-r-full border-l px-2.5 text-[11px] font-semibold ${NC_BORDER} ${NC_TEXT_MUTED} ${NC_HOVER} ${NC_FOCUS_RING}`}
-                    >
-                      {sortDir === 'asc' ? 'A–Z' : 'Z–A'}
-                    </button>
-                  </div>
+                  <NextcloudSortMenu
+                    sortBy={sortBy}
+                    onSortByChange={setSortBy}
+                    sortDir={sortDir}
+                    onSortDirChange={setSortDir}
+                  />
 
                   <div className={`flex items-center rounded-full border p-0.5 ${NC_BORDER}`}>
                     <button
@@ -4190,6 +4189,20 @@ const NextcloudBrowser: React.FC = () => {
               </tbody>
             </table>
           )}
+            {/* Só na home e fora da busca: dentro de uma pasta a pergunta é
+                "o que tem aqui", e no resultado de busca o bloco competiria
+                com aquilo que foi pesquisado. */}
+            {!path && !isSearchActive && (
+              <NextcloudRecentActivity
+                revision={changeFeedRevision}
+                onOpen={({ path: itemPath, folder }) => {
+                  navigateToFolder(folder);
+                  setSelected({ [itemPath]: true });
+                  setSelectionAnchorPath(itemPath);
+                  setFocusedEntryPath(itemPath);
+                }}
+              />
+            )}
         </div>
         </section>
 

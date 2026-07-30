@@ -431,6 +431,39 @@ export const nextcloudService = {
   // tabela `nextcloud_file_locks` (heartbeat) não é mais usada — ela mantinha
   // o aviso na tela depois de o documento já ter sido fechado.
 
+  /**
+   * Últimas mudanças de arquivo, do mais recente para o mais antigo.
+   *
+   * Lê a MESMA tabela que alimenta o Realtime (`nextcloud_change_events`), e
+   * não a data de modificação do WebDAV, por dois motivos: aqui há o histórico
+   * do Nextcloud INTEIRO sem varrer pasta por pasta, e cada linha diz QUEM
+   * mexeu e O QUE aconteceu — coisas que o `mtime` de um PROPFIND não conta.
+   *
+   * Busca mais linhas do que o necessário porque um mesmo arquivo costuma
+   * gerar vários eventos seguidos (salvar duas vezes = dois eventos); quem
+   * chama junta por caminho e corta no total desejado.
+   */
+  async recentChanges(limit = 60): Promise<NextcloudChangeEvent[]> {
+    const { data, error } = await supabase
+      .from('nextcloud_change_events')
+      .select('id, event_class, actor_uid, actor_name, node_path, source_path, target_path, affected_directory, node_id, created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) => ({
+      id: String(row.id ?? ''),
+      eventClass: String(row.event_class ?? ''),
+      actorUid: (row.actor_uid as string | null) ?? null,
+      actorName: (row.actor_name as string | null) ?? null,
+      nodePath: (row.node_path as string | null) ?? null,
+      sourcePath: (row.source_path as string | null) ?? null,
+      targetPath: (row.target_path as string | null) ?? null,
+      affectedDirectory: (row.affected_directory as string | null) ?? null,
+      nodeId: typeof row.node_id === 'number' ? row.node_id : null,
+      createdAt: String(row.created_at ?? ''),
+    }));
+  },
+
   /** Assina eventos de mudança de arquivos vindos do Nextcloud (via webhook ->
    *  Edge Function nextcloud-webhook -> nextcloud_change_events -> Realtime).
    *  Independente de `subscribeLocks`. Retorna uma função de unsubscribe. */

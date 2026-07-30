@@ -6,7 +6,7 @@
  * coloca no lugar dos módulos reais.
  */
 import React from 'react';
-import type { NextcloudEntry } from '../services/nextcloud.service';
+import type { NextcloudChangeEvent, NextcloudEntry } from '../services/nextcloud.service';
 
 const now = Date.now();
 const iso = (daysAgo: number) => new Date(now - daysAgo * 86_400_000).toISOString();
@@ -56,14 +56,38 @@ export const nextcloudService = {
   linkFolder: async () => {},
   unlinkFolder: async () => {},
   subscribeFileChanges: () => () => {},
+  recentChanges: async (): Promise<NextcloudChangeEvent[]> => [
+    ev('OCP\\Files\\Events\\Node\\NodeWrittenEvent', 'Clientes/Contestação revisada.pdf', 'Marina Costa', 4),
+    ev('OCP\\Files\\Events\\Node\\NodeCreatedEvent', 'Clientes/Procuração — João Mendes.docx', 'Pedro', 90),
+    ev('OCP\\Files\\Events\\Node\\NodeRenamedEvent', 'Clientes/Empresarial', 'Pedro', 240),
+    ev('OCP\\Files\\Events\\Node\\NodeDeletedEvent', 'Modelos/Rascunho antigo.docx', 'Marina Costa', 900),
+    ev('OCP\\Files\\Events\\Node\\NodeCreatedEvent', 'Financeiro/Recibo 2026-07.pdf', 'Pedro', 3000),
+  ],
 };
+
+let evSeq = 0;
+function ev(eventClass: string, path: string, actor: string, minutesAgo: number): NextcloudChangeEvent {
+  evSeq += 1;
+  return {
+    id: `ev-${evSeq}`,
+    eventClass,
+    actorUid: actor.toLowerCase(),
+    actorName: actor,
+    nodePath: path,
+    sourcePath: null,
+    targetPath: null,
+    affectedDirectory: path.split('/').slice(0, -1).join('/'),
+    nodeId: evSeq,
+    createdAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+  };
+}
 
 export class NextcloudServiceError extends Error {}
 export class NextcloudConflictError extends NextcloudServiceError {}
 export function getNextcloudErrorMessage(error: unknown, action: string): string {
   return `Não foi possível ${action}: ${error instanceof Error ? error.message : 'erro'}`;
 }
-export type { NextcloudEntry };
+export type { NextcloudChangeEvent, NextcloudEntry };
 
 /* --- contextos --- */
 
