@@ -81,3 +81,32 @@ export function fileIconColorClass(entry: NextcloudEntry): string {
   if (isTextFile(entry)) return 'text-slate-500';
   return 'text-gray-400';
 }
+
+/**
+ * Tamanho legível. Movido do NextcloudBrowser para cá quando o painel lateral
+ * de detalhes passou a precisar da MESMA conta que a lista — duas versões
+ * arredondando diferente mostrariam tamanhos distintos para o mesmo arquivo.
+ */
+export function formatBytes(bytes: number): string {
+  if (!bytes) return '—';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+}
+
+/** Data/hora por extenso (propriedades e painel de detalhes). */
+export function formatDateTime(mtime: string | null): string {
+  if (!mtime) return 'Não informado';
+  const date = new Date(mtime);
+  if (isNaN(date.getTime())) return 'Não informado';
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}

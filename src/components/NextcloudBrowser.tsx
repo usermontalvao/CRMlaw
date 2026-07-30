@@ -42,6 +42,34 @@ import { NextcloudIcon } from './icons/NextcloudIcon';
 import { NcModalCloseButton } from './nextcloud/NcModalCloseButton';
 import { SortablePdfPage } from './nextcloud/SortablePdfPage';
 import { NcThumb, thumbCache } from './nextcloud/NcThumb';
+import { NextcloudTopBar } from './nextcloud/NextcloudTopBar';
+import { NextcloudBreadcrumbs } from './nextcloud/NextcloudBreadcrumbs';
+import { NextcloudNewMenu } from './nextcloud/NextcloudNewMenu';
+import { NextcloudMoreMenu } from './nextcloud/NextcloudMoreMenu';
+import { NextcloudSelectionToolbar } from './nextcloud/NextcloudSelectionToolbar';
+import { NextcloudDetailsPanel } from './nextcloud/NextcloudDetailsPanel';
+import { NextcloudEmptyState } from './nextcloud/NextcloudEmptyState';
+import {
+  NextcloudFilterChips,
+  matchesTypeFilter,
+  type NextcloudTypeFilter,
+} from './nextcloud/NextcloudFilterChips';
+import {
+  NC_BORDER,
+  NC_BRAND_BLUE,
+  NC_FOCUS_RING,
+  NC_HAIRLINE,
+  NC_HOVER,
+  NC_SELECTED,
+  NC_SHADOW,
+  NC_SHELL_BG,
+  NC_SURFACE,
+  NC_SURFACE_MUTED,
+  NC_TEXT,
+  NC_TEXT_FAINT,
+  NC_TEXT_MUTED,
+  NC_TEXT_STRONG,
+} from './nextcloud/ncTokens';
 import { useNextcloudSelection } from '../hooks/useNextcloudSelection';
 import { useNextcloudClipboard } from '../hooks/useNextcloudClipboard';
 import { useNextcloudPresence, type EditingPeer } from '../hooks/useNextcloudPresence';
@@ -52,6 +80,7 @@ import { setLocalPdfWorker } from '../utils/pdfWorker';
 import {
   isDocx, isPdf, isImage, isVideo, isAudio, isMedia, isTextFile,
   fileTypeLabel, extIcon, fileIconColorClass, baseName, fileExtension,
+  formatBytes, formatDateTime,
 } from '../utils/nextcloudFile';
 import { formatRelativeTime, relativeTimeRefreshDelay } from '../utils/relativeTime';
 import {
@@ -249,11 +278,11 @@ const NextcloudTreeNode: React.FC<{
           if (event.key === 'Enter') onNavigate(nodePath);
           if (event.key === 'ArrowRight' && !expanded) void toggleExpanded(event as unknown as React.MouseEvent);
         }}
-        className={`group flex h-8 cursor-default items-center gap-1 rounded-lg pr-2 text-[13px] transition ${
+        className={`group flex h-9 cursor-default items-center gap-1 rounded-full pr-3 text-[13px] transition ${
           dragOver
-            ? 'bg-blue-600 font-semibold text-white shadow-sm ring-2 ring-blue-300 dark:ring-blue-700'
+            ? 'bg-blue-600 font-medium text-white shadow-sm ring-2 ring-blue-300 dark:ring-blue-700'
             : isActive
-            ? 'bg-blue-100 font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-200'
+            ? 'bg-[#e8f0fe] font-medium text-blue-800 dark:bg-blue-950/60 dark:text-blue-200'
             : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800'
         }`}
         style={{ paddingLeft: 6 + depth * 14 }}
@@ -301,27 +330,18 @@ const NextcloudTreeNode: React.FC<{
  * no mesmo caminho do Nextcloud, sem criar petição) e pré-visualizar PDF/imagem.
  */
 
-function formatBytes(bytes: number): string {
-  if (!bytes) return '—';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let n = bytes;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
-  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-}
-
-function formatDateTime(mtime: string | null): string {
-  if (!mtime) return 'Não informado';
-  const date = new Date(mtime);
-  if (isNaN(date.getTime())) return 'Não informado';
-  return date.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+/**
+ * Conteúdo de texto pronto para subir ao Nextcloud.
+ *
+ * A função de upload recusa corpo VAZIO de propósito: um corpo de 0 byte
+ * costuma ser requisição que perdeu o conteúdo no caminho, e aceitá-la
+ * truncaria o arquivo no servidor. O efeito colateral era que criar uma nota em
+ * branco (ou apagar todo o texto e salvar) devolvia "os dados enviados são
+ * inválidos". Mas um arquivo de texto vazio é legítimo — então guardamos a
+ * menor representação honesta dele: uma quebra de linha.
+ */
+function textContentBlob(content: string, mime = 'text/plain'): Blob {
+  return new Blob([content.length > 0 ? content : '\n'], { type: `${mime};charset=utf-8` });
 }
 
 const RelativeModifiedTime: React.FC<{ mtime: string | null }> = React.memo(({ mtime }) => {
@@ -395,6 +415,7 @@ const NextcloudBrowser: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ message: string; stamp: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
   const [dragActive, setDragActive] = useState(false);
   const [uploadDropReport, setUploadDropReport] = useState<UploadDropReport | null>(null);
@@ -473,6 +494,17 @@ const NextcloudBrowser: React.FC = () => {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => {
     try { return localStorage.getItem('nextcloud-sort-dir') === 'desc' ? 'desc' : 'asc'; } catch { return 'asc'; }
   });
+  // Painel de detalhes: preferência persistida, como o modo de exibição.
+  const [detailsOpen, setDetailsOpen] = useState(() => {
+    try { return localStorage.getItem('nextcloud-details-open') === '1'; } catch { return false; }
+  });
+  // Filtro por tipo (chips). NÃO é persistido de propósito: voltar ao módulo e
+  // encontrar metade dos arquivos escondidos por um filtro esquecido parece
+  // arquivo sumido.
+  const [typeFilter, setTypeFilter] = useState<NextcloudTypeFilter>('all');
+  useEffect(() => {
+    try { localStorage.setItem('nextcloud-details-open', detailsOpen ? '1' : '0'); } catch { /* ignore */ }
+  }, [detailsOpen]);
   useEffect(() => {
     try { localStorage.setItem('nextcloud-view-mode', viewMode); } catch { /* ignore */ }
   }, [viewMode]);
@@ -795,7 +827,7 @@ const NextcloudBrowser: React.FC = () => {
   }, [search, path]);
 
   // Entradas exibidas: resultados da busca recursiva quando há termo, senão a pasta.
-  const displayEntries = useMemo(() => {
+  const sortedEntries = useMemo(() => {
     const list = [...(isSearchActive ? (searchResults ?? []) : entries)];
     return list.sort((a, b) => {
       if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
@@ -806,6 +838,14 @@ const NextcloudBrowser: React.FC = () => {
       return sortDir === 'asc' ? comparison : -comparison;
     });
   }, [entries, isSearchActive, searchResults, sortBy, sortDir]);
+
+  // O filtro por tipo entra DEPOIS da ordenação e vale para todo o resto do
+  // explorador (seleção, marquee, Ctrl+A, teclado): o que está escondido pelo
+  // chip não pode ser apagado nem movido sem estar à vista.
+  const displayEntries = useMemo(
+    () => (typeFilter === 'all' ? sortedEntries : sortedEntries.filter((entry) => matchesTypeFilter(entry, typeFilter))),
+    [sortedEntries, typeFilter],
+  );
 
   useLayoutEffect(() => {
     if (loading || searching || restoredScrollKeyRef.current === browserScrollKey) return;
@@ -1044,7 +1084,7 @@ const NextcloudBrowser: React.FC = () => {
       } else {
         const blob = kind === 'word'
           ? await Packer.toBlob(new DocxDocument({ sections: [{ properties: {}, children: [new Paragraph('')] }] }))
-          : new Blob([''], { type: `${definition.mime};charset=utf-8` });
+          : textContentBlob('', definition.mime);
         size = blob.size;
         await nextcloudService.writeFile(target, blob);
       }
@@ -1656,7 +1696,7 @@ const NextcloudBrowser: React.FC = () => {
       if (movedNow) {
         await nextcloudService.move(textEditorEntry!.path, target);
       }
-      const blob = new Blob([textEditorContent], { type: 'text/plain;charset=utf-8' });
+      const blob = textContentBlob(textEditorContent);
       // Só usa If-Match ao SOBRESCREVER a mesma versão que abrimos (não em
       // arquivo novo nem após mover). Assim detectamos edição concorrente (412).
       const useIfMatch = !movedNow && textEditorEntry && target === textEditorEntry.path ? textEditorEtag : null;
@@ -1719,7 +1759,7 @@ const NextcloudBrowser: React.FC = () => {
       const dir = dirOf(textEditorEntry.path);
       const freeName = await resolveFreeName(dir, textEditorName.trim() || 'Novo documento.txt');
       const target = [dir, freeName].filter(Boolean).join('/');
-      const blob = new Blob([textEditorContent], { type: 'text/plain;charset=utf-8' });
+      const blob = textContentBlob(textEditorContent);
       const put = await nextcloudService.writeFile(target, blob);
       setTextEditorName(freeName);
       setTextEditorSavedContent(textEditorContent);
@@ -2176,6 +2216,30 @@ const NextcloudBrowser: React.FC = () => {
       setError(`${report.filesUploaded} arquivo(s) enviado(s); ${report.failures.length} item(ns) falharam. Veja o resumo.`);
     }
   }, [load, path]);
+
+  /**
+   * "Enviar pasta" pelo seletor de arquivos. O `webkitdirectory` entrega uma
+   * lista PLANA de arquivos com o caminho relativo em cada um — as pastas
+   * intermediárias precisam ser deduzidas, senão pastas vazias somem e a
+   * criação da árvore depende da ordem de chegada. Daí em diante é o mesmo
+   * caminho do arrastar-e-soltar: mesma criação de árvore, mesma resolução de
+   * conflito de nome, mesmo relatório.
+   */
+  const handleUploadFolder = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const directories = new Set<string>();
+    const items: NextcloudDroppedItem[] = [];
+    for (const file of Array.from(files)) {
+      const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+      const segments = relativePath.split('/').filter(Boolean);
+      for (let i = 1; i < segments.length; i += 1) directories.add(segments.slice(0, i).join('/'));
+      items.push({ kind: 'file', file, relativePath });
+    }
+    await uploadDroppedFiles([
+      ...Array.from(directories).map((relativePath) => ({ kind: 'directory' as const, relativePath })),
+      ...items,
+    ]);
+  }, [uploadDroppedFiles]);
 
   useEffect(() => {
     const element = dropZoneRef.current;
@@ -3471,41 +3535,56 @@ const NextcloudBrowser: React.FC = () => {
   return (
     <div
       ref={dropZoneRef}
-      className={`relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-gray-900 transition-[padding] duration-200 dark:bg-gray-900 dark:text-gray-100 ${sidebarOpen ? 'lg:pl-[var(--nextcloud-sidebar-width)]' : ''}`}
+      className={`relative flex h-full min-h-0 flex-col overflow-hidden ${NC_SHELL_BG} ${NC_TEXT} transition-[padding] duration-200 ${sidebarOpen ? 'lg:pl-[var(--nextcloud-sidebar-width)]' : ''}`}
       style={{ '--nextcloud-sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
     >
       {sidebarOpen && (
         <>
           <button type="button" aria-label="Fechar navegação lateral" onClick={() => setSidebarOpen(false)} className="absolute inset-0 z-30 bg-slate-950/20 backdrop-blur-[1px] lg:hidden" />
           <aside
-            className={`absolute inset-y-0 left-0 z-40 flex max-w-[calc(100vw_-_32px)] flex-col border-r bg-[#f8f9fb] shadow-xl lg:z-20 lg:shadow-none dark:bg-zinc-950 ${resizingSidebar ? 'border-blue-400' : 'border-slate-200 dark:border-zinc-800'}`}
+            className={`absolute inset-y-0 left-0 z-40 flex max-w-[calc(100vw_-_32px)] flex-col ${NC_SURFACE_MUTED} shadow-xl lg:z-20 lg:shadow-none ${resizingSidebar ? 'border-r border-blue-400' : ''}`}
             style={{ width: sidebarWidth }}
           >
-            <div className="flex h-[61px] shrink-0 items-center justify-between border-b border-slate-200 px-3 dark:border-zinc-800">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <div className="flex h-8 w-11 shrink-0 items-center justify-center rounded-lg bg-[#0082c9] text-white shadow-sm">
-                  <NextcloudIcon className="h-4 w-8" />
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">Explorador</p>
-                  <p className="text-[11px] text-slate-400">Nextcloud</p>
-                </div>
-              </div>
-              <button type="button" onClick={() => setSidebarOpen(false)} title="Recolher painel" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 dark:hover:bg-zinc-800 dark:hover:text-white">
+            <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-3">
+              <NextcloudNewMenu
+                onNewFolder={newFolder}
+                onNewWord={() => { void createItemInline('word'); }}
+                onNewTextNote={() => { void createItemInline('text'); }}
+                onNewMarkdown={() => { void createItemInline('markdown'); }}
+                onUploadFiles={() => fileInputRef.current?.click()}
+                onUploadFolder={() => folderInputRef.current?.click()}
+                disabled={Boolean(busy)}
+              />
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(false)}
+                title="Recolher painel"
+                aria-label="Recolher painel de navegação"
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${NC_TEXT_MUTED} ${NC_HOVER} ${NC_FOCUS_RING}`}
+              >
                 <PanelLeftClose className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-              <p className="mb-1 flex items-center gap-1 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400"><ChevronDown className="h-3 w-3" /> Acesso rápido</p>
-              <button type="button" onClick={() => navigateToFolder('')} className={`flex h-8 w-full items-center gap-2 rounded-lg px-3 text-[13px] transition ${path === '' ? 'bg-blue-100 font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-200' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800'}`}>
-                <Home className="h-4 w-4 text-blue-600" /> Início
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+              <button
+                type="button"
+                onClick={() => navigateToFolder('')}
+                className={`flex h-9 w-full items-center gap-3 rounded-full px-3 text-[13px] transition ${NC_FOCUS_RING} ${
+                  path === ''
+                    ? 'bg-[#e8f0fe] font-medium text-blue-800 dark:bg-blue-950/60 dark:text-blue-200'
+                    : `${NC_TEXT} ${NC_HOVER}`
+                }`}
+              >
+                <Home className="h-4 w-4 text-blue-600" /> Meus arquivos
               </button>
 
               <div className="mt-4">
-                <p className="mb-1 flex items-center gap-1 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400"><ChevronDown className="h-3 w-3" /> Este Nextcloud</p>
+                <p className={`mb-1 flex items-center gap-1 px-3 text-[10px] font-bold uppercase tracking-[0.14em] ${NC_TEXT_FAINT}`}>
+                  <ChevronDown className="h-3 w-3" /> Pastas do escritório
+                </p>
                 {sidebarRoots.length === 0 ? (
-                  <p className="px-3 py-2 text-xs text-slate-400">Nenhuma pasta na raiz.</p>
+                  <p className={`px-3 py-2 text-xs ${NC_TEXT_FAINT}`}>Nenhuma pasta na raiz.</p>
                 ) : sidebarRoots.map((folder) => (
                   <NextcloudTreeNode
                     key={`${sidebarTreeRevision}:${folder.path}`}
@@ -3520,11 +3599,21 @@ const NextcloudBrowser: React.FC = () => {
               </div>
             </div>
 
-            <div className="shrink-0 border-t border-slate-200 px-3 py-3 text-[11px] text-slate-400 dark:border-zinc-800">
-              <div className="flex items-center justify-between gap-2">
-                <span>{entries.length} item(ns) na pasta atual</span>
-                <span className="tabular-nums">{sidebarWidth}px</span>
+            {/* Estado da sincronização: diz a verdade sobre o que está
+                acontecendo agora — dizer "Sincronizado" durante uma falha seria
+                pior do que não dizer nada. */}
+            <div className={`shrink-0 border-t px-4 py-3 ${NC_BORDER}`}>
+              <div className={`flex items-center gap-2 text-[11px] ${error ? 'text-red-500' : busy || loading ? 'text-blue-600 dark:text-blue-300' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                {error
+                  ? <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                  : busy || loading
+                    ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                    : <CircleCheck className="h-3.5 w-3.5 shrink-0" />}
+                <span className="truncate">
+                  {error ? 'Falha ao falar com o Nextcloud' : busy || loading ? 'Sincronizando com o Nextcloud…' : 'Sincronizado com Nextcloud'}
+                </span>
               </div>
+              <p className={`mt-1.5 text-[11px] ${NC_TEXT_FAINT}`}>{entries.length} item(ns) na pasta atual</p>
             </div>
             <button
               type="button"
@@ -3556,162 +3645,520 @@ const NextcloudBrowser: React.FC = () => {
           </div>
         </div>
       )}
-      {/* Cabeçalho / toolbar (barra do cloud) */}
-      <div className="border-b border-gray-200 dark:border-gray-800 bg-gradient-to-r from-blue-50/60 to-transparent dark:from-blue-950/20">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3">
-          <div className="flex items-center gap-2.5 min-w-0 shrink-0">
-            {!sidebarOpen && (
-              <button type="button" onClick={() => setSidebarOpen(true)} title="Mostrar painel de navegação" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 dark:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-white">
-                <PanelLeftOpen className="h-4 w-4" />
-              </button>
-            )}
-            <div className="flex h-9 w-12 items-center justify-center rounded-xl bg-[#0082c9] text-white shadow-sm shadow-sky-600/20">
-              <NextcloudIcon className="h-4 w-9" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-base font-semibold leading-tight truncate">Nextcloud</h1>
-              <p className="text-xs text-gray-500 truncate">
-                {isSearchActive
-                  ? (searching ? 'Buscando…' : `${displayEntries.length} resultado(s)`)
-                  : `${entries.length} item(ns)`}
-              </p>
-            </div>
-          </div>
+      <NextcloudTopBar
+        search={search}
+        onSearchChange={setSearch}
+        searchScopeLabel={path ? 'Pesquisar nesta pasta e nas subpastas…' : 'Pesquisar no Nextcloud'}
+        searching={searching}
+        summary={isSearchActive
+          ? (searching ? 'Buscando…' : `${displayEntries.length} resultado(s)`)
+          : `${entries.length} item(ns)`}
+        sidebarOpen={sidebarOpen}
+        onOpenSidebar={() => setSidebarOpen(true)}
+        loading={loading}
+        onRefresh={() => { void load(path); }}
+      />
+      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => { void handleUpload(e.target.files); e.target.value = ''; }} />
+      <input
+        // `webkitdirectory` não existe na tipagem do React; setar por atributo
+        // mantém o TypeScript honesto em vez de calar o erro com `any`.
+        ref={(node) => {
+          if (node) {
+            node.setAttribute('webkitdirectory', '');
+            node.setAttribute('directory', '');
+          }
+          folderInputRef.current = node;
+        }}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(event) => { void handleUploadFolder(event.target.files); event.target.value = ''; }}
+      />
 
-          {/* Barra de pesquisa */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 focus-within:ring-2 focus-within:ring-blue-500/40 focus-within:border-blue-500">
-              <Search className="w-4 h-4 text-gray-400 shrink-0" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={path ? 'Pesquisar aqui e nas subpastas…' : 'Pesquisar em tudo…'}
-                className="bg-transparent outline-none text-sm flex-1 min-w-0"
+      <main className="relative flex min-h-0 flex-1 gap-3 px-2 pb-2 sm:px-3 sm:pb-3 lg:px-4 lg:pb-4">
+        <section className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border ${NC_BORDER} ${NC_SURFACE} ${NC_SHADOW}`}>
+          {/* Uma linha só: caminho quando não há seleção, ações quando há.
+              Trocar no lugar (em vez de empilhar mais uma barra) é o que evita
+              a lista pular de altura a cada clique. */}
+          <div className={`flex min-h-[56px] shrink-0 items-center justify-between gap-2 border-b px-2 py-2 sm:px-3 ${NC_HAIRLINE}`}>
+            {selectedEntries.length > 0 ? (
+              <NextcloudSelectionToolbar
+                entries={selectedEntries}
+                pdfs={selectedPdfs}
+                images={selectedImages}
+                docx={selectedDocx}
+                busy={Boolean(busy)}
+                convertingDocx={convertingDocxPaths.length > 0}
+                linkFolder={selectedEntries.length === 1 && selectedEntries[0].isDir ? selectedEntries[0] : null}
+                linkLabel={selectedEntries.length === 1 && links[selectedEntries[0].path] ? 'Alterar vínculo' : 'Vincular'}
+                onLinkFolder={() => setLinkTarget(selectedEntries[0])}
+                onCopy={() => copyEntries(selectedEntries)}
+                onCut={() => cutEntries(selectedEntries)}
+                onDownload={() => { void downloadEntries(selectedEntries); }}
+                onDelete={() => remove(selectedEntries)}
+                onPdfTools={() => { void openPdfTools(selectedPdfs[0]); }}
+                onPdfLibrary={() => { void openPdfTools(selectedPdfs[0], selectedPdfs); }}
+                onPdfMerge={() => { void openPdfMergeTools(selectedPdfs); }}
+                onOrganizePdf={() => { void openOrganizer(selectedPdfs[0]); }}
+                onImagesToPdf={() => { setImagesPdfTargets(selectedImages); setImagesPdfName(selectedImages.length === 1 ? baseName(selectedImages[0].name) : 'imagens-convertidas'); }}
+                onDocxToPdf={() => { void convertDocxEntriesToPdf(selectedDocx); }}
+                onProperties={() => setPropertiesTargets(selectedEntries)}
+                detailsOpen={detailsOpen}
+                onToggleDetails={() => setDetailsOpen((current) => !current)}
+                onClear={clearSelection}
               />
-              {searching && <Loader2 className="w-4 h-4 animate-spin text-gray-400 shrink-0" />}
-              {search && (
-                <button onClick={() => setSearch('')} title="Limpar busca" className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
+            ) : (
+              <>
+                <NextcloudBreadcrumbs
+                  segments={segments}
+                  onNavigate={(target) => navigateToFolder(target)}
+                  canGoBack={canGoBack}
+                  canGoForward={canGoForward}
+                  canGoUp={parentPath !== null}
+                  onBack={goBackFolder}
+                  onForward={goForwardFolder}
+                  onUp={goUpFolder}
+                />
+
+                <div className="flex shrink-0 items-center gap-1">
+                  {clipboard && (
+                    <div className={`mr-1 flex items-center gap-1 rounded-full border py-0.5 pl-2.5 pr-0.5 ${NC_BORDER}`}>
+                      <span className={`hidden text-[11px] sm:inline ${NC_TEXT_MUTED}`}>
+                        {clipboard.entries.length} {clipboard.mode === 'cut' ? 'recortado(s)' : 'copiado(s)'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => { void paste(); }}
+                        title="Colar (Ctrl+V)"
+                        className={`inline-flex h-7 items-center gap-1.5 rounded-full bg-blue-600 px-2.5 text-[11px] font-medium text-white transition hover:bg-blue-700 ${NC_FOCUS_RING}`}
+                      >
+                        <ClipboardPaste className="h-3.5 w-3.5" /> Colar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setClipboard(null)}
+                        title="Cancelar"
+                        aria-label="Cancelar área de transferência"
+                        className={`flex h-7 w-7 items-center justify-center rounded-full ${NC_TEXT_MUTED} ${NC_HOVER} ${NC_FOCUS_RING}`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className={`hidden items-center rounded-full border pl-2.5 lg:flex ${NC_BORDER}`}>
+                    <ArrowUpDown className={`h-3.5 w-3.5 ${NC_TEXT_FAINT}`} />
+                    <select
+                      value={sortBy}
+                      onChange={(event) => setSortBy(event.target.value as 'name' | 'date' | 'size')}
+                      aria-label="Ordenar por"
+                      className={`h-8 cursor-pointer bg-transparent px-1.5 text-xs outline-none ${NC_TEXT}`}
+                    >
+                      <option value="name">Nome</option>
+                      <option value="date">Modificação</option>
+                      <option value="size">Tamanho</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setSortDir((current) => current === 'asc' ? 'desc' : 'asc')}
+                      title={sortDir === 'asc' ? 'Ordem crescente' : 'Ordem decrescente'}
+                      className={`h-8 rounded-r-full border-l px-2.5 text-[11px] font-semibold ${NC_BORDER} ${NC_TEXT_MUTED} ${NC_HOVER} ${NC_FOCUS_RING}`}
+                    >
+                      {sortDir === 'asc' ? 'A–Z' : 'Z–A'}
+                    </button>
+                  </div>
+
+                  <div className={`flex items-center rounded-full border p-0.5 ${NC_BORDER}`}>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('list')}
+                      title="Lista"
+                      aria-label="Visualização em lista"
+                      aria-pressed={viewMode === 'list'}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full transition ${NC_FOCUS_RING} ${viewMode === 'list' ? `bg-[#e8f0fe] text-blue-700 dark:bg-blue-950/60 dark:text-blue-200` : `${NC_TEXT_MUTED} ${NC_HOVER}`}`}
+                    >
+                      <List className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('grid')}
+                      title="Grade"
+                      aria-label="Visualização em grade"
+                      aria-pressed={viewMode === 'grid'}
+                      className={`flex h-8 w-8 items-center justify-center rounded-full transition ${NC_FOCUS_RING} ${viewMode === 'grid' ? `bg-[#e8f0fe] text-blue-700 dark:bg-blue-950/60 dark:text-blue-200` : `${NC_TEXT_MUTED} ${NC_HOVER}`}`}
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setDetailsOpen((current) => !current)}
+                    title={detailsOpen ? 'Ocultar detalhes' : 'Mostrar detalhes'}
+                    aria-label={detailsOpen ? 'Ocultar detalhes' : 'Mostrar detalhes'}
+                    aria-expanded={detailsOpen}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full transition ${NC_FOCUS_RING} ${detailsOpen ? 'bg-[#e8f0fe] text-blue-700 dark:bg-blue-950/60 dark:text-blue-200' : `${NC_TEXT_MUTED} ${NC_HOVER}`}`}
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+
+                  <NextcloudMoreMenu
+                    onAutoLink={() => { void runAutoLink(); }}
+                    autoLinkDisabled={Boolean(busy)}
+                    onOpenTextEditor={() => { void openTextEditor(); }}
+                    onRefresh={() => { void load(path); }}
+                    detailsOpen={detailsOpen}
+                    onToggleDetails={() => setDetailsOpen((current) => !current)}
+                    sidebarOpen={sidebarOpen}
+                    onToggleSidebar={() => setSidebarOpen((current) => !current)}
+                    viewMode={viewMode}
+                    onViewModeChange={setViewMode}
+                    sortBy={sortBy}
+                    onSortByChange={setSortBy}
+                    sortDir={sortDir}
+                    onSortDirChange={setSortDir}
+                  />
+                </div>
+              </>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="hidden lg:flex items-center rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800">
-              <ArrowUpDown className="ml-2.5 h-4 w-4 text-gray-400" />
-              <select
-                value={sortBy}
-                onChange={(event) => setSortBy(event.target.value as 'name' | 'date' | 'size')}
-                aria-label="Ordenar por"
-                className="h-9 bg-transparent px-2 text-xs outline-none"
-              >
-                <option value="name">Nome</option>
-                <option value="date">Modificação</option>
-                <option value="size">Tamanho</option>
-              </select>
-              <button
-                type="button"
-                onClick={() => setSortDir((current) => current === 'asc' ? 'desc' : 'asc')}
-                title={sortDir === 'asc' ? 'Ordem crescente' : 'Ordem decrescente'}
-                className="h-9 border-l border-gray-200 px-2.5 text-xs font-semibold text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700"
-              >
-                {sortDir === 'asc' ? 'A–Z' : 'Z–A'}
-              </button>
-            </div>
-            {/* Alternância lista / blocos (preferência salva) */}
-            <div className="flex items-center rounded-xl border border-gray-300 dark:border-gray-700 overflow-hidden">
-              <button onClick={() => setViewMode('list')} title="Lista" className={`p-2 ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500'}`}>
-                <List className="w-4 h-4" />
-              </button>
-              <button onClick={() => setViewMode('grid')} title="Blocos" className={`p-2 ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-500'}`}>
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-            </div>
-            <button onClick={newFolder} title="Nova pasta" aria-label="Nova pasta" className="inline-flex items-center justify-center p-2 rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
-              <FolderPlus className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => void runAutoLink()}
-              disabled={!!busy}
-              title="Vincular automaticamente as pastas desta pasta aos clientes (por CPF/CNPJ ou nome)"
-              aria-label="Vincular auto"
-              className="inline-flex items-center justify-center p-2 rounded-xl border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
-            >
-              <Wand2 className="w-4 h-4" />
-            </button>
-            <button onClick={() => void openTextEditor()} title="Bloco de notas" aria-label="Bloco de notas" className="inline-flex items-center justify-center p-2 rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
-              <NotebookPen className="w-4 h-4 text-blue-600" />
-            </button>
-            <button onClick={() => fileInputRef.current?.click()} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl bg-blue-600 text-white hover:bg-blue-700 shadow-sm">
-              <Upload className="w-4 h-4" /> <span className="hidden sm:inline">Enviar</span>
-            </button>
-            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => { handleUpload(e.target.files); e.target.value = ''; }} />
-            <button onClick={() => load(path)} title="Recarregar" className="p-2 rounded-xl border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-      </div>
+          <NextcloudFilterChips entries={sortedEntries} value={typeFilter} onChange={setTypeFilter} />
 
-      {/* Breadcrumb, com voltar / avançar / subir um nível (como no explorador) */}
-      <div className="flex items-center gap-1 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 border-b border-gray-100 dark:border-gray-800 overflow-x-auto">
-        <div className="mr-1.5 flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={goBackFolder}
-            disabled={!canGoBack}
-            title="Voltar (Alt+←)"
-            aria-label="Voltar"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-white"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={goForwardFolder}
-            disabled={!canGoForward}
-            title="Avançar (Alt+→)"
-            aria-label="Avançar"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-white"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={goUpFolder}
-            disabled={parentPath === null}
-            title="Subir um nível (Alt+↑)"
-            aria-label="Subir um nível"
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800 dark:hover:text-white"
-          >
-            <ArrowUp className="h-4 w-4" />
-          </button>
+
+
+        {/* Lista / Blocos */}
+        <div
+          ref={fileAreaRef}
+          className="relative flex-1 overflow-y-auto"
+          onScroll={(event) => {
+            scrollPositionsRef.current[browserScrollKey] = event.currentTarget.scrollTop;
+            scheduleBrowserSessionPersist();
+          }}
+          onPointerDown={handleMarqueePointerDown}
+          onContextMenu={openBlankCtxMenu}
+          onClick={() => {
+            if (!suppressFileAreaClickRef.current) clearSelection();
+          }}
+        >
+          {marquee && (
+            <div
+              className="pointer-events-none fixed z-[80] border border-blue-500 bg-blue-500/15 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
+              style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }}
+            />
+          )}
+          {(loading && !isSearchActive) || (isSearchActive && searching && !searchResults) ? (
+            <div className={`flex flex-col items-center justify-center gap-3 py-16 ${NC_TEXT_MUTED}`}>
+              <Loader2 className="h-6 w-6 animate-spin" />
+              {isSearchActive && <span className="text-sm">Buscando em todas as subpastas…</span>}
+            </div>
+          ) : displayEntries.length === 0 ? (
+            <NextcloudEmptyState
+              searchTerm={isSearchActive ? search : null}
+              filterActive={typeFilter !== 'all' && sortedEntries.length > 0}
+              onClearFilter={() => setTypeFilter('all')}
+              onUpload={() => fileInputRef.current?.click()}
+            />
+          ) : viewMode === 'grid' ? (
+            /* ── Grade ── */
+            <div className="grid gap-3 p-3 sm:p-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+              {displayEntries.map((entry) => {
+                const Icon = extIcon(entry);
+                // Pasta vinculada mostra o próprio vínculo; arquivo mostra o da
+                // pasta em que está — na busca recursiva é essa a informação que
+                // diz de qual cliente é o documento.
+                const linkedClient = clientNameById(links[entry.isDir ? entry.path : dirOf(entry.path)]);
+                const isSel = !!selected[entry.path];
+                const extension = entry.isDir ? null : fileExtension(entry.name);
+                const isDropTarget = entry.isDir && dragTargetPath === entry.path;
+                return (
+                  <div
+                    key={entry.path}
+                    data-nextcloud-entry-path={entry.path}
+                    onContextMenu={(e) => openCtxMenu(e, entry)}
+                    onDoubleClick={() => openEntry(entry)}
+                    onClick={(event) => handleEntryClick(event, entry)}
+                    draggable
+                    onDragStart={(event) => handleInternalDragStart(event, entry)}
+                    onDragEnd={finishInternalDrag}
+                    onDragEnter={(event) => {
+                      if (!entry.isDir || !draggedEntries?.length) return;
+                      event.preventDefault();
+                      setDragTargetPath(entry.path);
+                      setDragOperation(event.ctrlKey || event.metaKey || event.altKey ? 'copy' : 'move');
+                    }}
+                    onDragOver={(event) => {
+                      if (entry.isDir && draggedEntries?.length) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const operation = event.ctrlKey || event.metaKey || event.altKey ? 'copy' : 'move';
+                        event.dataTransfer.dropEffect = operation;
+                        setDragTargetPath(entry.path);
+                        setDragOperation(operation);
+                      }
+                    }}
+                    onDragLeave={(event) => {
+                      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                      if (dragTargetPath === entry.path) setDragTargetPath(null);
+                    }}
+                    onDrop={(event) => void dropSelectedIntoFolder(event, entry)}
+                    className={`group relative flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-2.5 transition-all duration-150 ${
+                      isDropTarget
+                        ? 'scale-[1.025] border-blue-500 bg-[#e8f0fe] shadow-[0_10px_30px_rgba(37,99,235,0.2)] ring-4 ring-blue-500/15 dark:bg-blue-950/70'
+                        : isSel
+                          ? `border-blue-400 ${NC_SELECTED}`
+                          : `${NC_BORDER} ${NC_SURFACE} hover:border-slate-300 hover:shadow-md dark:hover:border-zinc-700`
+                    } ${isCut(entry.path) ? 'opacity-50' : ''}`}
+                  >
+                    <button onClick={(e) => { e.stopPropagation(); selectEntry(entry, { toggle: true }); }} title={isSel ? 'Desmarcar' : 'Selecionar'} aria-label={isSel ? `Desmarcar ${entry.name}` : `Selecionar ${entry.name}`} className={`absolute left-2 top-2 z-10 ${NC_TEXT_FAINT} hover:text-blue-600`}>
+                      {isSel ? <CheckSquare className="h-4 w-4 text-blue-600" /> : <Square className="h-4 w-4 opacity-0 transition group-hover:opacity-100" />}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); openCtxMenu(e, entry); }} title="Mais ações" aria-label={`Mais ações para ${entry.name}`} className={`absolute right-1.5 top-1.5 z-10 rounded-full p-1 opacity-0 transition group-hover:opacity-100 ${NC_TEXT_MUTED} ${NC_HOVER}`}>
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                    {/* Área de prévia BRANCA: é o "papel" do documento. Um bloco
+                        cinza aqui faz todo arquivo parecer indisponível. */}
+                    <div data-nextcloud-drag-visual className={`relative flex w-full items-center justify-center overflow-hidden rounded-lg border ${NC_BORDER} ${NC_SURFACE}`}>
+                      {entry.isDir
+                        ? (
+                          <div className="flex h-24 w-full items-center justify-center">
+                            {isDropTarget ? (
+                              <span className="flex h-20 w-20 animate-pulse items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-4 ring-blue-300/50">
+                                <FolderInput className="h-11 w-11" />
+                              </span>
+                            ) : (
+                              <Icon className="h-12 w-12 text-blue-500" />
+                            )}
+                          </div>
+                        )
+                        : <NcThumb entry={entry} />}
+                      {isDropTarget && (
+                        <span className="absolute inset-x-2 bottom-0 inline-flex items-center justify-center gap-1 rounded-lg bg-blue-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-lg">
+                          <FolderInput className="h-3 w-3" />
+                          {dragOperation === 'copy' ? 'Copiar para esta pasta' : 'Mover para esta pasta'}
+                        </span>
+                      )}
+                      {extension && (
+                        <span className={`absolute bottom-1.5 left-1.5 inline-flex rounded-md border px-1.5 py-1 text-[9px] font-extrabold leading-none tracking-[0.08em] shadow-sm backdrop-blur-sm ${extensionBadgeClass(extension)}`}>
+                          {extension}
+                        </span>
+                      )}
+                    </div>
+                    {inlineRename?.path === entry.path ? (
+                      <input
+                        autoFocus
+                        value={inlineRename.value}
+                        onClick={(event) => event.stopPropagation()}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                        onChange={(event) => setInlineRename((current) => current ? { ...current, value: event.target.value } : current)}
+                        onFocus={(event) => event.currentTarget.setSelectionRange(0, Math.max(0, event.currentTarget.value.length - (inlineRename.extension?.length ?? 0)))}
+                        onBlur={() => { void finishInlineRename(); }}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+                          if (event.key === 'Escape') { event.preventDefault(); setInlineRename(null); }
+                        }}
+                        aria-label="Nome do novo documento"
+                        className="w-full rounded-md border border-blue-500 bg-white px-1.5 py-1 text-center text-xs text-slate-900 outline-none ring-2 ring-blue-500/20 dark:bg-zinc-900 dark:text-white"
+                      />
+                    ) : (
+                      <span className={`line-clamp-2 w-full break-all text-center text-xs leading-tight ${NC_TEXT}`} title={entry.name}>{entry.name}</span>
+                    )}
+                    {isSearchActive && <span className={`w-full truncate text-center text-[10px] ${NC_TEXT_FAINT}`} title={dirOf(entry.path) || 'raiz'}>{dirOf(entry.path) || 'raiz'}</span>}
+                    {!entry.isDir && <EditingNowBadge peers={othersEditing(entry.path)} compact />}
+                    {linkedClient && (
+                      <span className="inline-flex max-w-full items-center gap-1 truncate rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                        <UserPlus className="h-2.5 w-2.5 shrink-0" /> <span className="truncate">{linkedClient}</span>
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* ── Lista ── */
+            <table className="w-full text-sm">
+              <thead className={`sticky top-0 z-10 border-b text-xs ${NC_HAIRLINE} ${NC_SURFACE} ${NC_TEXT_MUTED}`}>
+                <tr>
+                  <th className="w-9 px-2 py-2.5" />
+                  <th className="px-3 py-2.5 text-left font-medium">
+                    <button type="button" onClick={() => { if (sortBy === 'name') setSortDir((value) => value === 'asc' ? 'desc' : 'asc'); else setSortBy('name'); }} className="inline-flex items-center gap-1 hover:text-blue-600">
+                      Nome {sortBy === 'name' && <ArrowUpDown className="h-3 w-3" />}
+                    </button>
+                  </th>
+                  <th className="hidden px-3 py-2.5 text-left font-medium lg:table-cell">Cliente</th>
+                  <th className="hidden px-3 py-2.5 text-left font-medium md:table-cell">
+                    <button type="button" onClick={() => { if (sortBy === 'date') setSortDir((value) => value === 'asc' ? 'desc' : 'asc'); else setSortBy('date'); }} className="inline-flex items-center gap-1 hover:text-blue-600">
+                      Modificado {sortBy === 'date' && <ArrowUpDown className="h-3 w-3" />}
+                    </button>
+                  </th>
+                  <th className="hidden px-3 py-2.5 text-right font-medium sm:table-cell">
+                    <button type="button" onClick={() => { if (sortBy === 'size') setSortDir((value) => value === 'asc' ? 'desc' : 'asc'); else setSortBy('size'); }} className="ml-auto inline-flex items-center gap-1 hover:text-blue-600">
+                      Tamanho {sortBy === 'size' && <ArrowUpDown className="h-3 w-3" />}
+                    </button>
+                  </th>
+                  <th className="w-12 px-2 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {displayEntries.map((entry) => {
+                const Icon = extIcon(entry);
+                const linkedClient = clientNameById(links[entry.isDir ? entry.path : dirOf(entry.path)]);
+                const isSel = !!selected[entry.path];
+                const extension = entry.isDir ? null : fileExtension(entry.name);
+                const isDropTarget = entry.isDir && dragTargetPath === entry.path;
+                return (
+                    <tr
+                      key={entry.path}
+                      data-nextcloud-entry-path={entry.path}
+                      onContextMenu={(e) => openCtxMenu(e, entry)}
+                      onDoubleClick={() => openEntry(entry)}
+                      onClick={(event) => handleEntryClick(event, entry)}
+                      draggable
+                      onDragStart={(event) => handleInternalDragStart(event, entry)}
+                      onDragEnd={finishInternalDrag}
+                      onDragEnter={(event) => {
+                        if (!entry.isDir || !draggedEntries?.length) return;
+                        event.preventDefault();
+                        setDragTargetPath(entry.path);
+                        setDragOperation(event.ctrlKey || event.metaKey || event.altKey ? 'copy' : 'move');
+                      }}
+                      onDragOver={(event) => {
+                        if (entry.isDir && draggedEntries?.length) {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          const operation = event.ctrlKey || event.metaKey || event.altKey ? 'copy' : 'move';
+                          event.dataTransfer.dropEffect = operation;
+                          setDragTargetPath(entry.path);
+                          setDragOperation(operation);
+                        }
+                      }}
+                      onDragLeave={(event) => {
+                        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                        if (dragTargetPath === entry.path) setDragTargetPath(null);
+                      }}
+                      onDrop={(event) => void dropSelectedIntoFolder(event, entry)}
+                      className={`group border-b transition ${
+                        isDropTarget
+                          ? 'border-blue-300 bg-[#e8f0fe] shadow-[inset_4px_0_0_#2563eb] dark:border-blue-900 dark:bg-blue-950/60'
+                          : `${NC_HAIRLINE} ${isSel ? NC_SELECTED : 'hover:bg-slate-50 dark:hover:bg-zinc-800/60'}`
+                      } ${isCut(entry.path) ? 'opacity-50' : ''}`}
+                    >
+                      <td className="px-2 py-2 text-center">
+                        <button
+                          onClick={(event) => { event.stopPropagation(); selectEntry(entry, { toggle: true }); }}
+                          title={isSel ? 'Desmarcar' : 'Selecionar'}
+                          aria-label={isSel ? `Desmarcar ${entry.name}` : `Selecionar ${entry.name}`}
+                          className={`p-1 ${NC_TEXT_FAINT} hover:text-blue-600`}
+                        >
+                          {isSel ? <CheckSquare className="h-4 w-4 text-blue-600" /> : <Square className="h-4 w-4 opacity-0 transition group-hover:opacity-100" />}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <span data-nextcloud-drag-visual className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all ${isDropTarget ? 'animate-pulse bg-blue-600 text-white shadow-md ring-2 ring-blue-300' : ''}`}>
+                            {isDropTarget
+                              ? <FolderInput className="h-4 w-4" />
+                              : <Icon className={`h-5 w-5 ${fileIconColorClass(entry)}`} />}
+                          </span>
+                          <span className="flex min-w-0 flex-col">
+                            {inlineRename?.path === entry.path ? (
+                              <input
+                                autoFocus
+                                value={inlineRename.value}
+                                onClick={(event) => event.stopPropagation()}
+                                onDoubleClick={(event) => event.stopPropagation()}
+                                onChange={(event) => setInlineRename((current) => current ? { ...current, value: event.target.value } : current)}
+                                onFocus={(event) => event.currentTarget.setSelectionRange(0, Math.max(0, event.currentTarget.value.length - (inlineRename.extension?.length ?? 0)))}
+                                onBlur={() => { void finishInlineRename(); }}
+                                onKeyDown={(event) => {
+                                  event.stopPropagation();
+                                  if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+                                  if (event.key === 'Escape') { event.preventDefault(); setInlineRename(null); }
+                                }}
+                                aria-label="Nome do novo documento"
+                                className="w-full max-w-[40vw] rounded-md border border-blue-500 bg-white px-2 py-1 text-sm text-slate-900 outline-none ring-2 ring-blue-500/20 dark:bg-zinc-900 dark:text-white"
+                              />
+                            ) : (
+                              <span className={`max-w-[46vw] truncate text-[13px] ${entry.isDir ? 'font-medium' : ''} ${NC_TEXT_STRONG}`} title={entry.name}>
+                                {entry.name}
+                              </span>
+                            )}
+                            {/* Linha secundária: o tipo em palavras. Na busca
+                                recursiva vira a pasta de origem, que ali é a
+                                informação que falta para achar o arquivo. */}
+                            <span className={`max-w-[46vw] truncate text-[11px] ${NC_TEXT_MUTED}`}>
+                              {isDropTarget
+                                ? (dragOperation === 'copy' ? 'Solte para copiar aqui' : 'Solte para mover aqui')
+                                : isSearchActive
+                                  ? (dirOf(entry.path) || 'raiz')
+                                  : fileTypeLabel(entry)}
+                            </span>
+                          </span>
+                          {extension && (
+                            <span className={`hidden shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-extrabold leading-none tracking-[0.08em] sm:inline-flex ${extensionBadgeClass(extension)}`}>
+                              {extension}
+                            </span>
+                          )}
+                          {!entry.isDir && <EditingNowBadge peers={othersEditing(entry.path)} />}
+                        </div>
+                      </td>
+                      <td className={`hidden px-3 py-2 lg:table-cell ${NC_TEXT_MUTED}`}>
+                        {linkedClient ? (
+                          entry.isDir ? (
+                            <span className="inline-flex max-w-[200px] items-center gap-1 truncate rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                              <UserPlus className="h-3 w-3 shrink-0" /> <span className="truncate">{linkedClient}</span>
+                            </span>
+                          ) : (
+                            <span className="block max-w-[200px] truncate text-xs" title={linkedClient}>{linkedClient}</span>
+                          )
+                        ) : (
+                          <span className={`text-xs ${NC_TEXT_FAINT}`}>—</span>
+                        )}
+                      </td>
+                      <td className={`hidden px-3 py-2 text-[13px] md:table-cell ${NC_TEXT_MUTED}`}>
+                        <RelativeModifiedTime mtime={entry.mtime} />
+                      </td>
+                      <td className={`hidden px-3 py-2 text-right text-[13px] tabular-nums sm:table-cell ${NC_TEXT_MUTED}`}>
+                        {entry.isDir ? '—' : formatBytes(entry.size)}
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center justify-end">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openCtxMenu(e, entry); }}
+                            title="Mais ações"
+                            aria-label={`Mais ações para ${entry.name}`}
+                            className={`flex h-8 w-8 items-center justify-center rounded-full opacity-60 transition group-hover:opacity-100 ${NC_TEXT_MUTED} ${NC_HOVER}`}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
-        <button onClick={() => navigateToFolder('')} className="inline-flex items-center gap-1 hover:text-blue-600">
-          <Home className="w-4 h-4" /> Início
-        </button>
-        {segments.map((seg, i) => {
-          const target = segments.slice(0, i + 1).join('/');
-          return (
-            <React.Fragment key={target}>
-              <ChevronRight className="w-4 h-4 opacity-50 shrink-0" />
-              <button onClick={() => navigateToFolder(target)} className="hover:text-blue-600 whitespace-nowrap">{seg}</button>
-            </React.Fragment>
-          );
-        })}
-        {clipboard && (
-          <div className="ml-auto flex items-center gap-1.5 shrink-0">
-            <span className="text-xs text-gray-400 hidden sm:inline">{clipboard.entries.length} {clipboard.mode === 'cut' ? 'recortado(s)' : 'copiado(s)'}</span>
-            <button onClick={() => void paste()} title="Colar (Ctrl+V)" className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs">
-              <ClipboardPaste className="w-3.5 h-3.5" /> Colar
-            </button>
-            <button onClick={() => setClipboard(null)} title="Cancelar" className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
+        </section>
+
+        {detailsOpen && (
+          <NextcloudDetailsPanel
+            entries={selectedEntries}
+            currentPath={path}
+            linkedClientName={(entry) => clientNameById(links[entry.isDir ? entry.path : dirOf(entry.path)])}
+            peersFor={othersEditing}
+            locationOf={(entry) => dirOf(entry.path) || 'Início'}
+            onClose={() => setDetailsOpen(false)}
+            onPreview={(entry) => setPreviewFile(entry)}
+            onDownload={(targets) => { void downloadEntries(targets); }}
+            onOpenVersions={(entry) => { void openVersions(entry); }}
+            onOpenProperties={(targets) => setPropertiesTargets(targets)}
+            onLinkFolder={(entry) => setLinkTarget(entry)}
+          />
         )}
-      </div>
+      </main>
 
       {(busy || notice || error) && (
         <div className="pointer-events-none absolute right-4 top-[72px] z-[130] flex w-[min(380px,calc(100%_-_32px))] flex-col items-end gap-2" aria-live="polite">
@@ -3748,361 +4195,14 @@ const NextcloudBrowser: React.FC = () => {
         </div>
       )}
 
-      {/* Barra de ações da seleção */}
-      {selectedEntries.length > 0 && (
-        <div
-          className="fixed bottom-5 left-1/2 z-[120] flex max-w-[calc(100vw_-_24px)] -translate-x-1/2 flex-wrap items-center justify-center gap-0.5 overflow-hidden rounded-2xl bg-[#111113]/95 px-1.5 py-1.5 text-white shadow-[0_20px_60px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.07)] backdrop-blur-xl"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <span className="mr-0.5 flex shrink-0 items-center gap-1.5 rounded-lg bg-orange-500/20 px-2.5 py-1.5 text-[11px] font-bold whitespace-nowrap text-orange-300">
-            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[10px] font-black leading-none text-white">{selectedEntries.length}</span>
-            <span className="hidden sm:inline">{selectedEntries.length === 1 ? 'item' : 'itens'}</span>
-          </span>
-          <span className="mx-1 h-4 w-px shrink-0 bg-white/10" />
-          <button onClick={() => copyEntries(selectedEntries)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/10 hover:text-white">
-            <Copy className="h-3.5 w-3.5 text-sky-400" /> <span className="hidden sm:inline">Copiar</span>
-          </button>
-          <button onClick={() => cutEntries(selectedEntries)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/10 hover:text-white">
-            <Scissors className="h-3.5 w-3.5 text-amber-300" /> <span className="hidden sm:inline">Recortar</span>
-          </button>
-          <button onClick={() => { void downloadEntries(selectedEntries); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/10 hover:text-white">
-            <Download className="h-3.5 w-3.5 text-emerald-400" /> <span className="hidden sm:inline">Baixar{selectedEntries.length > 1 || selectedEntries.some((entry) => entry.isDir) ? ' ZIP' : ''}</span>
-          </button>
-          <button onClick={() => remove(selectedEntries)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-300 transition hover:bg-red-500/15 hover:text-red-200">
-            <Trash2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Apagar</span>
-          </button>
-          {selectedPdfs.length === 1 && (
-            <button onClick={() => { void openPdfTools(selectedPdfs[0]); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-300 transition hover:bg-white/10 hover:text-red-200">
-              <Wrench className="h-3.5 w-3.5" /> <span className="hidden md:inline">Hub PDF</span>
-            </button>
-          )}
-          {selectedPdfs.length >= 2 && selectedPdfs.length === selectedEntries.length && (
-            <button
-              onClick={() => { void openPdfTools(selectedPdfs[0], selectedPdfs); }}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-300 transition hover:bg-white/10 hover:text-red-200"
-              title={`Abrir ${selectedPdfs.length} PDFs no Hub`}
-            >
-              <Wrench className="h-3.5 w-3.5 text-red-400" /> <span className="hidden md:inline">Biblioteca PDF</span>
-            </button>
-          )}
-          {selectedPdfs.length >= 2 && (
-            <button onClick={() => { void openPdfMergeTools(selectedPdfs); }} disabled={Boolean(busy)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-300 transition hover:bg-red-500/20 hover:text-red-200 disabled:opacity-40">
-              <FileText className="h-3.5 w-3.5 text-red-400" /> <span className="hidden lg:inline">Mesclar PDF</span>
-            </button>
-          )}
-          {selectedImages.length >= 1 && (
-            <button onClick={() => { setImagesPdfTargets(selectedImages); setImagesPdfName('imagens-convertidas'); }} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-violet-300 transition hover:bg-white/10 hover:text-violet-200">
-              <FileImage className="h-3.5 w-3.5" /> <span className="hidden lg:inline">{selectedImages.length} imagem(ns) → PDF</span>
-            </button>
-          )}
-          {selectedDocx.length >= 1 && (
-            <button onClick={() => void convertDocxEntriesToPdf(selectedDocx)} disabled={convertingDocxPaths.length > 0} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-blue-300 transition hover:bg-white/10 hover:text-blue-200 disabled:opacity-40">
-              {convertingDocxPaths.length ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-              <span className="hidden lg:inline">{selectedDocx.length} Word → PDF</span>
-            </button>
-          )}
-          <span className="mx-1 h-4 w-px shrink-0 bg-white/10" />
-          <button onClick={clearSelection} title="Limpar seleção" aria-label="Limpar seleção" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* Lista / Blocos */}
-      <div
-        ref={fileAreaRef}
-        className="relative flex-1 overflow-y-auto"
-        onScroll={(event) => {
-          scrollPositionsRef.current[browserScrollKey] = event.currentTarget.scrollTop;
-          scheduleBrowserSessionPersist();
-        }}
-        onPointerDown={handleMarqueePointerDown}
-        onContextMenu={openBlankCtxMenu}
-        onClick={() => {
-          if (!suppressFileAreaClickRef.current) clearSelection();
-        }}
-      >
-        {marquee && (
-          <div
-            className="pointer-events-none fixed z-[80] border border-blue-500 bg-blue-500/15 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
-            style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }}
-          />
-        )}
-        {(loading && !isSearchActive) || (isSearchActive && searching && !searchResults) ? (
-          <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            {isSearchActive && <span className="text-sm">Buscando em todas as subpastas…</span>}
-          </div>
-        ) : displayEntries.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-2">
-            {isSearchActive ? <Search className="w-10 h-10 opacity-40" /> : <Folder className="w-10 h-10 opacity-40" />}
-            <span className="text-sm">{isSearchActive ? `Nenhum resultado para “${search}”` : 'Pasta vazia'}</span>
-          </div>
-        ) : viewMode === 'grid' ? (
-          /* ── Blocos ── */
-          <div className="grid gap-3 p-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
-            {displayEntries.map((entry) => {
-              const Icon = extIcon(entry);
-              const linkedClient = entry.isDir ? clientNameById(links[entry.path]) : null;
-              const isSel = !!selected[entry.path];
-              const extension = entry.isDir ? null : fileExtension(entry.name);
-              const isDropTarget = entry.isDir && dragTargetPath === entry.path;
-              return (
-                <div
-                  key={entry.path}
-                  data-nextcloud-entry-path={entry.path}
-                  onContextMenu={(e) => openCtxMenu(e, entry)}
-                  onDoubleClick={() => openEntry(entry)}
-                  onClick={(event) => handleEntryClick(event, entry)}
-                  draggable
-                  onDragStart={(event) => handleInternalDragStart(event, entry)}
-                  onDragEnd={finishInternalDrag}
-                  onDragEnter={(event) => {
-                    if (!entry.isDir || !draggedEntries?.length) return;
-                    event.preventDefault();
-                    setDragTargetPath(entry.path);
-                    setDragOperation(event.ctrlKey || event.metaKey || event.altKey ? 'copy' : 'move');
-                  }}
-                  onDragOver={(event) => {
-                    if (entry.isDir && draggedEntries?.length) {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      const operation = event.ctrlKey || event.metaKey || event.altKey ? 'copy' : 'move';
-                      event.dataTransfer.dropEffect = operation;
-                      setDragTargetPath(entry.path);
-                      setDragOperation(operation);
-                    }
-                  }}
-                  onDragLeave={(event) => {
-                    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-                    if (dragTargetPath === entry.path) setDragTargetPath(null);
-                  }}
-                  onDrop={(event) => void dropSelectedIntoFolder(event, entry)}
-                  className={`group relative flex flex-col items-center gap-2 rounded-xl border p-3 cursor-pointer transition-all duration-150 ${
-                    isDropTarget
-                      ? 'scale-[1.025] border-blue-500 bg-blue-100 shadow-[0_10px_30px_rgba(37,99,235,0.2)] ring-4 ring-blue-500/15 dark:bg-blue-950/70'
-                      : isSel
-                        ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-950/30'
-                        : 'border-gray-200 hover:border-gray-300 hover:shadow-sm dark:border-gray-800 dark:hover:border-gray-700'
-                  } ${isCut(entry.path) ? 'opacity-50' : ''}`}
-                >
-                  <button onClick={(e) => { e.stopPropagation(); selectEntry(entry, { toggle: true }); }} title={isSel ? 'Desmarcar' : 'Selecionar'} className="absolute top-1.5 left-1.5 text-gray-400 hover:text-blue-600">
-                    {isSel ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4 opacity-0 group-hover:opacity-100" />}
-                  </button>
-                  <button onClick={(e) => { e.stopPropagation(); openCtxMenu(e, entry); }} title="Mais ações" className="absolute top-1.5 right-1.5 p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 opacity-0 group-hover:opacity-100 z-10">
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-                  <div data-nextcloud-drag-visual className="relative w-full">
-                    {entry.isDir
-                      ? (
-                        <div className="flex h-24 w-full items-center justify-center">
-                          {isDropTarget ? (
-                            <span className="flex h-20 w-20 animate-pulse items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-4 ring-blue-300/50">
-                              <FolderInput className="h-11 w-11" />
-                            </span>
-                          ) : (
-                            <Icon className="h-12 w-12 text-blue-500" />
-                          )}
-                        </div>
-                      )
-                      : <NcThumb entry={entry} />}
-                    {isDropTarget && (
-                      <span className="absolute inset-x-2 bottom-0 inline-flex items-center justify-center gap-1 rounded-lg bg-blue-600 px-2 py-1.5 text-[10px] font-bold text-white shadow-lg">
-                        <FolderInput className="h-3 w-3" />
-                        {dragOperation === 'copy' ? 'Copiar para esta pasta' : 'Mover para esta pasta'}
-                      </span>
-                    )}
-                    {extension && (
-                      <span className={`absolute bottom-1.5 left-1.5 inline-flex rounded-md border px-1.5 py-1 text-[9px] font-extrabold leading-none tracking-[0.08em] shadow-sm backdrop-blur-sm ${extensionBadgeClass(extension)}`}>
-                        {extension}
-                      </span>
-                    )}
-                  </div>
-                  {inlineRename?.path === entry.path ? (
-                    <input
-                      autoFocus
-                      value={inlineRename.value}
-                      onClick={(event) => event.stopPropagation()}
-                      onDoubleClick={(event) => event.stopPropagation()}
-                      onChange={(event) => setInlineRename((current) => current ? { ...current, value: event.target.value } : current)}
-                      onFocus={(event) => event.currentTarget.setSelectionRange(0, Math.max(0, event.currentTarget.value.length - (inlineRename.extension?.length ?? 0)))}
-                      onBlur={() => { void finishInlineRename(); }}
-                      onKeyDown={(event) => {
-                        event.stopPropagation();
-                        if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
-                        if (event.key === 'Escape') { event.preventDefault(); setInlineRename(null); }
-                      }}
-                      aria-label="Nome do novo documento"
-                      className="w-full rounded-md border border-blue-500 bg-white px-1.5 py-1 text-center text-xs text-slate-900 outline-none ring-2 ring-blue-500/20 dark:bg-zinc-900 dark:text-white"
-                    />
-                  ) : (
-                    <span className="text-xs text-center leading-tight line-clamp-2 break-all w-full" title={entry.name}>{entry.name}</span>
-                  )}
-                  {isSearchActive && <span className="text-[10px] text-gray-400 truncate w-full text-center" title={dirOf(entry.path) || 'raiz'}>{dirOf(entry.path) || 'raiz'}</span>}
-                  {!entry.isDir && <EditingNowBadge peers={othersEditing(entry.path)} compact />}
-                  {linkedClient && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 truncate max-w-full">
-                      <UserPlus className="w-2.5 h-2.5 shrink-0" /> <span className="truncate">{linkedClient}</span>
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          /* ── Lista ── */
-          <table className="w-full text-sm">
-            <thead className="text-xs uppercase text-gray-500 border-b border-gray-100 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900 z-10">
-              <tr>
-                <th className="px-2 py-2 w-8" />
-                <th className="text-left font-medium px-4 py-2">
-                  <button type="button" onClick={() => { if (sortBy === 'name') setSortDir((value) => value === 'asc' ? 'desc' : 'asc'); else setSortBy('name'); }} className="inline-flex items-center gap-1 hover:text-blue-600">
-                    Nome {sortBy === 'name' && <ArrowUpDown className="h-3 w-3" />}
-                  </button>
-                </th>
-                <th className="text-right font-medium px-4 py-2 hidden sm:table-cell">
-                  <button type="button" onClick={() => { if (sortBy === 'size') setSortDir((value) => value === 'asc' ? 'desc' : 'asc'); else setSortBy('size'); }} className="ml-auto inline-flex items-center gap-1 hover:text-blue-600">
-                    Tamanho {sortBy === 'size' && <ArrowUpDown className="h-3 w-3" />}
-                  </button>
-                </th>
-                <th className="text-right font-medium px-4 py-2 hidden md:table-cell">
-                  <button type="button" onClick={() => { if (sortBy === 'date') setSortDir((value) => value === 'asc' ? 'desc' : 'asc'); else setSortBy('date'); }} className="ml-auto inline-flex items-center gap-1 hover:text-blue-600">
-                    Modificado {sortBy === 'date' && <ArrowUpDown className="h-3 w-3" />}
-                  </button>
-                </th>
-                <th className="px-4 py-2 w-24" />
-              </tr>
-            </thead>
-            <tbody>
-              {displayEntries.map((entry) => {
-              const Icon = extIcon(entry);
-              const linkedClient = entry.isDir ? clientNameById(links[entry.path]) : null;
-              const isSel = !!selected[entry.path];
-              const extension = entry.isDir ? null : fileExtension(entry.name);
-              const isDropTarget = entry.isDir && dragTargetPath === entry.path;
-              return (
-                  <tr
-                    key={entry.path}
-                    data-nextcloud-entry-path={entry.path}
-                    onContextMenu={(e) => openCtxMenu(e, entry)}
-                    onDoubleClick={() => openEntry(entry)}
-                    onClick={(event) => handleEntryClick(event, entry)}
-                    draggable
-                    onDragStart={(event) => handleInternalDragStart(event, entry)}
-                    onDragEnd={finishInternalDrag}
-                    onDragEnter={(event) => {
-                      if (!entry.isDir || !draggedEntries?.length) return;
-                      event.preventDefault();
-                      setDragTargetPath(entry.path);
-                      setDragOperation(event.ctrlKey || event.metaKey || event.altKey ? 'copy' : 'move');
-                    }}
-                    onDragOver={(event) => {
-                      if (entry.isDir && draggedEntries?.length) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        const operation = event.ctrlKey || event.metaKey || event.altKey ? 'copy' : 'move';
-                        event.dataTransfer.dropEffect = operation;
-                        setDragTargetPath(entry.path);
-                        setDragOperation(operation);
-                      }
-                    }}
-                    onDragLeave={(event) => {
-                      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-                      if (dragTargetPath === entry.path) setDragTargetPath(null);
-                    }}
-                    onDrop={(event) => void dropSelectedIntoFolder(event, entry)}
-                    className={`group border-b transition ${
-                      isDropTarget
-                        ? 'border-blue-300 bg-blue-100 shadow-[inset_4px_0_0_#2563eb] dark:border-blue-900 dark:bg-blue-950/60'
-                        : `border-gray-50 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40 ${isSel ? 'bg-blue-50/60 dark:bg-blue-950/30' : ''}`
-                    } ${isCut(entry.path) ? 'opacity-50' : ''}`}
-                  >
-                    <td className="px-2 py-2.5 text-center">
-                      <button onClick={(event) => { event.stopPropagation(); selectEntry(entry, { toggle: true }); }} title={isSel ? 'Desmarcar' : 'Selecionar'} className="p-1 text-gray-400 hover:text-blue-600">
-                        {isSel ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4 opacity-0 group-hover:opacity-100" />}
-                      </button>
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className={`inline-flex items-center gap-2.5 text-left ${entry.isDir ? 'font-medium' : ''}`}>
-                          <span data-nextcloud-drag-visual className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all ${isDropTarget ? 'animate-pulse bg-blue-600 text-white shadow-md ring-2 ring-blue-300' : ''}`}>
-                            {isDropTarget
-                              ? <FolderInput className="h-4.5 w-4.5" />
-                              : <Icon className={`h-5 w-5 ${fileIconColorClass(entry)}`} />}
-                          </span>
-                          <span className="flex flex-col min-w-0">
-                            {inlineRename?.path === entry.path ? (
-                              <input
-                                autoFocus
-                                value={inlineRename.value}
-                                onClick={(event) => event.stopPropagation()}
-                                onDoubleClick={(event) => event.stopPropagation()}
-                                onChange={(event) => setInlineRename((current) => current ? { ...current, value: event.target.value } : current)}
-                                onFocus={(event) => event.currentTarget.setSelectionRange(0, Math.max(0, event.currentTarget.value.length - (inlineRename.extension?.length ?? 0)))}
-                                onBlur={() => { void finishInlineRename(); }}
-                                onKeyDown={(event) => {
-                                  event.stopPropagation();
-                                  if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
-                                  if (event.key === 'Escape') { event.preventDefault(); setInlineRename(null); }
-                                }}
-                                aria-label="Nome do novo documento"
-                                className="w-full max-w-[40vw] rounded-md border border-blue-500 bg-white px-2 py-1 text-sm text-slate-900 outline-none ring-2 ring-blue-500/20 dark:bg-zinc-900 dark:text-white"
-                              />
-                            ) : (
-                              <span className="truncate max-w-[40vw]">{entry.name}</span>
-                            )}
-                            {isSearchActive && <span className="text-[11px] text-gray-400 truncate max-w-[40vw]">{dirOf(entry.path) || 'raiz'}</span>}
-                            {isDropTarget && (
-                              <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-300">
-                                {dragOperation === 'copy' ? 'Solte para copiar aqui' : 'Solte para mover aqui'}
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                        {extension && (
-                          <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-extrabold leading-none tracking-[0.08em] ${extensionBadgeClass(extension)}`}>
-                            {extension}
-                          </span>
-                        )}
-                        {linkedClient && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
-                            <UserPlus className="w-3 h-3" /> {linkedClient}
-                          </span>
-                        )}
-                        {!entry.isDir && <EditingNowBadge peers={othersEditing(entry.path)} />}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-gray-500 hidden sm:table-cell">{entry.isDir ? '—' : formatBytes(entry.size)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-500 hidden md:table-cell">
-                      <RelativeModifiedTime mtime={entry.mtime} />
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center justify-end">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); openCtxMenu(e, entry); }}
-                          title="Mais ações"
-                          className="p-1.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 opacity-60 group-hover:opacity-100"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
       {/* Menu de contexto (botão direito / kebab) */}
       {ctxMenu && (() => {
         const item = (icon: React.ReactNode, label: string, onClick: () => void, danger = false) => (
           <button
             onClick={() => { setCtxMenu(null); onClick(); }}
-            className={`w-full px-3 py-2 text-left text-sm flex items-center gap-3 transition ${danger ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+            className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-[13px] transition ${danger ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40' : `${NC_TEXT} ${NC_HOVER}`}`}
           >
-            <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${danger ? 'bg-red-50 dark:bg-red-950/40' : 'bg-gray-100 dark:bg-gray-800'}`}>{icon}</span>
+            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${danger ? 'bg-red-50 dark:bg-red-950/40' : 'bg-slate-100 dark:bg-zinc-800'}`}>{icon}</span>
             {label}
           </button>
         );
@@ -4116,7 +4216,7 @@ const NextcloudBrowser: React.FC = () => {
           return (
             <div
               ref={ctxMenuRef}
-              className="fixed z-[9999] max-h-[calc(100dvh-16px)] w-64 overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white py-1 shadow-[0_18px_55px_rgba(15,23,42,0.24)] dark:border-zinc-700 dark:bg-zinc-900"
+              className={`fixed z-[9999] max-h-[calc(100dvh-16px)] w-64 overflow-y-auto overscroll-contain rounded-2xl border p-1.5 ${NC_BORDER} ${NC_SURFACE} shadow-[0_18px_55px_rgba(15,23,42,0.24)]`}
               style={{ left: ctxMenu.x, top: ctxMenu.y }}
               onContextMenu={(event) => event.preventDefault()}
             >
@@ -4148,7 +4248,7 @@ const NextcloudBrowser: React.FC = () => {
         return (
           <div
             ref={ctxMenuRef}
-            className="fixed z-[9999] max-h-[calc(100dvh-16px)] w-56 overflow-y-auto overscroll-contain rounded-2xl border border-gray-200 bg-white py-1 shadow-2xl dark:border-gray-700 dark:bg-gray-900"
+            className={`fixed z-[9999] max-h-[calc(100dvh-16px)] w-60 overflow-y-auto overscroll-contain rounded-2xl border p-1.5 ${NC_BORDER} ${NC_SURFACE} shadow-[0_18px_55px_rgba(15,23,42,0.24)]`}
             style={{ left: ctxMenu.x, top: ctxMenu.y }}
             onContextMenu={(e) => e.preventDefault()}
           >

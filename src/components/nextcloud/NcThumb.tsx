@@ -61,15 +61,18 @@ export const NcThumb: React.FC<{ entry: NextcloudEntry }> = ({ entry }) => {
   }, [entry.path, entry.size, eligible]);
 
   const Icon = extIcon(entry);
+  // Prévia sobre BRANCO (não sobre cinza): a miniatura é a folha do documento e,
+  // com fundo cinza, todo arquivo parecia desabilitado dentro do cartão branco.
+  const shell = 'flex h-24 w-full items-center justify-center overflow-hidden rounded-lg bg-white dark:bg-zinc-900';
   if (!eligible || failed) {
-    return <div className="w-full h-24 flex items-center justify-center"><Icon className={`w-12 h-12 ${fileIconColorClass(entry)}`} /></div>;
+    return <div className={shell}><Icon className={`h-12 w-12 ${fileIconColorClass(entry)}`} /></div>;
   }
   if (!url) {
-    return <div className="w-full h-24 flex items-center justify-center bg-slate-100 dark:bg-gray-800 rounded-lg"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>;
+    return <div className={shell}><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>;
   }
   return (
-    <div className="w-full h-24 overflow-hidden rounded-lg bg-slate-100 dark:bg-gray-800 flex items-center justify-center">
-      <img src={url} alt={entry.name} className="max-w-full max-h-full object-contain" />
+    <div className={shell}>
+      <img src={url} alt={entry.name} className="max-h-full max-w-full object-contain" />
     </div>
   );
 };
