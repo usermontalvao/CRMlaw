@@ -40,6 +40,7 @@ interface ModalState {
 }
 
 interface SecurityPinContextType {
+  isPinModalOpen: boolean;
   requirePin: (opts: RequirePinOptions) => Promise<boolean>;
   openCreatePin: () => Promise<boolean>;
   openChangePin: () => Promise<boolean>;
@@ -223,9 +224,14 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
       return true;
     }
 
-    // Verificar se usuário tem PIN
-    const hasPin = await securityPinService.hasSecurityPin();
-    if (!hasPin) {
+    // Verificar se usuário tem PIN.
+    // `null` = não deu para saber (rede/sessão). Nesse caso assumimos que o
+    // PIN existe e vamos para a verificação: propor criação sobrescreveria o
+    // PIN de quem já tem (create_security_pin faz ON CONFLICT DO UPDATE).
+    // Errar para o lado da verificação é recuperável; errar para o lado da
+    // criação é destrutivo.
+    const hasPin = await securityPinService.hasSecurityPinOrNull();
+    if (hasPin === false) {
       // Sem PIN: abre criação com contexto próprio (não vaza title/entityName da ação original)
       const created = await openModal('create', {
         action: 'create_pin_first',
@@ -299,7 +305,7 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   return (
-    <SecurityPinContext.Provider value={{ requirePin, openCreatePin, openChangePin, openRemovePin, getFinancialSessionExpiry, revealFinancialValues, getFinancialModuleExpiry }}>
+    <SecurityPinContext.Provider value={{ isPinModalOpen: modal !== null, requirePin, openCreatePin, openChangePin, openRemovePin, getFinancialSessionExpiry, revealFinancialValues, getFinancialModuleExpiry }}>
       {children}
       {modal && (
         <SecurityPinModal

@@ -54,6 +54,7 @@ import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { useSidebarMode } from '../contexts/SidebarModeContext';
 import { securityPinService, type PinMeta } from '../services/securityPin.service';
 import { profileService, type Profile } from '../services/profile.service';
+import { birthdayService } from '../services/birthday.service';
 import { settingsService } from '../services/settings.service';
 import { feedPostsService, type EntityReference, type FeedPost, type PreviewData, type TagRecord } from '../services/feedPosts.service';
 import { matchesNormalizedSearch } from '../utils/search';
@@ -64,6 +65,7 @@ import { taskService } from '../services/task.service';
 import { supabase } from '../config/supabase';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { formatCurrency as fmtCurrencyG } from '../utils/formatters';
+import { getLocalDateKey, validateBirthDate } from '../utils/birthday';
 
 // Banner padrão jurídico (usado quando usuário não selecionou nenhum)
 const DEFAULT_BANNER = 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=1200&h=400&fit=crop';
@@ -225,6 +227,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
     bio: '',
     role: '',
   });
+  const [birthDate, setBirthDate] = useState('');
   const [passwordForm, setPasswordForm] = useState({
     newPassword: '',
     confirmPassword: '',
@@ -539,8 +542,14 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
       setIsOwnProfile(ownProfile);
 
       // Carregar metadados do PIN (apenas perfil próprio)
-      if (ownProfile) {
+      if (ownProfile && user?.id) {
         securityPinService.getPinMeta().then(setPinMeta).catch(() => {});
+        birthdayService
+          .getMyBirthDate(user.id)
+          .then((savedBirthDate) => setBirthDate(savedBirthDate || ''))
+          .catch((error) => console.error('Erro ao carregar data de nascimento:', error));
+      } else {
+        setBirthDate('');
       }
 
       // Carregar dados no formulário
@@ -578,12 +587,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.id || !isOwnProfile) return;
+
+    const birthDateError = validateBirthDate(birthDate);
+    if (birthDateError) {
+      setMessage({ type: 'error', text: birthDateError });
+      return;
+    }
     
     setSaving(true);
     setMessage(null);
     
     try {
-      await supabase
+      const { error: profileUpdateError } = await supabase
         .from('profiles')
         .update({
           name: profileForm.name,
@@ -594,6 +609,9 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
           bio: profileForm.bio,
         })
         .eq('user_id', user.id);
+
+      if (profileUpdateError) throw profileUpdateError;
+      await birthdayService.saveMyBirthDate(user.id, birthDate);
       
       setProfile(prev => prev ? { ...prev, ...profileForm } : null);
       setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });
@@ -3018,6 +3036,23 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Data de nascimento
+                    </label>
+                    <input
+                      type="date"
+                      value={birthDate}
+                      min="1900-01-01"
+                      max={getLocalDateKey()}
+                      onChange={(e) => setBirthDate(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                       Telefone
                     </label>
                     <input
@@ -3028,9 +3063,6 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                       placeholder="(00) 00000-0000"
                     />
                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                       OAB
@@ -3043,17 +3075,18 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
                       placeholder="UF 123456"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Cargo
-                    </label>
-                    <input
-                      type="text"
-                      value={profileForm.role}
-                      disabled
-                      className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400 cursor-not-allowed"
-                    />
-                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Cargo
+                  </label>
+                  <input
+                    type="text"
+                    value={profileForm.role}
+                    disabled
+                    className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border border-[#e7e5df] dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                  />
                 </div>
 
                 <div>

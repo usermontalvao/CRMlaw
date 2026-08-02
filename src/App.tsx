@@ -55,6 +55,7 @@ import { GlobalSearchModal } from './components/GlobalSearchModal';
 import SessionWarning from './components/SessionWarning';
 import BlockedAccountOverlay from './components/BlockedAccountOverlay';
 import LogoutOverlay from './components/LogoutOverlay';
+import BirthdayExperience from './components/BirthdayExperience';
 import TermsPrivacyPage from './components/TermsPrivacyPage';
 import ProfileModal, { type AppProfile, type UserRole } from './components/ProfileModal';
 import { NextcloudIcon } from './components/icons/NextcloudIcon';
@@ -129,6 +130,7 @@ import { DISPLAY_APP_VERSION_LABEL } from './utils/appVersion';
 import { isEditorAppLocation } from './utils/editorAppRoute';
 import { settingsService, type ModulesConfig, FLOATING_WINDOW_MODULE_DEFAULTS } from './services/settings.service';
 import { useToastContext } from './contexts/ToastContext';
+import { clearBirthdayCelebrationSession } from './utils/birthday';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 type CloudHeaderActionDetail = {
@@ -1642,6 +1644,7 @@ const MainApp: React.FC = () => {
         console.log('ðŸ”’ Logout detectado');
         sessionStorage.removeItem(PROFILE_CACHE_KEY);
         sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
+        clearBirthdayCelebrationSession();
 
         setProfile({
           name: 'Usuário',
@@ -1677,6 +1680,7 @@ useEffect(() => {
 
       // Limpar cache ao fazer logout/expiração de sessão
       sessionStorage.removeItem(PROFILE_CACHE_KEY);
+      clearBirthdayCelebrationSession();
       // Reset estado
       setProfile({
         name: 'Usuário',
@@ -2135,6 +2139,18 @@ useEffect(() => {
   return (
     <CacheProvider>
       {isAccountBlocked && <BlockedAccountOverlay onLogout={signOut} />}
+      {/* Conta bloqueada não recebe homenagem: o overlay de bloqueio é z-9999 e
+          a celebração vive acima dele, então sem esta guarda ela apareceria
+          por cima do aviso de conta desativada. */}
+      {user && !isAccountBlocked && (
+        <BirthdayExperience
+          key={user.id}
+          userId={user.id}
+          personName={profile.name || user.user_metadata?.full_name || user.email}
+          avatarUrl={profile.avatarUrl}
+          onSignOut={signOut}
+        />
+      )}
       <div className="min-h-screen overflow-x-hidden bg-gray-100 dark:bg-black transition-colors duration-300">
         {/* Overlay de LOGIN "” Epic Animation (o logout tem o seu próprio, abaixo) */}
         {loggingIn && (

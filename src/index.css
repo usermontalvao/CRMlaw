@@ -418,6 +418,28 @@ body {
   transition: background 0.3s ease, color 0.3s ease;
 }
 
+/* Tipografia editorial da experiência de aniversário.
+   Spectral (serif de alto contraste) para os títulos e Space Grotesk para os
+   rótulos — ambas já carregadas no index.html. As classes precisam vencer o
+   seletor universal acima, por isso são aplicadas direto no elemento do texto. */
+.font-birthday-display,
+.font-birthday-display * {
+  font-family: 'Spectral', ui-serif, Georgia, 'Times New Roman', serif;
+  font-feature-settings: 'kern' 1, 'liga' 1, 'onum' 0;
+}
+
+.font-birthday-kicker,
+.font-birthday-kicker * {
+  font-family: 'Space Grotesk', 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'tnum' 1;
+}
+
+.font-birthday-numeral,
+.font-birthday-numeral * {
+  font-family: 'Spectral', ui-serif, Georgia, serif;
+  font-feature-settings: 'lnum' 1, 'tnum' 1;
+}
+
 html,
 body,
 #root {
@@ -955,6 +977,82 @@ div[class*="fixed"] > div[class*="absolute"][class*="inset-0"],
 div[class*="fixed"] [class*="bg-black"],
 div[class*="fixed"] [class*="bg-slate-900"] {
   background: transparent !important;
+}
+
+/* ===== EXPERIÊNCIA DE ANIVERSÁRIO — imunidade à correção global acima =====
+   Aquelas regras casam por SUBSTRING de classe e usam !important, então
+   apagam coisas legítimas da experiência de aniversário: as tarjas pretas do
+   vídeo, o fundo do cartão e o botão primário (que ficava invisível, texto
+   branco sobre fundo transparente). Não dá para afrouxar a regra global sem
+   revisar todos os modais do CRM, então a experiência se declara imune aqui.
+
+   A classe aparece CINCO vezes de propósito. O seletor global mais forte
+   deste bloco chega a (0,4,2) e também usa !important; empatar por classes
+   exige mais de quatro. Não é repetição acidental — com três, o fundo do
+   cartão e do vídeo continuavam sendo sobrescritos. */
+.birthday-video.birthday-video.birthday-video.birthday-video.birthday-video {
+  background: #07040f !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.birthday-letterbox.birthday-letterbox.birthday-letterbox.birthday-letterbox.birthday-letterbox {
+  background: #000 !important;
+}
+
+.birthday-chrome.birthday-chrome.birthday-chrome.birthday-chrome.birthday-chrome {
+  background: rgba(0, 0, 0, 0.55) !important;
+}
+
+.birthday-gate-overlay.birthday-gate-overlay.birthday-gate-overlay.birthday-gate-overlay.birthday-gate-overlay {
+  background: rgba(2, 6, 23, 0.72) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+}
+
+.birthday-surface.birthday-surface.birthday-surface.birthday-surface.birthday-surface {
+  background: #ffffff !important;
+  border-color: rgb(226 232 240) !important;
+}
+
+.dark .birthday-surface.birthday-surface.birthday-surface.birthday-surface.birthday-surface {
+  background: #0f172a !important;
+  border-color: rgb(51 65 85) !important;
+}
+
+.birthday-primary.birthday-primary.birthday-primary.birthday-primary.birthday-primary {
+  background: #0f172a !important;
+  color: #ffffff !important;
+}
+
+.birthday-primary.birthday-primary.birthday-primary.birthday-primary.birthday-primary:hover {
+  background: #1e293b !important;
+}
+
+.dark .birthday-primary.birthday-primary.birthday-primary.birthday-primary.birthday-primary {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+.dark .birthday-primary.birthday-primary.birthday-primary.birthday-primary.birthday-primary:hover {
+  background: #e2e8f0 !important;
+}
+
+.birthday-accent-bar.birthday-accent-bar.birthday-accent-bar.birthday-accent-bar.birthday-accent-bar {
+  background: #0f172a !important;
+}
+
+/* Texto pintado por gradiente (background-clip: text) só aparece se a cor da
+   fonte for transparente. A regra de modais mais abaixo força cor sólida em
+   h2/h3 dentro de QUALQUER container "fixed" com z-index — era o que fazia o
+   título do vídeo virar um fantasma escuro sobre o fundo escuro. */
+.birthday-gradient-text.birthday-gradient-text.birthday-gradient-text.birthday-gradient-text.birthday-gradient-text {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+.dark .birthday-accent-bar.birthday-accent-bar.birthday-accent-bar.birthday-accent-bar.birthday-accent-bar {
+  background: #f1f5f9 !important;
 }
 
 /* Container do modal - fundo escuro sólido */

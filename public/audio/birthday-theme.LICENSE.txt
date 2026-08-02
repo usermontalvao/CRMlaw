@@ -1,0 +1,24 @@
+birthday-theme.mp3
+==================
+
+Obra:        Canon (Johann Pachelbel, 1653-1706)
+Arranjo:     Frank Hudson
+Execução:    United States Air Force Band — "Strolling Strings"
+Gravação:    United States Air Force Band
+
+LICENÇA: DOMÍNIO PÚBLICO
+  Obra do governo federal dos Estados Unidos (17 U.S.C. § 105), portanto sem
+  direitos autorais. A ficha no Wikimedia Commons registra explicitamente
+  Copyrighted = False e AttributionRequired = false — não há obrigação de
+  crédito, e o uso comercial é permitido.
+
+Origem oficial:
+  https://www.music.af.mil/Multimedia/Music/Public-Domain-Music/
+Arquivo baixado de:
+  https://upload.wikimedia.org/wikipedia/commons/1/12/Canon_%282004%29_-_Strolling_Strings_-_United_States_Air_Force_Band.mp3
+
+Processamento: recortados os primeiros 56 s do original (3min49s), cortando em
+fronteira de quadro MPEG — sem recodificação, portanto sem perda de qualidade.
+
+PARA TROCAR A MÚSICA: basta substituir birthday-theme.mp3 por outro arquivo.
+Nenhum código precisa mudar. Confira a licença do substituto antes.

@@ -41,10 +41,8 @@ import {
   ChevronUp,
   Copy,
   Hash,
+  Sparkles,
   Layers,
-  BarChart3,
-  Filter,
-  ChevronsUpDown,
   CloudOff,
   RefreshCw,
   AlertTriangle,
@@ -481,6 +479,7 @@ const SELECTED_STANDARD_TYPE_STORAGE_KEY_PREFIX = 'petition-editor-selected-stan
 const BLOCK_FILTER_SCOPE_STORAGE_KEY = 'petition-editor-block-filter-scope-v1';
 const PETITION_LOCAL_DRAFT_STORAGE_KEY_PREFIX = 'petition-editor-local-draft-v2:';
 const DEFAULT_EDITOR_ZOOM = 1.2;
+const DEFAULT_BLOCK_EDITOR_ZOOM = 1.1;
 // CSS para o editor - Layout responsivo para 100% zoom
 const EDITOR_STYLES = `
   /* ========== ESTRUTURA PRINCIPAL ========== */
@@ -1828,11 +1827,15 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [bmExpandedBlocks, setBmExpandedBlocks] = useState<Set<string>>(new Set());
   const [bmDocxPreviews, setBmDocxPreviews] = useState<Map<string, 'loading' | 'done' | 'error'>>(new Map());
   const bmPreviewContainersRef = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  /** HTML já renderizado por bloco: recolher desmonta o container, então
+   *  guardamos o resultado para reexibir na hora ao expandir de novo. */
+  const bmPreviewHtmlRef = useRef<Map<string, string>>(new Map());
   const bmPreviewQueueRef = useRef<string[]>([]);
   const bmPreviewBusyRef = useRef(false);
   const [bmViewMode, setBmViewMode] = useState<'list' | 'grid'>('list');
   const [bmSortBy, setBmSortBy] = useState<'title' | 'updated' | 'category'>('category');
   const [bmCollapsedCategories, setBmCollapsedCategories] = useState<Set<string>>(new Set());
+  const [bmCategoryFilter, setBmCategoryFilter] = useState<string>('all');
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     try {
       if (typeof window === 'undefined') return 320;
@@ -2612,57 +2615,17 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [selectionToCreateBlock, setSelectionToCreateBlock] = useState<{ sfdt: string; text: string } | null>(null);
   const blockModalInitDoneRef = useRef(false);
   const [blockTagInput, setBlockTagInput] = useState('');
+  const [blockTagsSuggesting, setBlockTagsSuggesting] = useState(false);
+  const [blockPropsOpen, setBlockPropsOpen] = useState(true);
 
-  const addTagsFromText = (rawText: string) => {
-    const text = String(rawText || '').trim();
-    if (!text) return;
-
-    const ignore = new Set([
-      'a',
-      'as',
-      'ao',
-      'aos',
-      'Ã ',
-      'Ã s',
-      'com',
-      'da',
-      'das',
-      'de',
-      'do',
-      'dos',
-      'e',
-      'em',
-      'na',
-      'nas',
-      'no',
-      'nos',
-      'para',
-      'por',
-      'sem',
-      'uma',
-      'um',
-    ]);
-
-    const parts = text
-      .split(/\s+/g)
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .map((t) => t.replace(/[^0-9a-zA-Z\u00C0-\u017F_-]/g, ''))
-      .map((t) => t.trim())
-      .filter(Boolean)
-      .map((t) => t.toLowerCase())
-      .filter((t) => t.length >= 3)
-      .filter((t) => {
-        const n = normalizeSearchText(t);
-        if (!n) return false;
-        if (ignore.has(n)) return false;
-        return true;
-      });
-
-    if (parts.length === 0) {
-      setBlockTagInput('');
-      return;
-    }
+  // Aceita "horas extras, dano moral" (vírgula/;/quebra de linha) preservando
+  // expressões compostas — a busca de blocos pontua frases inteiras.
+  const addBlockTags = (rawText: string) => {
+    const parts = String(rawText || '')
+      .split(/[,;\n]+/)
+      .map((t) => normalizeTag(t))
+      .filter(Boolean);
+    if (parts.length === 0) return;
 
     setBlockFormData((prev) => {
       const existing = Array.isArray(prev.tags) ? prev.tags : [];
@@ -2673,6 +2636,29 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       return { ...prev, tags: next };
     });
     setBlockTagInput('');
+    setBlockEditorDirty(true);
+  };
+
+  const removeBlockTag = (tag: string) => {
+    setBlockFormData((prev) => ({
+      ...prev,
+      tags: (Array.isArray(prev.tags) ? prev.tags : []).filter((t) => t !== tag),
+    }));
+    setBlockEditorDirty(true);
+  };
+
+  const suggestBlockTags = async () => {
+    if (blockTagsSuggesting) return;
+    try {
+      setBlockTagsSuggesting(true);
+      const content = blockEditorRef.current?.getSfdt?.() || blockFormData.content || '';
+      const suggested = await generateBlockTags(blockFormData.title, content);
+      if (suggested.length) addBlockTags(suggested.join(','));
+    } catch (err) {
+      console.error('Erro ao sugerir tags do bloco:', err);
+    } finally {
+      setBlockTagsSuggesting(false);
+    }
   };
 
   // Modal de busca de bloco
@@ -2777,9 +2763,11 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     setBlockEditorReady(false);
     setBlockEditorDirty(false);
     setBlockFindReplaceMode(null);
-    blockDocStatusStore.set({ page: 1, pageCount: 1, zoom: 1, layout: 'Pages' });
+    blockDocStatusStore.set({ page: 1, pageCount: 1, zoom: DEFAULT_BLOCK_EDITOR_ZOOM, layout: 'Pages' });
     setBlockWordCount(0);
     setBlockStandardTypeLoading(false);
+    setBlockTagInput('');
+    setBlockPropsOpen(true);
 
     if (block) {
       const normalizedBlock = sanitizeBlockRecord(block);
@@ -2795,7 +2783,9 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
         legal_area_id: (normalizedBlock.legal_area_id ?? selectedLegalAreaId) as any,
         is_default: normalizedBlock.is_default,
         is_active: normalizedBlock.is_active,
-        tags: normalizedBlock.tags || [],
+        // Blocos antigos não têm tags gravadas: mostrar as mesmas que a
+        // biblioteca deriva, para o painel bater com o card.
+        tags: (normalizedBlock.tags || []).length ? normalizedBlock.tags : getBlockTagsForUI(normalizedBlock),
       });
     } else {
       setEditingBlock(null);
@@ -4967,16 +4957,32 @@ Regras:
   };
 
   // Deletar bloco
-  const deleteBlock = async (blockId: string) => {
-    if (!confirm('Tem certeza que deseja excluir este bloco?')) return;
+  /** O preview formatado é cacheado por bloco; qualquer alteração invalida. */
+  const invalidateBlockPreview = (blockId: string) => {
+    bmPreviewHtmlRef.current.delete(blockId);
+    const container = bmPreviewContainersRef.current.get(blockId);
+    if (container) container.innerHTML = '';
+    setBmDocxPreviews((prev) => {
+      if (!prev.has(blockId)) return prev;
+      const next = new Map(prev);
+      next.delete(blockId);
+      return next;
+    });
+  };
+
+  const deleteBlock = async (blockId: string): Promise<boolean> => {
+    if (!confirm('Tem certeza que deseja excluir este bloco?')) return false;
 
     try {
       await petitionEditorService.deleteBlock(blockId);
       setBlocks((prev) => prev.filter((b) => b.id !== blockId));
+      invalidateBlockPreview(blockId);
       showSuccessMessage('Bloco excluido');
+      return true;
     } catch (err) {
       console.error('Erro ao excluir bloco:', err);
       setError('Erro ao excluir bloco');
+      return false;
     }
   };
 
@@ -5136,6 +5142,7 @@ Regras:
           tags: blockFormData.tags,
         } as any);
         await petitionEditorService.setBlockStandardType(updated.id, effectiveStandardTypeId);
+        invalidateBlockPreview(updated.id);
 
         // Atualizar lista conforme escopo atual
         if (blockFilterScope === 'type' && selectedStandardTypeId) {
@@ -5231,6 +5238,8 @@ Regras:
         } else if (sfdt) {
           ed.insertText(sfdt);
         }
+        ed.setZoom(DEFAULT_BLOCK_EDITOR_ZOOM);
+        window.setTimeout(() => ed.setZoom(DEFAULT_BLOCK_EDITOR_ZOOM), 80);
 
         // Reforço: se renderizar vazio, tentar novamente e, por fim, fallback para texto
         window.setTimeout(() => {
@@ -5264,6 +5273,7 @@ Regras:
         // começamos a considerar mudanças do usuário após a carga e o fallback.
         window.setTimeout(() => {
           if (cancelled) return;
+          ed.setZoom(DEFAULT_BLOCK_EDITOR_ZOOM);
           blockModalInitDoneRef.current = true;
           setBlockEditorDirty(false);
           refreshBlockDocStatus();
@@ -8868,11 +8878,14 @@ Regras:
       {/* ConteÃºdo Principal */}
       {activeWorkspace === 'blocks' ? (() => {
         const bmDefaultCount = filteredBlocks.filter((b) => b.is_default).length;
-        const bmInactiveCount = blocks.filter((b) => !b.is_active && String((b.document_type || 'petition') as any) === String(selectedDocumentType)).length;
-        const bmAllTags = new Set<string>();
-        filteredBlocks.forEach((b) => { (blockIndexMap.get(b.id)?.tags ?? getBlockTagsForUI(b)).forEach((t) => bmAllTags.add(t)); });
+        const bmVisibleBlocks = bmCategoryFilter === 'all'
+          ? filteredBlocks
+          : filteredBlocks.filter((block) => String(block.category || 'outros') === bmCategoryFilter);
+        const bmActiveCategoryLabel = bmCategoryFilter === 'all'
+          ? 'Todos os blocos'
+          : getCategoryLabel(bmCategoryFilter);
 
-        const bmSortedBlocks = bmSortBy === 'category' ? filteredBlocks : [...filteredBlocks].sort((a, b) => {
+        const bmSortedBlocks = bmSortBy === 'category' ? bmVisibleBlocks : [...bmVisibleBlocks].sort((a, b) => {
           if (bmSortBy === 'title') return a.title.localeCompare(b.title, 'pt-BR');
           if (bmSortBy === 'updated') return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
           return 0;
@@ -8881,6 +8894,8 @@ Regras:
         const bmRenderDocxPreview = async (blockId: string, sfdt: string) => {
           const container = bmPreviewContainersRef.current.get(blockId);
           if (!container) return;
+          // Já reexibido a partir do cache: nada a refazer.
+          if (container.childElementCount > 0) return;
 
           setBmDocxPreviews((prev) => { const n = new Map(prev); n.set(blockId, 'loading'); return n; });
           container.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:16px;color:#94a3b8;font-size:13px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Renderizando preview formatado...</div>';
@@ -8925,6 +8940,7 @@ Regras:
               renderEndnotes: false,
             } as any);
 
+            bmPreviewHtmlRef.current.set(blockId, currentContainer.innerHTML);
             setBmDocxPreviews((prev) => { const n = new Map(prev); n.set(blockId, 'done'); return n; });
           } catch {
             const currentContainer = bmPreviewContainersRef.current.get(blockId);
@@ -8947,7 +8963,8 @@ Regras:
         };
 
         const bmQueuePreview = (blockId: string) => {
-          if (bmDocxPreviews.get(blockId) === 'done' || bmDocxPreviews.get(blockId) === 'loading') return;
+          // 'done' não impede: ao expandir de novo o container é outro, vazio.
+          if (bmDocxPreviews.get(blockId) === 'loading') return;
           if (!bmPreviewQueueRef.current.includes(blockId)) {
             bmPreviewQueueRef.current.push(blockId);
           }
@@ -8967,7 +8984,7 @@ Regras:
           });
         };
         const bmExpandAll = () => {
-          const ids = filteredBlocks.map((b) => b.id);
+          const ids = bmVisibleBlocks.map((b) => b.id);
           setBmExpandedBlocks(new Set(ids));
           window.setTimeout(() => { ids.forEach((id) => bmQueuePreview(id)); }, 100);
         };
@@ -8992,42 +9009,20 @@ Regras:
           const plain = idx?.plain ?? sfdtToPlainText(block.content);
           const tags = idx?.tags ?? getBlockTagsForUI(block, plain);
           const isExpanded = bmExpandedBlocks.has(block.id);
-          const previewLength = 180;
+          const previewLength = bmViewMode === 'grid' ? 150 : 210;
           const summaryText = plain.slice(0, previewLength) + (plain.length > previewLength ? '...' : '');
           const updatedDate = block.updated_at ? new Date(block.updated_at) : null;
-          const docxStatus = bmDocxPreviews.get(block.id);
-
-          const headerRow = (compact?: boolean) => (
-            <div className={`flex items-center gap-2 ${compact ? '' : 'flex-wrap'}`}>
-              <h4 className={`font-semibold text-slate-900 ${compact ? 'text-sm leading-snug line-clamp-2' : 'text-sm'}`}>{block.title}</h4>
-              {block.is_default && (
-                <span className={`inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 font-bold ${compact ? 'p-1' : 'px-2 py-0.5 text-[10px]'}`} title="Bloco padrao">
-                  <Star className="w-3 h-3" />{!compact && ' Padrao'}
-                </span>
-              )}
-              {!block.is_active && (
-                <span className={`inline-flex items-center rounded-full bg-red-50 border border-red-200 text-red-600 font-bold ${compact ? 'p-1' : 'px-2 py-0.5 text-[10px]'}`} title="Inativo">
-                  {compact ? <XCircle className="w-3 h-3" /> : 'Inativo'}
-                </span>
-              )}
-              {!compact && updatedDate && (
-                <span className="text-[10px] text-slate-400 ml-auto flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  {updatedDate.toLocaleDateString('pt-BR')}
-                </span>
-              )}
-            </div>
-          );
+          const wordCount = plain.trim() ? plain.trim().split(/\s+/).length : 0;
 
           const tagsRow = (maxTags: number) => tags.length > 0 ? (
-            <div className="flex flex-wrap gap-1 mt-2">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {tags.slice(0, maxTags).map((tag) => (
-                <span key={tag} className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-slate-100 text-[11px] font-medium text-slate-700 border border-slate-200">
-                  <Hash className="w-2.5 h-2.5 text-blue-500" />{tag}
+                <span key={tag} className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                  {tag}
                 </span>
               ))}
               {tags.length > maxTags && (
-                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-[10px] font-medium text-slate-500">+{tags.length - maxTags}</span>
+                <span className="px-1 py-0.5 text-[10px] font-medium text-slate-400">+{tags.length - maxTags}</span>
               )}
             </div>
           ) : null;
@@ -9036,415 +9031,474 @@ Regras:
             <div
               ref={(el) => {
                 bmPreviewContainersRef.current.set(block.id, el);
-                if (el && isExpanded && !docxStatus) {
-                  window.setTimeout(() => bmQueuePreview(block.id), 30);
+                if (!el || !isExpanded || el.childElementCount > 0) return;
+                const cached = bmPreviewHtmlRef.current.get(block.id);
+                if (cached) {
+                  el.innerHTML = cached;
+                  return;
                 }
+                window.setTimeout(() => bmQueuePreview(block.id), 30);
               }}
-              className="bm-docx-preview-container overflow-auto bg-[#f7f8fa] rounded-lg border border-[#e3e6ea] shadow-inner"
-              style={{ maxHeight: 500, minHeight: 80 }}
+              className="bm-docx-preview-container overflow-auto bg-[#f8fafd]"
+              style={{ maxHeight: 460, minHeight: 96 }}
             />
           );
 
           if (bmViewMode === 'grid') {
             return (
-              <div key={block.id} className="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-200 flex flex-col overflow-hidden">
-                <div className="p-4 flex-1 flex flex-col">
-                  {headerRow(true)}
-
-                  <div className="flex-1 min-h-0 mt-2">
-                    {isExpanded ? (
-                      docxPreviewContainer
-                    ) : (
-                      <div className="text-xs text-slate-600 leading-relaxed line-clamp-4">
-                        {summaryText || <span className="italic text-slate-400">Sem conteudo</span>}
+              <article key={block.id} className="group flex min-h-[220px] flex-col overflow-hidden rounded-2xl border border-[#dde3ea] bg-white transition hover:border-[#c5d1df] hover:shadow-[0_4px_18px_rgba(60,64,67,.10)]">
+                <div className="flex flex-1 flex-col p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#e8f0fe] text-[#1967d2]">
+                      <FileText className="h-[18px] w-[18px]" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => openBlockModal(block)}
+                        className="block max-w-full text-left text-sm font-semibold leading-5 text-[#202124] hover:text-[#1967d2]"
+                      >
+                        <span className="line-clamp-2">{block.title}</span>
+                      </button>
+                      <div className="mt-1 flex items-center gap-2 text-[10px] text-[#5f6368]">
+                        <span>{wordCount} palavra{wordCount !== 1 ? 's' : ''}</span>
+                        {block.is_default && (
+                          <span className="inline-flex items-center gap-1 text-[#1967d2]">
+                            <Star className="h-3 w-3 fill-current" /> Padrão
+                          </span>
+                        )}
                       </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => bmToggleExpand(block.id)}
-                      className="mt-2 text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5"
-                    >
-                      {isExpanded ? <><ChevronUp className="w-3 h-3" /> Recolher</> : <><Eye className="w-3 h-3" /> Ver formatado</>}
-                    </button>
+                    </div>
                   </div>
 
-                  {!isExpanded && tagsRow(4)}
+                  <div className="mt-4 flex-1">
+                    {isExpanded ? (
+                      <div className="overflow-hidden rounded-xl border border-[#e3e7ec]">
+                        {docxPreviewContainer}
+                      </div>
+                    ) : (
+                      <p className="line-clamp-4 text-xs leading-[1.65] text-[#5f6368]">
+                        {summaryText || <span className="italic text-[#9aa0a6]">Sem conteúdo</span>}
+                      </p>
+                    )}
+                    {!isExpanded && tagsRow(3)}
+                  </div>
 
-                  {!isExpanded && updatedDate && (
-                    <div className="mt-2 text-[10px] text-slate-400 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {updatedDate.toLocaleDateString('pt-BR')}
+                  <div className="mt-4 flex items-center justify-between border-t border-[#edf0f3] pt-3">
+                    <span className="text-[10px] text-[#80868b]">
+                      {updatedDate ? `Editado em ${updatedDate.toLocaleDateString('pt-BR')}` : 'Sem data de edição'}
+                    </span>
+                    <div className="flex items-center gap-0.5">
+                      <button type="button" onClick={() => bmToggleExpand(block.id)} className="rounded-full p-2 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#1967d2]" title={isExpanded ? 'Recolher visualização' : 'Visualizar conteúdo formatado'} aria-label={isExpanded ? 'Recolher visualização' : 'Visualizar conteúdo formatado'}>
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                      <button type="button" onClick={() => openBlockModal(block)} className="rounded-full p-2 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#1967d2]" title="Editar bloco" aria-label={`Editar ${block.title}`}>
+                        <Edit3 className="h-4 w-4" />
+                      </button>
+                      <button type="button" onClick={() => bmCopyPlainText(plain)} className="rounded-full p-2 text-[#5f6368] hover:bg-[#f1f3f4] hover:text-[#1967d2]" title="Copiar texto" aria-label={`Copiar ${block.title}`}>
+                        <Copy className="h-4 w-4" />
+                      </button>
+                      <button type="button" onClick={() => { void deleteBlock(block.id); }} className="rounded-full p-2 text-[#5f6368] hover:bg-red-50 hover:text-red-600" title="Excluir bloco" aria-label={`Excluir ${block.title}`}>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
-                  )}
+                  </div>
                 </div>
-
-                <div className="px-4 py-2.5 bg-slate-50/60 border-t border-slate-100 flex items-center gap-1.5">
-                  <button type="button" onClick={() => openBlockModal(block)} className="flex-1 px-2 py-1.5 text-[12px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center justify-center gap-1">
-                    <Edit3 className="w-3 h-3" /> Editar
-                  </button>
-                  <button type="button" onClick={() => bmCopyPlainText(plain)} className="px-2.5 py-1.5 text-[12px] font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-white transition-colors" title="Copiar texto">
-                    <Copy className="w-3 h-3" />
-                  </button>
-                  <button type="button" onClick={() => { void deleteBlock(block.id); }} className="px-2.5 py-1.5 text-[12px] font-medium rounded-lg border border-slate-200 text-red-500 hover:bg-red-50 hover:border-red-200 transition-colors" title="Excluir">
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
+              </article>
             );
           }
 
           return (
-            <div key={block.id} className="group bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 transition-all duration-200 overflow-hidden">
-              <div className="px-5 py-4">
-                <div className="flex items-start gap-4">
-                  <div className="flex-1 min-w-0">
-                    {headerRow(false)}
+            <article key={block.id} className="group border-b border-[#edf0f3] bg-white last:border-b-0 hover:bg-[#f8fafd]">
+              <div className="flex items-start gap-3 px-4 py-3.5 sm:px-5">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#e8f0fe] text-[#1967d2]">
+                  <FileText className="h-[18px] w-[18px]" />
+                </div>
 
-                    {/* Preview area */}
-                    <div className="mt-3">
-                      {isExpanded ? (
-                        <div className="rounded-xl overflow-hidden border border-[#e3e6ea]">
-                          <div className="bg-slate-50 px-3 py-2 border-b border-[#e3e6ea] flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                              <FileText className="w-3.5 h-3.5" /> Preview formatado
-                            </span>
-                            <button type="button" onClick={() => bmToggleExpand(block.id)}
-                              className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-0.5">
-                              <ChevronUp className="w-3.5 h-3.5" /> Recolher
-                            </button>
-                          </div>
-                          {docxPreviewContainer}
-                        </div>
-                      ) : (
-                        <div className="p-3.5 bg-slate-50 border border-[#e3e6ea]/80 rounded-xl">
-                          <div className="text-[13px] text-slate-600 leading-relaxed line-clamp-3">
-                            {summaryText || <span className="italic text-slate-400">Sem conteudo</span>}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => bmToggleExpand(block.id)}
-                            className="mt-2 text-[11px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                          >
-                            <Eye className="w-3.5 h-3.5" /> Ver conteudo formatado (Word)
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {tagsRow(10)}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <button
+                      type="button"
+                      onClick={() => openBlockModal(block)}
+                      className="max-w-full truncate text-left text-sm font-semibold text-[#202124] hover:text-[#1967d2]"
+                    >
+                      {block.title}
+                    </button>
+                    {block.is_default && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[#e8f0fe] px-2 py-0.5 text-[10px] font-medium text-[#1967d2]">
+                        <Star className="h-3 w-3 fill-current" /> Padrão
+                      </span>
+                    )}
                   </div>
+                  {!isExpanded && (
+                    <p className="mt-1 line-clamp-2 max-w-4xl text-xs leading-5 text-[#5f6368]">
+                      {summaryText || <span className="italic text-[#9aa0a6]">Sem conteúdo</span>}
+                    </p>
+                  )}
+                  {!isExpanded && tagsRow(4)}
+                </div>
 
-                  <div className="flex flex-col gap-1.5 shrink-0">
-                    <button type="button" onClick={() => openBlockModal(block)} className="px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors flex items-center gap-1.5" title="Editar">
-                      <Edit3 className="w-3.5 h-3.5" /> Editar
-                    </button>
-                    <button type="button" onClick={() => bmCopyPlainText(plain)} className="px-3 py-1.5 text-[12px] font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5" title="Copiar texto">
-                      <Copy className="w-3.5 h-3.5" /> Copiar
-                    </button>
-                    <button type="button" onClick={() => { void deleteBlock(block.id); }} className="px-3 py-1.5 text-[12px] font-medium rounded-lg border border-slate-200 text-red-500 hover:bg-red-50 hover:border-red-200 transition-colors flex items-center gap-1.5" title="Excluir">
-                      <Trash2 className="w-3.5 h-3.5" /> Excluir
-                    </button>
-                  </div>
+                <div className="hidden w-28 shrink-0 pt-0.5 text-right sm:block">
+                  <div className="text-[11px] text-[#5f6368]">{wordCount} palavra{wordCount !== 1 ? 's' : ''}</div>
+                  {updatedDate && <div className="mt-1 text-[10px] text-[#9aa0a6]">{updatedDate.toLocaleDateString('pt-BR')}</div>}
+                </div>
+
+                <div className="flex shrink-0 items-center gap-0.5 opacity-100 transition lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
+                  <button type="button" onClick={() => bmToggleExpand(block.id)} className="rounded-full p-2 text-[#5f6368] hover:bg-[#e8eaed] hover:text-[#1967d2]" title={isExpanded ? 'Recolher visualização' : 'Visualizar conteúdo formatado'} aria-label={isExpanded ? 'Recolher visualização' : 'Visualizar conteúdo formatado'}>
+                    {isExpanded ? <ChevronUp className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                  <button type="button" onClick={() => openBlockModal(block)} className="rounded-full p-2 text-[#5f6368] hover:bg-[#e8eaed] hover:text-[#1967d2]" title="Editar bloco" aria-label={`Editar ${block.title}`}>
+                    <Edit3 className="h-4 w-4" />
+                  </button>
+                  <button type="button" onClick={() => bmCopyPlainText(plain)} className="hidden rounded-full p-2 text-[#5f6368] hover:bg-[#e8eaed] hover:text-[#1967d2] sm:inline-flex" title="Copiar texto" aria-label={`Copiar ${block.title}`}>
+                    <Copy className="h-4 w-4" />
+                  </button>
+                  <button type="button" onClick={() => { void deleteBlock(block.id); }} className="hidden rounded-full p-2 text-[#5f6368] hover:bg-red-50 hover:text-red-600 sm:inline-flex" title="Excluir bloco" aria-label={`Excluir ${block.title}`}>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
-            </div>
+
+              {isExpanded && (
+                <div className="border-t border-[#edf0f3] bg-[#f8fafd] px-4 py-4 sm:px-16">
+                  <div className="overflow-hidden rounded-xl border border-[#dde3ea] bg-white">
+                    <div className="flex items-center justify-between border-b border-[#edf0f3] px-3 py-2">
+                      <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-[#5f6368]">
+                        <FileText className="h-3.5 w-3.5" /> Visualização formatada
+                      </span>
+                      <button type="button" onClick={() => bmToggleExpand(block.id)} className="rounded-full p-1 text-[#5f6368] hover:bg-[#f1f3f4]" title="Recolher visualização">
+                        <ChevronUp className="h-4 w-4" />
+                      </button>
+                    </div>
+                    {docxPreviewContainer}
+                  </div>
+                </div>
+              )}
+            </article>
           );
         };
 
         return (
-        <div className="flex-1 overflow-hidden bg-slate-50">
-          <div className="h-full overflow-y-auto">
-            <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={returnFromBlocksWorkspace}
-                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-600"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    {blocksReturnTarget === 'start' ? 'Voltar ao início' : 'Voltar ao editor'}
+        <div className="flex flex-1 flex-col overflow-hidden bg-[#f8fafd] text-[#202124]">
+          <header className="z-10 shrink-0 border-b border-[#e3e7ec] bg-white">
+            <div className="flex min-h-[68px] items-center gap-3 px-4 sm:px-6">
+              <button
+                type="button"
+                onClick={returnFromBlocksWorkspace}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#5f6368] transition hover:bg-[#f1f3f4]"
+                title={blocksReturnTarget === 'start' ? 'Voltar ao início' : 'Voltar ao editor'}
+                aria-label={blocksReturnTarget === 'start' ? 'Voltar ao início' : 'Voltar ao editor'}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e8f0fe] text-[#1967d2]">
+                <Layers className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="truncate text-lg font-medium leading-6">Biblioteca de blocos</h2>
+                <p className="hidden text-xs text-[#5f6368] sm:block">Trechos jurídicos prontos para reutilizar no editor</p>
+              </div>
+
+              <div className="relative ml-auto hidden w-full max-w-[520px] md:block">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-[#5f6368]" />
+                <input
+                  type="search"
+                  placeholder="Pesquisar na biblioteca"
+                  value={blockSearch}
+                  onChange={(event) => setBlockSearch(event.target.value)}
+                  className="h-11 w-full rounded-full border border-transparent bg-[#f1f3f4] pl-11 pr-10 text-sm text-[#202124] outline-none transition placeholder:text-[#5f6368] hover:bg-[#eceff1] focus:border-[#a8c7fa] focus:bg-white focus:shadow-[0_1px_2px_rgba(60,64,67,.18)]"
+                  aria-label="Pesquisar blocos"
+                />
+                {blockSearch && (
+                  <button type="button" onClick={() => setBlockSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-2 text-[#5f6368] hover:bg-[#e8eaed]" title="Limpar pesquisa" aria-label="Limpar pesquisa">
+                    <X className="h-4 w-4" />
                   </button>
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-900">Gerenciador de blocos</h2>
-                    <p className="text-xs text-slate-500">Organize os textos reutilizáveis do editor.</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Stats Bar */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-                    <Layers className="w-[18px] h-[18px] text-blue-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[22px] font-semibold leading-none text-slate-900 tabular-nums">{filteredBlocks.length}</div>
-                    <div className="mt-1 text-[12px] text-slate-500">Blocos visiveis</div>
-                  </div>
-                </div>
-                <div className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-                    <BarChart3 className="w-[18px] h-[18px] text-blue-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[22px] font-semibold leading-none text-slate-900 tabular-nums">{sidebarCategoryKeys.length}</div>
-                    <div className="mt-1 text-[12px] text-slate-500">Categorias</div>
-                  </div>
-                </div>
-                <div className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
-                    <Star className="w-[18px] h-[18px] text-emerald-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[22px] font-semibold leading-none text-slate-900 tabular-nums">{bmDefaultCount}</div>
-                    <div className="mt-1 text-[12px] text-slate-500">Padroes</div>
-                  </div>
-                </div>
-                <div className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-500/10">
-                    <Hash className="w-[18px] h-[18px] text-slate-500" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[22px] font-semibold leading-none text-slate-900 tabular-nums">{bmAllTags.size}</div>
-                    <div className="mt-1 text-[12px] text-slate-500">Tags unicas</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Filters + Actions Bar */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-                <div className="p-4 flex flex-col xl:flex-row xl:items-center gap-3">
-                  {/* Search */}
-                  <div className="relative flex-1 min-w-0 max-w-md">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Buscar por titulo, tags ou conteudo..."
-                      value={blockSearch}
-                      onChange={(e) => setBlockSearch(e.target.value)}
-                      className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400 bg-slate-50 focus:bg-white transition-colors"
-                    />
-                    {blockSearch && (
-                      <button type="button" onClick={() => setBlockSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Filters inline */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <select
-                      value={selectedDocumentType}
-                      onChange={(e) => setSelectedDocumentType(e.target.value as DocumentType)}
-                      className="px-3 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400"
-                    >
-                      <option value="petition">Peticao</option>
-                      <option value="contestation">Contestacao</option>
-                      <option value="impugnation">Impugnacao</option>
-                      <option value="appeal">Recurso</option>
-                    </select>
-
-                    <select
-                      value={blockFilterScope === 'global' ? '__all__' : (selectedLegalAreaId || '')}
-                      onChange={(e) => {
-                        const areaId = e.target.value;
-                        if (areaId === '__all__') {
-                          setBlockFilterScope('global');
-                          return;
-                        }
-
-                        setSelectedLegalAreaId(areaId || null);
-                        setSelectedStandardTypeId(null);
-                        setStandardTypes(areaId ? (standardTypesByArea[areaId] ?? []).map(sanitizeStandardTypeRecord) : []);
-                        setBlockFilterScope('area');
-                      }}
-                      className="min-w-[160px] px-3 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400"
-                      title="Filtrar blocos por área jurídica"
-                      aria-label="Filtrar blocos por área jurídica"
-                    >
-                      <option value="__all__">Todas as áreas</option>
-                      {legalAreas.map((area) => (
-                        <option key={area.id} value={area.id}>{area.name}</option>
-                      ))}
-                    </select>
-
-                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-                      {selectedStandardTypeId && (
-                        <button type="button" onClick={() => setBlockFilterScope('type')}
-                          className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${blockFilterScope === 'type' ? 'bg-blue-500 text-white' : 'text-slate-600 hover:bg-white'}`}>
-                          Peticao
-                        </button>
-                      )}
-                      <button type="button" onClick={() => setBlockFilterScope('area')}
-                        className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${blockFilterScope === 'area' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
-                        Area
-                      </button>
-                      <button type="button" onClick={() => setBlockFilterScope('global')}
-                        className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-colors ${blockFilterScope === 'global' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
-                        Global
-                      </button>
-                    </div>
-
-                    <div className="h-5 w-px bg-slate-200" />
-
-                    <select
-                      value={bmSortBy}
-                      onChange={(e) => setBmSortBy(e.target.value as any)}
-                      className="px-3 py-2 text-xs font-medium text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/25 focus:border-blue-400"
-                      title="Ordenar por"
-                    >
-                      <option value="category">Por categoria</option>
-                      <option value="title">Por titulo A-Z</option>
-                      <option value="updated">Mais recentes</option>
-                    </select>
-
-                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-                      <button type="button" onClick={() => setBmViewMode('list')} title="Lista"
-                        className={`p-1.5 rounded-lg transition-colors ${bmViewMode === 'list' ? 'bg-[#f7f8fa] text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                        <List className="w-4 h-4" />
-                      </button>
-                      <button type="button" onClick={() => setBmViewMode('grid')} title="Grade"
-                        className={`p-1.5 rounded-lg transition-colors ${bmViewMode === 'grid' ? 'bg-[#f7f8fa] text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                        <LayoutGrid className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 ml-auto">
-                    <button type="button" onClick={bmExpandAll}
-                      className="px-3 py-2 text-[12px] font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5" title="Expandir todos">
-                      <ChevronsUpDown className="w-3.5 h-3.5" /> Expandir
-                    </button>
-                    <button type="button" onClick={bmCollapseAll}
-                      className="px-3 py-2 text-[12px] font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5" title="Recolher todos">
-                      <ChevronUp className="w-3.5 h-3.5" /> Recolher
-                    </button>
-                    <button type="button" onClick={() => { ensureDraftFromCategories(blockCategories); setShowCategoryModal(true); }}
-                      className="px-3 py-2 text-[12px] font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors flex items-center gap-1.5">
-                      <Settings className="w-3.5 h-3.5" /> Categorias
-                    </button>
-                    <button type="button" onClick={() => openBlockModal()}
-                      className="px-4 py-2 text-[12px] font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 shadow-sm shadow-blue-500/30 transition-colors flex items-center gap-1.5">
-                      <Plus className="w-4 h-4" /> Novo bloco
-                    </button>
-                  </div>
-                </div>
-
-                {/* Standard Types pills */}
-                {standardTypes.length > 0 && selectedLegalAreaId && (
-                  <div className="px-4 pb-4 pt-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Modelo:</span>
-                      <button type="button" onClick={() => { setSelectedStandardTypeId(null); setBlockFilterScope('area'); }}
-                        className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${!selectedStandardTypeId ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-[#f7f8fa] border-[#e3e6ea] text-slate-600 hover:bg-slate-50'}`}>
-                        {selectedLegalArea?.name || 'Area'}
-                      </button>
-                      {standardTypes.map((t) => (
-                        <button key={t.id} type="button"
-                          onClick={() => { setSelectedStandardTypeId(t.id); setBlockFilterScope('type'); if (t.default_document && editorRef.current) { editorRef.current.loadSfdt(t.default_document); if (t.default_document_name) setPetitionTitle(sanitizeText(t.default_document_name)); } }}
-                          className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors ${selectedStandardTypeId === t.id ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-[#f7f8fa] border-[#e3e6ea] text-slate-600 hover:bg-blue-50/40'}`}>
-                          {t.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 )}
               </div>
 
-              {/* Active filters breadcrumb */}
-              {(blockSearch || blockFilterScope !== 'area' || selectedStandardTypeId) && (
-                <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
-                  <Filter className="w-3.5 h-3.5 text-slate-400" />
-                  <span className="font-medium">Filtros:</span>
-                  {blockSearch && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-medium">
-                      Busca: "{blockSearch}"
-                      <button type="button" onClick={() => setBlockSearch('')} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
-                    </span>
-                  )}
-                  {blockFilterScope === 'global' && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 border border-[#e3e6ea] text-slate-600 font-medium">Global</span>
-                  )}
-                  {blockFilterScope === 'type' && selectedStandardTypeId && (
-                    <span className="inline-flex items-center px-2 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-medium">
-                      Peticao padrao
-                    </span>
-                  )}
-                  {selectedLegalArea && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border font-medium" style={{ backgroundColor: (selectedLegalArea.color || '#f97316') + '10', borderColor: (selectedLegalArea.color || '#f97316') + '40', color: selectedLegalArea.color || '#f97316' }}>
-                      <Scale className="w-3 h-3" /> {selectedLegalArea.name}
-                    </span>
-                  )}
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => openBlockModal()}
+                className="ml-auto inline-flex h-10 shrink-0 items-center gap-2 rounded-full bg-[#0b57d0] px-4 text-sm font-medium text-white shadow-sm transition hover:bg-[#0a4ebd] md:ml-2"
+              >
+                <Plus className="h-[18px] w-[18px]" />
+                <span className="hidden sm:inline">Novo bloco</span>
+              </button>
+            </div>
+          </header>
 
-              {/* Block List / Grid */}
-              {filteredBlocks.length === 0 ? (
-                <div className="bg-white rounded-xl border border-slate-200 p-14 text-center">
-                  <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-slate-100 flex items-center justify-center">
-                    <FileText className="w-7 h-7 text-slate-400" />
-                  </div>
-                  <div className="text-base font-semibold text-slate-800">Nenhum bloco encontrado</div>
-                  <div className="text-sm text-slate-500 mt-1.5 max-w-md mx-auto">Tente ajustar os filtros, alterar o escopo ou o tipo de documento.</div>
-                  <button type="button" onClick={() => openBlockModal()}
-                    className="mt-5 px-5 py-2.5 text-sm font-semibold rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors inline-flex items-center gap-2">
-                    <Plus className="w-4 h-4" /> Criar primeiro bloco
-                  </button>
+          <div className="flex min-h-0 flex-1">
+            <aside className="hidden w-[248px] shrink-0 flex-col border-r border-[#e3e7ec] bg-white px-3 py-4 md:flex">
+              <button
+                type="button"
+                onClick={() => setBmCategoryFilter('all')}
+                className={`flex h-10 w-full items-center gap-3 rounded-full px-3 text-left text-sm font-medium transition ${bmCategoryFilter === 'all' ? 'bg-[#c2e7ff] text-[#001d35]' : 'text-[#3c4043] hover:bg-[#f1f3f4]'}`}
+              >
+                <Layers className="h-[18px] w-[18px]" />
+                <span className="min-w-0 flex-1 truncate">Todos os blocos</span>
+                <span className="text-[11px] tabular-nums opacity-70">{filteredBlocks.length}</span>
+              </button>
+
+              <div className="mb-1 mt-5 flex items-center justify-between px-3">
+                <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#5f6368]">Categorias</span>
+                <button
+                  type="button"
+                  onClick={() => { ensureDraftFromCategories(blockCategories); setShowCategoryModal(true); }}
+                  className="rounded-full p-1.5 text-[#5f6368] hover:bg-[#f1f3f4]"
+                  title="Gerenciar categorias"
+                  aria-label="Gerenciar categorias"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+              </div>
+
+              <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto" aria-label="Categorias de blocos">
+                {sidebarCategoryKeys.map((category) => {
+                  const count = ((blocksByCategory as Record<string, PetitionBlock[]>)[category] || []).length;
+                  const isActive = bmCategoryFilter === category;
+                  return (
+                    <button
+                      key={category}
+                      type="button"
+                      onClick={() => setBmCategoryFilter(category)}
+                      className={`flex min-h-9 w-full items-center gap-3 rounded-full px-3 text-left text-[13px] transition ${isActive ? 'bg-[#e8f0fe] font-medium text-[#1967d2]' : 'text-[#3c4043] hover:bg-[#f1f3f4]'}`}
+                    >
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${isActive ? 'bg-[#1967d2]' : 'bg-[#bdc1c6]'}`} />
+                      <span className="min-w-0 flex-1 truncate">{getCategoryLabel(category)}</span>
+                      <span className="text-[11px] tabular-nums opacity-70">{count}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <div className="mt-4 rounded-xl bg-[#f8fafd] p-3">
+                <div className="flex items-center gap-2 text-xs font-medium text-[#3c4043]">
+                  <Star className="h-3.5 w-3.5 text-[#1967d2]" />
+                  {bmDefaultCount} bloco{bmDefaultCount !== 1 ? 's' : ''} padrão
                 </div>
-              ) : bmSortBy !== 'category' ? (
-                bmViewMode === 'grid' ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                <p className="mt-1 text-[10px] leading-4 text-[#80868b]">Os padrões aparecem primeiro nas rotinas do editor.</p>
+              </div>
+            </aside>
+
+            <main className="min-w-0 flex-1 overflow-y-auto">
+              <div className="border-b border-[#e3e7ec] bg-white px-4 py-3 md:hidden">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#5f6368]" />
+                  <input
+                    type="search"
+                    placeholder="Pesquisar na biblioteca"
+                    value={blockSearch}
+                    onChange={(event) => setBlockSearch(event.target.value)}
+                    className="h-10 w-full rounded-full bg-[#f1f3f4] pl-10 pr-9 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-[#a8c7fa]"
+                    aria-label="Pesquisar blocos"
+                  />
+                  {blockSearch && (
+                    <button type="button" onClick={() => setBlockSearch('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full p-2 text-[#5f6368]" aria-label="Limpar pesquisa">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                  <button type="button" onClick={() => setBmCategoryFilter('all')} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${bmCategoryFilter === 'all' ? 'bg-[#c2e7ff] text-[#001d35]' : 'bg-[#f1f3f4] text-[#3c4043]'}`}>
+                    Todos
+                  </button>
+                  {sidebarCategoryKeys.map((category) => (
+                    <button key={category} type="button" onClick={() => setBmCategoryFilter(category)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium ${bmCategoryFilter === category ? 'bg-[#c2e7ff] text-[#001d35]' : 'bg-[#f1f3f4] text-[#3c4043]'}`}>
+                      {getCategoryLabel(category)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mx-auto w-full max-w-[1380px] px-4 py-5 sm:px-6 lg:px-8">
+                <div className="rounded-2xl border border-[#dde3ea] bg-white">
+                  <div className="flex flex-col gap-3 p-3 sm:p-4 xl:flex-row xl:items-center">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={selectedDocumentType}
+                        onChange={(event) => setSelectedDocumentType(event.target.value as DocumentType)}
+                        className="h-9 rounded-lg border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#3c4043] outline-none hover:bg-[#f8fafd] focus:border-[#1a73e8]"
+                        aria-label="Tipo de documento"
+                      >
+                        <option value="petition">Petição</option>
+                        <option value="contestation">Contestação</option>
+                        <option value="impugnation">Impugnação</option>
+                        <option value="appeal">Recurso</option>
+                      </select>
+
+                      <select
+                        value={blockFilterScope === 'global' ? '__all__' : (selectedLegalAreaId || '')}
+                        onChange={(event) => {
+                          const areaId = event.target.value;
+                          if (areaId === '__all__') {
+                            setBlockFilterScope('global');
+                            return;
+                          }
+                          setSelectedLegalAreaId(areaId || null);
+                          setSelectedStandardTypeId(null);
+                          setStandardTypes(areaId ? (standardTypesByArea[areaId] ?? []).map(sanitizeStandardTypeRecord) : []);
+                          setBlockFilterScope('area');
+                        }}
+                        className="h-9 min-w-[150px] rounded-lg border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#3c4043] outline-none hover:bg-[#f8fafd] focus:border-[#1a73e8]"
+                        aria-label="Área jurídica"
+                      >
+                        <option value="__all__">Todas as áreas</option>
+                        {legalAreas.map((area) => (
+                          <option key={area.id} value={area.id}>{area.name}</option>
+                        ))}
+                      </select>
+
+                      <div className="flex h-9 items-center rounded-lg border border-[#dadce0] p-0.5">
+                        {selectedStandardTypeId && (
+                          <button type="button" onClick={() => setBlockFilterScope('type')} className={`h-8 rounded-md px-2.5 text-[11px] font-medium ${blockFilterScope === 'type' ? 'bg-[#e8f0fe] text-[#1967d2]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}>
+                            Modelo
+                          </button>
+                        )}
+                        <button type="button" onClick={() => setBlockFilterScope('area')} className={`h-8 rounded-md px-2.5 text-[11px] font-medium ${blockFilterScope === 'area' ? 'bg-[#e8f0fe] text-[#1967d2]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}>
+                          Área
+                        </button>
+                        <button type="button" onClick={() => setBlockFilterScope('global')} className={`h-8 rounded-md px-2.5 text-[11px] font-medium ${blockFilterScope === 'global' ? 'bg-[#e8f0fe] text-[#1967d2]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`}>
+                          Global
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 xl:ml-auto">
+                      <select
+                        value={bmSortBy}
+                        onChange={(event) => setBmSortBy(event.target.value as 'title' | 'updated' | 'category')}
+                        className="h-9 rounded-lg border border-[#dadce0] bg-white px-3 text-xs font-medium text-[#3c4043] outline-none hover:bg-[#f8fafd] focus:border-[#1a73e8]"
+                        aria-label="Ordenar blocos"
+                      >
+                        <option value="category">Por categoria</option>
+                        <option value="title">Título A–Z</option>
+                        <option value="updated">Mais recentes</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={bmExpandedBlocks.size > 0 ? bmCollapseAll : bmExpandAll}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#dadce0] px-3 text-xs font-medium text-[#3c4043] hover:bg-[#f8fafd]"
+                        title={bmExpandedBlocks.size > 0 ? 'Recolher visualizações' : 'Visualizar todos'}
+                      >
+                        {bmExpandedBlocks.size > 0 ? <ChevronUp className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        <span className="hidden sm:inline">{bmExpandedBlocks.size > 0 ? 'Recolher' : 'Visualizar'}</span>
+                      </button>
+
+                      <div className="flex h-9 items-center rounded-lg border border-[#dadce0] p-0.5">
+                        <button type="button" onClick={() => setBmViewMode('list')} className={`rounded-md p-1.5 ${bmViewMode === 'list' ? 'bg-[#e8f0fe] text-[#1967d2]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`} title="Exibir em lista" aria-label="Exibir em lista">
+                          <List className="h-4 w-4" />
+                        </button>
+                        <button type="button" onClick={() => setBmViewMode('grid')} className={`rounded-md p-1.5 ${bmViewMode === 'grid' ? 'bg-[#e8f0fe] text-[#1967d2]' : 'text-[#5f6368] hover:bg-[#f1f3f4]'}`} title="Exibir em grade" aria-label="Exibir em grade">
+                          <LayoutGrid className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {standardTypes.length > 0 && selectedLegalAreaId && (
+                    <div className="flex items-center gap-2 overflow-x-auto border-t border-[#edf0f3] px-4 py-2.5">
+                      <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.08em] text-[#80868b]">Modelo</span>
+                      <button type="button" onClick={() => { setSelectedStandardTypeId(null); setBlockFilterScope('area'); }} className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium ${!selectedStandardTypeId ? 'bg-[#c2e7ff] text-[#001d35]' : 'bg-[#f1f3f4] text-[#3c4043] hover:bg-[#e8eaed]'}`}>
+                        {selectedLegalArea?.name || 'Área'}
+                      </button>
+                      {standardTypes.map((type) => (
+                        <button
+                          key={type.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedStandardTypeId(type.id);
+                            setBlockFilterScope('type');
+                            if (type.default_document && editorRef.current) {
+                              editorRef.current.loadSfdt(type.default_document);
+                              if (type.default_document_name) setPetitionTitle(sanitizeText(type.default_document_name));
+                            }
+                          }}
+                          className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium ${selectedStandardTypeId === type.id ? 'bg-[#c2e7ff] text-[#001d35]' : 'bg-[#f1f3f4] text-[#3c4043] hover:bg-[#e8eaed]'}`}
+                        >
+                          {type.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-3 mt-6 flex flex-wrap items-end justify-between gap-3 px-1">
+                  <div>
+                    <h3 className="text-base font-medium text-[#202124]">{bmActiveCategoryLabel}</h3>
+                    <p className="mt-0.5 text-xs text-[#5f6368]">
+                      {bmVisibleBlocks.length} resultado{bmVisibleBlocks.length !== 1 ? 's' : ''}
+                      {selectedLegalArea ? ` · ${selectedLegalArea.name}` : ''}
+                      {blockFilterScope === 'global' ? ' · escopo global' : ''}
+                    </p>
+                  </div>
+                  {blockSearch && (
+                    <button type="button" onClick={() => setBlockSearch('')} className="inline-flex items-center gap-1.5 rounded-full bg-[#e8f0fe] px-3 py-1.5 text-xs font-medium text-[#1967d2] hover:bg-[#dbe8fd]">
+                      “{blockSearch}” <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {bmVisibleBlocks.length === 0 ? (
+                  <div className="rounded-2xl border border-[#dde3ea] bg-white px-6 py-16 text-center">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#f1f3f4]">
+                      <Search className="h-6 w-6 text-[#80868b]" />
+                    </div>
+                    <div className="mt-4 text-base font-medium text-[#202124]">Nenhum bloco por aqui</div>
+                    <p className="mx-auto mt-1 max-w-md text-sm leading-5 text-[#5f6368]">
+                      Ajuste a pesquisa ou escolha outra categoria. Você também pode criar um novo bloco para este contexto.
+                    </p>
+                    <div className="mt-5 flex flex-wrap justify-center gap-2">
+                      {(blockSearch || bmCategoryFilter !== 'all') && (
+                        <button type="button" onClick={() => { setBlockSearch(''); setBmCategoryFilter('all'); }} className="h-9 rounded-full border border-[#dadce0] px-4 text-sm font-medium text-[#1967d2] hover:bg-[#f8fafd]">
+                          Limpar filtros
+                        </button>
+                      )}
+                      <button type="button" onClick={() => openBlockModal()} className="inline-flex h-9 items-center gap-2 rounded-full bg-[#0b57d0] px-4 text-sm font-medium text-white hover:bg-[#0a4ebd]">
+                        <Plus className="h-4 w-4" /> Novo bloco
+                      </button>
+                    </div>
+                  </div>
+                ) : bmSortBy === 'category' && bmCategoryFilter === 'all' ? (
+                  <div className="space-y-6">
+                    {sidebarCategoryKeys.map((category) => {
+                      const items = (blocksByCategory as Record<string, PetitionBlock[]>)[category] || [];
+                      if (items.length === 0) return null;
+                      const isCatCollapsed = bmCollapsedCategories.has(category);
+                      return (
+                        <section key={category}>
+                          <button type="button" onClick={() => bmToggleCategory(category)} className="mb-2 flex w-full items-center gap-2 px-1 text-left">
+                            {isCatCollapsed ? <ChevronRight className="h-4 w-4 text-[#5f6368]" /> : <ChevronDown className="h-4 w-4 text-[#5f6368]" />}
+                            <span className="text-sm font-medium text-[#3c4043]">{getCategoryLabel(category)}</span>
+                            <span className="text-[11px] text-[#80868b]">{items.length}</span>
+                            <span className="h-px flex-1 bg-[#e3e7ec]" />
+                          </button>
+                          {!isCatCollapsed && (
+                            bmViewMode === 'grid' ? (
+                              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                                {items.map(renderBlockCard)}
+                              </div>
+                            ) : (
+                              <div className="overflow-hidden rounded-2xl border border-[#dde3ea] bg-white">
+                                {items.map(renderBlockCard)}
+                              </div>
+                            )
+                          )}
+                        </section>
+                      );
+                    })}
+                  </div>
+                ) : bmViewMode === 'grid' ? (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {bmSortedBlocks.map(renderBlockCard)}
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="overflow-hidden rounded-2xl border border-[#dde3ea] bg-white">
                     {bmSortedBlocks.map(renderBlockCard)}
                   </div>
-                )
-              ) : (
-                <div className="space-y-4">
-                  {sidebarCategoryKeys.map((category) => {
-                    const items = (blocksByCategory as Record<string, PetitionBlock[]>)[category] || [];
-                    if (items.length === 0) return null;
-                    const isCatCollapsed = bmCollapsedCategories.has(category);
-                    return (
-                      <section key={category} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                        <button
-                          type="button"
-                          onClick={() => bmToggleCategory(category)}
-                          className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10">
-                              <Layers className="w-4 h-4 text-blue-600" />
-                            </div>
-                            <div className="text-left">
-                              <h3 className="text-sm font-semibold text-slate-900">{getCategoryLabel(category)}</h3>
-                              <p className="text-[11px] text-slate-500">{items.length} bloco{items.length !== 1 ? 's' : ''}</p>
-                            </div>
-                          </div>
-                          {isCatCollapsed ? <ChevronRight className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
-                        </button>
-
-                        {!isCatCollapsed && (
-                          bmViewMode === 'grid' ? (
-                            <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                              {items.map(renderBlockCard)}
-                            </div>
-                          ) : (
-                            <div className="px-4 pb-4 space-y-3">
-                              {items.map(renderBlockCard)}
-                            </div>
-                          )
-                        )}
-                      </section>
-                    );
-                  })}
-                </div>
-              )}
-
-            </div>
+                )}
+              </div>
+            </main>
           </div>
         </div>
         );
@@ -11001,126 +11055,6 @@ Regras:
               onOpenFindReplace={(mode) => setBlockFindReplaceMode(mode)}
             />
 
-            {/* Propriedades do bloco */}
-            <div className="petition-block-properties shrink-0 px-4 py-2 border-b border-slate-200 bg-slate-50/70 flex items-center gap-5 flex-wrap">
-              <div className="flex items-center gap-2">
-                <label className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Categoria</label>
-                <select
-                  value={blockFormData.category}
-                  onChange={(e) => {
-                    setBlockFormData({ ...blockFormData, category: e.target.value as BlockCategory });
-                    setBlockEditorDirty(true);
-                  }}
-                  className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer"
-                >
-                  {categoryKeysOrdered.map((key) => (
-                    <option key={key} value={key}>{getCategoryLabel(key)}</option>
-                  ))}
-                </select>
-              </div>
-
-              {legalAreas.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <label className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Area</label>
-                  <select
-                    value={(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '') as any}
-                    onChange={(e) => {
-                      const v = e.target.value || null;
-                      setBlockFormData({ ...blockFormData, legal_area_id: v as any });
-                      setBlockEditorDirty(true);
-                      if (v && blockStandardTypeId) {
-                        const types = standardTypesByArea[String(v)] ?? [];
-                        if (!types.some((t) => t.id === blockStandardTypeId)) {
-                          setBlockStandardTypeId(null);
-                        }
-                      }
-                    }}
-                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer"
-                  >
-                    {legalAreas.map((area) => (
-                      <option key={area.id} value={area.id}>
-                        {area.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {legalAreas.length > 0 && (standardTypesByArea[String(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '')] ?? []).length > 0 && (
-                <div className="flex items-center gap-2">
-                  <label className="text-[11px] font-medium text-slate-500 whitespace-nowrap">Modelo</label>
-                  <select
-                    value={(blockFilterScope === 'type' && selectedStandardTypeId ? selectedStandardTypeId : (blockStandardTypeId || '')) as any}
-                    onChange={(e) => {
-                      if (blockFilterScope === 'type' && selectedStandardTypeId) return;
-                      const v = e.target.value || null;
-                      setBlockStandardTypeId(v as any);
-                      setBlockEditorDirty(true);
-                      const found = Object.values(standardTypesByArea).flat().find((t) => t.id === v) || null;
-                      if (found?.legal_area_id) {
-                        setBlockFormData((prev) => ({ ...prev, legal_area_id: found.legal_area_id as any }));
-                      }
-                    }}
-                    disabled={blockStandardTypeLoading || (blockFilterScope === 'type' && Boolean(selectedStandardTypeId))}
-                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer disabled:opacity-60"
-                  >
-                    <option value="">Sem modelo</option>
-                    {(standardTypesByArea[String(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '')] ?? []).map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="ml-auto flex items-center gap-2.5">
-                {!editingBlock && (
-                  <label className="flex items-center gap-2 cursor-pointer px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition">
-                    <input
-                      type="checkbox"
-                      checked={updateExistingBlockMode}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setUpdateExistingBlockMode(checked);
-                        setBlockEditorDirty(true);
-                        if (!checked) setUpdateExistingBlockId('');
-                      }}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500/40 cursor-pointer"
-                    />
-                    <span className="text-[12px] font-medium text-slate-600 whitespace-nowrap">Atualizar existente</span>
-                  </label>
-                )}
-
-                {updateExistingBlockMode && !editingBlock && (
-                  <select
-                    value={updateExistingBlockId}
-                    onChange={(e) => {
-                      setUpdateExistingBlockId(e.target.value);
-                      setBlockEditorDirty(true);
-                    }}
-                    className="px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer w-48"
-                  >
-                    <option value="">Selecione o bloco</option>
-                    {updatableBlocks.map((b) => (
-                      <option key={b.id} value={b.id}>{b.title}</option>
-                    ))}
-                  </select>
-                )}
-
-                <label className="flex items-center gap-2 cursor-pointer px-2.5 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100/70 transition">
-                  <input
-                    type="checkbox"
-                    checked={blockFormData.is_default}
-                    onChange={(e) => {
-                      setBlockFormData({ ...blockFormData, is_default: e.target.checked });
-                      setBlockEditorDirty(true);
-                    }}
-                    className="w-4 h-4 rounded border-blue-300 text-blue-500 focus:ring-blue-500/40 cursor-pointer"
-                  />
-                  <span className="text-[12px] font-medium text-blue-700 whitespace-nowrap">Padrao</span>
-                </label>
-              </div>
-            </div>
-
             {/* Editor - ocupa todo o espaço restante */}
             <div className="syncfusion-editor-wrapper petition-block-editor-surface relative flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
               <SyncfusionEditor
@@ -11134,18 +11068,29 @@ Regras:
                 showRuler
                 showNavigationPane={false}
                 layoutType="Pages"
-                pageFit="FitPageWidth"
                 removeMargins={false}
                 onReady={() => {
                   setBlockEditorReady(true);
-                  window.setTimeout(() => blockEditorRef.current?.refresh?.(), 60);
+                  blockEditorRef.current?.setZoom(DEFAULT_BLOCK_EDITOR_ZOOM);
                   window.setTimeout(() => {
                     blockEditorRef.current?.refresh?.();
+                    blockEditorRef.current?.setZoom(DEFAULT_BLOCK_EDITOR_ZOOM);
+                  }, 60);
+                  window.setTimeout(() => {
+                    blockEditorRef.current?.refresh?.();
+                    blockEditorRef.current?.setZoom(DEFAULT_BLOCK_EDITOR_ZOOM);
                     refreshBlockDocStatus();
                     scheduleBlockWordCount(100);
                   }, 320);
                 }}
                 onContentChange={handleBlockContentChange}
+                onDocumentChange={() => {
+                  blockEditorRef.current?.setZoom(DEFAULT_BLOCK_EDITOR_ZOOM);
+                  window.setTimeout(() => {
+                    blockEditorRef.current?.setZoom(DEFAULT_BLOCK_EDITOR_ZOOM);
+                    refreshBlockDocStatus();
+                  }, 80);
+                }}
                 onSelectionChange={refreshBlockDocStatus}
                 onViewChange={refreshBlockDocStatus}
               />
@@ -11158,6 +11103,239 @@ Regras:
                   onDocumentChanged={() => setBlockEditorDirty(true)}
                 />
               )}
+
+              {/* Propriedades do bloco: cartão flutuante sobre o editor, recolhível */}
+              <div className={`petition-block-properties absolute right-4 top-4 z-30 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.18)] ${blockPropsOpen ? 'w-[340px] max-w-[calc(100%-2rem)]' : ''}`}>
+                <button
+                  type="button"
+                  onClick={() => setBlockPropsOpen((v) => !v)}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 transition"
+                  title={blockPropsOpen ? 'Recolher propriedades' : 'Expandir propriedades do bloco'}
+                >
+                  <Settings className="h-4 w-4 shrink-0 text-blue-500" />
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-slate-700">
+                    {blockPropsOpen ? 'Propriedades do bloco' : (blockFormData.title.trim() || 'Bloco sem título')}
+                  </span>
+                  {!blockPropsOpen && (blockFormData.tags || []).length > 0 && (
+                    <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                      {(blockFormData.tags || []).length}
+                    </span>
+                  )}
+                  {blockPropsOpen ? <ChevronUp className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />}
+                </button>
+
+                {blockPropsOpen && (
+                  <div className="max-h-[min(70vh,560px)] space-y-3 overflow-y-auto border-t border-slate-100 px-3 py-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] font-medium text-slate-500">Nome do bloco *</label>
+                      <input
+                        type="text"
+                        value={blockFormData.title}
+                        onChange={(e) => {
+                          setBlockFormData({ ...blockFormData, title: e.target.value });
+                          setBlockEditorDirty(true);
+                        }}
+                        placeholder="Ex.: Das questões iniciais"
+                        className="w-full px-2.5 py-1.5 text-[13px] font-medium text-slate-800 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition"
+                      />
+                    </div>
+
+                    {legalAreas.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-medium text-slate-500">Área</label>
+                        <select
+                          value={(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '') as any}
+                          onChange={(e) => {
+                            const v = e.target.value || null;
+                            setBlockFormData({ ...blockFormData, legal_area_id: v as any });
+                            setBlockEditorDirty(true);
+                            if (v && blockStandardTypeId) {
+                              const types = standardTypesByArea[String(v)] ?? [];
+                              if (!types.some((t) => t.id === blockStandardTypeId)) {
+                                setBlockStandardTypeId(null);
+                              }
+                            }
+                          }}
+                          className="w-full px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer"
+                        >
+                          {legalAreas.map((area) => (
+                            <option key={area.id} value={area.id}>
+                              {area.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {legalAreas.length > 0 && (standardTypesByArea[String(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '')] ?? []).length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-medium text-slate-500">Modelo</label>
+                        <select
+                          value={(blockFilterScope === 'type' && selectedStandardTypeId ? selectedStandardTypeId : (blockStandardTypeId || '')) as any}
+                          onChange={(e) => {
+                            if (blockFilterScope === 'type' && selectedStandardTypeId) return;
+                            const v = e.target.value || null;
+                            setBlockStandardTypeId(v as any);
+                            setBlockEditorDirty(true);
+                            const found = Object.values(standardTypesByArea).flat().find((t) => t.id === v) || null;
+                            if (found?.legal_area_id) {
+                              setBlockFormData((prev) => ({ ...prev, legal_area_id: found.legal_area_id as any }));
+                            }
+                          }}
+                          disabled={blockStandardTypeLoading || (blockFilterScope === 'type' && Boolean(selectedStandardTypeId))}
+                          className="w-full px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer disabled:opacity-60"
+                        >
+                          <option value="">Sem modelo</option>
+                          {(standardTypesByArea[String(blockFormData.legal_area_id ?? selectedLegalAreaId ?? '')] ?? []).map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] font-medium text-slate-500">Categoria</label>
+                      <select
+                        value={blockFormData.category}
+                        onChange={(e) => {
+                          setBlockFormData({ ...blockFormData, category: e.target.value as BlockCategory });
+                          setBlockEditorDirty(true);
+                        }}
+                        className="w-full px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer"
+                      >
+                        {categoryKeysOrdered.map((key) => (
+                          <option key={key} value={key}>{getCategoryLabel(key)}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Tags: alimentam a busca de blocos (título + tags + conteúdo) */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] font-medium text-slate-500">Tags</label>
+
+                      {(blockFormData.tags || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {(blockFormData.tags || []).map((tag) => (
+                            <span
+                              key={tag}
+                              className="petition-block-tag inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[12px] font-medium text-slate-700"
+                            >
+                              <Hash className="w-2.5 h-2.5 text-blue-500" />
+                              {tag}
+                              <button
+                                type="button"
+                                onClick={() => removeBlockTag(tag)}
+                                className="p-0.5 rounded-full text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                                title={`Remover tag ${tag}`}
+                                aria-label={`Remover tag ${tag}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={blockTagInput}
+                          onChange={(e) => setBlockTagInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ',') {
+                              e.preventDefault();
+                              addBlockTags(blockTagInput);
+                            } else if (e.key === 'Backspace' && !blockTagInput) {
+                              const current = blockFormData.tags || [];
+                              if (current.length) removeBlockTag(current[current.length - 1]);
+                            }
+                          }}
+                          onBlur={() => addBlockTags(blockTagInput)}
+                          placeholder="Nova tag + Enter"
+                          className="min-w-0 flex-1 px-2.5 py-1 text-[12px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition"
+                          aria-label="Adicionar tag ao bloco"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => { void suggestBlockTags(); }}
+                          disabled={blockTagsSuggesting}
+                          className="petition-block-tag inline-flex shrink-0 items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-[12px] font-medium text-slate-600 hover:border-slate-300 hover:text-blue-600 transition disabled:opacity-60"
+                          title="Sugerir tags a partir do título e do conteúdo"
+                        >
+                          {blockTagsSuggesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          Sugerir
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={blockFormData.is_default}
+                          onChange={(e) => {
+                            setBlockFormData({ ...blockFormData, is_default: e.target.checked });
+                            setBlockEditorDirty(true);
+                          }}
+                          className="w-4 h-4 rounded border-blue-300 text-blue-500 focus:ring-blue-500/40 cursor-pointer"
+                        />
+                        <span className="text-[12px] font-medium text-blue-700">Bloco padrão</span>
+                      </label>
+
+                      {!editingBlock && (
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={updateExistingBlockMode}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setUpdateExistingBlockMode(checked);
+                              setBlockEditorDirty(true);
+                              if (!checked) setUpdateExistingBlockId('');
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-500/40 cursor-pointer"
+                          />
+                          <span className="text-[12px] font-medium text-slate-600">Atualizar bloco existente</span>
+                        </label>
+                      )}
+
+                      {updateExistingBlockMode && !editingBlock && (
+                        <select
+                          value={updateExistingBlockId}
+                          onChange={(e) => {
+                            setUpdateExistingBlockId(e.target.value);
+                            setBlockEditorDirty(true);
+                          }}
+                          className="w-full px-2.5 py-1.5 text-[13px] text-slate-700 border border-slate-200 rounded-lg bg-white hover:border-slate-300 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition cursor-pointer"
+                        >
+                          <option value="">Selecione o bloco</option>
+                          {updatableBlocks.map((b) => (
+                            <option key={b.id} value={b.id}>{b.title}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    {editingBlock && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const removed = await deleteBlock(editingBlock.id);
+                          if (removed) {
+                            setBlockEditorDirty(false);
+                            setShowBlockModal(false);
+                            setEditingBlock(null);
+                          }
+                        }}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-semibold text-red-600 hover:bg-red-100 transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Excluir bloco
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {blockEditorReady && (
@@ -11476,8 +11654,9 @@ const blockEditorModalStyles = `
   #block-editor-modal .pet-ribbon {
     width: 100%;
   }
+  /* Cartão flutuante de propriedades: fica acima da folha do editor. */
   #block-editor-modal .petition-block-properties {
-    min-height: 42px;
+    min-width: 190px;
   }
   .petition-block-editor-surface {
     background: #ffffff;
@@ -11568,6 +11747,20 @@ const blockEditorModalStyles = `
     background-color: #333333 !important;
     border-color: #4a4a4a !important;
     color: #eef2f7 !important;
+  }
+  body.petition-dark #block-editor-modal .petition-block-tag {
+    background-color: #333333 !important;
+    border-color: #4a4a4a !important;
+    color: #d6dbe3 !important;
+  }
+  body.petition-dark #block-editor-modal .petition-block-properties span {
+    color: #d6dbe3;
+  }
+  body.petition-dark #block-editor-modal .petition-block-properties > button:hover {
+    background-color: #333333 !important;
+  }
+  body.petition-dark #block-editor-modal .petition-block-properties [class*="border-slate-100"] {
+    border-color: #3d3d3d !important;
   }
 `;
 

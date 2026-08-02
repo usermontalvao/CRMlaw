@@ -109,6 +109,14 @@ if (isEditorAppRoute) {
   }
 }
 
+// Vídeo animado de aniversário: link direto para assistir/conferir a peça
+// fora da data. Precisa ser lido ANTES da normalização de path abaixo, que
+// descarta a query string. Aceita "?aniversarioanimado" e "#/aniversarioanimado".
+const isBirthdayVideoRoute =
+  new URLSearchParams(window.location.search).has('aniversarioanimado') ||
+  currentHash.includes('/aniversarioanimado') ||
+  currentPath.includes('/aniversarioanimado');
+
 const isPublicSignature = isPublicSignatureRoute(currentHash, currentPath);
 const isStaffSessionExpired = hasStaffSessionExpiredNotice();
 
@@ -176,6 +184,26 @@ async function renderRoot() {
     const { default: PetitionAiChatPreview } = await import('./dev/PetitionAiChatPreview');
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <PetitionAiChatPreview />,
+    );
+    return;
+  }
+
+  // Vídeo animado de aniversário (?aniversarioanimado | #/aniversarioanimado).
+  // Disponível também em produção: é o link para assistir à homenagem.
+  if (isBirthdayVideoRoute) {
+    const { default: BirthdayVideoRoute } = await import('./components/birthday/BirthdayVideoRoute');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <BirthdayVideoRoute />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: cadastro obrigatório e aviso de correspondência
+  // (?birthdaypreview=gate | ?birthdaypreview=toast).
+  if (isDev && new URLSearchParams(window.location.search).has('birthdaypreview')) {
+    const { default: BirthdayPreview } = await import('./dev/BirthdayPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <BirthdayPreview />,
     );
     return;
   }

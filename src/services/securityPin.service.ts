@@ -36,13 +36,32 @@ class SecurityPinService {
     return validatePinFormat(pin);
   }
 
-  async hasSecurityPin(): Promise<boolean> {
+  /**
+   * `true` tem PIN, `false` não tem, `null` NÃO FOI POSSÍVEL SABER.
+   *
+   * A distinção é essencial: antes, qualquer falha de rede virava `false`, ou
+   * seja "esta pessoa não tem PIN". Depois de um tempo ocioso, a conexão com o
+   * Supabase cai (ERR_CONNECTION_CLOSED) e o app passava a oferecer "Crie seu
+   * PIN de Segurança" a quem já tinha um. E `create_security_pin` faz
+   * `ON CONFLICT DO UPDATE SET pin_hash`, então aceitar aquele convite
+   * SOBRESCREVERIA o PIN existente, zerando inclusive o bloqueio por
+   * tentativas. Quem chama precisa poder distinguir "não tem" de "não sei".
+   */
+  async hasSecurityPinOrNull(): Promise<boolean | null> {
     const { data, error } = await supabase.rpc('has_security_pin');
     if (error) {
       console.error('[SecurityPin] hasSecurityPin error:', error);
-      return false;
+      return null;
     }
     return Boolean(data);
+  }
+
+  /**
+   * Versão booleana, mantida para quem só precisa de um palpite. Trata
+   * "não sei" como "não tem" — NÃO use para decidir se abre o cadastro de PIN.
+   */
+  async hasSecurityPin(): Promise<boolean> {
+    return (await this.hasSecurityPinOrNull()) ?? false;
   }
 
   async getPinMeta(userId?: string): Promise<PinMeta> {
