@@ -172,12 +172,16 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   let mediaNode: any = null;       // nó *Message com metadados de mídia
   let mediaMime: string | null = null;
   let fileName: string | null = null;
+  let isAnimated = false;          // GIF (vídeo com gifPlayback)
 
   if (msg.conversation) { content = msg.conversation; }
   else if (msg.extendedTextMessage?.text) { content = msg.extendedTextMessage.text; }
   else if (msg.imageMessage) { type = 'image'; content = msg.imageMessage.caption || null; mediaNode = msg.imageMessage; mediaMime = msg.imageMessage.mimetype || 'image/jpeg'; }
   else if (msg.audioMessage) { type = 'audio'; mediaNode = msg.audioMessage; mediaMime = msg.audioMessage.mimetype || 'audio/ogg'; }
-  else if (msg.videoMessage) { type = 'video'; content = msg.videoMessage.caption || null; mediaNode = msg.videoMessage; mediaMime = msg.videoMessage.mimetype || 'video/mp4'; }
+  // `gifPlayback` é a única marca que distingue um GIF de um vídeo curto: o
+  // WhatsApp converte todo GIF para mp4. Sem guardar isso, a conversa mostraria
+  // um play parado no lugar da animação.
+  else if (msg.videoMessage) { type = 'video'; content = msg.videoMessage.caption || null; mediaNode = msg.videoMessage; mediaMime = msg.videoMessage.mimetype || 'video/mp4'; isAnimated = msg.videoMessage.gifPlayback === true; }
   else if (msg.documentMessage) { type = 'document'; content = msg.documentMessage.caption || null; mediaNode = msg.documentMessage; mediaMime = msg.documentMessage.mimetype || 'application/octet-stream'; fileName = msg.documentMessage.fileName || null; }
   else if (msg.documentWithCaptionMessage?.message?.documentMessage) {
     const dm = msg.documentWithCaptionMessage.message.documentMessage;
@@ -333,6 +337,7 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
     storage_path: storagePath,
     media_size: mediaSize,
     file_name: fileName,
+    is_animated: isAnimated,
     transcription_status: transcriptionStatus,
     status: fromMe ? 'sent' : 'delivered',
     wa_timestamp: waTimestamp,

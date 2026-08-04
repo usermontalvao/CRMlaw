@@ -210,6 +210,12 @@ export interface WhatsAppModuleConfig {
   kit_link_message_template: string;
   document_request_message_template: string;
   close_farewell_default: string;
+  /**
+   * Teto de conversas simultâneas por atendente, usado pela distribuição da
+   * fila. `0` = sem teto (comportamento histórico): a distribuição continua
+   * equilibrando pela carga, mas nunca recusa um atendente por estar cheio.
+   */
+  agent_capacity: number;
 }
 
 export interface WhatsAppChannelDepartmentRouting {
@@ -228,6 +234,7 @@ export const WHATSAPP_MODULE_DEFAULTS: WhatsAppModuleConfig = {
   kit_link_message_template: 'Segue o link para preencher e assinar seus documentos:\n\n{{url}}',
   document_request_message_template: 'Olá{{cliente.primeiro_nome_com_virgula}}! Para darmos continuidade ao seu atendimento, precisamos que nos envie:\n\n{{itens}}',
   close_farewell_default: 'Encerramos este atendimento por agora. Se precisar retomar, é só nos chamar por aqui.',
+  agent_capacity: 0,
 };
 
 // ── Regras de notificação ──────────────────────────────────────────────────

@@ -109,7 +109,7 @@ export const LeadModal: React.FC<LeadModalProps> = ({
 
           {!fl.isHidden('source') && (
             <div>
-              <label className={LABEL}>{fl.fieldLabel('source', 'Origem')}</label>
+              <label className={LABEL}>{fl.fieldLabel('source', 'Origem do lead')}</label>
               <input
                 type="text"
                 list="lead-modal-sources"

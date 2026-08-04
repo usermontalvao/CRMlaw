@@ -62,6 +62,7 @@ import {
   AlarmClock,
   Cloud,
   CheckSquare,
+  GitBranch,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
@@ -591,11 +592,6 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     })));
   }, []);
   useEffect(() => { if (activeSection === 'modules_leads' || activeSection === 'modules_whatsapp') loadWaFunnelChannels(); }, [activeSection, loadWaFunnelChannels]);
-  const updateWaFunnelChannel = useCallback(async (id: string, patch: Partial<Pick<WaFunnelChannel, 'funnel_enabled' | 'funnel_initial_stage'>>) => {
-    setWaFunnelChannels(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
-    await supabase.from('whatsapp_instances').update(patch).eq('id', id);
-  }, []);
-
   // Módulos restantes
   const [signatureConfig, setSignatureConfig]  = useState<SignatureModuleConfig>({ ...SIGNATURE_MODULE_DEFAULTS, signer_roles: [...SIGNATURE_MODULE_DEFAULTS.signer_roles], auth_methods: [...SIGNATURE_MODULE_DEFAULTS.auth_methods] });
   const [publicAuthSignConfig, setPublicAuthSignConfig] = useState<{ google: boolean; email: boolean; phone: boolean }>({ google: true, email: true, phone: true });
@@ -4281,9 +4277,9 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                       <>
 
                         <div className="settings-card">
-                          <p className="settings-card-title">Estágios do Funil</p>
+                          <p className="settings-card-title">Funil-base de Leads</p>
                           <p style={{ fontSize: '11.5px', color: '#9ca3af', margin: '-4px 0 10px' }}>
-                            Cada etapa vincula <strong>etiquetas</strong> que a representam. No WhatsApp, a etiqueta aplicada na conversa espelha o estágio do funil. Arraste para reordenar as etapas (= ordem do funil).
+                            Usado pelos leads sem canal do WhatsApp e como modelo para copiar. Cada canal pode personalizar seu próprio fluxo em <strong>WhatsApp → Funis</strong>. Arraste para reordenar as etapas deste modelo-base.
                           </p>
                           <ConfigurableList
                             items={stageItems}
@@ -4340,11 +4336,11 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           />
                         </div>
 
-                        {/* Canais (contas conectadas) & etapa inicial no funil */}
+                        {/* Resumo dos funis por canal; edição vive no próprio WhatsApp. */}
                         <div className="settings-card">
-                          <p className="settings-card-title">Canais & Etapa Inicial</p>
+                          <p className="settings-card-title">Funis dos canais do WhatsApp</p>
                           <p style={{ fontSize: '11.5px', color: '#9ca3af', margin: '-4px 0 12px' }}>
-                            Por canal (conta de WhatsApp conectada): se participa do funil e em qual etapa uma <strong>nova conversa</strong> entra. Aplica-se <strong>só na criação</strong> da conversa — reabrir/novas mensagens não reiniciam o funil. Sem etapa definida, usa a <strong>padrão</strong>.
+                            Cada número agora tem seu próprio fluxo. Edite etapas, ordem, cores, etiquetas e entrada inicial em <strong>WhatsApp → Funis</strong>. O funil configurado acima permanece como modelo-base para copiar e para leads sem canal do WhatsApp.
                           </p>
                           {waFunnelChannels.length === 0 ? (
                             <p style={{ fontSize: '12.5px', color: '#9ca3af' }}>Nenhuma conta de WhatsApp conectada.</p>
@@ -4352,27 +4348,11 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                               {waFunnelChannels.map(ch => (
                                 <div key={ch.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', background: '#f8fafc', border: '1px solid rgba(15,23,42,0.08)', borderRadius: '10px' }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => updateWaFunnelChannel(ch.id, { funnel_enabled: !ch.funnel_enabled })}
-                                    title={ch.funnel_enabled ? 'Desativar no funil' : 'Ativar no funil'}
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                                    {ch.funnel_enabled
-                                      ? <ToggleRight size={22} style={{ color: '#f97316' }} />
-                                      : <ToggleLeft size={22} style={{ color: '#94a3b8' }} />}
-                                  </button>
+                                  <GitBranch size={16} style={{ color: ch.funnel_enabled ? '#f97316' : '#94a3b8' }} />
                                   <span style={{ flex: 1, fontSize: '13px', fontWeight: 600, color: ch.funnel_enabled ? '#374151' : '#9ca3af' }}>{ch.label}</span>
-                                  <select
-                                    className="settings-input"
-                                    style={{ width: '200px', fontSize: '12.5px', opacity: ch.funnel_enabled ? 1 : 0.5 }}
-                                    disabled={!ch.funnel_enabled}
-                                    value={ch.funnel_initial_stage ?? ''}
-                                    onChange={e => updateWaFunnelChannel(ch.id, { funnel_initial_stage: e.target.value || null })}>
-                                    <option value="">Etapa padrão do funil</option>
-                                    {leadConfig.stages.filter(s => s.active !== false).map(s => (
-                                      <option key={s.key} value={s.key}>{s.label}</option>
-                                    ))}
-                                  </select>
+                                  <span style={{ fontSize: '11px', fontWeight: 700, color: ch.funnel_enabled ? '#15803d' : '#64748b', background: ch.funnel_enabled ? '#f0fdf4' : '#f1f5f9', borderRadius: '999px', padding: '4px 8px' }}>
+                                    {ch.funnel_enabled ? 'Exibido em Leads' : 'Oculto em Leads'}
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -4381,7 +4361,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
                         {/* Origens */}
                         <div className="settings-card">
-                          <p className="settings-card-title">Origens de Lead</p>
+                          <p className="settings-card-title">Origens do lead (não são canais)</p>
+                          <p style={{ fontSize: '11.5px', color: '#9ca3af', margin: '-4px 0 10px' }}>
+                            Use para indicar como o lead chegou — por exemplo Google, indicação ou campanha. Os números/contas do WhatsApp são geridos na seção acima.
+                          </p>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
                             {leadConfig.sources.map((src, idx) => (
                               <span key={idx} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', background: '#f8fafc', border: '1px solid rgba(15,23,42,0.09)', borderRadius: '20px', fontSize: '12px', color: '#374151' }}>
@@ -4486,7 +4469,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
                       {/* Painel 2 — Funil de atendimento (mesma config do módulo Leads) */}
                       <div className="settings-card" style={{ padding: 0, overflow: 'hidden' }}>
-                        {waPanelHeader('funnel', Target, 'Funil de atendimento (Leads)', 'Estágios, etiquetas, etapa inicial por canal e origens')}
+                        {waPanelHeader('funnel', Target, 'Funil de atendimento (Leads)', 'Estágios, canais sincronizados, etiquetas e origens')}
                         {waHubExpanded.funnel && (
                           <div style={{ borderTop: '1px solid #f1f0ec', padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
                             {leadsCards}

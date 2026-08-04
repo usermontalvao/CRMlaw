@@ -6,6 +6,7 @@ import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppPresence, WhatsAppDirection,
 } from '../../types/whatsapp.types';
 import type { StaffOption } from '../../services/whatsapp.service';
+import type { ElapsedMinutes } from './businessTime';
 
 export const formatTime = (iso: string | null) => {
   if (!iso) return '';
@@ -29,6 +30,31 @@ export const prettyPhone = (phone: string) => {
   if (m) return `+55 (${m[1]}) ${m[2]}-${m[3]}`;
   return phone.startsWith('+') ? phone : `+${d}`;
 };
+
+/**
+ * Nome que a conversa exibe: o cadastro vinculado manda no nome. `contact_name`
+ * é o apelido que o próprio contato configurou no WhatsApp ("Vicente"), então
+ * assim que existe cliente vinculado a lista, o cabeçalho e o funil passam a
+ * mostrar o nome do cadastro. Sem vínculo, cai no nome do WhatsApp e, por fim,
+ * no telefone formatado.
+ */
+export const conversationName = (c: {
+  client_name?: string | null;
+  contact_name: string | null;
+  contact_phone: string;
+}) => (c.client_name || c.contact_name || prettyPhone(c.contact_phone));
+
+/**
+ * Busca da inbox: casa contra os DOIS nomes (cadastro e WhatsApp) além do
+ * telefone. Quem procura por "Vicente" continua achando a conversa mesmo que a
+ * lista agora exiba "Vicente da Costa Pereira", e vice-versa. `q` já vem em
+ * minúsculas do chamador.
+ */
+export const matchesConversationSearch = (
+  c: { client_name?: string | null; contact_name: string | null; contact_phone: string },
+  q: string,
+) => [c.client_name, c.contact_name].some(name => (name || '').toLowerCase().includes(q))
+  || c.contact_phone.includes(q);
 
 export const formatBytes = (n: number | null) => {
   if (!n) return '';
@@ -99,15 +125,33 @@ export const normalizeRoleStr = (r?: string | null) =>
 export const firstName = (name?: string | null) => (name || '').trim().split(/\s+/)[0] || '';
 export const isLawyer = (s?: Partial<StaffOption> | null) =>
   !!s && (normalizeRoleStr(s.role) === 'advogado' || !!(s.oab && s.oab.trim()));
-export const treatmentOf = (s?: Partial<StaffOption> | null) =>
-  isLawyer(s) ? (s!.gender === 'male' ? 'Dr.' : s!.gender === 'female' ? 'Dra.' : '') : '';
-/** Rótulo de exibição do agente: "Dr. Pedro", "Dra. Ana" ou só "Carla". */
+export const treatmentOf = (s?: Partial<StaffOption> | null) => {
+  if (!s) return '';
+  // Escolha explícita do agente vence a dedução pelo cadastro.
+  if (s.treatment === 'none') return '';
+  if (s.treatment === 'dr') return 'Dr.';
+  if (s.treatment === 'dra') return 'Dra.';
+  return isLawyer(s) ? (s.gender === 'male' ? 'Dr.' : s.gender === 'female' ? 'Dra.' : '') : '';
+};
+/**
+ * Rótulo de exibição do agente: "Dr. Pedro", "Dra. Ana" ou só "Carla".
+ *
+ * Sem nome exibido configurado, usa o PRIMEIRO nome do perfil — o cadastro tem
+ * o nome completo e ninguém assina "Dr. Pedro Rodrigues Montalvão Neto" numa
+ * conversa. Já o nome exibido é digitado pelo agente para esse fim, então vale
+ * exatamente como veio: quem quiser "Pedro Montalvão" ou "Escritório" escreve
+ * e é isso que o cliente lê.
+ */
 export const agentLabel = (s?: Partial<StaffOption> | null, shortNameOverride?: string | null) => {
   if (!s) return null;
-  const fn = firstName(shortNameOverride || s.name);
+  const custom = (shortNameOverride || s.short_name || '').trim();
+  const name = custom || firstName(s.name);
   const t = treatmentOf(s);
-  return t ? `${t} ${fn}` : fn;
+  return t ? `${t} ${name}` : name;
 };
+/** Cargo mostrado ao lado da assinatura: o escolhido pelo agente ou o do perfil. */
+export const agentRoleLabel = (s?: Partial<StaffOption> | null) =>
+  (s?.role_label || '').trim() || s?.role || null;
 export const greetingByHour = () => {
   const h = new Date().getHours();
   return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
@@ -141,18 +185,40 @@ export const convStatus = (c: {
   return { key: 'open', label: 'Aberta', cls: 'bg-emerald-100 text-emerald-700' };
 };
 
+/**
+ * Tempo decorrido desde um instante, do jeito que o módulo mede AGORA.
+ *
+ * Sem `elapsed`, é o relógio de parede (o que estes sinais sempre fizeram).
+ * Recebendo a medição em horário útil da inbox, o mesmo badge para de acusar
+ * "parada há 62h" na segunda por causa de uma mensagem de sexta à noite. A
+ * conta em si mora em `businessTime` — aqui só se decide a cor e o texto.
+ */
+const minutesSince = (
+  since: string,
+  c: WhatsAppConversation,
+  elapsed?: ElapsedMinutes,
+): number => {
+  const from = new Date(since).getTime();
+  if (Number.isNaN(from)) return 0;
+  const now = Date.now();
+  return elapsed ? Math.max(0, elapsed(from, now, c.instance_id)) : Math.max(0, (now - from) / 60000);
+};
+
 /** Minutos parados aguardando nossa resposta (cliente foi o último a falar). */
-export const waitingMinutes = (c: WhatsAppConversation): number | null => {
+export const waitingMinutes = (c: WhatsAppConversation, elapsed?: ElapsedMinutes): number | null => {
   if (c.is_blocked || c.status === 'closed') return null;
   if (c.last_message_direction !== 'in') return null;
   const since = c.last_customer_message_at || c.last_message_at;
   if (!since) return null;
-  return (Date.now() - new Date(since).getTime()) / 60000;
+  return minutesSince(since, c, elapsed);
 };
 
 /** Sinal de SLA: atenção (>15min) ou estourado (>60min). null = sem alerta. */
-export const slaSignal = (c: WhatsAppConversation): { color: string; label: string } | null => {
-  const m = waitingMinutes(c);
+export const slaSignal = (
+  c: WhatsAppConversation,
+  elapsed?: ElapsedMinutes,
+): { color: string; label: string } | null => {
+  const m = waitingMinutes(c, elapsed);
   if (m == null || m < 15) return null;
   const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
   return m >= 60
@@ -165,11 +231,14 @@ export const slaSignal = (c: WhatsAppConversation): { color: string; label: stri
  * Usa last_message_at como proxy do momento em que entrou na fila.
  * null = sem alerta (conversa não está em fila ou tempo aceitável).
  */
-export const slaInternalSignal = (c: WhatsAppConversation): { color: string; label: string } | null => {
+export const slaInternalSignal = (
+  c: WhatsAppConversation,
+  elapsed?: ElapsedMinutes,
+): { color: string; label: string } | null => {
   if (convStatus(c).key !== 'waiting_internal') return null;
   const since = c.last_message_at;
   if (!since) return null;
-  const m = (Date.now() - new Date(since).getTime()) / 60000;
+  const m = minutesSince(since, c, elapsed);
   if (m < 30) return null;
   const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
   return m >= 120
@@ -181,12 +250,15 @@ export const slaInternalSignal = (c: WhatsAppConversation): { color: string; lab
  * Fase N: conversa com responsável atribuído que não respondeu em >4h após última
  * mensagem do cliente. Mais grave que slaSignal (15min) — sinaliza abandono real.
  */
-export const abandonedSignal = (c: WhatsAppConversation): { label: string } | null => {
+export const abandonedSignal = (
+  c: WhatsAppConversation,
+  elapsed?: ElapsedMinutes,
+): { label: string } | null => {
   if (!c.assigned_user_id || c.is_blocked || c.status === 'closed') return null;
   if (c.last_message_direction !== 'in') return null;
   const since = c.last_customer_message_at || c.last_message_at;
   if (!since) return null;
-  const h = (Date.now() - new Date(since).getTime()) / 3600000;
+  const h = minutesSince(since, c, elapsed) / 60;
   if (h < 4) return null;
   const label = h < 24 ? `${Math.floor(h)}h sem resposta` : `${Math.floor(h / 24)}d sem resposta`;
   return { label };
@@ -198,10 +270,13 @@ export const abandonedSignal = (c: WhatsAppConversation): { label: string } | nu
  * (>15min) e estourado (>60min) — para a operação ver o gargalo antes de virar
  * problema. null = não há transferência pendente.
  */
-export const transferAlert = (c: WhatsAppConversation): { color: string; label: string } | null => {
+export const transferAlert = (
+  c: WhatsAppConversation,
+  elapsed?: ElapsedMinutes,
+): { color: string; label: string } | null => {
   if (!c.awaiting_accept || c.is_blocked || c.status === 'closed') return null;
   const since = c.transfer_pending_since;
-  const m = since ? (Date.now() - new Date(since).getTime()) / 60000 : 0;
+  const m = since ? minutesSince(since, c, elapsed) : 0;
   if (m < 15) return { color: '#0ea5e9', label: 'aguardando aceite' };
   const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
   return m >= 60

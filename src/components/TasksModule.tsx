@@ -1,21 +1,29 @@
-import { useState, useEffect, useRef } from 'react';
-import { useFormLayout } from '../hooks/useFormLayout';
+import { useState, useEffect, useMemo } from 'react';
 import {
+  Briefcase,
+  CalendarDays,
   CheckCircle2,
   Circle,
   Trash2,
   AlertCircle,
-  Loader2,
   Pencil,
+  Plus,
   RotateCcw,
+  UserRound,
 } from 'lucide-react';
 import { taskService } from '../services/task.service';
+import { clientService } from '../services/client.service';
+import { processService } from '../services/process.service';
 import { settingsService, type TaskPriorityConfig, TASK_MODULE_DEFAULTS } from '../services/settings.service';
 import { useAuth } from '../contexts/AuthContext';
-import type { Task, TaskPriority } from '../types/task.types';
+import { useNavigation } from '../contexts/NavigationContext';
+import type { Task } from '../types/task.types';
+import type { Client } from '../types/client.types';
+import type { Process } from '../types/process.types';
 import { formatDate, formatTime } from '../utils/formatters';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { ModuleSkeleton } from './ui';
+import { TaskFormModal } from './TaskFormModal';
 
 interface TasksModuleProps {
   focusNewTask?: boolean;
@@ -26,28 +34,23 @@ interface TasksModuleProps {
 const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChange }: TasksModuleProps) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [taskFormOpen, setTaskFormOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [processes, setProcesses] = useState<Process[]>([]);
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('pending');
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
-  const [completedSearch, setCompletedSearch] = useState('');
-  const [addingTask, setAddingTask] = useState(false);
-  const newTaskInputRef = useRef<HTMLInputElement | null>(null);
+  const [taskSearch, setTaskSearch] = useState('');
   const { user } = useAuth();
-
-  const fl = useFormLayout('tasks');
+  const { navigateTo } = useNavigation();
 
   // Prioridades configuráveis
   const [priorities, setPriorities] = useState<TaskPriorityConfig[]>(TASK_MODULE_DEFAULTS.priorities);
-  const [selectedPriority, setSelectedPriority] = useState<string>('medium');
 
   useEffect(() => {
     settingsService.getTaskModuleConfig().then(cfg => {
       if (cfg.priorities?.length) {
         setPriorities(cfg.priorities);
-        // Usa a primeira prioridade como padrão (respeita ordem configurada)
-        setSelectedPriority(cfg.priorities[0].key);
       }
     }).catch(() => {/* mantém fallbacks */});
   }, []);
@@ -56,18 +59,14 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
 
   useEffect(() => {
     loadTasks();
+    loadReferenceData();
   }, []);
 
   useEffect(() => {
     if (!focusNewTask) return;
-
-    const handleFocus = () => {
-      newTaskInputRef.current?.focus();
-      onParamConsumed?.();
-    };
-
-    const timeout = window.setTimeout(handleFocus, 0);
-    return () => window.clearTimeout(timeout);
+    setSelectedTask(null);
+    setTaskFormOpen(true);
+    onParamConsumed?.();
   }, [focusNewTask, onParamConsumed]);
 
   const loadTasks = async () => {
@@ -91,23 +90,16 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
     }
   };
 
-  const handleAddTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskTitle.trim() || addingTask) return;
-
+  const loadReferenceData = async () => {
     try {
-      setAddingTask(true);
-      const priority: TaskPriority = (selectedPriority || 'medium') as TaskPriority;
-      await taskService.createTask({
-        title: newTaskTitle.trim(),
-        priority,
-      });
-      setNewTaskTitle('');
-      await loadTasks();
-    } catch (error: any) {
-      alert(error.message || 'Erro ao criar tarefa');
-    } finally {
-      setAddingTask(false);
+      const [clientItems, processItems] = await Promise.all([
+        clientService.listClients(),
+        processService.listProcesses(),
+      ]);
+      setClients(clientItems);
+      setProcesses(processItems);
+    } catch (error) {
+      console.error('Erro ao carregar vínculos das tarefas:', error);
     }
   };
 
@@ -131,31 +123,8 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
   };
 
   const handleStartEditing = (task: Task) => {
-    setEditingTaskId(task.id);
-    setEditingTitle(task.title);
-  };
-
-  const handleSaveEditing = async () => {
-    if (!editingTaskId) return;
-    const trimmed = editingTitle.trim();
-    if (!trimmed) {
-      alert('O nome da tarefa não pode ficar vazio.');
-      return;
-    }
-
-    try {
-      await taskService.updateTask(editingTaskId, { title: trimmed });
-      setEditingTaskId(null);
-      setEditingTitle('');
-      await loadTasks();
-    } catch (error: any) {
-      alert(error.message || 'Erro ao atualizar tarefa');
-    }
-  };
-
-  const handleCancelEditing = () => {
-    setEditingTaskId(null);
-    setEditingTitle('');
+    setSelectedTask(task);
+    setTaskFormOpen(true);
   };
 
   const reorderPendingTasks = (allTasks: Task[], sourceId: string, targetId: string) => {
@@ -204,17 +173,20 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
     }
   };
 
-  const normalizedSearch = normalizeSearchText(completedSearch);
+  const clientMap = useMemo(() => new Map(clients.map(client => [client.id, client])), [clients]);
+  const processMap = useMemo(() => new Map(processes.map(process => [process.id, process])), [processes]);
+  const normalizedSearch = normalizeSearchText(taskSearch);
 
   const filteredTasks = tasks.filter((task) => {
-    if (filter === 'all') return true;
-    if (filter === 'completed') {
-      const matchesStatus = task.status === 'completed';
-      if (!matchesStatus) return false;
-      if (!normalizedSearch) return true;
-      return matchesNormalizedSearch(normalizedSearch, [task.title]);
-    }
-    return task.status === filter;
+    const matchesStatus = filter === 'all' || task.status === filter;
+    if (!matchesStatus) return false;
+    if (!normalizedSearch) return true;
+    return matchesNormalizedSearch(normalizedSearch, [
+      task.title,
+      task.description,
+      task.client_id ? clientMap.get(task.client_id)?.full_name : '',
+      task.process_id ? processMap.get(task.process_id)?.process_code : '',
+    ]);
   });
 
   const pendingTasks = tasks.filter((t) => t.status === 'pending');
@@ -222,46 +194,35 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
 
   return (
     <div className="space-y-4 sm:space-y-6 p-3 sm:p-0">
-      {/* Add Task Form */}
-      <form onSubmit={handleAddTask} className="flex flex-col sm:flex-row gap-2">
-        <input
-          type="text"
-          value={newTaskTitle}
-          onChange={(e) => setNewTaskTitle(e.target.value)}
-          placeholder={fl.fieldLabel('title', 'Digite uma nova tarefa...')}
-          ref={newTaskInputRef}
-          className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
-        />
-        {!fl.isHidden('priority') && priorities.length > 1 && (
-          <select
-            value={selectedPriority}
-            onChange={(e) => setSelectedPriority(e.target.value)}
-            className="w-full sm:w-auto px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-[#f8f7f5]"
-          >
-            {priorities.map(p => (
-              <option key={p.key} value={p.key}>{p.label}</option>
-            ))}
-          </select>
-        )}
+      <div className="flex justify-end">
         <button
-          type="submit"
-          disabled={!newTaskTitle.trim() || addingTask}
-          className={`w-full sm:w-auto px-4 sm:px-6 py-2 text-white rounded-lg font-medium text-sm transition-all transform active:scale-95 ${
-            addingTask
-              ? 'bg-amber-600 hover:bg-amber-700 cursor-not-allowed'
-              : 'bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed'
-          }`}
+          type="button"
+          onClick={() => {
+            setSelectedTask(null);
+            setTaskFormOpen(true);
+          }}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-700 active:scale-95 sm:w-auto sm:px-6"
         >
-          {addingTask ? (
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Adicionando...</span>
-            </div>
-          ) : (
-            <span>Adicionar</span>
-          )}
+          <Plus className="h-4 w-4" />
+          Nova tarefa
         </button>
-      </form>
+      </div>
+
+      <TaskFormModal
+        open={taskFormOpen}
+        selectedTask={selectedTask}
+        initialClientName={selectedTask?.client_id ? clientMap.get(selectedTask.client_id)?.full_name : undefined}
+        initialProcesses={processes}
+        onClose={() => {
+          setTaskFormOpen(false);
+          setSelectedTask(null);
+        }}
+        onSaved={async () => {
+          setTaskFormOpen(false);
+          setSelectedTask(null);
+          await Promise.all([loadTasks(), loadReferenceData()]);
+        }}
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
@@ -297,26 +258,24 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
         </button>
       </div>
 
-      {filter === 'completed' && (
-        <div className="flex flex-col sm:flex-row items-center gap-2">
-          <input
-            type="text"
-            value={completedSearch}
-            onChange={(e) => setCompletedSearch(e.target.value)}
-            placeholder="Pesquisar tarefas concluídas..."
-            className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          />
-          {completedSearch && (
-            <button
-              type="button"
-              onClick={() => setCompletedSearch('')}
-              className="w-full sm:w-auto px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200"
-            >
-              Limpar
-            </button>
-          )}
-        </div>
-      )}
+      <div className="flex flex-col items-center gap-2 sm:flex-row">
+        <input
+          type="text"
+          value={taskSearch}
+          onChange={(e) => setTaskSearch(e.target.value)}
+          placeholder="Pesquisar por tarefa, cliente ou processo..."
+          className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+        />
+        {taskSearch && (
+          <button
+            type="button"
+            onClick={() => setTaskSearch('')}
+            className="w-full sm:w-auto px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200"
+          >
+            Limpar
+          </button>
+        )}
+      </div>
 
       {/* Task List */}
       {loading ? (
@@ -331,6 +290,8 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
           {filteredTasks.map((task) => {
             const isPending = task.status === 'pending';
             const isDragging = draggingTaskId === task.id;
+            const linkedClient = task.client_id ? clientMap.get(task.client_id) : null;
+            const linkedProcess = task.process_id ? processMap.get(task.process_id) : null;
             return (
             <div
               key={task.id}
@@ -371,58 +332,58 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
               </button>
 
               <div className="flex-1 min-w-0">
-                {editingTaskId === task.id ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={editingTitle}
-                      onChange={(e) => setEditingTitle(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleSaveEditing();
-                        } else if (e.key === 'Escape') {
-                          handleCancelEditing();
-                        }
-                      }}
-                      className="flex-1 px-2 py-1 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs sm:text-sm"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSaveEditing}
-                      className="px-2 sm:px-3 py-1 text-xs font-semibold text-white bg-blue-600 rounded hover:bg-blue-700"
-                    >
-                      Salvar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCancelEditing}
-                      className="px-2 sm:px-3 py-1 text-xs font-semibold text-slate-600 bg-slate-100 rounded hover:bg-slate-200"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                ) : (
-                  <p
-                    className={`text-xs sm:text-sm font-medium ${
-                      task.status === 'completed'
-                        ? 'text-slate-500 line-through'
-                        : 'text-slate-900'
-                    }`}
-                  >
-                    {task.title}
-                  </p>
+                <p
+                  className={`text-xs sm:text-sm font-medium ${
+                    task.status === 'completed'
+                      ? 'text-slate-500 line-through'
+                      : 'text-slate-900'
+                  }`}
+                >
+                  {task.title}
+                </p>
+                {task.description && (
+                  <p className="mt-1 line-clamp-2 text-[11px] text-slate-500 sm:text-xs">{task.description}</p>
                 )}
-                {task.status === 'pending' && (() => {
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  {task.status === 'pending' && (() => {
                   const cfg = priorities.find(p => p.key === task.priority);
                   const label = cfg?.label ?? task.priority;
                   const badge = cfg?.badge ?? 'bg-slate-100 text-slate-600';
                   return (
-                    <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${badge}`}>
+                    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${badge}`}>
                       {label}
                     </span>
                   );
-                })()}
+                  })()}
+                  {linkedClient && (
+                    <button
+                      type="button"
+                      onClick={() => navigateTo('clientes', { mode: 'details', entityId: linkedClient.id } as any)}
+                      className="inline-flex max-w-full items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 transition hover:bg-emerald-100"
+                      title={`Abrir cliente ${linkedClient.full_name}`}
+                    >
+                      <UserRound className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{linkedClient.full_name}</span>
+                    </button>
+                  )}
+                  {linkedProcess && (
+                    <button
+                      type="button"
+                      onClick={() => navigateTo('processos', { mode: 'details', entityId: linkedProcess.id } as any)}
+                      className="inline-flex max-w-full items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 transition hover:bg-blue-100"
+                      title={`Abrir processo ${linkedProcess.process_code}`}
+                    >
+                      <Briefcase className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{linkedProcess.process_code}</span>
+                    </button>
+                  )}
+                  {task.due_date && (
+                    <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                      <CalendarDays className="h-3 w-3" />
+                      Até {formatDate(task.due_date)}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] sm:text-xs text-slate-500 mt-1">
                   Criado em {formatDate(task.created_at)} às {formatTime(task.created_at)} por {task.created_by_name || fallbackCreatorName}
                 </p>

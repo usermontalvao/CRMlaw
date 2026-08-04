@@ -13,6 +13,8 @@ import type { Agreement } from '../../types/financial.types';
 export const CONV_TABLE = 'whatsapp_conversations';
 export const MSG_TABLE = 'whatsapp_messages';
 export const CHANNEL_TABLE = 'whatsapp_instances';
+export const CHANNEL_MEMBER_TABLE = 'whatsapp_channel_members';
+export const CHANNEL_FUNNEL_STAGE_TABLE = 'whatsapp_channel_funnel_stages';
 export const DEPT_TABLE = 'whatsapp_departments';
 export const DEPT_MEMBER_TABLE = 'whatsapp_department_members';
 export const TRANSFER_TABLE = 'whatsapp_transfers';
@@ -94,13 +96,27 @@ export interface StaffOption {
   gender?: string | null;   // '' | 'male' | 'female' — para tratamento Dr./Dra.
   role?: string | null;     // cargo (ex: "Advogado")
   oab?: string | null;      // OAB preenchida reforça que é advogado
+  // Identidade de atendimento escolhida pelo próprio agente (whatsapp_agent_settings).
+  // Quando preenchida, manda no que a equipe vê na assinatura da mensagem.
+  short_name?: string | null;
+  role_label?: string | null;
+  treatment?: AgentTreatment;
 }
+
+/**
+ * Tratamento na assinatura da mensagem. `null`/'' mantém a regra automática
+ * (Dr./Dra. para advogado, conforme o gênero do perfil); 'none' desliga o
+ * tratamento; 'dr'/'dra' força — quem não é advogado no cadastro mas assina
+ * como tal, e vice-versa.
+ */
+export type AgentTreatment = '' | 'none' | 'dr' | 'dra' | null;
 
 /** Preferências de atendimento do agente (saudação inicial, nome curto, cargo). */
 export interface AgentPrefs {
   auto_greeting: boolean;
   short_name: string | null;
   role_label: string | null;
+  treatment: AgentTreatment;
 }
 
 /** Um prazo normalizado (vem da tabela deadlines OU de evento de calendário). */
@@ -315,6 +331,25 @@ export async function attachAvatarUrls(convs: WhatsAppConversation[]): Promise<v
   const byPath = await resolveSignedUrls(paths);
   for (const c of convs) {
     if (c.contact_avatar_path) c.contact_avatar_url = byPath.get(c.contact_avatar_path) || null;
+  }
+}
+
+/**
+ * Preenche `client_name` com o nome do cadastro vinculado (uma consulta em lote
+ * para toda a lista). A conversa guarda só `client_id`; sem isto a lista e o
+ * cabeçalho continuariam mostrando o nome do WhatsApp mesmo com cliente
+ * vinculado — e o nome do WhatsApp é o apelido que o próprio contato escolheu.
+ */
+export async function attachClientNames(convs: WhatsAppConversation[]): Promise<void> {
+  const ids = Array.from(new Set(convs.map(c => c.client_id).filter((id): id is string => !!id)));
+  if (ids.length === 0) return;
+  const { data } = await supabase.from('clients').select('id, full_name').in('id', ids);
+  const byId = new Map<string, string>();
+  for (const row of (data || []) as { id: string; full_name: string | null }[]) {
+    if (row.full_name) byId.set(row.id, row.full_name);
+  }
+  for (const c of convs) {
+    c.client_name = c.client_id ? byId.get(c.client_id) ?? null : null;
   }
 }
 

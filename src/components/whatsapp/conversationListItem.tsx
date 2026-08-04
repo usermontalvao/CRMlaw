@@ -7,9 +7,10 @@ import type {
 } from '../../types/whatsapp.types';
 import type { FunnelLabel } from '../../services/settings.service';
 import {
-  formatTime, prettyPhone, presenceInfo, maskName, maskPhoneFull,
+  formatTime, prettyPhone, conversationName, presenceInfo, maskName, maskPhoneFull,
   slaSignal, slaInternalSignal, abandonedSignal, transferAlert,
 } from './format';
+import type { ElapsedMinutes } from './businessTime';
 import { resolveLabelMeta } from './funnel';
 import { Avatar } from './avatar';
 
@@ -45,14 +46,15 @@ export const PresenceText: React.FC<{
 PresenceText.displayName = 'PresenceText';
 
 export const DateDivider: React.FC<{ label: string }> = ({ label }) => (
-  <div className="flex justify-center my-2.5">
-    <span className="px-3 py-1 rounded-full bg-white/90 text-slate-500 text-[11px] font-semibold shadow-sm">{label}</span>
+  <div className="sticky top-2 z-[2] flex justify-center my-3 pointer-events-none">
+    <span className="px-3 py-1.5 rounded-lg bg-[#f7f9fa]/95 text-[#54656f] text-[10.5px] font-medium uppercase tracking-[0.03em] shadow-sm ring-1 ring-black/[0.03] backdrop-blur-sm">{label}</span>
   </div>
 );
 
 // Item da lista de conversas (memoizado). Os sinais de SLA/transferência/abandono
-// são funções puras de `c`, então o item os calcula sozinho; só `status`/`docStatus`
-// (que dependem de estado do módulo) chegam prontos como primitivos. Com props
+// são funções puras de `c` (mais a medição de tempo, que chega estável do
+// módulo), então o item os calcula sozinho; só `status`/`docStatus` (que
+// dependem de estado do módulo) chegam prontos como primitivos. Com props
 // estáveis, o React.memo só re-renderiza a linha cuja conversa de fato mudou —
 // não a lista inteira a cada evento de realtime.
 export const ConversationListItem: React.FC<{
@@ -68,13 +70,19 @@ export const ConversationListItem: React.FC<{
   muted: boolean;
   draftPreview: string;
   funnelLabels: FunnelLabel[];
+  /**
+   * Medição de tempo dos badges de SLA. Ausente = relógio de parede; com a
+   * medição em horário útil do módulo, a espera fora do expediente não conta.
+   * Precisa ter identidade estável para o React.memo continuar valendo.
+   */
+  elapsedMinutes?: ElapsedMinutes;
   onSelect: (id: string) => void;
   onDismissTracking?: () => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, onSelect, onDismissTracking }) => {
-  const sla = slaSignal(c);
-  const slaInt = slaInternalSignal(c);
-  const ta = transferAlert(c);
-  const ab = abandonedSignal(c);
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, elapsedMinutes, onSelect, onDismissTracking }) => {
+  const sla = slaSignal(c, elapsedMinutes);
+  const slaInt = slaInternalSignal(c, elapsedMinutes);
+  const ta = transferAlert(c, elapsedMinutes);
+  const ab = abandonedSignal(c, elapsedMinutes);
   const urgentBorder = sla?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
     : sla?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
     : slaInt?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
@@ -84,14 +92,14 @@ export const ConversationListItem: React.FC<{
     <button onClick={() => onSelect(c.id)}
       className={`wa-conv w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'wa-conv-active bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''}`}>
       <div className="relative flex-shrink-0">
-        <Avatar url={c.contact_avatar_url} name={c.contact_name} phone={c.contact_phone} size={40} />
+        <Avatar url={c.contact_avatar_url} name={conversationName(c)} phone={c.contact_phone} size={40} />
         {ch && <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ background: ch.color || '#ea6c00' }} title={ch.name || ch.instance_name} />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[13.5px] font-semibold text-slate-800 truncate flex items-center gap-1">
             {c.is_blocked && <Ban size={12} className="text-red-500 flex-shrink-0" />}
-            <span className="truncate">{privateMode ? maskName(c.contact_name) : (c.contact_name || prettyPhone(c.contact_phone))}</span>
+            <span className="truncate">{privateMode ? maskName(conversationName(c)) : conversationName(c)}</span>
           </span>
           <span className="flex items-center gap-1 flex-shrink-0">
             {muted && <BellOff size={11} className="text-slate-400 flex-shrink-0" />}

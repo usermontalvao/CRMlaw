@@ -6,9 +6,10 @@ import { processService } from '../process.service';
 import type { WhatsAppConversation, WhatsAppClientLite, TimelineEvent } from '../../types/whatsapp.types';
 import {
   CONV_TABLE, MSG_TABLE, TRANSFER_TABLE, NOTES_TABLE,
-  attachAvatarUrls, invokeFn, normalizePhone, phoneVariants, type WhatsAppInternalNote,
+  attachAvatarUrls, attachClientNames, invokeFn, normalizePhone, phoneVariants, type WhatsAppInternalNote,
 } from './shared';
 import { messagesApi } from './messages';
+import { realtimeRetryDelay, isRealtimeDeadStatus } from './realtimeBackoff';
 
 export const conversationsApi = {
   // ── Conversas ────────────────────────────────────────────────
@@ -19,7 +20,7 @@ export const conversationsApi = {
       .order('last_message_at', { ascending: false, nullsFirst: false });
     if (error) throw new Error(error.message);
     const convs = (data || []) as WhatsAppConversation[];
-    await attachAvatarUrls(convs);
+    await Promise.all([attachAvatarUrls(convs), attachClientNames(convs)]);
     return convs;
   },
 
@@ -227,6 +228,47 @@ export const conversationsApi = {
       transfer_pending_since: null,
     }).eq('id', conversationId);
     if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Atribui a conversa a um atendente SEM passar por aceite — é o comando de
+   * distribuição da operação, não uma transferência entre pares.
+   *
+   * A diferença importa: `transferConversation` deixa a conversa "aguardando
+   * aceite", o que é certo quando um colega passa o caso para outro (o destino
+   * precisa concordar). Numa distribuição de fila isso só recria o gargalo que
+   * ela veio resolver — a conversa ficaria parada esperando alguém clicar. Aqui
+   * o responsável já entra valendo, e a trilha registra quem distribuiu.
+   */
+  async assignConversation(conversationId: string, toUserId: string, note?: string): Promise<void> {
+    const { data: conv } = await supabase
+      .from(CONV_TABLE)
+      .select('assigned_user_id, department_id')
+      .eq('id', conversationId)
+      .maybeSingle();
+
+    const { error } = await supabase.from(CONV_TABLE).update({
+      assigned_user_id: toUserId,
+      awaiting_accept: false,
+      transfer_pending_since: null,
+    }).eq('id', conversationId);
+    if (error) throw new Error(error.message);
+
+    const { data: auth } = await supabase.auth.getUser();
+    const now = new Date().toISOString();
+    // Auditoria best-effort: a atribuição já valeu; perder a linha de histórico
+    // não pode desfazer a distribuição e deixar a conversa órfã de novo.
+    await supabase.from(TRANSFER_TABLE).insert({
+      conversation_id: conversationId,
+      from_user_id: conv?.assigned_user_id ?? null,
+      to_user_id: toUserId,
+      from_department_id: conv?.department_id ?? null,
+      to_department_id: null,
+      note: note || 'Distribuição da fila',
+      performed_by: auth?.user?.id ?? null,
+      accepted_at: now,
+      accepted_by: toUserId,
+    });
   },
 
   /**
@@ -545,13 +587,51 @@ export const conversationsApi = {
   subscribe(handlers: {
     onMessageChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
     onConversationChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
+    /**
+     * Saúde do canal. 'live' = recebendo eventos; 'down' = caiu e está tentando
+     * voltar. Quem consome usa isso para ressincronizar por HTTP o que foi
+     * perdido enquanto o canal esteve fora — nenhum evento é reenviado depois.
+     */
+    onStatusChange?: (status: 'live' | 'down') => void;
   }) {
-    const channel = supabase
-      .channel('whatsapp-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: MSG_TABLE }, p => handlers.onMessageChange?.(p))
-      .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => handlers.onConversationChange?.(p))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let attempt = 0;
+    let timer: number | null = null;
+    let disposed = false;
+
+    const reopenLater = () => {
+      if (disposed || timer !== null) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        if (disposed) return;
+        // Descarta o canal morto antes de abrir outro: um canal em erro nunca
+        // volta sozinho, e mantê-lo só acumula socket parado.
+        if (channel) { supabase.removeChannel(channel); channel = null; }
+        open();
+      }, realtimeRetryDelay(attempt++));
+    };
+
+    const open = () => {
+      if (disposed) return;
+      // Nome único por tentativa: reutilizar o mesmo nome enquanto o canal
+      // anterior ainda está fechando faz o servidor recusar a nova inscrição.
+      channel = supabase
+        .channel(`whatsapp-realtime-${Date.now()}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: MSG_TABLE }, p => handlers.onMessageChange?.(p))
+        .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => handlers.onConversationChange?.(p))
+        .subscribe(status => {
+          if (disposed) return;
+          if (status === 'SUBSCRIBED') { attempt = 0; handlers.onStatusChange?.('live'); return; }
+          if (isRealtimeDeadStatus(status)) { handlers.onStatusChange?.('down'); reopenLater(); }
+        });
+    };
+
+    open();
+    return () => {
+      disposed = true;
+      if (timer !== null) window.clearTimeout(timer);
+      if (channel) supabase.removeChannel(channel);
+    };
   },
 
   /**

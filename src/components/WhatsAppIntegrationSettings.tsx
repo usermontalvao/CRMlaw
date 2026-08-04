@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Save, Loader2, Eye, EyeOff, Plus, Trash2, QrCode, Check, Users, X, Phone,
-  Clock, BellOff, Bot, Pencil, MessageSquare, Share2,
+  Clock, BellOff, Bot, Pencil, MessageSquare, Share2, LockKeyhole, GitBranch, IdCard,
 } from 'lucide-react';
 import {
   settingsService,
@@ -11,11 +11,15 @@ import {
   type WhatsAppChannelDepartmentRouting,
   type WhatsAppModuleConfig,
 } from '../services/settings.service';
-import { whatsappService, type StaffOption } from '../services/whatsapp.service';
+import { whatsappService, DEFAULT_AGENT_PREFS, type StaffOption, type AgentPrefs } from '../services/whatsapp.service';
+import { useAuth } from '../contexts/AuthContext';
+import { agentLabel, agentRoleLabel } from './whatsapp/format';
 import type {
   WhatsAppChannel, WhatsAppDepartment, WhatsAppTemplate, WhatsAppBusinessHoursRow,
   WhatsAppAiChannelConfig, WhatsAppAiPlaybook, AiPlaybookQuestion,
 } from '../types/whatsapp.types';
+import ChannelAccessManager from './whatsapp/ChannelAccessManager';
+import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
 
 const DAY_NAMES = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
 
@@ -39,6 +43,7 @@ const statusColor = (s: string) => s === 'connected' ? '#16a34a' : s === 'connec
 const statusLabel = (s: string) => s === 'connected' ? 'Conectado' : s === 'connecting' ? 'Conectando…' : 'Desconectado';
 
 const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, onFeedback }) => {
+  const { user } = useAuth();
   const [server, setServer] = useState<WhatsAppEvolutionConfig>({ ...WHATSAPP_EVOLUTION_DEFAULTS });
   const [showKey, setShowKey] = useState(false);
   const [savingServer, setSavingServer] = useState(false);
@@ -56,7 +61,10 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   const [savingTplId, setSavingTplId] = useState<string | null>(null);
   const [savingCopy, setSavingCopy] = useState(false);
   const [savingRouting, setSavingRouting] = useState(false);
-  const [activeSection, setActiveSection] = useState<'connection' | 'channels' | 'departments' | 'routing' | 'copies' | 'templates' | 'playbooks'>('connection');
+  // Identidade de atendimento do usuário logado (assinatura das mensagens).
+  const [agentPrefs, setAgentPrefs] = useState<AgentPrefs>(DEFAULT_AGENT_PREFS);
+  const [savingIdentity, setSavingIdentity] = useState(false);
+  const [activeSection, setActiveSection] = useState<'connection' | 'identity' | 'channels' | 'access' | 'funnels' | 'departments' | 'routing' | 'copies' | 'templates' | 'playbooks'>('connection');
   const [activeChannelSection, setActiveChannelSection] = useState<'list' | 'new'>('list');
   const [loading, setLoading] = useState(true);
 
@@ -90,7 +98,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
 
   const reload = async () => {
     try {
-      const [cfg, copyCfg, routingCfg, chs, depts, st, tpls, pbs] = await Promise.all([
+      const [cfg, copyCfg, routingCfg, chs, depts, st, tpls, pbs, prefs] = await Promise.all([
         settingsService.getWhatsAppEvolutionConfig(),
         settingsService.getWhatsAppModuleConfig(),
         settingsService.getWhatsAppChannelDepartmentRouting(),
@@ -99,6 +107,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
         whatsappService.listStaff(),
         whatsappService.listTemplates(),
         whatsappService.listPlaybooks().catch(() => [] as WhatsAppAiPlaybook[]),
+        whatsappService.getMyAgentPrefs().catch(() => DEFAULT_AGENT_PREFS),
       ]);
       setServer(cfg);
       setCopyConfig(copyCfg);
@@ -108,6 +117,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       setStaff(st);
       setTemplates(tpls);
       setPlaybooks(pbs);
+      setAgentPrefs(prefs);
     } catch (e: any) {
       onFeedback('error', e.message || 'Erro ao carregar dados do WhatsApp.');
     } finally {
@@ -521,9 +531,37 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     </div>
   );
 
+  // Meu perfil na equipe — base do rótulo automático mostrado como referência.
+  const myProfile = staff.find(s => s.user_id === user?.id) || null;
+  // Prévia ao vivo: exatamente o que o cliente lê acima da mensagem.
+  const identityPreview = agentLabel(myProfile ? { ...myProfile, ...agentPrefs } : null)
+    || agentPrefs.short_name?.trim()
+    || userName
+    || 'Sem assinatura';
+  const identityRolePreview = agentRoleLabel(myProfile ? { ...myProfile, ...agentPrefs } : null);
+
+  const saveIdentity = async () => {
+    setSavingIdentity(true);
+    try {
+      const saved = await whatsappService.saveMyAgentPrefs(agentPrefs);
+      setAgentPrefs(saved);
+      // A equipe inteira vê esta assinatura, então a lista de staff em memória
+      // (que alimenta os rótulos) precisa refletir a mudança na hora.
+      setStaff(prev => prev.map(s => s.user_id === user?.id
+        ? { ...s, short_name: saved.short_name, role_label: saved.role_label, treatment: saved.treatment }
+        : s));
+      onFeedback('success', 'Identidade de atendimento salva!');
+    } catch (e: any) {
+      onFeedback('error', e.message || 'Erro ao salvar identidade.');
+    } finally { setSavingIdentity(false); }
+  };
+
   const sectionItems = [
     { key: 'connection' as const, label: 'Conexão', summary: 'Servidor Evolution e API', icon: QrCode },
+    { key: 'identity' as const, label: 'Minha assinatura', summary: 'Nome exibido nas mensagens', icon: IdCard },
     { key: 'channels' as const, label: 'Canais', summary: 'Números, horários e IA', icon: Phone },
+    { key: 'access' as const, label: 'Acessos', summary: 'Quem vê cada canal', icon: LockKeyhole },
+    { key: 'funnels' as const, label: 'Funis', summary: 'Fluxo próprio por canal', icon: GitBranch },
     { key: 'departments' as const, label: 'Departamentos', summary: 'Setores e membros', icon: Users },
     { key: 'routing' as const, label: 'Roteamento', summary: 'Canais × departamentos', icon: Share2 },
     { key: 'copies' as const, label: 'Textos padrão', summary: 'Copys operacionais', icon: Pencil },
@@ -683,6 +721,85 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
         <div className="settings-save-bar" style={{ marginTop: '16px' }}>
           <button className="settings-btn-primary" onClick={saveServer} disabled={savingServer}>
             {savingServer ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar servidor
+          </button>
+        </div>
+      </>)}
+
+      {/* ── Minha assinatura nas mensagens ── */}
+      {renderSection('identity', 'Minha assinatura', 'Como o seu nome aparece acima do texto enviado', <>
+        <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '14px' }}>
+          Toda mensagem que você envia sai com o seu nome em negrito antes do texto, e a
+          equipe vê esse mesmo nome acima da bolha aqui no CRM. Sem nada preenchido, o
+          sistema usa o primeiro nome do seu cadastro e acrescenta Dr./Dra. quando o
+          perfil é de advogado. Isto vale só para você — cada pessoa configura a sua.
+        </p>
+
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px',
+          marginBottom: '16px', borderRadius: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0',
+        }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#15803d' }}>
+            Prévia
+          </span>
+          <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#166534' }}>{identityPreview}</span>
+          {identityRolePreview && (
+            <span style={{
+              fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+              color: '#15803d', background: '#dcfce7', padding: '2px 6px', borderRadius: '6px',
+            }}>{identityRolePreview}</span>
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+          <div>
+            <label className="settings-label">Nome exibido</label>
+            <input className="settings-input" maxLength={60}
+              placeholder={myProfile ? agentLabel({ ...myProfile, short_name: null, treatment: null }) || 'Seu primeiro nome' : 'Seu primeiro nome'}
+              value={agentPrefs.short_name ?? ''}
+              onChange={e => setAgentPrefs(prev => ({ ...prev, short_name: e.target.value }))} />
+            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '6px' }}>
+              Escrito exatamente como você digitar. Em branco = primeiro nome do cadastro.
+            </p>
+          </div>
+          <div>
+            <label className="settings-label">Tratamento</label>
+            <select className="settings-input" value={agentPrefs.treatment || ''}
+              onChange={e => setAgentPrefs(prev => ({ ...prev, treatment: (e.target.value || null) as AgentPrefs['treatment'] }))}>
+              <option value="">Automático (pelo cadastro)</option>
+              <option value="none">Sem tratamento</option>
+              <option value="dr">Dr.</option>
+              <option value="dra">Dra.</option>
+            </select>
+            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '6px' }}>
+              Vai na frente do nome exibido.
+            </p>
+          </div>
+          <div>
+            <label className="settings-label">Cargo exibido</label>
+            <input className="settings-input" maxLength={40}
+              placeholder={myProfile?.role || 'Cargo do cadastro'}
+              value={agentPrefs.role_label ?? ''}
+              onChange={e => setAgentPrefs(prev => ({ ...prev, role_label: e.target.value }))} />
+            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '6px' }}>
+              Etiqueta ao lado do nome, visível só para a equipe no CRM.
+            </p>
+          </div>
+          <div>
+            <label className="settings-label">Saudação automática</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#374151', marginTop: '8px' }}>
+              <input type="checkbox" checked={agentPrefs.auto_greeting}
+                onChange={e => setAgentPrefs(prev => ({ ...prev, auto_greeting: e.target.checked }))} />
+              Apresentar-me ao cliente na primeira resposta
+            </label>
+            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '6px' }}>
+              Usa a copy configurada em “Textos padrão”.
+            </p>
+          </div>
+        </div>
+
+        <div className="settings-save-bar" style={{ marginTop: '16px' }}>
+          <button className="settings-btn-primary" onClick={saveIdentity} disabled={savingIdentity}>
+            {savingIdentity ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar minha assinatura
           </button>
         </div>
       </>)}
@@ -939,6 +1056,30 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
           </div>
         </div>
         )}
+      </>)}
+
+      {/* ── Acesso por usuário (mesma fonte para WhatsApp + Leads) ── */}
+      {renderSection('access', 'Acessos por usuário', 'Defina quem enxerga cada canal no atendimento e no funil de Leads', <>
+        <ChannelAccessManager
+          channels={channels}
+          staff={staff}
+          requirePin={requirePin}
+          onFeedback={onFeedback}
+          onChannelsChange={setChannels}
+        />
+      </>)}
+
+      {/* ── Funil comercial/jurídico próprio de cada canal ── */}
+      {renderSection('funnels', 'Funis por canal', 'Personalize etapas, ordem, cores, etiquetas e entrada inicial de cada número', <>
+        <ChannelFunnelManager
+          channels={channels}
+          departments={departments}
+          staff={staff}
+          moduleConfig={copyConfig}
+          requirePin={requirePin}
+          onFeedback={onFeedback}
+          onChannelsChange={setChannels}
+        />
       </>)}
 
       {/* ── Departamentos ── */}

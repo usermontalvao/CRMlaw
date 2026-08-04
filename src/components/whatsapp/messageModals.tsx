@@ -2,7 +2,10 @@
 // agendamento de mensagem. Extraídos de WhatsAppModule.tsx — autocontidos.
 import React, { useCallback, useEffect, useState } from 'react';
 import { MessageSquare, CalendarClock, Plus, Loader2, Trash2, Pencil, Save, X } from 'lucide-react';
-import { WaDialog, WaDialogBody, waInput, waLabel, waBtnGhost, waBtnPrimary } from './ui';
+import {
+  WaDialog, WaDialogBody, WaDialogActions, WaField, WaFieldStack,
+  waInput, waTextarea, waBtnGhost, waBtnPrimary,
+} from './ui';
 import { whatsappService, renderTemplate } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
 import type { WhatsAppTemplate } from '../../types/whatsapp.types';
@@ -81,39 +84,41 @@ export const TemplatePickerModal: React.FC<{
   };
 
   return (
-    <WaDialog title="Modelos de mensagem" icon={<MessageSquare size={18} />} onClose={onClose}
+    <WaDialog title="Modelos de mensagem" subtitle="Digite / no compositor para usar um atalho"
+      icon={<MessageSquare size={18} />} onClose={onClose}
       headerActions={
         <button onClick={() => setCreating(c => !c)} title="Novo modelo"
-          className="shrink-0 inline-flex items-center gap-1 rounded-full bg-white/15 hover:bg-white/25 px-2.5 py-1 text-[12px] font-semibold text-white transition">
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[12px] font-semibold text-amber-700 transition hover:bg-amber-100">
           <Plus size={13} /> Novo
         </button>
       }>
       {/* Formulário de novo modelo */}
       {creating && (
-        <div className="px-4 sm:px-5 py-3 border-b border-[#f1f0ec] bg-[#f7f9fa] space-y-2">
-          <div>
-            <label className={waLabel}>Atalho / título <span className="font-normal text-slate-400">(ex: boas-vindas → digite /boas)</span></label>
-            <input autoFocus value={newName} onChange={e => setNewName(e.target.value)} placeholder="boas-vindas" className={waInput} />
-          </div>
-          <div>
-            <label className={waLabel}>Texto da mensagem</label>
-            <textarea value={newBody} onChange={e => setNewBody(e.target.value)} rows={3}
-              placeholder="Olá! Seja bem-vindo(a) ao nosso escritório…" className={`${waInput} resize-none`} />
-            <p className="mt-1 text-[10.5px] text-slate-400">Variáveis: {'{{cliente.nome}}'}, {'{{saudacao}}'}, {'{{agente.nome}}'}.</p>
-          </div>
-          <div className="flex justify-end gap-2">
-            <button onClick={() => { setCreating(false); setNewName(''); setNewBody(''); }} className={waBtnGhost}>Cancelar</button>
-            <button onClick={createNew} disabled={saving || !newName.trim() || !newBody.trim()} className={waBtnPrimary}>
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Salvar modelo
-            </button>
-          </div>
+        <div className="border-b border-[#efece5] bg-[#faf9f7] px-4 py-4 sm:px-5">
+          <WaFieldStack>
+            <WaField label="Atalho / título" optional="(ex: boas-vindas → digite /boas)" htmlFor="wa-tpl-name">
+              <input id="wa-tpl-name" autoFocus value={newName} onChange={e => setNewName(e.target.value)}
+                placeholder="boas-vindas" className={waInput} />
+            </WaField>
+            <WaField label="Texto da mensagem" htmlFor="wa-tpl-body"
+              hint={<>Variáveis: {'{{cliente.nome}}'}, {'{{saudacao}}'}, {'{{agente.nome}}'}.</>}>
+              <textarea id="wa-tpl-body" value={newBody} onChange={e => setNewBody(e.target.value)} rows={3}
+                placeholder="Olá! Seja bem-vindo(a) ao nosso escritório…" className={waTextarea} />
+            </WaField>
+            <WaDialogActions>
+              <button onClick={() => { setCreating(false); setNewName(''); setNewBody(''); }} className={waBtnGhost}>Cancelar</button>
+              <button onClick={createNew} disabled={saving || !newName.trim() || !newBody.trim()} className={waBtnPrimary}>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Salvar modelo
+              </button>
+            </WaDialogActions>
+          </WaFieldStack>
         </div>
       )}
 
-      <div className="px-4 sm:px-5 py-3 border-b border-[#f1f0ec]">
+      <div className="border-b border-[#efece5] px-4 py-3 sm:px-5">
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar modelo…" className={waInput} />
       </div>
-      <div className="px-4 sm:px-5 py-3 space-y-2">
+      <div className="space-y-2 px-4 py-3 sm:px-5">
         {templates === null ? (
           <div className="flex items-center justify-center py-8 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
         ) : filtered.length === 0 ? (
@@ -122,30 +127,30 @@ export const TemplatePickerModal: React.FC<{
           const preview = renderTemplate(t.body, context);
           return (
             <div key={t.id}
-              className="group/tpl relative rounded-xl border border-[#e7e5df] hover:border-[#00a884] hover:bg-[#00a884]/5 transition">
+              className="group/tpl relative rounded-xl border border-[#e7e5df] transition hover:border-amber-300 hover:bg-amber-50/40">
               {editingId === t.id ? (
-                <div className="p-3 space-y-2">
-                  <div>
-                    <label className={waLabel}>Atalho / título</label>
-                    <input value={editName} onChange={e => setEditName(e.target.value)} className={waInput} />
-                  </div>
-                  <div>
-                    <label className={waLabel}>Texto da mensagem</label>
-                    <textarea value={editBody} onChange={e => setEditBody(e.target.value)} rows={4} className={`${waInput} resize-none`} />
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <button onClick={cancelEdit} className={waBtnGhost}><X size={14} /> Cancelar</button>
-                    <button onClick={() => saveEdit(t)} disabled={saving || !editName.trim() || !editBody.trim()} className={waBtnPrimary}>
-                      {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
-                    </button>
-                  </div>
+                <div className="p-3">
+                  <WaFieldStack>
+                    <WaField label="Atalho / título">
+                      <input value={editName} onChange={e => setEditName(e.target.value)} className={waInput} />
+                    </WaField>
+                    <WaField label="Texto da mensagem">
+                      <textarea value={editBody} onChange={e => setEditBody(e.target.value)} rows={4} className={waTextarea} />
+                    </WaField>
+                    <WaDialogActions>
+                      <button onClick={cancelEdit} className={waBtnGhost}><X size={14} /> Cancelar</button>
+                      <button onClick={() => saveEdit(t)} disabled={saving || !editName.trim() || !editBody.trim()} className={waBtnPrimary}>
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar
+                      </button>
+                    </WaDialogActions>
+                  </WaFieldStack>
                 </div>
               ) : (
                 <>
                   <button onClick={() => onPick(preview)} className="w-full text-left p-3 pr-16">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-slate-700">
-                        <span className="text-[#00a884]">/</span>{t.name}
+                        <span className="text-amber-600">/</span>{t.name}
                       </span>
                       {t.category && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500">{t.category}</span>}
                     </div>
@@ -222,21 +227,25 @@ export const ScheduleMessageModal: React.FC<{
       onClose={onClose}
       size="sm"
       footer={
-        <div className="flex justify-end gap-2">
+        <WaDialogActions>
           <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
           <button onClick={submit} disabled={saving || !text.trim() || !when} className={waBtnPrimary}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <CalendarClock size={14} />} Agendar
           </button>
-        </div>
+        </WaDialogActions>
       }
     >
       <WaDialogBody>
-        <label className={waLabel}>Mensagem</label>
-        <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder="Texto a enviar…"
-          className={`${waInput} mb-3 resize-none`} />
-        <label className={waLabel}>Data e hora</label>
-        <input type="datetime-local" value={when} min={minLocal} onChange={e => setWhen(e.target.value)}
-          className={waInput} />
+        <WaFieldStack>
+          <WaField label="Mensagem" htmlFor="wa-sched-text">
+            <textarea id="wa-sched-text" value={text} onChange={e => setText(e.target.value)} rows={3}
+              placeholder="Texto a enviar…" className={waTextarea} />
+          </WaField>
+          <WaField label="Data e hora" htmlFor="wa-sched-when" hint="Precisa ser pelo menos 1 minuto no futuro.">
+            <input id="wa-sched-when" type="datetime-local" value={when} min={minLocal}
+              onChange={e => setWhen(e.target.value)} className={waInput} />
+          </WaField>
+        </WaFieldStack>
       </WaDialogBody>
     </WaDialog>
   );

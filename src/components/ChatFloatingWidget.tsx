@@ -12,6 +12,10 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch } from '../utils/search';
 import WhatsAppModule from './WhatsAppModule';
 import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
+import WhatsAppMessageToast, {
+  WHATSAPP_TOAST_DURATION_MS,
+  type WhatsAppMessageToastData,
+} from './whatsapp/WhatsAppMessageToast';
 
 // Tamanho padrão do widget (usado no reset e quando não há preferência salva).
 const WIDGET_DEFAULT_W = 384;
@@ -611,7 +615,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   // o widget já naquela conversa (consumido por onParamConsumed → volta a null).
   const [waOpenConvId, setWaOpenConvId] = useState<string | null>(null);
   // Toast de WhatsApp ancorado ao widget (emitido por useWhatsAppNotifications).
-  const [waToast, setWaToast] = useState<{ id: string; conversationId: string; name: string; preview: string } | null>(null);
+  const [waToast, setWaToast] = useState<WhatsAppMessageToastData | null>(null);
   const waToastTimerRef = useRef<number | null>(null);
   // Contador de não-lidas do WhatsApp para o BADGE do launcher (estrutura do
   // widget antigo): quando o widget está fechado o WhatsAppModule embutido não
@@ -1173,7 +1177,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         preview: data?.preview || 'Nova mensagem',
       });
       if (waToastTimerRef.current) window.clearTimeout(waToastTimerRef.current);
-      waToastTimerRef.current = window.setTimeout(() => setWaToast(null), 7000);
+      waToastTimerRef.current = window.setTimeout(() => setWaToast(null), WHATSAPP_TOAST_DURATION_MS);
     };
     // Escuta o CustomEvent nativo no window (o emitter sempre o dispara). Usar só
     // o window evita disparo duplo e sobrevive a divergência de instância entre
@@ -2974,121 +2978,32 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         </div>
       )}
 
-      {/* Toast de WhatsApp — notificação premium ancorada ao widget (acima do
-          launcher). Cartão claro com selo de marca, hierarquia tipográfica
-          refinada e barra de progresso fina. */}
+      {/* WhatsApp: aviso curto e discreto, ancorado ao launcher. O cartão inteiro
+          abre a conversa; evitamos repetir essa ação em uma terceira linha. */}
       {waToast && (
-        <div
+        <WhatsAppMessageToast
           key={waToast.id}
-          className="mb-3 w-[332px] max-w-[calc(100vw-24px)]"
-          style={{ animation: 'chatToastIn 480ms cubic-bezier(.34,1.56,.64,1) both, chatToastOut 560ms 6.6s ease-in both' }}
-        >
-          <div
-            className="relative overflow-hidden rounded-[18px]"
-            style={{
-              background: 'linear-gradient(180deg,#ffffff 0%,#f9fdfb 100%)',
-              boxShadow:
-                '0 20px 48px -14px rgba(6,78,59,.30), 0 8px 18px -10px rgba(15,23,42,.20), inset 0 1px 0 rgba(255,255,255,.85)',
-              border: '1px solid rgba(16,185,129,.18)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)',
-            }}
-          >
-            {/* Trilho de acento (verde WhatsApp) na borda esquerda */}
-            <span
-              aria-hidden
-              className="absolute left-0 top-0 bottom-0 w-[3px]"
-              style={{ background: 'linear-gradient(180deg,#25D366 0%,#0e9f6e 100%)' }}
-            />
-            {/* Brilho sutil no canto superior */}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-x-0 top-0 h-16"
-              style={{ background: 'radial-gradient(70% 100% at 18% 0%, rgba(37,211,102,.10) 0%, transparent 70%)' }}
-            />
-
-            {/* Fechar */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (waToastTimerRef.current) { window.clearTimeout(waToastTimerRef.current); waToastTimerRef.current = null; }
-                setWaToast(null);
-              }}
-              className="absolute top-2.5 right-2.5 z-10 h-6 w-6 rounded-full flex items-center justify-center text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-              title="Dispensar"
-              aria-label="Dispensar notificação"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-
-            {/* Corpo clicável */}
-            <button
-              type="button"
-              className="group/watoast relative w-full flex items-start gap-3 pl-4 pr-9 py-3.5 text-left"
-              onClick={async () => {
-                if (waToastTimerRef.current) { window.clearTimeout(waToastTimerRef.current); waToastTimerRef.current = null; }
-                const convId = waToast.conversationId;
-                setWaToast(null);
-                await ensureAudioContext();
-                setSelectedRoomId(null);
-                setChatTab('whatsapp');
-                setWaOpenConvId(convId);
-                setOpen(true);
-              }}
-            >
-              {/* Avatar com selo de marca WhatsApp */}
-              <span className="relative shrink-0">
-                <span
-                  className="flex h-11 w-11 items-center justify-center rounded-full text-white text-[14px] font-semibold ring-2 ring-white"
-                  style={{ background: 'linear-gradient(135deg,#34d97e 0%,#0ea36a 100%)', boxShadow: '0 6px 14px -4px rgba(14,163,106,.55)' }}
-                >
-                  {waToast.name
-                    .split(' ')
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .map((n: string) => n[0])
-                    .join('')
-                    .toUpperCase() || 'W'}
-                </span>
-                <span className="absolute -bottom-0.5 -right-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white shadow-[0_2px_5px_rgba(15,23,42,.18)]">
-                  <span className="flex h-[14px] w-[14px] items-center justify-center rounded-full bg-[#25D366]">
-                    <svg viewBox="0 0 24 24" className="h-[10px] w-[10px]" fill="#ffffff" aria-hidden>
-                      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38c1.45.79 3.08 1.21 4.79 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.84 9.84 0 0 0 12.04 2zm5.9 13.98c-.25.7-1.45 1.34-2 1.42-.53.08-1.18.11-1.91-.12-.44-.14-1-.32-1.72-.63-3.03-1.31-5.01-4.36-5.16-4.56-.15-.2-1.23-1.64-1.23-3.12 0-1.49.78-2.22 1.06-2.52.28-.31.61-.38.81-.38.2 0 .41 0 .58.01.19.01.44-.07.69.53.25.61.86 2.1.94 2.25.08.15.13.33.02.53-.1.2-.15.33-.3.5-.15.18-.32.39-.46.53-.15.15-.31.31-.13.61.18.3.79 1.3 1.7 2.11 1.17 1.04 2.15 1.36 2.46 1.51.3.15.48.13.66-.08.18-.2.76-.89.96-1.19.2-.3.41-.25.69-.15.28.1 1.77.83 2.07.99.3.15.5.22.58.35.07.12.07.72-.18 1.42z"/>
-                    </svg>
-                  </span>
-                </span>
-              </span>
-
-              {/* Texto */}
-              <span className="block min-w-0 flex-1">
-                <span className="flex items-baseline gap-2">
-                  <span className="flex-1 truncate text-[14px] font-semibold leading-tight text-slate-900">
-                    {/^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ\s]+$/.test(waToast.name)
-                      ? waToast.name.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
-                      : waToast.name}
-                  </span>
-                  <span className="shrink-0 text-[10.5px] font-medium text-slate-400">agora</span>
-                </span>
-                <span className="mt-0.5 block text-[12.5px] leading-snug text-slate-500 line-clamp-2 break-words">
-                  {waToast.preview}
-                </span>
-                <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold tracking-wide text-[#0e9f6e]">
-                  Abrir conversa
-                  <ChevronRight className="w-3 h-3 transition-transform duration-150 group-hover/watoast:translate-x-0.5" />
-                </span>
-              </span>
-            </button>
-
-            {/* Barra de progresso fina */}
-            <span className="block h-[2px] overflow-hidden">
-              <span
-                className="block h-full w-full origin-left"
-                style={{ background: 'linear-gradient(90deg,#25D366 0%,#0e9f6e 100%)', animation: 'chatToastProgress 7s linear both' }}
-              />
-            </span>
-          </div>
-        </div>
+          toast={waToast}
+          onDismiss={() => {
+            if (waToastTimerRef.current) {
+              window.clearTimeout(waToastTimerRef.current);
+              waToastTimerRef.current = null;
+            }
+            setWaToast(null);
+          }}
+          onOpen={async conversationId => {
+            if (waToastTimerRef.current) {
+              window.clearTimeout(waToastTimerRef.current);
+              waToastTimerRef.current = null;
+            }
+            setWaToast(null);
+            await ensureAudioContext();
+            setSelectedRoomId(null);
+            setChatTab('whatsapp');
+            setWaOpenConvId(conversationId);
+            setOpen(true);
+          }}
+        />
       )}
 
       {showToast && toast && (

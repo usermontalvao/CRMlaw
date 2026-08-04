@@ -17,7 +17,7 @@ import { useFormLayout } from '../hooks/useFormLayout';
 
 type TipoPrazo = 'processual' | 'material';
 
-type DeadlineFormData = {
+export type DeadlineFormData = {
   title: string;
   description: string;
   due_date: string;
@@ -39,6 +39,8 @@ export interface DeadlineFormModalProps {
   selectedDeadline?: Deadline | null;
   /** Pre-fill fields (e.g. when opening from IntimationsModule) */
   initialData?: Partial<DeadlineFormData>;
+  /** Nome já conhecido do cliente, para exibi-lo sem aguardar uma nova busca. */
+  initialClientName?: string;
   /** 'intimation' shows a banner with context info at the top of the form */
   source?: 'manual' | 'intimation';
   intimationId?: string;
@@ -142,6 +144,7 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
   onSaved,
   selectedDeadline,
   initialData,
+  initialClientName,
   source,
   intimationId,
   intimationContext,
@@ -394,6 +397,7 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
             <div className="col-span-12 lg:col-span-5">
               <ClientSearchSelect
                 value={formData.client_id}
+                initialClientName={initialClientName}
                 onChange={clientId => {
                   handleChange('client_id', clientId);
                   if (!clientId) handleChange('process_id', '');
