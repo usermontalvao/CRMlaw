@@ -84,6 +84,11 @@ export function useWaMessages(selectedId: string | null): WaMessagesApi {
   useEffect(() => {
     setHasMoreMsgs(false); setLoadingMore(false); oldestTsRef.current = null;
     if (!selectedId) { setMessages([]); return; }
+    // Limpa a thread ANTES de buscar: sem isso, as mensagens da conversa
+    // anterior continuavam na tela sob o nome do novo contato até a resposta
+    // chegar — um piscar de conteúdo errado (e, num escritório, a conversa de um
+    // cliente aparecendo brevemente na aba de outro). Prefere-se o spinner.
+    setMessages([]);
     loadMessages(selectedId);
   }, [selectedId, loadMessages]);
 

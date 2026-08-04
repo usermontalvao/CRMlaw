@@ -3,7 +3,7 @@
 // Extraído de WhatsAppModule.tsx — autocontido.
 import React, { useEffect, useState } from 'react';
 import { FilePlus, Loader2, Trash2, Plus } from 'lucide-react';
-import { WaDialog, WaDialogBody, waInput, waLabel, waBtnGhost, waBtnPrimary } from './ui';
+import { WaDialog, WaDialogBody, WaDialogActions, waInput, waLabel, waBtnGhost, waBtnPrimary } from './ui';
 import { whatsappService, renderTemplate } from '../../services/whatsapp.service';
 import { sendTextResilient } from '../../services/whatsapp/resilientSend';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -90,13 +90,13 @@ export const RequestDocumentModal: React.FC<{
       icon={<FilePlus size={18} />}
       onClose={onClose}
       footer={
-        <div className="flex justify-end gap-2">
+        <WaDialogActions>
           <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
           <button onClick={handleSave} disabled={saving || validItems.length === 0} className={waBtnPrimary}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <FilePlus size={14} />}
             {sendMsg ? 'Solicitar e enviar' : 'Registrar solicitação'}
           </button>
-        </div>
+        </WaDialogActions>
       }
     >
       <WaDialogBody className="space-y-4">

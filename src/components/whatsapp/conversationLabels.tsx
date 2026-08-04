@@ -11,7 +11,8 @@ export const ConversationLabelsPanel: React.FC<{
   conversation: WhatsAppConversation;
   funnelLabels: FunnelLabel[];
   onChanged: (conv: WhatsAppConversation) => void;
-}> = ({ conversation, funnelLabels, onChanged }) => {
+  onStageEntered?: (conversation: WhatsAppConversation, stageKey: string) => Promise<void>;
+}> = ({ conversation, funnelLabels, onChanged, onStageEntered }) => {
   const toast = useToastContext();
   const [saving, setSaving] = useState(false);
   const current = conversation.labels ?? [];
@@ -32,7 +33,11 @@ export const ConversationLabelsPanel: React.FC<{
     setSaving(true);
     try {
       await whatsappService.updateLabels(conversation.id, next);
-      onChanged({ ...conversation, labels: next });
+      const updated = { ...conversation, labels: next };
+      onChanged(updated);
+      const previousStage = inferFunnelStage(current, funnelLabels)?.stageKey;
+      const nextStage = funnelKeys.has(key) ? funnelLabels.find(label => label.key === key)?.stageKey : undefined;
+      if (nextStage && nextStage !== previousStage) await onStageEntered?.(updated, nextStage);
     } catch (e: any) { toast.error('Falha ao salvar etiqueta', e.message); }
     finally { setSaving(false); }
   };
@@ -60,7 +65,7 @@ export const ConversationLabelsPanel: React.FC<{
       {/* Select compacto agrupado por etapa do funil. */}
       <select value="" onChange={e => { if (e.target.value) toggle(e.target.value); }} disabled={saving || funnelLabels.length === 0}
         className="w-full min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none disabled:opacity-60">
-        <option value="">{saving ? 'Salvando…' : funnelLabels.length === 0 ? 'Configure o funil em Leads' : '🏷 Etiquetas — adicionar…'}</option>
+        <option value="">{saving ? 'Salvando…' : funnelLabels.length === 0 ? 'Configure em WhatsApp → Funis' : '🏷 Etiquetas — adicionar…'}</option>
         {groups.map(g => (
           <optgroup key={g.stageKey} label={g.stageLabel}>
             {g.labels.map(l => <option key={l.key} value={l.key}>{l.key}</option>)}

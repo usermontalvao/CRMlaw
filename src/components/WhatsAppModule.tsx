@@ -5,7 +5,7 @@ import {
   CheckCheck, Check, AlertCircle, Link2, ArrowRightLeft, X,
   Paperclip, Mic, FileText, Image as ImageIcon, CornerUpLeft,
   Pencil, Download, UserCheck, Unlink, IdCard, Scale, Calendar,
-  Clock, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw,
+  Clock, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw, RefreshCw,
   StickyNote, Trash2, History, CalendarClock, MessageSquare, Filter, Maximize2,
   UserPlus, UserMinus, PenLine, HandCoins, ListTodo, FilePlus,
   Sparkles, Tag, Tags, Bot,
@@ -13,18 +13,20 @@ import {
   BarChart2, TrendingUp, Users, AlertTriangle, Clock3, CheckCircle, Inbox,
   Mail, MapPin, Play, Pause, Bell, BellOff, Info, MoreVertical, BellRing,
   Target,
+  LockKeyhole,
+  GitBranch,
 } from 'lucide-react';
 import { useStaffPush } from './whatsapp/hooks/useStaffPush';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
 import { muteStore } from '../services/whatsapp/muteStore';
-import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
+import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, DEFAULT_AGENT_PREFS, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
 import type { WhatsAppScheduledMessage } from '../types/whatsapp.types';
 import {
   formatTime, initials, prettyPhone, formatBytes, dayLabel, lastSeenLabel, presenceInfo,
   typeLabel, conversationPreviewLabel, firstName, agentLabel, greetingByHour, buildGreeting,
   convStatus, slaSignal, slaInternalSignal, abandonedSignal, transferAlert,
   maskSensitive, maskName, maskPhoneFull, fmtAudioTime, prettyDoc, dueInfo, fmtDateTime,
-  fmtNoteDate,
+  fmtNoteDate, conversationName, matchesConversationSearch, agentRoleLabel,
 } from './whatsapp/format';
 import {
   WaDialog, WaDialogBody, waInput, waLabel, waBtnPrimary, waBtnGhost, waBtnDanger,
@@ -42,22 +44,32 @@ import {
 import type { ConfirmOpts, ConfirmFn, WaOpenWorkspaceFn } from './whatsapp/types';
 import { MessageBubble, ImageAlbum } from './whatsapp/messageBubble';
 import { Avatar } from './whatsapp/avatar';
-import { WA_LABELS, resolveLabelMeta, inferFunnelStage } from './whatsapp/funnel';
+import { WA_LABELS, resolveLabelMeta, inferFunnelStage, funnelLabelsFromChannelStages } from './whatsapp/funnel';
 import { ClientLinkPanel } from './whatsapp/clientLinkPanel';
 import { ConversationSummaryBanner } from './whatsapp/conversationSummaryBanner';
 import { InternalNotesSection } from './whatsapp/internalNotes';
 import { AttachmentPreviewModal } from './whatsapp/attachmentPreviewModal';
 import { ConversationLabelsPanel } from './whatsapp/conversationLabels';
 import { ConversationFunnelBoard } from './whatsapp/conversationFunnelBoard';
+import { nextLeadChannelFilter } from './whatsapp/channelFilterSync';
+import {
+  INBOX_FILTER_KEYS, readFilter, writeFilter, canSanitize,
+  sanitizeChannelFilter, sanitizeDeptFilter, sanitizeLabelFilter,
+} from './whatsapp/inboxFilters';
+import { executeFunnelStageActions } from './whatsapp/funnelStageActions';
+import ChannelAccessManager from './whatsapp/ChannelAccessManager';
+import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
 import { ThreadScheduledGhosts, ScheduledMessagesPanel } from './whatsapp/scheduledMessages';
 import { AiApprovalBanner } from './whatsapp/aiApprovalBanner';
 import { AttendanceDashboard } from './whatsapp/attendanceDashboard';
 import { ClientFillLinksPanel } from './whatsapp/clientFillLinksPanel';
-import { ConversationListItem, PresenceText, DateDivider } from './whatsapp/conversationListItem';
+import { PresenceText, DateDivider } from './whatsapp/conversationListItem';
+import { ConversationList } from './whatsapp/conversationList';
 import { WaLightbox } from './whatsapp/lightbox';
 import { WaNotifyBell } from './whatsapp/notifyBell';
 import { useWaIsMobile, useWaIsPanelDocked, getCurrentTimeInTz } from './whatsapp/hooks';
 import { useResizableLayout } from './whatsapp/hooks/useResizableLayout';
+import { useWaInboxPosition, readStoredConversationId } from './whatsapp/hooks/useWaInboxPosition';
 import { useClientOverview } from './whatsapp/hooks/useClientOverview';
 import { useWaRealtime } from './whatsapp/hooks/useWaRealtime';
 import { useWaComposer } from './whatsapp/hooks/useWaComposer';
@@ -68,15 +80,20 @@ import { useWaTemplates } from './whatsapp/hooks/useWaTemplates';
 import { useWaOperationalModals } from './whatsapp/hooks/useWaOperationalModals';
 import { useWaAiActions } from './whatsapp/hooks/useWaAiActions';
 import { useConfirm, ConfirmDialog } from './whatsapp/useConfirm';
+import { useWaComposerSpellcheck } from './whatsapp/useWaComposerSpellcheck';
+import ComposerSpellcheckOverlay from './whatsapp/ComposerSpellcheckOverlay';
+import ComposerSpellcheckContextMenu, { type ComposerSpellcheckMenuState } from './whatsapp/ComposerSpellcheckContextMenu';
+import { findWhatsAppSpellIssueAtOffset, type WhatsAppSpellcheckHit } from './whatsapp/composerSpellcheck';
 import { processService, type ProcessMovement } from '../services/process.service';
 import type { CalendarEvent, CalendarEventType } from '../types/calendar.types';
 import type { Requirement, RequirementStatus } from '../types/requirement.types';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppChannel, WhatsAppDepartment,
-  WhatsAppClientLite, WhatsAppPresence, WhatsAppDirection,
+  WhatsAppClientLite, WhatsAppPresence, WhatsAppDirection, WhatsAppChannelFunnelStage,
 } from '../types/whatsapp.types';
 import type { Process, ProcessStatus, ProcessPracticeArea } from '../types/process.types';
 import { useAuth } from '../contexts/AuthContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { signatureService } from '../services/signature.service';
@@ -138,6 +155,7 @@ interface WhatsAppModuleProps {
 const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onParamConsumed, onConvertLead, variant = 'full', onUnreadChange, onActiveConversationChange }) => {
   const embedded = variant === 'embedded';
   const { user } = useAuth();
+  const { requirePin } = useSecurityPin();
   const toast = useToastContext();
   const { navigateTo } = useNavigation();
   const { confirm, pending: confirmPending, resolve: resolveConfirm } = useConfirm();
@@ -147,26 +165,41 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Mantém o funil montado após a 1ª abertura para que o slide de fechamento
   // mostre o conteúdo (não esvazia no meio da animação).
   const [leadsEverOpened, setLeadsEverOpened] = useState(false);
-  // Canal selecionado na gaveta (= conta de WhatsApp conectada). Vazio = todos.
-  const [leadChannelFilter, setLeadChannelFilter] = useState('');
-  // Etiquetas do funil (fonte única vinda de Configurações → Leads). Espelham o
-  // estágio do funil de cada conversa. Recarregadas ao abrir a gaveta de Leads
-  // (onde a config pode ter sido alterada) e no mount.
-  const [funnelLabels, setFunnelLabels] = useState<FunnelLabel[]>([]);
+  // Canal selecionado na gaveta. Como cada canal tem seu próprio fluxo, o
+  // quadro sempre representa exatamente um canal por vez.
+  const [leadChannelFilter, setLeadChannelFilter] = useState(
+    () => (embedded ? '' : readFilter(INBOX_FILTER_KEYS.leadChannel) || ''),
+  );
+  // O funil global é somente o modelo-base/fallback. Canais com configuração
+  // própria usam sua lista de etapas e etiquetas em toda a experiência.
+  const [baseFunnelLabels, setBaseFunnelLabels] = useState<FunnelLabel[]>([]);
+  const [channelFunnelLabels, setChannelFunnelLabels] = useState<Record<string, FunnelLabel[]>>({});
+  const [channelFunnelStages, setChannelFunnelStages] = useState<Record<string, WhatsAppChannelFunnelStage[]>>({});
   const [moduleConfig, setModuleConfig] = useState<WhatsAppModuleConfig>({ ...WHATSAPP_MODULE_DEFAULTS });
-  const reloadFunnelLabels = useCallback(() => {
-    settingsService.getLeadModuleConfig()
-      .then(cfg => setFunnelLabels(funnelLabelsFromConfig(cfg)))
-      .catch(() => {});
+  const reloadFunnelLabels = useCallback(async () => {
+    const cfg = await settingsService.getLeadModuleConfig().catch(() => null);
+    if (cfg) setBaseFunnelLabels(funnelLabelsFromConfig(cfg));
+    const rows = await whatsappService.listChannelFunnelStages().catch(() => []);
+    const grouped: Record<string, WhatsAppChannelFunnelStage[]> = {};
+    for (const row of rows) {
+      if (!grouped[row.channel_id]) grouped[row.channel_id] = [];
+      grouped[row.channel_id].push(row);
+    }
+    setChannelFunnelStages(grouped);
+    setChannelFunnelLabels(Object.fromEntries(
+      Object.entries(grouped).map(([channelId, stages]) => [channelId, funnelLabelsFromChannelStages(stages)]),
+    ));
   }, []);
-  useEffect(() => { reloadFunnelLabels(); }, [reloadFunnelLabels]);
+  useEffect(() => { void reloadFunnelLabels(); }, [reloadFunnelLabels]);
   useEffect(() => {
     settingsService.getWhatsAppModuleConfig().then(setModuleConfig).catch(() => {});
   }, []);
   // Reflete no atendimento qualquer ajuste de funil feito na gaveta de Leads.
-  useEffect(() => { if (leadsPanelOpen) { setLeadsEverOpened(true); reloadFunnelLabels(); } }, [leadsPanelOpen, reloadFunnelLabels]);
+  useEffect(() => { if (leadsPanelOpen) { setLeadsEverOpened(true); void reloadFunnelLabels(); } }, [leadsPanelOpen, reloadFunnelLabels]);
   const [conversations, setConversations] = useState<WhatsAppConversation[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Reabre na conversa em que o atendente parou. Só no módulo cheio: no widget
+  // embutido a inbox é efêmera e abrir sozinha uma conversa seria intrusivo.
+  const [selectedId, setSelectedId] = useState<string | null>(() => readStoredConversationId(!embedded));
   // Responsividade: abaixo de `md` (768px) a lista e a thread não cabem lado a
   // lado, então alternamos para um painel por vez (estilo WhatsApp mobile).
   // No modo embutido (widget estreito) forçamos esse mesmo painel único — os
@@ -186,7 +219,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Web Push do staff: avisa o atendente mesmo com o navegador fechado.
   const { pushState, toggleStaffPush } = useStaffPush();
   // Filtros da inbox recolhidos por padrão (expansível); economiza altura no topo.
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  // Se o atendente deixou o painel aberto, ele reabre assim — junto com os
+  // filtros que ele escolheu.
+  const [filtersOpen, setFiltersOpen] = useState(
+    () => !embedded && readFilter(INBOX_FILTER_KEYS.panelOpen) === '1',
+  );
   // Fecha a gaveta ao trocar de conversa ou quando o painel volta a ser fixo.
   useEffect(() => { setMobilePanelOpen(false); setHeaderMenuOpen(false); setAttachMenuOpen(false); }, [selectedId]);
   useEffect(() => { if (panelDocked) setMobilePanelOpen(false); }, [panelDocked]);
@@ -194,7 +231,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const [departments, setDepartments] = useState<WhatsAppDepartment[]>([]);
   const [channelRouting, setChannelRouting] = useState<WhatsAppChannelDepartmentRouting[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);
-  const [agentPrefs, setAgentPrefs] = useState<AgentPrefs>({ auto_greeting: true, short_name: null, role_label: null });
+  const [agentPrefs, setAgentPrefs] = useState<AgentPrefs>(DEFAULT_AGENT_PREFS);
   const [search, setSearch] = useState('');
   // Fase 5: a inbox abre em "Minhas" por padrão (escopo do próprio atendente).
   // A escolha persiste localmente — quem trabalha em "Todas" não reabre em Minhas.
@@ -206,11 +243,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     const v = localStorage.getItem('wa_filter');
     return v === 'all' || v === 'unread' || v === 'mine' ? v : 'mine';
   });
-  const [channelFilter, setChannelFilter] = useState<string>('all');
-  const [deptFilter, setDeptFilter] = useState<string>('all');
+  // Canal e setor voltam como o atendente deixou. Os valores salvos ainda serão
+  // conferidos contra o que existe hoje (efeito mais abaixo), porque um canal ou
+  // setor pode ter sido removido desde a última sessão.
+  const [channelFilter, setChannelFilter] = useState<string>(
+    () => (embedded ? 'all' : readFilter(INBOX_FILTER_KEYS.channel) || 'all'),
+  );
+  const [deptFilter, setDeptFilter] = useState<string>(
+    () => (embedded ? 'all' : readFilter(INBOX_FILTER_KEYS.dept) || 'all'),
+  );
   // O som das notificações vive agora dentro de <WaNotifyBell/> (estado de UI local).
   // Silenciamento por conversa (no banco, por usuário). Re-renderiza ao mudar o store.
-  useSyncExternalStore(muteStore.subscribe, muteStore.getSnapshot);
+  // O snapshot alimenta o memo de `mutedIds` (silenciar/reativar precisa
+  // repintar as linhas afetadas mesmo com a lista memoizada).
+  const muteSnapshot = useSyncExternalStore(muteStore.subscribe, muteStore.getSnapshot);
   useEffect(() => { void muteStore.init(); }, []);
   const [muteMenuOpen, setMuteMenuOpen] = useState(false);
   const [loadingConvs, setLoadingConvs] = useState(true);
@@ -219,7 +265,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const [taskSource, setTaskSource] = useState<WhatsAppMessage | null>(null);
   // Fase I/360: estado dos modais operacionais + workspace → useWaOperationalModals (abaixo).
   // Fase M: filtro por etiqueta + resumo automático por IA
-  const [labelFilter, setLabelFilter] = useState('');
+  const [labelFilter, setLabelFilter] = useState(
+    () => (embedded ? '' : readFilter(INBOX_FILTER_KEYS.label) || ''),
+  );
   const [summaryOpen, setSummaryOpen] = useState(false);
   // Fase J: sessão de IA da conversa selecionada → gerida por useWaRealtime (abaixo).
   // Fase K: IA da conversa (sugerir/classificar/extrair) + exportação → useWaAiActions (abaixo).
@@ -227,6 +275,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const [privateMode, setPrivateMode] = useState(false);
   // Fase M: dashboard de atendimento
   const [showDashboard, setShowDashboard] = useState(false);
+  const [channelAccessOpen, setChannelAccessOpen] = useState(false);
+  const [channelFunnelsOpen, setChannelFunnelsOpen] = useState(false);
   // Fase N: aviso de fora do horário de atendimento
   const [outsideHours, setOutsideHours] = useState<{ message: string } | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -241,14 +291,26 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   });
   // Larguras das colunas com persistência local + divisórias arrastáveis (Fase 10.1).
   const { panelWidth, listWidth, startPanelResize, startListResize } = useResizableLayout();
+  // Memória de posição da inbox (conversa aberta + rolagem da lista).
+  const { setListEl, onListScroll } = useWaInboxPosition(selectedId, !embedded);
   // Persistência local dos filtros da inbox (Fase 3/5): o escopo escolhido pelo
   // atendente sobrevive ao recarregar — sem reimpor o padrão a cada abertura.
   useEffect(() => { if (!embedded) localStorage.setItem('wa_filter', filter); }, [filter, embedded]);
   useEffect(() => { localStorage.setItem('wa_status_filter', statusFilter); }, [statusFilter]);
+  // Canal, setor, etiqueta, canal do funil e o próprio painel de filtros seguem
+  // a mesma regra: no widget embutido a inbox é efêmera e não herda o escopo.
+  useEffect(() => { if (!embedded) writeFilter(INBOX_FILTER_KEYS.channel, channelFilter); }, [channelFilter, embedded]);
+  useEffect(() => { if (!embedded) writeFilter(INBOX_FILTER_KEYS.dept, deptFilter); }, [deptFilter, embedded]);
+  useEffect(() => { if (!embedded) writeFilter(INBOX_FILTER_KEYS.label, labelFilter); }, [labelFilter, embedded]);
+  useEffect(() => { if (!embedded) writeFilter(INBOX_FILTER_KEYS.leadChannel, leadChannelFilter); }, [leadChannelFilter, embedded]);
+  useEffect(() => { if (!embedded) writeFilter(INBOX_FILTER_KEYS.panelOpen, filtersOpen ? '1' : '0'); }, [filtersOpen, embedded]);
 
   const imgInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
+  const [composerScrollTop, setComposerScrollTop] = useState(0);
+  const [composerScrollbarWidth, setComposerScrollbarWidth] = useState(0);
+  const [composerSpellMenu, setComposerSpellMenu] = useState<ComposerSpellcheckMenuState | null>(null);
   const avatarTriedRef = useRef<Set<string>>(new Set());
 
   const channelById = useMemo(() => new Map(channels.map(c => [c.id, c])), [channels]);
@@ -259,11 +321,62 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Papel operacional do usuário logado → permissões da UI (Fase 9).
   const myRole = user ? (staffById.get(user.id)?.role ?? null) : null;
   const perms = useMemo(() => agentPermissions(myRole), [myRole]);
+  const canManageChannelAccess = (myRole || '').trim().toLocaleLowerCase('pt-BR') === 'administrador';
 
   const selected = useMemo(
     () => conversations.find(c => c.id === selectedId) || null,
     [conversations, selectedId],
   );
+  const funnelLabelsForChannel = useCallback((channelId: string | null | undefined) => {
+    if (!channelId) return baseFunnelLabels;
+    const custom = channelFunnelLabels[channelId];
+    return custom?.length ? custom : baseFunnelLabels;
+  }, [baseFunnelLabels, channelFunnelLabels]);
+  const selectedFunnelLabels = useMemo(
+    () => funnelLabelsForChannel(selected?.instance_id),
+    [selected?.instance_id, funnelLabelsForChannel],
+  );
+  const labelFilterOptions = useMemo(() => {
+    const source = channelFilter === 'all'
+      ? channels.flatMap(channel => funnelLabelsForChannel(channel.id))
+      : funnelLabelsForChannel(channelFilter);
+    const seen = new Set<string>();
+    return source.filter(label => {
+      if (seen.has(label.key)) return false;
+      seen.add(label.key);
+      return true;
+    });
+  }, [channelFilter, channels, funnelLabelsForChannel]);
+  const funnelChannels = useMemo(() => channels.filter(channel => channel.funnel_enabled !== false), [channels]);
+  const funnelChannelIds = useMemo(() => funnelChannels.map(channel => channel.id), [funnelChannels]);
+
+  // Confere os filtros restaurados contra o que existe HOJE. Um canal/setor
+  // removido (ou uma etiqueta que saiu do funil) viraria um filtro invisível que
+  // esvazia a lista sem dizer o motivo; nesses casos volta para "todos".
+  useEffect(() => {
+    if (!canSanitize(channels)) return;
+    setChannelFilter(current => sanitizeChannelFilter(current, channels.map(c => c.id)));
+  }, [channels]);
+  useEffect(() => {
+    if (!canSanitize(departments)) return;
+    setDeptFilter(current => sanitizeDeptFilter(current, departments.map(d => d.id)));
+  }, [departments]);
+  useEffect(() => {
+    if (!canSanitize(labelFilterOptions)) return;
+    setLabelFilter(current => sanitizeLabelFilter(current, labelFilterOptions.map(l => l.key)));
+  }, [labelFilterOptions]);
+  // Inbox e quadro de Leads compartilham o mesmo recorte de canal. O filtro
+  // "Todos" continua válido apenas para a inbox, porque cada quadro possui um
+  // funil diferente; ao escolher um canal específico em qualquer seletor, o
+  // outro acompanha imediatamente.
+  useEffect(() => {
+    setLeadChannelFilter(current => nextLeadChannelFilter(current, channelFilter, funnelChannelIds));
+  }, [channelFilter, funnelChannelIds]);
+
+  const selectLeadChannel = useCallback((channelId: string) => {
+    setLeadChannelFilter(channelId);
+    if (channelId) setChannelFilter(channelId);
+  }, []);
   const selectedAllowedDepartments = useMemo(() => {
     if (!selected?.instance_id) return departments;
     const routing = channelRoutingById.get(selected.instance_id);
@@ -290,6 +403,29 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     } catch {/* */} finally { setLoadingConvs(false); }
   }, []);
 
+  const runFunnelStageActions = useCallback(async (
+    conversation: WhatsAppConversation,
+    stageKey: string,
+  ) => {
+    const stage = conversation.instance_id
+      ? channelFunnelStages[conversation.instance_id]?.find(item => item.stage_key === stageKey)
+      : null;
+    if (!stage?.entry_actions?.length) return;
+    const result = await executeFunnelStageActions({
+      conversation,
+      actions: stage.entry_actions,
+      departments,
+      staff,
+    });
+    await loadConversations();
+    if (result.completed.length > 0) {
+      toast.success('Ações da etapa executadas', result.completed.join(' · '));
+    }
+    if (result.errors.length > 0) {
+      toast.warning('Etapa alterada com ações pendentes', result.errors.join(' · '));
+    }
+  }, [channelFunnelStages, departments, staff, loadConversations, toast]);
+
   // Camada de dados da thread: janela de mensagens da conversa aberta, com
   // carregamento inicial, paginação e refresh em tempo real. Vive aqui (antes de
   // useWaRealtime/useWaComposer) porque é a fonte de `refreshMessages`.
@@ -311,7 +447,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     whatsappService.getMyAgentPrefs().then(setAgentPrefs).catch(() => {});
   }, [loadConversations]);
 
-  const { aiSession, setAiSession } = useWaRealtime({
+  const { aiSession, setAiSession, realtimeStatus } = useWaRealtime({
     selectedId, loadConversations, refreshMessages,
     setConversations, setMessages, setSelectedId,
   });
@@ -350,12 +486,30 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Auto-crescimento do campo de mensagem: cresce com o texto até um teto e
   // então rola. Roda a cada mudança do rascunho, então também encolhe de volta
   // quando o draft é limpo (envio/edição/escape).
+  //
+  // A medição é cara: zerar a altura e ler `scrollHeight` obriga o navegador a
+  // recalcular o layout da página inteira (lista + thread) de forma síncrona —
+  // a cada tecla. Medimos num rAF (coalesce teclas da mesma moldura) e só
+  // escrevemos quando a altura muda de fato, o que corta a maior parte dos
+  // reflows durante a digitação.
   const COMPOSER_MAX_H = 192; // px (≈ max-h-48); acima disso, rola
+  const composerHRef = useRef<number>(0);
   useEffect(() => {
     const el = draftRef.current;
     if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, COMPOSER_MAX_H) + 'px';
+    const frame = requestAnimationFrame(() => {
+      const prev = el.style.height;
+      el.style.height = 'auto';
+      const next = Math.min(el.scrollHeight, COMPOSER_MAX_H);
+      if (next === composerHRef.current && prev) el.style.height = prev;
+      else {
+        composerHRef.current = next;
+        el.style.height = `${next}px`;
+      }
+      setComposerScrollbarWidth(Math.max(0, el.offsetWidth - el.clientWidth - 2));
+      if (el.scrollHeight <= el.clientHeight) setComposerScrollTop(0);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [draft]);
 
   // Domínio de modelos/atalho "/" do compositor: carrega templates ativos + kits,
@@ -368,6 +522,57 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     selected, selectedId, user, staffById, moduleConfig, draft, editing, setDraft,
   });
 
+  // O corretor nativo continua habilitado, mas a revisão local garante o aviso
+  // mesmo quando o Chrome está com o spellcheck desligado. O mesmo Hunspell
+  // pt-BR do editor jurídico roda após uma pequena pausa e desenha somente o
+  // ondulado vermelho em cima do campo, como nos compositores modernos.
+  const composerSpellcheck = useWaComposerSpellcheck(draft, !recording && !slashActive);
+  const closeComposerSpellMenu = useCallback(() => setComposerSpellMenu(null), []);
+  const openComposerSpellMenu = useCallback((event: React.MouseEvent<HTMLTextAreaElement>) => {
+    const textarea = event.currentTarget;
+    const hit = findWhatsAppSpellIssueAtOffset(draft, composerSpellcheck.issues, textarea.selectionStart);
+    if (!hit) return;
+    event.preventDefault();
+    textarea.setSelectionRange(hit.start, hit.end);
+    setComposerSpellMenu({ ...hit, x: event.clientX, y: event.clientY });
+  }, [composerSpellcheck.issues, draft]);
+  const replaceComposerSpelling = useCallback((hit: WhatsAppSpellcheckHit, replacement: string) => {
+    setDraft(current => {
+      const currentWord = current.slice(hit.start, hit.end);
+      if (currentWord.toLocaleLowerCase('pt-BR') !== hit.issue.word.toLocaleLowerCase('pt-BR')) return current;
+      return current.slice(0, hit.start) + replacement + current.slice(hit.end);
+    });
+    setComposerSpellMenu(null);
+    window.requestAnimationFrame(() => {
+      const textarea = draftRef.current;
+      if (!textarea) return;
+      const caret = hit.start + replacement.length;
+      textarea.focus();
+      textarea.setSelectionRange(caret, caret);
+    });
+  }, [setDraft]);
+
+  // Abrir uma conversa já deixa o cursor no compositor: no WhatsApp você clica no
+  // contato e digita. Sem isso era preciso um segundo clique na barra.
+  // Só no desktop — no celular o foco automático abriria o teclado por cima da
+  // conversa antes de o atendente ler qualquer coisa. Também não rouba o foco
+  // quando a conversa não aceita escrita (bloqueada) ou quando o clique veio de
+  // dentro de um campo (busca da inbox, por exemplo).
+  // `conversations` fica fora das dependências de propósito: ele muda a cada
+  // evento de realtime, e reagir a isso roubaria o foco do atendente no meio de
+  // uma frase toda vez que qualquer conversa recebesse mensagem.
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+  useEffect(() => {
+    if (!selectedId || isMobile) return;
+    if (conversationsRef.current.find(c => c.id === selectedId)?.is_blocked) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+    // Espera o commit da thread: focar antes faz o navegador rolar a lista.
+    const id = window.setTimeout(() => draftRef.current?.focus({ preventScroll: true }), 0);
+    return () => window.clearTimeout(id);
+  }, [selectedId, isMobile]);
+
   // Ao abrir uma conversa, marca como lida e zera o contador de não-lidas. A carga
   // da thread (mensagens/paginação) vive em useWaMessages.
   useEffect(() => {
@@ -376,6 +581,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       setConversations(prev => prev.map(c => c.id === selectedId ? { ...c, unread_count: 0 } : c));
     }).catch(() => {});
   }, [selectedId]);
+
+  // A conversa restaurada da sessão anterior pode não existir mais (excluída,
+  // ou fora do recorte de canais deste usuário): limpa a seleção em vez de
+  // deixar a thread num vazio sem explicação.
+  useEffect(() => {
+    if (loadingConvs || !selectedId || conversations.length === 0) return;
+    if (!conversations.some(c => c.id === selectedId)) setSelectedId(null);
+  }, [loadingConvs, conversations, selectedId]);
 
   // Deep-link: ao clicar na notificação de mensagem nova (fora do módulo), o App
   // navega para cá com a conversa-alvo. Seleciona e limpa o param para não reabrir.
@@ -461,7 +674,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         if (deptFilter !== 'all' && deptFilter !== 'none' && c.department_id !== deptFilter) return false;
         if (labelFilter && !(c.labels ?? []).includes(labelFilter)) return false;
         if (!q) return true;
-        return (c.contact_name || '').toLowerCase().includes(q) || c.contact_phone.includes(q);
+        return matchesConversationSearch(c, q);
       })
       // Ordem igual ao WhatsApp: mensagem mais recente sempre no topo, sem
       // reordenar por status/urgência (a triagem fica nos filtros e badges de SLA).
@@ -471,6 +684,46 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         return tb < ta ? -1 : tb > ta ? 1 : 0;
       });
   }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
+
+  // ── Props estáveis da lista ──────────────────────────────────────────
+  // A lista está atrás de um React.memo (ver conversationList.tsx). Estas três
+  // props mudariam de identidade a cada tecla/evento e derrubariam o memo, então
+  // cada uma devolve a MESMA referência enquanto o conteúdo não muda.
+
+  // Rascunhos das outras conversas. O da conversa aberta é excluído de propósito:
+  // ele nunca aparece na lista (você está vendo o compositor), mas o `draftMap`
+  // é regravado a cada ~600ms de digitação — sem esse recorte, digitar
+  // re-renderizaria a lista inteira duas vezes por segundo.
+  const listDraftsRef = useRef<Record<string, string>>({});
+  const listDrafts = useMemo(() => {
+    const next: Record<string, string> = {};
+    for (const [id, value] of Object.entries(draftMap)) {
+      if (id === selectedId) continue;
+      const trimmed = (value ?? '').trim();
+      if (trimmed) next[id] = trimmed;
+    }
+    const prev = listDraftsRef.current;
+    const keys = Object.keys(next);
+    const same = keys.length === Object.keys(prev).length && keys.every(k => prev[k] === next[k]);
+    if (same) return prev;
+    listDraftsRef.current = next;
+    return next;
+  }, [draftMap, selectedId]);
+
+  // Silenciadas: um Set estável em vez de consultar o store por linha.
+  const mutedIdsRef = useRef<Set<string>>(new Set());
+  const mutedIds = useMemo(() => {
+    const next = new Set(conversations.filter(c => muteStore.isMuted(c.id)).map(c => c.id));
+    const prev = mutedIdsRef.current;
+    if (next.size === prev.size && [...next].every(id => prev.has(id))) return prev;
+    mutedIdsRef.current = next;
+    return next;
+  }, [conversations, muteSnapshot]);
+
+  const listEmptyMessage = useMemo(
+    () => `Nenhuma conversa${search || filter !== 'all' || channelFilter !== 'all' || deptFilter !== 'all' ? ' para este filtro' : ' ainda'}.`,
+    [search, filter, channelFilter, deptFilter],
+  );
 
   // Não-lidas ignoram conversas bloqueadas: elas saem da fila normal.
   const unreadTotal = useMemo(
@@ -496,7 +749,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       if (deptFilter === 'none' && c.department_id) return false;
       if (deptFilter !== 'all' && deptFilter !== 'none' && c.department_id !== deptFilter) return false;
       if (labelFilter && !(c.labels ?? []).includes(labelFilter)) return false;
-      if (q && !((c.contact_name || '').toLowerCase().includes(q) || c.contact_phone.includes(q))) return false;
+      if (q && !matchesConversationSearch(c, q)) return false;
       return true;
     });
     return {
@@ -557,9 +810,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     handleConversationOpened,
     onTransferDone, onBlockDone, onCloseDone, onRequestDocCreated, onWorkspaceSaved,
   } = useWaOperationalModals({
-    selected, funnelLabels, setConversations, setSelectedId,
+    selected, funnelLabels: selectedFunnelLabels, setConversations, setSelectedId,
     loadConversations, reloadOverview, setOverview,
     classifyOnClose: handleAiClassify,
+    onStageEntered: runFunnelStageActions,
   });
 
   // Drag and drop de arquivos na thread → useThreadDragDrop (estado do overlay +
@@ -603,15 +857,37 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // já mostra "Mensagens" + aba). Só uma instância é montada por vez.
   const listHeaderActions = (
     <div className="flex items-center gap-2 shrink-0">
-      <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-        <span className="inline-block w-2 h-2 rounded-full" style={{ background: anyConnected ? '#16a34a' : '#9ca3af' }} />
-        {anyConnected ? 'Online' : 'Offline'}
-      </span>
+      {/* Canal fora = a inbox parou de receber eventos e está sendo reposta por
+          HTTP. Dizer isso evita a leitura de "o sistema travou". */}
+      {realtimeStatus === 'down' ? (
+        <span title="Sem conexão em tempo real — atualizando por sincronização periódica"
+          className="flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+          <RefreshCw size={11} className="animate-spin" />
+          Reconectando…
+        </span>
+      ) : (
+        <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
+          <span className="inline-block w-2 h-2 rounded-full" style={{ background: anyConnected ? '#16a34a' : '#9ca3af' }} />
+          {anyConnected ? 'Online' : 'Offline'}
+        </span>
+      )}
       <WaNotifyBell pushState={pushState} onTogglePush={toggleStaffPush} />
       {!embedded && (
         <button onClick={() => setShowDashboard(true)} title="Dashboard de atendimento"
           className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-slate-200 transition">
           <BarChart2 size={15} />
+        </button>
+      )}
+      {!embedded && canManageChannelAccess && (
+        <button onClick={() => setChannelAccessOpen(true)} title="Definir quem vê cada canal"
+          className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-amber-100 hover:text-amber-700 transition">
+          <LockKeyhole size={15} />
+        </button>
+      )}
+      {!embedded && canManageChannelAccess && (
+        <button onClick={() => setChannelFunnelsOpen(true)} title="Personalizar o funil de cada canal"
+          className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-amber-100 hover:text-amber-700 transition">
+          <GitBranch size={15} />
         </button>
       )}
       <button onClick={() => setNewConvOpen(true)} title="Nova conversa"
@@ -642,10 +918,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             {/* Canal = conta de WhatsApp conectada (filtra por instância). */}
             <label className="inline-flex items-center gap-1.5 ml-auto">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Canal</span>
-              <select value={leadChannelFilter} onChange={e => setLeadChannelFilter(e.target.value)}
+              <select value={leadChannelFilter} onChange={e => selectLeadChannel(e.target.value)}
+                aria-label="Canal do funil de Leads"
                 className="text-[12px] pl-2 pr-6 py-1 rounded-lg bg-white border border-[#e7e5df] focus:border-amber-300 outline-none">
-                <option value="">Todos os canais</option>
-                {channels.map(c => (
+                {funnelChannels.length === 0 && <option value="">Nenhum canal com funil ativo</option>}
+                {funnelChannels.map(c => (
                   <option key={c.id} value={c.id}>{c.name || c.instance_name}</option>
                 ))}
               </select>
@@ -656,10 +933,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           {leadsEverOpened && (
             <ConversationFunnelBoard
               conversations={conversations}
-              funnelLabels={funnelLabels}
+              funnelLabels={funnelLabelsForChannel(leadChannelFilter)}
               channelId={leadChannelFilter}
               onOpen={(id) => { setSelectedId(id); setLeadsPanelOpen(false); }}
               onMoved={(id, labels) => setConversations(prev => prev.map(c => c.id === id ? { ...c, labels } : c))}
+              onStageEntered={runFunnelStageActions}
             />
           )}
         </div>
@@ -724,6 +1002,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           {filtersOpen && (
           <div className="grid grid-cols-2 gap-2 mt-2.5">
             <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)}
+              aria-label="Canal da inbox"
               className="min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none">
               <option value="all">Todos os canais</option>
               {channels.map(c => <option key={c.id} value={c.id}>{c.name || c.instance_name}</option>)}
@@ -746,7 +1025,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             <select value={labelFilter} onChange={e => setLabelFilter(e.target.value)}
               className="min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none">
               <option value="">Todas as etiquetas</option>
-              {funnelLabels.map(l => <option key={l.key} value={l.key}>{l.stageLabel} › {l.key}</option>)}
+              {labelFilterOptions.map(l => <option key={l.key} value={l.key}>{l.stageLabel} › {l.key}</option>)}
             </select>
           </div>
           )}
@@ -767,43 +1046,25 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0">
-          {loadingConvs ? (
-            <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
-          ) : filtered.length === 0 ? (
-            <div className="px-4 py-10 text-center text-[13px] text-slate-400">
-              Nenhuma conversa{search || filter !== 'all' || channelFilter !== 'all' || deptFilter !== 'all' ? ' para este filtro' : ' ainda'}.
-            </div>
-          ) : filtered.map(c => {
-            const st = effectiveConversationStatus(c);
-            // "Rascunho:" só nas conversas NÃO abertas (ao trocar/fechar). Na
-            // conversa ativa não aparece — você já está vendo o composer.
-            const draftPreview = c.id === selectedId ? '' : (draftMap[c.id] ?? '').trim();
-            const tracked = st.key === 'waiting_client' ? trackedSignatureStatus(c.client_id) : null;
-            return (
-              <ConversationListItem
-                key={c.id}
-                c={c}
-                active={c.id === selectedId}
-                channel={c.instance_id ? (channelById.get(c.instance_id) ?? null) : null}
-                dept={c.department_id ? (deptById.get(c.department_id) ?? null) : null}
-                privateMode={privateMode}
-                statusKey={st.key}
-                statusLabel={st.label}
-                statusCls={st.cls}
-                docStatus={effectiveDocStatus(c.client_id)}
-                muted={muteStore.isMuted(c.id)}
-                draftPreview={draftPreview}
-                funnelLabels={funnelLabels}
-                onSelect={setSelectedId}
-                onDismissTracking={tracked
-                  ? () => (tracked.signature_request_id
-                    ? stopSignatureTracking(tracked.signature_request_id)
-                    : stopTemplateFillTracking(tracked.link_id))
-                  : undefined}
-              />
-            );
-          })}
+        <div ref={setListEl} onScroll={onListScroll} className="flex-1 overflow-y-auto min-h-0">
+          <ConversationList
+            conversations={filtered}
+            selectedId={selectedId}
+            loading={loadingConvs}
+            privateMode={privateMode}
+            emptyMessage={listEmptyMessage}
+            channelById={channelById}
+            deptById={deptById}
+            drafts={listDrafts}
+            mutedIds={mutedIds}
+            funnelLabelsForChannel={funnelLabelsForChannel}
+            conversationStatus={effectiveConversationStatus}
+            docStatusFor={effectiveDocStatus}
+            trackedSignatureFor={trackedSignatureStatus}
+            onSelect={setSelectedId}
+            onStopSignatureTracking={stopSignatureTracking}
+            onStopTemplateFillTracking={stopTemplateFillTracking}
+          />
         </div>
       </aside>
 
@@ -835,10 +1096,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   <ChevronLeft size={22} />
                 </button>
               )}
-              <Avatar url={selected.contact_avatar_url} name={selected.contact_name} phone={selected.contact_phone} size={36}
+              <Avatar url={selected.contact_avatar_url} name={conversationName(selected)} phone={selected.contact_phone} size={36}
                 onClick={selected.contact_avatar_url ? () => setLightbox(selected.contact_avatar_url) : undefined} />
               <div className="min-w-0 flex-1">
-                <p className="text-[14px] font-bold text-slate-800 truncate">{privateMode ? maskName(selected.contact_name) : (selected.contact_name || prettyPhone(selected.contact_phone))}</p>
+                <p className="text-[14px] font-bold text-slate-800 truncate">{privateMode ? maskName(conversationName(selected)) : conversationName(selected)}</p>
                 <div className="flex items-center flex-nowrap gap-2 min-w-0 overflow-hidden whitespace-nowrap text-[11.5px] text-slate-400">
                   <PresenceText conv={selected} privateMode={privateMode} />
                   {selected.assigned_user_id && <span>· {staffByUser.get(selected.assigned_user_id) || 'Atribuído'}</span>}
@@ -1114,7 +1375,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                               m={u.m}
                               repliedTo={u.m.reply_to_id ? msgById.get(u.m.reply_to_id) || null : null}
                               senderName={senderName}
-                              senderRole={u.m.direction === 'out' && u.m.sender_user_id ? (staffById.get(u.m.sender_user_id)?.role || null) : null}
+                              senderRole={u.m.direction === 'out' && u.m.sender_user_id ? agentRoleLabel(staffById.get(u.m.sender_user_id)) : null}
                               privateMode={privateMode}
                               canCreateFollowups={!!selected?.client_id}
                               onOpenImage={setLightbox}
@@ -1272,7 +1533,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                         </div>
                       </div>
                     )}
+                    {!slashActive && (
+                      <ComposerSpellcheckOverlay text={draft} issues={composerSpellcheck.issues}
+                        scrollTop={composerScrollTop} scrollbarWidth={composerScrollbarWidth} />
+                    )}
                     <textarea ref={draftRef} value={draft} onChange={e => setDraft(e.target.value)}
+                      onScroll={e => setComposerScrollTop(e.currentTarget.scrollTop)}
+                      onContextMenu={openComposerSpellMenu}
                       onKeyDown={e => {
                         if (slashActive) {
                           if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => Math.min(i + 1, slashResults.length - 1)); return; }
@@ -1283,8 +1550,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
                         if (e.key === 'Escape') { setEditing(null); setReplyTo(null); }
                       }}
+                      spellCheck lang="pt-BR" autoCorrect="on" autoCapitalize="sentences"
+                      data-testid="whatsapp-message-input"
                       rows={1} placeholder={editing ? 'Editar mensagem…' : 'Digite uma mensagem…'}
-                      className="w-full resize-none max-h-48 min-h-[40px] leading-5 px-3.5 py-2.5 text-[13.5px] rounded-xl bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+                      className="relative z-0 w-full resize-none max-h-48 min-h-[40px] leading-5 px-3.5 py-2.5 text-[13.5px] rounded-xl bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+                    <ComposerSpellcheckContextMenu menu={composerSpellMenu}
+                      onReplace={replaceComposerSpelling} onClose={closeComposerSpellMenu} />
                   </div>
                   {draft.trim() || editing ? (
                     <button onClick={handleSend} disabled={sending || !draft.trim()}
@@ -1333,10 +1604,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           )}
           {/* Header compacto: avatar + nome + telefone numa linha */}
           <div className="flex items-center gap-2.5 pb-3 border-b border-[#f1f0ec]">
-            <Avatar url={selected.contact_avatar_url} name={selected.contact_name} phone={selected.contact_phone} size={40}
+            <Avatar url={selected.contact_avatar_url} name={conversationName(selected)} phone={selected.contact_phone} size={40}
               onClick={selected.contact_avatar_url ? () => setLightbox(selected.contact_avatar_url) : undefined} />
             <div className="min-w-0">
-              <p className="text-[13px] font-bold text-slate-800 truncate leading-tight">{privateMode ? maskName(selected.contact_name) : (selected.contact_name || 'Contato')}</p>
+              <p className="text-[13px] font-bold text-slate-800 truncate leading-tight">{privateMode ? maskName(conversationName(selected)) : conversationName(selected)}</p>
               <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                 <Phone size={11} className="text-slate-300 flex-shrink-0" /> {privateMode ? maskPhoneFull() : prettyPhone(selected.contact_phone)}
               </p>
@@ -1358,8 +1629,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Etiquetas</p>
                 <ConversationLabelsPanel
                   conversation={selected}
-                  funnelLabels={funnelLabels}
+                  funnelLabels={selectedFunnelLabels}
                   onChanged={conv => setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels: conv.labels } : c))}
+                  onStageEntered={runFunnelStageActions}
                 />
               </div>
             </div>
@@ -1490,10 +1762,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações rápidas</p>
             <div className="grid grid-cols-2 gap-1.5">
               {[
-                { label: 'Lançamento', icon: <HandCoins size={15} />, on: () => openWa({ type: 'financial_create', clientId: selected.client_id!, clientName: selected.contact_name || undefined }) },
+                { label: 'Lançamento', icon: <HandCoins size={15} />, on: () => openWa({ type: 'financial_create', clientId: selected.client_id!, clientName: selected.client_name || selected.contact_name || undefined }) },
                 { label: 'Prazo', icon: <Clock size={15} />, on: () => openWa({ type: 'deadline_create', clientId: selected.client_id! }) },
                 { label: 'Agenda', icon: <Calendar size={15} />, on: () => openWa({ type: 'calendar_create', clientId: selected.client_id! }) },
-                { label: 'Documento', icon: <FileText size={15} />, on: () => openWa({ type: 'document_generate', clientId: selected.client_id!, clientName: selected.contact_name || undefined, processCode: (overview?.processes ?? [])[0]?.process_code }) },
+                { label: 'Documento', icon: <FileText size={15} />, on: () => openWa({ type: 'document_generate', clientId: selected.client_id!, clientName: selected.client_name || selected.contact_name || undefined, processCode: (overview?.processes ?? [])[0]?.process_code }) },
                 { label: 'Pedir doc.', icon: <FilePlus size={15} />, on: () => setDocRequestOpen(true) },
               ].map(a => (
                 <button key={a.label} onClick={a.on}
@@ -1510,7 +1782,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           {selected.client_id && (
             <CasosPanel
               clientId={selected.client_id}
-              clientName={selected.contact_name || undefined}
+              clientName={selected.client_name || selected.contact_name || undefined}
               processes={overview?.processes ?? null}
               pendings={overview?.pendings ?? null}
               onOpenWorkspace={openWa}
@@ -1521,7 +1793,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           {selected.client_id && <ClientAgendaPanel schedule={overview?.schedule ?? null} />}
 
           {selected.client_id && <ClientPendingsPanel pendings={overview?.pendings ?? null} confirm={confirm} onChanged={reloadOverview} />}
-          {selected.client_id && <ClientCloudDocsLink clientId={selected.client_id} clientName={selected.contact_name || undefined} />}
+          {selected.client_id && <ClientCloudDocsLink clientId={selected.client_id} clientName={selected.client_name || selected.contact_name || undefined} />}
           {selected.client_id && <ClientFillLinksPanel links={overview?.templateFillLinks ?? null} signatures={overview?.signatures ?? null} onStopTracking={stopTemplateFillTracking} />}
           {selected.client_id && <ClientSignaturesPanel signatures={overview?.signatures ?? null} links={overview?.templateFillLinks ?? null} onStopTracking={stopTemplateFillTracking} onStopSignatureTracking={stopSignatureTracking} />}
 
@@ -1579,6 +1851,52 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       )}
       {/* ── fim do conteúdo principal do atendimento ── */}
       </div>
+
+      {channelAccessOpen && (
+        <Modal
+          open={channelAccessOpen}
+          onClose={() => setChannelAccessOpen(false)}
+          size="xl"
+          eyebrow="WhatsApp · Gestão"
+          title="Acessos aos canais"
+          subtitle="A mesma visibilidade vale para a inbox, novas conversas e o funil de Leads."
+          icon={<LockKeyhole size={18} />}
+        >
+          <ChannelAccessManager
+            channels={channels}
+            staff={staff}
+            requirePin={requirePin}
+            onChannelsChange={setChannels}
+            onFeedback={(type, message) => type === 'success'
+              ? toast.success('Acessos atualizados', message)
+              : toast.error('Erro ao salvar acessos', message)}
+          />
+        </Modal>
+      )}
+
+      {channelFunnelsOpen && (
+        <Modal
+          open={channelFunnelsOpen}
+          onClose={() => setChannelFunnelsOpen(false)}
+          size="xl"
+          eyebrow="WhatsApp · Gestão"
+          title="Funis por canal"
+          subtitle="Cada número segue seu próprio fluxo; o quadro de Leads acompanha o canal selecionado."
+          icon={<GitBranch size={18} />}
+        >
+          <ChannelFunnelManager
+            channels={channels}
+            departments={departments}
+            staff={staff}
+            moduleConfig={moduleConfig}
+            requirePin={requirePin}
+            onChannelsChange={next => { setChannels(next); void reloadFunnelLabels(); }}
+            onFeedback={(type, message) => type === 'success'
+              ? toast.success('Funil atualizado', message)
+              : toast.error('Erro ao salvar funil', message)}
+          />
+        </Modal>
+      )}
 
       {transferOpen && selected && (
         <TransferModal
@@ -1662,7 +1980,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
       {legalHoldModalOpen && selected && (
         <LegalHoldModal
-          subtitle={selected.contact_name || prettyPhone(selected.contact_phone)}
+          subtitle={conversationName(selected)}
           onClose={closeLegalHoldModal}
           onConfirm={confirmLegalHold}
         />
@@ -1691,7 +2009,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         <RequestDocumentModal
           conversationId={selected.id}
           clientId={selected.client_id}
-          clientName={selected.contact_name}
+          clientName={selected.client_name || selected.contact_name}
           createdBy={user?.id ?? null}
           moduleConfig={moduleConfig}
           onClose={() => setDocRequestOpen(false)}

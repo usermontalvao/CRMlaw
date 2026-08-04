@@ -161,6 +161,60 @@ const isStaff = hasSupabaseSession() || isStaffSessionExpired || isDocRoute || i
 async function renderRoot() {
   let rootElement: React.ReactNode;
 
+  // DEV-ONLY: gestão unificada de acesso aos canais WhatsApp (?waaccesspreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('waaccesspreview')) {
+    const { default: WhatsAppAccessPreview } = await import('./dev/WhatsAppAccessPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppAccessPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: editor de funil personalizado por canal (?wafunnelpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('wafunnelpreview')) {
+    const { default: WhatsAppFunnelPreview } = await import('./dev/WhatsAppFunnelPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppFunnelPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: quadro de Leads com o recorte de conversas vivas (?wafunnelboardpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('wafunnelboardpreview')) {
+    const { default: WhatsAppFunnelBoardPreview } = await import('./dev/WhatsAppFunnelBoardPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppFunnelBoardPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: corretor do campo de mensagem do WhatsApp (?waspellpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('waspellpreview')) {
+    const { default: WhatsAppSpellcheckPreview } = await import('./dev/WhatsAppSpellcheckPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppSpellcheckPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: bancada de medição da lista de conversas (?walistperf=1).
+  if (isDev && new URLSearchParams(window.location.search).has('walistperf')) {
+    const { default: WhatsAppListPerfPreview } = await import('./dev/WhatsAppListPerfPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppListPerfPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: vitrine dos modais do atendimento WhatsApp (?wamodalspreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('wamodalspreview')) {
+    const { default: WhatsAppModalsPreview } = await import('./dev/WhatsAppModalsPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppModalsPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: harness do certificado de assinatura (?certpreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('certpreview')) {
     const { default: CertificatePreview } = await import('./dev/CertificatePreview');

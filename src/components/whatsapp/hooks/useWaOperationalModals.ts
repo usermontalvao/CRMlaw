@@ -6,6 +6,7 @@
 // concentrar a orquestração desses fluxos fora do JSX, sem mudar o comportamento.
 import { useCallback, useState } from 'react';
 import { whatsappService, type ClientOverview } from '../../../services/whatsapp.service';
+import { resolveStageTarget } from '../funnel';
 import type { FunnelLabel } from '../../../services/settings.service';
 import type { WaModal } from '../../WaWorkspace';
 import type { WhatsAppConversation } from '../../../types/whatsapp.types';
@@ -20,6 +21,8 @@ interface WaOperationalModalsArgs {
   setOverview: React.Dispatch<React.SetStateAction<ClientOverview | null>>;
   /** IA classifica o assunto ao encerrar (best-effort) — vem do módulo. */
   classifyOnClose: () => Promise<void>;
+  /** Ações de entrada da etapa (mesmo handler do quadro e do painel de etiquetas). */
+  onStageEntered?: (conversation: WhatsAppConversation, stageKey: string) => Promise<void>;
 }
 
 export interface WaOperationalModalsApi {
@@ -55,7 +58,7 @@ export interface WaOperationalModalsApi {
  */
 export function useWaOperationalModals({
   selected, funnelLabels, setConversations, setSelectedId,
-  loadConversations, reloadOverview, setOverview, classifyOnClose,
+  loadConversations, reloadOverview, setOverview, classifyOnClose, onStageEntered,
 }: WaOperationalModalsArgs): WaOperationalModalsApi {
   const [docRequestOpen, setDocRequestOpen] = useState(false);
   // WhatsApp 360: workspace modal (abre entidades do CRM sem sair da conversa)
@@ -71,15 +74,21 @@ export function useWaOperationalModals({
   // funil anteriores, mantém tags livres). Usado por automações como "ao pedir
   // documento → Aguardando Documentos". No-op se a etapa não existe no funil.
   const moveConversationToStage = useCallback(async (conv: WhatsAppConversation, stageKey: string) => {
-    const target = funnelLabels.find(l => l.stageKey === stageKey);
+    // Cada canal tem funil próprio: a etapa é procurada pela chave e, se o canal
+    // renomeou/recriou a etapa, pelo nome dela (ver `resolveStageTarget`).
+    const target = resolveStageTarget(funnelLabels, stageKey);
     if (!target) return;
     const cur = conv.labels ?? [];
     if (cur.includes(target.key)) return;
     const funnelKeys = new Set(funnelLabels.map(l => l.key));
     const next = [...cur.filter(l => !funnelKeys.has(l)), target.key];
     setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels: next } : c));
-    try { await whatsappService.updateLabels(conv.id, next); } catch { /* best-effort */ }
-  }, [funnelLabels, setConversations]);
+    try { await whatsappService.updateLabels(conv.id, next); }
+    catch { return; /* best-effort: sem gravar a etapa, não dispara automação */ }
+    // Entrar na etapa por automação vale o mesmo que arrastar no quadro ou trocar
+    // a etiqueta no painel: as ações de entrada da etapa rodam nos três caminhos.
+    try { await onStageEntered?.({ ...conv, labels: next }, target.stageKey); } catch { /* best-effort */ }
+  }, [funnelLabels, setConversations, onStageEntered]);
 
   // Abre a conversa recém-criada/reaberta na inbox (recarrega para trazer avatar etc.).
   const handleConversationOpened = useCallback(async (conversationId: string) => {

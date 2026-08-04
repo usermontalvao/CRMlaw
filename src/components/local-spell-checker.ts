@@ -58,10 +58,17 @@ const persistUserWord = (word: string) => {
 };
 
 let checkerPromise: Promise<Checker | null> | null = null;
+// Falha de carga (dev server reiniciando, rede oscilando) não pode ficar grudada
+// na memória: sem soltar o cache, o corretor só voltaria com reload da página.
+// A janela evita que cada palavra digitada dispare um novo par de fetches.
+let lastFailureAt = 0;
+const RETRY_COOLDOWN_MS = 15_000;
 
 const getChecker = (): Promise<Checker | null> => {
   if (!checkerPromise) {
-    checkerPromise = (async () => {
+    if (Date.now() - lastFailureAt < RETRY_COOLDOWN_MS) return Promise.resolve(null);
+
+    const attempt: Promise<Checker | null> = (async () => {
       try {
         // Hunspell real compilado para WASM. Motores JS puros (nspell/typo.js)
         // não aguentam o dicionário pt-BR completo no browser (estouram o
@@ -101,6 +108,13 @@ const getChecker = (): Promise<Checker | null> => {
         return null;
       }
     })();
+
+    checkerPromise = attempt;
+    void attempt.then((spell) => {
+      if (spell || checkerPromise !== attempt) return;
+      lastFailureAt = Date.now();
+      checkerPromise = null;
+    });
   }
   return checkerPromise;
 };

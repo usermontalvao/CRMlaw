@@ -30,6 +30,31 @@ export const prettyPhone = (phone: string) => {
   return phone.startsWith('+') ? phone : `+${d}`;
 };
 
+/**
+ * Nome que a conversa exibe: o cadastro vinculado manda no nome. `contact_name`
+ * é o apelido que o próprio contato configurou no WhatsApp ("Vicente"), então
+ * assim que existe cliente vinculado a lista, o cabeçalho e o funil passam a
+ * mostrar o nome do cadastro. Sem vínculo, cai no nome do WhatsApp e, por fim,
+ * no telefone formatado.
+ */
+export const conversationName = (c: {
+  client_name?: string | null;
+  contact_name: string | null;
+  contact_phone: string;
+}) => (c.client_name || c.contact_name || prettyPhone(c.contact_phone));
+
+/**
+ * Busca da inbox: casa contra os DOIS nomes (cadastro e WhatsApp) além do
+ * telefone. Quem procura por "Vicente" continua achando a conversa mesmo que a
+ * lista agora exiba "Vicente da Costa Pereira", e vice-versa. `q` já vem em
+ * minúsculas do chamador.
+ */
+export const matchesConversationSearch = (
+  c: { client_name?: string | null; contact_name: string | null; contact_phone: string },
+  q: string,
+) => [c.client_name, c.contact_name].some(name => (name || '').toLowerCase().includes(q))
+  || c.contact_phone.includes(q);
+
 export const formatBytes = (n: number | null) => {
   if (!n) return '';
   if (n < 1024) return `${n} B`;
@@ -99,15 +124,33 @@ export const normalizeRoleStr = (r?: string | null) =>
 export const firstName = (name?: string | null) => (name || '').trim().split(/\s+/)[0] || '';
 export const isLawyer = (s?: Partial<StaffOption> | null) =>
   !!s && (normalizeRoleStr(s.role) === 'advogado' || !!(s.oab && s.oab.trim()));
-export const treatmentOf = (s?: Partial<StaffOption> | null) =>
-  isLawyer(s) ? (s!.gender === 'male' ? 'Dr.' : s!.gender === 'female' ? 'Dra.' : '') : '';
-/** Rótulo de exibição do agente: "Dr. Pedro", "Dra. Ana" ou só "Carla". */
+export const treatmentOf = (s?: Partial<StaffOption> | null) => {
+  if (!s) return '';
+  // Escolha explícita do agente vence a dedução pelo cadastro.
+  if (s.treatment === 'none') return '';
+  if (s.treatment === 'dr') return 'Dr.';
+  if (s.treatment === 'dra') return 'Dra.';
+  return isLawyer(s) ? (s.gender === 'male' ? 'Dr.' : s.gender === 'female' ? 'Dra.' : '') : '';
+};
+/**
+ * Rótulo de exibição do agente: "Dr. Pedro", "Dra. Ana" ou só "Carla".
+ *
+ * Sem nome exibido configurado, usa o PRIMEIRO nome do perfil — o cadastro tem
+ * o nome completo e ninguém assina "Dr. Pedro Rodrigues Montalvão Neto" numa
+ * conversa. Já o nome exibido é digitado pelo agente para esse fim, então vale
+ * exatamente como veio: quem quiser "Pedro Montalvão" ou "Escritório" escreve
+ * e é isso que o cliente lê.
+ */
 export const agentLabel = (s?: Partial<StaffOption> | null, shortNameOverride?: string | null) => {
   if (!s) return null;
-  const fn = firstName(shortNameOverride || s.name);
+  const custom = (shortNameOverride || s.short_name || '').trim();
+  const name = custom || firstName(s.name);
   const t = treatmentOf(s);
-  return t ? `${t} ${fn}` : fn;
+  return t ? `${t} ${name}` : name;
 };
+/** Cargo mostrado ao lado da assinatura: o escolhido pelo agente ou o do perfil. */
+export const agentRoleLabel = (s?: Partial<StaffOption> | null) =>
+  (s?.role_label || '').trim() || s?.role || null;
 export const greetingByHour = () => {
   const h = new Date().getHours();
   return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';

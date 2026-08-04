@@ -13,8 +13,9 @@ import { automationApi } from './whatsapp/automation';
 export {
   normalizePhone, phoneVariants, renderTemplate, agentPermissions, summarizeOverview,
 } from './whatsapp/shared';
+export { DEFAULT_AGENT_PREFS } from './whatsapp/admin';
 export type {
-  AgentPermissions, TemplateContext, StaffOption, AgentPrefs, ScheduleDeadline,
+  AgentPermissions, TemplateContext, StaffOption, AgentPrefs, AgentTreatment, ScheduleDeadline,
   ClientSchedule, ClientDocRequest, ClientPendings, ClientOverview, ClientQuickSummary,
   WhatsAppInternalNote, ClientTrackedSignatureStatus,
 } from './whatsapp/shared';

@@ -21,6 +21,7 @@ export interface WhatsAppConversation {
   contact_avatar_path: string | null;   // caminho no bucket (persistido)
   contact_avatar_url: string | null;     // URL assinada resolvida no client (efêmera)
   client_id: string | null;
+  client_name: string | null;            // nome do cadastro vinculado, resolvido no client (não é coluna)
   assigned_user_id: string | null;
   department_id: string | null;
   status: WhatsAppConvStatus;
@@ -121,6 +122,8 @@ export interface WhatsAppClientLite {
 }
 
 /** Canal = uma conexão/número na Evolution (whatsapp_instances). */
+export type WhatsAppChannelVisibility = 'all' | 'restricted';
+
 export interface WhatsAppChannel {
   id: string;
   instance_name: string;
@@ -136,6 +139,46 @@ export interface WhatsAppChannel {
   absence_message: string | null;    // Fase N
   absence_enabled: boolean;          // Fase N
   timezone: string;                  // Fase N — IANA timezone para regra de horário comercial
+  /** Fonte única de visibilidade usada pela inbox, nova conversa e funil de Leads. */
+  visibility_mode: WhatsAppChannelVisibility;
+  /** O canal participa do quadro de Leads do WhatsApp. */
+  funnel_enabled: boolean;
+  /** Chave da etapa inicial deste canal. */
+  funnel_initial_stage: string | null;
+}
+
+/** Etapa do funil comercial/jurídico pertencente a um canal do WhatsApp. */
+export type WhatsAppFunnelStageActionType =
+  | 'send_message'
+  | 'transfer_to_user'
+  | 'transfer_to_department'
+  | 'close_conversation';
+
+export interface WhatsAppFunnelStageAction {
+  type: WhatsAppFunnelStageActionType;
+  /** Destino da transferência (user_id ou department_id, conforme o tipo). */
+  target?: string | null;
+  /** Texto enviado; em encerramento, funciona como mensagem de despedida. */
+  message?: string | null;
+  /** Metadados internos, como motivo/observação da automação. */
+  payload?: { reason?: string | null; note?: string | null } & Record<string, unknown>;
+}
+
+export interface WhatsAppChannelFunnelStage {
+  id: string;
+  channel_id: string;
+  stage_key: string;
+  label: string;
+  description: string;
+  color: string;
+  labels: string[];
+  position: number;
+  is_active: boolean;
+  is_default: boolean;
+  /** Automações opcionais executadas, em ordem, ao entrar nesta etapa. */
+  entry_actions: WhatsAppFunnelStageAction[];
+  created_at: string;
+  updated_at: string;
 }
 
 /** Linha de horário de atendimento (Fase N). */

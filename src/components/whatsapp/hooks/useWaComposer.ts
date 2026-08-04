@@ -277,64 +277,30 @@ export function useWaComposer({
 
     if (editing) {
       const target = editing;
-      setSending(true);
+      const convId = selected.id;
+      // Mesma regra do envio: a bolha já mostra o texto novo e o compositor
+      // fecha na hora; se a edição falhar no servidor, a bolha volta ao que era.
+      setMessages(prev => prev.map(m => m.id === target.id ? { ...m, content: rawText, edited_at: new Date().toISOString() } : m));
+      setEditing(null); setDraft(''); setSending(true);
       try {
         await whatsappService.editMessage(target.id, rawText);
-        setMessages(prev => prev.map(m => m.id === target.id ? { ...m, content: rawText, edited_at: new Date().toISOString() } : m));
-        setEditing(null); setDraft('');
-        void refreshMessages(selected.id);
+        void refreshMessages(convId);
       } catch (err: any) {
+        setMessages(prev => prev.map(m => m.id === target.id
+          ? { ...m, content: target.content, edited_at: target.edited_at } : m));
         toast.error('Falha ao editar', err.message);
       } finally { setSending(false); sendingRef.current = false; }
       return;
     }
 
-    // Auto-assumir: responder uma conversa SEM dono (na fila) assume o atendimento
-    // automaticamente para você — antes mesmo da 1ª mensagem sair. Conversa já minha
-    // ou de outro atendente não é tocada (takeover explícito continua no botão Assumir).
-    let justAssumed = false;
-    if (!selected.assigned_user_id && !selected.is_blocked && user?.id) {
-      try {
-        await whatsappService.assumeConversation(selected.id);
-        // Fase J: aborta sessão de IA quando o humano assume.
-        if (aiSession?.status === 'active') await whatsappService.abortAiSession(selected.id).catch(() => {});
-        setConversations(prev => prev.map(c => c.id === selected.id
-          ? { ...c, assigned_user_id: user.id, awaiting_accept: false, transfer_pending_since: null } : c));
-        justAssumed = true;
-      } catch (e: any) {
-        toast.error('Falha ao assumir', e.message);
-        sendingRef.current = false;
-        return;
-      }
-    }
-
-    // Ao responder, pausa o aviso de horário (ausência) nesta conversa: o atendente
-    // está atendendo, então o cliente não deve mais receber o auto-aviso "fora do
-    // horário". Reativado automaticamente quando o atendimento é encerrado.
-    if (selected.absence_suppressed === false) {
-      whatsappService.setAbsenceSuppressed(selected.id, true).catch(() => {});
-      setConversations(prev => prev.map(c => c.id === selected.id ? { ...c, absence_suppressed: true } : c));
-    }
-
-    // Saudação inicial automática (Fase 1): apresenta o responsável ao cliente ANTES
-    // da 1ª mensagem — no primeiro atendimento humano (sem nenhum envio ainda) OU ao
-    // assumir agora uma conversa que estava na fila (ex.: reaberta pelo cliente).
-    const hasOutbound = messages.some(m => m.direction === 'out') || pending.some(p => p.direction === 'out');
+    const conversation = selected;
     const me = user ? staffById.get(user.id) : null;
-    if ((justAssumed || !hasOutbound) && agentPrefs.auto_greeting && me) {
-      try {
-        const greeting = renderTemplate(moduleConfig.auto_greeting_template, {
-          clientName: selected.contact_name ?? null,
-          clientPhone: prettyPhone(selected.contact_phone),
-          agentName: agentPrefs.short_name || me.name,
-          greeting: greetingByHour(),
-        }) || buildGreeting({ ...me, name: agentPrefs.short_name || me.name }, agentPrefs.role_label);
-        // Resiliente: se o canal estiver fora, a saudação é retida (reenvio
-        // automático) em vez de se perder antes da mensagem principal.
-        await sendTextResilient({ conversationId: selected.id, channelId: selected.instance_id, text: greeting });
-        await refreshMessages(selected.id);
-      } catch { /* saudação é best-effort; não impede a mensagem principal */ }
-    }
+
+    // Decisões que dependem do estado ANTES deste envio, tiradas agora: assim que
+    // a bolha otimista entra em `pending`, a própria mensagem contaria como saída
+    // e a saudação inicial nunca sairia.
+    const hasOutbound = messages.some(m => m.direction === 'out') || pending.some(p => p.direction === 'out');
+    const needsAssume = !conversation.assigned_user_id && !conversation.is_blocked && !!user?.id;
 
     // Prefixo de identificação do agente: *Dr. Pedro:*\n antes do texto.
     // Usa agentLabel para incluir Dr./Dra. em advogados automaticamente.
@@ -342,21 +308,69 @@ export function useWaComposer({
     const agentDisplayName = agentLabel(me, agentPrefs.short_name);
     const text = agentDisplayName ? `*${agentDisplayName}:*\n${rawText}` : rawText;
 
+    // ── O que o atendente vê acontece AGORA, no mesmo frame do Enter ──────
+    // Assumir a conversa e a saudação automática são idas à rede; enquanto
+    // estavam aqui em cima, o texto ficava preso no compositor esperando o
+    // servidor. Agora a bolha aparece e o input esvazia primeiro; a rede toda
+    // (assumir → saudação → mensagem) roda em seguida, na ordem de sempre.
     const sentAt = new Date().toISOString();
     const tempId = newTempId();
     const replyId = replyTo?.id;
-    const optimistic = buildOptimistic(selected.id, tempId, sentAt, {
+    const optimistic = buildOptimistic(conversation.id, tempId, sentAt, {
       type: 'text', content: text, reply_to_id: replyId ?? null, _local: 'sending',
     });
     retryRef.current.set(tempId, { kind: 'text', text, replyId });
     setPending(prev => [...prev, optimistic]);
-    bumpConversationPreview(selected.id, rawText, sentAt);
+    bumpConversationPreview(conversation.id, rawText, sentAt);
     setDraft(''); setReplyTo(null); setSending(true);
     try {
-      const { message_id, evolution_message_id } = await whatsappService.sendText({ conversationId: selected.id, text, replyToId: replyId });
+      // Auto-assumir: responder uma conversa SEM dono (na fila) assume o atendimento
+      // automaticamente para você — antes da 1ª mensagem sair. Conversa já minha
+      // ou de outro atendente não é tocada (takeover explícito continua no botão Assumir).
+      let justAssumed = false;
+      if (needsAssume) {
+        try {
+          await whatsappService.assumeConversation(conversation.id);
+        } catch (e: any) {
+          throw new Error(`Não foi possível assumir o atendimento: ${e.message}`);
+        }
+        // Fase J: aborta sessão de IA quando o humano assume.
+        if (aiSession?.status === 'active') await whatsappService.abortAiSession(conversation.id).catch(() => {});
+        setConversations(prev => prev.map(c => c.id === conversation.id
+          ? { ...c, assigned_user_id: user!.id, awaiting_accept: false, transfer_pending_since: null } : c));
+        justAssumed = true;
+      }
+
+      // Ao responder, pausa o aviso de horário (ausência) nesta conversa: o atendente
+      // está atendendo, então o cliente não deve mais receber o auto-aviso "fora do
+      // horário". Reativado automaticamente quando o atendimento é encerrado.
+      if (conversation.absence_suppressed === false) {
+        whatsappService.setAbsenceSuppressed(conversation.id, true).catch(() => {});
+        setConversations(prev => prev.map(c => c.id === conversation.id ? { ...c, absence_suppressed: true } : c));
+      }
+
+      // Saudação inicial automática (Fase 1): apresenta o responsável ao cliente ANTES
+      // da 1ª mensagem — no primeiro atendimento humano (sem nenhum envio ainda) OU ao
+      // assumir agora uma conversa que estava na fila (ex.: reaberta pelo cliente).
+      if ((justAssumed || !hasOutbound) && agentPrefs.auto_greeting && me) {
+        try {
+          const greeting = renderTemplate(moduleConfig.auto_greeting_template, {
+            clientName: conversation.contact_name ?? null,
+            clientPhone: prettyPhone(conversation.contact_phone),
+            agentName: agentPrefs.short_name || me.name,
+            greeting: greetingByHour(),
+          }) || buildGreeting({ ...me, name: agentPrefs.short_name || me.name }, agentPrefs.role_label);
+          // Resiliente: se o canal estiver fora, a saudação é retida (reenvio
+          // automático) em vez de se perder antes da mensagem principal.
+          await sendTextResilient({ conversationId: conversation.id, channelId: conversation.instance_id, text: greeting });
+          void refreshMessages(conversation.id);
+        } catch { /* saudação é best-effort; não impede a mensagem principal */ }
+      }
+
+      const { message_id, evolution_message_id } = await whatsappService.sendText({ conversationId: conversation.id, text, replyToId: replyId });
       bindPendingToServerMessage(tempId, message_id, evolution_message_id);
       retryRef.current.delete(tempId);
-      void refreshMessages(selected.id);
+      void refreshMessages(conversation.id);
     } catch (err: any) {
       if (isAutoQueueError(err)) {
         try {

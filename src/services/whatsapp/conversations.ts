@@ -6,9 +6,10 @@ import { processService } from '../process.service';
 import type { WhatsAppConversation, WhatsAppClientLite, TimelineEvent } from '../../types/whatsapp.types';
 import {
   CONV_TABLE, MSG_TABLE, TRANSFER_TABLE, NOTES_TABLE,
-  attachAvatarUrls, invokeFn, normalizePhone, phoneVariants, type WhatsAppInternalNote,
+  attachAvatarUrls, attachClientNames, invokeFn, normalizePhone, phoneVariants, type WhatsAppInternalNote,
 } from './shared';
 import { messagesApi } from './messages';
+import { realtimeRetryDelay, isRealtimeDeadStatus } from './realtimeBackoff';
 
 export const conversationsApi = {
   // ── Conversas ────────────────────────────────────────────────
@@ -19,7 +20,7 @@ export const conversationsApi = {
       .order('last_message_at', { ascending: false, nullsFirst: false });
     if (error) throw new Error(error.message);
     const convs = (data || []) as WhatsAppConversation[];
-    await attachAvatarUrls(convs);
+    await Promise.all([attachAvatarUrls(convs), attachClientNames(convs)]);
     return convs;
   },
 
@@ -545,13 +546,51 @@ export const conversationsApi = {
   subscribe(handlers: {
     onMessageChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
     onConversationChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
+    /**
+     * Saúde do canal. 'live' = recebendo eventos; 'down' = caiu e está tentando
+     * voltar. Quem consome usa isso para ressincronizar por HTTP o que foi
+     * perdido enquanto o canal esteve fora — nenhum evento é reenviado depois.
+     */
+    onStatusChange?: (status: 'live' | 'down') => void;
   }) {
-    const channel = supabase
-      .channel('whatsapp-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: MSG_TABLE }, p => handlers.onMessageChange?.(p))
-      .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => handlers.onConversationChange?.(p))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let attempt = 0;
+    let timer: number | null = null;
+    let disposed = false;
+
+    const reopenLater = () => {
+      if (disposed || timer !== null) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        if (disposed) return;
+        // Descarta o canal morto antes de abrir outro: um canal em erro nunca
+        // volta sozinho, e mantê-lo só acumula socket parado.
+        if (channel) { supabase.removeChannel(channel); channel = null; }
+        open();
+      }, realtimeRetryDelay(attempt++));
+    };
+
+    const open = () => {
+      if (disposed) return;
+      // Nome único por tentativa: reutilizar o mesmo nome enquanto o canal
+      // anterior ainda está fechando faz o servidor recusar a nova inscrição.
+      channel = supabase
+        .channel(`whatsapp-realtime-${Date.now()}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: MSG_TABLE }, p => handlers.onMessageChange?.(p))
+        .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => handlers.onConversationChange?.(p))
+        .subscribe(status => {
+          if (disposed) return;
+          if (status === 'SUBSCRIBED') { attempt = 0; handlers.onStatusChange?.('live'); return; }
+          if (isRealtimeDeadStatus(status)) { handlers.onStatusChange?.('down'); reopenLater(); }
+        });
+    };
+
+    open();
+    return () => {
+      disposed = true;
+      if (timer !== null) window.clearTimeout(timer);
+      if (channel) supabase.removeChannel(channel);
+    };
   },
 
   /**

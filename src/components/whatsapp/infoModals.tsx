@@ -5,7 +5,7 @@ import {
   Sparkles, Loader2, StickyNote, History, UserCheck, Filter,
   ArrowRightLeft, CheckCircle2, RotateCcw, Ban, Scale,
 } from 'lucide-react';
-import { WaDialog, WaDialogBody, waBtnGhost, waBtnPrimary } from './ui';
+import { WaDialog, WaDialogBody, WaDialogActions, waBtnGhost, waBtnPrimary } from './ui';
 import { whatsappService } from '../../services/whatsapp.service';
 import { aiService } from '../../services/ai.service';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -64,14 +64,14 @@ export const ConversationSummaryModal: React.FC<{
       icon={<Sparkles size={18} />}
       onClose={onClose}
       footer={
-        <div className="flex justify-end gap-2">
+        <WaDialogActions>
           <button onClick={onClose} className={waBtnGhost}>Fechar</button>
           {summary && (
             <button onClick={saveAsNote} disabled={saving} className={waBtnPrimary}>
               {saving ? <Loader2 size={14} className="animate-spin" /> : <StickyNote size={14} />} Salvar como nota
             </button>
           )}
-        </div>
+        </WaDialogActions>
       }
     >
       <WaDialogBody className="min-h-[120px]">

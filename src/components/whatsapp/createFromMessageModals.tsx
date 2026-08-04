@@ -2,7 +2,7 @@
 // (Fase H). Extraidos de WhatsAppModule.tsx - autocontidos.
 import React, { useEffect, useState } from 'react';
 import { Calendar, ListTodo, Loader2 } from 'lucide-react';
-import { WaDialog, WaDialogBody, waInput, waLabel, waBtnGhost, waBtnPrimary } from './ui';
+import { WaDialog, WaDialogBody, WaDialogActions, waInput, waSelect, waSelectStyle, waLabel, waBtnGhost, waBtnPrimary } from './ui';
 import { msgTitle, msgDescription, typeLabel } from './format';
 import { deadlineService } from '../../services/deadline.service';
 import { taskService } from '../../services/task.service';
@@ -92,12 +92,12 @@ export const CreateDeadlineFromMessageModal: React.FC<{
       icon={<Calendar size={18} />}
       onClose={onClose}
       footer={
-        <div className="flex justify-end gap-2">
+        <WaDialogActions>
           <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
           <button onClick={handleSave} disabled={saving || !title.trim() || !dueDate || !responsibleId} className={waBtnPrimary}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Calendar size={14} />} Criar prazo
           </button>
-        </div>
+        </WaDialogActions>
       }
     >
       <WaDialogBody className="space-y-3">
@@ -108,7 +108,7 @@ export const CreateDeadlineFromMessageModal: React.FC<{
         </div>
 
         <div>
-          <label className={waLabel}>Titulo *</label>
+          <label className={waLabel}>Título *</label>
           <input value={title} onChange={e => setTitle(e.target.value)} autoFocus className={waInput} />
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -118,7 +118,7 @@ export const CreateDeadlineFromMessageModal: React.FC<{
           </div>
           <div>
             <label className={waLabel}>Prioridade</label>
-            <select value={priority} onChange={e => setPriority(e.target.value as DeadlinePriority)} className={waInput}>
+            <select value={priority} onChange={e => setPriority(e.target.value as DeadlinePriority)} className={waSelect} style={waSelectStyle}>
               <option value="baixa">Baixa</option>
               <option value="media">Media</option>
               <option value="alta">Alta</option>
@@ -129,7 +129,7 @@ export const CreateDeadlineFromMessageModal: React.FC<{
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={waLabel}>Tipo</label>
-            <select value={type} onChange={e => setType(e.target.value as DeadlineType)} className={waInput}>
+            <select value={type} onChange={e => setType(e.target.value as DeadlineType)} className={waSelect} style={waSelectStyle}>
               <option value="geral">Geral</option>
               <option value="processo">Processo</option>
               <option value="requerimento">Requerimento</option>
@@ -138,7 +138,7 @@ export const CreateDeadlineFromMessageModal: React.FC<{
           {processes.length > 0 && (
             <div>
               <label className={waLabel}>Processo</label>
-              <select value={processId} onChange={e => setProcessId(e.target.value)} className={waInput}>
+              <select value={processId} onChange={e => setProcessId(e.target.value)} className={waSelect} style={waSelectStyle}>
                 <option value="">Nenhum</option>
                 {processes.map(p => <option key={p.id} value={p.id}>{p.process_code || p.id.slice(0, 8)}</option>)}
               </select>
@@ -146,7 +146,7 @@ export const CreateDeadlineFromMessageModal: React.FC<{
           )}
         </div>
         <div>
-          <label className={waLabel}>Responsavel *</label>
+          <label className={waLabel}>Responsável *</label>
           <select
             value={responsibleId}
             onChange={e => setResponsibleId(e.target.value)}
@@ -205,12 +205,12 @@ export const CreateTaskFromMessageModal: React.FC<{
       icon={<ListTodo size={18} />}
       onClose={onClose}
       footer={
-        <div className="flex justify-end gap-2">
+        <WaDialogActions>
           <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
           <button onClick={handleSave} disabled={saving || !title.trim()} className={waBtnPrimary}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <ListTodo size={14} />} Criar tarefa
           </button>
-        </div>
+        </WaDialogActions>
       }
     >
       <WaDialogBody className="space-y-3">
@@ -221,7 +221,7 @@ export const CreateTaskFromMessageModal: React.FC<{
         </div>
 
         <div>
-          <label className={waLabel}>Titulo *</label>
+          <label className={waLabel}>Título *</label>
           <input value={title} onChange={e => setTitle(e.target.value)} autoFocus className={waInput} />
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -231,7 +231,7 @@ export const CreateTaskFromMessageModal: React.FC<{
           </div>
           <div>
             <label className={waLabel}>Prioridade</label>
-            <select value={priority} onChange={e => setPriority(e.target.value as TaskPriority)} className={waInput}>
+            <select value={priority} onChange={e => setPriority(e.target.value as TaskPriority)} className={waSelect} style={waSelectStyle}>
               <option value="low">Baixa</option>
               <option value="medium">Media</option>
               <option value="high">Alta</option>
@@ -241,7 +241,7 @@ export const CreateTaskFromMessageModal: React.FC<{
         {processes.length > 0 && (
           <div>
             <label className={waLabel}>Processo</label>
-            <select value={processId} onChange={e => setProcessId(e.target.value)} className={waInput}>
+            <select value={processId} onChange={e => setProcessId(e.target.value)} className={waSelect} style={waSelectStyle}>
               <option value="">Nenhum</option>
               {processes.map(p => <option key={p.id} value={p.id}>{p.process_code || p.id.slice(0, 8)}</option>)}
             </select>
