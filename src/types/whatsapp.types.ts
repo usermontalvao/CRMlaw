@@ -74,6 +74,12 @@ export interface WhatsAppMessage {
   file_name: string | null;
   transcription_text: string | null;
   transcription_status: WhatsAppTranscriptionStatus;
+  /**
+   * GIF: o WhatsApp converte GIF em mp4 e sinaliza `gifPlayback`. Sem guardar
+   * essa marca, o GIF fica indistinguível de um vídeo curto e a conversa mostra
+   * um play parado no lugar da animação.
+   */
+  is_animated?: boolean | null;
   reply_to_id: string | null;
   edited_at: string | null;
   status: WhatsAppMsgStatus;

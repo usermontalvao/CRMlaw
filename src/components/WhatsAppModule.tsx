@@ -15,6 +15,7 @@ import {
   Target,
   LockKeyhole,
   GitBranch,
+  Activity,
 } from 'lucide-react';
 import { useStaffPush } from './whatsapp/hooks/useStaffPush';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
@@ -57,6 +58,19 @@ import {
   sanitizeChannelFilter, sanitizeDeptFilter, sanitizeLabelFilter,
 } from './whatsapp/inboxFilters';
 import { executeFunnelStageActions } from './whatsapp/funnelStageActions';
+import { nextInQueue, rankQueue, DEFAULT_QUEUE_POLICY } from './whatsapp/attendanceRouting';
+import {
+  scheduleFromRows, elapsedMinutesFor, elapsedMinutesForChannels, businessHoursStatus,
+  DEFAULT_BUSINESS_SCHEDULE, type BusinessSchedule,
+} from './whatsapp/businessTime';
+// Fuso do escritório (configurável) — a mesma âncora que a agenda usa. Só entra
+// quando o canal não declara o próprio.
+import { getOfficeTimeZone } from '../utils/officeTime';
+import { BUSINESS_HOURS_CHANGED_EVENT } from '../services/whatsapp/admin';
+import { QueuePanel } from './whatsapp/queuePanel';
+// Etiqueta comum de propósito: já é filtrável na inbox, aparece no funil e não
+// exigiu coluna nova. A regra que a respeita mora junto dela, em `campaign.ts`.
+import { isOptOutMessage, DO_NOT_DISTURB_LABEL } from './whatsapp/campaign';
 import ChannelAccessManager from './whatsapp/ChannelAccessManager';
 import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
 import { ThreadScheduledGhosts, ScheduledMessagesPanel } from './whatsapp/scheduledMessages';
@@ -64,10 +78,11 @@ import { AiApprovalBanner } from './whatsapp/aiApprovalBanner';
 import { AttendanceDashboard } from './whatsapp/attendanceDashboard';
 import { ClientFillLinksPanel } from './whatsapp/clientFillLinksPanel';
 import { PresenceText, DateDivider } from './whatsapp/conversationListItem';
+import { DockedDetailsToggle } from './whatsapp/DockedDetailsToggle';
 import { ConversationList } from './whatsapp/conversationList';
 import { WaLightbox } from './whatsapp/lightbox';
 import { WaNotifyBell } from './whatsapp/notifyBell';
-import { useWaIsMobile, useWaIsPanelDocked, getCurrentTimeInTz } from './whatsapp/hooks';
+import { useWaIsMobile, useWaIsPanelDocked, utcOffsetMinutesOf } from './whatsapp/hooks';
 import { useResizableLayout } from './whatsapp/hooks/useResizableLayout';
 import { useWaInboxPosition, readStoredConversationId } from './whatsapp/hooks/useWaInboxPosition';
 import { useClientOverview } from './whatsapp/hooks/useClientOverview';
@@ -89,7 +104,7 @@ import type { CalendarEvent, CalendarEventType } from '../types/calendar.types';
 import type { Requirement, RequirementStatus } from '../types/requirement.types';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppChannel, WhatsAppDepartment,
-  WhatsAppClientLite, WhatsAppPresence, WhatsAppDirection, WhatsAppChannelFunnelStage,
+  WhatsAppClientLite, WhatsAppPresence, WhatsAppDirection, WhatsAppChannelFunnelStage, WhatsAppBusinessHoursRow,
 } from '../types/whatsapp.types';
 import type { Process, ProcessStatus, ProcessPracticeArea } from '../types/process.types';
 import { useAuth } from '../contexts/AuthContext';
@@ -211,6 +226,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const rawPanelDocked = useWaIsPanelDocked();
   const panelDocked = embedded ? false : rawPanelDocked;
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  // O painel 360º pode ser recolhido por completo no desktop. A preferência é
+  // local ao navegador para que o atendente recupere o espaço da conversa sem
+  // precisar fechar novamente a cada acesso ao módulo.
+  const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(
+    () => !embedded && localStorage.getItem('wa_details_panel_collapsed') === '1',
+  );
   // Menu "⋮" do cabeçalho da thread (agrupa as ações em telas estreitas).
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   // Menu "+" do composer (documento, modelo, agendar) — mantém a barra enxuta.
@@ -225,10 +246,34 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     () => !embedded && readFilter(INBOX_FILTER_KEYS.panelOpen) === '1',
   );
   // Fecha a gaveta ao trocar de conversa ou quando o painel volta a ser fixo.
-  useEffect(() => { setMobilePanelOpen(false); setHeaderMenuOpen(false); setAttachMenuOpen(false); }, [selectedId]);
+  useEffect(() => { setMobilePanelOpen(false); setHeaderMenuOpen(false); setAttachMenuOpen(false); setMoreMenuOpen(false); }, [selectedId]);
   useEffect(() => { if (panelDocked) setMobilePanelOpen(false); }, [panelDocked]);
+  useEffect(() => {
+    if (!embedded) localStorage.setItem('wa_details_panel_collapsed', detailsPanelCollapsed ? '1' : '0');
+  }, [detailsPanelCollapsed, embedded]);
   const [channels, setChannels] = useState<WhatsAppChannel[]>([]);
   const [departments, setDepartments] = useState<WhatsAppDepartment[]>([]);
+  const [departmentMembers, setDepartmentMembers] = useState<Record<string, string[]>>({});
+  const [businessHoursByChannel, setBusinessHoursByChannel] = useState<Record<string, WhatsAppBusinessHoursRow[]>>({});
+  // Distingue "ainda não sei o expediente" de "não há expediente cadastrado":
+  // são conclusões opostas sobre o SLA e sobre a mensagem de ausência.
+  const [businessHoursLoaded, setBusinessHoursLoaded] = useState(false);
+  /**
+   * Agenda de expediente de CADA canal, no fuso cadastrado nele. A inbox mistura
+   * canais na mesma lista: medir tudo pelo expediente de um único número faria o
+   * SLA do plantão 24h ser lido com o relógio do comercial (e vice-versa).
+   * Canal sem nenhuma linha ativa não entra — quem consome trata a ausência.
+   */
+  const schedulesByChannel = useMemo(() => {
+    const out: Record<string, BusinessSchedule> = {};
+    for (const ch of channels) {
+      const rows = businessHoursByChannel[ch.id];
+      if (!rows?.length) continue;
+      const schedule = scheduleFromRows(rows, utcOffsetMinutesOf(ch.timezone || getOfficeTimeZone()));
+      if (schedule.days.length > 0) out[ch.id] = schedule;
+    }
+    return out;
+  }, [channels, businessHoursByChannel]);
   const [channelRouting, setChannelRouting] = useState<WhatsAppChannelDepartmentRouting[]>([]);
   const [staff, setStaff] = useState<StaffOption[]>([]);
   const [agentPrefs, setAgentPrefs] = useState<AgentPrefs>(DEFAULT_AGENT_PREFS);
@@ -386,6 +431,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
   const selectedClientId = selected?.client_id ?? null;
 
+  // Quem já passou por esta conversa. Alimenta a sugestão de advogado no modal
+  // de transferência: o cliente que já explicou o caso para a Dra. Ana prefere
+  // a Dra. Ana ocupada a um advogado livre que vai pedir tudo de novo.
+  const [conversationAgentIds, setConversationAgentIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!selected) { setConversationAgentIds([]); return; }
+    let cancelled = false;
+    whatsappService.getConversationAgents(selected)
+      .then(ids => { if (!cancelled) setConversationAgentIds(ids); })
+      .catch(() => { if (!cancelled) setConversationAgentIds([]); });
+    return () => { cancelled = true; };
+  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Pacote 360 do cliente + status de documentos/assinaturas por cliente (com
   // realtime). Banner-resumo e painéis laterais consomem deste estado.
   const {
@@ -436,6 +494,16 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     loadMessages, loadMoreMsgs, refreshMessages,
   } = useWaMessages(selectedId);
 
+  // Horário de atendimento de todos os canais numa consulta só: é o que faz o
+  // SLA contar expediente (e não madrugada) e o que decide a mensagem de
+  // ausência da conversa aberta. Uma consulta por conversa, como era antes,
+  // repetia a mesma resposta a cada troca de thread.
+  const loadBusinessHours = useCallback(() => {
+    whatsappService.listAllBusinessHours()
+      .then(rows => { setBusinessHoursByChannel(rows); setBusinessHoursLoaded(true); })
+      .catch(() => {});
+  }, []);
+
   // Bootstrap dos dados auxiliares (uma vez). O fluxo reativo (realtime de
   // conversa/mensagem/IA) vive em useWaRealtime.
   useEffect(() => {
@@ -445,7 +513,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     settingsService.getWhatsAppChannelDepartmentRouting().then(setChannelRouting).catch(() => {});
     whatsappService.listStaff().then(setStaff).catch(() => {});
     whatsappService.getMyAgentPrefs().then(setAgentPrefs).catch(() => {});
-  }, [loadConversations]);
+    // Matriz setor→membros: a distribuição da fila precisa dela para não
+    // mandar conversa de um setor para quem não pertence a ele.
+    whatsappService.listAllDepartmentMembers().then(setDepartmentMembers).catch(() => {});
+    loadBusinessHours();
+  }, [loadConversations, loadBusinessHours]);
+
+  // Recarrega o expediente quando ele é salvo nas configurações do canal (a tela
+  // de integração fica em outro módulo; sem este aviso, o SLA e a mensagem de
+  // ausência continuariam com o horário antigo até um recarregamento da página).
+  useEffect(() => {
+    const onChanged = () => { loadBusinessHours(); };
+    window.addEventListener(BUSINESS_HOURS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(BUSINESS_HOURS_CHANGED_EVENT, onChanged);
+  }, [loadBusinessHours]);
 
   const { aiSession, setAiSession, realtimeStatus } = useWaRealtime({
     selectedId, loadConversations, refreshMessages,
@@ -598,37 +679,41 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     onParamConsumed?.();
   }, [openConversationId, onParamConsumed]);
 
-  // Fase N: verifica horário de atendimento ao trocar de canal/conversa (timezone-aware).
+  // Fase N: aviso de fora do horário de atendimento do canal da conversa aberta.
+  // A regra de "está aberto?" mora em `businessTime` (a mesma que mede o SLA);
+  // aqui só se escolhe qual mensagem mostrar.
   useEffect(() => {
     const instanceId = selected?.instance_id;
     if (!instanceId) { setOutsideHours(null); return; }
+    // Antes de saber o expediente, não afirma nada: anunciar "estamos fechados"
+    // e desdizer meio segundo depois é pior do que esperar a resposta.
+    if (!businessHoursLoaded) return;
     const ch = channels.find(c => c.id === instanceId);
-    let cancelled = false;
-    whatsappService.listBusinessHours(instanceId).then(rows => {
-      if (cancelled) return;
-      const tz = ch?.timezone || 'America/Cuiaba';
-      const { dow, curMins } = getCurrentTimeInTz(tz);
-      const row = rows.find(r => r.day_of_week === dow);
-      if (!row || !row.is_active) {
-        setOutsideHours({ message: ch?.absence_message || moduleConfig.outside_hours_fallback_message });
-        return;
-      }
-      const [sh, sm] = row.start_time.split(':').map(Number);
-      const [eh, em] = row.end_time.split(':').map(Number);
-      const startMins = sh * 60 + sm;
-      const endMins = eh * 60 + em;
-      if (curMins < startMins || curMins >= endMins) {
-        setOutsideHours({
-          message: ch?.absence_message || renderTemplate(moduleConfig.outside_hours_schedule_template, {
-            extraVars: { inicio: row.start_time, fim: row.end_time },
-          }),
-        });
-      } else {
-        setOutsideHours(null);
-      }
-    }).catch(() => { if (!cancelled) setOutsideHours(null); });
-    return () => { cancelled = true; };
-  }, [selected?.instance_id, selected?.id, channels, moduleConfig.outside_hours_fallback_message, moduleConfig.outside_hours_schedule_template]);
+    const schedule = schedulesByChannel[instanceId];
+    // Canal sem expediente cadastrado (nem uma linha ativa) segue tratado como
+    // fechado, como antes — configurar horário é o que "abre" o canal.
+    if (!schedule) {
+      setOutsideHours({ message: ch?.absence_message || moduleConfig.outside_hours_fallback_message });
+      return;
+    }
+    const status = businessHoursStatus(Date.now(), schedule);
+    if (status.open) { setOutsideHours(null); return; }
+    if (status.windows.length === 0) {
+      setOutsideHours({ message: ch?.absence_message || moduleConfig.outside_hours_fallback_message });
+      return;
+    }
+    setOutsideHours({
+      message: ch?.absence_message || renderTemplate(moduleConfig.outside_hours_schedule_template, {
+        extraVars: {
+          inicio: status.windows[0].start,
+          fim: status.windows[status.windows.length - 1].end,
+        },
+      }),
+    });
+  }, [
+    selected?.instance_id, selected?.id, channels, schedulesByChannel, businessHoursLoaded,
+    moduleConfig.outside_hours_fallback_message, moduleConfig.outside_hours_schedule_template,
+  ]);
 
   // Ao abrir uma conversa sem foto, busca a foto de perfil na Evolution (1x por conversa).
   useEffect(() => {
@@ -855,6 +940,110 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // + nova conversa). Extraído para reposicionar no modo embutido: lá vai para a
   // linha da busca, eliminando a linha de título "WhatsApp" redundante (o widget
   // já mostra "Mensagens" + aba). Só uma instância é montada por vez.
+  // "Próximo da fila": em vez de o atendente escolher a conversa que estiver
+  // mais visível, a fila responde qual é a mais urgente AGORA — transferência
+  // sem aceite estourada > SLA estourado > urgente > espera longa. Só oferece o
+  // que está sem dono: puxar a conversa de um colega é atropelo, não
+  // produtividade.
+  const queueCandidates = useMemo(
+    () => conversations.map(c => ({
+      id: c.id,
+      status: c.status,
+      isBlocked: c.is_blocked,
+      assignedUserId: c.assigned_user_id,
+      departmentId: c.department_id,
+      awaitingAccept: c.awaiting_accept,
+      transferPendingSince: c.transfer_pending_since,
+      lastMessageDirection: c.last_message_direction,
+      lastCustomerMessageAt: c.last_customer_message_at,
+      lastMessageAt: c.last_message_at,
+      labels: c.labels,
+      // Sem o canal, a fila não teria como medir cada conversa no expediente
+      // do número em que ela chegou.
+      channelId: c.instance_id,
+    })),
+    [conversations],
+  );
+  // Recalcula a cada minuto: a urgência é função do relógio, não de um evento.
+  const [queueTick, setQueueTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setQueueTick(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  /**
+   * Medição de tempo da fila e dos badges.
+   *
+   * Enquanto os horários não chegam do banco, mede pelo expediente PADRÃO do
+   * escritório (seg–sex 8h–18h) em vez do relógio de parede: é o que a migration
+   * semeia para todo canal, então o número já nasce certo em vez de aparecer
+   * "parada há 62h" por um instante e encolher sozinho quando a agenda carrega.
+   * Depois de carregado, canal sem horário cadastrado volta ao relógio de
+   * parede — o comportamento histórico.
+   */
+  const elapsedMinutes = useMemo(
+    () => (businessHoursLoaded
+      ? elapsedMinutesForChannels(schedulesByChannel, null)
+      : elapsedMinutesFor(DEFAULT_BUSINESS_SCHEDULE)),
+    [businessHoursLoaded, schedulesByChannel],
+  );
+
+  const queuePolicy = useMemo(
+    () => ({ ...DEFAULT_QUEUE_POLICY, elapsedMinutes }),
+    [elapsedMinutes],
+  );
+
+  const nextUp = useMemo(
+    () => nextInQueue(queueCandidates, queueTick, { policy: queuePolicy }),
+    [queueCandidates, queueTick, queuePolicy],
+  );
+  // Badge vermelho no ícone da fila: só conta o que é falha de processo (o
+  // destino nunca aceitou, o cliente estourou o SLA), não volume normal — um
+  // alerta que acende todo dia deixa de ser alerta.
+  // Pedido de descadastro na última mensagem do cliente. A detecção só olha o
+  // que já está na tela (nenhuma escrita automática): marcar sozinho um cliente
+  // como "não perturbe" a partir de um "pare" ambíguo silenciaria alguém que só
+  // queria interromper uma explicação.
+  const [optOutDismissed, setOptOutDismissed] = useState<string | null>(null);
+  const optOutRequest = useMemo(() => {
+    if (!selected || selected.is_blocked || optOutDismissed === selected.id) return false;
+    if ((selected.labels ?? []).includes(DO_NOT_DISTURB_LABEL)) return false;
+    const lastInbound = [...messages].reverse().find(m => m.direction === 'in');
+    if (!lastInbound) return false;
+    return isOptOutMessage(lastInbound.content ?? lastInbound.transcription_text);
+  }, [selected, messages, optOutDismissed]);
+
+  const markDoNotDisturb = useCallback(async () => {
+    if (!selected) return;
+    const labels = Array.from(new Set([...(selected.labels ?? []), DO_NOT_DISTURB_LABEL]));
+    try {
+      await whatsappService.updateLabels(selected.id, labels);
+      setConversations(prev => prev.map(c => (c.id === selected.id ? { ...c, labels } : c)));
+      toast.success('Marcado como “Não perturbe”', 'Este contato fica fora dos disparos de campanha.');
+    } catch (e: any) {
+      toast.error('Não foi possível marcar', e?.message);
+    }
+  }, [selected, toast]);
+
+  const [queuePanelOpen, setQueuePanelOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const queueAlerts = useMemo(
+    () => rankQueue(queueCandidates, queueTick, queuePolicy)
+      .filter(p => p.bucket === 'transferencia_travada' || p.bucket === 'sla_estourado').length,
+    [queueCandidates, queueTick, queuePolicy],
+  );
+  const takeNextInQueue = useCallback(() => {
+    if (!nextUp) return;
+    setSelectedId(nextUp.id);
+    // Só mexe nos filtros do atendente se a conversa escolhida não estivesse
+    // visível — abrir a thread e deixar a lista mostrando outra coisa é
+    // desorientador, mas trocar o escopo dele sem necessidade também é.
+    if (!filtered.some(c => c.id === nextUp.id)) {
+      setFilter('all');
+      setStatusFilter('open');
+    }
+  }, [nextUp, filtered]);
+
   const listHeaderActions = (
     <div className="flex items-center gap-2 shrink-0">
       {/* Canal fora = a inbox parou de receber eventos e está sendo reposta por
@@ -872,23 +1061,73 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         </span>
       )}
       <WaNotifyBell pushState={pushState} onTogglePush={toggleStaffPush} />
+      {/* "Próximo da fila" fica sempre à mão: é ação de atendimento, feita
+          dezenas de vezes por dia, não configuração. */}
+      {!embedded && nextUp && (
+        <button onClick={takeNextInQueue}
+          title={`Próximo da fila: ${nextUp.label}`}
+          aria-label={`Próximo da fila: ${nextUp.label}`}
+          className={`flex items-center justify-center w-7 h-7 rounded-full transition ${
+            nextUp.bucket === 'transferencia_travada' || nextUp.bucket === 'sla_estourado'
+              ? 'bg-red-100 text-red-700 hover:bg-red-200'
+              : nextUp.bucket === 'urgente' || nextUp.bucket === 'sla_atencao'
+                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                : 'bg-[#f3f2ef] text-slate-600 hover:bg-slate-200'
+          }`}>
+          <ListTodo size={15} />
+        </button>
+      )}
+      {/* Gestão (fila, dashboard, acessos, funis) atrás de um único botão. Em
+          fila, esses quatro ícones estouravam a largura da coluna e sumiam
+          cortados na borda — e nenhum deles é ação de minuto a minuto. */}
       {!embedded && (
-        <button onClick={() => setShowDashboard(true)} title="Dashboard de atendimento"
-          className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-slate-200 transition">
-          <BarChart2 size={15} />
-        </button>
-      )}
-      {!embedded && canManageChannelAccess && (
-        <button onClick={() => setChannelAccessOpen(true)} title="Definir quem vê cada canal"
-          className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-amber-100 hover:text-amber-700 transition">
-          <LockKeyhole size={15} />
-        </button>
-      )}
-      {!embedded && canManageChannelAccess && (
-        <button onClick={() => setChannelFunnelsOpen(true)} title="Personalizar o funil de cada canal"
-          className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 hover:bg-amber-100 hover:text-amber-700 transition">
-          <GitBranch size={15} />
-        </button>
+        <div className="relative">
+          <button onClick={() => setMoreMenuOpen(o => !o)} aria-expanded={moreMenuOpen}
+            title="Gestão do atendimento"
+            className={`relative flex items-center justify-center w-7 h-7 rounded-full transition ${
+              moreMenuOpen ? 'bg-slate-200 text-slate-700' : 'bg-[#f3f2ef] text-slate-600 hover:bg-slate-200'
+            }`}>
+            <MoreVertical size={15} />
+            {queueAlerts > 0 && (
+              <span title={`${queueAlerts} na fila precisando de ação`}
+                className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-[3px] rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center">
+                {queueAlerts}
+              </span>
+            )}
+          </button>
+          {moreMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setMoreMenuOpen(false)} />
+              <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-xl border border-[#e7e5df] bg-white shadow-lg py-1">
+                <button onClick={() => { setMoreMenuOpen(false); setQueuePanelOpen(true); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-[#faf9f7] transition">
+                  <Activity size={15} className={queueAlerts > 0 ? 'text-red-600' : 'text-slate-400'} />
+                  Fila de atendimento
+                  {queueAlerts > 0 && (
+                    <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-100 text-red-700 text-[10px] font-bold flex items-center justify-center">
+                      {queueAlerts}
+                    </span>
+                  )}
+                </button>
+                <button onClick={() => { setMoreMenuOpen(false); setShowDashboard(true); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-[#faf9f7] transition">
+                  <BarChart2 size={15} className="text-slate-400" /> Dashboard
+                </button>
+                {canManageChannelAccess && <>
+                  <div className="my-1 border-t border-[#f1f0ec]" />
+                  <button onClick={() => { setMoreMenuOpen(false); setChannelAccessOpen(true); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-[#faf9f7] transition">
+                    <LockKeyhole size={15} className="text-slate-400" /> Quem vê cada canal
+                  </button>
+                  <button onClick={() => { setMoreMenuOpen(false); setChannelFunnelsOpen(true); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-[#faf9f7] transition">
+                    <GitBranch size={15} className="text-slate-400" /> Funil de cada canal
+                  </button>
+                </>}
+              </div>
+            </>
+          )}
+        </div>
       )}
       <button onClick={() => setNewConvOpen(true)} title="Nova conversa"
         className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition active:scale-90 hover:rotate-90 duration-200">
@@ -963,16 +1202,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       </>)}
 
       {/* ── Conteúdo principal do módulo (atendimento) ── */}
-      <div className="flex flex-1 min-h-0">
+      <div className="relative flex flex-1 min-h-0">
       {/* ── Lista de conversas ── */}
       <aside style={isMobile ? undefined : { width: listWidth }}
+        data-testid="whatsapp-conversation-list"
         className={`flex-shrink-0 flex-col border-r border-[#e7e5df] bg-white min-h-0 ${isMobile ? (selectedId ? 'hidden' : 'flex w-full') : 'flex'}`}>
         <div className={`border-b border-[#e7e5df] ${embedded ? 'px-3 pt-2.5 pb-2' : 'px-4 pt-4 pb-3'}`}>
           {!embedded && (
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <MessageCircle size={18} className="text-amber-600" />
-                <h2 className="font-bold text-slate-800 text-[15px]">WhatsApp</h2>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              {/* O título cede espaço antes das ações: se algo tiver que
+                  encolher, é a palavra "WhatsApp", nunca os botões. */}
+              <div className="flex items-center gap-2 min-w-0">
+                <MessageCircle size={18} className="text-amber-600 shrink-0" />
+                <h2 className="font-bold text-slate-800 text-[15px] truncate">WhatsApp</h2>
               </div>
               {listHeaderActions}
             </div>
@@ -1058,6 +1300,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             drafts={listDrafts}
             mutedIds={mutedIds}
             funnelLabelsForChannel={funnelLabelsForChannel}
+            elapsedMinutes={elapsedMinutes}
             conversationStatus={effectiveConversationStatus}
             docStatusFor={effectiveDocStatus}
             trackedSignatureFor={trackedSignatureStatus}
@@ -1069,8 +1312,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       </aside>
 
       {/* Divisória arrastável lista ↔ thread (Fase 10.1) */}
-      <div onMouseDown={startListResize} title="Arraste para redimensionar"
-        className="hidden md:block w-1.5 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-amber-300/60 active:bg-amber-400/70 transition-colors" />
+      <div onPointerDown={startListResize} title="Arraste para redimensionar" role="separator" aria-orientation="vertical"
+        className="hidden md:block w-1.5 flex-shrink-0 cursor-col-resize touch-none bg-transparent hover:bg-amber-300/60 active:bg-amber-400/70 transition-colors" />
 
       {/* ── Thread ── */}
       <section className={`relative flex-1 flex-col min-h-0 min-w-0 ${isMobile && !selectedId ? 'hidden' : 'flex'}`}
@@ -1089,7 +1332,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           </div>
         ) : (
           <>
-            <header className={`flex items-center gap-2 sm:gap-3 border-b border-[#e7e5df] bg-white ${embedded ? 'px-2.5 py-2' : 'px-2.5 sm:px-5 py-3'}`}>
+            <header className={`flex items-center gap-2 sm:gap-3 border-b border-black/[0.06] bg-[#f0f2f5] ${embedded ? 'px-2.5 py-2' : 'px-2.5 sm:px-5 py-2.5'}`}>
               {isMobile && (
                 <button onClick={() => setSelectedId(null)} title="Voltar à lista"
                   className="flex-shrink-0 -ml-1 w-9 h-9 rounded-lg text-slate-600 hover:bg-[#f3f2ef] flex items-center justify-center transition">
@@ -1128,12 +1371,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                       </span>
                     );
                   })()}
-                  {(() => { const sla = slaSignal(selected); return sla ? (
+                  {(() => { const sla = slaSignal(selected, elapsedMinutes); return sla ? (
                     <span className="inline-flex items-center gap-1 font-semibold" style={{ color: sla.color }}>
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: sla.color }} /> {sla.label}
                     </span>
                   ) : null; })()}
-                  {(() => { const ta = transferAlert(selected); return ta ? (
+                  {(() => { const ta = transferAlert(selected, elapsedMinutes); return ta ? (
                     <span className="inline-flex items-center gap-1 font-semibold" style={{ color: ta.color }}>
                       <ArrowRightLeft size={11} /> {ta.label}
                     </span>
@@ -1341,8 +1584,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               </div>
             )}
 
-            <div ref={setThreadEl} onScroll={onThreadScroll} className="flex-1 overflow-y-auto min-h-0" style={{ background: '#F8F9FA' }}>
-              <div ref={threadContentRef} className="px-3 sm:px-5 py-4 space-y-1.5">
+            <div ref={setThreadEl} onScroll={onThreadScroll} className="wa-thread-bg flex-1 overflow-y-auto min-h-0">
+              <div ref={threadContentRef} className="mx-auto w-full max-w-[1180px] px-3 sm:px-6 py-4">
               {loadingMsgs ? (
                 <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
               ) : (() => {
@@ -1359,23 +1602,42 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     </div>
                   )}
                   {/* Álbuns/bolhas a partir do agrupamento memoizado (messageUnits) */}
-                  {messageUnits.map(u => {
+                  {messageUnits.map((u, unitIndex) => {
                       const head = u.kind === 'album' ? u.items[0] : u.m;
+                      const tail = u.kind === 'album' ? u.items[u.items.length - 1] : u.m;
+                      const previousUnit = unitIndex > 0 ? messageUnits[unitIndex - 1] : null;
+                      const nextUnit = unitIndex < messageUnits.length - 1 ? messageUnits[unitIndex + 1] : null;
+                      const previousTail = previousUnit
+                        ? (previousUnit.kind === 'album' ? previousUnit.items[previousUnit.items.length - 1] : previousUnit.m)
+                        : null;
+                      const nextHead = nextUnit ? (nextUnit.kind === 'album' ? nextUnit.items[0] : nextUnit.m) : null;
+                      const belongsToSameGroup = (left: WhatsAppMessage | null, right: WhatsAppMessage | null) => {
+                        if (!left || !right) return false;
+                        if (left.direction !== right.direction || (left.sender_user_id || null) !== (right.sender_user_id || null)) return false;
+                        if (new Date(left.wa_timestamp).toDateString() !== new Date(right.wa_timestamp).toDateString()) return false;
+                        return Math.abs(new Date(right.wa_timestamp).getTime() - new Date(left.wa_timestamp).getTime()) <= 5 * 60_000;
+                      };
+                      const groupStart = !belongsToSameGroup(previousTail, head);
+                      const groupEnd = !belongsToSameGroup(tail, nextHead);
                       const day = new Date(head.wa_timestamp).toDateString();
                       const showDivider = day !== prevDay;
                       prevDay = day;
-                      const senderName = head.direction === 'out' && head.sender_user_id ? (agentLabel(staffById.get(head.sender_user_id)) || staffByUser.get(head.sender_user_id) || null) : null;
+                      const senderName = groupStart && head.direction === 'out' && head.sender_user_id
+                        ? (agentLabel(staffById.get(head.sender_user_id)) || staffByUser.get(head.sender_user_id) || null)
+                        : null;
                       return (
                         <React.Fragment key={u.kind === 'album' ? `album-${head._tempId || head.id}` : (head._tempId || head.id)}>
                           {showDivider && <DateDivider label={dayLabel(head.wa_timestamp)} />}
                           {u.kind === 'album' ? (
-                            <ImageAlbum items={u.items} out={head.direction === 'out'} senderName={senderName} onOpenImage={setLightbox} />
+                            <ImageAlbum items={u.items} out={head.direction === 'out'} senderName={senderName} groupStart={groupStart} onOpenImage={setLightbox} />
                           ) : (
                             <MessageBubble
                               m={u.m}
                               repliedTo={u.m.reply_to_id ? msgById.get(u.m.reply_to_id) || null : null}
                               senderName={senderName}
                               senderRole={u.m.direction === 'out' && u.m.sender_user_id ? agentRoleLabel(staffById.get(u.m.sender_user_id)) : null}
+                              groupStart={groupStart}
+                              groupEnd={groupEnd}
                               privateMode={privateMode}
                               canCreateFollowups={!!selected?.client_id}
                               onOpenImage={setLightbox}
@@ -1394,11 +1656,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
             {/* Banner de reply / edição */}
             {(replyTo || editing) && !selected.is_blocked && (
-              <div className="px-4 pt-2 bg-white">
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border-l-2 border-amber-500">
-                  {editing ? <Pencil size={14} className="text-amber-600 flex-shrink-0" /> : <CornerUpLeft size={14} className="text-amber-600 flex-shrink-0" />}
+              <div className="px-3 pt-2 bg-[#f0f2f5]">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border-l-[3px] border-[#00a884] shadow-sm">
+                  {editing ? <Pencil size={14} className="text-[#008069] flex-shrink-0" /> : <CornerUpLeft size={14} className="text-[#008069] flex-shrink-0" />}
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-bold text-amber-700">{editing ? 'Editando mensagem' : `Respondendo${(replyTo!.direction === 'out') ? ' você' : ''}`}</p>
+                    <p className="text-[11px] font-bold text-[#008069]">{editing ? 'Editando mensagem' : `Respondendo${(replyTo!.direction === 'out') ? ' você' : ''}`}</p>
                     <p className="text-[12px] text-slate-600 truncate">{(editing || replyTo)!.content || typeLabel((editing || replyTo)!.type)}</p>
                   </div>
                   <button onClick={() => { setReplyTo(null); setEditing(null); if (editing) setDraft(''); }} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
@@ -1432,6 +1694,28 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               </div>
             )}
 
+            {/* Pedido de descadastro. Continuar disparando campanha para quem
+                pediu para sair é o caminho mais rápido para ser denunciado como
+                spam — e o WhatsApp derruba o número do escritório, não a
+                campanha. Detectamos e propomos a marcação; quem decide é a
+                equipe, porque "pare" no meio de um atendimento nem sempre é
+                descadastro. */}
+            {optOutRequest && (
+              <div className="px-4 py-2 border-t border-violet-200 bg-violet-50 flex items-center gap-2">
+                <BellOff size={14} className="text-violet-600 flex-shrink-0" />
+                <p className="flex-1 text-[12px] text-violet-900">
+                  O cliente parece ter pedido para não receber mais mensagens de campanha.
+                </p>
+                <button onClick={markDoNotDisturb}
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-violet-200 text-violet-700 text-[12px] font-semibold hover:bg-violet-100 transition">
+                  Marcar “{DO_NOT_DISTURB_LABEL}”
+                </button>
+                <button onClick={() => setOptOutDismissed(selected.id)}
+                  title="Não é descadastro"
+                  className="flex-shrink-0 text-violet-400 hover:text-violet-700 text-[12px]">✕</button>
+              </div>
+            )}
+
             {/* Composer (ou aviso de bloqueio) */}
             {selected.is_blocked ? (
               <div className="px-4 py-3 border-t border-[#e7e5df] bg-red-50/60 flex items-center gap-3">
@@ -1445,7 +1729,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 </button>
               </div>
             ) : (
-            <div className="relative px-2.5 sm:px-4 py-3 border-t border-[#e7e5df] bg-white">
+            <div className="relative px-2.5 sm:px-3 py-2 border-t border-black/[0.06] bg-[#f0f2f5]">
               {recording ? (
                 <div className="flex items-center gap-2.5">
                   {/* Keyframes do equalizador (escopo local, estilo WhatsApp) */}
@@ -1456,7 +1740,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     <Trash2 size={18} />
                   </button>
                   {/* Pílula com ponto pulsante + onda animada + cronômetro */}
-                  <div className="flex-1 min-w-0 flex items-center gap-2.5 px-3.5 h-10 rounded-full bg-[#f3f2ef]">
+                  <div className="flex-1 min-w-0 flex items-center gap-2.5 px-3.5 h-10 rounded-full bg-white">
                     <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
                     <div className="flex-1 min-w-0 flex items-center justify-center gap-[3px] h-5 overflow-hidden">
                       {WA_REC_BARS.map((h, i) => (
@@ -1470,7 +1754,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   </div>
                   {/* Enviar o áudio */}
                   <button onClick={() => stopRecording(true)} title="Enviar áudio"
-                    className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 transition">
+                    className="flex-shrink-0 w-10 h-10 rounded-full bg-[#00a884] text-white flex items-center justify-center hover:bg-[#008f72] transition">
                     <Send size={16} />
                   </button>
                 </div>
@@ -1482,14 +1766,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     <input ref={docInputRef} type="file" className="hidden" onChange={e => onPickFiles(e, 'document')} />
                     {/* Backdrop p/ fechar o widget flutuante ao tocar fora */}
                     {attachMenuOpen && <div className="fixed inset-0 z-20" onClick={() => setAttachMenuOpen(false)} />}
-                    {/* Widget flutuante de ações (anexos/IA), à direita — a barra de digitação fica só com texto + áudio */}
-                    <div className="absolute right-2.5 sm:right-4 bottom-full mb-2 z-30 flex flex-col items-end gap-2">
-                      {attachMenuOpen && (() => {
+                    {/* Menu de anexos acima do botão "+" integrado ao compositor. */}
+                    {attachMenuOpen && (() => {
                         const row = 'w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-[13.5px] font-medium text-slate-700 hover:bg-amber-50 transition disabled:opacity-50';
                         const dot = 'w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0';
                         const run = (fn: () => void) => () => { setAttachMenuOpen(false); fn(); };
                         return (
-                          <div className="w-60 rounded-2xl bg-white shadow-[0_12px_40px_-8px_rgba(15,23,42,0.25)] ring-1 ring-black/5 p-1.5 origin-bottom-right animate-[waPop_120ms_ease-out]">
+                          <div className="absolute left-2.5 sm:left-3 bottom-full mb-2 z-30 w-60 rounded-2xl bg-white shadow-[0_12px_40px_-8px_rgba(15,23,42,0.25)] ring-1 ring-black/5 p-1.5 origin-bottom-left animate-[waPop_120ms_ease-out]">
                             <style>{`@keyframes waPop{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}`}</style>
                             <button className={row} onClick={run(() => imgInputRef.current?.click())}><span className={`${dot} bg-amber-100 text-amber-700`}><ImageIcon size={17} /></span> Imagem ou vídeo</button>
                             <button className={row} onClick={run(() => docInputRef.current?.click())}><span className={`${dot} bg-amber-100 text-amber-700`}><Paperclip size={17} /></span> Documento</button>
@@ -1503,14 +1786,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                           </div>
                         );
                       })()}
-                      <button onClick={() => setAttachMenuOpen(o => !o)} title="Anexos e ações" aria-haspopup="menu" aria-expanded={attachMenuOpen}
-                        className="w-10 h-10 rounded-full bg-amber-600 text-white shadow-lg shadow-amber-600/25 flex items-center justify-center hover:bg-amber-700 transition">
-                        <Plus size={20} className={`transition-transform duration-200 ${attachMenuOpen ? 'rotate-45' : ''}`} />
-                      </button>
-                    </div>
                   </>
                 )}
                 <div className="flex items-end gap-2">
+                  {!editing && (
+                    <button onClick={() => setAttachMenuOpen(o => !o)} title="Anexos e ações" aria-haspopup="menu" aria-expanded={attachMenuOpen}
+                      className="flex-shrink-0 w-10 h-10 rounded-full text-[#54656f] flex items-center justify-center hover:bg-black/[0.06] transition">
+                      <Plus size={22} className={`transition-transform duration-200 ${attachMenuOpen ? 'rotate-45' : ''}`} />
+                    </button>
+                  )}
                   <div className="relative flex-1">
                     {/* Menu do atalho "/" — modelos de mensagem (estilo WhatsApp) */}
                     {slashActive && (
@@ -1553,18 +1837,18 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                       spellCheck lang="pt-BR" autoCorrect="on" autoCapitalize="sentences"
                       data-testid="whatsapp-message-input"
                       rows={1} placeholder={editing ? 'Editar mensagem…' : 'Digite uma mensagem…'}
-                      className="relative z-0 w-full resize-none max-h-48 min-h-[40px] leading-5 px-3.5 py-2.5 text-[13.5px] rounded-xl bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
+                      className="relative z-0 w-full resize-none max-h-48 min-h-[40px] leading-5 px-3.5 py-2.5 text-[14px] rounded-xl bg-white border border-transparent focus:border-[#00a884]/35 outline-none shadow-[0_1px_1px_rgba(11,20,26,0.04)]" />
                     <ComposerSpellcheckContextMenu menu={composerSpellMenu}
                       onReplace={replaceComposerSpelling} onClose={closeComposerSpellMenu} />
                   </div>
                   {draft.trim() || editing ? (
                     <button onClick={handleSend} disabled={sending || !draft.trim()}
-                      className={`flex-shrink-0 w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 hover:scale-105 disabled:opacity-40 transition active:scale-90 ${sending ? '' : 'wa-send-ready'}`}>
+                      className={`flex-shrink-0 w-10 h-10 rounded-full bg-[#00a884] text-white flex items-center justify-center hover:bg-[#008f72] hover:scale-105 disabled:opacity-40 transition active:scale-90 ${sending ? '' : 'wa-send-ready'}`}>
                       {sending ? <Loader2 size={16} className="animate-spin" /> : editing ? <Check size={18} /> : <Send size={16} />}
                     </button>
                   ) : (
                     <button title="Gravar áudio" onClick={startRecording}
-                      className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-600 text-white flex items-center justify-center hover:bg-amber-700 hover:scale-105 transition active:scale-90">
+                      className="flex-shrink-0 w-10 h-10 rounded-full text-[#54656f] flex items-center justify-center hover:bg-black/[0.06] hover:text-[#00a884] transition active:scale-90">
                       <Mic size={18} />
                     </button>
                   )}
@@ -1578,20 +1862,29 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       </section>
 
       {/* ── Painel do contato ── */}
-      {selected && (
-        <div onMouseDown={startPanelResize} title="Arraste para redimensionar"
-          className="hidden xl:block w-1.5 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-amber-300/60 active:bg-amber-400/70 transition-colors" />
+      {selected && panelDocked && !detailsPanelCollapsed && (
+        <div onPointerDown={startPanelResize} title="Arraste para redimensionar" role="separator" aria-orientation="vertical"
+          className="relative hidden xl:block w-1.5 flex-shrink-0 cursor-col-resize touch-none bg-transparent hover:bg-amber-300/60 active:bg-amber-400/70 transition-colors">
+          <DockedDetailsToggle collapsed={false} onToggle={() => setDetailsPanelCollapsed(true)} />
+        </div>
+      )}
+      {selected && panelDocked && detailsPanelCollapsed && (
+        <DockedDetailsToggle collapsed onToggle={() => setDetailsPanelCollapsed(false)} />
       )}
       {/* Fundo escurecido da gaveta (apenas quando o painel não está fixo) */}
       {selected && !panelDocked && mobilePanelOpen && (
         <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]" onClick={() => setMobilePanelOpen(false)} />
       )}
       {selected && (
-        <aside style={panelDocked ? { width: panelWidth } : undefined}
-          className={`flex-shrink-0 flex flex-col gap-3 overflow-y-auto min-h-0 border-l border-[#e7e5df] bg-white p-3.5 pb-24 ${
+        <aside style={panelDocked ? { width: detailsPanelCollapsed ? 0 : panelWidth } : undefined}
+          data-testid="whatsapp-details-panel"
+          aria-hidden={panelDocked && detailsPanelCollapsed}
+          className={`flex-shrink-0 flex flex-col min-h-0 bg-white transition-[width,opacity,padding] duration-200 ${
             panelDocked
-              ? ''
-              : `fixed top-0 right-0 bottom-0 z-50 w-[88%] max-w-[360px] shadow-2xl transition-transform duration-200 ${mobilePanelOpen ? 'translate-x-0' : 'translate-x-full'}`
+              ? detailsPanelCollapsed
+                ? 'gap-0 overflow-hidden border-l-0 p-0 opacity-0 pointer-events-none'
+                : 'gap-3 overflow-y-auto border-l border-[#e7e5df] p-3.5 pb-24 opacity-100'
+              : `gap-3 overflow-y-auto border-l border-[#e7e5df] p-3.5 pb-24 fixed top-0 right-0 bottom-0 z-50 w-[88%] max-w-[360px] shadow-2xl transition-transform duration-200 ${mobilePanelOpen ? 'translate-x-0' : 'translate-x-full'}`
           }`}>
           {/* Botão de fechar (apenas no modo gaveta, fora do desktop) */}
           {!panelDocked && (
@@ -1904,6 +2197,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           departments={selectedAllowedDepartments}
           staff={staff}
           moduleConfig={moduleConfig}
+          conversations={conversations}
+          currentUserId={user?.id ?? null}
+          previousAgentIds={conversationAgentIds}
           onClose={() => setTransferOpen(false)}
           onDone={onTransferDone}
         />
@@ -1995,6 +2291,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         <AttendanceDashboard onClose={() => setShowDashboard(false)} />
       )}
 
+      {!embedded && queuePanelOpen && (
+        <QueuePanel
+          conversations={conversations}
+          staff={staff}
+          departmentMembers={departmentMembers}
+          capacity={moduleConfig.agent_capacity ?? 0}
+          currentUserId={user?.id ?? null}
+          policy={queuePolicy}
+          onOpenConversation={setSelectedId}
+          onChanged={loadConversations}
+          onClose={() => setQueuePanelOpen(false)}
+        />
+      )}
+
       {/* Fase M: modal de resumo automático por IA */}
       {summaryOpen && selected && (
         <ConversationSummaryModal
@@ -2009,7 +2319,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         <RequestDocumentModal
           conversationId={selected.id}
           clientId={selected.client_id}
-          clientName={selected.client_name || selected.contact_name}
+          clientName={selected.client_name || selected.contact_name || ''}
           createdBy={user?.id ?? null}
           moduleConfig={moduleConfig}
           onClose={() => setDocRequestOpen(false)}
@@ -2018,18 +2328,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       )}
 
       {/* Fase H: modais de ação jurídica a partir de mensagem */}
-      {deadlineSource && selected && (
+      {deadlineSource && selected?.client_id && (
         <CreateDeadlineFromMessageModal
           message={deadlineSource}
-          clientId={selected.client_id!}
+          clientId={selected.client_id}
+          clientName={selected.client_name || selected.contact_name || ''}
           processes={overview?.processes ?? []}
           onClose={() => setDeadlineSource(null)}
         />
       )}
-      {taskSource && selected && (
+      {taskSource && selected?.client_id && (
         <CreateTaskFromMessageModal
           message={taskSource}
-          clientId={selected.client_id!}
+          clientId={selected.client_id}
+          clientName={selected.client_name || selected.contact_name || ''}
           processes={overview?.processes ?? []}
           onClose={() => setTaskSource(null)}
         />

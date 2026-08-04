@@ -18,6 +18,7 @@ import type { FunnelLabel } from '../../services/settings.service';
 import type {
   WhatsAppChannel, WhatsAppConversation, WhatsAppDepartment,
 } from '../../types/whatsapp.types';
+import type { ElapsedMinutes } from './businessTime';
 
 export interface ConversationListProps {
   conversations: WhatsAppConversation[];
@@ -31,6 +32,8 @@ export interface ConversationListProps {
   drafts: Record<string, string>;
   mutedIds: ReadonlySet<string>;
   funnelLabelsForChannel: (channelId: string | null | undefined) => FunnelLabel[];
+  /** Medição de tempo dos badges de SLA (horário útil do canal de cada conversa). */
+  elapsedMinutes?: ElapsedMinutes;
   conversationStatus: (c: WhatsAppConversation) => { key: string; label: string; cls: string };
   docStatusFor: (clientId: string | null | undefined) => 'awaiting' | 'ready' | null;
   trackedSignatureFor: (clientId: string | null | undefined) => { signature_request_id?: string | null; link_id?: string } | null;
@@ -41,7 +44,7 @@ export interface ConversationListProps {
 
 const ConversationListInner: React.FC<ConversationListProps> = ({
   conversations, selectedId, loading, privateMode, emptyMessage,
-  channelById, deptById, drafts, mutedIds, funnelLabelsForChannel,
+  channelById, deptById, drafts, mutedIds, funnelLabelsForChannel, elapsedMinutes,
   conversationStatus, docStatusFor, trackedSignatureFor,
   onSelect, onStopSignatureTracking, onStopTemplateFillTracking,
 }) => {
@@ -75,6 +78,7 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
             muted={mutedIds.has(c.id)}
             draftPreview={drafts[c.id] ?? ''}
             funnelLabels={funnelLabelsForChannel(c.instance_id)}
+            elapsedMinutes={elapsedMinutes}
             onSelect={onSelect}
             onDismissTracking={tracked
               ? () => (tracked.signature_request_id

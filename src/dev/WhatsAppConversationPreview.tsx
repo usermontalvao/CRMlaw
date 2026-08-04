@@ -1,0 +1,286 @@
+// DEV-ONLY: bancada visual da thread do WhatsApp (?waconversationpreview=1).
+// Usa as bolhas reais para validar densidade, agrupamento, áudio e responsividade
+// sem depender de autenticação ou de dados de clientes.
+import React, { useEffect, useState } from 'react';
+import { MessageBubble } from '../components/whatsapp/messageBubble';
+import { DateDivider } from '../components/whatsapp/conversationListItem';
+import { DockedDetailsToggle } from '../components/whatsapp/DockedDetailsToggle';
+import { useResizableLayout } from '../components/whatsapp/hooks/useResizableLayout';
+import type { WhatsAppMessage } from '../types/whatsapp.types';
+import { ArrowRightLeft, Download, History, MessageSquare, Mic, MoreVertical, Phone, Plus, Search, Sparkles, UserRound, Video } from 'lucide-react';
+
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+const PREVIEW_IMAGE = `data:image/svg+xml,${encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="960" height="1280" viewBox="0 0 960 1280">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d9fdd3"/><stop offset="1" stop-color="#8bd5c0"/></linearGradient></defs>
+    <rect width="960" height="1280" fill="url(#g)"/><rect x="150" y="180" width="660" height="880" rx="32" fill="white" opacity=".88"/>
+    <circle cx="480" cy="465" r="130" fill="#00a884" opacity=".18"/><path d="M340 830h280M340 890h210" stroke="#008069" stroke-width="28" stroke-linecap="round" opacity=".45"/>
+  </svg>
+`)}`;
+
+function message(overrides: Partial<WhatsAppMessage> & Pick<WhatsAppMessage, 'id' | 'direction' | 'type' | 'wa_timestamp'>): WhatsAppMessage {
+  return {
+    conversation_id: 'preview-conversation',
+    evolution_message_id: 'evo-' + overrides.id,
+    content: null,
+    media_url: null,
+    media_mime: null,
+    storage_path: null,
+    media_size: null,
+    media_sha256: null,
+    file_name: null,
+    transcription_text: null,
+    transcription_status: null,
+    reply_to_id: null,
+    edited_at: null,
+    status: 'read',
+    sender_user_id: null,
+    created_at: overrides.wa_timestamp,
+    ...overrides,
+  };
+}
+
+const AUDIO = message({
+  id: 'audio',
+  direction: 'in',
+  type: 'audio',
+  wa_timestamp: '2026-08-04T15:08:00.000Z',
+  media_url: SILENT_WAV,
+  media_mime: 'audio/wav',
+  transcription_status: 'done',
+  transcription_text: 'Olá, doutor, bom dia. A atendente do INSS informou que o resultado poderia ser consultado pelo telefone 135. O senhor consegue verificar para mim?',
+});
+
+const FIRST_OUT = message({
+  id: 'out-1',
+  direction: 'out',
+  type: 'text',
+  wa_timestamp: '2026-08-04T15:09:00.000Z',
+  content: 'Há sim. Eu já consultei, mas o resultado ainda não está disponível.',
+  sender_user_id: 'pedro',
+});
+
+const SECOND_OUT = message({
+  id: 'out-2',
+  direction: 'out',
+  type: 'text',
+  wa_timestamp: '2026-08-04T15:10:00.000Z',
+  content: 'Depois do almoço vou acessar novamente e lhe aviso por aqui.',
+  sender_user_id: 'pedro',
+});
+
+const OK = message({
+  id: 'ok',
+  direction: 'in',
+  type: 'text',
+  wa_timestamp: '2026-08-04T15:10:30.000Z',
+  content: 'Ok, doutor. Obrigada!',
+});
+
+const LAST_OUT = message({
+  id: 'out-3',
+  direction: 'out',
+  type: 'text',
+  wa_timestamp: '2026-08-04T17:32:00.000Z',
+  content: 'Boa tarde! O senhor conseguiu realizar a alteração da senha do Meu INSS?',
+  sender_user_id: 'pedro',
+});
+
+const PREVIEW_PHOTO = message({
+  id: 'photo',
+  direction: 'in',
+  type: 'image',
+  wa_timestamp: '2026-08-04T15:11:00.000Z',
+});
+
+// Print de celular: bem mais alto que largo. É o formato que mais chega no
+// atendimento (o cliente fotografa a tela do Meu INSS, do banco, do processo) e
+// o que revelava a bolha com faixas cinza sobrando dos dois lados.
+const PHONE_SHOT = `data:image/svg+xml,${encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="2340" viewBox="0 0 1080 2340">
+    <rect width="1080" height="2340" fill="#ffffff"/>
+    <rect width="1080" height="90" fill="#111827"/>
+    <rect x="70" y="220" width="820" height="70" rx="10" fill="#1f2937"/>
+    <rect x="70" y="320" width="700" height="70" rx="10" fill="#1f2937"/>
+    <rect x="70" y="480" width="940" height="26" rx="13" fill="#9ca3af"/>
+    <rect x="70" y="540" width="880" height="26" rx="13" fill="#9ca3af"/>
+    <rect x="70" y="600" width="910" height="26" rx="13" fill="#9ca3af"/>
+    <rect x="70" y="1800" width="940" height="300" rx="16" fill="#374151"/>
+  </svg>
+`)}`;
+
+const PHONE_SHOT_MSG = message({
+  id: 'phone-shot',
+  direction: 'in',
+  type: 'image',
+  wa_timestamp: '2026-08-04T15:12:00.000Z',
+  media_url: PHONE_SHOT,
+  media_mime: 'image/svg+xml',
+});
+
+// Paisagem larga: o outro extremo, para conferir que a bolha veste os dois.
+const WIDE_SHOT = `data:image/svg+xml,${encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="700" viewBox="0 0 1600 700">
+    <rect width="1600" height="700" fill="#dbeafe"/>
+    <circle cx="1300" cy="160" r="90" fill="#fbbf24"/>
+    <path d="M0 520 L380 280 L700 520 L1050 330 L1600 620 L1600 700 L0 700 Z" fill="#1d4ed8" opacity=".55"/>
+  </svg>
+`)}`;
+
+const WIDE_SHOT_MSG = message({
+  id: 'wide-shot',
+  direction: 'in',
+  type: 'image',
+  wa_timestamp: '2026-08-04T15:13:00.000Z',
+  media_url: WIDE_SHOT,
+  media_mime: 'image/svg+xml',
+});
+
+// Figurinha (webp/png com fundo transparente): tem que aparecer solta sobre a
+// conversa, não como cartão de arquivo.
+const STICKER = `data:image/svg+xml,${encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+    <circle cx="256" cy="256" r="200" fill="#fde047"/>
+    <circle cx="196" cy="214" r="26" fill="#1f2937"/><circle cx="316" cy="214" r="26" fill="#1f2937"/>
+    <path d="M164 306a100 100 0 0 0 184 0" stroke="#1f2937" stroke-width="26" fill="none" stroke-linecap="round"/>
+  </svg>
+`)}`;
+
+const STICKER_MSG = message({
+  id: 'sticker',
+  direction: 'in',
+  type: 'sticker',
+  wa_timestamp: '2026-08-04T15:14:00.000Z',
+  media_url: STICKER,
+  media_mime: 'image/webp',
+});
+
+// Áudio com transcrição: ela precisa estar legível de cara, sem clique.
+const AUDIO_TRANSCRITO = message({
+  id: 'audio-2',
+  direction: 'in',
+  type: 'audio',
+  wa_timestamp: '2026-08-04T15:15:00.000Z',
+  media_url: SILENT_WAV,
+  media_mime: 'audio/wav',
+  transcription_status: 'done',
+  transcription_text: 'Doutor, consegui abrir o aplicativo. Aparece que o benefício está em análise desde o dia doze. Preciso levar mais algum documento na agência?',
+});
+
+const noop = () => {};
+const bubbleActions = {
+  onReply: noop,
+  onEdit: noop,
+  onOpenImage: noop,
+  onRetry: noop,
+  onDiscard: noop,
+  onResend: noop,
+  onCancel: noop,
+  onCreateDeadline: noop,
+  onCreateTask: noop,
+};
+
+export default function WhatsAppConversationPreview() {
+  const [detailsCollapsed, setDetailsCollapsed] = useState(false);
+  const { panelWidth, startPanelResize } = useResizableLayout();
+  const [previewImageReady, setPreviewImageReady] = useState(false);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setPreviewImageReady(true), 5_000);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-slate-200 p-4 lg:p-8">
+      <div className="relative mx-auto flex h-[calc(100vh-2rem)] max-w-[1180px] overflow-hidden rounded-xl bg-white shadow-2xl lg:h-[calc(100vh-4rem)]">
+        <section data-preview-thread className="flex min-w-0 flex-1 flex-col">
+        <header className="flex items-center gap-3 border-b border-black/[0.06] bg-[#f0f2f5] px-4 py-2.5">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#d9fdd3] text-sm font-bold text-[#008069]">LI</div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[14px] font-semibold text-[#111b21]">Lisliandra Inocêncio</p>
+            <p className="text-[11.5px] text-[#667781]">online · atendimento com Dr. Pedro</p>
+          </div>
+          <div className="flex items-center gap-1 text-[#54656f]">
+            {[Video, Phone, Search, MoreVertical].map((Icon, index) => (
+              <button key={index} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/[0.06]"><Icon size={18} /></button>
+            ))}
+          </div>
+        </header>
+
+        <main className="wa-thread-bg flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-[1050px] px-5 py-4">
+            <DateDivider label="Hoje" />
+            <MessageBubble m={AUDIO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={FIRST_OUT} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd={false} {...bubbleActions} />
+            <MessageBubble m={SECOND_OUT} repliedTo={null} senderName={null} senderRole="Administrador" groupStart={false} groupEnd {...bubbleActions} />
+            <MessageBubble m={OK} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={{ ...PREVIEW_PHOTO, media_url: previewImageReady ? PREVIEW_IMAGE : null }} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={PHONE_SHOT_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={WIDE_SHOT_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={STICKER_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={AUDIO_TRANSCRITO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={LAST_OUT} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...bubbleActions} />
+          </div>
+        </main>
+
+        <footer className="flex items-end gap-2 border-t border-black/[0.06] bg-[#f0f2f5] px-3 py-2">
+          <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#54656f] hover:bg-black/[0.06]"><Plus size={22} /></button>
+          <textarea rows={1} placeholder="Digite uma mensagem…"
+            className="min-h-10 flex-1 resize-none rounded-xl border border-transparent bg-white px-3.5 py-2.5 text-[14px] leading-5 outline-none focus:border-[#00a884]/35" />
+          <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#54656f] hover:bg-black/[0.06] hover:text-[#00a884]"><Mic size={19} /></button>
+        </footer>
+        </section>
+
+        {!detailsCollapsed && (
+          <div onPointerDown={startPanelResize} role="separator" aria-orientation="vertical"
+            className="relative w-1.5 shrink-0 touch-none cursor-col-resize bg-transparent">
+            <DockedDetailsToggle collapsed={false} onToggle={() => setDetailsCollapsed(true)} />
+          </div>
+        )}
+        {detailsCollapsed && (
+          <DockedDetailsToggle collapsed onToggle={() => setDetailsCollapsed(false)} />
+        )}
+
+        <aside
+          data-preview-details
+          data-testid="whatsapp-details-panel"
+          aria-hidden={detailsCollapsed}
+          style={{ width: detailsCollapsed ? 0 : panelWidth }}
+          className={`shrink-0 bg-white transition-[width,opacity,padding] duration-200 ${detailsCollapsed ? 'overflow-hidden p-0 opacity-0' : 'overflow-y-auto border-l border-[#e7e5df] p-4 opacity-100'}`}
+        >
+          <div className="flex items-center gap-3 border-b border-[#f1f0ec] pb-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#d9fdd3] text-[#008069]"><UserRound size={21} /></div>
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-bold text-slate-800">Lisliandra Inocêncio</p>
+              <p className="mt-0.5 text-[11px] text-slate-400">+55 (65) 98404-6375</p>
+            </div>
+          </div>
+          <div className="mt-4 space-y-4">
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Responsável</p>
+              <p className="text-[12px] font-semibold text-slate-700">Dr. Pedro</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><p className="text-[9px] font-bold uppercase text-slate-400">Setor</p><p className="text-[12px] font-semibold text-slate-700">Previdenciário</p></div>
+              <div><p className="text-[9px] font-bold uppercase text-slate-400">Etiqueta</p><span className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">Novo</span></div>
+            </div>
+            <button className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#e7e5df] py-2 text-[11px] font-semibold text-slate-500"><ArrowRightLeft size={13} /> Transferir conversa</button>
+            <div>
+              <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[[History, 'Histórico'], [MessageSquare, 'Modelos'], [Sparkles, 'Resumo IA'], [Download, 'Exportar']].map(([Icon, label]) => {
+                  const ActionIcon = Icon as typeof History;
+                  return <button key={label as string} className="flex items-center justify-center gap-1.5 rounded-lg bg-[#f3f2ef] py-2 text-[11px] font-semibold text-slate-500"><ActionIcon size={13} />{label as string}</button>;
+                })}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[#e7e5df] p-3">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cliente vinculado</p>
+              <p className="mt-2 text-[12px] font-bold text-slate-800">PEDRO RODRIGUES MONTALVAO NETO</p>
+              <p className="mt-1 text-[11px] text-slate-400">045.448.031-93 · Ativo</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}

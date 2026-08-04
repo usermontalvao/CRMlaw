@@ -15,6 +15,13 @@ export interface WhatsAppChannelMemberRow {
   user_id: string;
 }
 
+/**
+ * Aviso de que o expediente de algum canal mudou. Quem depende dele (o SLA da
+ * inbox, o banner de ausência) recarrega ao ouvir — a tela que edita e a tela
+ * que consome vivem em módulos diferentes.
+ */
+export const BUSINESS_HOURS_CHANGED_EVENT = 'whatsapp:business-hours-changed';
+
 /** Identidade "no automático": nome do perfil, tratamento deduzido, saudação ligada. */
 export const DEFAULT_AGENT_PREFS: AgentPrefs = {
   auto_greeting: true, short_name: null, role_label: null, treatment: null,
@@ -227,6 +234,24 @@ export const adminApi = {
     return (data || []).map((r: any) => r.user_id);
   },
 
+  /**
+   * Mapa setor → membros, de uma vez só. A versão por setor obrigaria uma
+   * consulta por departamento só para saber quem pode receber o quê — e a
+   * distribuição da fila precisa da matriz inteira antes de decidir qualquer
+   * coisa.
+   */
+  async listAllDepartmentMembers(): Promise<Record<string, string[]>> {
+    const { data, error } = await supabase
+      .from(DEPT_MEMBER_TABLE)
+      .select('department_id, user_id');
+    if (error) throw new Error(error.message);
+    const byDept: Record<string, string[]> = {};
+    for (const row of (data || []) as { department_id: string; user_id: string }[]) {
+      (byDept[row.department_id] ??= []).push(row.user_id);
+    }
+    return byDept;
+  },
+
   async setDepartmentMembers(departmentId: string, userIds: string[]): Promise<void> {
     await supabase.from(DEPT_MEMBER_TABLE).delete().eq('department_id', departmentId);
     if (userIds.length) {
@@ -338,12 +363,37 @@ export const adminApi = {
     return (data || []) as WhatsAppBusinessHoursRow[];
   },
 
+  /**
+   * Horários de TODOS os canais numa consulta. O SLA da inbox precisa da agenda
+   * de cada canal ao mesmo tempo (a lista mistura canais), e uma consulta por
+   * canal a cada render é o tipo de N+1 que só aparece quando o escritório
+   * cresce para cinco números.
+   */
+  async listAllBusinessHours(): Promise<Record<string, WhatsAppBusinessHoursRow[]>> {
+    const { data, error } = await supabase
+      .from('whatsapp_business_hours')
+      .select('*')
+      .order('day_of_week');
+    if (error) throw new Error(error.message);
+    const byInstance: Record<string, WhatsAppBusinessHoursRow[]> = {};
+    for (const row of (data || []) as WhatsAppBusinessHoursRow[]) {
+      (byInstance[row.instance_id] ??= []).push(row);
+    }
+    return byInstance;
+  },
+
   async upsertBusinessHours(instanceId: string, rows: Omit<WhatsAppBusinessHoursRow, 'id' | 'instance_id'>[]): Promise<void> {
     const payload = rows.map(r => ({ ...r, instance_id: instanceId }));
     const { error } = await supabase
       .from('whatsapp_business_hours')
       .upsert(payload, { onConflict: 'instance_id,day_of_week' });
     if (error) throw new Error(error.message);
+    // O expediente é editado em Configurações, mas quem mede o SLA por ele é a
+    // inbox — que já está montada em outro ponto da árvore. Sem este aviso, o
+    // horário novo só valeria no próximo carregamento da página.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(BUSINESS_HOURS_CHANGED_EVENT, { detail: { instanceId } }));
+    }
   },
 
   async updateAbsenceConfig(instanceId: string, absenceMessage: string, absenceEnabled: boolean, timezone?: string): Promise<void> {

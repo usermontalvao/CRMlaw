@@ -3526,20 +3526,98 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   from { opacity: 0; transform: translateY(5px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-/* Elevação suave do balão ao passar o mouse (só box-shadow, p/ não conflitar
-   com o fill-mode da animação de entrada). */
-.wa-bubble { transition: box-shadow 0.18s ease; }
-.group:hover .wa-bubble { box-shadow: 0 5px 16px -6px rgba(0, 0, 0, 0.22); }
+/* Superfície da conversa inspirada no WhatsApp: bege quente e textura quase
+   imperceptível, para não competir com texto, alertas jurídicos ou mídia. */
+.wa-thread-bg {
+  background-color: #efeae2;
+  background-image:
+    linear-gradient(rgba(239, 234, 226, 0.86), rgba(239, 234, 226, 0.86)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cg fill='none' stroke='%2354656f' stroke-width='1.2' opacity='.18'%3E%3Cpath d='M18 28h19a7 7 0 0 1 7 7v8a7 7 0 0 1-7 7H27l-7 6 2-6h-4a7 7 0 0 1-7-7v-8a7 7 0 0 1 7-7Z'/%3E%3Cpath d='M128 26l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1 3-6Z'/%3E%3Cpath d='M73 98c6-9 18-9 24 0M77 111h16M85 90v29'/%3E%3Cpath d='M132 126h22a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6h-8l-6 5 2-5h-10a6 6 0 0 1-6-6v-10a6 6 0 0 1 6-6Z'/%3E%3Cpath d='M25 133c8 0 14 6 14 14M25 141c3 0 6 3 6 6M25 149h.1'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: auto, 180px 180px;
+}
+
+/* Bolhas compactas, sem contorno pesado. O limite absoluto impede mensagens
+   de atravessarem a tela em monitores largos. */
+.wa-bubble {
+  border-radius: 7.5px;
+  box-shadow: 0 1px 1px rgba(11, 20, 26, 0.13);
+  transition: box-shadow 0.16s ease;
+}
+/* Figurinha: sem retângulo, sem sombra e sem rabinho — ela flutua sobre o fundo
+   da conversa, como no WhatsApp. */
+.wa-sticker-bubble {
+  background: transparent;
+  box-shadow: none;
+}
+.wa-bubble-content { max-width: min(76%, 560px); }
+.wa-bubble-media { max-width: min(76%, 320px); }
+.wa-bubble-out { background: #d9fdd3; }
+.wa-bubble-incoming { background: #fff; }
+.group:hover .wa-bubble { box-shadow: 0 2px 5px rgba(11, 20, 26, 0.16); }
+
+.wa-bubble-tail-out::before,
+.wa-bubble-tail-in::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+.wa-bubble-tail-out::before {
+  right: -8px;
+  border-top: 9px solid #d9fdd3;
+  border-right: 9px solid transparent;
+}
+.wa-bubble-tail-in::before {
+  left: -8px;
+  border-top: 9px solid #fff;
+  border-left: 9px solid transparent;
+}
+.wa-bubble-menu-trigger {
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 1px 4px rgba(11, 20, 26, 0.08);
+  backdrop-filter: blur(3px);
+  transition: opacity 0.14s ease, background-color 0.14s ease;
+}
+.wa-bubble-menu-trigger:hover { background: rgba(255, 255, 255, 0.96); }
+
+/* A caixa começa neutra e assume a proporção real assim que os metadados da
+   mídia chegam. Retratos ficam altos, paisagens ficam largas, sem faixas. */
+.wa-media-frame {
+  max-width: min(300px, 72vw);
+  border-radius: 7px;
+  background: #dfe3e5;
+}
+.wa-media-skeleton {
+  background-color: #dfe3e5;
+  overflow: hidden;
+}
+.wa-media-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.32), transparent);
+  animation: wa-media-shimmer 1.35s ease-in-out infinite;
+}
+@keyframes wa-media-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+@media (max-width: 640px) {
+  .wa-bubble-content { max-width: 86%; }
+  .wa-bubble-media { max-width: 82%; }
+}
 
 /* Botões de ação (responder/editar/prazo…) crescem um toque no hover. */
 .wa-msg-actions button { transition: transform 0.15s ease, color 0.15s ease; }
 .wa-msg-actions button:hover { transform: scale(1.25); }
 
-/* Botão de enviar "pronto": pulso âmbar discreto convidando ao envio. */
+/* Botão de enviar "pronto": pulso verde discreto convidando ao envio. */
 .wa-send-ready { animation: wa-send-ready 2.4s ease-in-out infinite; }
 @keyframes wa-send-ready {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0); }
-  50%      { box-shadow: 0 0 0 5px rgba(217, 119, 6, 0.16); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 168, 132, 0); }
+  50%      { box-shadow: 0 0 0 5px rgba(0, 168, 132, 0.15); }
 }
 
 /* Ícone do estado vazio flutua de leve. */

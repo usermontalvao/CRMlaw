@@ -161,6 +161,25 @@ const isStaff = hasSupabaseSession() || isStaffSessionExpired || isDocRoute || i
 async function renderRoot() {
   let rootElement: React.ReactNode;
 
+  // DEV-ONLY: bancada visual da conversa WhatsApp (?waconversationpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('waconversationpreview')) {
+    const { default: WhatsAppConversationPreview } = await import('./dev/WhatsAppConversationPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppConversationPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: simulação de um dia de operação — vários atendentes, fila por SLA,
+  // encaminhamento para advogado e campanha (?waoperationsim=1).
+  if (isDev && new URLSearchParams(window.location.search).has('waoperationsim')) {
+    const { default: WhatsAppOperationSim } = await import('./dev/WhatsAppOperationSim');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppOperationSim />,
+    );
+    return;
+  }
+
   // DEV-ONLY: gestão unificada de acesso aos canais WhatsApp (?waaccesspreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('waaccesspreview')) {
     const { default: WhatsAppAccessPreview } = await import('./dev/WhatsAppAccessPreview');

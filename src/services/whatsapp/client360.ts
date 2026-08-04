@@ -15,6 +15,21 @@ import type { Agreement } from '../../types/financial.types';
 import type { WhatsAppClientLite } from '../../types/whatsapp.types';
 import type { ClientSchedule, ScheduleDeadline, ClientPendings, ClientDocRequest, ClientOverview, ClientTemplateFillLink, ClientTrackedSignatureStatus } from './shared';
 
+/**
+ * Até quantos dias depois do vencimento um prazo pendente ainda é mostrado no
+ * painel da conversa. Passou disso, é registro esquecido no cadastro — não é
+ * pauta do atendimento de hoje.
+ */
+const STALE_DEADLINE_DAYS = 30;
+
+/** Dias de atraso de um vencimento (0 quando ainda não venceu). */
+function daysOverdue(due: string, startOfToday: Date): number {
+  const d = new Date(due.length <= 10 ? `${due}T00:00:00` : due);
+  if (Number.isNaN(d.getTime())) return 0;
+  d.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.round((startOfToday.getTime() - d.getTime()) / 86_400_000));
+}
+
 export const client360Api = {
   /** Busca manual de cliente por nome, CPF/CNPJ ou telefone. */
   async searchClients(query: string): Promise<WhatsAppClientLite[]> {
@@ -100,13 +115,21 @@ export const client360Api = {
     const orphanCalDeadlines = allEvents.filter(e =>
       e.event_type === 'deadline' && e.status === 'pendente' && !(e.deadline_id && tableIds.has(e.deadline_id)));
 
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
     const deadlines: ScheduleDeadline[] = [
       ...tableDeadlines.map(d => ({ id: d.id, title: d.title, due: d.due_date, kind: 'deadline' as const })),
       ...orphanCalDeadlines.map(e => ({ id: e.id, title: e.title, due: e.start_at, kind: 'event' as const })),
-    ].sort((a, b) => a.due.localeCompare(b.due));
+    ]
+      // Vencido recente ainda é pendência de verdade e precisa aparecer. Vencido
+      // há meses é prazo que ninguém baixou no cadastro — e, como a lista é
+      // ordenada por vencimento e cortada nos 5 primeiros, esse resíduo antigo
+      // empurrava os prazos REAIS para fora do painel (e virava o "próximo
+      // prazo" do banner-resumo). Fora da janela, o registro segue no módulo de
+      // Prazos; só deixa de poluir o atendimento.
+      .filter(d => daysOverdue(d.due, startOfToday) <= STALE_DEADLINE_DAYS)
+      .sort((a, b) => a.due.localeCompare(b.due));
 
     // Compromissos = eventos de calendário que não são prazos, daqui pra frente.
-    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
     const events = allEvents
       .filter(e => e.status === 'pendente' && e.event_type !== 'deadline' && new Date(e.start_at) >= startOfToday)
       .sort((a, b) => a.start_at.localeCompare(b.start_at));

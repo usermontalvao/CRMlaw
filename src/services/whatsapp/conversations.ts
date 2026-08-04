@@ -231,6 +231,47 @@ export const conversationsApi = {
   },
 
   /**
+   * Atribui a conversa a um atendente SEM passar por aceite — é o comando de
+   * distribuição da operação, não uma transferência entre pares.
+   *
+   * A diferença importa: `transferConversation` deixa a conversa "aguardando
+   * aceite", o que é certo quando um colega passa o caso para outro (o destino
+   * precisa concordar). Numa distribuição de fila isso só recria o gargalo que
+   * ela veio resolver — a conversa ficaria parada esperando alguém clicar. Aqui
+   * o responsável já entra valendo, e a trilha registra quem distribuiu.
+   */
+  async assignConversation(conversationId: string, toUserId: string, note?: string): Promise<void> {
+    const { data: conv } = await supabase
+      .from(CONV_TABLE)
+      .select('assigned_user_id, department_id')
+      .eq('id', conversationId)
+      .maybeSingle();
+
+    const { error } = await supabase.from(CONV_TABLE).update({
+      assigned_user_id: toUserId,
+      awaiting_accept: false,
+      transfer_pending_since: null,
+    }).eq('id', conversationId);
+    if (error) throw new Error(error.message);
+
+    const { data: auth } = await supabase.auth.getUser();
+    const now = new Date().toISOString();
+    // Auditoria best-effort: a atribuição já valeu; perder a linha de histórico
+    // não pode desfazer a distribuição e deixar a conversa órfã de novo.
+    await supabase.from(TRANSFER_TABLE).insert({
+      conversation_id: conversationId,
+      from_user_id: conv?.assigned_user_id ?? null,
+      to_user_id: toUserId,
+      from_department_id: conv?.department_id ?? null,
+      to_department_id: null,
+      note: note || 'Distribuição da fila',
+      performed_by: auth?.user?.id ?? null,
+      accepted_at: now,
+      accepted_by: toUserId,
+    });
+  },
+
+  /**
    * Devolve a conversa para a fila: remove o responsável, mantendo setor e
    * status. Volta a ficar disponível para quem for assumir no destino.
    */
