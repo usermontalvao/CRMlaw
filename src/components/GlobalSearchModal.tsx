@@ -22,7 +22,7 @@ import { financialService } from '../services/financial.service';
 import { cloudService } from '../services/cloud.service';
 import { signatureService } from '../services/signature.service';
 import { nextcloudService } from '../services/nextcloud.service';
-import { whatsappService } from '../services/whatsapp.service';
+import { whatsappService, samePhone } from '../services/whatsapp.service';
 import { conversationName, prettyPhone } from './whatsapp/format';
 import { WhatsAppIcon } from './icons/WhatsAppIcon';
 import { events, SYSTEM_EVENTS } from '../utils/events';
@@ -80,7 +80,15 @@ async function getSearchData(force = false): Promise<SearchData> {
     // consertar uma prévia levemente velha. O que se busca aqui (nome, telefone,
     // existência da conversa) quase nunca muda; o TTL de 5 min dá conta.
     whatsappService.listConversations().catch(() => [] as Awaited<ReturnType<typeof whatsappService.listConversations>>),
-  ]).then(([processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures, conversations]) => {
+    // Canais só pelo número: é o que permite descartar a conversa do canal
+    // consigo mesmo, que não é atendimento e só inflaria o resultado.
+    whatsappService.listChannels().catch(() => [] as Awaited<ReturnType<typeof whatsappService.listChannels>>),
+  ]).then(([processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures, todasConversas, canais]) => {
+    const telefonePorCanal = new Map(canais.map(c => [c.id, c.phone_number]));
+    const conversations = todasConversas.filter(c => {
+      const proprio = c.instance_id ? telefonePorCanal.get(c.instance_id) : null;
+      return !(proprio && samePhone(c.contact_phone, proprio));
+    });
     const data: SearchData = { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures, conversations };
     _cache = { data, fetchedAt: Date.now() };
     _inflight = null;

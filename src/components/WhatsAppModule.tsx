@@ -20,7 +20,7 @@ import {
 import { useStaffPush } from './whatsapp/hooks/useStaffPush';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
 import { muteStore } from '../services/whatsapp/muteStore';
-import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, DEFAULT_AGENT_PREFS, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
+import { whatsappService, normalizePhone, samePhone, renderTemplate, agentPermissions, summarizeOverview, DEFAULT_AGENT_PREFS, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
 import type { WhatsAppScheduledMessage } from '../types/whatsapp.types';
 import {
   formatTime, initials, prettyPhone, formatBytes, dayLabel, lastSeenLabel, presenceInfo,
@@ -367,6 +367,24 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const avatarTriedRef = useRef<Set<string>>(new Set());
 
   const channelById = useMemo(() => new Map(channels.map(c => [c.id, c])), [channels]);
+
+  // Conversa do canal com o PRÓPRIO número. Mandar mensagem para si mesmo é
+  // recurso do WhatsApp e é o jeito natural de testar um canal recém-conectado —
+  // mas o resultado entra na inbox como se fosse atendimento, com o nome do
+  // cliente vinculado, e vira um par que parece conversa duplicada na busca.
+  // Não é fila de trabalho: sai da lista, dos contadores e da busca.
+  //
+  // A comparação é por variantes do 9º dígito (`samePhone`): o canal se cadastra
+  // com o número novo (5565 9 8404-6375) e a conversa costuma chegar no formato
+  // antigo (5565 8404-6375) — igualdade literal não casaria os dois.
+  const selfChatIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of conversations) {
+      const canal = c.instance_id ? channelById.get(c.instance_id) : null;
+      if (canal?.phone_number && samePhone(c.contact_phone, canal.phone_number)) ids.add(c.id);
+    }
+    return ids;
+  }, [conversations, channelById]);
   const deptById = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
   const channelRoutingById = useMemo(() => new Map(channelRouting.map(item => [item.channel_id, item])), [channelRouting]);
   const staffByUser = useMemo(() => new Map(staff.map(s => [s.user_id, s.name])), [staff]);
@@ -813,6 +831,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         // "Nova conversa" aberta mas sem primeiro envio — não polui a inbox. Fica
         // visível apenas enquanto está aberta na thread; ao sair sem enviar, some.
         if (!c.last_message_at && c.id !== selectedId) return false;
+        // Conversa do canal consigo mesmo: fora da fila. A exceção do selecionado
+        // segue a mesma regra do rascunho acima — o que está aberto na thread não
+        // some da lista debaixo de quem está olhando.
+        if (selfChatIds.has(c.id) && c.id !== selectedId) return false;
         if (filter === 'unread' && c.unread_count === 0) return false;
         if (filter === 'mine' && c.assigned_user_id !== user?.id) return false;
         // A dimensão de status (e a concessão que a busca faz nela) mora em
@@ -840,7 +862,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         const tb = b.last_message_at || b.created_at;
         return tb < ta ? -1 : tb > ta ? 1 : 0;
       });
-  }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
+  }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, selfChatIds]);
 
   // As encerradas que a BUSCA trouxe do arquivo. A lista as usa para duas coisas:
   // desenhar a divisória "Encerradas" onde o grupo começa e pintar essas linhas
@@ -982,6 +1004,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     const searching = q.length > 0;
     const base = conversations.filter(c => {
       if (!c.last_message_at && c.id !== selectedId) return false;
+      if (selfChatIds.has(c.id) && c.id !== selectedId) return false;
       // MESMA regra da lista, pela mesma função: quando a busca traz encerradas
       // do arquivo, elas precisam contar aqui também. Enquanto isto ficou de
       // fora, as abas mostravam "Todas (0)" com três conversas na tela.
@@ -1001,7 +1024,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       unread: base.filter(c => !c.is_blocked && c.unread_count > 0).length,
       mine: base.filter(c => c.assigned_user_id === user?.id).length,
     };
-  }, [conversations, search, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
+  }, [conversations, search, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, selfChatIds]);
 
   const anyConnected = channels.some(c => c.status === 'connected');
   const connectedChannels = useMemo(() => channels.filter(c => c.status === 'connected'), [channels]);
