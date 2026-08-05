@@ -88,6 +88,17 @@ export function useWaRealtime({
             loadConversationsRef.current();
             return prev;
           }
+          // Mesma história com a foto. O payload traz o CAMINHO no storage, e o
+          // que a tela usa é a URL assinada que o client resolve a partir dele —
+          // por isso a URL é preservada no merge abaixo. Só que preservá-la
+          // quando o caminho mudou congela a foto antiga para sempre: quem
+          // atualizasse a foto do contato (aqui ou em outra aba) continuaria
+          // vendo a anterior até recarregar a página. Sem como assinar a URL a
+          // partir do evento, a saída é buscar de novo.
+          if ('contact_avatar_path' in row && row.contact_avatar_path !== prev[idx].contact_avatar_path) {
+            loadConversationsRef.current();
+            return prev;
+          }
           const next = [...prev];
           // Preserva campos resolvidos só no client (não vêm no payload).
           next[idx] = {

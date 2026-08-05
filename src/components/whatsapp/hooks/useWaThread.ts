@@ -5,6 +5,7 @@
 // concentrar a lógica de rolagem/apresentação da thread fora do orquestrador.
 // Vive DEPOIS de useWaComposer na ordem de hooks, pois consome `pending`.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { countNewBelow, emptySeenMark, markAllSeen, type SeenMark } from '../threadUnread';
 import type { WhatsAppMessage } from '../../../types/whatsapp.types';
 
 export type MessageUnit =
@@ -26,6 +27,12 @@ export interface WaThreadApi {
   setThreadEl: (node: HTMLDivElement | null) => void;
   /** Handler de scroll que distingue rolagem do usuário do pin programático. */
   onThreadScroll: () => void;
+  /** O usuário subiu o bastante para valer a pena oferecer o caminho de volta. */
+  scrolledUp: boolean;
+  /** Mensagens recebidas que chegaram abaixo da janela visível desde então. */
+  newBelow: number;
+  /** Volta ao fim da conversa e zera a contagem de novas. */
+  scrollToBottom: () => void;
 }
 
 /**
@@ -39,6 +46,17 @@ export function useWaThread(
   pending: WhatsAppMessage[],
 ): WaThreadApi {
   const [lightbox, setLightbox] = useState<string | null>(null);
+
+  // Quem sobe para reler o histórico perdia o caminho de volta: só restava
+  // arrastar a barra até o fim, e nada avisava que tinham chegado mensagens
+  // enquanto isso. Estes dois estados sustentam o botão de voltar ao fim.
+  const [scrolledUp, setScrolledUp] = useState(false);
+  const [newBelow, setNewBelow] = useState(0);
+  // O que já foi visto: ids concretos + um piso de tempo (ver `threadUnread`).
+  // Por id, e não por índice, porque carregar mensagens anteriores insere no
+  // COMEÇO da lista e deslocaria qualquer índice; e com piso de tempo porque
+  // essas mensagens anteriores não podem ser confundidas com novidade.
+  const seenRef = useRef<SeenMark>(emptySeenMark());
 
   const threadRef = useRef<HTMLDivElement>(null);
   const threadContentRef = useRef<HTMLDivElement>(null);
@@ -58,13 +76,17 @@ export function useWaThread(
   const lastScrollTopRef = useRef(0);
 
   // Mescla mensagens reais + otimistas (que ainda não voltaram do servidor).
+  // A fila otimista atravessa a troca de conversa — é assim que um envio em voo
+  // (ou que falhou) continua existindo enquanto se atende outra pessoa. Por isso
+  // o recorte por `conversation_id` acontece AQUI, na hora de desenhar: a bolha
+  // de uma conversa não pode aparecer na thread de outra.
   const allMessages = useMemo(() => {
-    const extra = pending.filter(p => !messages.some(b =>
+    const extra = pending.filter(p => p.conversation_id === selectedId && !messages.some(b =>
       (!!p._serverId && b.id === p._serverId)
       || (!!p.evolution_message_id && !!b.evolution_message_id && b.evolution_message_id === p.evolution_message_id),
     ));
     return [...messages, ...extra].sort((a, b) => a.wa_timestamp.localeCompare(b.wa_timestamp));
-  }, [messages, pending]);
+  }, [messages, pending, selectedId]);
 
   const msgById = useMemo(() => new Map(allMessages.map(m => [m.id, m])), [allMessages]);
 
@@ -180,6 +202,39 @@ export function useWaThread(
     if (stickBottomRef.current || atBottomRef.current) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [allMessages, selectedId, jumpToBottom]);
 
+  // Contagem do que chegou "lá embaixo" enquanto se lê o histórico. A regra em si
+  // (o que conta como novidade) mora em `threadUnread`, testada em separado;
+  // aqui só se decide QUANDO a conversa está sendo acompanhada — o que é uma
+  // pergunta sobre a barra de rolagem, e por isso fica deste lado.
+  useEffect(() => {
+    const noFim = stickBottomRef.current || atBottomRef.current;
+    if (noFim) {
+      seenRef.current = markAllSeen(seenRef.current, allMessages);
+      setNewBelow(0);
+      return;
+    }
+    setNewBelow(countNewBelow(allMessages, seenRef.current));
+  }, [allMessages]);
+
+  // Troca de conversa zera o histórico do que já foi visto.
+  useEffect(() => {
+    seenRef.current = emptySeenMark();
+    setNewBelow(0);
+    setScrolledUp(false);
+  }, [selectedId]);
+
+  /** Volta ao fim da conversa e marca tudo como visto. */
+  const scrollToBottom = useCallback(() => {
+    const el = threadRef.current;
+    if (!el) return;
+    stickBottomRef.current = true;
+    atBottomRef.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    seenRef.current = markAllSeen(seenRef.current, allMessages);
+    setNewBelow(0);
+    setScrolledUp(false);
+  }, [allMessages]);
+
   // Mantém o fim "grudado" enquanto o conteúdo cresce depois de renderizado —
   // imagens/áudio têm altura desconhecida no 1º paint e esticam a thread depois,
   // o que empurrava a última mensagem pra fora de vista ao abrir a conversa.
@@ -213,11 +268,17 @@ export function useWaThread(
       stickBottomRef.current = true;  // voltou ao fim → volta a grudar
     }
     lastScrollTopRef.current = el.scrollTop;
+    // Limiar generoso (uma tela e meia de distância): perto do fim o botão só
+    // atrapalharia, e ele não pode piscar a cada roda do mouse. `setState` com o
+    // mesmo valor é descartado pelo React, então não há re-render por evento.
+    setScrolledUp(dist > 320);
+    if (dist < 80) setNewBelow(0);
   }, []);
 
   return {
     allMessages, msgById, messageUnits,
     lightbox, setLightbox, lightboxImages,
     threadContentRef, setThreadEl, onThreadScroll,
+    scrolledUp, newBelow, scrollToBottom,
   };
 }

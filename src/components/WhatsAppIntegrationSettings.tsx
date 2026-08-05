@@ -924,9 +924,14 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                     <span style={{ fontSize: '12px', color: '#374151' }}>Enviar mensagem automática ao cliente quando fora do horário</span>
                   </label>
                   {absence.enabled && (
-                    <textarea value={absence.message} onChange={e => setAbsence(a => ({ ...a, message: e.target.value }))}
-                      rows={2} placeholder="Ex: Olá! No momento estamos fora do horário de atendimento. Nosso horário é de seg a sex, das 8h às 18h. Sua mensagem foi recebida e retornaremos assim que possível."
-                      style={{ width: '100%', fontSize: '12px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #d1d5db', resize: 'vertical', boxSizing: 'border-box' }} />
+                    <>
+                      <textarea value={absence.message} onChange={e => setAbsence(a => ({ ...a, message: e.target.value }))}
+                        rows={2} placeholder="Ex: Olá! No momento estamos fora do horário de atendimento. Nosso horário é de seg a sex, das 8h às 18h. Sua mensagem foi recebida e retornaremos assim que possível."
+                        style={{ width: '100%', fontSize: '12px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #d1d5db', resize: 'vertical', boxSizing: 'border-box' }} />
+                      <p style={{ margin: '5px 1px 0', fontSize: '10.5px', lineHeight: 1.4, color: '#8a94a6' }}>
+                        Para não insistir, este aviso é enviado no máximo uma vez a cada 12 horas por conversa, mesmo após encerrar ou reabrir o atendimento.
+                      </p>
+                    </>
                   )}
 
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>

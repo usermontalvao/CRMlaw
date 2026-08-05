@@ -36,26 +36,45 @@ export function useWaMessages(selectedId: string | null): WaMessagesApi {
   const [loadingMore, setLoadingMore] = useState(false);
   const oldestTsRef = useRef<string | null>(null);
 
+  // Qual conversa está aberta AGORA. Toda busca daqui é assíncrona, e a resposta
+  // não tem obrigação de chegar antes da próxima troca de conversa: quem clica em
+  // dois contatos em sequência (ou responde um e já pula para o seguinte) pode ter
+  // a resposta da conversa anterior chegando depois. Sem esta guarda, esse
+  // `setMessages` atrasado escrevia a thread de um cliente sob o nome de outro —
+  // exatamente o vazamento que a limpeza da thread na troca tenta evitar. Como
+  // ref e não estado: precisa valer já no mesmo render em que a seleção muda.
+  const activeConvRef = useRef<string | null>(selectedId);
+  activeConvRef.current = selectedId;
+  /** A resposta que acabou de chegar ainda é da conversa que está na tela? */
+  const stale = (convId: string) => activeConvRef.current !== convId;
+
   const loadMessages = useCallback(async (convId: string) => {
     setLoadingMsgs(true);
     try {
       const msgs = await whatsappService.listMessages(convId, { limit: MSG_PAGE });
+      if (stale(convId)) return;
       setMessages(msgs);
       setHasMoreMsgs(msgs.length === MSG_PAGE);
       oldestTsRef.current = msgs[0]?.wa_timestamp ?? null;
-    } catch {/* */} finally { setLoadingMsgs(false); }
+    } catch {/* */} finally {
+      // O spinner pertence à conversa aberta: uma resposta atrasada não pode
+      // apagar o carregamento da conversa que entrou no lugar dela.
+      if (!stale(convId)) setLoadingMsgs(false);
+    }
   }, []);
 
   const loadMoreMsgs = useCallback(async () => {
-    if (!selectedId || !oldestTsRef.current || loadingMore) return;
+    const convId = selectedId;
+    if (!convId || !oldestTsRef.current || loadingMore) return;
     setLoadingMore(true);
     try {
-      const older = await whatsappService.listMessages(selectedId, { limit: MSG_PAGE, before: oldestTsRef.current });
+      const older = await whatsappService.listMessages(convId, { limit: MSG_PAGE, before: oldestTsRef.current });
+      if (stale(convId)) return;
       if (older.length === 0) { setHasMoreMsgs(false); return; }
       oldestTsRef.current = older[0]?.wa_timestamp ?? oldestTsRef.current;
       setMessages(prev => [...older, ...prev]);
       setHasMoreMsgs(older.length === MSG_PAGE);
-    } catch {/* */} finally { setLoadingMore(false); }
+    } catch {/* */} finally { if (!stale(convId)) setLoadingMore(false); }
   }, [selectedId, loadingMore]);
 
   // Atualização silenciosa da thread (sem spinner) para eventos em tempo real:
@@ -67,6 +86,12 @@ export function useWaMessages(selectedId: string | null): WaMessagesApi {
   const refreshMessages = useCallback(async (convId: string) => {
     try {
       const latest = await whatsappService.listMessages(convId, { limit: MSG_PAGE });
+      // Mesma guarda do carregamento inicial, e aqui ela pega um caso a mais: o
+      // envio dispara `refreshMessages` da conversa em que se escreveu, e trocar
+      // de conversa logo após enviar é rotina. A resposta que chegava depois
+      // costurava as mensagens de quem acabou de receber por cima da thread já
+      // aberta de outra pessoa.
+      if (stale(convId)) return;
       setMessages(prev => {
         if (prev.length === 0 || latest.length === 0) return latest;
         // `latest` é o bloco contíguo mais novo (asc). Tudo estritamente anterior

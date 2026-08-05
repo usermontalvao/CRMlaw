@@ -13,6 +13,11 @@ import type { WhatsAppChannel, WhatsAppConversation, WhatsAppDepartment } from '
 
 const DEPT_BY_ID = new Map<string, WhatsAppDepartment>();
 const SEM_MUDOS: ReadonlySet<string> = new Set<string>();
+// Algumas conversas com envio falho: é o estado que a fila otimista deixa na
+// lista quando uma mensagem não sai e o atendente já pulou para o próximo
+// contato. Fica na bancada para o badge vermelho ser visto no meio das outras
+// linhas — que é onde ele precisa se destacar.
+const FALHAS: ReadonlyMap<string, number> = new Map([['c3', 1], ['c11', 2]]);
 const noop = () => {};
 
 const CANAL: WhatsAppChannel = {
@@ -149,6 +154,7 @@ const WhatsAppListPerfPreview: React.FC = () => {
               deptById={DEPT_BY_ID}
               drafts={listDrafts}
               mutedIds={SEM_MUDOS}
+              failedSends={FALHAS}
               funnelLabelsForChannel={funnelPorCanal}
               conversationStatus={statusDaConversa}
               docStatusFor={semDoc}
@@ -172,6 +178,7 @@ const WhatsAppListPerfPreview: React.FC = () => {
                 docStatus={null}
                 muted={false}
                 draftPreview={c.id === selectedId ? '' : (draftMap[c.id] ?? '')}
+                failedSends={FALHAS.get(c.id) ?? 0}
                 funnelLabels={FUNNEL}
                 onSelect={onSelect}
               />

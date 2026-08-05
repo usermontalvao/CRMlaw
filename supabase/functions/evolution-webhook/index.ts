@@ -19,6 +19,11 @@
  * pessoa em duas threads.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import {
+  ABSENCE_COOLDOWN_HOURS,
+  absenceCooldownCutoff,
+  isAbsenceCooldownActive,
+} from '../_shared/absence-cooldown.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
@@ -352,10 +357,10 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
     else await job.catch(() => {});
   }
 
-  // ── Mensagem automática de ausência (Fase N; inbound apenas; cooldown 2h) ──
+  // ── Mensagem automática de ausência (Fase N; inbound; cooldown 12h) ──
   // Regra de negócio: se o cliente mandou mensagem fora do expediente, ele deve
   // receber o comunicado comercial mesmo quando a conversa estava encerrada.
-  // O cooldown por conversa já evita spam/repetição excessiva.
+  // O cooldown sobrevive a encerramento/reabertura e evita repetição excessiva.
   if (!fromMe) {
     const job = maybeAutoSendAbsence(admin, instanceId, instanceName, conv.id, remoteJid);
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(job);
@@ -615,8 +620,8 @@ async function classifyReopenWithAI(admin: any, convId: string, text: string): P
 
 /**
  * Fase N — Mensagem automática de ausência.
- * Disparada async para cada inbound. Cooldown: não reenvia se já enviou nos
- * últimos 120 minutos para a mesma conversa (anti-loop).
+ * Disparada async para cada inbound. Cooldown: não reenvia se já enviou nas
+ * últimas 12 horas para a mesma conversa (anti-loop).
  */
 async function maybeAutoSendAbsence(
   admin: any, instanceId: string, instanceName: string, convId: string, remoteJid: string,
@@ -635,10 +640,7 @@ async function maybeAutoSendAbsence(
     // absence_suppressed: o atendente pausou o aviso comercial só nesta conversa
     // (volta ao normal ao encerrar). Bloqueado também não recebe auto-mensagem.
     if (!conv || conv.is_blocked || conv.absence_suppressed) return;
-    if (conv.absence_sent_at) {
-      const diffH = (Date.now() - new Date(conv.absence_sent_at).getTime()) / 3_600_000;
-      if (diffH < 2) return; // dentro do cooldown
-    }
+    if (isAbsenceCooldownActive(conv.absence_sent_at)) return;
 
     const tz = ch.timezone || 'America/Cuiaba';
     const { dow, curMins } = getLocalTimeInTz(tz);
@@ -662,6 +664,26 @@ async function maybeAutoSendAbsence(
     if (!server.base_url || !server.api_key) return;
     const base = server.base_url.replace(/\/+$/, '');
 
+    // Reserva o disparo ANTES de chamar a Evolution. O UPDATE condicional é a
+    // trava atômica: se dois webhooks da mesma conversa chegarem juntos, somente
+    // um consegue atualizar a linha e o outro encerra sem enviar duplicado.
+    const claimedAt = new Date().toISOString();
+    const cutoff = absenceCooldownCutoff(Date.parse(claimedAt));
+    const { data: claim, error: claimError } = await admin
+      .from('whatsapp_conversations')
+      .update({ absence_sent_at: claimedAt })
+      .eq('id', convId)
+      .eq('is_blocked', false)
+      .eq('absence_suppressed', false)
+      .or(`absence_sent_at.is.null,absence_sent_at.lt.${cutoff}`)
+      .select('id')
+      .maybeSingle();
+    if (claimError) {
+      console.error('absence cooldown claim failed', claimError);
+      return;
+    }
+    if (!claim) return;
+
     const res = await fetch(
       `${base}/message/sendText/${encodeURIComponent(instanceName)}`,
       {
@@ -673,12 +695,14 @@ async function maybeAutoSendAbsence(
     );
     if (!res.ok) {
       console.error('absence auto-send failed', res.status, await res.text().catch(() => ''));
+      // Falha HTTP confirmada: devolve a reserva sem apagar uma marca posterior.
+      await admin.from('whatsapp_conversations')
+        .update({ absence_sent_at: conv.absence_sent_at || null })
+        .eq('id', convId)
+        .eq('absence_sent_at', claimedAt);
       return;
     }
-
-    await admin.from('whatsapp_conversations')
-      .update({ absence_sent_at: new Date().toISOString() })
-      .eq('id', convId);
+    console.info(`absence auto-send claimed for ${ABSENCE_COOLDOWN_HOURS}h`, convId);
   } catch (err) {
     console.error('maybeAutoSendAbsence error', err);
   }

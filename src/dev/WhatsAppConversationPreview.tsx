@@ -6,8 +6,15 @@ import { MessageBubble } from '../components/whatsapp/messageBubble';
 import { DateDivider } from '../components/whatsapp/conversationListItem';
 import { DockedDetailsToggle } from '../components/whatsapp/DockedDetailsToggle';
 import { useResizableLayout } from '../components/whatsapp/hooks/useResizableLayout';
-import type { WhatsAppMessage } from '../types/whatsapp.types';
-import { ArrowRightLeft, Download, History, MessageSquare, Mic, MoreVertical, Phone, Plus, Search, Sparkles, UserRound, Video } from 'lucide-react';
+// O topo do painel de detalhes entra aqui com os COMPONENTES REAIS: uma cópia
+// decorativa dele foi justamente o que deixou a bancada mostrar um layout que o
+// módulo já não tinha mais.
+import { ContactIdentity, AttendanceSummary } from '../components/whatsapp/detailsPanelHeader';
+import { ConversationLabelsPanel } from '../components/whatsapp/conversationLabels';
+import { ToastProvider } from '../contexts/ToastContext';
+import type { FunnelLabel } from '../services/settings.service';
+import type { WhatsAppConversation, WhatsAppMessage } from '../types/whatsapp.types';
+import { ArrowRightLeft, Download, History, MessageSquare, Mic, MoreVertical, Phone, Plus, Search, Sparkles, Video } from 'lucide-react';
 
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 const PREVIEW_IMAGE = `data:image/svg+xml,${encodeURIComponent(`
@@ -167,6 +174,41 @@ const AUDIO_TRANSCRITO = message({
   transcription_text: 'Doutor, consegui abrir o aplicativo. Aparece que o benefício está em análise desde o dia doze. Preciso levar mais algum documento na agência?',
 });
 
+// Conversa de mentira para o painel de detalhes. Uma foto de verdade (retrato
+// gerado) porque o avatar grande é justamente o que se quer conferir aqui.
+const CONTACT_PHOTO = `data:image/svg+xml,${encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+    <defs><linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fde68a"/><stop offset="1" stop-color="#f59e0b"/></linearGradient></defs>
+    <rect width="240" height="240" fill="url(#b)"/>
+    <circle cx="120" cy="96" r="42" fill="#fff" opacity=".92"/>
+    <path d="M40 232c6-46 38-72 80-72s74 26 80 72Z" fill="#fff" opacity=".92"/>
+  </svg>
+`)}`;
+
+const PREVIEW_CONVERSATION: WhatsAppConversation = {
+  id: 'preview-conversation', instance_id: 'canal', remote_jid: 'preview@s.whatsapp.net',
+  contact_phone: '5565984046375', contact_name: 'Lisliandra Inocêncio',
+  contact_avatar_path: null, contact_avatar_url: CONTACT_PHOTO,
+  client_id: 'cli-1', client_name: null,
+  assigned_user_id: 'dr-pedro', department_id: 'previdenciario',
+  status: 'open', unread_count: 0,
+  last_message_at: '2026-08-04T15:15:00.000Z', last_message_preview: null, last_message_direction: 'in',
+  presence: null, presence_updated_at: null, last_seen_at: null,
+  is_blocked: false, blocked_at: null, blocked_by: null, blocked_reason: null,
+  closed_at: null, closed_by: null, closure_reason: null, reopened_at: null,
+  first_response_at: null, last_customer_message_at: '2026-08-04T15:15:00.000Z', last_agent_message_at: null,
+  awaiting_accept: false, transfer_pending_since: null, contact_reason: null,
+  labels: ['Atendimento'],
+  legal_hold: false, legal_hold_reason: null, absence_suppressed: false,
+  created_at: '2026-08-04T12:00:00.000Z', updated_at: '2026-08-04T15:15:00.000Z',
+};
+
+const PREVIEW_FUNNEL: FunnelLabel[] = [
+  { key: 'Novo', stageKey: 'novo', stageLabel: 'Novo contato', color: '#0ea5e9', bg: '#0ea5e922' },
+  { key: 'Atendimento', stageKey: 'em_atendimento', stageLabel: 'Em atendimento', color: '#dc2626', bg: '#dc262622' },
+  { key: 'Proposta', stageKey: 'proposta', stageLabel: 'Proposta enviada', color: '#7c3aed', bg: '#7c3aed22' },
+];
+
 const noop = () => {};
 const bubbleActions = {
   onReply: noop,
@@ -190,6 +232,9 @@ export default function WhatsAppConversationPreview() {
   }, []);
 
   return (
+    // O painel de etiquetas avisa por toast quando o salvamento falha — sem
+    // Provider ele nem monta.
+    <ToastProvider>
     <div className="min-h-screen bg-slate-200 p-4 lg:p-8">
       <div className="relative mx-auto flex h-[calc(100vh-2rem)] max-w-[1180px] overflow-hidden rounded-xl bg-white shadow-2xl lg:h-[calc(100vh-4rem)]">
         <section data-preview-thread className="flex min-w-0 flex-1 flex-col">
@@ -245,25 +290,26 @@ export default function WhatsAppConversationPreview() {
           data-testid="whatsapp-details-panel"
           aria-hidden={detailsCollapsed}
           style={{ width: detailsCollapsed ? 0 : panelWidth }}
-          className={`shrink-0 bg-white transition-[width,opacity,padding] duration-200 ${detailsCollapsed ? 'overflow-hidden p-0 opacity-0' : 'overflow-y-auto border-l border-[#e7e5df] p-4 opacity-100'}`}
+          className={`shrink-0 bg-white transition-[width,opacity,padding] duration-200 ${detailsCollapsed ? 'overflow-hidden p-0 opacity-0' : 'overflow-y-auto border-l border-[#e7e5df] p-3.5 opacity-100'}`}
         >
-          <div className="flex items-center gap-3 border-b border-[#f1f0ec] pb-4">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#d9fdd3] text-[#008069]"><UserRound size={21} /></div>
-            <div className="min-w-0">
-              <p className="truncate text-[13px] font-bold text-slate-800">Lisliandra Inocêncio</p>
-              <p className="mt-0.5 text-[11px] text-slate-400">+55 (65) 98404-6375</p>
+          <ContactIdentity conversation={PREVIEW_CONVERSATION} privateMode={false} onOpenPhoto={noop} />
+          <div className="mt-2 space-y-4">
+            <div className="space-y-2">
+              <AttendanceSummary
+                assignee="Dr. Pedro"
+                department="Previdenciário"
+                stage={{ stageLabel: 'Em atendimento', color: '#dc2626' }}
+              />
+              <button className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#e7e5df] py-1.5 text-[11.5px] font-semibold text-slate-500"><ArrowRightLeft size={12} /> Transferir conversa</button>
             </div>
-          </div>
-          <div className="mt-4 space-y-4">
-            <div>
-              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Responsável</p>
-              <p className="text-[12px] font-semibold text-slate-700">Dr. Pedro</p>
+            <div className="space-y-1.5">
+              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Etiquetas</p>
+              <ConversationLabelsPanel
+                conversation={PREVIEW_CONVERSATION}
+                funnelLabels={PREVIEW_FUNNEL}
+                onChanged={noop}
+              />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div><p className="text-[9px] font-bold uppercase text-slate-400">Setor</p><p className="text-[12px] font-semibold text-slate-700">Previdenciário</p></div>
-              <div><p className="text-[9px] font-bold uppercase text-slate-400">Etiqueta</p><span className="mt-1 inline-flex rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">Novo</span></div>
-            </div>
-            <button className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#e7e5df] py-2 text-[11px] font-semibold text-slate-500"><ArrowRightLeft size={13} /> Transferir conversa</button>
             <div>
               <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações</p>
               <div className="grid grid-cols-2 gap-2">
@@ -282,5 +328,6 @@ export default function WhatsAppConversationPreview() {
         </aside>
       </div>
     </div>
+    </ToastProvider>
   );
 }

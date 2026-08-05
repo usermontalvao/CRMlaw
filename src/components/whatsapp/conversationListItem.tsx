@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Clock, Pencil, Ban, BellOff, FileText, UserPlus, ArrowRightLeft, Tag, X,
+  Clock, Pencil, Ban, BellOff, FileText, UserPlus, ArrowRightLeft, Tag, X, AlertTriangle,
 } from 'lucide-react';
 import type {
   WhatsAppConversation, WhatsAppChannel, WhatsAppDepartment, WhatsAppPresence,
@@ -76,9 +76,16 @@ export const ConversationListItem: React.FC<{
    * Precisa ter identidade estável para o React.memo continuar valendo.
    */
   elapsedMinutes?: ElapsedMinutes;
+  /**
+   * Envios desta conversa que falharam e continuam esperando uma decisão
+   * (tentar de novo ou descartar). Vem da fila otimista do compositor, que
+   * sobrevive à troca de conversa — sem este aviso na lista, uma mensagem que
+   * não saiu ficaria escondida dentro de uma thread que ninguém vai reabrir.
+   */
+  failedSends?: number;
   onSelect: (id: string) => void;
   onDismissTracking?: () => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, elapsedMinutes, onSelect, onDismissTracking }) => {
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, elapsedMinutes, failedSends = 0, onSelect, onDismissTracking }) => {
   const sla = slaSignal(c, elapsedMinutes);
   const slaInt = slaInternalSignal(c, elapsedMinutes);
   const ta = transferAlert(c, elapsedMinutes);
@@ -90,6 +97,8 @@ export const ConversationListItem: React.FC<{
     : '';
   return (
     <button onClick={() => onSelect(c.id)}
+      // Identifica a linha para o teclado da inbox trazê-la ao campo de visão.
+      data-conv-id={c.id}
       className={`wa-conv w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'wa-conv-active bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''}`}>
       <div className="relative flex-shrink-0">
         <Avatar url={c.contact_avatar_url} name={conversationName(c)} phone={c.contact_phone} size={40} />
@@ -127,6 +136,16 @@ export const ConversationListItem: React.FC<{
           )}
         </div>
         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+          {/* Primeiro de todos os badges, e o único em vermelho cheio: uma
+              mensagem que não saiu é a coisa mais urgente que esta linha pode
+              ter a dizer. */}
+          {failedSends > 0 && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-red-600 text-white"
+              title="Toque na conversa para tentar de novo ou descartar">
+              <AlertTriangle size={9} />
+              {failedSends === 1 ? 'Não enviada' : `${failedSends} não enviadas`}
+            </span>
+          )}
           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${statusCls}`}>
             {statusKey === 'blocked' && <Ban size={9} />}{statusLabel}
             {onDismissTracking && (

@@ -305,8 +305,8 @@ export const conversationsApi = {
       closure_reason: note || null,
       // Encerrar zera a pausa do aviso de horário: volta ao normal no próximo contato.
       absence_suppressed: false,
-      // Permite que uma nova retomada fora do horário dispare novamente o aviso comercial.
-      absence_sent_at: null,
+      // `absence_sent_at` é preservado: fechar/reabrir a conversa não pode apagar
+      // o cooldown e repetir o mesmo aviso para o cliente poucos minutos depois.
     }).eq('id', conversationId);
     if (error) throw new Error(error.message);
   },

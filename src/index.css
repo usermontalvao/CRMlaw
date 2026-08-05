@@ -3507,7 +3507,51 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 }
 
 /* Realce da conversa ativa: barra âmbar à esquerda que "cresce" ao selecionar. */
-.wa-conv { position: relative; }
+.wa-conv {
+  position: relative;
+  /* A inbox de um escritório grande passa de 800 conversas, e o navegador
+     recalculava estilo, layout e pintura de TODAS a cada mudança — inclusive
+     das ~790 que estão fora da tela. `content-visibility: auto` faz ele pular
+     esse trabalho para o que não está visível, sem tirar nada do DOM (a busca
+     do navegador, o leitor de tela e o Ctrl+F continuam achando as linhas).
+     `contain-intrinsic-size: auto` guarda a altura real já medida de cada linha
+     — sem o `auto`, a barra de rolagem pularia toda vez que uma linha entrasse
+     ou saísse do campo de visão. Os 74px são só o palpite antes da primeira
+     medição: é a altura de uma linha com uma etiqueta. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--wa-conv-h, 74px);
+}
+
+/* Esqueletos de carregamento (lista e conversa). Um brilho que atravessa o
+   bloco, e não um pulsar de opacidade: pulsar pisca a tela inteira em uníssono
+   e cansa; o brilho tem direção e dá a sensação de que algo está vindo. Cada
+   linha entra com um atraso pequeno, como uma lista sendo preenchida. */
+.wa-skel {
+  position: relative;
+  overflow: hidden;
+  background: #e9e7e2;
+}
+.wa-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  animation: wa-skel-sweep 1.45s ease-in-out infinite;
+}
+@keyframes wa-skel-sweep {
+  100% { transform: translateX(100%); }
+}
+/* No fundo bege da conversa o cinza da lista some; o balão fantasma precisa ser
+   claro como o balão real (branco de um lado, verde do outro). */
+.wa-thread-bg .wa-skel { background: rgba(255, 255, 255, 0.72); }
+.wa-thread-bg .wa-skel-out { background: rgba(217, 253, 211, 0.78); }
+
+.wa-skel-row { animation: wa-skel-row-in 0.32s ease-out both; }
+@keyframes wa-skel-row-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 .wa-conv::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
   background: linear-gradient(to bottom, #f59e0b, #d97706);
@@ -3620,6 +3664,69 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   50%      { box-shadow: 0 0 0 5px rgba(0, 168, 132, 0.15); }
 }
 
+/* ── Topo do painel de detalhes ──────────────────────────────────────
+   Faixa de identidade: um degradê âmbar quase imperceptível separando "quem é o
+   contato" do resto do painel, sem precisar de mais uma linha divisória. */
+.wa-panel-hero {
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(245, 158, 11, 0.10), transparent 68%),
+    linear-gradient(180deg, #fdfcfa, #ffffff);
+  border-bottom: 1px solid #f1f0ec;
+}
+
+/* Foto do contato: anel branco destacando-a do degradê e uma lupa que aparece
+   por cima ao passar o mouse — a foto é clicável e nada dizia isso. */
+.wa-avatar-hero > div {
+  box-shadow: 0 0 0 3px #fff, 0 4px 14px rgba(11, 20, 26, 0.13);
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease;
+}
+.wa-avatar-hero:hover > div {
+  transform: scale(1.04);
+  box-shadow: 0 0 0 3px #fff, 0 8px 22px rgba(11, 20, 26, 0.18);
+}
+.wa-avatar-zoom {
+  background: rgba(11, 20, 26, 0.42);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.wa-avatar-hero:hover .wa-avatar-zoom { opacity: 1; }
+
+/* Telefone: vira botão de copiar só quando o mouse chega perto. */
+.wa-phone-copy { transition: background-color 0.15s ease, color 0.15s ease; }
+.wa-phone-copy:not(:disabled):hover { background: #f3f2ef; color: #334155; }
+.wa-phone-copy-icon { opacity: 0; transition: opacity 0.15s ease; }
+.wa-phone-copy:hover .wa-phone-copy-icon { opacity: 1; }
+
+/* Etiquetas: pastilha aplicada e pastilha de adicionar, na mesma linha. */
+.wa-chip { transition: transform 0.14s ease, box-shadow 0.14s ease; }
+.wa-chip:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(11, 20, 26, 0.16); }
+.wa-chip-x { background: rgba(255, 255, 255, 0.22); transition: background-color 0.14s ease; }
+.wa-chip-x:hover { background: rgba(255, 255, 255, 0.42); }
+.wa-chip-add { transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease; }
+.wa-chip-add:has(select:not(:disabled)):hover {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #b45309;
+}
+.wa-chip-add:has(select:focus-visible) {
+  border-color: #f59e0b;
+  color: #b45309;
+  outline: 2px solid rgba(245, 158, 11, 0.35);
+  outline-offset: 1px;
+}
+
+/* Botão de voltar ao fim da conversa: entra de baixo, discreto, e sobe um toque
+   no hover. Some com a mesma naturalidade com que apareceu. */
+.wa-jump {
+  animation: wa-jump-in 0.18s ease-out both;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, color 0.16s ease;
+}
+.wa-jump:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(11, 20, 26, 0.18); }
+@keyframes wa-jump-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* Ícone do estado vazio flutua de leve. */
 .wa-empty-float { animation: wa-empty-float 3.6s ease-in-out infinite; }
 @keyframes wa-empty-float {
@@ -3636,7 +3743,9 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 
 @media (prefers-reduced-motion: reduce) {
   .wa-typing > span, .wa-msg-in, .wa-bubble-in, .wa-badge-pop, .wa-badge-glow,
-  .wa-send-ready, .wa-empty-float, .wa-drop-pulse { animation: none !important; }
+  .wa-send-ready, .wa-empty-float, .wa-drop-pulse,
+  .wa-skel::after, .wa-skel-row, .wa-jump { animation: none !important; }
+  .wa-jump:hover, .wa-avatar-hero:hover > div, .wa-chip:hover { transform: none !important; }
   .wa-conv::before { transition: none !important; }
   .wa-msg-actions button:hover, .group:hover .wa-bubble { transform: none !important; }
 }

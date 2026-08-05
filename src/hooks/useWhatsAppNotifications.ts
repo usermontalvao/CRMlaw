@@ -75,6 +75,12 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
   useEffect(() => {
     if (!userId) return;
 
+    // O cache vive no escopo do módulo (sobrevive a re-inscrições), então trocar
+    // de usuário na mesma aba — turno seguinte no computador compartilhado da
+    // recepção — herdaria as atribuições de quem saiu, e o filtro "é minha?"
+    // responderia pela pessoa errada. Cada login começa do zero.
+    convMetaCache.clear();
+
     // Mantém o cache de atribuição fresco (a conversa muda de dono ao ser assumida/
     // transferida). Não notifica daqui — é só cache para o gatilho de mensagem.
     const unsubConv = whatsappService.subscribeConversationNotifications((payload) => {
@@ -120,8 +126,15 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         if (meta.assigned_user_id !== userId) return;
         if (meta.is_blocked) return;
 
-        // Dentro do módulo o próprio chat já mostra tudo — nada de notificar.
-        if (inModuleRef.current) return;
+        // Dentro do módulo, COM A ABA À VISTA, o próprio chat já mostra tudo.
+        // A segunda metade da condição é o que faltava: quem deixa o CRM aberto
+        // justamente na tela do WhatsApp e vai trabalhar noutra janela era o
+        // único que não recebia aviso nenhum — o sistema achava que a pessoa
+        // estava olhando para a conversa. É o oposto: ela precisa MAIS do aviso,
+        // porque não está vendo a tela.
+        const noModuloEVisivel = inModuleRef.current
+          && (typeof document === 'undefined' || document.visibilityState === 'visible');
+        if (noModuloEVisivel) return;
         // Conversa silenciada por este usuário → nenhuma notificação.
         if (muteStore.isMuted(convId)) return;
 
@@ -131,7 +144,13 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         // Visual (in-app): em vez do toast global no topo, emite o evento que o
         // ChatFloatingWidget consome para exibir o aviso ANCORADO ao widget
         // (verde, clicável). Reaproveita a estrutura de toast já pronta do widget.
-        events.emit(SYSTEM_EVENTS.WHATSAPP_NOTIFY, { conversationId: convId, name, preview });
+        // Só faz sentido fora do módulo: se a pessoa está NELE (e chegou aqui
+        // porque a aba estava escondida), ao voltar ela vê a conversa em si — um
+        // toast apontando para a tela que já está aberta seria ruído, e vários
+        // deles empilhados enquanto a aba esteve fora, ruído acumulado.
+        if (!inModuleRef.current) {
+          events.emit(SYSTEM_EVENTS.WHATSAPP_NOTIFY, { conversationId: convId, name, preview });
+        }
 
         // Som (respeitando o mute por preferência local).
         if (!isNotifySoundMuted()) {

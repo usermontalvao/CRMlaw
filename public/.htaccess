@@ -1,0 +1,11 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Mantém arquivos reais (JS, CSS, imagens e manifests) acessíveis normalmente.
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+
+  # Rotas públicas do CRM são resolvidas pelo frontend Vite/React.
+  RewriteRule ^ index.html [L]
+</IfModule>

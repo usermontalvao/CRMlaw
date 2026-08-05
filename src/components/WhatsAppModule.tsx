@@ -51,6 +51,7 @@ import { ConversationSummaryBanner } from './whatsapp/conversationSummaryBanner'
 import { InternalNotesSection } from './whatsapp/internalNotes';
 import { AttachmentPreviewModal } from './whatsapp/attachmentPreviewModal';
 import { ConversationLabelsPanel } from './whatsapp/conversationLabels';
+import { ContactIdentity, AttendanceSummary } from './whatsapp/detailsPanelHeader';
 import { ConversationFunnelBoard } from './whatsapp/conversationFunnelBoard';
 import { nextLeadChannelFilter } from './whatsapp/channelFilterSync';
 import {
@@ -80,6 +81,8 @@ import { ClientFillLinksPanel } from './whatsapp/clientFillLinksPanel';
 import { PresenceText, DateDivider } from './whatsapp/conversationListItem';
 import { DockedDetailsToggle } from './whatsapp/DockedDetailsToggle';
 import { ConversationList } from './whatsapp/conversationList';
+import { ThreadSkeleton } from './whatsapp/skeletons';
+import { resolveInboxKey, isTypingTarget } from './whatsapp/inboxKeyboard';
 import { WaLightbox } from './whatsapp/lightbox';
 import { WaNotifyBell } from './whatsapp/notifyBell';
 import { useWaIsMobile, useWaIsPanelDocked, utcOffsetMinutesOf } from './whatsapp/hooks';
@@ -455,10 +458,21 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Move uma conversa para uma ETAPA do funil (etapa única: remove etiquetas de
   // funil anteriores, mantém tags livres). Usado por automações como "ao pedir
   // documento → Aguardando Documentos". No-op se a etapa não existe no funil.
+  // A inbox é recarregada de vários lugares ao mesmo tempo — abertura, realtime
+  // de conversa nova, ações de funil, reposição a cada 15s enquanto o canal está
+  // fora. Duas chamadas em voo não terminam necessariamente na ordem em que
+  // saíram, e a que chega por último é a que fica: bastava a mais ANTIGA demorar
+  // um pouco mais para a lista voltar a um retrato velho, sem a mensagem que
+  // acabara de chegar, até o próximo evento desencalhar. O contador descarta
+  // qualquer resposta que já tenha sido ultrapassada por outra mais recente.
+  const convReqRef = useRef(0);
   const loadConversations = useCallback(async () => {
+    const req = (convReqRef.current += 1);
     try {
-      setConversations(await whatsappService.listConversations());
-    } catch {/* */} finally { setLoadingConvs(false); }
+      const rows = await whatsappService.listConversations();
+      if (req !== convReqRef.current) return;
+      setConversations(rows);
+    } catch {/* */} finally { if (req === convReqRef.current) setLoadingConvs(false); }
   }, []);
 
   const runFunnelStageActions = useCallback(async (
@@ -562,6 +576,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     allMessages, msgById, messageUnits,
     lightbox, setLightbox, lightboxImages,
     threadContentRef, setThreadEl, onThreadScroll,
+    scrolledUp, newBelow, scrollToBottom,
   } = useWaThread(selectedId, messages, pending);
 
   // Auto-crescimento do campo de mensagem: cresce com o texto até um teto e
@@ -654,14 +669,34 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     return () => window.clearTimeout(id);
   }, [selectedId, isMobile]);
 
-  // Ao abrir uma conversa, marca como lida e zera o contador de não-lidas. A carga
-  // da thread (mensagens/paginação) vive em useWaMessages.
+  // Marca como lida ao abrir a conversa E a cada mensagem que chega com ela
+  // aberta. A segunda metade é o que faltava: o contador de não-lidas vem do
+  // banco pelo realtime, então cada mensagem recebida somava no badge da própria
+  // conversa que estava na tela — o atendente lia as três mensagens e a linha
+  // ativa continuava anunciando "3" até ele sair da conversa e voltar.
+  // Só marca com a aba visível: de uma aba escondida ninguém leu nada, e zerar
+  // ali apagaria justamente o aviso que faz a pessoa voltar.
+  const lastInboundId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].direction === 'in') return messages[i].id;
+    }
+    return null;
+  }, [messages]);
   useEffect(() => {
     if (!selectedId) return;
-    whatsappService.markRead(selectedId).then(() => {
-      setConversations(prev => prev.map(c => c.id === selectedId ? { ...c, unread_count: 0 } : c));
-    }).catch(() => {});
-  }, [selectedId]);
+    let cancelled = false;
+    const marcarLida = () => {
+      if (document.visibilityState !== 'visible') return;
+      whatsappService.markRead(selectedId).then(() => {
+        if (cancelled) return;
+        setConversations(prev => prev.map(c => c.id === selectedId ? { ...c, unread_count: 0 } : c));
+      }).catch(() => {});
+    };
+    marcarLida();
+    // Voltar para a aba com a conversa aberta também conta como ler.
+    document.addEventListener('visibilitychange', marcarLida);
+    return () => { cancelled = true; document.removeEventListener('visibilitychange', marcarLida); };
+  }, [selectedId, lastInboundId]);
 
   // A conversa restaurada da sessão anterior pode não existir mais (excluída,
   // ou fora do recorte de canais deste usuário): limpa a seleção em vez de
@@ -770,6 +805,50 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       });
   }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
 
+  // ── Teclado da inbox ─────────────────────────────────────────────────
+  // Andar pela fila sem tirar as mãos do teclado: ↑/↓ trocam de conversa,
+  // Alt+↑/↓ fazem o mesmo sem sair do compositor e Ctrl/Cmd+K vai para a busca.
+  // A decisão de qual tecla é nossa mora em `inboxKeyboard` (pura e testada);
+  // aqui só se lê o estado do DOM e se executa o resultado.
+  const searchRef = useRef<HTMLInputElement>(null);
+  const filteredIds = useMemo(() => filtered.map(c => c.id), [filtered]);
+  useEffect(() => {
+    // Só na inbox de tela cheia. No modo embutido (widget dentro de outra tela)
+    // a seta pertence à página que hospeda o widget, e duas instâncias montadas
+    // ao mesmo tempo brigariam pela mesma tecla.
+    if (embedded) return;
+    const onKey = (e: KeyboardEvent) => {
+      const alvo = document.activeElement;
+      const action = resolveInboxKey(e, {
+        visibleIds: filteredIds,
+        selectedId,
+        typing: isTypingTarget(alvo),
+        inSearch: alvo === searchRef.current,
+        hasSearch: search.trim().length > 0,
+        dialogOpen: !!document.querySelector('[role="dialog"]'),
+      });
+      if (!action) return;
+      e.preventDefault();
+      if (action.kind === 'select') {
+        setSelectedId(action.conversationId);
+        // A linha escolhida pode estar fora da janela visível — e, com
+        // `content-visibility`, sequer pintada. `block: 'nearest'` traz só o
+        // necessário, sem jogar a lista inteira de lugar.
+        requestAnimationFrame(() => {
+          document
+            .querySelector<HTMLElement>(`[data-conv-id="${CSS.escape(action.conversationId)}"]`)
+            ?.scrollIntoView({ block: 'nearest' });
+        });
+        return;
+      }
+      if (action.kind === 'focusSearch') { searchRef.current?.focus(); searchRef.current?.select(); return; }
+      if (action.kind === 'clearSearch') { setSearch(''); return; }
+      searchRef.current?.blur();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [filteredIds, selectedId, search, embedded]);
+
   // ── Props estáveis da lista ──────────────────────────────────────────
   // A lista está atrás de um React.memo (ver conversationList.tsx). Estas três
   // props mudariam de identidade a cada tecla/evento e derrubariam o memo, então
@@ -804,6 +883,26 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     mutedIdsRef.current = next;
     return next;
   }, [conversations, muteSnapshot]);
+
+  // Envios que falharam, contados por conversa. A fila otimista atravessa a troca
+  // de conversa (ver useWaComposer), então uma mensagem que não saiu enquanto o
+  // atendente já estava em outro contato continua existindo — este mapa é o que
+  // a faz aparecer na lista, em vez de ficar esperando dentro de uma thread que
+  // ninguém tem motivo para reabrir. Mesmo cuidado de identidade das props
+  // acima: `pending` muda a cada transição de envio, e a contagem quase nunca.
+  const failedSendsRef = useRef<Map<string, number>>(new Map());
+  const failedSends = useMemo(() => {
+    const next = new Map<string, number>();
+    for (const p of pending) {
+      if (p._local !== 'failed') continue;
+      next.set(p.conversation_id, (next.get(p.conversation_id) ?? 0) + 1);
+    }
+    const prev = failedSendsRef.current;
+    const same = next.size === prev.size && [...next].every(([id, n]) => prev.get(id) === n);
+    if (same) return prev;
+    failedSendsRef.current = next;
+    return next;
+  }, [pending]);
 
   const listEmptyMessage = useMemo(
     () => `Nenhuma conversa${search || filter !== 'all' || channelFilter !== 'all' || deptFilter !== 'all' ? ' para este filtro' : ' ainda'}.`,
@@ -1222,8 +1321,17 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           <div className="flex items-center gap-2">
             <div className="relative flex-1 min-w-0">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar conversa…"
-                className={`w-full pl-9 pr-3 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none ${embedded ? 'py-1.5' : 'py-2'}`} />
+              <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Buscar conversa…" title="Buscar conversa (Ctrl+K) · ↑ ↓ trocam de conversa"
+                className={`w-full pl-9 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none ${embedded ? 'py-1.5 pr-3' : 'py-2 pr-12'}`} />
+              {/* Atalho anunciado no próprio campo: atalho que ninguém descobre
+                  não existe. Some quando há texto (o dedo já está no teclado) e
+                  no modo embutido, onde não há largura sobrando. */}
+              {!embedded && !search && (
+                <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 select-none rounded border border-slate-200 bg-white px-1.5 py-0.5 font-sans text-[10px] font-semibold text-slate-400 sm:block">
+                  Ctrl K
+                </kbd>
+              )}
             </div>
             {(() => {
               const active = (channelFilter !== 'all' ? 1 : 0) + (deptFilter !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + (labelFilter !== '' ? 1 : 0);
@@ -1299,6 +1407,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             deptById={deptById}
             drafts={listDrafts}
             mutedIds={mutedIds}
+            failedSends={failedSends}
             funnelLabelsForChannel={funnelLabelsForChannel}
             elapsedMinutes={elapsedMinutes}
             conversationStatus={effectiveConversationStatus}
@@ -1584,10 +1693,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               </div>
             )}
 
+            {/* O invólucro existe para ancorar o botão de voltar ao fim: ele
+                precisa flutuar sobre a conversa sem rolar junto com ela. */}
+            <div className="relative flex flex-1 min-h-0 flex-col">
             <div ref={setThreadEl} onScroll={onThreadScroll} className="wa-thread-bg flex-1 overflow-y-auto min-h-0">
               <div ref={threadContentRef} className="mx-auto w-full max-w-[1180px] px-3 sm:px-6 py-4">
               {loadingMsgs ? (
-                <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
+                <ThreadSkeleton />
               ) : (() => {
                 let prevDay = '';
                 return (<>
@@ -1652,6 +1764,29 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 </>);
               })()}
               </div>
+            </div>
+
+            {/* Voltar ao fim. Sem isto, quem sobe para reler o histórico só volta
+                arrastando a barra — e não fica sabendo do que chegou no caminho.
+                O número conta apenas mensagens RECEBIDAS: as próprias já levam
+                quem enviou até o fim. */}
+            {scrolledUp && (
+              <button
+                onClick={scrollToBottom}
+                title={newBelow > 0 ? `${newBelow} nova(s) mensagem(ns)` : 'Ir para o fim da conversa'}
+                aria-label={newBelow > 0
+                  ? `Ir para o fim da conversa, ${newBelow} mensagem(ns) nova(s)`
+                  : 'Ir para o fim da conversa'}
+                className="wa-jump absolute bottom-4 right-4 z-[3] flex h-10 w-10 items-center justify-center rounded-full border border-black/[0.06] bg-white text-slate-500 shadow-md hover:text-slate-800"
+              >
+                <ChevronDown size={20} />
+                {newBelow > 0 && (
+                  <span className="wa-badge-pop absolute -top-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-bold text-white">
+                    {newBelow > 99 ? '99+' : newBelow}
+                  </span>
+                )}
+              </button>
+            )}
             </div>
 
             {/* Banner de reply / edição */}
@@ -1895,43 +2030,35 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               </button>
             </div>
           )}
-          {/* Header compacto: avatar + nome + telefone numa linha */}
-          <div className="flex items-center gap-2.5 pb-3 border-b border-[#f1f0ec]">
-            <Avatar url={selected.contact_avatar_url} name={conversationName(selected)} phone={selected.contact_phone} size={40}
-              onClick={selected.contact_avatar_url ? () => setLightbox(selected.contact_avatar_url) : undefined} />
-            <div className="min-w-0">
-              <p className="text-[13px] font-bold text-slate-800 truncate leading-tight">{privateMode ? maskName(conversationName(selected)) : conversationName(selected)}</p>
-              <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                <Phone size={11} className="text-slate-300 flex-shrink-0" /> {privateMode ? maskPhoneFull() : prettyPhone(selected.contact_phone)}
-              </p>
-            </div>
-          </div>
+          {/* Identidade: foto grande, nome e telefone copiável. */}
+          <ContactIdentity
+            conversation={selected}
+            privateMode={privateMode}
+            onOpenPhoto={selected.contact_avatar_url ? () => setLightbox(selected.contact_avatar_url) : undefined}
+          />
 
-          {/* Atendimento: Responsável; Setor + Etiqueta lado a lado; transferir */}
-          <div className="space-y-1.5">
-            <div className="min-w-0">
-              <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Responsável</p>
-              <p className="text-[12px] font-semibold text-slate-700 truncate">{selected.assigned_user_id ? (staffByUser.get(selected.assigned_user_id) || '—') : 'Ninguém'}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-2 items-start">
-              <div className="min-w-0">
-                <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Setor</p>
-                <p className="text-[12px] font-semibold text-slate-700 truncate">{selected.department_id ? (deptById.get(selected.department_id)?.name || '—') : 'Nenhum'}</p>
-              </div>
-              <div className="min-w-0">
-                <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Etiquetas</p>
-                <ConversationLabelsPanel
-                  conversation={selected}
-                  funnelLabels={selectedFunnelLabels}
-                  onChanged={conv => setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels: conv.labels } : c))}
-                  onStageEntered={runFunnelStageActions}
-                />
-              </div>
-            </div>
+          {/* Estado do atendimento (só leitura) + a ação que o muda. */}
+          <div className="space-y-2">
+            <AttendanceSummary
+              assignee={selected.assigned_user_id ? (staffByUser.get(selected.assigned_user_id) || '—') : 'Ninguém'}
+              department={selected.department_id ? (deptById.get(selected.department_id)?.name || '—') : 'Nenhum'}
+              stage={inferFunnelStage(selected.labels ?? [], selectedFunnelLabels)}
+            />
             <button onClick={() => setTransferOpen(true)}
-              className="w-full inline-flex items-center justify-center gap-1.5 py-1 rounded-md border border-[#e7e5df] text-[11px] font-semibold text-slate-500 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition">
+              className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-[#e7e5df] text-[11.5px] font-semibold text-slate-500 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition">
               <ArrowRightLeft size={12} /> Transferir conversa
             </button>
+          </div>
+
+          {/* Etiquetas: a parte editável, com a largura inteira. */}
+          <div className="space-y-1.5">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Etiquetas</p>
+            <ConversationLabelsPanel
+              conversation={selected}
+              funnelLabels={selectedFunnelLabels}
+              onChanged={conv => setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels: conv.labels } : c))}
+              onStageEntered={runFunnelStageActions}
+            />
           </div>
 
           {/* Ações da conversa (movidas do cabeçalho para não poluir a barra) */}

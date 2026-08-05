@@ -180,11 +180,20 @@ export function useWaComposer({
   const recChunksRef = useRef<Blob[]>([]);
   const recTimerRef = useRef<number | null>(null);
 
-  // Reset do compositor ao trocar de conversa: limpa fila otimista, resposta/
-  // edição e o progresso de upload (o reset de paginação/mensagens fica no módulo).
+  // Reset do compositor ao trocar de conversa. Resposta e edição são do momento
+  // e morrem aqui; a fila otimista, NÃO — ela é a mensagem em si.
+  //
+  // Antes a fila era esvaziada na troca, e isso apagava mensagem em voo: quem
+  // enviava e já pulava para o próximo contato (o ritmo normal de quem atende
+  // uma fila) perdia a bolha de vista. Se o envio falhasse enquanto se estava em
+  // outra conversa, só sobrava um toast — o item falho, com o botão de tentar de
+  // novo, tinha sido descartado junto. A mensagem simplesmente não ia, e nada na
+  // tela dizia isso depois que o toast sumia. O progresso de upload e o registro
+  // de uploads cancelados seguem a mesma lógica: pertencem ao envio, não à tela.
+  // Quem separa uma conversa da outra na hora de desenhar é `conversation_id`
+  // (ver useWaThread) — a fila é do compositor, mas cada item sabe de quem é.
   useEffect(() => {
-    setPending([]); setReplyTo(null); setEditing(null);
-    setUploadProgress(new Map()); cancelledUploads.current.clear();
+    setReplyTo(null); setEditing(null);
   }, [selectedId]);
 
   // Concilia a fila otimista contra as mensagens já persistidas: remove o

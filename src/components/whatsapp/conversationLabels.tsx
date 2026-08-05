@@ -1,6 +1,14 @@
 // Painel de etiquetas da conversa (espelho do funil configurado).
+//
+// Antes eram três blocos empilhados — a etapa do funil, um `select` de largura
+// cheia e, embaixo dele, as etiquetas aplicadas — o que fazia a mesma coisa
+// aparecer em dois lugares e o controle ficar no meio do caminho. Agora é UMA
+// linha só: as etiquetas aplicadas e, como último item, a pastilha de
+// adicionar. Quem lê vê o conjunto; quem vai editar acha o controle onde a
+// lista termina. A etapa do funil mudou-se para o resumo do atendimento (ver
+// `detailsPanelHeader`), junto de responsável e setor, que é o que ela é.
 import React, { useState } from 'react';
-import { Target, Tag, X } from 'lucide-react';
+import { Plus, Tag, X } from 'lucide-react';
 import { whatsappService } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
 import { resolveLabelMeta, inferFunnelStage } from './funnel';
@@ -51,40 +59,55 @@ export const ConversationLabelsPanel: React.FC<{
     g.labels.push(l);
   }
 
-  const stage = inferFunnelStage(current, funnelLabels);
+  const semFunil = funnelLabels.length === 0;
+  const semSugestao = groups.length === 0;
 
   return (
-    <div className="space-y-1.5">
-      {/* Etapa atual do funil (derivada das etiquetas). */}
-      {stage && (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold"
-          style={{ background: stage.color + '22', color: stage.color }}>
-          <Target size={10} /> {stage.stageLabel}
-        </span>
-      )}
-      {/* Select compacto agrupado por etapa do funil. */}
-      <select value="" onChange={e => { if (e.target.value) toggle(e.target.value); }} disabled={saving || funnelLabels.length === 0}
-        className="w-full min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none disabled:opacity-60">
-        <option value="">{saving ? 'Salvando…' : funnelLabels.length === 0 ? 'Configure em WhatsApp → Funis' : '🏷 Etiquetas — adicionar…'}</option>
-        {groups.map(g => (
-          <optgroup key={g.stageKey} label={g.stageLabel}>
-            {g.labels.map(l => <option key={l.key} value={l.key}>{l.key}</option>)}
-          </optgroup>
-        ))}
-      </select>
-      {current.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {current.map(key => {
-            const meta = resolveLabelMeta(key, funnelLabels);
-            return (
-              <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-semibold" style={{ background: meta.color, color: '#fff' }}>
-                <Tag size={9} />{key}
-                <button onClick={() => toggle(key)} disabled={saving} className="hover:opacity-70 ml-0.5"><X size={10} /></button>
-              </span>
-            );
-          })}
-        </div>
-      )}
+    <div className="flex flex-wrap items-center gap-1.5">
+      {current.map(key => {
+        const meta = resolveLabelMeta(key, funnelLabels);
+        return (
+          <span key={key} className="wa-chip inline-flex items-center gap-1 rounded-full py-0.5 pl-2 pr-1 text-[10.5px] font-semibold text-white"
+            style={{ background: meta.color }}>
+            <Tag size={9} className="flex-shrink-0 opacity-80" />
+            <span className="max-w-[140px] truncate">{key}</span>
+            <button onClick={() => toggle(key)} disabled={saving}
+              title={`Remover ${key}`} aria-label={`Remover etiqueta ${key}`}
+              className="wa-chip-x flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-full">
+              <X size={9} strokeWidth={3} />
+            </button>
+          </span>
+        );
+      })}
+
+      {/* Pastilha de adicionar. O `select` nativo continua ali por cima, apenas
+          invisível: é ele que dá o menu agrupado por etapa, a navegação por
+          teclado e o comportamento certo no celular — de graça. */}
+      <span className={`wa-chip-add relative inline-flex items-center gap-1 rounded-full border border-dashed px-2 py-[3px] text-[10.5px] font-semibold ${
+        saving || semFunil || semSugestao
+          ? 'border-slate-200 text-slate-300'
+          : 'cursor-pointer border-slate-300 text-slate-500'
+      }`}>
+        <Plus size={10} className="flex-shrink-0" />
+        {saving
+          ? 'Salvando…'
+          : semFunil
+            ? 'Configure em Funis'
+            : semSugestao
+              ? 'Todas aplicadas'
+              : 'Etiqueta'}
+        <select value="" onChange={e => { if (e.target.value) toggle(e.target.value); }}
+          disabled={saving || semFunil || semSugestao}
+          aria-label="Adicionar etiqueta"
+          className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-default">
+          <option value="">Adicionar etiqueta…</option>
+          {groups.map(g => (
+            <optgroup key={g.stageKey} label={g.stageLabel}>
+              {g.labels.map(l => <option key={l.key} value={l.key}>{l.key}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      </span>
     </div>
   );
 };

@@ -11,9 +11,9 @@
 // estável entre renders (funções em useCallback, mapas em useMemo). A derivação
 // por linha mora aqui dentro justamente para o módulo não precisar recriar
 // objetos por conversa a cada render.
-import React from 'react';
-import { Loader2 } from 'lucide-react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { ConversationListItem } from './conversationListItem';
+import { ConversationListSkeleton } from './skeletons';
 import type { FunnelLabel } from '../../services/settings.service';
 import type {
   WhatsAppChannel, WhatsAppConversation, WhatsAppDepartment,
@@ -31,6 +31,8 @@ export interface ConversationListProps {
   /** Rascunhos das conversas NÃO abertas (o da aberta nunca aparece na lista). */
   drafts: Record<string, string>;
   mutedIds: ReadonlySet<string>;
+  /** Envios que falharam, por conversa (ver `failedSends` no item da lista). */
+  failedSends: ReadonlyMap<string, number>;
   funnelLabelsForChannel: (channelId: string | null | undefined) => FunnelLabel[];
   /** Medição de tempo dos badges de SLA (horário útil do canal de cada conversa). */
   elapsedMinutes?: ElapsedMinutes;
@@ -44,22 +46,35 @@ export interface ConversationListProps {
 
 const ConversationListInner: React.FC<ConversationListProps> = ({
   conversations, selectedId, loading, privateMode, emptyMessage,
-  channelById, deptById, drafts, mutedIds, funnelLabelsForChannel, elapsedMinutes,
+  channelById, deptById, drafts, mutedIds, failedSends, funnelLabelsForChannel, elapsedMinutes,
   conversationStatus, docStatusFor, trackedSignatureFor,
   onSelect, onStopSignatureTracking, onStopTemplateFillTracking,
 }) => {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-10 text-slate-400">
-        <Loader2 size={18} className="animate-spin" />
-      </div>
-    );
-  }
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // As linhas usam `content-visibility` (ver index.css): o navegador não gasta
+  // layout nem pintura com o que está fora da tela. O preço é ele precisar de um
+  // palpite de altura para as linhas que ainda não pintou — e um palpite errado
+  // faz a barra de rolagem encolher enquanto se rola. Em vez de chutar um número
+  // fixo, mede as primeiras linhas reais e publica a média como variável CSS.
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const rows = el.querySelectorAll<HTMLElement>('.wa-conv');
+    const amostra = Math.min(rows.length, 6);
+    if (amostra === 0) return;
+    let soma = 0;
+    for (let i = 0; i < amostra; i += 1) soma += rows[i].offsetHeight;
+    const media = Math.round(soma / amostra);
+    if (media > 0) el.style.setProperty('--wa-conv-h', `${media}px`);
+  }, [conversations.length]);
+
+  if (loading) return <ConversationListSkeleton />;
   if (conversations.length === 0) {
     return <div className="px-4 py-10 text-center text-[13px] text-slate-400">{emptyMessage}</div>;
   }
   return (
-    <>
+    <div ref={listRef}>
       {conversations.map(c => {
         const st = conversationStatus(c);
         const tracked = st.key === 'waiting_client' ? trackedSignatureFor(c.client_id) : null;
@@ -77,6 +92,7 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
             docStatus={docStatusFor(c.client_id)}
             muted={mutedIds.has(c.id)}
             draftPreview={drafts[c.id] ?? ''}
+            failedSends={failedSends.get(c.id) ?? 0}
             funnelLabels={funnelLabelsForChannel(c.instance_id)}
             elapsedMinutes={elapsedMinutes}
             onSelect={onSelect}
@@ -88,7 +104,7 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
           />
         );
       })}
-    </>
+    </div>
   );
 };
 
