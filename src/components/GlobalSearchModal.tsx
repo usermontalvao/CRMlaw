@@ -5,7 +5,7 @@ import {
   ClipboardList, Calendar, CheckSquare, AlarmClock, DollarSign, FolderOpen,
   Clock, Zap, Gavel, PenTool, Sparkles, CornerDownLeft, LayoutGrid,
   Phone, Mail, Hash, Building2, Tag, User, CreditCard, Copy, Check,
-  Scale, MessageCircle, MessageSquare, Terminal, Plus, Navigation, Trash2, Sun, Moon,
+  Scale, MessageCircle, Terminal, Plus, Navigation, Trash2, Sun, Moon,
   UserPlus, FileSignature, BookOpen, Settings, LogOut, RefreshCw,
   ClipboardCheck, Banknote, FilePlus, CalendarPlus, UserCheck,
 } from 'lucide-react';
@@ -24,6 +24,7 @@ import { signatureService } from '../services/signature.service';
 import { nextcloudService } from '../services/nextcloud.service';
 import { whatsappService } from '../services/whatsapp.service';
 import { conversationName, prettyPhone } from './whatsapp/format';
+import { WhatsAppIcon } from './icons/WhatsAppIcon';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch } from '../utils/search';
 import type { Client } from '../types/client.types';
@@ -220,7 +221,7 @@ const TYPE_CONFIG: Record<ResultType, {
   cloud:                 { label: 'Pasta',        icon: FolderOpen,    color: 'text-indigo-600 bg-indigo-50',   border: 'border-indigo-200',  group: 'Cloud'         },
   assinatura:            { label: 'Assinatura',   icon: PenTool,       color: 'text-violet-600 bg-violet-50',   border: 'border-violet-200',  group: 'Assinaturas'   },
   nextcloud:             { label: 'Arquivo',      icon: FolderOpen,    color: 'text-blue-600 bg-blue-50',       border: 'border-blue-200',    group: 'Nextcloud'     },
-  conversa:              { label: 'Conversa',     icon: MessageSquare, color: 'text-green-600 bg-green-50',     border: 'border-green-200',   group: 'WhatsApp'      },
+  conversa:              { label: 'Conversa',     icon: WhatsAppIcon,  color: 'text-green-600 bg-green-50',     border: 'border-green-200',   group: 'WhatsApp'      },
 };
 
 // Intimações removidas da exibição (ainda carregadas para extrair partes dos processos)
@@ -400,7 +401,7 @@ const SIDEBAR_MODULES: Array<{ key: ResultType | 'all'; label: string; icon: Rea
   { key: 'financeiro',   label: 'Financeiro',    icon: DollarSign,    mod: 'financeiro' },
   { key: 'cloud',        label: 'Cloud',         icon: FolderOpen,    mod: 'cloud' },
   { key: 'nextcloud',    label: 'Nextcloud',     icon: FolderOpen,    mod: 'nextcloud' },
-  { key: 'conversa',     label: 'WhatsApp',      icon: MessageSquare, mod: 'whatsapp' },
+  { key: 'conversa',     label: 'WhatsApp',      icon: WhatsAppIcon,  mod: 'whatsapp' },
   { key: 'assinatura',   label: 'Assinaturas',   icon: PenTool,       mod: 'assinaturas' },
 ];
 
@@ -935,13 +936,18 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           if (s === 0 && somenteDigitos.length >= 4 && c.contact_phone.replace(/\D/g, '').endsWith(somenteDigitos)) {
             s = 60;
           }
-          // Encerrada some para o fim da lista pela mesma razão que na inbox: é
-          // arquivo, e o que está em aberto é o que se pode responder agora.
-          if (s > 0 && c.status === 'closed') s -= 15;
           return { c, s };
         })
         .filter(x => x.s > 0)
-        .sort((a, b) => b.s - a.s || (b.c.last_message_at ?? '').localeCompare(a.c.last_message_at ?? ''))
+        // O status não altera o score: antes, a penalidade das encerradas era
+        // maior que quase todos os scores possíveis e as removia no `.filter`.
+        // Em empate de relevância, as abertas vêm primeiro e as encerradas
+        // continuam visíveis logo depois, identificadas pelo badge "Encerrada".
+        .sort((a, b) =>
+          b.s - a.s
+          || Number(a.c.status === 'closed') - Number(b.c.status === 'closed')
+          || (b.c.last_message_at ?? '').localeCompare(a.c.last_message_at ?? '')
+        )
         .slice(0, 5)
         .map(({ c, s }) => {
           const encerrada = c.status === 'closed';

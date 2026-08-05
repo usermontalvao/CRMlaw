@@ -59,6 +59,7 @@ import BirthdayExperience from './components/BirthdayExperience';
 import TermsPrivacyPage from './components/TermsPrivacyPage';
 import ProfileModal, { type AppProfile, type UserRole } from './components/ProfileModal';
 import { NextcloudIcon } from './components/icons/NextcloudIcon';
+import { WhatsAppIcon } from './components/icons/WhatsAppIcon';
 
 type ModuleIcon = ComponentType<SVGProps<SVGSVGElement>>;
 
@@ -231,7 +232,7 @@ const MODULE_META: Record<string, { label: string; desc: string; Icon: ModuleIco
   agenda:        { label: 'Agenda',               desc: 'compromissos e audiências',              Icon: Calendar },
   tarefas:       { label: 'Tarefas',              desc: 'atividades e pendências',                Icon: CheckSquare },
   chat:          { label: 'Mensagens',            desc: 'comunicação interna',                    Icon: MessageCircle },
-  whatsapp:      { label: 'WhatsApp',             desc: 'atendimento via WhatsApp',               Icon: MessageSquare },
+  whatsapp:      { label: 'WhatsApp',             desc: 'atendimento via WhatsApp',               Icon: WhatsAppIcon },
   peticoes:      { label: 'Editor de Petições',   desc: 'redação e formatação de petições',       Icon: Newspaper },
   configuracoes: { label: 'Configurações',        desc: 'ajustes do sistema',                     Icon: Settings },
 };
@@ -2318,7 +2319,7 @@ useEffect(() => {
               onOpenWindowDirect={floatingWindowModules.has('chat') ? () => handleOpenWindow('chat','Chat') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('whatsapp') && (
-            <SidebarModuleBtn moduleKey="whatsapp" label="WhatsApp" Icon={MessageSquare}
+            <SidebarModuleBtn moduleKey="whatsapp" label="WhatsApp" Icon={WhatsAppIcon}
               isActive={activeModule === 'whatsapp'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('whatsapp'); }}
               expiresAt={getOverrideExpiry('whatsapp')}
@@ -2583,7 +2584,7 @@ useEffect(() => {
                     configuracoes: { label: 'Configurações', Icon: Settings },
                     agenda: { label: 'Agenda', Icon: Calendar },
                     chat: { label: 'Chat', Icon: MessageCircle },
-                    whatsapp: { label: 'WhatsApp', Icon: MessageSquare },
+                    whatsapp: { label: 'WhatsApp', Icon: WhatsAppIcon },
                     tarefas: { label: 'Tarefas', Icon: CheckSquare },
                   };
                   const meta = MODULE_META[activeModule];
