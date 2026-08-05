@@ -261,6 +261,15 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: harness visual do tratamento de devolução de e-mail (?emailbounce=1).
+  if (isDev && new URLSearchParams(window.location.search).has('emailbounce')) {
+    const { default: EmailBouncePreview } = await import('./dev/EmailBouncePreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <EmailBouncePreview />,
+    );
+    return;
+  }
+
   // Vídeo animado de aniversário (?aniversarioanimado | #/aniversarioanimado).
   // Disponível também em produção: é o link para assistir à homenagem.
   if (isBirthdayVideoRoute) {

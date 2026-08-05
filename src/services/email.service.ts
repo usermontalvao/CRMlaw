@@ -129,6 +129,67 @@ class EmailService {
     return { items: (data ?? []) as EmailMessage[], total: count ?? 0 };
   }
 
+  /**
+   * Endereços com quem a caixa já trocou e-mail, em minúsculas. Serve para
+   * avisar no compose quando o destinatário é inédito — é o único sinal capaz
+   * de pegar erro de digitação na parte antes do @ (`fulanoo@gmail.com`), que
+   * o SMTP só recusa depois, por devolução.
+   */
+  async listKnownAddresses(limit = 1500): Promise<Set<string>> {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('direction, from_address, to_text, cc_text')
+      .eq('is_draft', false)
+      .eq('is_spam', false)
+      .order('sent_at', { ascending: false, nullsFirst: false })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+
+    const known = new Set<string>();
+    const addAll = (raw: string | null) => {
+      if (!raw) return;
+      for (const part of raw.split(/[,;]+/)) {
+        const match = part.match(/<([^>]+)>/);
+        const address = (match ? match[1] : part).trim().toLowerCase();
+        if (address.includes('@')) known.add(address);
+      }
+    };
+    for (const row of (data ?? []) as Array<Pick<EmailMessage, 'direction' | 'from_address' | 'to_text' | 'cc_text'>>) {
+      // De quem escreveu para nós e para quem já escrevemos: ambos contam.
+      addAll(row.from_address);
+      addAll(row.to_text);
+      addAll(row.cc_text);
+    }
+    return known;
+  }
+
+  /**
+   * Devoluções (bounces) recebidas: mensagens de MAILER-DAEMON/postmaster ou
+   * com relatório DSN no corpo. Servem para marcar como "não entregue" o
+   * e-mail correspondente em Enviados — sem isso a falha fica só na caixa de
+   * entrada e a mensagem enviada continua com cara de entregue.
+   */
+  async listBounceMessages(limit = 200): Promise<EmailMessage[]> {
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('*')
+      .eq('direction', 'inbound')
+      .eq('is_draft', false)
+      .or(
+        [
+          'from_address.ilike.%mailer-daemon%',
+          'from_address.ilike.%postmaster%',
+          'from_address.ilike.%mail-daemon%',
+          'body_text.ilike.%Final-Recipient:%',
+          'body_text.ilike.%Diagnostic-Code:%',
+        ].join(',')
+      )
+      .order('sent_at', { ascending: false, nullsFirst: false })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as EmailMessage[];
+  }
+
   /** Uma mensagem específica por id (usado ao abrir via notificação). */
   async getMessage(id: string): Promise<EmailMessage | null> {
     const { data, error } = await supabase.from(TABLE).select('*').eq('id', id).maybeSingle();

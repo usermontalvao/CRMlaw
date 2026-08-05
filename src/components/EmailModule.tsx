@@ -6,7 +6,7 @@ import {
   Settings, Type, Printer, PenLine, SlidersHorizontal, ShieldCheck, Plus, X,
   Bold, Italic, Underline, List, ListOrdered, Link2,
   Strikethrough, AlignLeft, AlignCenter, AlignRight, Quote, RemoveFormatting, Palette, ChevronDown,
-  AlertCircle, ChevronLeft, Keyboard, ImageOff, Star, Ban, Sparkles, User,
+  AlertCircle, ChevronLeft, Keyboard, ImageOff, Star, Ban, Sparkles, User, MailX,
 } from 'lucide-react';
 import { emailService } from '../services/email.service';
 import { aiService } from '../services/ai.service';
@@ -20,6 +20,9 @@ import type { EmailFolder, EmailMessage, EmailSignature, SendEmailDTO, EmailSpam
 import type { Client } from '../types/client.types';
 import { Modal, ModalBody, ModalFooter, Button, Input, Label } from './ui';
 import { resolveFolder } from '../utils/email.transitions';
+import type { BounceRecord } from '../utils/emailDelivery';
+import { detectBounce, findAddressIssues, matchBouncesToSent } from '../utils/emailDelivery';
+import BounceNotice from './email/BounceNotice';
 
 const FOLDERS: { key: EmailFolder; label: string; Icon: typeof Inbox }[] = [
   { key: 'inbox', label: 'Caixa de entrada', Icon: Inbox },
@@ -251,11 +254,40 @@ function normalizeComposeText(html: string): string {
   return (tmp.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
-function getComposeWarnings(compose: ComposeState, selected: EmailMessage | null, userEmail: string | null): ComposeWarning[] {
+function getComposeWarnings(
+  compose: ComposeState,
+  selected: EmailMessage | null,
+  userEmail: string | null,
+  knownAddresses: Set<string>,
+): ComposeWarning[] {
   const warnings: ComposeWarning[] = [];
   const plain = normalizeComposeText(compose.bodyHtml).toLocaleLowerCase('pt-BR');
-  const allRecipients = [...parseRecipients(compose.to), ...parseRecipients(compose.cc), ...parseRecipients(compose.bcc)].map((item) => addressOf(item).toLowerCase());
+  const rawRecipients = [...parseRecipients(compose.to), ...parseRecipients(compose.cc), ...parseRecipients(compose.bcc)];
+  const allRecipients = rawRecipients.map((item) => addressOf(item).toLowerCase());
   const informalHits = ['vc', 'vcs', 'kd', 'pq', 'blz', 'mano', 'amigo', 'amiguinho'].filter((token) => new RegExp(`\\b${token}\\b`, 'i').test(plain));
+
+  // Endereço com cara de erro de digitação (domínio conhecido escrito errado,
+  // pontuação sobrando). Vem antes das outras: é o que mais causa devolução.
+  for (const issue of findAddressIssues(rawRecipients)) {
+    warnings.push({ id: `address-typo:${issue.address}`, message: issue.message });
+  }
+
+  // Destinatário inédito: o SMTP aceita a mensagem e só devolve minutos depois
+  // com "550 5.1.1 does not exist". Como a lista de conhecidos vem de e-mails
+  // já trocados, só avisa quando ela realmente carregou.
+  if (knownAddresses.size > 0) {
+    const self = (userEmail || '').toLowerCase();
+    const unknown = allRecipients.filter((address) => address && address !== self && !knownAddresses.has(address));
+    if (unknown.length) {
+      warnings.push({
+        id: `unknown-recipient:${unknown.join(',')}`,
+        message:
+          unknown.length === 1
+            ? `Você nunca trocou e-mail com ${unknown[0]} — confira se o endereço está certo.`
+            : `Você nunca trocou e-mail com ${unknown.length} destes destinatários (${unknown.join(', ')}) — confira os endereços.`,
+      });
+    }
+  }
 
   if (/\banex(a|o|ei|ando|ado|amos)\b|\bem anexo\b|\bsegue anexo\b/i.test(plain) && compose.attachments.length === 0) {
     warnings.push({ id: 'missing-attachment', message: 'Você mencionou anexo, mas não há arquivo anexado.' });
@@ -758,6 +790,8 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const [sigDraft, setSigDraft] = useState<EmailSignature>({ user_id: '', name: '', signature_text: '', signature_html: '', use_html: false });
 
   const [spamRules, setSpamRules] = useState<EmailSpamRule[]>([]);
+  const [knownAddresses, setKnownAddresses] = useState<Set<string>>(() => new Set());
+  const [bounceRecords, setBounceRecords] = useState<BounceRecord[]>([]);
   const [rulesLoading, setRulesLoading] = useState(false);
   const [ruleForm, setRuleForm] = useState<{ kind: SpamRuleKind; match_type: SpamRuleMatch; value: string }>({
     kind: 'whitelist', match_type: 'address', value: '',
@@ -820,6 +854,28 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   useEffect(() => { setLimit(prefs.perPage); setChecked(new Set()); keepVisibleRef.current = new Set(); setExpandedSubjects(new Set()); }, [folder, search, prefs.perPage, onlyUnread, appliedFilters]);
   useEffect(() => { emailService.getSignature().then((s) => { if (s) setSignature(s); }).catch(() => {}); }, []);
   useEffect(() => { emailService.listSpamRules().then(setSpamRules).catch(() => {}); }, []);
+  // Carregado uma vez: base do aviso "você nunca trocou e-mail com esse endereço".
+  useEffect(() => { emailService.listKnownAddresses().then(setKnownAddresses).catch(() => {}); }, []);
+
+  // Devoluções recebidas — recarregadas junto com a lista para que um bounce
+  // que acabou de chegar já marque a mensagem em Enviados.
+  const loadBounces = useCallback(async () => {
+    try {
+      const items = await emailService.listBounceMessages();
+      const records: BounceRecord[] = [];
+      for (const m of items) {
+        const report = detectBounce({
+          fromAddress: m.from_address,
+          subject: m.subject,
+          bodyText: m.body_text,
+          bodyHtml: m.body_html,
+        });
+        if (report) records.push({ bounceMessageId: m.id, receivedAt: m.sent_at || m.created_at, report });
+      }
+      setBounceRecords(records);
+    } catch { /* a lista de e-mails não pode quebrar por causa disso */ }
+  }, []);
+  useEffect(() => { void loadBounces(); }, [loadBounces, folder]);
 
   // Fecha menu de contexto ao clicar fora ou pressionar Escape
   useEffect(() => {
@@ -1493,9 +1549,72 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   };
 
   const composeWarnings = useMemo(
-    () => getComposeWarnings(compose, selected, user?.email ?? null),
-    [compose, selected, user?.email]
+    () => getComposeWarnings(compose, selected, user?.email ?? null, knownAddresses),
+    [compose, selected, user?.email, knownAddresses]
   );
+
+  // Devolução: só faz sentido em mensagem recebida.
+  const bounceReport = useMemo(() => {
+    if (!selected || selected.direction !== 'inbound') return null;
+    return detectBounce({
+      fromAddress: selected.from_address,
+      subject: selected.subject,
+      bodyText: selected.body_text,
+      bodyHtml: selected.body_html,
+    });
+  }, [selected]);
+
+  /**
+   * Mensagens enviadas que voltaram: `id da mensagem -> devolução`. É o que
+   * faz a falha aparecer em Enviados, e não só no relatório do MAILER-DAEMON
+   * perdido na caixa de entrada.
+   */
+  const failureBySentId = useMemo(() => {
+    if (!bounceRecords.length) return new Map<string, BounceRecord>();
+    const outbound = [...messages, ...thread, ...(selected ? [selected] : [])]
+      .filter((m) => m.direction === 'outbound' && !m.is_draft);
+    const seen = new Set<string>();
+    const refs = outbound
+      .filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)))
+      .map((m) => ({
+        id: m.id,
+        messageId: m.message_id,
+        subject: m.subject,
+        recipients: [m.to_text, m.cc_text, m.bcc_text],
+        sentAt: m.sent_at || m.created_at,
+      }));
+    return matchBouncesToSent(bounceRecords, refs);
+  }, [bounceRecords, messages, thread, selected]);
+
+  const selectedFailure = selected ? failureBySentId.get(selected.id) ?? null : null;
+
+  /** Abre o relatório completo do MAILER-DAEMON a partir da mensagem enviada. */
+  const openBounceMessage = async (bounceMessageId: string) => {
+    try {
+      const m = await emailService.getMessage(bounceMessageId);
+      if (m) { setSelected(m); setThread([]); }
+    } catch { /* noop */ }
+  };
+
+  /**
+   * Reabre o e-mail que voltou, já com o endereço recusado no campo "Para" para
+   * o usuário corrigir. Reaproveita assunto e corpo do original quando ele
+   * ainda está em Enviados.
+   */
+  const openComposeToFailedRecipient = async (failed: string[]) => {
+    const address = failed[0] ?? '';
+    let original: EmailMessage | null = null;
+    try {
+      const { items } = await emailService.listMessages('sent', undefined, 1, false, { to: address });
+      original = items[0] ?? null;
+    } catch { /* sem o original, abre só com o endereço */ }
+    startCompose({
+      to: address,
+      subject: original?.subject ?? '',
+      bodyHtml: original?.body_html || buildInitialBody(),
+      clientId: original?.client_id ?? undefined,
+    });
+  };
 
   const doSend = async () => {
     const toList = parseRecipients(compose.to);
@@ -1542,6 +1661,9 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     setSendError(null);
     try {
       await emailService.sendEmail(dto);
+      // Passaram a ser conhecidos: não faz sentido avisar "nunca trocou e-mail"
+      // com quem acabou de receber uma mensagem daqui.
+      setKnownAddresses((prev) => new Set([...prev, ...allRecipients.map((e) => addressOf(e).toLowerCase())]));
       // Enviou: remove o rascunho pelo id (se houver) e faz limpeza por subject como fallback.
       if (draftIdRef.current) {
         try { await emailService.deleteDraft(draftIdRef.current); } catch { /* noop */ }
@@ -1790,6 +1912,12 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     const isChk = checked.has(m.id);
     const name = senderName(m);
     const preview = snippet(m);
+    // Selo de falha na lista, dos dois lados: no relatório do MAILER-DAEMON
+    // (que sem isso parece só mais um e-mail) e, principalmente, na mensagem
+    // em Enviados que voltou — é lá que o usuário procura.
+    const bounced = m.direction === 'inbound'
+      ? detectBounce({ fromAddress: m.from_address, subject: m.subject, bodyText: m.body_text, bodyHtml: m.body_html })
+      : failureBySentId.get(m.id)?.report ?? null;
     return (
       <div data-email-id={m.id} role="button" tabIndex={0}
         draggable
@@ -1826,6 +1954,14 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
           </div>
           <div className={`mt-0.5 flex items-center gap-1.5 truncate text-[13px] ${isUnread ? 'font-medium text-zinc-900 dark:text-zinc-100' : 'text-zinc-600'}`}>
             {isUnread && <span className="h-1.5 w-1.5 flex-none rounded-full bg-amber-500" />}
+            {bounced && (
+              <span
+                title={`${bounced.reason}${bounced.failedRecipients.length ? ` (${bounced.failedRecipients.join(', ')})` : ''}`}
+                className={`flex flex-none items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${bounced.severity === 'soft' ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-700'}`}>
+                <MailX className="h-3 w-3" />
+                {bounced.severity === 'soft' ? 'Atrasado' : 'Não entregue'}
+              </span>
+            )}
             {m.attachments?.length > 0 && <Paperclip className="h-3 w-3 flex-none text-zinc-400" />}
             <span className="truncate">{m.subject || '(sem assunto)'}</span>
           </div>
@@ -1939,7 +2075,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                 </span>
               )}
             </button>
-            <button onClick={() => load()} title="Atualizar"
+            <button onClick={() => { void load(); void loadBounces(); }} title="Atualizar"
               className="flex-none rounded-lg border border-[#e7e5df] p-1.5 text-zinc-500 hover:bg-zinc-50">
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -2391,6 +2527,22 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
                       </button>
                     )}
                   </div>
+                )}
+
+                {bounceReport && (
+                  <BounceNotice
+                    report={bounceReport}
+                    onResend={(failed) => { void openComposeToFailedRecipient(failed); }}
+                  />
+                )}
+
+                {selectedFailure && (
+                  <BounceNotice
+                    report={selectedFailure.report}
+                    context="sent"
+                    onResend={(failed) => { void openComposeToFailedRecipient(failed); }}
+                    onOpenReport={() => { void openBounceMessage(selectedFailure.bounceMessageId); }}
+                  />
                 )}
 
                 {(() => {
