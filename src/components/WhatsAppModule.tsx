@@ -55,6 +55,7 @@ import { ContactIdentity, AttendanceSummary } from './whatsapp/detailsPanelHeade
 import { QuickActions } from './whatsapp/quickActions';
 import { useWaViewers } from './whatsapp/hooks/useWaViewers';
 import { viewersLabel } from '../services/whatsapp/inboxPresenceState';
+import { imagesFromClipboard } from '../utils/clipboardImages';
 import { ConversationFunnelBoard } from './whatsapp/conversationFunnelBoard';
 import { nextLeadChannelFilter } from './whatsapp/channelFilterSync';
 import { hiddenByStatusFilter, searchRank } from './whatsapp/inboxStatusScope';
@@ -1062,6 +1063,37 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Drag and drop de arquivos na thread → useThreadDragDrop (estado do overlay +
   // handlers). O envio em si (sendFile, staging, retry/resend) vive em useWaComposer.
   const { dragOver, dragProps } = useThreadDragDrop(!!selected && !editing, handleDroppedFiles);
+
+  // Print da tela colado com Ctrl+V / Cmd+V vira anexo, pelo mesmo caminho do
+  // arrastar-e-soltar (abre o preview com legenda).
+  //
+  // O listener é do DOCUMENTO, não do <textarea>: depois de tirar o print quase
+  // ninguém volta o cursor para o campo de digitação antes de colar — clica na
+  // conversa, na lista, em qualquer lugar. Preso ao textarea, o Ctrl+V só
+  // funcionava com o foco exatamente ali e falhava calado em todo o resto da
+  // tela. É assim que o WhatsApp Web se comporta.
+  //
+  // O estado vai por ref e o listener é montado UMA vez: `handleDroppedFiles`
+  // nasce novo a cada render, e como este módulo re-renderiza a cada tecla
+  // digitada no compositor, um efeito dependente dele ficaria removendo e
+  // registrando o listener letra por letra.
+  const pasteStateRef = useRef({ selected, editing, attachStaged, handleDroppedFiles });
+  pasteStateRef.current = { selected, editing, attachStaged, handleDroppedFiles };
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const st = pasteStateRef.current;
+      // Sem conversa aberta não há destino; em edição só cabe texto; e com o
+      // preview aberto a colagem pertence à legenda, não a um anexo novo.
+      if (!st.selected || st.editing || st.attachStaged) return;
+      const imagens = imagesFromClipboard(e.clipboardData);
+      if (imagens.length === 0) return; // colagem de texto segue o fluxo normal
+      e.preventDefault();
+      st.handleDroppedFiles(imagens);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, []);
 
   // Handlers das bolhas com identidade ESTÁVEL: um ref guarda sempre a última
   // implementação (que fecha sobre estado atual), e o objeto exposto à árvore
