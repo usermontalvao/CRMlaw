@@ -225,6 +225,15 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: preview de anexo com anotação — lápis/marca-texto (?waattachpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('waattachpreview')) {
+    const { default: WhatsAppAttachmentPreview } = await import('./dev/WhatsAppAttachmentPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppAttachmentPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: vitrine dos modais do atendimento WhatsApp (?wamodalspreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('wamodalspreview')) {
     const { default: WhatsAppModalsPreview } = await import('./dev/WhatsAppModalsPreview');
