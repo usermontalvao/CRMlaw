@@ -87,6 +87,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   // QR / conexão por canal
   const [qrFor, setQrFor] = useState<{ id: string; qr?: string; status: string } | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [savingDefaultAssigneeFor, setSavingDefaultAssigneeFor] = useState<string | null>(null);
 
   // formulário de departamento
   const [newDept, setNewDept] = useState({ name: '', color: PALETTE[1] });
@@ -240,6 +241,42 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       onFeedback('success', 'Canal excluído.');
     } catch (e: any) {
       onFeedback('error', e.message || 'Erro ao excluir.');
+    }
+  };
+
+  const saveDefaultAssignee = async (ch: WhatsAppChannel, userId: string) => {
+    const nextUserId = userId || null;
+    if (nextUserId === ch.default_assignee_id) return;
+
+    const selected = staff.find(person => person.user_id === nextUserId);
+    const pinOk = await requirePin({
+      action: 'update_whatsapp_channel_default_assignee',
+      resourceType: 'whatsapp_channel',
+      resourceId: ch.id,
+      sensitivity: 'high',
+      title: 'Alterar responsável inicial',
+      description: nextUserId
+        ? `Confirme com seu PIN para direcionar novas mensagens de ${ch.name || ch.instance_name} para ${selected?.name || 'o usuário selecionado'}.`
+        : `Confirme com seu PIN para desativar a atribuição inicial automática de ${ch.name || ch.instance_name}.`,
+    });
+    if (!pinOk) return;
+
+    setSavingDefaultAssigneeFor(ch.id);
+    try {
+      await whatsappService.updateChannel(ch.id, { default_assignee_id: nextUserId });
+      setChannels(prev => prev.map(channel => channel.id === ch.id
+        ? { ...channel, default_assignee_id: nextUserId }
+        : channel));
+      onFeedback(
+        'success',
+        nextUserId
+          ? `${selected?.name || 'Responsável'} receberá as novas conversas deste canal.`
+          : 'A atribuição inicial automática deste canal foi desativada.',
+      );
+    } catch (e: any) {
+      onFeedback('error', e.message || 'Erro ao salvar o responsável inicial.');
+    } finally {
+      setSavingDefaultAssigneeFor(null);
     }
   };
 
@@ -873,6 +910,47 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                   style={{ padding: '6px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
                   <Trash2 size={14} />
                 </button>
+              </div>
+
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap',
+                marginTop: '12px', padding: '10px 12px', border: '1px solid #e2e8f0',
+                borderRadius: '10px', background: '#f8fafc',
+              }}>
+                <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+                  <p style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                    <Users size={13} /> Responsável inicial
+                  </p>
+                  <p style={{ marginTop: '3px', fontSize: '11px', lineHeight: 1.45, color: '#64748b' }}>
+                    Recebe automaticamente mensagens novas e conversas sem responsável, inclusive fora do horário comercial. Uma atribuição ou transferência já existente nunca é substituída.
+                  </p>
+                </div>
+                <div style={{ flex: '0 1 300px', minWidth: '230px', position: 'relative' }}>
+                  <select
+                    aria-label={`Responsável inicial do canal ${ch.name || ch.instance_name}`}
+                    value={ch.default_assignee_id || ''}
+                    disabled={savingDefaultAssigneeFor === ch.id}
+                    onChange={event => { void saveDefaultAssignee(ch, event.target.value); }}
+                    style={{
+                      width: '100%', fontSize: '12px', padding: '7px 32px 7px 9px', borderRadius: '7px',
+                      border: '1px solid #cbd5e1', background: '#fff', color: '#111827',
+                      opacity: savingDefaultAssigneeFor === ch.id ? 0.65 : 1,
+                    }}
+                  >
+                    <option value="">— Sem atribuição automática —</option>
+                    {staff.map(person => {
+                      const role = agentRoleLabel(person);
+                      return (
+                        <option key={person.user_id} value={person.user_id}>
+                          {agentLabel(person) || person.name}{role ? ` · ${role}` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {savingDefaultAssigneeFor === ch.id && (
+                    <Loader2 size={14} className="animate-spin" style={{ position: 'absolute', right: '10px', top: '8px', color: '#64748b' }} />
+                  )}
+                </div>
               </div>
 
               {/* Painel de horários e ausência (Fase N) */}

@@ -147,6 +147,8 @@ export interface WhatsAppChannel {
   timezone: string;                  // Fase N — IANA timezone para regra de horário comercial
   /** Fonte única de visibilidade usada pela inbox, nova conversa e funil de Leads. */
   visibility_mode: WhatsAppChannelVisibility;
+  /** Recebe automaticamente mensagens de entrada quando a conversa ainda não tem responsável. */
+  default_assignee_id?: string | null;
   /** O canal participa do quadro de Leads do WhatsApp. */
   funnel_enabled: boolean;
   /** Chave da etapa inicial deste canal. */

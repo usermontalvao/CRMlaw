@@ -54,7 +54,10 @@ export const adminApi = {
     return data as WhatsAppChannel;
   },
 
-  async updateChannel(id: string, patch: Partial<Pick<WhatsAppChannel, 'name' | 'color' | 'phone_number' | 'is_active'>>): Promise<void> {
+  async updateChannel(
+    id: string,
+    patch: Partial<Pick<WhatsAppChannel, 'name' | 'color' | 'phone_number' | 'is_active' | 'default_assignee_id'>>,
+  ): Promise<void> {
     const { error } = await supabase.from(CHANNEL_TABLE).update(patch).eq('id', id);
     if (error) throw new Error(error.message);
   },
