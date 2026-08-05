@@ -5,7 +5,7 @@ import {
   Loader2, UserCheck, IdCard, Mail, Phone, MapPin, User as UserIcon,
   Pencil, Unlink, ChevronUp, ChevronDown, Link2, UserPlus,
 } from 'lucide-react';
-import { whatsappService, normalizePhone } from '../../services/whatsapp.service';
+import { whatsappService, normalizePhone, samePhone } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
 import { prettyDoc, prettyPhone, formatTime, initials } from './format';
 import { ClientPickerModal } from './clientPickerModals';
@@ -30,7 +30,9 @@ export const ClientLinkPanel: React.FC<{
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   // Fase E: oferta de atualização de telefone após vincular
-  const [phonePrompt, setPhonePrompt] = useState<{ clientId: string; name: string } | null>(null);
+  const [phonePrompt, setPhonePrompt] = useState<{
+    clientId: string; name: string; mobile: string | null; phone: string | null;
+  } | null>(null);
   const [addingPhone, setAddingPhone] = useState(false);
   // Fase F: histórico de conversas anteriores do cliente
   type PastConv = Pick<WhatsAppConversation, 'id' | 'contact_phone' | 'status' | 'last_message_at' | 'last_message_preview' | 'last_message_direction' | 'closed_at' | 'contact_reason'>;
@@ -73,10 +75,13 @@ export const ClientLinkPanel: React.FC<{
       await whatsappService.linkClient(conversation.id, clientId);
       onChanged();
       if (clientId && picked) {
-        const myPhone = normalizePhone(conversation.contact_phone);
-        const existing = [picked.mobile, picked.phone].map(p => (p ? normalizePhone(p) : null));
-        if (myPhone && !existing.includes(myPhone)) {
-          setPhonePrompt({ clientId, name: picked.full_name });
+        // Casa pelas variantes com/sem o 9º dígito — mesma regra da busca por
+        // telefone. Sem isso o mesmo número em outra forma parecia ausente e o
+        // banner pedia para "adicionar" o que já estava no cadastro.
+        const jaCadastrado = samePhone(picked.mobile, conversation.contact_phone)
+          || samePhone(picked.phone, conversation.contact_phone);
+        if (normalizePhone(conversation.contact_phone) && !jaCadastrado) {
+          setPhonePrompt({ clientId, name: picked.full_name, mobile: picked.mobile, phone: picked.phone });
         } else {
           setPhonePrompt(null);
         }
@@ -106,9 +111,19 @@ export const ClientLinkPanel: React.FC<{
     if (!phonePrompt) return;
     setAddingPhone(true);
     try {
-      const { added, field } = await whatsappService.addPhoneToClient(phonePrompt.clientId, conversation.contact_phone);
+      const { added, field, replaced } = await whatsappService.addPhoneToClient(phonePrompt.clientId, conversation.contact_phone);
       setPhonePrompt(null);
-      if (added) toast.success(`Telefone adicionado ao campo ${field === 'mobile' ? 'Celular' : 'Telefone'} do cadastro.`);
+      const campo = field === 'mobile' ? 'Celular' : 'Telefone';
+      // O caso "substituiu" precisa aparecer: é o mais comum aqui (a maioria dos
+      // cadastros já tem os dois campos preenchidos) e apaga um dado da ficha.
+      if (added && replaced) {
+        toast.success(`${campo} atualizado no cadastro.`, `${prettyPhone(replaced)} foi substituído e está no histórico da ficha.`);
+      } else if (added) {
+        toast.success(`Telefone adicionado ao campo ${campo} do cadastro.`);
+      } else {
+        toast.info('Cadastro já tinha este número.');
+      }
+      onChanged();
     } catch (e: any) { toast.error('Falha ao atualizar telefone', e.message); }
     finally { setAddingPhone(false); }
   };
@@ -149,14 +164,14 @@ export const ClientLinkPanel: React.FC<{
                     <span className="truncate">{client.email}</span>
                   </a>
                 )}
-                {client.mobile && normalizePhone(client.mobile) !== normalizePhone(conversation.contact_phone) && (
+                {client.mobile && !samePhone(client.mobile, conversation.contact_phone) && (
                   <p className="flex items-center gap-1.5 text-[12px] text-slate-500">
                     <Phone size={11} className="flex-shrink-0" />
                     <span>{prettyPhone(client.mobile)}</span>
                     <span className="text-[10px] text-slate-400">celular</span>
                   </p>
                 )}
-                {client.phone && normalizePhone(client.phone) !== normalizePhone(conversation.contact_phone) && (
+                {client.phone && !samePhone(client.phone, conversation.contact_phone) && (
                   <p className="flex items-center gap-1.5 text-[12px] text-slate-500">
                     <Phone size={11} className="flex-shrink-0" />
                     <span>{prettyPhone(client.phone)}</span>
@@ -215,20 +230,32 @@ export const ClientLinkPanel: React.FC<{
             <p className="text-[12.5px] text-slate-400">Cliente não encontrado.</p>
           )}
         </div>
-        {/* Fase E: banner de oferta de atualização de telefone */}
-        {phonePrompt && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <p className="text-[12px] font-semibold text-amber-800 mb-0.5">Adicionar número ao cadastro?</p>
-            <p className="text-[11.5px] text-amber-700 mb-2">{prettyPhone(conversation.contact_phone)} não estava em {phonePrompt.name}.</p>
-            <div className="flex items-center gap-2">
-              <button onClick={handleAddPhone} disabled={addingPhone}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 text-white text-[11.5px] font-semibold hover:bg-amber-700 disabled:opacity-50">
-                {addingPhone ? <Loader2 size={11} className="animate-spin" /> : <Phone size={11} />} Adicionar
-              </button>
-              <button onClick={() => setPhonePrompt(null)} className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-700">Ignorar</button>
+        {/* Fase E: banner de oferta de atualização de telefone. Com Celular e
+            Telefone já preenchidos o Celular é substituído, então o banner diz
+            exatamente qual número sai — a troca não pode ser surpresa. */}
+        {phonePrompt && (() => {
+          const vaiSubstituir = !!(phonePrompt.mobile && phonePrompt.phone);
+          return (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-[12px] font-semibold text-amber-800 mb-0.5">
+                {vaiSubstituir ? 'Atualizar o celular do cadastro?' : 'Adicionar número ao cadastro?'}
+              </p>
+              <p className="text-[11.5px] text-amber-700 mb-2">
+                {prettyPhone(conversation.contact_phone)} não estava em {phonePrompt.name}.
+                {vaiSubstituir && (
+                  <> O celular atual <strong>{prettyPhone(phonePrompt.mobile!)}</strong> será substituído e fica registrado no histórico da ficha.</>
+                )}
+              </p>
+              <div className="flex items-center gap-2">
+                <button onClick={handleAddPhone} disabled={addingPhone}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 text-white text-[11.5px] font-semibold hover:bg-amber-700 disabled:opacity-50">
+                  {addingPhone ? <Loader2 size={11} className="animate-spin" /> : <Phone size={11} />} {vaiSubstituir ? 'Atualizar' : 'Adicionar'}
+                </button>
+                <button onClick={() => setPhonePrompt(null)} className="text-[11.5px] font-semibold text-slate-500 hover:text-slate-700">Ignorar</button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
         {pickerOpen && <ClientPickerModal phone={conversation.contact_phone} onClose={() => setPickerOpen(false)} onPick={c => link(c.id, c)} />}
       </div>
     );

@@ -14,7 +14,7 @@
 
 import { supabase } from '../config/supabase';
 
-export type ClientChangeSource = 'edicao' | 'mesclagem' | 'portal' | 'assinatura' | 'importacao';
+export type ClientChangeSource = 'edicao' | 'mesclagem' | 'portal' | 'assinatura' | 'importacao' | 'whatsapp';
 
 export interface ClientChangeEntry {
   id: string;
@@ -67,6 +67,7 @@ export const CLIENT_CHANGE_SOURCE_LABELS: Record<ClientChangeSource, string> = {
   portal: 'Solicitação do portal',
   assinatura: 'Dados da assinatura',
   importacao: 'Importação',
+  whatsapp: 'Conversa do WhatsApp',
 };
 
 const asText = (value: unknown): string | null => {

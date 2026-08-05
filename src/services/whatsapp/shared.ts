@@ -328,6 +328,23 @@ export function phoneVariants(input: string): string[] {
   return Array.from(out);
 }
 
+/**
+ * Dois telefones são da mesma pessoa? Compara pelas variantes com e sem o 9º
+ * dígito, do mesmo jeito que a RPC `whatsapp_match_client_by_phone` faz ao
+ * procurar o cliente.
+ *
+ * Comparar só por `normalizePhone` (igualdade literal) tratava `5565992216459`
+ * e `556592216459` como números diferentes: o painel de vínculo então oferecia
+ * "adicionar ao cadastro" um número que já estava lá, só na outra forma.
+ */
+export function samePhone(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const va = phoneVariants(a);
+  if (va.length === 0) return false;
+  const vb = new Set(phoneVariants(b));
+  return va.some(v => vb.has(v));
+}
+
 export function extOf(name: string, mime: string): string {
   const fromName = name.includes('.') ? name.split('.').pop()! : '';
   if (fromName) return fromName.toLowerCase().slice(0, 8);

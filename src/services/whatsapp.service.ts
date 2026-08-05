@@ -11,7 +11,7 @@ import { automationApi } from './whatsapp/automation';
 
 // Helpers e tipos de domínio (telefone, template, permissões, overview, etc.).
 export {
-  normalizePhone, phoneVariants, renderTemplate, agentPermissions, summarizeOverview,
+  normalizePhone, phoneVariants, samePhone, renderTemplate, agentPermissions, summarizeOverview,
 } from './whatsapp/shared';
 export { DEFAULT_AGENT_PREFS } from './whatsapp/admin';
 export type {

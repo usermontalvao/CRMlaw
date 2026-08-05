@@ -1,6 +1,7 @@
 // Camada 360 do cliente: busca/match, agenda, pendências e overview consolidado.
 import { supabase } from '../../config/supabase';
-import { normalizePhone, openResilientChannel } from './shared';
+import { normalizePhone, samePhone, openResilientChannel } from './shared';
+import { clientChangeHistoryService } from '../clientChangeHistory.service';
 import { deadlineService } from '../deadline.service';
 import { requirementService } from '../requirement.service';
 import { processService } from '../process.service';
@@ -77,23 +78,52 @@ export const client360Api = {
    * Preenche `mobile` primeiro; se cheio, usa `phone`. Ignora se o número já existe.
    * Retorna `{ added: true, field }` quando gravou ou `{ added: false }` quando pulou.
    */
-  async addPhoneToClient(clientId: string, phone: string): Promise<{ added: boolean; field: 'mobile' | 'phone' | null }> {
+  /**
+   * Grava o número da conversa no cadastro do cliente.
+   *
+   * Campo livre é preenchido (Celular primeiro). Com os dois já preenchidos, o
+   * Celular é SUBSTITUÍDO — o número do WhatsApp é, por definição, o celular em
+   * uso, e é por ele que o escritório fala com a pessoa hoje. O número antigo
+   * não se perde: vai para o histórico do cadastro com origem `whatsapp`, do
+   * mesmo jeito que a edição manual e a mesclagem fazem.
+   *
+   * Devolve `replaced` com o valor sobrescrito (null quando só preencheu campo
+   * vazio), para o painel poder dizer ao atendente o que mudou.
+   */
+  async addPhoneToClient(clientId: string, phone: string): Promise<{
+    added: boolean;
+    field: 'mobile' | 'phone' | null;
+    replaced: string | null;
+  }> {
     const norm = normalizePhone(phone);
-    if (!norm) return { added: false, field: null };
+    const unchanged = { added: false, field: null, replaced: null } as const;
+    if (!norm) return unchanged;
     const { data } = await supabase
       .from('clients')
       .select('mobile, phone')
       .eq('id', clientId)
       .single();
     const cur = data as { mobile: string | null; phone: string | null } | null;
-    if (!cur) return { added: false, field: null };
-    const existing = [cur.mobile, cur.phone].map(p => (p ? normalizePhone(p) : null));
-    if (existing.includes(norm)) return { added: false, field: null };
-    if (cur.mobile && cur.phone) return { added: false, field: null }; // ambos preenchidos
-    const field: 'mobile' | 'phone' = !cur.mobile ? 'mobile' : 'phone';
+    if (!cur) return unchanged;
+    // Casa pelas variantes com/sem o 9º dígito: `556592216459` no WhatsApp e
+    // `65992216459` na ficha são o mesmo número, não há o que gravar.
+    if (samePhone(cur.mobile, norm) || samePhone(cur.phone, norm)) return unchanged;
+
+    const field: 'mobile' | 'phone' = !cur.mobile ? 'mobile' : !cur.phone ? 'phone' : 'mobile';
+    const replaced = field === 'mobile' && cur.mobile ? cur.mobile : null;
+
     const { error } = await supabase.from('clients').update({ [field]: norm }).eq('id', clientId);
     if (error) throw new Error(error.message);
-    return { added: true, field };
+
+    // Trilha do cadastro. Nunca derruba a operação: o número já foi gravado.
+    await clientChangeHistoryService.record(clientId, 'whatsapp', [{
+      field,
+      oldValue: cur[field],
+      newValue: norm,
+      sourceLabel: 'Número informado pela conversa do WhatsApp',
+    }]);
+
+    return { added: true, field, replaced };
   },
 
   /**
