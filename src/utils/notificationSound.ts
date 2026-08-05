@@ -17,6 +17,10 @@
 
 // Preferência de som (persistida). 'off' silencia o som mantendo o aviso visual.
 const MUTE_KEY = 'wa:notifySound';
+// Preferência separada para o toque da conversa que está ABERTA na tela. Quem
+// atende o dia inteiro com a conversa à vista costuma querer só o toque das
+// outras — este é o único som que dispara enquanto a pessoa já está lendo.
+const IN_CHAT_MUTE_KEY = 'wa:notifySoundInChat';
 
 /** true se o usuário desligou o som das notificações de WhatsApp. */
 export function isNotifySoundMuted(): boolean {
@@ -28,6 +32,19 @@ export function setNotifySoundMuted(muted: boolean): void {
   try {
     if (muted) localStorage.setItem(MUTE_KEY, 'off');
     else localStorage.removeItem(MUTE_KEY);
+  } catch { /* localStorage indisponível — ignora */ }
+}
+
+/** true se o usuário desligou só o toque da conversa aberta. */
+export function isInChatSoundMuted(): boolean {
+  try { return localStorage.getItem(IN_CHAT_MUTE_KEY) === 'off'; } catch { return false; }
+}
+
+/** Liga/desliga o toque da conversa aberta (independente do som geral). */
+export function setInChatSoundMuted(muted: boolean): void {
+  try {
+    if (muted) localStorage.setItem(IN_CHAT_MUTE_KEY, 'off');
+    else localStorage.removeItem(IN_CHAT_MUTE_KEY);
   } catch { /* localStorage indisponível — ignora */ }
 }
 
@@ -101,16 +118,49 @@ function strikeBell(
 }
 
 /**
+ * Onde a pessoa estava quando a mensagem chegou. Cada camada tem um toque
+ * próprio, e a diferença entre eles é o que permite reagir sem olhar a tela:
+ *
+ * - `global`  — fora do módulo (dashboard, prazos, qualquer tela do CRM) ou com
+ *               a aba escondida: duas notas ascendentes, o toque que chama.
+ * - `inbox`   — dentro do WhatsApp, mensagem em OUTRA conversa: uma nota só,
+ *               mais curta. Avisa que a lista mexeu sem interromper a leitura.
+ * - `in-chat` — na própria conversa aberta: nota grave e baixa, quase um toque
+ *               de confirmação; a mensagem já está aparecendo na tela.
+ */
+export type NotifyTone = 'global' | 'inbox' | 'in-chat';
+
+/**
  * Agenda o toque num contexto qualquer. Separado de `playNotificationSound`
  * para o mesmo som poder ser renderizado num `OfflineAudioContext` e conferido
  * (pico, duração, decaimento) sem depender do ouvido de quem revisa.
  */
-export function scheduleNotificationTone(ac: BaseAudioContext, destination: AudioNode): void {
-  // Barramento único: mantém o pico somado das duas notas longe do 0 dBFS,
-  // onde o navegador distorce.
+export function scheduleNotificationTone(
+  ac: BaseAudioContext,
+  destination: AudioNode,
+  tone: NotifyTone = 'global',
+): void {
+  // Barramento único: mantém o pico somado das notas longe do 0 dBFS, onde o
+  // navegador distorce.
   const master = ac.createGain();
   master.gain.value = 0.7;
   master.connect(destination);
+
+  if (tone === 'in-chat') {
+    // Dó5, curto e no centro: o som mais grave e mais baixo dos três. Toca
+    // dezenas de vezes por dia na frente de quem está lendo — precisa passar
+    // despercebido quando se está atento e ser notado quando não se está.
+    strikeBell(ac, master, { freq: 523.25, at: 0, dur: 0.26, gain: 0.13, pan: 0 });
+    return;
+  }
+
+  if (tone === 'inbox') {
+    // Si5: uma nota só, meio caminho entre o toque global e o da conversa
+    // aberta. Sem segunda nota — é o que faz o ouvido separar "chegou noutra
+    // conversa" de "chegou algo no CRM" sem precisar pensar.
+    strikeBell(ac, master, { freq: 987.77, at: 0, dur: 0.42, gain: 0.22, pan: 0.1 });
+    return;
+  }
 
   // Lá5 → Mi6: quinta ascendente, o intervalo mais estável que existe — soa
   // resolvido mesmo em meio segundo. A segunda nota é mais baixa e mais longa,
@@ -120,12 +170,12 @@ export function scheduleNotificationTone(ac: BaseAudioContext, destination: Audi
 }
 
 /** Toca o "ding" de mensagem nova. Silencioso se o áudio não estiver disponível. */
-export function playNotificationSound(): void {
+export function playNotificationSound(tone: NotifyTone = 'global'): void {
   try {
     const ac = getCtx();
     if (!ac) return;
     if (ac.state === 'suspended') void ac.resume();
-    scheduleNotificationTone(ac, ac.destination);
+    scheduleNotificationTone(ac, ac.destination, tone);
   } catch {
     /* áudio é um extra; nunca deixa a notificação visual quebrar */
   }

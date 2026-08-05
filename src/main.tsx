@@ -180,6 +180,16 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: bancada dos avisos de mensagem nova — os três toques e a pilha de
+  // cartões (?wanotifypreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('wanotifypreview')) {
+    const { default: WhatsAppNotifyPreview } = await import('./dev/WhatsAppNotifyPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppNotifyPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: gestão unificada de acesso aos canais WhatsApp (?waaccesspreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('waaccesspreview')) {
     const { default: WhatsAppAccessPreview } = await import('./dev/WhatsAppAccessPreview');

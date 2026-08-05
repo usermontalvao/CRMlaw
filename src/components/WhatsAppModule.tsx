@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Search, Send, Loader2, MessageCircle, Phone, User as UserIcon,
@@ -20,6 +20,7 @@ import {
 import { useStaffPush } from './whatsapp/hooks/useStaffPush';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
 import { muteStore } from '../services/whatsapp/muteStore';
+import { notifyScope } from '../services/whatsapp/notifyScope';
 import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, DEFAULT_AGENT_PREFS, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
 import type { WhatsAppScheduledMessage } from '../types/whatsapp.types';
 import {
@@ -406,6 +407,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     () => siblingThreadIds(selected, conversations),
     [selected, conversations],
   );
+  // Conta ao notificador global (que vive no App) o que está à vista aqui. É o
+  // que permite três avisos diferentes para a mesma mensagem: conversa aberta,
+  // outra conversa da lista, ou outra tela do CRM. Sem isso, o notificador só
+  // sabia "está no módulo?" — e por isso calava tudo enquanto o módulo estava
+  // aberto, inclusive mensagem de conversa que ninguém estava lendo.
+  // O id é por instância: o widget flutuante e uma janela flutuante do módulo
+  // podem estar abertos ao mesmo tempo, e fechar um não pode apagar o registro
+  // do outro.
+  const notifySurfaceId = useId();
+  useEffect(() => {
+    notifyScope.publish(notifySurfaceId, { kind: embedded ? 'embedded' : 'full', threadIds });
+    return () => notifyScope.clear(notifySurfaceId);
+  }, [notifySurfaceId, embedded, threadIds]);
   const funnelLabelsForChannel = useCallback((channelId: string | null | undefined) => {
     if (!channelId) return baseFunnelLabels;
     const custom = channelFunnelLabels[channelId];

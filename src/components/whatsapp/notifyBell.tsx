@@ -1,7 +1,11 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, BellOff, BellRing, Loader2 } from 'lucide-react';
-import { isNotifySoundMuted, setNotifySoundMuted, playNotificationSound } from '../../utils/notificationSound';
+import { Bell, BellOff, BellRing, Loader2, MessageSquare, MessageSquareOff } from 'lucide-react';
+import {
+  isNotifySoundMuted, setNotifySoundMuted,
+  isInChatSoundMuted, setInChatSoundMuted,
+  playNotificationSound,
+} from '../../utils/notificationSound';
 import { useToastContext } from '../../contexts/ToastContext';
 import type { StaffPushState } from './hooks/useStaffPush';
 
@@ -21,11 +25,13 @@ export const WaNotifyBell: React.FC<{
   const toast = useToastContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const [soundMuted, setSoundMuted] = useState(() => isNotifySoundMuted());
+  const [inChatMuted, setInChatMuted] = useState(() => isInChatSoundMuted());
   const btnRef = useRef<HTMLButtonElement>(null);
 
   const pushSupported = pushState !== 'unsupported' && pushState !== 'unknown';
   const pushOn = pushState === 'on';
   const soundOn = !soundMuted;
+  const inChatOn = !inChatMuted;
   const active = soundOn || pushOn;
   const Icon = pushOn ? BellRing : soundOn ? Bell : BellOff;
 
@@ -33,8 +39,18 @@ export const WaNotifyBell: React.FC<{
     const next = !soundMuted;
     setSoundMuted(next);
     setNotifySoundMuted(next);
-    if (!next) { playNotificationSound(); toast.success('Som das notificações ativado'); }
+    if (!next) { playNotificationSound('global'); toast.success('Som das notificações ativado'); }
     else toast.info('Som das notificações silenciado');
+  };
+
+  const toggleInChat = () => {
+    const next = !inChatMuted;
+    setInChatMuted(next);
+    setInChatSoundMuted(next);
+    // Toca o próprio toque que está sendo ligado — a diferença entre ele e o
+    // toque geral só faz sentido ouvindo os dois.
+    if (!next) { playNotificationSound('in-chat'); toast.success('Toque da conversa aberta ativado'); }
+    else toast.info('Toque da conversa aberta silenciado');
   };
 
   const row = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] text-slate-700 hover:bg-amber-50 transition text-left';
@@ -67,6 +83,16 @@ export const WaNotifyBell: React.FC<{
               </span>
               <span className={pill(soundOn)}>{soundOn ? 'ON' : 'OFF'}</span>
             </button>
+            {soundOn && (
+              <button className={row} onClick={toggleInChat}>
+                {inChatOn ? <MessageSquare size={16} className="text-amber-500 shrink-0" /> : <MessageSquareOff size={16} className="text-slate-400 shrink-0" />}
+                <span className="min-w-0">
+                  <span className="block leading-tight">Toque da conversa aberta</span>
+                  <span className="block text-[11px] text-slate-400">Aviso curto quando a mensagem chega na conversa à sua frente</span>
+                </span>
+                <span className={pill(inChatOn)}>{inChatOn ? 'ON' : 'OFF'}</span>
+              </button>
+            )}
             {pushSupported && (
               <button className={row} onClick={onTogglePush} disabled={pushState === 'busy'}>
                 {pushState === 'busy' ? <Loader2 size={16} className="animate-spin text-slate-400 shrink-0" /> : pushOn ? <BellRing size={16} className="text-amber-500 shrink-0" /> : <BellOff size={16} className="text-slate-400 shrink-0" />}

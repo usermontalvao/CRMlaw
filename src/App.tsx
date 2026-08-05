@@ -104,6 +104,7 @@ const PetitionEditorWidget = lazy(() => import('./components/PetitionEditorWidge
 const ChatFloatingWidget = lazy(() => import('./components/ChatFloatingWidget'));
 import { usePresence } from './hooks/usePresence';
 import { useWhatsAppNotifications } from './hooks/useWhatsAppNotifications';
+import { WhatsAppNotifyHost } from './components/whatsapp/WhatsAppNotifyHost';
 import { useAuth } from './contexts/AuthContext';
 import {
   events,
@@ -3024,6 +3025,10 @@ useEffect(() => {
       <Suspense fallback={null}>
         <ChatFloatingWidget />
       </Suspense>
+
+      {/* Avisos de mensagem nova do WhatsApp: pilha própria, visível em
+          QUALQUER tela (inclusive dentro do módulo, onde o widget nem monta). */}
+      <WhatsAppNotifyHost onOpen={(conversationId) => navigateTo('whatsapp', { conversationId })} />
 
       {/* #9 "” Modal de busca global ⌘K */}
       <GlobalSearchModal

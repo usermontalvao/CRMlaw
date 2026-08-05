@@ -1,6 +1,17 @@
 // Notificador global de WhatsApp: som + aviso visual quando chega uma mensagem
-// nova de uma conversa ATRIBUÍDA A MIM ("minha") e estamos FORA do módulo. Vive
-// no nível do App, porque o objetivo é avisar quem está em outra tela.
+// nova de uma conversa ATRIBUÍDA A MIM ("minha"). Vive no nível do App, porque
+// precisa alcançar qualquer tela — inclusive o próprio módulo do WhatsApp.
+//
+// TRÊS CAMADAS (a mesma ideia do WhatsApp: o aviso muda conforme onde você
+// está, em vez de ser tudo ou nada):
+//   'global'  — outra tela do CRM, ou aba escondida. Toque cheio + cartão
+//               clicável + notificação do sistema (só com a aba fora de vista).
+//   'inbox'   — dentro do WhatsApp, mensagem em OUTRA conversa. Toque de uma
+//               nota + cartão. Era exatamente o caso que não avisava nada.
+//   'in-chat' — na conversa que já está aberta. Só um toque grave e baixo: a
+//               mensagem já está entrando na tela, o cartão seria ruído. É
+//               também a única camada que não exige que a conversa seja
+//               "minha" — quem está com ela aberta está atendendo.
 //
 // LATÊNCIA: dispara no INSERT da mensagem (sinal mais cedo — antes do webhook
 // gravar o UPDATE da conversa). O filtro "é minha?" usa um cache de atribuição
@@ -9,10 +20,15 @@
 import { useEffect, useRef } from 'react';
 import { whatsappService } from '../services/whatsapp.service';
 import { muteStore } from '../services/whatsapp/muteStore';
-import { playNotificationSound, isNotifySoundMuted } from '../utils/notificationSound';
+import { notifyScope } from '../services/whatsapp/notifyScope';
+import { playNotificationSound, isNotifySoundMuted, isInChatSoundMuted } from '../utils/notificationSound';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 
 const SOUND_THROTTLE_MS = 1500; // evita rajada de "dings" em mensagens em sequência
+// O toque da conversa aberta acompanha a digitação de quem está do outro lado
+// (mensagens curtas em sequência). Estrangular por 1,5s comeria toques que ali
+// são justamente o feedback do que está chegando; 500ms só evita a metralhadora.
+const IN_CHAT_THROTTLE_MS = 500;
 
 // Dedup em escopo de módulo (não por instância do hook): sobrevive a qualquer
 // re-subscrição/StrictMode e impede a MESMA mensagem de notificar duas vezes.
@@ -46,7 +62,7 @@ function previewOf(msg: Record<string, any>): string {
 interface Params {
   /** Usuário atual; sem ele não há escopo "minha" para filtrar. */
   userId: string | undefined;
-  /** true quando o módulo WhatsApp é a tela ativa (aí não notificamos). */
+  /** true quando o módulo WhatsApp é a tela ativa (define a camada do aviso). */
   inModule: boolean;
   /** Abre o módulo WhatsApp já na conversa que recebeu a mensagem. */
   onOpen: (conversationId: string) => void;
@@ -121,48 +137,53 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         }
         if (!meta) return;
 
-        // Escopo ESTRITO "minhas": só conversa atribuída a mim. Conversas sem dono /
-        // na fila / de outros atendentes NÃO notificam.
-        if (meta.assigned_user_id !== userId) return;
         if (meta.is_blocked) return;
 
-        // Dentro do módulo, COM A ABA À VISTA, o próprio chat já mostra tudo.
-        // A segunda metade da condição é o que faltava: quem deixa o CRM aberto
-        // justamente na tela do WhatsApp e vai trabalhar noutra janela era o
-        // único que não recebia aviso nenhum — o sistema achava que a pessoa
-        // estava olhando para a conversa. É o oposto: ela precisa MAIS do aviso,
-        // porque não está vendo a tela.
-        const noModuloEVisivel = inModuleRef.current
-          && (typeof document === 'undefined' || document.visibilityState === 'visible');
-        if (noModuloEVisivel) return;
         // Conversa silenciada por este usuário → nenhuma notificação.
         if (muteStore.isMuted(convId)) return;
+
+        // Onde a pessoa está agora decide TUDO daqui para baixo: o toque, o
+        // cartão e a notificação do sistema. Quem deixa o CRM aberto na tela do
+        // WhatsApp e vai trabalhar noutra janela cai em 'global' pela aba
+        // escondida — é quem mais precisa do aviso, não quem menos precisa.
+        const documentVisible = typeof document === 'undefined' || document.visibilityState === 'visible';
+        const tier = notifyScope.tierFor(convId, { inModule: inModuleRef.current, documentVisible });
+
+        // Escopo ESTRITO "minhas" para chamar a atenção de quem está noutra
+        // tela ou noutra conversa: fila e conversas de outros atendentes não
+        // interrompem ninguém. A conversa ABERTA na frente da pessoa é o único
+        // caso fora da regra — ali o toque é confirmação do que já está
+        // aparecendo na tela, e perguntar "de quem é essa conversa?" para
+        // decidir se confirma seria arbitrário.
+        if (tier !== 'in-chat' && meta.assigned_user_id !== userId) return;
 
         const name = meta.contact_name || meta.contact_phone || 'Contato';
         const preview = previewOf(msg);
 
-        // Visual (in-app): em vez do toast global no topo, emite o evento que o
-        // ChatFloatingWidget consome para exibir o aviso ANCORADO ao widget
-        // (verde, clicável). Reaproveita a estrutura de toast já pronta do widget.
-        // Só faz sentido fora do módulo: se a pessoa está NELE (e chegou aqui
-        // porque a aba estava escondida), ao voltar ela vê a conversa em si — um
-        // toast apontando para a tela que já está aberta seria ruído, e vários
-        // deles empilhados enquanto a aba esteve fora, ruído acumulado.
-        if (!inModuleRef.current) {
-          events.emit(SYSTEM_EVENTS.WHATSAPP_NOTIFY, { conversationId: convId, name, preview });
+        // Visual (in-app): cartão clicável, renderizado pelo host global
+        // (WhatsAppNotifyHost) — aparece em qualquer tela, inclusive dentro do
+        // módulo. Na conversa já aberta não há cartão: a mensagem está entrando
+        // na tela e um aviso apontando para ela seria ruído.
+        if (tier !== 'in-chat') {
+          events.emit(SYSTEM_EVENTS.WHATSAPP_NOTIFY, { conversationId: convId, name, preview, tier });
         }
 
-        // Som (respeitando o mute por preferência local).
-        if (!isNotifySoundMuted()) {
+        // Som (respeitando o mute por preferência local). O toque da conversa
+        // aberta tem chave própria — dá para calar só ele.
+        const soundOn = !isNotifySoundMuted() && !(tier === 'in-chat' && isInChatSoundMuted());
+        if (soundOn) {
           const now = Date.now();
-          if (now - lastSoundRef.current > SOUND_THROTTLE_MS) {
+          const throttle = tier === 'in-chat' ? IN_CHAT_THROTTLE_MS : SOUND_THROTTLE_MS;
+          if (now - lastSoundRef.current > throttle) {
             lastSoundRef.current = now;
-            playNotificationSound();
+            playNotificationSound(tier);
           }
         }
 
-        // Notificação do sistema (útil com a aba em segundo plano) — só se autorizada.
-        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        // Notificação do sistema: só com a aba fora de vista. Com o CRM na
+        // frente ela duplica o cartão e ainda rouba o foco do sistema
+        // operacional — é o tipo de excesso que faz desligar tudo.
+        if (!documentVisible && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
           try {
             const n = new Notification(`WhatsApp · ${name}`, { body: preview, tag: `wa:${convId}` });
             n.onclick = () => { window.focus(); onOpenRef.current(convId); n.close(); };

@@ -12,10 +12,6 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch } from '../utils/search';
 import WhatsAppModule from './WhatsAppModule';
 import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
-import WhatsAppMessageToast, {
-  WHATSAPP_TOAST_DURATION_MS,
-  type WhatsAppMessageToastData,
-} from './whatsapp/WhatsAppMessageToast';
 
 // Tamanho padrão do widget (usado no reset e quando não há preferência salva).
 const WIDGET_DEFAULT_W = 384;
@@ -611,12 +607,6 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   // só guardamos o total de não-lidas (badge) e a conversa ativa (deep-link ao maximizar).
   const [waUnread, setWaUnread] = useState(0);
   const [waActiveConvId, setWaActiveConvId] = useState<string | null>(null);
-  // Deep-link da aba WhatsApp embutida: ao clicar no toast de notificação, abrimos
-  // o widget já naquela conversa (consumido por onParamConsumed → volta a null).
-  const [waOpenConvId, setWaOpenConvId] = useState<string | null>(null);
-  // Toast de WhatsApp ancorado ao widget (emitido por useWhatsAppNotifications).
-  const [waToast, setWaToast] = useState<WhatsAppMessageToastData | null>(null);
-  const waToastTimerRef = useRef<number | null>(null);
   // Contador de não-lidas do WhatsApp para o BADGE do launcher (estrutura do
   // widget antigo): quando o widget está fechado o WhatsAppModule embutido não
   // está montado e não há waUnread vivo, então acumulamos aqui via o evento de
@@ -1155,29 +1145,17 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     if (open && chatTab === 'whatsapp') setWaNotifyCount(0);
   }, [open, chatTab]);
 
-  // Notificação de WhatsApp ancorada ao widget: o hook global (App) faz toda a
-  // filtragem ("é minha?", silenciada, fora do módulo) e emite o evento; aqui só
-  // exibimos o toast reaproveitando a estrutura visual já pronta do widget.
+  // Badge do launcher: o hook global (App) faz toda a filtragem ("é minha?",
+  // silenciada, camada do aviso) e emite o evento; o cartão visual é desenhado
+  // pelo WhatsAppNotifyHost (global). Aqui só somamos o contador do launcher,
+  // que existe porque com o widget fechado o WhatsAppModule embutido não está
+  // montado e não há não-lidas vivas para exibir.
   useEffect(() => {
     const handle = (data?: any) => {
       const conversationId = data?.conversationId;
       if (!conversationId) return;
-      // Badge do launcher (sempre, mesmo com a aba WhatsApp aberta noutra conversa).
       const viewingThis = open && chatTab === 'whatsapp' && waActiveConvId === conversationId;
       if (!viewingThis) setWaNotifyCount((c) => c + 1);
-      // Já vendo essa conversa na aba WhatsApp do widget? Não precisa do toast.
-      if (viewingThis) return;
-      // Widget ABERTO: não exibe o toast flutuante (sobrepõe o painel e deforma o
-      // layout). O contador da aba WhatsApp (+1/+2) e a lista já mostram a chegada.
-      if (open) return;
-      setWaToast({
-        id: `${conversationId}:${Date.now()}`,
-        conversationId,
-        name: data?.name || 'Contato',
-        preview: data?.preview || 'Nova mensagem',
-      });
-      if (waToastTimerRef.current) window.clearTimeout(waToastTimerRef.current);
-      waToastTimerRef.current = window.setTimeout(() => setWaToast(null), WHATSAPP_TOAST_DURATION_MS);
     };
     // Escuta o CustomEvent nativo no window (o emitter sempre o dispara). Usar só
     // o window evita disparo duplo e sobrevive a divergência de instância entre
@@ -2383,8 +2361,6 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <WhatsAppModule
                     variant="embedded"
-                    openConversationId={waOpenConvId ?? undefined}
-                    onParamConsumed={() => setWaOpenConvId(null)}
                     onUnreadChange={setWaUnread}
                     onActiveConversationChange={setWaActiveConvId}
                   />
@@ -2976,34 +2952,6 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
           )}
         </div>
         </div>
-      )}
-
-      {/* WhatsApp: aviso curto e discreto, ancorado ao launcher. O cartão inteiro
-          abre a conversa; evitamos repetir essa ação em uma terceira linha. */}
-      {waToast && (
-        <WhatsAppMessageToast
-          key={waToast.id}
-          toast={waToast}
-          onDismiss={() => {
-            if (waToastTimerRef.current) {
-              window.clearTimeout(waToastTimerRef.current);
-              waToastTimerRef.current = null;
-            }
-            setWaToast(null);
-          }}
-          onOpen={async conversationId => {
-            if (waToastTimerRef.current) {
-              window.clearTimeout(waToastTimerRef.current);
-              waToastTimerRef.current = null;
-            }
-            setWaToast(null);
-            await ensureAudioContext();
-            setSelectedRoomId(null);
-            setChatTab('whatsapp');
-            setWaOpenConvId(conversationId);
-            setOpen(true);
-          }}
-        />
       )}
 
       {showToast && toast && (

@@ -73,9 +73,11 @@ export const SYSTEM_EVENTS = {
   NAVIGATE_REQUEST: 'navigate_request',
   // Presence: widget broadcasts online user IDs so other components can read them
   PRESENCE_UPDATED: 'presence_updated',
-  // WhatsApp: notificação visual de mensagem nova de uma conversa "minha" (fora
-  // do módulo) — consumida pelo ChatFloatingWidget para exibir o toast ancorado
-  // ao widget em vez do toast global no topo da tela.
+  // WhatsApp: mensagem nova de uma conversa "minha". Payload traz também a
+  // camada do aviso (`tier`: 'global' | 'inbox'). Quem desenha o cartão é o
+  // WhatsAppNotifyHost (global); o ChatFloatingWidget só soma o badge do
+  // launcher. Mensagem na conversa JÁ ABERTA não emite o evento — ali o aviso
+  // é só o toque curto.
   WHATSAPP_NOTIFY: 'whatsapp_notify',
   // Admin alterou quais módulos aparecem no menu lateral
   MODULES_CONFIG_UPDATED: 'modules_config_updated',
