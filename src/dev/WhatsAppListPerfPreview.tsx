@@ -13,6 +13,8 @@ import type { WhatsAppChannel, WhatsAppConversation, WhatsAppDepartment } from '
 
 const DEPT_BY_ID = new Map<string, WhatsAppDepartment>();
 const SEM_MUDOS: ReadonlySet<string> = new Set<string>();
+// Uma conversa com outro atendente dentro, para conferir o aviso de colisão.
+const OCUPADAS: ReadonlySet<string> = new Set(['c1']);
 // Algumas conversas com envio falho: é o estado que a fila otimista deixa na
 // lista quando uma mensagem não sai e o atendente já pulou para o próximo
 // contato. Fica na bancada para o badge vermelho ser visto no meio das outras
@@ -52,6 +54,19 @@ const seed = (n: number): WhatsAppConversation[] => Array.from({ length: n }, (_
 
 const FUNNEL = [{ key: 'Novo', stageKey: 'novo', stageLabel: 'Novo', color: '#64748b', bg: '#64748b22' }];
 
+// Duas encerradas para conferir a fronteira entre a fila e o arquivo: divisória
+// "Encerradas" e, abaixo dela, as linhas em preto e branco. Na inbox de verdade
+// esse grupo fica no FIM da busca; aqui entra depois da terceira linha só para o
+// contraste entre os dois grupos caber na tela sem rolar 300 conversas.
+const ARQUIVADAS = new Set(['c2', 'c5']);
+const comArquivo = (lista: WhatsAppConversation[]): WhatsAppConversation[] => {
+  const ativas = lista.filter(c => !ARQUIVADAS.has(c.id));
+  const arquivadas = lista
+    .filter(c => ARQUIVADAS.has(c.id))
+    .map(c => ({ ...c, status: 'closed' as const, closed_at: new Date().toISOString() }));
+  return [...ativas.slice(0, 3), ...arquivadas, ...ativas.slice(3)];
+};
+
 const WhatsAppListPerfPreview: React.FC = () => {
   const [total, setTotal] = useState(300);
   const [memoizada, setMemoizada] = useState(true);
@@ -60,7 +75,7 @@ const WhatsAppListPerfPreview: React.FC = () => {
   const [resultado, setResultado] = useState<string[]>([]);
   const t0 = useRef(0);
 
-  const conversas = useMemo(() => seed(total), [total]);
+  const conversas = useMemo(() => comArquivo(seed(total)), [total]);
   const selectedId = conversas[0]?.id ?? null;
 
   // Espelha o módulo: o mapa é recriado quando o rascunho é gravado.
@@ -155,6 +170,9 @@ const WhatsAppListPerfPreview: React.FC = () => {
               drafts={listDrafts}
               mutedIds={SEM_MUDOS}
               failedSends={FALHAS}
+              archivedIds={ARQUIVADAS}
+              showChannelName
+              busyConversationIds={OCUPADAS}
               funnelLabelsForChannel={funnelPorCanal}
               conversationStatus={statusDaConversa}
               docStatusFor={semDoc}
@@ -179,6 +197,9 @@ const WhatsAppListPerfPreview: React.FC = () => {
                 muted={false}
                 draftPreview={c.id === selectedId ? '' : (draftMap[c.id] ?? '')}
                 failedSends={FALHAS.get(c.id) ?? 0}
+                archived={ARQUIVADAS.has(c.id)}
+                showChannelName
+                busy={OCUPADAS.has(c.id)}
                 funnelLabels={FUNNEL}
                 onSelect={onSelect}
               />

@@ -4,9 +4,9 @@ import {
   Search, Send, Loader2, MessageCircle, Phone, User as UserIcon,
   CheckCheck, Check, AlertCircle, Link2, ArrowRightLeft, X,
   Paperclip, Mic, FileText, Image as ImageIcon, CornerUpLeft,
-  Pencil, Download, UserCheck, Unlink, IdCard, Scale, Calendar,
+  Pencil, UserCheck, Unlink, IdCard, Scale, Calendar,
   Clock, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw, RefreshCw,
-  StickyNote, Trash2, History, CalendarClock, MessageSquare, Filter, Maximize2,
+  StickyNote, Trash2, CalendarClock, MessageSquare, Filter, Maximize2,
   UserPlus, UserMinus, PenLine, HandCoins, ListTodo, FilePlus,
   Sparkles, Tag, Tags, Bot,
   Shield, ShieldCheck, Eye, EyeOff,
@@ -52,8 +52,12 @@ import { InternalNotesSection } from './whatsapp/internalNotes';
 import { AttachmentPreviewModal } from './whatsapp/attachmentPreviewModal';
 import { ConversationLabelsPanel } from './whatsapp/conversationLabels';
 import { ContactIdentity, AttendanceSummary } from './whatsapp/detailsPanelHeader';
+import { QuickActions } from './whatsapp/quickActions';
+import { useWaViewers } from './whatsapp/hooks/useWaViewers';
+import { viewersLabel } from '../services/whatsapp/inboxPresenceState';
 import { ConversationFunnelBoard } from './whatsapp/conversationFunnelBoard';
 import { nextLeadChannelFilter } from './whatsapp/channelFilterSync';
+import { hiddenByStatusFilter, searchRank } from './whatsapp/inboxStatusScope';
 import {
   INBOX_FILTER_KEYS, readFilter, writeFilter, canSanitize,
   sanitizeChannelFilter, sanitizeDeptFilter, sanitizeLabelFilter,
@@ -542,6 +546,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     return () => window.removeEventListener(BUSINESS_HOURS_CHANGED_EVENT, onChanged);
   }, [loadBusinessHours]);
 
+  // Presença da equipe: quem está com qual conversa aberta agora. Anuncia onde
+  // eu estou e devolve onde os outros estão — a base do aviso de colisão.
+  const { hereWithMe, busyConversationIds } = useWaViewers(
+    selectedId,
+    user?.id ? { id: user.id, name: staffByUser.get(user.id) || 'Atendente' } : null,
+  );
+
   const { aiSession, setAiSession, realtimeStatus } = useWaRealtime({
     selectedId, loadConversations, refreshMessages,
     setConversations, setMessages, setSelectedId,
@@ -698,6 +709,24 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     return () => { cancelled = true; document.removeEventListener('visibilitychange', marcarLida); };
   }, [selectedId, lastInboundId]);
 
+  // Marcar como não lida e SAIR da conversa. Sair não é detalhe: enquanto ela
+  // estiver aberta, o efeito acima a marcaria como lida de novo na primeira
+  // mensagem que chegasse — e o atendente veria a pendência que acabou de criar
+  // desaparecer sozinha. Fechar a thread também é o gesto certo: "não lida"
+  // quer dizer "vou cuidar disto depois", e depois começa saindo daqui.
+  const handleMarkUnread = useCallback(async () => {
+    if (!selectedId) return;
+    const alvo = selectedId;
+    try {
+      await whatsappService.markUnread(alvo);
+      setConversations(prev => prev.map(c => c.id === alvo ? { ...c, unread_count: 1 } : c));
+      setSelectedId(null);
+      toast.success('Marcada como não lida', 'Ela volta para a fila de pendentes.');
+    } catch (err: any) {
+      toast.error('Não foi possível marcar como não lida', err?.message);
+    }
+  }, [selectedId, toast]);
+
   // A conversa restaurada da sessão anterior pode não existir mais (excluída,
   // ou fora do recorte de canais deste usuário): limpa a seleção em vez de
   // deixar a thread num vazio sem explicação.
@@ -776,6 +805,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const searching = q.length > 0;
     return conversations
       .filter(c => {
         // Fase 0: conversa sem nenhuma mensagem (last_message_at nulo) é rascunho de
@@ -784,11 +814,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         if (!c.last_message_at && c.id !== selectedId) return false;
         if (filter === 'unread' && c.unread_count === 0) return false;
         if (filter === 'mine' && c.assigned_user_id !== user?.id) return false;
-        if (statusFilter === 'open' && c.status === 'closed') return false;
-        if (statusFilter === 'closed' && c.status !== 'closed') return false;
-        if (statusFilter === 'waiting_you' && convStatus(c).key !== 'waiting_you') return false;
-        if (statusFilter === 'waiting_internal' && convStatus(c).key !== 'waiting_internal') return false;
-        if (statusFilter === 'reopened' && (c.status === 'closed' || !c.reopened_at)) return false;
+        // A dimensão de status (e a concessão que a busca faz nela) mora em
+        // `inboxStatusScope`, compartilhada com os contadores das abas.
+        if (hiddenByStatusFilter({
+          filter: statusFilter, closed: c.status === 'closed',
+          reopened: !!c.reopened_at, liveKey: convStatus(c).key, searching,
+        })) return false;
         if (channelFilter !== 'all' && c.instance_id !== channelFilter) return false;
         if (deptFilter === 'none' && c.department_id) return false;
         if (deptFilter !== 'all' && deptFilter !== 'none' && c.department_id !== deptFilter) return false;
@@ -798,12 +829,37 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       })
       // Ordem igual ao WhatsApp: mensagem mais recente sempre no topo, sem
       // reordenar por status/urgência (a triagem fica nos filtros e badges de SLA).
+      // A única exceção é a encerrada que a busca trouxe do arquivo: ela desce
+      // para o fim, para o resultado não empurrar a fila de hoje tela abaixo.
       .sort((a, b) => {
+        const ra = searchRank({ closed: a.status === 'closed', searching });
+        const rb = searchRank({ closed: b.status === 'closed', searching });
+        if (ra !== rb) return ra - rb;
         const ta = a.last_message_at || a.created_at;
         const tb = b.last_message_at || b.created_at;
         return tb < ta ? -1 : tb > ta ? 1 : 0;
       });
   }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
+
+  // As encerradas que a BUSCA trouxe do arquivo. A lista as usa para duas coisas:
+  // desenhar a divisória "Encerradas" onde o grupo começa e pintar essas linhas
+  // em preto e branco. Ver uma conversa encerrada no meio da fila, com as mesmas
+  // cores das ativas, parece defeito; separada e sem cor, lê-se como o que é —
+  // arquivo, ali porque foi procurado.
+  //
+  // Não vale sob o filtro "Encerradas": lá o arquivo é o assunto, e cinzentar a
+  // lista inteira só a faria parecer quebrada.
+  const archivedIdsRef = useRef<Set<string>>(new Set());
+  const archivedIds = useMemo(() => {
+    const next = new Set<string>();
+    if (search.trim() && statusFilter !== 'closed') {
+      for (const c of filtered) if (c.status === 'closed') next.add(c.id);
+    }
+    const prev = archivedIdsRef.current;
+    if (next.size === prev.size && [...next].every(id => prev.has(id))) return prev;
+    archivedIdsRef.current = next;
+    return next;
+  }, [filtered, search, statusFilter]);
 
   // ── Teclado da inbox ─────────────────────────────────────────────────
   // Andar pela fila sem tirar as mãos do teclado: ↑/↓ trocam de conversa,
@@ -922,13 +978,16 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // sob o filtro "Abertas" (badge "Minhas (1)" com lista vazia).
   const tabCounts = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const searching = q.length > 0;
     const base = conversations.filter(c => {
       if (!c.last_message_at && c.id !== selectedId) return false;
-      if (statusFilter === 'open' && c.status === 'closed') return false;
-      if (statusFilter === 'closed' && c.status !== 'closed') return false;
-      if (statusFilter === 'waiting_you' && convStatus(c).key !== 'waiting_you') return false;
-      if (statusFilter === 'waiting_internal' && convStatus(c).key !== 'waiting_internal') return false;
-      if (statusFilter === 'reopened' && (c.status === 'closed' || !c.reopened_at)) return false;
+      // MESMA regra da lista, pela mesma função: quando a busca traz encerradas
+      // do arquivo, elas precisam contar aqui também. Enquanto isto ficou de
+      // fora, as abas mostravam "Todas (0)" com três conversas na tela.
+      if (hiddenByStatusFilter({
+        filter: statusFilter, closed: c.status === 'closed',
+        reopened: !!c.reopened_at, liveKey: convStatus(c).key, searching,
+      })) return false;
       if (channelFilter !== 'all' && c.instance_id !== channelFilter) return false;
       if (deptFilter === 'none' && c.department_id) return false;
       if (deptFilter !== 'all' && deptFilter !== 'none' && c.department_id !== deptFilter) return false;
@@ -1408,6 +1467,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             drafts={listDrafts}
             mutedIds={mutedIds}
             failedSends={failedSends}
+            archivedIds={archivedIds}
+            showChannelName={channels.length > 1}
+            busyConversationIds={busyConversationIds}
             funnelLabelsForChannel={funnelLabelsForChannel}
             elapsedMinutes={elapsedMinutes}
             conversationStatus={effectiveConversationStatus}
@@ -1655,6 +1717,25 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 </div>
               </div>
             </header>
+
+            {/* Colisão de atendimento. Numa inbox compartilhada, dois atendentes
+                abrem a mesma conversa sem saber um do outro: ou o cliente recebe
+                duas respostas — às vezes divergentes, na frente dele —, ou cada
+                um supõe que o outro pegou e ninguém responde. Uma faixa fina,
+                logo abaixo do cabeçalho, resolve com informação: fica no caminho
+                dos olhos antes de a mão chegar ao compositor, e não empurra
+                nada de lugar quando some. */}
+            {hereWithMe.length > 0 && (
+              <div className="wa-collision flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-1.5">
+                <Users size={13} className="flex-shrink-0 text-amber-600" />
+                <span className="truncate text-[11.5px] font-semibold text-amber-800">
+                  {viewersLabel(hereWithMe)}
+                </span>
+                <span className="ml-auto flex-shrink-0 text-[10.5px] text-amber-600">
+                  cuidado para não responder em dobro
+                </span>
+              </div>
+            )}
 
             {selected.client_id && <ConversationSummaryBanner embedded={embedded} overview={overview} docStatus={effectiveDocStatus(selected.client_id)} clientId={selected.client_id} onOpenWorkspace={openWa} onDismissDocReady={() => dismissDocReady(selected.client_id!)} onDismissTemplateFill={stopTemplateFillTracking} />}
 
@@ -2037,20 +2118,34 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             onOpenPhoto={selected.contact_avatar_url ? () => setLightbox(selected.contact_avatar_url) : undefined}
           />
 
-          {/* Estado do atendimento (só leitura) + a ação que o muda. */}
-          <div className="space-y-2">
-            <AttendanceSummary
-              assignee={selected.assigned_user_id ? (staffByUser.get(selected.assigned_user_id) || '—') : 'Ninguém'}
-              department={selected.department_id ? (deptById.get(selected.department_id)?.name || '—') : 'Nenhum'}
-              stage={inferFunnelStage(selected.labels ?? [], selectedFunnelLabels)}
-            />
-            <button onClick={() => setTransferOpen(true)}
-              className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-[#e7e5df] text-[11.5px] font-semibold text-slate-500 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 transition">
-              <ArrowRightLeft size={12} /> Transferir conversa
-            </button>
-          </div>
+          {/* Estado do atendimento: quem cuida, em que setor, em que etapa.
+              Vem logo depois de "quem é" porque é a segunda pergunta que se faz
+              ao abrir uma conversa — e antes das ações, que dependem da resposta
+              (não se transfere sem saber de quem é). */}
+          <AttendanceSummary
+            assignee={selected.assigned_user_id ? (staffByUser.get(selected.assigned_user_id) || '—') : 'Ninguém'}
+            department={selected.department_id ? (deptById.get(selected.department_id)?.name || '—') : 'Nenhum'}
+            stage={inferFunnelStage(selected.labels ?? [], selectedFunnelLabels)}
+          />
 
-          {/* Etiquetas: a parte editável, com a largura inteira. */}
+          {/* Ações rápidas. Subiram para cá: são o que se usa a cada atendimento,
+              e estavam abaixo das etiquetas — metadado que se mexe de vez em
+              quando. Numa coluna, altura é atenção; o que se usa mais fica mais
+              alto. A hierarquia interna (agir / consultar / bloquear) mora no
+              próprio componente. */}
+          <QuickActions
+            blocked={selected.is_blocked}
+            onMarkUnread={handleMarkUnread}
+            onTransfer={() => setTransferOpen(true)}
+            onTemplates={() => setTemplateOpen(true)}
+            onTimeline={() => setTimelineOpen(true)}
+            onSummary={selected.client_id ? () => setSummaryOpen(true) : undefined}
+            onExport={messages.length > 0 ? handleExportConversation : undefined}
+            onBlock={perms.canBlock ? () => setBlockOpen(true) : undefined}
+            onUnblock={perms.canBlock ? handleUnblock : undefined}
+          />
+
+          {/* Etiquetas: classificação, no fim do bloco. */}
           <div className="space-y-1.5">
             <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Etiquetas</p>
             <ConversationLabelsPanel
@@ -2059,48 +2154,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               onChanged={conv => setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels: conv.labels } : c))}
               onStageEntered={runFunnelStageActions}
             />
-          </div>
-
-          {/* Ações da conversa (movidas do cabeçalho para não poluir a barra) */}
-          <div className="space-y-1.5">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações</p>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button onClick={() => setTimelineOpen(true)} title="Histórico da conversa"
-                className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#f3f2ef] text-slate-500 hover:bg-slate-200 text-[10.5px] font-semibold transition">
-                <History size={13} /> Histórico
-              </button>
-              <button onClick={() => setTemplateOpen(true)} title="Usar modelo de mensagem"
-                className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#f3f2ef] text-slate-500 hover:bg-slate-200 text-[10.5px] font-semibold transition">
-                <MessageSquare size={13} /> Modelos
-              </button>
-              {selected.client_id && (
-                <button onClick={() => setSummaryOpen(true)} title="Resumo por IA"
-                  className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#f3f2ef] text-slate-500 hover:bg-violet-50 hover:text-violet-600 text-[10.5px] font-semibold transition">
-                  <Sparkles size={13} /> Resumo IA
-                </button>
-              )}
-              {messages.length > 0 && (
-                <button onClick={handleExportConversation} title="Exportar histórico (.txt)"
-                  className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#f3f2ef] text-slate-500 hover:bg-slate-200 text-[10.5px] font-semibold transition">
-                  <Download size={13} /> Exportar
-                </button>
-              )}
-              {selected.is_blocked ? (
-                perms.canBlock && (
-                  <button onClick={handleUnblock} title="Desbloquear contato"
-                    className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100 text-[10.5px] font-semibold transition">
-                    <ShieldOff size={13} /> Desbloquear
-                  </button>
-                )
-              ) : (
-                perms.canBlock && (
-                  <button onClick={() => setBlockOpen(true)} title="Bloquear contato"
-                    className="flex items-center justify-center gap-1 py-1.5 rounded-md bg-[#f3f2ef] text-slate-500 hover:bg-red-50 hover:text-red-600 text-[10.5px] font-semibold transition">
-                    <Ban size={13} /> Bloquear
-                  </button>
-                )
-              )}
-            </div>
           </div>
 
           {/* Assunto detectado pela IA (somente leitura; preenchido ao encerrar o atendimento) */}

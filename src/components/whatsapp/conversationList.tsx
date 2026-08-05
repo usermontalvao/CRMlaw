@@ -12,6 +12,7 @@
 // por linha mora aqui dentro justamente para o módulo não precisar recriar
 // objetos por conversa a cada render.
 import React, { useLayoutEffect, useRef } from 'react';
+import { Archive } from 'lucide-react';
 import { ConversationListItem } from './conversationListItem';
 import { ConversationListSkeleton } from './skeletons';
 import type { FunnelLabel } from '../../services/settings.service';
@@ -33,6 +34,15 @@ export interface ConversationListProps {
   mutedIds: ReadonlySet<string>;
   /** Envios que falharam, por conversa (ver `failedSends` no item da lista). */
   failedSends: ReadonlyMap<string, number>;
+  /**
+   * Encerradas que a busca trouxe do arquivo. Vêm no fim da lista já ordenadas;
+   * aqui ganham uma divisória antes da primeira e o aspecto sem cor.
+   */
+  archivedIds: ReadonlySet<string>;
+  /** Escrever o nome do canal nas linhas (só faz sentido com 2+ números). */
+  showChannelName: boolean;
+  /** Conversas com outro atendente dentro agora (presença da equipe). */
+  busyConversationIds: ReadonlySet<string>;
   funnelLabelsForChannel: (channelId: string | null | undefined) => FunnelLabel[];
   /** Medição de tempo dos badges de SLA (horário útil do canal de cada conversa). */
   elapsedMinutes?: ElapsedMinutes;
@@ -46,7 +56,8 @@ export interface ConversationListProps {
 
 const ConversationListInner: React.FC<ConversationListProps> = ({
   conversations, selectedId, loading, privateMode, emptyMessage,
-  channelById, deptById, drafts, mutedIds, failedSends, funnelLabelsForChannel, elapsedMinutes,
+  channelById, deptById, drafts, mutedIds, failedSends, archivedIds, showChannelName, busyConversationIds,
+  funnelLabelsForChannel, elapsedMinutes,
   conversationStatus, docStatusFor, trackedSignatureFor,
   onSelect, onStopSignatureTracking, onStopTemplateFillTracking,
 }) => {
@@ -73,14 +84,24 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
   if (conversations.length === 0) {
     return <div className="px-4 py-10 text-center text-[13px] text-slate-400">{emptyMessage}</div>;
   }
+  // Onde o arquivo começa. A ordenação já pôs as encerradas da busca no fim, então
+  // basta achar a primeira: é ali que entra a divisória.
+  const primeiraArquivada = archivedIds.size > 0
+    ? conversations.findIndex(c => archivedIds.has(c.id))
+    : -1;
+
   return (
     <div ref={listRef}>
-      {conversations.map(c => {
+      {conversations.map((c, i) => {
         const st = conversationStatus(c);
         const tracked = st.key === 'waiting_client' ? trackedSignatureFor(c.client_id) : null;
-        return (
+        const arquivada = archivedIds.has(c.id);
+        const item = (
           <ConversationListItem
             key={c.id}
+            archived={arquivada}
+            showChannelName={showChannelName}
+            busy={busyConversationIds.has(c.id)}
             c={c}
             active={c.id === selectedId}
             channel={c.instance_id ? (channelById.get(c.instance_id) ?? null) : null}
@@ -102,6 +123,22 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
                 : onStopTemplateFillTracking(tracked.link_id!))
               : undefined}
           />
+        );
+        if (i !== primeiraArquivada) return item;
+        // Fecha a fila de trabalho e abre o arquivo. Sem esta linha, a primeira
+        // encerrada apareceria logo depois de uma ativa e pareceria fazer parte
+        // da mesma lista.
+        return (
+          <React.Fragment key={`div-${c.id}`}>
+            <div className="flex items-center gap-2 px-4 pt-3 pb-1.5 select-none">
+              <Archive size={11} className="flex-shrink-0 text-slate-400" />
+              <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400">
+                Encerradas ({archivedIds.size})
+              </span>
+              <span className="h-px flex-1 bg-[#e7e5df]" />
+            </div>
+            {item}
+          </React.Fragment>
         );
       })}
     </div>

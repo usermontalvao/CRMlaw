@@ -11,6 +11,7 @@ import { useResizableLayout } from '../components/whatsapp/hooks/useResizableLay
 // módulo já não tinha mais.
 import { ContactIdentity, AttendanceSummary } from '../components/whatsapp/detailsPanelHeader';
 import { ConversationLabelsPanel } from '../components/whatsapp/conversationLabels';
+import { QuickActions } from '../components/whatsapp/quickActions';
 import { ToastProvider } from '../contexts/ToastContext';
 import type { FunnelLabel } from '../services/settings.service';
 import type { WhatsAppConversation, WhatsAppMessage } from '../types/whatsapp.types';
@@ -292,16 +293,27 @@ export default function WhatsAppConversationPreview() {
           style={{ width: detailsCollapsed ? 0 : panelWidth }}
           className={`shrink-0 bg-white transition-[width,opacity,padding] duration-200 ${detailsCollapsed ? 'overflow-hidden p-0 opacity-0' : 'overflow-y-auto border-l border-[#e7e5df] p-3.5 opacity-100'}`}
         >
+          {/* Espelha a ordem real do painel: quem é → como está o atendimento →
+              o que eu faço agora → como está classificado. Usa os componentes de
+              verdade (e não cópias à mão), para a bancada não mentir quando eles
+              mudarem. */}
           <ContactIdentity conversation={PREVIEW_CONVERSATION} privateMode={false} onOpenPhoto={noop} />
           <div className="mt-2 space-y-4">
-            <div className="space-y-2">
-              <AttendanceSummary
-                assignee="Dr. Pedro"
-                department="Previdenciário"
-                stage={{ stageLabel: 'Em atendimento', color: '#dc2626' }}
-              />
-              <button className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[#e7e5df] py-1.5 text-[11.5px] font-semibold text-slate-500"><ArrowRightLeft size={12} /> Transferir conversa</button>
-            </div>
+            <AttendanceSummary
+              assignee="Dr. Pedro"
+              department="Previdenciário"
+              stage={{ stageLabel: 'Em atendimento', color: '#dc2626' }}
+            />
+            <QuickActions
+              blocked={false}
+              onMarkUnread={noop}
+              onTransfer={noop}
+              onTemplates={noop}
+              onTimeline={noop}
+              onSummary={noop}
+              onExport={noop}
+              onBlock={noop}
+            />
             <div className="space-y-1.5">
               <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Etiquetas</p>
               <ConversationLabelsPanel
@@ -309,15 +321,6 @@ export default function WhatsAppConversationPreview() {
                 funnelLabels={PREVIEW_FUNNEL}
                 onChanged={noop}
               />
-            </div>
-            <div>
-              <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações</p>
-              <div className="grid grid-cols-2 gap-2">
-                {[[History, 'Histórico'], [MessageSquare, 'Modelos'], [Sparkles, 'Resumo IA'], [Download, 'Exportar']].map(([Icon, label]) => {
-                  const ActionIcon = Icon as typeof History;
-                  return <button key={label as string} className="flex items-center justify-center gap-1.5 rounded-lg bg-[#f3f2ef] py-2 text-[11px] font-semibold text-slate-500"><ActionIcon size={13} />{label as string}</button>;
-                })}
-              </div>
             </div>
             <div className="rounded-xl border border-[#e7e5df] p-3">
               <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cliente vinculado</p>

@@ -3522,6 +3522,38 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   contain-intrinsic-size: auto var(--wa-conv-h, 74px);
 }
 
+/* Faixa de colisão: outro atendente está na mesma conversa. Entra deslizando de
+   cima, curto e sem repetir — precisa ser notada uma vez, não pulsar enquanto a
+   pessoa escreve. O ícone da lista tem um pulso lento e discreto, porque ali
+   compete com outros badges e um elemento parado passa despercebido. */
+.wa-collision { animation: wa-collision-in 0.22s ease-out both; }
+@keyframes wa-collision-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.wa-busy-dot { animation: wa-busy-pulse 2.4s ease-in-out infinite; }
+@keyframes wa-busy-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+
+/* Conversa encerrada que a BUSCA trouxe do arquivo. Fica em preto e branco: a
+   cor na inbox é informação de trabalho — a bolinha do canal, o âmbar do SLA, a
+   cor da etiqueta, o vermelho de "não enviada". Nada disso é acionável num
+   atendimento que já terminou, e mantê-lo colorido faria o arquivo competir com
+   a fila de hoje justamente quando se está procurando alguém. Sem cor, a linha
+   continua legível e clicável, mas se anuncia como passado.
+   O `grayscale` pega tudo de uma vez, inclusive a foto do contato. Ao passar o
+   mouse a cor volta um pouco, indicando que a linha continua viva. */
+.wa-conv-archived {
+  filter: grayscale(1);
+  opacity: 0.72;
+  transition: filter 0.18s ease, opacity 0.18s ease;
+}
+.wa-conv-archived:hover { filter: grayscale(0.55); opacity: 0.92; }
+/* Selecionada volta a ter cor: a conversa aberta é o foco, arquivo ou não. */
+.wa-conv-archived.wa-conv-active { filter: grayscale(0); opacity: 1; }
+
 /* Esqueletos de carregamento (lista e conversa). Um brilho que atravessa o
    bloco, e não um pulsar de opacidade: pulsar pisca a tela inteira em uníssono
    e cansa; o brilho tem direção e dá a sensação de que algo está vindo. Cada
@@ -3744,9 +3776,10 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 @media (prefers-reduced-motion: reduce) {
   .wa-typing > span, .wa-msg-in, .wa-bubble-in, .wa-badge-pop, .wa-badge-glow,
   .wa-send-ready, .wa-empty-float, .wa-drop-pulse,
-  .wa-skel::after, .wa-skel-row, .wa-jump { animation: none !important; }
+  .wa-skel::after, .wa-skel-row, .wa-jump,
+  .wa-collision, .wa-busy-dot { animation: none !important; }
   .wa-jump:hover, .wa-avatar-hero:hover > div, .wa-chip:hover { transform: none !important; }
-  .wa-conv::before { transition: none !important; }
+  .wa-conv::before, .wa-conv-archived { transition: none !important; }
   .wa-msg-actions button:hover, .group:hover .wa-bubble { transform: none !important; }
 }
 

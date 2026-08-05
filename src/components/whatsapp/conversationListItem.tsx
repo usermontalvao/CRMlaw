@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Clock, Pencil, Ban, BellOff, FileText, UserPlus, ArrowRightLeft, Tag, X, AlertTriangle,
+  Clock, Pencil, Ban, BellOff, FileText, UserPlus, ArrowRightLeft, Tag, X, AlertTriangle, Users,
 } from 'lucide-react';
 import type {
   WhatsAppConversation, WhatsAppChannel, WhatsAppDepartment, WhatsAppPresence,
@@ -83,9 +83,21 @@ export const ConversationListItem: React.FC<{
    * não saiu ficaria escondida dentro de uma thread que ninguém vai reabrir.
    */
   failedSends?: number;
+  /**
+   * Encerrada trazida do arquivo pela busca. Some a cor da linha: ela está ali
+   * porque foi procurada, não porque é trabalho de hoje.
+   */
+  archived?: boolean;
+  /**
+   * Escrever o nome do canal na linha. Ligado só quando o escritório tem mais de
+   * um número: com um só, o nome seria a mesma palavra em todas as linhas.
+   */
+  showChannelName?: boolean;
+  /** Outro atendente está com esta conversa aberta agora. */
+  busy?: boolean;
   onSelect: (id: string) => void;
   onDismissTracking?: () => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, elapsedMinutes, failedSends = 0, onSelect, onDismissTracking }) => {
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, elapsedMinutes, failedSends = 0, archived = false, showChannelName = false, busy = false, onSelect, onDismissTracking }) => {
   const sla = slaSignal(c, elapsedMinutes);
   const slaInt = slaInternalSignal(c, elapsedMinutes);
   const ta = transferAlert(c, elapsedMinutes);
@@ -99,7 +111,7 @@ export const ConversationListItem: React.FC<{
     <button onClick={() => onSelect(c.id)}
       // Identifica a linha para o teclado da inbox trazê-la ao campo de visão.
       data-conv-id={c.id}
-      className={`wa-conv w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'wa-conv-active bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''}`}>
+      className={`wa-conv w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'wa-conv-active bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''} ${archived ? 'wa-conv-archived' : ''}`}>
       <div className="relative flex-shrink-0">
         <Avatar url={c.contact_avatar_url} name={conversationName(c)} phone={c.contact_phone} size={40} />
         {ch && <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ background: ch.color || '#ea6c00' }} title={ch.name || ch.instance_name} />}
@@ -111,6 +123,15 @@ export const ConversationListItem: React.FC<{
             <span className="truncate">{privateMode ? maskName(conversationName(c)) : conversationName(c)}</span>
           </span>
           <span className="flex items-center gap-1 flex-shrink-0">
+            {/* Alguém já está nesta conversa. Saber ANTES de abrir é o que evita
+                a colisão — depois de aberta, os dois já leram e já pensaram na
+                resposta. */}
+            {busy && (
+              <span title="Outro atendente está nesta conversa agora"
+                className="wa-busy-dot flex-shrink-0 inline-flex items-center justify-center">
+                <Users size={11} className="text-amber-600" />
+              </span>
+            )}
             {muted && <BellOff size={11} className="text-slate-400 flex-shrink-0" />}
             {sla
               ? <span className="inline-flex items-center gap-0.5 text-[9.5px] font-bold" style={{ color: sla.color }}>
@@ -161,6 +182,19 @@ export const ConversationListItem: React.FC<{
           {ds && (
             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${ds === 'awaiting' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
               <FileText size={9} /> {ds === 'awaiting' ? 'Aguardando docs' : 'Docs prontos'}
+            </span>
+          )}
+          {/* Por qual número do escritório este atendimento entrou. A mesma pessoa
+              que escreve para dois números do escritório tem uma conversa em cada
+              — são atendimentos distintos, e é assim que a inbox os separa. Sem
+              dizer o canal, as duas linhas ficam idênticas e parecem duplicata.
+              A bolinha colorida no avatar já dizia isso, mas só a quem parasse o
+              mouse em cima para ler a dica. */}
+          {showChannelName && ch && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
+              style={{ background: (ch.color || '#ea6c00') + '1f', color: ch.color || '#ea6c00' }}>
+              <span className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: ch.color || '#ea6c00' }} />
+              {ch.name || ch.instance_name}
             </span>
           )}
           {dept && (
