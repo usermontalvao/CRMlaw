@@ -3,6 +3,7 @@
 // módulo (via useSyncExternalStore). Carrega do banco e mantém-se vivo por
 // realtime — sem localStorage, para não virar "módulo mentiroso".
 import { supabase } from '../../config/supabase';
+import { openResilientChannel } from './shared';
 
 const MUTE_TABLE = 'whatsapp_conversation_mutes';
 
@@ -11,7 +12,7 @@ const map = new Map<string, Until>(); // conversation_id → muted_until
 const listeners = new Set<() => void>();
 let initialized = false;
 let version = 0; // muda a cada emit → snapshot estável para useSyncExternalStore
-let channel: ReturnType<typeof supabase.channel> | null = null;
+let closeChannel: (() => void) | null = null;
 
 function emit() { version++; listeners.forEach((l) => l()); }
 
@@ -41,10 +42,13 @@ export const muteStore = {
     if (initialized) return;
     initialized = true;
     await this.reload();
-    channel = supabase
-      .channel('wa-conversation-mutes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: MUTE_TABLE }, () => { void this.reload(); })
-      .subscribe();
+    closeChannel = openResilientChannel({
+      name: 'wa-conversation-mutes',
+      bind: ch => ch.on('postgres_changes', { event: '*', schema: 'public', table: MUTE_TABLE }, () => { void this.reload(); }),
+      // Cada reconexão relê o banco: enquanto o canal esteve fora, silenciamentos
+      // podem ter mudado em outra aba, e nenhum evento perdido é reenviado.
+      onStatusChange: status => { if (status === 'live') void this.reload(); },
+    });
   },
 
   /** Recarrega o mapa do banco (RLS já limita às linhas do usuário atual). */
@@ -67,7 +71,7 @@ export const muteStore = {
   getSnapshot(): number { return version; },
 
   teardown(): void {
-    if (channel) { void supabase.removeChannel(channel); channel = null; }
+    if (closeChannel) { closeChannel(); closeChannel = null; }
     initialized = false;
     map.clear();
   },

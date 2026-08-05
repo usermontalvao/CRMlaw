@@ -1,7 +1,7 @@
 // Camada de automação: mensagens agendadas (Fase 8.1) e sessões de IA (Fase J).
 import { supabase } from '../../config/supabase';
 import type { WhatsAppScheduledMessage, WhatsAppAiSession } from '../../types/whatsapp.types';
-import { SCHEDULED_TABLE } from './shared';
+import { SCHEDULED_TABLE, openResilientChannel } from './shared';
 
 const AI_SESSIONS_TABLE = 'whatsapp_ai_sessions';
 
@@ -87,13 +87,12 @@ export const automationApi = {
 
   /** Realtime das mensagens agendadas de uma conversa (para o painel reagir). */
   subscribeScheduled(conversationId: string, onChange: () => void): () => void {
-    const ch = supabase
-      .channel(`wa-sched-${conversationId}`)
-      .on('postgres_changes',
+    return openResilientChannel({
+      name: `wa-sched-${conversationId}`,
+      bind: ch => ch.on('postgres_changes',
         { event: '*', schema: 'public', table: SCHEDULED_TABLE, filter: `conversation_id=eq.${conversationId}` },
-        () => onChange())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+        () => onChange()),
+    });
   },
 
   // ── Sessões de IA (Fase J) ────────────────────────────────────
@@ -120,15 +119,14 @@ export const automationApi = {
 
   /** Realtime de sessão de IA de uma conversa (banner na UI reage). */
   subscribeAiSession(conversationId: string, onChange: (session: WhatsAppAiSession | null) => void): () => void {
-    const ch = supabase
-      .channel(`wa-ai-${conversationId}`)
-      .on('postgres_changes',
+    return openResilientChannel({
+      name: `wa-ai-${conversationId}`,
+      bind: ch => ch.on('postgres_changes',
         { event: '*', schema: 'public', table: AI_SESSIONS_TABLE, filter: `conversation_id=eq.${conversationId}` },
         (payload) => {
           if (payload.eventType === 'DELETE') onChange(null);
           else onChange((payload.new as WhatsAppAiSession) || null);
-        })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+        }),
+    });
   },
 };

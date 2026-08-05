@@ -1,6 +1,6 @@
 // Camada 360 do cliente: busca/match, agenda, pendências e overview consolidado.
 import { supabase } from '../../config/supabase';
-import { normalizePhone } from './shared';
+import { normalizePhone, openResilientChannel } from './shared';
 import { deadlineService } from '../deadline.service';
 import { requirementService } from '../requirement.service';
 import { processService } from '../process.service';
@@ -381,23 +381,23 @@ export const client360Api = {
 
   /** Realtime das solicitações de documento (lista/cabeçalho/pendências reagem à baixa por IA). */
   subscribeDocRequests(onChange: () => void): () => void {
-    const ch = supabase
-      .channel('wa-docreqs')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' }, () => onChange())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_request_items' }, () => onChange())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return openResilientChannel({
+      name: 'wa-docreqs',
+      bind: ch => ch
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'document_requests' }, () => onChange())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'document_request_items' }, () => onChange()),
+    });
   },
 
   /** Realtime das assinaturas para a lateral 360 da conversa refletir preenchimento/assinatura em aberto. */
   subscribeSignatures(onChange: () => void): () => void {
-    const ch = supabase
-      .channel('wa-signatures')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'signature_requests' }, () => onChange())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'signature_signers' }, () => onChange())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'template_fill_links' }, () => onChange())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return openResilientChannel({
+      name: 'wa-signatures',
+      bind: ch => ch
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'signature_requests' }, () => onChange())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'signature_signers' }, () => onChange())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'template_fill_links' }, () => onChange()),
+    });
   },
 
   async listClientTemplateFillLinks(clientId: string): Promise<ClientTemplateFillLink[]> {

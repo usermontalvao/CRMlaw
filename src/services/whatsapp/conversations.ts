@@ -6,10 +6,10 @@ import { processService } from '../process.service';
 import type { WhatsAppConversation, WhatsAppClientLite, TimelineEvent } from '../../types/whatsapp.types';
 import {
   CONV_TABLE, MSG_TABLE, TRANSFER_TABLE, NOTES_TABLE,
-  attachAvatarUrls, attachClientNames, invokeFn, normalizePhone, phoneVariants, type WhatsAppInternalNote,
+  attachAvatarUrls, attachClientNames, invokeFn, normalizePhone, phoneVariants,
+  openResilientChannel, type WhatsAppInternalNote,
 } from './shared';
 import { messagesApi } from './messages';
-import { realtimeRetryDelay, isRealtimeDeadStatus } from './realtimeBackoff';
 
 export const conversationsApi = {
   // ── Conversas ────────────────────────────────────────────────
@@ -32,6 +32,26 @@ export const conversationsApi = {
 
   async markRead(conversationId: string): Promise<void> {
     await supabase.from(CONV_TABLE).update({ unread_count: 0 }).eq('id', conversationId);
+  },
+
+  /**
+   * Devolve a conversa à pilha de "não lidas".
+   *
+   * É a triagem que faltava: abrir uma conversa, ver que ela pede tempo (um
+   * documento para conferir, uma resposta que depende de outra pessoa) e
+   * DEIXAR MARCADA para depois. Sem isto, abrir era irreversível — o contador
+   * zerava, a conversa saía da aba "Não lidas" e só voltava se o cliente
+   * escrevesse de novo. Na prática, o atendente evitava abrir para não perder o
+   * lugar na fila, que é o contrário do que a inbox deveria incentivar.
+   *
+   * Grava 1, e não a contagem real de mensagens não vistas: o número aqui é um
+   * SINAL de pendência, não uma medida. Recontar quantas mensagens o atendente
+   * "desleu" seria inventar precisão — ele leu todas, e escolheu voltar depois.
+   */
+  async markUnread(conversationId: string): Promise<void> {
+    const { error } = await supabase.from(CONV_TABLE)
+      .update({ unread_count: 1 }).eq('id', conversationId);
+    if (error) throw new Error(error.message);
   },
 
   // ── Silenciar conversa (notificações), por usuário ───────────
@@ -594,44 +614,13 @@ export const conversationsApi = {
      */
     onStatusChange?: (status: 'live' | 'down') => void;
   }) {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    let attempt = 0;
-    let timer: number | null = null;
-    let disposed = false;
-
-    const reopenLater = () => {
-      if (disposed || timer !== null) return;
-      timer = window.setTimeout(() => {
-        timer = null;
-        if (disposed) return;
-        // Descarta o canal morto antes de abrir outro: um canal em erro nunca
-        // volta sozinho, e mantê-lo só acumula socket parado.
-        if (channel) { supabase.removeChannel(channel); channel = null; }
-        open();
-      }, realtimeRetryDelay(attempt++));
-    };
-
-    const open = () => {
-      if (disposed) return;
-      // Nome único por tentativa: reutilizar o mesmo nome enquanto o canal
-      // anterior ainda está fechando faz o servidor recusar a nova inscrição.
-      channel = supabase
-        .channel(`whatsapp-realtime-${Date.now()}`)
+    return openResilientChannel({
+      name: 'whatsapp-realtime',
+      bind: ch => ch
         .on('postgres_changes', { event: '*', schema: 'public', table: MSG_TABLE }, p => handlers.onMessageChange?.(p))
-        .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => handlers.onConversationChange?.(p))
-        .subscribe(status => {
-          if (disposed) return;
-          if (status === 'SUBSCRIBED') { attempt = 0; handlers.onStatusChange?.('live'); return; }
-          if (isRealtimeDeadStatus(status)) { handlers.onStatusChange?.('down'); reopenLater(); }
-        });
-    };
-
-    open();
-    return () => {
-      disposed = true;
-      if (timer !== null) window.clearTimeout(timer);
-      if (channel) supabase.removeChannel(channel);
-    };
+        .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => handlers.onConversationChange?.(p)),
+      onStatusChange: handlers.onStatusChange,
+    });
   },
 
   /**
@@ -643,11 +632,10 @@ export const conversationsApi = {
   subscribeConversationNotifications(
     onChange: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void,
   ) {
-    const channel = supabase
-      .channel('whatsapp-notify')
-      .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => onChange(p))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return openResilientChannel({
+      name: 'whatsapp-notify',
+      bind: ch => ch.on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => onChange(p)),
+    });
   },
 
   /**
@@ -658,11 +646,10 @@ export const conversationsApi = {
   subscribeInboundMessages(
     onInsert: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void,
   ) {
-    const channel = supabase
-      .channel('whatsapp-notify-msg')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: MSG_TABLE }, p => onInsert(p))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return openResilientChannel({
+      name: 'whatsapp-notify-msg',
+      bind: ch => ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: MSG_TABLE }, p => onInsert(p)),
+    });
   },
 
   /** Metadados enxutos da conversa para o notificador (fallback de cache-miss). */

@@ -16,6 +16,17 @@ import type {
 /** De quanto em quanto tempo repomos os dados enquanto o canal está fora. */
 const DOWN_POLL_MS = 15_000;
 
+/**
+ * Quanto o canal precisa ficar fora antes de a interface ANUNCIAR que está fora.
+ *
+ * Um websocket cai e volta por motivos banais — o wi-fi trocando de ponto, o
+ * notebook acordando, um proxy reciclando conexão. Anunciar cada um desses
+ * soluços transforma o indicador do topo num pisca-pisca, e um aviso que aparece
+ * o tempo todo é um aviso em que ninguém confia quando a queda é de verdade. A
+ * reconexão em si continua imediata: o que espera é só o que se diz na tela.
+ */
+const DOWN_GRACE_MS = 2500;
+
 interface WaRealtimeArgs {
   selectedId: string | null;
   loadConversations: () => void;
@@ -73,6 +84,12 @@ export function useWaRealtime({
     // `wasDown` evita ressincronizar na primeira conexão: ali o bootstrap do
     // módulo já carregou tudo, e repetir só duplicaria requisições na abertura.
     let wasDown = false;
+    // Só o ANÚNCIO da queda espera a carência; a reposição de dados continua
+    // reagindo ao estado real do canal, sem atraso nenhum.
+    let graceTimer: number | null = null;
+    const cancelGrace = () => {
+      if (graceTimer !== null) { window.clearTimeout(graceTimer); graceTimer = null; }
+    };
     const unsub = whatsappService.subscribe({
       // Mescla a conversa que mudou no lugar (presença, preview, contador,
       // ordem) — sem recarregar a lista nem tocar na thread aberta.
@@ -131,12 +148,24 @@ export function useWaRealtime({
         if (convId === selectedIdRef.current) refreshMessagesRef.current(convId);
       },
       onStatusChange: (status) => {
-        setRealtimeStatus(status);
-        if (status === 'down') { wasDown = true; return; }
+        if (status === 'down') {
+          wasDown = true;
+          // Já anunciado (ou já contando): não reinicia a contagem, senão uma
+          // sequência de quedas curtas adiaria o aviso para sempre.
+          if (graceTimer === null) {
+            graceTimer = window.setTimeout(() => {
+              graceTimer = null;
+              setRealtimeStatus('down');
+            }, DOWN_GRACE_MS);
+          }
+          return;
+        }
+        cancelGrace();
+        setRealtimeStatus('live');
         if (wasDown) { wasDown = false; resync(); } // voltou: repõe o buraco
       },
     });
-    return unsub;
+    return () => { cancelGrace(); unsub(); };
   }, [resync, setConversations, setMessages]);
 
   // Enquanto o canal está fora, repõe em intervalo curto: a inbox continua

@@ -2,12 +2,88 @@
 // helpers puros (telefone, template, permissões) e os tipos de domínio
 // consumidos pelas camadas conversations/messages/admin/client360/automation.
 import { supabase } from '../../config/supabase';
+import { realtimeRetryDelay, resolveChannelStatus } from './realtimeBackoff';
 import type { CalendarEvent } from '../../types/calendar.types';
 import type { Requirement } from '../../types/requirement.types';
 import type { Process } from '../../types/process.types';
 import type { WhatsAppConversation, WhatsAppMessage } from '../../types/whatsapp.types';
 import type { SignatureRequestWithSigners } from '../../types/signature.types';
 import type { Agreement } from '../../types/financial.types';
+
+export type RealtimeChannel = ReturnType<typeof supabase.channel>;
+
+/**
+ * Abre um canal realtime que se reergue sozinho e devolve como desligá-lo.
+ *
+ * Um websocket cai — rede oscilando, notebook suspenso, proxy reciclando
+ * conexão — e um canal caído do Supabase nunca volta por conta própria. Isso já
+ * era tratado no canal da inbox, mas os canais do notificador global assinavam
+ * "cru": se o socket deles morresse, morriam calados, e quem estava FORA do
+ * módulo simplesmente parava de ser avisado de mensagem nova pelo resto da
+ * sessão — sem som, sem aviso, sem nada na tela dizendo que o aviso acabou.
+ * Justamente o caso em que o aviso é a única coisa que existe. Agora a política
+ * é uma só, e vale para todos os canais.
+ *
+ * A numeração de gerações resolve a armadilha descrita em `resolveChannelStatus`:
+ * `removeChannel` faz o canal removido reportar CLOSED, indistinguível de uma
+ * queda real — e como quem remove é a própria reconexão, cada tentativa
+ * provocava a seguinte, num laço que nunca assentava.
+ */
+export function openResilientChannel(opts: {
+  /** Prefixo do nome do canal (a geração e o instante são acrescentados). */
+  name: string;
+  /** Registra os `.on(...)` do canal. Chamado a cada (re)abertura. */
+  bind: (channel: RealtimeChannel) => RealtimeChannel;
+  onStatusChange?: (status: 'live' | 'down') => void;
+}): () => void {
+  let channel: RealtimeChannel | null = null;
+  let attempt = 0;
+  let timer: number | null = null;
+  let disposed = false;
+  let generation = 0;
+
+  /** Aposenta e remove o canal atual. O que ele disser depois não conta. */
+  const discardCurrent = () => {
+    if (!channel) return;
+    generation += 1;
+    supabase.removeChannel(channel);
+    channel = null;
+  };
+
+  const reopenLater = () => {
+    if (disposed || timer !== null) return;
+    timer = window.setTimeout(() => {
+      timer = null;
+      if (disposed) return;
+      // Descarta o canal morto antes de abrir outro: um canal em erro nunca
+      // volta sozinho, e mantê-lo só acumula socket parado.
+      discardCurrent();
+      open();
+    }, realtimeRetryDelay(attempt++));
+  };
+
+  const open = () => {
+    if (disposed) return;
+    const mine = generation;
+    // Nome único por tentativa: reutilizar o mesmo nome enquanto o canal
+    // anterior ainda está fechando faz o servidor recusar a nova inscrição.
+    channel = opts.bind(supabase.channel(`${opts.name}-${mine}-${Date.now()}`))
+      .subscribe(status => {
+        const action = resolveChannelStatus(status, {
+          fromGeneration: mine, currentGeneration: generation, disposed,
+        });
+        if (action === 'live') { attempt = 0; opts.onStatusChange?.('live'); return; }
+        if (action === 'down-and-retry') { opts.onStatusChange?.('down'); reopenLater(); }
+      });
+  };
+
+  open();
+  return () => {
+    disposed = true;
+    if (timer !== null) window.clearTimeout(timer);
+    discardCurrent();
+  };
+}
 
 // ── Tabelas / storage ────────────────────────────────────────
 export const CONV_TABLE = 'whatsapp_conversations';
