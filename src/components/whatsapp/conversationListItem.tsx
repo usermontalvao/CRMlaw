@@ -172,14 +172,29 @@ export const ConversationListItem: React.FC<{
           )}
           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${statusCls}`}>
             {statusKey === 'blocked' && <Ban size={9} />}{statusLabel}
+            {/* A linha inteira já é um <button>, e botão dentro de botão é HTML
+                inválido (o React reclama e o navegador desmonta a árvore do seu
+                jeito). Um span com papel de botão mantém o clique, o foco e o
+                teclado sem aninhar nada. */}
             {onDismissTracking && (
-              <button
+              <span
+                role="button"
+                tabIndex={0}
                 onClick={(e) => { e.stopPropagation(); onDismissTracking(); }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  // preventDefault: sem ele, o Espaço rola a lista e o Enter
+                  // dispara o clique da linha logo atrás.
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDismissTracking();
+                }}
                 title="Fechar acompanhamento"
-                className="inline-flex items-center justify-center h-3 w-3 rounded-full bg-white/60 hover:bg-slate-700 hover:text-white transition"
+                aria-label="Fechar acompanhamento"
+                className="inline-flex items-center justify-center h-3 w-3 cursor-pointer rounded-full bg-white/60 transition hover:bg-slate-700 hover:text-white"
               >
                 <X size={8} strokeWidth={2.75} />
-              </button>
+              </span>
             )}
           </span>
           {ds && (
