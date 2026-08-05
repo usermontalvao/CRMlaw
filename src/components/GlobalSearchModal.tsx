@@ -5,7 +5,7 @@ import {
   ClipboardList, Calendar, CheckSquare, AlarmClock, DollarSign, FolderOpen,
   Clock, Zap, Gavel, PenTool, Sparkles, CornerDownLeft, LayoutGrid,
   Phone, Mail, Hash, Building2, Tag, User, CreditCard, Copy, Check,
-  Scale, MessageCircle, Terminal, Plus, Navigation, Trash2, Sun, Moon,
+  Scale, MessageCircle, MessageSquare, Terminal, Plus, Navigation, Trash2, Sun, Moon,
   UserPlus, FileSignature, BookOpen, Settings, LogOut, RefreshCw,
   ClipboardCheck, Banknote, FilePlus, CalendarPlus, UserCheck,
 } from 'lucide-react';
@@ -22,6 +22,8 @@ import { financialService } from '../services/financial.service';
 import { cloudService } from '../services/cloud.service';
 import { signatureService } from '../services/signature.service';
 import { nextcloudService } from '../services/nextcloud.service';
+import { whatsappService } from '../services/whatsapp.service';
+import { conversationName, prettyPhone } from './whatsapp/format';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch } from '../utils/search';
 import type { Client } from '../types/client.types';
@@ -39,6 +41,7 @@ interface SearchData {
   agreements: Awaited<ReturnType<typeof financialService.listAgreements>>;
   rootFolders: Awaited<ReturnType<typeof cloudService.listFolders>>;
   signatures: Awaited<ReturnType<typeof signatureService.listRequests>>;
+  conversations: Awaited<ReturnType<typeof whatsappService.listConversations>>;
 }
 
 let _cache: { data: SearchData; fetchedAt: number } | null = null;
@@ -70,8 +73,14 @@ async function getSearchData(force = false): Promise<SearchData> {
     financialService.listAgreements().catch(() => []),
     cloudService.listFolders(null, false).catch(() => [] as Awaited<ReturnType<typeof cloudService.listFolders>>),
     signatureService.listRequests().catch(() => [] as Awaited<ReturnType<typeof signatureService.listRequests>>),
-  ]).then(([processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures]) => {
-    const data: SearchData = { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures };
+    // Conversas do WhatsApp. De propósito FORA da lista de invalidação abaixo:
+    // mensagem nova chega o tempo todo, e derrubar o cache a cada uma forçaria
+    // recarregar processos, clientes, prazos e o resto junto — caro para
+    // consertar uma prévia levemente velha. O que se busca aqui (nome, telefone,
+    // existência da conversa) quase nunca muda; o TTL de 5 min dá conta.
+    whatsappService.listConversations().catch(() => [] as Awaited<ReturnType<typeof whatsappService.listConversations>>),
+  ]).then(([processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures, conversations]) => {
+    const data: SearchData = { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures, conversations };
     _cache = { data, fetchedAt: Date.now() };
     _inflight = null;
     return data;
@@ -116,7 +125,7 @@ if (typeof document !== 'undefined') {
 type ResultType =
   | 'cliente' | 'processo' | 'processo-via-cliente' | 'intimacao'
   | 'requerimento' | 'prazo' | 'agenda' | 'tarefa' | 'financeiro' | 'cloud' | 'assinatura'
-  | 'nextcloud';
+  | 'nextcloud' | 'conversa';
 
 interface DetailRow { icon: React.ElementType; label: string; value: string }
 
@@ -211,11 +220,12 @@ const TYPE_CONFIG: Record<ResultType, {
   cloud:                 { label: 'Pasta',        icon: FolderOpen,    color: 'text-indigo-600 bg-indigo-50',   border: 'border-indigo-200',  group: 'Cloud'         },
   assinatura:            { label: 'Assinatura',   icon: PenTool,       color: 'text-violet-600 bg-violet-50',   border: 'border-violet-200',  group: 'Assinaturas'   },
   nextcloud:             { label: 'Arquivo',      icon: FolderOpen,    color: 'text-blue-600 bg-blue-50',       border: 'border-blue-200',    group: 'Nextcloud'     },
+  conversa:              { label: 'Conversa',     icon: MessageSquare, color: 'text-green-600 bg-green-50',     border: 'border-green-200',   group: 'WhatsApp'      },
 };
 
 // Intimações removidas da exibição (ainda carregadas para extrair partes dos processos)
 const GROUP_ORDER: ResultType[] = [
-  'cliente', 'processo', 'processo-via-cliente', 'requerimento', 'prazo',
+  'cliente', 'conversa', 'processo', 'processo-via-cliente', 'requerimento', 'prazo',
   'agenda', 'tarefa', 'financeiro', 'cloud', 'nextcloud', 'assinatura',
 ];
 
@@ -358,6 +368,7 @@ const TYPE_MODULE: Record<string, string> = {
   cloud:                'documentos',
   nextcloud:            'cloud',
   assinatura:           'assinaturas',
+  conversa:             'whatsapp',
 };
 
 // Mapa ResultType → módulo de navegação para o botão "Ver todos"
@@ -373,6 +384,7 @@ const TYPE_NAV: Record<string, string> = {
   cloud:                'cloud',
   nextcloud:            'nextcloud',
   assinatura:           'assinaturas',
+  conversa:             'whatsapp',
 };
 
 // ─── Sidebar module list (static, always visible) ────────────────────────────
@@ -388,6 +400,7 @@ const SIDEBAR_MODULES: Array<{ key: ResultType | 'all'; label: string; icon: Rea
   { key: 'financeiro',   label: 'Financeiro',    icon: DollarSign,    mod: 'financeiro' },
   { key: 'cloud',        label: 'Cloud',         icon: FolderOpen,    mod: 'cloud' },
   { key: 'nextcloud',    label: 'Nextcloud',     icon: FolderOpen,    mod: 'nextcloud' },
+  { key: 'conversa',     label: 'WhatsApp',      icon: MessageSquare, mod: 'whatsapp' },
   { key: 'assinatura',   label: 'Assinaturas',   icon: PenTool,       mod: 'assinaturas' },
 ];
 
@@ -487,7 +500,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       const nq = nrm(q2);
       const today = new Date().toISOString().slice(0, 10);
 
-      const { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures } =
+      const { processes, clients, intimacoes, requirements, events, tasks, deadlines, agreements, rootFolders, signatures, conversations } =
         await getSearchData();
 
       const clientById = new Map<string, Client>(clients.map(c => [c.id, c]));
@@ -901,9 +914,68 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
           };
         });
 
+      // ── Conversas do WhatsApp ─────────────────────────────────────────────
+      // Achar a pessoa e não poder falar com ela era o passo que faltava: a busca
+      // global já entregava o cadastro, os processos e os arquivos do cliente, mas
+      // o atendimento — o lugar onde a conversa de fato acontece — só se
+      // alcançava abrindo o módulo e buscando de novo, lá dentro.
+      //
+      // Casa por nome do contato, nome do cadastro vinculado e telefone. O
+      // telefone é comparado só por dígitos: ninguém digita "+55 (65) 9…" na
+      // busca, digita 996128787 — e o que está guardado tem código de país,
+      // parênteses e traço.
+      const somenteDigitos = q.replace(/\D/g, '');
+      const conversaResults: SearchResult[] = conversations
+        .map(c => {
+          const nome = conversationName(c);
+          let s = topScore([nome, c.client_name ?? '', c.contact_name ?? ''], q2);
+          // Busca por telefone: casa como sufixo, para 996128787 achar
+          // 5565996128787. Só a partir de 4 dígitos, senão "12" casaria com meia
+          // agenda e o resultado viraria ruído.
+          if (s === 0 && somenteDigitos.length >= 4 && c.contact_phone.replace(/\D/g, '').endsWith(somenteDigitos)) {
+            s = 60;
+          }
+          // Encerrada some para o fim da lista pela mesma razão que na inbox: é
+          // arquivo, e o que está em aberto é o que se pode responder agora.
+          if (s > 0 && c.status === 'closed') s -= 15;
+          return { c, s };
+        })
+        .filter(x => x.s > 0)
+        .sort((a, b) => b.s - a.s || (b.c.last_message_at ?? '').localeCompare(a.c.last_message_at ?? ''))
+        .slice(0, 5)
+        .map(({ c, s }) => {
+          const encerrada = c.status === 'closed';
+          const previa = (c.last_message_preview ?? '').trim();
+          return {
+            id: c.id, type: 'conversa' as const,
+            title: conversationName(c),
+            // A prévia da última mensagem é o que identifica a conversa certa
+            // quando a mesma pessoa tem mais de uma (uma por número do escritório).
+            subtitle: previa
+              ? `${c.last_message_direction === 'out' ? 'Você: ' : ''}${previa}`
+              : prettyPhone(c.contact_phone),
+            meta: [
+              encerrada ? 'Encerrada' : null,
+              c.unread_count > 0 ? `${c.unread_count} não lida${c.unread_count > 1 ? 's' : ''}` : null,
+              c.last_message_at ? fmtDate(c.last_message_at) : null,
+            ].filter(Boolean).join(' · ') || undefined,
+            score: s,
+            navModule: 'whatsapp',
+            // Mesmo parâmetro que a notificação de mensagem nova usa para abrir
+            // a conversa direto (ver `onOpen` em App.tsx).
+            navParams: { conversationId: c.id },
+            details: [
+              { icon: Phone, label: 'Telefone', value: prettyPhone(c.contact_phone) },
+              c.client_name ? { icon: User, label: 'Cliente', value: c.client_name } : null,
+              { icon: Tag, label: 'Situação', value: encerrada ? 'Encerrada' : 'Em aberto' },
+              c.last_message_at ? { icon: Clock, label: 'Última mensagem', value: fmtDateTime(c.last_message_at) } : null,
+            ].filter(Boolean) as DetailRow[],
+          };
+        });
+
       // ── Merge + dedup ─────────────────────────────────────────────────────
       const merged = [
-        ...clientResults, ...processResults, ...processViaClientResults,
+        ...clientResults, ...conversaResults, ...processResults, ...processViaClientResults,
         ...reqResults, ...prazoResults,
         ...agendaResults, ...tarefaResults, ...financeiroResults, ...cloudResults,
         ...assinaturaResults,
@@ -1139,6 +1211,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     cloud:                  'text-indigo-600',
     nextcloud:              'text-blue-600',
     assinatura:             'text-purple-600',
+    conversa:               'text-green-600',
   };
   const TYPE_ICON_BG: Record<ResultType, string> = {
     cliente:                '#f1f5f9',
@@ -1153,6 +1226,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
     cloud:                  '#eef2ff',
     nextcloud:              '#eff6ff',
     assinatura:             '#faf5ff',
+    conversa:               '#f0fdf4',
   };
   const ICON_BOX_STYLE: React.CSSProperties = {
     background: '#f4f4f5',
