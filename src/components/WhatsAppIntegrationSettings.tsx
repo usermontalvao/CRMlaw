@@ -821,17 +821,6 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
               Etiqueta ao lado do nome, visível só para a equipe no CRM.
             </p>
           </div>
-          <div>
-            <label className="settings-label">Saudação automática</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#374151', marginTop: '8px' }}>
-              <input type="checkbox" checked={agentPrefs.auto_greeting}
-                onChange={e => setAgentPrefs(prev => ({ ...prev, auto_greeting: e.target.checked }))} />
-              Apresentar-me ao cliente na primeira resposta
-            </label>
-            <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '6px' }}>
-              Usa a copy configurada em “Textos padrão”.
-            </p>
-          </div>
         </div>
 
         <div className="settings-save-bar" style={{ marginTop: '16px' }}>
@@ -1316,11 +1305,6 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
           Importante: esta seção edita a <strong>copy</strong>. O <strong>horário comercial real</strong> continua sendo configurado por canal na seção acima.
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-          <div>
-            <label className="settings-label">Saudação automática inicial</label>
-            <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={copyConfig.auto_greeting_template}
-              onChange={e => setCopyConfig(prev => ({ ...prev, auto_greeting_template: e.target.value }))} />
-          </div>
           <div>
             <label className="settings-label">Apresentação ao aceitar transferência</label>
             <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={copyConfig.accept_presentation_template}

@@ -1,18 +1,17 @@
 // Domínio "compositor" do módulo WhatsApp: tudo que pertence à barra de envio e
 // ao ciclo de vida de uma mensagem que SAI da equipe — rascunho (por conversa),
 // resposta/edição, envio otimista de texto/mídia/áudio, gravação, retry/resend,
-// auto-assumir ao responder, saudação automática e supressão do aviso de
-// ausência. Extraído do WhatsAppModule para concentrar o trecho mais acoplado do
-// envio num único lugar, preservando os contratos usados pelo JSX do módulo.
+// auto-assumir ao responder e supressão do aviso de ausência. Extraído do
+// WhatsAppModule para concentrar o trecho mais acoplado do envio num único
+// lugar, preservando os contratos usados pelo JSX do módulo.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   whatsappService,
   type AgentPrefs,
   type StaffOption,
 } from '../../../services/whatsapp.service';
-import { agentLabel, buildGreeting, conversationPreviewLabel, greetingByHour, prettyPhone } from '../format';
-import { renderTemplate } from '../../../services/whatsapp.service';
-import { isReconnectPendingError, enqueueReconnectHold, sendTextResilient } from '../../../services/whatsapp/resilientSend';
+import { agentLabel, conversationPreviewLabel } from '../format';
+import { isReconnectPendingError, enqueueReconnectHold } from '../../../services/whatsapp/resilientSend';
 import { useToastContext } from '../../../contexts/ToastContext';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppAiSession,
@@ -70,7 +69,7 @@ export interface WaComposerApi {
 /**
  * Concentra o estado e a lógica do compositor de mensagens da conversa aberta.
  * Mantém o rascunho por conversa (espelhado em `draftMap` para a lista),
- * coordena os envios otimistas e os fluxos automáticos (assumir/saudar/suprimir
+ * coordena os envios otimistas e os fluxos automáticos (assumir/suprimir
  * ausência) e expõe à camada de UI exatamente os contratos que o JSX já usava.
  */
 export function useWaComposer({
@@ -242,8 +241,8 @@ export function useWaComposer({
   }, []);
 
   // Id temporário ÚNICO para a mensagem otimista. Sempre com sufixo aleatório:
-  // dois envios no mesmo milissegundo (saudação + mensagem, áudios rápidos) não
-  // podem colidir, ou a reconciliação otimista→servidor casaria o item errado.
+  // dois envios no mesmo milissegundo (áudios rápidos, mensagens em sequência)
+  // não podem colidir, ou a reconciliação otimista→servidor casaria o item errado.
   const newTempId = () => `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   // Fábrica única da mensagem otimista (mensagem que SAI, ainda não confirmada
@@ -276,7 +275,7 @@ export function useWaComposer({
   // Trava SÍNCRONA contra reenvio. O estado `sending` atualiza de forma assíncrona,
   // então dois disparos quase simultâneos (dois Enter, key-repeat, ou Enter + clique)
   // passavam ambos pela checagem antes do setSending(true) e rodavam handleSend duas
-  // vezes — enviando a saudação automática E a mensagem em duplicidade. O ref barra na hora.
+  // vezes — enviando a mensagem em duplicidade. O ref barra na hora.
   const sendingRef = useRef(false);
 
   const handleSend = async () => {
@@ -305,23 +304,18 @@ export function useWaComposer({
     const conversation = selected;
     const me = user ? staffById.get(user.id) : null;
 
-    // Decisões que dependem do estado ANTES deste envio, tiradas agora: assim que
-    // a bolha otimista entra em `pending`, a própria mensagem contaria como saída
-    // e a saudação inicial nunca sairia.
-    const hasOutbound = messages.some(m => m.direction === 'out') || pending.some(p => p.direction === 'out');
     const needsAssume = !conversation.assigned_user_id && !conversation.is_blocked && !!user?.id;
 
     // Prefixo de identificação do agente: *Dr. Pedro:*\n antes do texto.
     // Usa agentLabel para incluir Dr./Dra. em advogados automaticamente.
-    // Só em envios manuais pelo compositor — saudações e mensagens automáticas ficam sem prefixo.
+    // Só em envios manuais pelo compositor — mensagens automáticas ficam sem prefixo.
     const agentDisplayName = agentLabel(me, agentPrefs.short_name);
     const text = agentDisplayName ? `*${agentDisplayName}:*\n${rawText}` : rawText;
 
     // ── O que o atendente vê acontece AGORA, no mesmo frame do Enter ──────
-    // Assumir a conversa e a saudação automática são idas à rede; enquanto
-    // estavam aqui em cima, o texto ficava preso no compositor esperando o
-    // servidor. Agora a bolha aparece e o input esvazia primeiro; a rede toda
-    // (assumir → saudação → mensagem) roda em seguida, na ordem de sempre.
+    // Assumir a conversa é uma ida à rede; enquanto estava aqui em cima, o texto
+    // ficava preso no compositor esperando o servidor. Agora a bolha aparece e o
+    // input esvazia primeiro; a rede (assumir → mensagem) roda em seguida.
     const sentAt = new Date().toISOString();
     const tempId = newTempId();
     const replyId = replyTo?.id;
@@ -336,7 +330,6 @@ export function useWaComposer({
       // Auto-assumir: responder uma conversa SEM dono (na fila) assume o atendimento
       // automaticamente para você — antes da 1ª mensagem sair. Conversa já minha
       // ou de outro atendente não é tocada (takeover explícito continua no botão Assumir).
-      let justAssumed = false;
       if (needsAssume) {
         try {
           await whatsappService.assumeConversation(conversation.id);
@@ -347,7 +340,6 @@ export function useWaComposer({
         if (aiSession?.status === 'active') await whatsappService.abortAiSession(conversation.id).catch(() => {});
         setConversations(prev => prev.map(c => c.id === conversation.id
           ? { ...c, assigned_user_id: user!.id, awaiting_accept: false, transfer_pending_since: null } : c));
-        justAssumed = true;
       }
 
       // Ao responder, pausa o aviso de horário (ausência) nesta conversa: o atendente
@@ -358,24 +350,10 @@ export function useWaComposer({
         setConversations(prev => prev.map(c => c.id === conversation.id ? { ...c, absence_suppressed: true } : c));
       }
 
-      // Saudação inicial automática (Fase 1): apresenta o responsável ao cliente ANTES
-      // da 1ª mensagem — no primeiro atendimento humano (sem nenhum envio ainda) OU ao
-      // assumir agora uma conversa que estava na fila (ex.: reaberta pelo cliente).
-      if ((justAssumed || !hasOutbound) && agentPrefs.auto_greeting && me) {
-        try {
-          const greeting = renderTemplate(moduleConfig.auto_greeting_template, {
-            clientName: conversation.contact_name ?? null,
-            clientPhone: prettyPhone(conversation.contact_phone),
-            agentName: agentPrefs.short_name || me.name,
-            greeting: greetingByHour(),
-          }) || buildGreeting({ ...me, name: agentPrefs.short_name || me.name }, agentPrefs.role_label);
-          // Resiliente: se o canal estiver fora, a saudação é retida (reenvio
-          // automático) em vez de se perder antes da mensagem principal.
-          await sendTextResilient({ conversationId: conversation.id, channelId: conversation.instance_id, text: greeting });
-          void refreshMessages(conversation.id);
-        } catch { /* saudação é best-effort; não impede a mensagem principal */ }
-      }
-
+      // Só a mensagem digitada sai daqui: nenhuma saudação automática é enviada
+      // antes dela. Saudação continua disponível como variável `{{saudacao}}` nos
+      // modelos manuais, e as automações (ausência, IA, transferência) seguem
+      // com seus próprios fluxos.
       const { message_id, evolution_message_id } = await whatsappService.sendText({ conversationId: conversation.id, text, replyToId: replyId });
       bindPendingToServerMessage(tempId, message_id, evolution_message_id);
       retryRef.current.delete(tempId);
