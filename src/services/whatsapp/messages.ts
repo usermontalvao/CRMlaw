@@ -3,12 +3,37 @@ import { supabase } from '../../config/supabase';
 import type { WhatsAppMessage, SendMediaInput, UploadedMedia } from '../../types/whatsapp.types';
 import { MSG_TABLE, MEDIA_BUCKET, attachSignedUrls, invokeFn, extOf } from './shared';
 
+/**
+ * Retorno de um envio. `reopened` avisa que a conversa estava encerrada e voltou
+ * a ficar aberta por causa deste envio — quem chama usa para corrigir a tela sem
+ * esperar o realtime.
+ */
+export type SendResult = {
+  conversation_id: string;
+  message_id: string;
+  evolution_message_id: string | null;
+  reopened: boolean;
+};
+
 export const messagesApi = {
+  /**
+   * Mensagens de uma conversa — ou de várias, quando o mesmo contato tem thread em
+   * mais de um canal do escritório.
+   *
+   * O WhatsApp entrega uma conversa por número nosso, então quem escreve para dois
+   * dos nossos números vira duas linhas em `whatsapp_conversations` (a chave única
+   * é `instance_id + remote_jid`). Para o escritório, porém, é uma pessoa só: o
+   * atendimento continua o mesmo, mude o número por onde ele chegou. Recebendo a
+   * lista de ids irmãos, a thread vira um histórico único ordenado no tempo.
+   */
   async listMessages(
-    conversationId: string,
+    conversationId: string | string[],
     opts?: { limit?: number; before?: string },
   ): Promise<WhatsAppMessage[]> {
-    let q = supabase.from(MSG_TABLE).select('*').eq('conversation_id', conversationId);
+    const ids = Array.isArray(conversationId) ? conversationId : [conversationId];
+    if (ids.length === 0) return [];
+    let q = supabase.from(MSG_TABLE).select('*');
+    q = ids.length === 1 ? q.eq('conversation_id', ids[0]) : q.in('conversation_id', ids);
     if (opts?.before) q = q.lt('wa_timestamp', opts.before);
     const limit = opts?.limit ?? 0;
     if (limit > 0) {
@@ -25,18 +50,20 @@ export const messagesApi = {
     return msgs;
   },
 
-  async sendText(params: { conversationId?: string; phone?: string; text: string; channelId?: string; replyToId?: string }): Promise<{ conversation_id: string; message_id: string; evolution_message_id: string | null }> {
+  async sendText(params: { conversationId?: string; phone?: string; text: string; channelId?: string; replyToId?: string; automated?: boolean }): Promise<SendResult> {
     const data = await invokeFn('evolution-send', {
       conversation_id: params.conversationId,
       phone: params.phone,
       text: params.text,
       channel_id: params.channelId,
       reply_to_id: params.replyToId,
+      automated: params.automated === true,
     });
     return {
       conversation_id: data.conversation_id,
       message_id: data.message_id,
       evolution_message_id: data.evolution_message_id ?? null,
+      reopened: data.reopened === true,
     };
   },
 
@@ -54,7 +81,7 @@ export const messagesApi = {
     return { storagePath: path, mimeType: mime, fileName: name, size: (file as File).size ?? (file as Blob).size ?? 0 };
   },
 
-  async sendMedia(params: SendMediaInput): Promise<{ conversation_id: string; message_id: string; evolution_message_id: string | null }> {
+  async sendMedia(params: SendMediaInput): Promise<SendResult> {
     const data = await invokeFn('evolution-send', {
       conversation_id: params.conversationId,
       phone: params.phone,
@@ -65,11 +92,13 @@ export const messagesApi = {
       mime_type: params.mimeType,
       file_name: params.fileName,
       reply_to_id: params.replyToId,
+      as_gif: params.asGif === true,
     });
     return {
       conversation_id: data.conversation_id,
       message_id: data.message_id,
       evolution_message_id: data.evolution_message_id ?? null,
+      reopened: data.reopened === true,
     };
   },
 

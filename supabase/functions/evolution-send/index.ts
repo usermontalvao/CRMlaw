@@ -2,7 +2,7 @@
  * evolution-send — envia mensagens pela Evolution e grava como outbound.
  *
  * action 'send' (padrão): { conversation_id?, phone?, channel_id?, type?, text?,
- *   storage_path?, mime_type?, file_name?, reply_to_id? }
+ *   storage_path?, mime_type?, file_name?, reply_to_id?, as_gif? }
  * action 'edit':  { action:'edit', message_id, text }
  * action 'block' | 'unblock': { action, conversation_id, reason }
  *   — bloqueia no WhatsApp via /chat/updateBlockStatus pelo remote_jid, marca a
@@ -205,14 +205,20 @@ Deno.serve(async (req: Request) => {
   let conversationId: string | null = body?.conversation_id || null;
   let instanceId: string | null = body?.channel_id || null;
   let sendTarget = '';
+  // Estado da conversa ANTES do envio — é o que decide a reabertura no fim.
+  let wasClosed = false;
+  let hadOwner = false;
 
   if (conversationId) {
     const { data: conv } = await admin.from('whatsapp_conversations')
-      .select('contact_phone, instance_id, remote_jid, is_blocked').eq('id', conversationId).maybeSingle();
+      .select('contact_phone, instance_id, remote_jid, is_blocked, status, assigned_user_id')
+      .eq('id', conversationId).maybeSingle();
     if (!conv) return json({ error: 'Conversa não encontrada' }, 404);
     if (conv.is_blocked) return json({ error: 'Contato bloqueado. Desbloqueie para enviar mensagens.' }, 409);
     sendTarget = conv.remote_jid || conv.contact_phone;
     instanceId = conv.instance_id;
+    wasClosed = conv.status === 'closed';
+    hadOwner = !!conv.assigned_user_id;
   } else {
     const phone = (body?.phone || '').toString().replace(/\D/g, '');
     if (!phone) return json({ error: 'Informe conversation_id ou phone' }, 400);
@@ -269,6 +275,7 @@ Deno.serve(async (req: Request) => {
   let fileName: string | null = body?.file_name || null;
   let mediaSize: number | null = null;
   const storagePath: string | null = body?.storage_path || null;
+  const asGif: boolean = body?.as_gif === true;
 
   if (type === 'text') {
     endpoint = `${base}/message/sendText/${inst}`;
@@ -293,6 +300,10 @@ Deno.serve(async (req: Request) => {
         ...(text ? { caption: text } : {}),
         ...(fileName ? { fileName } : {}),
         ...(quoted ? { quoted } : {}),
+        // GIF do seletor: sem `gifPlayback` o WhatsApp entrega um vídeo comum,
+        // com botão de play parado no lugar da animação em laço. É a mesma
+        // marca que a gente já lê na entrada para a coluna `is_animated`.
+        ...(asGif && mediatype === 'video' ? { gifPlayback: true } : {}),
       };
     }
   }
@@ -325,6 +336,9 @@ Deno.serve(async (req: Request) => {
     media_size: type === 'text' ? null : mediaSize,
     file_name: type === 'text' ? null : fileName,
     status: 'sent',
+    // Marca o que saiu como GIF para a NOSSA bolha também tocar em laço, mudo e
+    // sem controles — igual ao que já fazemos com o GIF que chega.
+    is_animated: asGif && type === 'video',
     sender_user_id: user?.id ?? (body?.sender_user_id ?? null),
     reply_to_id: replyToId,
     raw: evoRaw,
@@ -334,7 +348,42 @@ Deno.serve(async (req: Request) => {
     .insert(insertRow).select('id').single();
   if (insErr) return json({ error: insErr.message }, 500);
 
-  return json({ ok: true, message_id: inserted?.id, conversation_id: conversationId, evolution_message_id: evoId });
+  // Falar com o cliente É atender: quem escreve numa conversa encerrada a traz de
+  // volta para a operação. Sem isso ela seguia fora da fila, do funil e do SLA
+  // enquanto o atendimento acontecia dentro dela — invisível para a gestão.
+  //
+  // Só vale para envio de GENTE. Duas portas de saída:
+  //   · `isSystem` — cron/scheduler e followups de documento/assinatura/template
+  //     autenticam com service role e escrevem sozinhos; ressuscitariam conversas
+  //     que ninguém retomou.
+  //   · `automated` — regra do CRM que roda no navegador do atendente (ações de
+  //     etapa do funil). O JWT é de gente, mas a mensagem não é atendimento: uma
+  //     etapa "encerrar + avisar" reabriria o que ela mesma acabou de fechar.
+  const reopened = wasClosed && !isSystem && !!user && body?.automated !== true;
+  if (reopened) {
+    const patch: Record<string, unknown> = {
+      status: 'open',
+      reopened_at: new Date().toISOString(),
+      awaiting_accept: false,
+      transfer_pending_since: null,
+    };
+    // Quem escreveu assume o caso — reabrir jogando na fila de outra pessoa seria
+    // pior que deixar encerrado. Conversa que já tem dono não é tomada: takeover
+    // continua sendo ato explícito (botão Assumir), como no compositor.
+    if (!hadOwner) patch.assigned_user_id = user.id;
+    const { error: reopenErr } = await admin.from('whatsapp_conversations')
+      .update(patch).eq('id', conversationId);
+    // A mensagem já saiu: falhar a reabertura não pode falhar o envio.
+    if (reopenErr) console.error('reabertura por envio manual falhou', reopenErr);
+  }
+
+  return json({
+    ok: true,
+    message_id: inserted?.id,
+    conversation_id: conversationId,
+    evolution_message_id: evoId,
+    reopened,
+  });
 });
 
 async function handleEdit(admin: any, base: string, apikey: string, body: any) {

@@ -4,6 +4,7 @@ import { CalendarClock, Pencil, X, Loader2, Check, RotateCcw, Trash2, Wifi } fro
 import { whatsappService } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
 import { maskSensitive } from './format';
+import { WaRichText } from './WaRichTextView';
 import type { ConfirmFn } from './types';
 import type { WhatsAppScheduledMessage } from '../../types/whatsapp.types';
 
@@ -97,7 +98,13 @@ export const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMo
                 </div>
               </div>
             ) : (
-              s.body && <p className="text-[13px] text-slate-700 whitespace-pre-wrap break-words">{privateMode ? maskSensitive(s.body) : s.body}</p>
+              // Mesma leitura da bolha: sem a linha de assinatura e com as
+              // marcas do WhatsApp viradas em estilo. O que espera na fila tem
+              // que se parecer com o que o contato vai receber.
+              s.body && (
+                <WaRichText text={privateMode ? maskSensitive(s.body) : s.body} stripSignature
+                  className="block text-[13px] text-slate-700 whitespace-pre-wrap break-words" />
+              )
             )}
           </div>
         </div>
@@ -247,7 +254,10 @@ export const ScheduledMessagesPanel: React.FC<{ conversationId: string; canSched
                 </div>
               ) : (
                 <>
-                  {s.body && <p className="mt-1 text-[12px] text-slate-600 whitespace-pre-wrap break-words line-clamp-3">{s.body}</p>}
+                  {s.body && (
+                    <WaRichText text={s.body} stripSignature
+                      className="block mt-1 text-[12px] text-slate-600 whitespace-pre-wrap break-words line-clamp-3" />
+                  )}
                   {reconnectHold && <p className="mt-0.5 text-[10.5px] text-sky-600">Retida porque o canal está fora. Será enviada automaticamente quando reconectar.</p>}
                   {s.status === 'failed' && s.error && <p className="mt-0.5 text-[10.5px] text-red-500">{s.error}</p>}
                 </>

@@ -10,6 +10,8 @@ import {
   Image as ImageIcon, Video as VideoIcon,
 } from 'lucide-react';
 import { formatTime, typeLabel, maskSensitive, fmtAudioTime, formatBytes } from './format';
+import { WaRichText } from './WaRichTextView';
+import { waPlainText, stripAgentSignature } from './waRichText';
 import type { WhatsAppMessage } from '../../types/whatsapp.types';
 
 const WA_MESSAGE_MENU_EVENT = 'wa-message-menu-open';
@@ -149,24 +151,24 @@ export const MessageBubble: React.FC<{
         {repliedTo && (
           <div className={`mb-1.5 px-2 py-1.5 rounded-md border-l-[3px] text-[12px] border-[#00a884] ${out ? 'bg-black/[0.045]' : 'bg-[#f0f2f5]'}`}>
             <span className="block font-semibold text-[#008069]">{repliedTo.direction === 'out' ? 'Você' : 'Contato'}</span>
-            <span className="block truncate text-slate-500">{repliedTo.content || typeLabel(repliedTo.type)}</span>
+            {/* Citação é resumo de uma linha: as marcas saem, não viram estilo. */}
+            <span className="block truncate text-slate-500">
+              {repliedTo.content
+                ? waPlainText(stripAgentSignature(repliedTo.content))
+                : typeLabel(repliedTo.type)}
+            </span>
           </div>
         )}
 
         <MediaContent m={m} out={out} onOpenImage={onOpenImage} />
 
         {m.content && m.type !== 'text' && (
-          <span className="block mt-1 whitespace-pre-wrap break-words">
-            {privateMode ? maskSensitive(m.content) : m.content}
-          </span>
+          <WaRichText text={privateMode ? maskSensitive(m.content) : m.content}
+            className="block mt-1 whitespace-pre-wrap break-words" />
         )}
         {m.content && m.type === 'text' && (
-          <span className="whitespace-pre-wrap break-words">
-            {(() => {
-              const raw = out ? m.content.replace(/^\*[^*]+:\*\n/, '') : m.content;
-              return privateMode ? maskSensitive(raw) : raw;
-            })()}
-          </span>
+          <WaRichText text={privateMode ? maskSensitive(m.content) : m.content} stripSignature={out}
+            className="whitespace-pre-wrap break-words" />
         )}
 
         <span className={mediaOnly

@@ -29,7 +29,7 @@ export interface WaMessagesApi {
  * thread em silêncio (merge) para eventos de tempo real. Não dispara markRead nem
  * mexe na lista de conversas — isso fica no módulo (domínio de conversa).
  */
-export function useWaMessages(selectedId: string | null): WaMessagesApi {
+export function useWaMessages(selectedId: string | null, threadIds?: readonly string[]): WaMessagesApi {
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [hasMoreMsgs, setHasMoreMsgs] = useState(false);
@@ -48,10 +48,23 @@ export function useWaMessages(selectedId: string | null): WaMessagesApi {
   /** A resposta que acabou de chegar ainda é da conversa que está na tela? */
   const stale = (convId: string) => activeConvRef.current !== convId;
 
+  // Quais linhas alimentam a thread. Quando o mesmo contato tem conversa em mais
+  // de um canal do escritório, a janela é a união delas — é uma pessoa só, e o
+  // histórico dela não se parte porque a mensagem entrou por outro número nosso.
+  // Guardado em ref (e não em dep de callback) porque a lista chega recalculada a
+  // cada render da inbox; o que importa para invalidar é a conversa aberta.
+  const threadIdsRef = useRef<readonly string[]>([]);
+  threadIdsRef.current = threadIds && threadIds.length > 0 ? threadIds : (selectedId ? [selectedId] : []);
+  /** Alvo de busca para a conversa pedida: ela sozinha, ou o grupo de irmãs. */
+  const scopeFor = (convId: string): string[] => {
+    const ids = threadIdsRef.current;
+    return ids.includes(convId) ? [...ids] : [convId];
+  };
+
   const loadMessages = useCallback(async (convId: string) => {
     setLoadingMsgs(true);
     try {
-      const msgs = await whatsappService.listMessages(convId, { limit: MSG_PAGE });
+      const msgs = await whatsappService.listMessages(scopeFor(convId), { limit: MSG_PAGE });
       if (stale(convId)) return;
       setMessages(msgs);
       setHasMoreMsgs(msgs.length === MSG_PAGE);
@@ -68,7 +81,7 @@ export function useWaMessages(selectedId: string | null): WaMessagesApi {
     if (!convId || !oldestTsRef.current || loadingMore) return;
     setLoadingMore(true);
     try {
-      const older = await whatsappService.listMessages(convId, { limit: MSG_PAGE, before: oldestTsRef.current });
+      const older = await whatsappService.listMessages(scopeFor(convId), { limit: MSG_PAGE, before: oldestTsRef.current });
       if (stale(convId)) return;
       if (older.length === 0) { setHasMoreMsgs(false); return; }
       oldestTsRef.current = older[0]?.wa_timestamp ?? oldestTsRef.current;
@@ -85,7 +98,7 @@ export function useWaMessages(selectedId: string | null): WaMessagesApi {
   // já carregadas e embaralhava o scroll de quem está lendo o histórico.
   const refreshMessages = useCallback(async (convId: string) => {
     try {
-      const latest = await whatsappService.listMessages(convId, { limit: MSG_PAGE });
+      const latest = await whatsappService.listMessages(scopeFor(convId), { limit: MSG_PAGE });
       // Mesma guarda do carregamento inicial, e aqui ela pega um caso a mais: o
       // envio dispara `refreshMessages` da conversa em que se escreveu, e trocar
       // de conversa logo após enviar é rotina. A resposta que chegava depois

@@ -29,6 +29,8 @@ const DOWN_GRACE_MS = 2500;
 
 interface WaRealtimeArgs {
   selectedId: string | null;
+  /** Linhas que compõem a thread aberta (o mesmo contato em vários canais). */
+  threadIds?: readonly string[];
   loadConversations: () => void;
   refreshMessages: (convId: string) => void;
   setConversations: React.Dispatch<React.SetStateAction<WhatsAppConversation[]>>;
@@ -49,7 +51,7 @@ export interface WaRealtimeApi {
  * de bootstrap (canais, setores, staff) — esses ficam no módulo.
  */
 export function useWaRealtime({
-  selectedId, loadConversations, refreshMessages,
+  selectedId, threadIds, loadConversations, refreshMessages,
   setConversations, setMessages,
 }: WaRealtimeArgs): WaRealtimeApi {
   // Fase J: sessão de IA da conversa selecionada.
@@ -60,6 +62,11 @@ export function useWaRealtime({
   // dependências vazias, para o canal não ser derrubado e refeito a cada render.
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+  // A thread aberta pode ser alimentada por mais de uma linha: mensagem que chega
+  // pelo outro número do escritório pertence à mesma conversa e precisa aparecer
+  // na hora, sem esperar o atendente trocar de conversa e voltar.
+  const threadIdsRef = useRef<readonly string[]>([]);
+  threadIdsRef.current = threadIds && threadIds.length > 0 ? threadIds : (selectedId ? [selectedId] : []);
   const loadConversationsRef = useRef(loadConversations);
   loadConversationsRef.current = loadConversations;
   const refreshMessagesRef = useRef(refreshMessages);
@@ -145,7 +152,8 @@ export function useWaRealtime({
             return;
           }
         }
-        if (convId === selectedIdRef.current) refreshMessagesRef.current(convId);
+        const open = selectedIdRef.current;
+        if (open && threadIdsRef.current.includes(convId)) refreshMessagesRef.current(open);
       },
       onStatusChange: (status) => {
         if (status === 'down') {

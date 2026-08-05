@@ -8,7 +8,7 @@ import {
   Clock, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw, RefreshCw,
   StickyNote, Trash2, CalendarClock, MessageSquare, Filter, Maximize2,
   UserPlus, UserMinus, PenLine, HandCoins, ListTodo, FilePlus,
-  Sparkles, Tag, Tags, Bot,
+  Sparkles, Tag, Tags, Bot, Clapperboard,
   Shield, ShieldCheck, Eye, EyeOff,
   BarChart2, TrendingUp, Users, AlertTriangle, Clock3, CheckCircle, Inbox,
   Mail, MapPin, Play, Pause, Bell, BellOff, Info, MoreVertical, BellRing,
@@ -20,7 +20,7 @@ import {
 import { useStaffPush } from './whatsapp/hooks/useStaffPush';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
 import { muteStore } from '../services/whatsapp/muteStore';
-import { whatsappService, normalizePhone, samePhone, renderTemplate, agentPermissions, summarizeOverview, DEFAULT_AGENT_PREFS, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
+import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, DEFAULT_AGENT_PREFS, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
 import type { WhatsAppScheduledMessage } from '../types/whatsapp.types';
 import {
   formatTime, initials, prettyPhone, formatBytes, dayLabel, lastSeenLabel, presenceInfo,
@@ -56,9 +56,17 @@ import { QuickActions } from './whatsapp/quickActions';
 import { useWaViewers } from './whatsapp/hooks/useWaViewers';
 import { viewersLabel } from '../services/whatsapp/inboxPresenceState';
 import { imagesFromClipboard } from '../utils/clipboardImages';
+import { applyWaFormat, formatFromKey, type WaFormat } from './whatsapp/composerFormat';
+import {
+  ChannelSwitcher, ChannelDownBanner, ChannelDownAlert, ReconnectHoldSiren,
+} from './whatsapp/channelSwitcher';
+import { GifPicker } from './whatsapp/gifPicker';
+import { giphyService } from '../services/giphy.service';
+import { sendReconnectHoldsThroughChannel } from '../services/whatsapp/resilientSend';
 import { ConversationFunnelBoard } from './whatsapp/conversationFunnelBoard';
 import { nextLeadChannelFilter } from './whatsapp/channelFilterSync';
 import { hiddenByStatusFilter, searchRank } from './whatsapp/inboxStatusScope';
+import { collapseContactThreads, contactKey, siblingThreadIds } from './whatsapp/contactThreads';
 import {
   INBOX_FILTER_KEYS, readFilter, writeFilter, canSanitize,
   sanitizeChannelFilter, sanitizeDeptFilter, sanitizeLabelFilter,
@@ -244,6 +252,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   // Menu "+" do composer (documento, modelo, agendar) — mantém a barra enxuta.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [gifOpen, setGifOpen] = useState(false);
   // Menu do sino: unifica som das notificações + push do navegador num só ícone.
   // Web Push do staff: avisa o atendente mesmo com o navegador fechado.
   const { pushState, toggleStaffPush } = useStaffPush();
@@ -260,6 +269,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     if (!embedded) localStorage.setItem('wa_details_panel_collapsed', detailsPanelCollapsed ? '1' : '0');
   }, [detailsPanelCollapsed, embedded]);
   const [channels, setChannels] = useState<WhatsAppChannel[]>([]);
+  // Pendências persistidas do atendente logado. É propositalmente global ao
+  // módulo (não pertence à conversa aberta): a sirene precisa sobreviver quando
+  // ele troca de cliente, fecha a thread ou recarrega a página.
+  const [reconnectAlerts, setReconnectAlerts] = useState<WhatsAppScheduledMessage[]>([]);
   const [departments, setDepartments] = useState<WhatsAppDepartment[]>([]);
   const [departmentMembers, setDepartmentMembers] = useState<Record<string, string[]>>({});
   const [businessHoursByChannel, setBusinessHoursByChannel] = useState<Record<string, WhatsAppBusinessHoursRow[]>>({});
@@ -367,24 +380,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const avatarTriedRef = useRef<Set<string>>(new Set());
 
   const channelById = useMemo(() => new Map(channels.map(c => [c.id, c])), [channels]);
+  const conversationsById = useMemo(
+    () => new Map(conversations.map(c => [c.id, c])),
+    [conversations],
+  );
 
-  // Conversa do canal com o PRÓPRIO número. Mandar mensagem para si mesmo é
-  // recurso do WhatsApp e é o jeito natural de testar um canal recém-conectado —
-  // mas o resultado entra na inbox como se fosse atendimento, com o nome do
-  // cliente vinculado, e vira um par que parece conversa duplicada na busca.
-  // Não é fila de trabalho: sai da lista, dos contadores e da busca.
-  //
-  // A comparação é por variantes do 9º dígito (`samePhone`): o canal se cadastra
-  // com o número novo (5565 9 8404-6375) e a conversa costuma chegar no formato
-  // antigo (5565 8404-6375) — igualdade literal não casaria os dois.
-  const selfChatIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const c of conversations) {
-      const canal = c.instance_id ? channelById.get(c.instance_id) : null;
-      if (canal?.phone_number && samePhone(c.contact_phone, canal.phone_number)) ids.add(c.id);
-    }
-    return ids;
-  }, [conversations, channelById]);
   const deptById = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
   const channelRoutingById = useMemo(() => new Map(channelRouting.map(item => [item.channel_id, item])), [channelRouting]);
   const staffByUser = useMemo(() => new Map(staff.map(s => [s.user_id, s.name])), [staff]);
@@ -397,6 +397,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const selected = useMemo(
     () => conversations.find(c => c.id === selectedId) || null,
     [conversations, selectedId],
+  );
+  // Linhas da MESMA pessoa. O escritório tem mais de um número, e quem escreve
+  // para dois deles ganha uma conversa em cada — mas continua sendo um contato só,
+  // com um histórico só. A thread aberta é a união dessas linhas; a resposta segue
+  // saindo pelo canal da conversa selecionada.
+  const threadIds = useMemo(
+    () => siblingThreadIds(selected, conversations),
+    [selected, conversations],
   );
   const funnelLabelsForChannel = useCallback((channelId: string | null | undefined) => {
     if (!channelId) return baseFunnelLabels;
@@ -529,7 +537,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     loadingMsgs, hasMoreMsgs, setHasMoreMsgs, loadingMore,
     oldestTsRef,
     loadMessages, loadMoreMsgs, refreshMessages,
-  } = useWaMessages(selectedId);
+  } = useWaMessages(selectedId, threadIds);
 
   // Horário de atendimento de todos os canais numa consulta só: é o que faz o
   // SLA contar expediente (e não madrugada) e o que decide a mensagem de
@@ -541,11 +549,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       .catch(() => {});
   }, []);
 
+  const loadChannels = useCallback(() => {
+    whatsappService.listChannels().then(setChannels).catch(() => {});
+  }, []);
+
+  const loadReconnectAlerts = useCallback(() => {
+    if (!user?.id) { setReconnectAlerts([]); return; }
+    whatsappService.listMyReconnectAlerts().then(setReconnectAlerts).catch(() => {});
+  }, [user?.id]);
+
   // Bootstrap dos dados auxiliares (uma vez). O fluxo reativo (realtime de
   // conversa/mensagem/IA) vive em useWaRealtime.
   useEffect(() => {
     loadConversations();
-    whatsappService.listChannels().then(setChannels).catch(() => {});
+    loadChannels();
     whatsappService.listDepartments().then(setDepartments).catch(() => {});
     settingsService.getWhatsAppChannelDepartmentRouting().then(setChannelRouting).catch(() => {});
     whatsappService.listStaff().then(setStaff).catch(() => {});
@@ -554,7 +571,33 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     // mandar conversa de um setor para quem não pertence a ele.
     whatsappService.listAllDepartmentMembers().then(setDepartmentMembers).catch(() => {});
     loadBusinessHours();
-  }, [loadConversations, loadBusinessHours]);
+  }, [loadConversations, loadBusinessHours, loadChannels]);
+
+  // Estado do canal é dado operacional, não configuração estática. Se um
+  // número cair enquanto a tela está aberta, o modal preventivo precisa reagir
+  // antes do próximo envio; quando voltar, a UI libera a conversa de imediato.
+  useEffect(() => whatsappService.subscribeChannels(loadChannels), [loadChannels]);
+
+  // A sirene é pessoal (`created_by = usuário atual`) e reage a inserts/updates
+  // do scheduler. Foco/online são uma segunda rede de segurança para eventos
+  // perdidos enquanto o notebook dormia ou o socket estava fora.
+  useEffect(() => {
+    loadReconnectAlerts();
+    if (!user?.id) return undefined;
+    const unsubscribe = whatsappService.subscribeMyReconnectAlerts(user.id, loadReconnectAlerts);
+    const refreshVisible = () => {
+      if (document.visibilityState === 'visible') loadReconnectAlerts();
+    };
+    window.addEventListener('focus', refreshVisible);
+    window.addEventListener('online', refreshVisible);
+    document.addEventListener('visibilitychange', refreshVisible);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', refreshVisible);
+      window.removeEventListener('online', refreshVisible);
+      document.removeEventListener('visibilitychange', refreshVisible);
+    };
+  }, [user?.id, loadReconnectAlerts]);
 
   // Recarrega o expediente quando ele é salvo nas configurações do canal (a tela
   // de integração fica em outro módulo; sem este aviso, o SLA e a mensagem de
@@ -573,7 +616,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   );
 
   const { aiSession, setAiSession, realtimeStatus } = useWaRealtime({
-    selectedId, loadConversations, refreshMessages,
+    selectedId, threadIds, loadConversations, refreshMessages,
     setConversations, setMessages, setSelectedId,
   });
 
@@ -593,7 +636,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     handleSend, beginEdit,
     retryPending, discardPending, cancelUpload, resendExisting,
     startRecording, stopRecording,
-    onPickFiles, handleDroppedFiles, confirmStagedSend,
+    onPickFiles, handleDroppedFiles, confirmStagedSend, sendGif,
   } = useWaComposer({
     selectedId, selected, user, agentPrefs, moduleConfig, staffById, aiSession,
     messages, setMessages, setConversations, refreshMessages,
@@ -653,6 +696,40 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // pt-BR do editor jurídico roda após uma pequena pausa e desenha somente o
   // ondulado vermelho em cima do campo, como nos compositores modernos.
   const composerSpellcheck = useWaComposerSpellcheck(draft, !recording && !slashActive);
+
+  // ── Formatação do texto selecionado (negrito/itálico/riscado/mono) ──
+  // O WhatsApp não tem editor rico: a formatação é o próprio texto, marcado
+  // com *, _, ~ e ```. A barra só existe enquanto há trecho selecionado.
+  const [textSel, setTextSel] = useState<{ start: number; end: number } | null>(null);
+
+  const syncTextSel = useCallback(() => {
+    const ta = draftRef.current;
+    if (!ta) return;
+    const { selectionStart: s, selectionEnd: e } = ta;
+    setTextSel(e > s ? { start: s, end: e } : null);
+  }, []);
+
+  const aplicarFormato = useCallback((fmt: WaFormat) => {
+    const ta = draftRef.current;
+    if (!ta) return;
+    // Lê a seleção do próprio DOM: entre o clique e aqui ela pode ter mudado,
+    // e formatar o intervalo errado estragaria a mensagem em silêncio.
+    const r = applyWaFormat(ta.value, ta.selectionStart, ta.selectionEnd, fmt);
+    if (!r.changed) return;
+    setDraft(r.text);
+    // O texto novo só existe no DOM depois do render; a seleção é reposta
+    // depois, senão o cursor cai no fim e o encadeamento (negrito → itálico)
+    // não funciona.
+    requestAnimationFrame(() => {
+      const el = draftRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(r.selectionStart, r.selectionEnd);
+      setTextSel({ start: r.selectionStart, end: r.selectionEnd });
+    });
+  }, [setDraft]);
+
+  useEffect(() => { if (!draft) setTextSel(null); }, [draft]);
   const closeComposerSpellMenu = useCallback(() => setComposerSpellMenu(null), []);
   const openComposerSpellMenu = useCallback((event: React.MouseEvent<HTMLTextAreaElement>) => {
     const textarea = event.currentTarget;
@@ -825,16 +902,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const searching = q.length > 0;
-    return conversations
+    const ordenadas = conversations
       .filter(c => {
         // Fase 0: conversa sem nenhuma mensagem (last_message_at nulo) é rascunho de
         // "Nova conversa" aberta mas sem primeiro envio — não polui a inbox. Fica
         // visível apenas enquanto está aberta na thread; ao sair sem enviar, some.
         if (!c.last_message_at && c.id !== selectedId) return false;
-        // Conversa do canal consigo mesmo: fora da fila. A exceção do selecionado
-        // segue a mesma regra do rascunho acima — o que está aberto na thread não
-        // some da lista debaixo de quem está olhando.
-        if (selfChatIds.has(c.id) && c.id !== selectedId) return false;
         if (filter === 'unread' && c.unread_count === 0) return false;
         if (filter === 'mine' && c.assigned_user_id !== user?.id) return false;
         // A dimensão de status (e a concessão que a busca faz nela) mora em
@@ -862,7 +935,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         const tb = b.last_message_at || b.created_at;
         return tb < ta ? -1 : tb > ta ? 1 : 0;
       });
-  }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, selfChatIds]);
+    // Uma linha por PESSOA — na FILA. O mesmo contato em dois números do
+    // escritório rendia duas linhas idênticas, nome igual e foto igual, lidas
+    // como duplicata; a thread já mostra o histórico das duas juntas, e aqui a
+    // lista passa a falar a mesma língua. A conversa aberta é sempre a
+    // sobrevivente do grupo dela, para o clique não trocar a thread debaixo de
+    // quem está lendo.
+    //
+    // Vale na busca também: procurar por uma pessoa e receber duas linhas dela é
+    // o mesmo defeito da fila. O arquivo não se perde por isso — o histórico das
+    // linhas encerradas já vem dentro da thread da conversa viva, e o filtro
+    // "Encerradas" continua listando cada uma delas separadamente.
+    return collapseContactThreads(ordenadas, selectedId);
+  }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
 
   // As encerradas que a BUSCA trouxe do arquivo. A lista as usa para duas coisas:
   // desenhar a divisória "Encerradas" onde o grupo começa e pintar essas linhas
@@ -1004,7 +1089,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     const searching = q.length > 0;
     const base = conversations.filter(c => {
       if (!c.last_message_at && c.id !== selectedId) return false;
-      if (selfChatIds.has(c.id) && c.id !== selectedId) return false;
       // MESMA regra da lista, pela mesma função: quando a busca traz encerradas
       // do arquivo, elas precisam contar aqui também. Enquanto isto ficou de
       // fora, as abas mostravam "Todas (0)" com três conversas na tela.
@@ -1019,12 +1103,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       if (q && !matchesConversationSearch(c, q)) return false;
       return true;
     });
+    // Mesma regra da lista: a aba conta PESSOAS, não linhas.
+    const porPessoa = collapseContactThreads(base, selectedId);
     return {
-      all: base.length,
-      unread: base.filter(c => !c.is_blocked && c.unread_count > 0).length,
-      mine: base.filter(c => c.assigned_user_id === user?.id).length,
+      all: porPessoa.length,
+      unread: porPessoa.filter(c => !c.is_blocked && c.unread_count > 0).length,
+      mine: porPessoa.filter(c => c.assigned_user_id === user?.id).length,
     };
-  }, [conversations, search, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, selfChatIds]);
+  }, [conversations, search, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
 
   const anyConnected = channels.some(c => c.status === 'connected');
   const connectedChannels = useMemo(() => channels.filter(c => c.status === 'connected'), [channels]);
@@ -1086,6 +1172,72 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Drag and drop de arquivos na thread → useThreadDragDrop (estado do overlay +
   // handlers). O envio em si (sendFile, staging, retry/resend) vive em useWaComposer.
   const { dragOver, dragProps } = useThreadDragDrop(!!selected && !editing, handleDroppedFiles);
+
+  // ── Trocar o canal por onde se fala com este contato ──
+  // Não move a conversa: cada número do escritório tem a SUA thread com o
+  // contato (é assim do lado do WhatsApp também). `openConversation` reabre a
+  // existente ou cria a que faltava, e a thread aberta passa a ser aquela.
+  const [switchingChannelId, setSwitchingChannelId] = useState<string | null>(null);
+  const selectedChannel = selected?.instance_id ? channelById.get(selected.instance_id) ?? null : null;
+  // O alerta de canal fora reaparece a cada conversa aberta: dispensar vale para
+  // aquela conversa, não para o problema (que continua até o canal voltar).
+  const [channelAlertOk, setChannelAlertOk] = useState<Set<string>>(new Set());
+  const channelDown = !!selectedChannel && selectedChannel.status !== 'connected' && !selected?.is_blocked;
+  const showChannelAlert = channelDown && !!selected && !channelAlertOk.has(selected.id);
+  const channelAlternatives = useMemo(
+    () => connectedChannels.filter(c => c.id !== selectedChannel?.id),
+    [connectedChannels, selectedChannel?.id],
+  );
+  const switchConversationChannel = useCallback(async (channelId: string) => {
+    if (!selected || channelId === selected.instance_id) return;
+    const alvo = channelById.get(channelId);
+    if (!selected.contact_phone) {
+      toast.warning('Conversa sem telefone', 'Não dá para abrir este contato em outro canal.');
+      return;
+    }
+    setSwitchingChannelId(channelId);
+    try {
+      const { conversation_id } = await whatsappService.openConversation({
+        phone: selected.contact_phone,
+        channelId,
+        clientId: selected.client_id ?? null,
+        contactName: selected.contact_name ?? null,
+        departmentId: channelRoutingById.get(channelId)?.default_department_id || null,
+      });
+      // A troca não pode abandonar o que já ficou preso na thread anterior.
+      // Somente as retenções do usuário logado são movidas e reenviadas, na
+      // ordem em que ele as escreveu; mensagens de colegas permanecem com eles.
+      const resent = await sendReconnectHoldsThroughChannel({
+        sourceConversationId: selected.id,
+        targetConversationId: conversation_id,
+        targetChannelId: channelId,
+      });
+      await handleConversationOpened(conversation_id);
+      loadReconnectAlerts();
+      const channelLabel = alvo?.name || alvo?.instance_name || 'outro canal';
+      if (resent.total === 0) {
+        toast.success('Canal trocado', `Agora falando pelo ${channelLabel}.`);
+      } else if (resent.failed === 0) {
+        toast.success(
+          'Canal trocado e mensagens enviadas',
+          `${resent.sent === 1 ? 'A mensagem presa foi enviada' : `${resent.sent} mensagens presas foram enviadas`} pelo ${channelLabel}.`,
+        );
+      } else {
+        toast.warning(
+          'Canal trocado com pendência',
+          `${resent.sent} enviada${resent.sent === 1 ? '' : 's'}; ${resent.failed} ainda não enviada${resent.failed === 1 ? '' : 's'}. A sirene continuará ativa.`,
+        );
+      }
+    } catch (e: any) {
+      toast.error('Não foi possível trocar de canal', e?.message);
+    } finally {
+      setSwitchingChannelId(null);
+    }
+  }, [selected, channelById, channelRoutingById, handleConversationOpened, loadReconnectAlerts, toast]);
+
+  const openReconnectAlert = useCallback((conversationId: string) => {
+    void handleConversationOpened(conversationId);
+  }, [handleConversationOpened]);
 
   // Print da tela colado com Ctrl+V / Cmd+V vira anexo, pelo mesmo caminho do
   // arrastar-e-soltar (abre o preview com legenda).
@@ -1351,6 +1503,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
   return (
     <div className="relative flex flex-col h-full min-h-0 bg-[#faf9f7]">
+      <ReconnectHoldSiren
+        items={reconnectAlerts}
+        conversationsById={conversationsById}
+        channelsById={channelById}
+        privateMode={privateMode}
+        onOpen={openReconnectAlert}
+      />
       {/* ── Painel de Leads embutido (funil comercial/jurídico) ──
           A altura segue o CONTEÚDO (sem espaço em branco). A revelação anima por
           max-height (clip, sem reflow do funil); o atendimento é empurrado para
@@ -1609,6 +1768,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   ) : null; })()}
                 </div>
               </div>
+              {/* Canal da conversa: por qual número se está falando, com o estado
+                  da conexão à vista e a troca a um clique. Fica FORA da linha de
+                  subtítulo (que tem overflow-hidden e cortaria o menu). */}
+              {channels.length > 0 && (
+                <ChannelSwitcher channels={channels} currentId={selected.instance_id}
+                  busyId={switchingChannelId} compact={isMobile} onSwitch={switchConversationChannel} />
+              )}
               {/* Ações em ícone com tooltip — não quebram o layout (Fase 10.1) */}
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 {selected.awaiting_accept && (selected.assigned_user_id === user?.id || !selected.assigned_user_id) && (
@@ -1945,7 +2111,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 border-l-2 border-slate-400">
                   <CheckCircle2 size={14} className="text-slate-500 flex-shrink-0" />
                   <p className="flex-1 text-[12px] text-slate-600">
-                    Atendimento encerrado{selected.closure_reason ? ` — ${selected.closure_reason}` : ''}. Reabre sozinho se o cliente voltar a falar.
+                    Atendimento encerrado{selected.closure_reason ? ` — ${selected.closure_reason}` : ''}. Reabre sozinho se o cliente voltar a falar ou assim que você enviar uma mensagem por aqui.
                   </p>
                   <button onClick={handleReopen}
                     className="flex-shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-700 hover:underline">
@@ -1985,6 +2151,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   title="Não é descadastro"
                   className="flex-shrink-0 text-violet-400 hover:text-violet-700 text-[12px]">✕</button>
               </div>
+            )}
+
+            {/* Canal fora do ar: o alerta escurece a tela ao abrir a conversa; a
+                faixa fica de lembrete depois de dispensado. Mensagem que não sai
+                sem ninguém perceber é o defeito que não pode acontecer. */}
+            {showChannelAlert && selectedChannel && (
+              <ChannelDownAlert channel={selectedChannel} alternatives={channelAlternatives}
+                busyId={switchingChannelId} onSwitch={switchConversationChannel}
+                onDismiss={() => setChannelAlertOk(prev => new Set(prev).add(selected.id))} />
+            )}
+            {channelDown && selectedChannel && (
+              <ChannelDownBanner channel={selectedChannel} alternatives={channelAlternatives}
+                busyId={switchingChannelId} onSwitch={switchConversationChannel} />
             )}
 
             {/* Composer (ou aviso de bloqueio) */}
@@ -2036,6 +2215,18 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     <input ref={imgInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => onPickFiles(e, 'media')} />
                     <input ref={docInputRef} type="file" className="hidden" onChange={e => onPickFiles(e, 'document')} />
                     {/* Backdrop p/ fechar o widget flutuante ao tocar fora */}
+                    {gifOpen && <div className="fixed inset-0 z-20" onClick={() => setGifOpen(false)} />}
+                    {gifOpen && (
+                      <GifPicker onClose={() => setGifOpen(false)}
+                        onPick={async item => {
+                          setGifOpen(false);
+                          try {
+                            void sendGif(await giphyService.baixar(item));
+                          } catch (e: any) {
+                            toast.error('GIF não enviado', e?.message || 'Falha ao baixar o GIF.');
+                          }
+                        }} />
+                    )}
                     {attachMenuOpen && <div className="fixed inset-0 z-20" onClick={() => setAttachMenuOpen(false)} />}
                     {/* Menu de anexos acima do botão "+" integrado ao compositor. */}
                     {attachMenuOpen && (() => {
@@ -2047,6 +2238,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                             <style>{`@keyframes waPop{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}`}</style>
                             <button className={row} onClick={run(() => imgInputRef.current?.click())}><span className={`${dot} bg-amber-100 text-amber-700`}><ImageIcon size={17} /></span> Imagem ou vídeo</button>
                             <button className={row} onClick={run(() => docInputRef.current?.click())}><span className={`${dot} bg-amber-100 text-amber-700`}><Paperclip size={17} /></span> Documento</button>
+                            <button className={row} onClick={run(() => setGifOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><Clapperboard size={17} /></span> GIF</button>
                             <button className={row} onClick={run(() => setTemplateOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><MessageSquare size={17} /></span> Modelo de mensagem</button>
                             {perms.canSchedule && (
                               <button className={row} onClick={run(() => setScheduleOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><CalendarClock size={17} /></span> Agendar mensagem</button>
@@ -2088,6 +2280,27 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                         </div>
                       </div>
                     )}
+                    {/* Barra de formatação: aparece com texto selecionado.
+                        `onMouseDown` com preventDefault é o que segura o foco no
+                        campo — sem isso o clique no botão tira a seleção antes
+                        de o handler rodar, e não haveria o que formatar. */}
+                    {textSel && !slashActive && !recording && (
+                      <div className="absolute bottom-full left-0 mb-2 z-30 flex items-center gap-0.5 p-1 rounded-xl bg-[#233138] shadow-xl ring-1 ring-black/10"
+                        onMouseDown={e => e.preventDefault()}>
+                        {([
+                          ['bold', 'Negrito', 'Ctrl+B', <b key="b">B</b>],
+                          ['italic', 'Itálico', 'Ctrl+I', <i key="i" className="font-serif">I</i>],
+                          ['strike', 'Riscado', 'Ctrl+Shift+X', <s key="s">S</s>],
+                          ['mono', 'Monoespaçado', null, <span key="m" className="font-mono text-[12px]">{'</>'}</span>],
+                        ] as Array<[WaFormat, string, string | null, React.ReactNode]>).map(([fmt, nome, atalho, icone]) => (
+                          <button key={fmt} onClick={() => aplicarFormato(fmt)}
+                            title={atalho ? `${nome} (${atalho})` : nome}
+                            className="w-8 h-8 rounded-lg text-white/75 hover:text-white hover:bg-white/15 transition flex items-center justify-center text-[14px]">
+                            {icone}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {!slashActive && (
                       <ComposerSpellcheckOverlay text={draft} issues={composerSpellcheck.issues}
                         scrollTop={composerScrollTop} scrollbarWidth={composerScrollbarWidth} />
@@ -2095,7 +2308,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     <textarea ref={draftRef} value={draft} onChange={e => setDraft(e.target.value)}
                       onScroll={e => setComposerScrollTop(e.currentTarget.scrollTop)}
                       onContextMenu={openComposerSpellMenu}
+                      onSelect={syncTextSel}
+                      onBlur={() => setTextSel(null)}
                       onKeyDown={e => {
+                        const fmt = formatFromKey(e.key, e.ctrlKey || e.metaKey, e.shiftKey);
+                        if (fmt) { e.preventDefault(); aplicarFormato(fmt); return; }
                         if (slashActive) {
                           if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => Math.min(i + 1, slashResults.length - 1)); return; }
                           if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex(i => Math.max(i - 1, 0)); return; }

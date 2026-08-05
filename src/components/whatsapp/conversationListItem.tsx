@@ -11,6 +11,7 @@ import {
   slaSignal, slaInternalSignal, abandonedSignal, transferAlert,
 } from './format';
 import type { ElapsedMinutes } from './businessTime';
+import { waPlainText } from './waRichText';
 import { resolveLabelMeta } from './funnel';
 import { Avatar } from './avatar';
 
@@ -149,7 +150,9 @@ export const ConversationListItem: React.FC<{
             </span>
           ) : (
             <span className="text-[12px] text-slate-500 truncate">
-              {c.last_message_direction === 'out' ? 'Você: ' : ''}{privateMode ? '••••••••' : (c.last_message_preview || '—')}
+              {/* Prévia de uma linha: as marcas do WhatsApp saem do caminho. */}
+              {c.last_message_direction === 'out' ? 'Você: ' : ''}
+              {privateMode ? '••••••••' : (waPlainText(c.last_message_preview || '') || '—')}
             </span>
           )}
           {!c.is_blocked && c.unread_count > 0 && (

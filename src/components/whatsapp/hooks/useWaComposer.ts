@@ -64,6 +64,7 @@ export interface WaComposerApi {
   onPickFiles: (e: React.ChangeEvent<HTMLInputElement>, kind: 'media' | 'document') => void;
   handleDroppedFiles: (files: File[]) => void;
   confirmStagedSend: (caption: string, files: File[]) => void;
+  sendGif: (file: File) => Promise<void>;
 }
 
 /**
@@ -100,7 +101,12 @@ export function useWaComposer({
       mimeType: input.mimeType,
       fileName: input.fileName,
     });
-    toast.success('Mensagem na fila', 'Ela será enviada automaticamente quando o canal reconectar.');
+    // Não é sucesso: o cliente ainda NÃO recebeu. A sirene global, alimentada
+    // pela linha persistida acima, continua na tela até o envio se resolver.
+    toast.warning(
+      'Mensagem não enviada',
+      'O canal está indisponível. A mensagem ficou retida; troque de canal ou aguarde a reconexão.',
+    );
     return true;
   }, [selected, toast]);
 
@@ -240,6 +246,33 @@ export function useWaComposer({
     )));
   }, []);
 
+  /**
+   * Fecha o ciclo de um envio bem-sucedido: liga a bolha otimista à mensagem do
+   * servidor e, quando o envio reabriu uma conversa encerrada, corrige a tela na
+   * hora — sem esperar o realtime. O servidor é quem decide a reabertura (só vale
+   * para envio humano); aqui apenas espelhamos o que ele já gravou.
+   */
+  const settleSend = useCallback((
+    conversationId: string,
+    tempId: string,
+    result: { message_id: string; evolution_message_id: string | null; reopened: boolean },
+  ) => {
+    bindPendingToServerMessage(tempId, result.message_id, result.evolution_message_id);
+    if (!result.reopened) return;
+    const at = new Date().toISOString();
+    setConversations(prev => prev.map(c => (c.id === conversationId
+      ? {
+          ...c,
+          status: 'open',
+          reopened_at: at,
+          awaiting_accept: false,
+          transfer_pending_since: null,
+          // Mesma regra do servidor: quem escreveu assume só se não havia dono.
+          assigned_user_id: c.assigned_user_id ?? user?.id ?? null,
+        }
+      : c)));
+  }, [bindPendingToServerMessage, setConversations, user?.id]);
+
   // Id temporário ÚNICO para a mensagem otimista. Sempre com sufixo aleatório:
   // dois envios no mesmo milissegundo (áudios rápidos, mensagens em sequência)
   // não podem colidir, ou a reconciliação otimista→servidor casaria o item errado.
@@ -354,8 +387,7 @@ export function useWaComposer({
       // antes dela. Saudação continua disponível como variável `{{saudacao}}` nos
       // modelos manuais, e as automações (ausência, IA, transferência) seguem
       // com seus próprios fluxos.
-      const { message_id, evolution_message_id } = await whatsappService.sendText({ conversationId: conversation.id, text, replyToId: replyId });
-      bindPendingToServerMessage(tempId, message_id, evolution_message_id);
+      settleSend(conversation.id, tempId, await whatsappService.sendText({ conversationId: conversation.id, text, replyToId: replyId }));
       retryRef.current.delete(tempId);
       void refreshMessages(conversation.id);
     } catch (err: any) {
@@ -415,11 +447,10 @@ export function useWaComposer({
         return;
       }
       setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'sending' } : p));
-      const { message_id, evolution_message_id } = await whatsappService.sendMedia({
+      settleSend(selected.id, tempId, await whatsappService.sendMedia({
         conversationId: selected.id, type: kind, text: caption || undefined,
         storagePath: up.storagePath, mimeType: up.mimeType, fileName: up.fileName, replyToId: replyId,
-      });
-      bindPendingToServerMessage(tempId, message_id, evolution_message_id);
+      }));
       retryRef.current.delete(tempId);
       void refreshMessages(selected.id);
     } catch (err: any) {
@@ -450,6 +481,41 @@ export function useWaComposer({
       if (previewUrl) setTimeout(() => URL.revokeObjectURL(previewUrl), 30_000);
     }
   };
+
+  // Envia um GIF escolhido no seletor. Vai como vídeo marcado `asGif`: o
+  // WhatsApp converte GIF para mp4 de qualquer jeito, e sem a marca a conversa
+  // recebe um vídeo com play parado em vez da animação em laço.
+  //
+  // Não passa pelo preview com legenda: escolher o GIF na grade JÁ é a escolha,
+  // e uma segunda confirmação só atrasaria o que se espera ser instantâneo.
+  const sendGif = useCallback(async (file: File) => {
+    if (!selected) return;
+    const conversationId = selected.id;
+    const sentAt = new Date().toISOString();
+    const tempId = newTempId();
+    const previewUrl = URL.createObjectURL(file);
+    const optimistic = buildOptimistic(conversationId, tempId, sentAt, {
+      type: 'video', is_animated: true,
+      media_url: previewUrl, media_mime: file.type, media_size: file.size, file_name: file.name,
+      _local: 'uploading',
+    });
+    setPending(prev => [...prev, optimistic]);
+    bumpConversationPreview(conversationId, conversationPreviewLabel('video'), sentAt);
+    try {
+      const up = await whatsappService.uploadMedia(file, { conversationId });
+      setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'sending' } : p));
+      settleSend(conversationId, tempId, await whatsappService.sendMedia({
+        conversationId, type: 'video', storagePath: up.storagePath,
+        mimeType: up.mimeType, fileName: up.fileName, asGif: true,
+      }));
+      void refreshMessages(conversationId);
+    } catch (err: any) {
+      markPendingFailed(tempId);
+      toast.error('GIF não enviado', err?.message || 'Falha ao enviar pelo WhatsApp.');
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
+    }
+  }, [selected, bumpConversationPreview, settleSend, markPendingFailed, refreshMessages, toast]);
 
   // Reenvia uma mensagem que falhou (texto ou mídia), reusando o que foi guardado.
   const retryPending = (m: WhatsAppMessage) => {
@@ -492,8 +558,7 @@ export function useWaComposer({
     setPending(prev => [...prev, optimistic]);
     bumpConversationPreview(selected.id, text, sentAt);
     try {
-      const { message_id, evolution_message_id } = await whatsappService.sendText({ conversationId: selected.id, text, replyToId: replyId });
-      bindPendingToServerMessage(tempId, message_id, evolution_message_id);
+      settleSend(selected.id, tempId, await whatsappService.sendText({ conversationId: selected.id, text, replyToId: replyId }));
       retryRef.current.delete(tempId);
       void refreshMessages(selected.id);
     } catch (err: any) {
@@ -524,11 +589,10 @@ export function useWaComposer({
     setPending(prev => [...prev, optimistic]);
     bumpConversationPreview(selected.id, conversationPreviewLabel(kind, m.content || '', m.file_name || ''), sentAt);
     try {
-      const { message_id, evolution_message_id } = await whatsappService.sendMedia({
+      settleSend(selected.id, tempId, await whatsappService.sendMedia({
         conversationId: selected.id, type: kind, text: m.content || undefined,
         storagePath: m.storage_path, mimeType: m.media_mime || 'application/octet-stream', fileName: m.file_name || undefined,
-      });
-      bindPendingToServerMessage(tempId, message_id, evolution_message_id);
+      }));
       void refreshMessages(selected.id);
     } catch (err: any) {
       if (isAutoQueueError(err)) {
@@ -646,11 +710,10 @@ export function useWaComposer({
       const up = await whatsappService.uploadMedia(blob, { conversationId: selected.id, fileName: 'audio.webm' });
       uploaded = up;
       setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'sending' } : p));
-      const { message_id, evolution_message_id } = await whatsappService.sendAudio({
+      settleSend(selected.id, tempId, await whatsappService.sendAudio({
         conversationId: selected.id, storagePath: up.storagePath, mimeType: up.mimeType,
         fileName: up.fileName, replyToId: replyId,
-      });
-      bindPendingToServerMessage(tempId, message_id, evolution_message_id);
+      }));
       void refreshMessages(selected.id);
     } catch (err: any) {
       if (isAutoQueueError(err)) {
@@ -689,5 +752,6 @@ export function useWaComposer({
     retryPending, discardPending, cancelUpload, resendExisting,
     startRecording, stopRecording,
     onPickFiles, handleDroppedFiles, confirmStagedSend,
+    sendGif,
   };
 }

@@ -102,6 +102,12 @@ export interface SendMediaInput {
   mimeType: string;
   fileName?: string;
   replyToId?: string;
+  /**
+   * Vídeo que na verdade é um GIF (seletor do Giphy). Faz o WhatsApp usar
+   * `gifPlayback` e marca `is_animated` na linha: toca em laço, mudo e sem
+   * controles, dos dois lados da conversa.
+   */
+  asGif?: boolean;
 }
 
 export interface UploadedMedia {
@@ -239,6 +245,8 @@ export interface WhatsAppScheduledMessage {
   error: string | null;
   /** NULL = agendada pelo usuário; 'reconnect' = retida aguardando reconexão automática do canal. */
   hold_reason: string | null;
+  /** Início da retenção automática — o scheduler desiste depois de 12h presa. */
+  hold_since?: string | null;
   created_by: string | null;
   created_at: string;
   sent_at: string | null;

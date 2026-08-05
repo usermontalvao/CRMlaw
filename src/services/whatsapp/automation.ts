@@ -16,6 +16,106 @@ export const automationApi = {
     return (data || []) as WhatsAppScheduledMessage[];
   },
 
+  /**
+   * Pendências por reconexão do atendente logado, em qualquer conversa.
+   *
+   * É a fonte da "sirene" do módulo. O filtro por `created_by` é deliberado:
+   * toda a equipe pode enxergar agendamentos de conversas permitidas, mas quem
+   * apertou Enviar é quem precisa receber o alerta persistente de que o cliente
+   * ainda não recebeu. Falhas após o teto de espera continuam aqui até uma ação
+   * humana; pendências enviadas/canceladas somem sozinhas.
+   */
+  async listMyReconnectAlerts(): Promise<WhatsAppScheduledMessage[]> {
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth?.user?.id) return [];
+    const { data, error } = await supabase
+      .from(SCHEDULED_TABLE)
+      .select('*')
+      .eq('created_by', auth.user.id)
+      .eq('hold_reason', 'reconnect')
+      .in('status', ['pending', 'failed'])
+      .order('hold_since', { ascending: true, nullsFirst: true })
+      .limit(50);
+    if (error) throw new Error(error.message);
+    return (data || []) as WhatsAppScheduledMessage[];
+  },
+
+  /**
+   * Move para a conversa do canal escolhido todas as retenções do próprio autor.
+   *
+   * O horário é empurrado por cinco minutos ANTES do envio imediato. Isso tira
+   * as linhas do alcance do cron enquanto o navegador as envia, sem apagar a
+   * sirene nem criar um estado intermediário irrecuperável. Se a aba morrer no
+   * meio, o scheduler retoma sozinho já pelo canal novo quando o prazo vencer.
+   */
+  async rerouteMyReconnectHolds(input: {
+    sourceConversationId: string;
+    targetConversationId: string;
+    targetChannelId: string;
+  }): Promise<WhatsAppScheduledMessage[]> {
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth?.user?.id) throw new Error('Não autenticado.');
+    const retryAt = new Date(Date.now() + 5 * 60_000).toISOString();
+    const { data, error } = await supabase
+      .from(SCHEDULED_TABLE)
+      .update({
+        conversation_id: input.targetConversationId,
+        channel_id: input.targetChannelId,
+        status: 'pending',
+        scheduled_at: retryAt,
+        sent_at: null,
+        error: 'Reenviando automaticamente pelo canal escolhido.',
+      })
+      .eq('conversation_id', input.sourceConversationId)
+      .eq('created_by', auth.user.id)
+      .eq('hold_reason', 'reconnect')
+      .in('status', ['pending', 'failed'])
+      .select('*');
+    if (error) throw new Error(error.message);
+    return ((data || []) as WhatsAppScheduledMessage[])
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  },
+
+  /** Confirma que uma retenção acabou sendo entregue pelo canal alternativo. */
+  async completeReroutedReconnectHold(id: string): Promise<void> {
+    const { error } = await supabase
+      .from(SCHEDULED_TABLE)
+      .update({
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        error: null,
+        hold_reason: null,
+        hold_since: null,
+      })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .eq('hold_reason', 'reconnect');
+    if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Mantém a retenção visível quando o canal alternativo também não entregar.
+   * Queda/reconexão volta ao cron; qualquer outra falha exige ação humana.
+   */
+  async failReroutedReconnectHold(
+    id: string,
+    message: string,
+    retryAutomatically: boolean,
+  ): Promise<void> {
+    const { error } = await supabase
+      .from(SCHEDULED_TABLE)
+      .update({
+        status: retryAutomatically ? 'pending' : 'failed',
+        scheduled_at: new Date(Date.now() + 60_000).toISOString(),
+        error: message.slice(0, 500),
+        hold_reason: 'reconnect',
+      })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .eq('hold_reason', 'reconnect');
+    if (error) throw new Error(error.message);
+  },
+
   async scheduleMessage(input: {
     conversationId: string; channelId?: string | null; scheduledAt: string;
     text?: string; type?: WhatsAppScheduledMessage['type'];
@@ -37,6 +137,9 @@ export const automationApi = {
       file_name: input.fileName || null,
       scheduled_at: input.scheduledAt,
       hold_reason: input.holdReason ?? null,
+      // Retenção começa a contar aqui: é esse relógio que o scheduler usa para
+      // espaçar as tentativas e desistir quando o canal não volta.
+      hold_since: input.holdReason ? new Date().toISOString() : null,
       created_by: auth?.user?.id ?? null,
     }).select('*').single();
     if (error) throw new Error(error.message);
@@ -72,7 +175,11 @@ export const automationApi = {
    * 'pending' (limpa o erro). Sem novo horário → dispara no próximo ciclo do cron.
    */
   async retryScheduled(id: string, patch?: { text?: string; scheduledAt?: string }): Promise<void> {
-    const upd: Record<string, unknown> = { status: 'pending', error: null, sent_at: null };
+    // Retentar à mão zera a retenção: a espera do canal recomeça do zero em vez
+    // de herdar as horas que já tinham estourado o teto.
+    const upd: Record<string, unknown> = {
+      status: 'pending', error: null, sent_at: null, hold_reason: null, hold_since: null,
+    };
     if (patch?.text !== undefined) upd.body = patch.text.trim() || null;
     if (patch?.scheduledAt) {
       if (new Date(patch.scheduledAt).getTime() < Date.now() - 30000) throw new Error('Escolha uma data/hora no futuro.');
@@ -91,6 +198,20 @@ export const automationApi = {
       name: `wa-sched-${conversationId}`,
       bind: ch => ch.on('postgres_changes',
         { event: '*', schema: 'public', table: SCHEDULED_TABLE, filter: `conversation_id=eq.${conversationId}` },
+        () => onChange()),
+    });
+  },
+
+  /** Reage às retenções do próprio atendente em todas as conversas. */
+  subscribeMyReconnectAlerts(userId: string, onChange: () => void): () => void {
+    return openResilientChannel({
+      name: `wa-reconnect-alerts-${userId}`,
+      bind: ch => ch.on('postgres_changes',
+        // DELETE não aceita filtro no Postgres Changes. A assinatura ouve a
+        // tabela (baixo volume) e a consulta `listMyReconnectAlerts` aplica o
+        // recorte pessoal com RLS; assim excluir/cancelar também apaga a sirene
+        // imediatamente, sem expor a pendência de outro atendente.
+        { event: '*', schema: 'public', table: SCHEDULED_TABLE },
         () => onChange()),
     });
   },

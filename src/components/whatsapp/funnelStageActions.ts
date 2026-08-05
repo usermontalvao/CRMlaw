@@ -41,6 +41,7 @@ export async function executeFunnelStageActions({
           conversationId: conversation.id,
           channelId: conversation.instance_id,
           text,
+          automated: true,
         });
         result.completed.push('mensagem enviada');
         continue;
@@ -77,6 +78,7 @@ export async function executeFunnelStageActions({
             conversationId: conversation.id,
             channelId: conversation.instance_id,
             text,
+            automated: true,
           });
         }
         result.completed.push(`transferido para ${agent?.name || department?.name}`);

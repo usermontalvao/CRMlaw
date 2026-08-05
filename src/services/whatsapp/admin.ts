@@ -7,7 +7,7 @@ import type {
 } from '../../types/whatsapp.types';
 import {
   CHANNEL_TABLE, CHANNEL_MEMBER_TABLE, CHANNEL_FUNNEL_STAGE_TABLE, DEPT_TABLE, DEPT_MEMBER_TABLE, TEMPLATES_TABLE,
-  invokeFn, type StaffOption, type AgentPrefs, type AgentTreatment,
+  invokeFn, openResilientChannel, type StaffOption, type AgentPrefs, type AgentTreatment,
 } from './shared';
 
 export interface WhatsAppChannelMemberRow {
@@ -36,6 +36,23 @@ export const adminApi = {
       .order('created_at', { ascending: true });
     if (error) throw new Error(error.message);
     return (data || []) as WhatsAppChannel[];
+  },
+
+  /**
+   * Mantém o estado operacional dos números vivo na inbox.
+   *
+   * O status não pode ser apenas o retrato do bootstrap: se o canal cair com o
+   * atendente já dentro do módulo, o aviso pré-envio precisa aparecer antes do
+   * próximo Enter. A assinatura só sinaliza a mudança; a tela relê a lista para
+   * continuar respeitando as policies de visibilidade de canais.
+   */
+  subscribeChannels(onChange: () => void): () => void {
+    return openResilientChannel({
+      name: 'wa-channel-status',
+      bind: ch => ch.on('postgres_changes',
+        { event: '*', schema: 'public', table: CHANNEL_TABLE },
+        () => onChange()),
+    });
   },
 
   async createChannel(input: { name: string; instance_name: string; phone_number?: string; color?: string }): Promise<WhatsAppChannel> {

@@ -58,6 +58,69 @@ export interface ResilientSendResult {
   evolution_message_id?: string | null;
 }
 
+export interface ReroutedReconnectResult {
+  total: number;
+  sent: number;
+  failed: number;
+}
+
+/**
+ * Reenvia, em ordem, as mensagens que o próprio atendente deixou presas na
+ * conversa antiga quando ele escolhe outro canal.
+ *
+ * Primeiro todas são movidas no banco para a conversa nova e afastadas do cron;
+ * só depois começam os envios. Assim, se o navegador fechar no meio, o que não
+ * chegou a ser processado continua persistido e o scheduler assume pelo canal
+ * novo. Cada sucesso encerra a retenção; cada falha mantém a sirene acesa.
+ */
+export async function sendReconnectHoldsThroughChannel(input: {
+  sourceConversationId: string;
+  targetConversationId: string;
+  targetChannelId: string;
+}): Promise<ReroutedReconnectResult> {
+  const holds = await whatsappService.rerouteMyReconnectHolds(input);
+  let sent = 0;
+  let failed = 0;
+
+  for (const hold of holds) {
+    try {
+      if (hold.type === 'text') {
+        const text = hold.body?.trim();
+        if (!text) throw new Error('A mensagem retida está sem texto.');
+        await whatsappService.sendText({
+          conversationId: input.targetConversationId,
+          channelId: input.targetChannelId,
+          text,
+        });
+      } else {
+        if (!hold.storage_path) throw new Error('O arquivo da mensagem retida não está mais disponível.');
+        await whatsappService.sendMedia({
+          conversationId: input.targetConversationId,
+          channelId: input.targetChannelId,
+          type: hold.type,
+          text: hold.body || undefined,
+          storagePath: hold.storage_path,
+          mimeType: hold.mime_type || 'application/octet-stream',
+          fileName: hold.file_name || undefined,
+        });
+      }
+      await whatsappService.completeReroutedReconnectHold(hold.id);
+      sent += 1;
+    } catch (error) {
+      const message = String((error as Error)?.message || error || 'Falha ao reenviar pelo canal escolhido.');
+      const reconnectPending = isReconnectPendingError(error);
+      // Mesmo que este UPDATE encontre uma oscilação, a linha já foi movida para
+      // o canal novo e ficou `pending`: o cron a recupera no prazo de segurança.
+      await whatsappService
+        .failReroutedReconnectHold(hold.id, message, reconnectPending)
+        .catch(() => {});
+      failed += 1;
+    }
+  }
+
+  return { total: holds.length, sent, failed };
+}
+
 /**
  * Envia um texto de forma resiliente: se o canal estiver desconectado/reconectando,
  * retém na fila (reenvio automático) em vez de falhar. Qualquer outro erro é
@@ -69,6 +132,8 @@ export async function sendTextResilient(input: {
   channelId?: string | null;
   text: string;
   replyToId?: string;
+  /** Disparo de regra do CRM, não atendimento — não reabre conversa encerrada. */
+  automated?: boolean;
 }): Promise<ResilientSendResult> {
   try {
     const r = await whatsappService.sendText({
@@ -76,6 +141,7 @@ export async function sendTextResilient(input: {
       channelId: input.channelId ?? undefined,
       text: input.text,
       replyToId: input.replyToId,
+      automated: input.automated,
     });
     return { queued: false, ...r };
   } catch (err) {
