@@ -39,6 +39,11 @@ export interface EmailMessage {
   spam_reason: string | null;
   spam_checked: boolean;
   created_at: string;
+  /**
+   * Aviso de devolução (DSN). Coluna gerada pelo banco — nunca é enviada em
+   * insert/update; só chega nas leituras que a pedem.
+   */
+  is_bounce?: boolean;
 }
 
 export interface EmailSignature {

@@ -35,6 +35,18 @@ const SEARCH_COLUMNS = [
 ] as const;
 
 /**
+ * Campos que a tela de e-mail lê de uma devolução: os quatro que alimentam o
+ * `detectBounce` mais a identificação e a data. O restante da linha não é usado
+ * — quem abre o relatório completo chama `getMessage`.
+ */
+const BOUNCE_COLUMNS = 'id, from_address, subject, body_text, body_html, sent_at, created_at';
+
+export type BounceMessage = Pick<
+  EmailMessage,
+  'id' | 'from_address' | 'subject' | 'body_text' | 'body_html' | 'sent_at' | 'created_at'
+>;
+
+/**
  * Monta o valor de um padrão ILIKE seguro para uso dentro de `.or()`.
  * O PostgREST separa condições por vírgula, então envolvemos o valor em aspas
  * duplas — caracteres reservados (`,`, `.`, `(`, `)`, `:`), comuns em números
@@ -164,30 +176,24 @@ class EmailService {
   }
 
   /**
-   * Devoluções (bounces) recebidas: mensagens de MAILER-DAEMON/postmaster ou
-   * com relatório DSN no corpo. Servem para marcar como "não entregue" o
+   * Devoluções (bounces) recebidas. Servem para marcar como "não entregue" o
    * e-mail correspondente em Enviados — sem isso a falha fica só na caixa de
    * entrada e a mensagem enviada continua com cara de entregue.
+   *
+   * O reconhecimento (MAILER-DAEMON/postmaster no remetente ou relatório DSN no
+   * corpo) mora na coluna gerada `is_bounce`, calculada na escrita da linha.
+   * Antes ele era feito aqui, em ILIKE sobre `body_text`: 1,5 s e 350 MB de
+   * buffer por chamada, varrendo os 12 mil e-mails para achar as 2 devoluções.
    */
-  async listBounceMessages(limit = 200): Promise<EmailMessage[]> {
+  async listBounceMessages(limit = 200): Promise<BounceMessage[]> {
     const { data, error } = await supabase
       .from(TABLE)
-      .select('*')
-      .eq('direction', 'inbound')
-      .eq('is_draft', false)
-      .or(
-        [
-          'from_address.ilike.%mailer-daemon%',
-          'from_address.ilike.%postmaster%',
-          'from_address.ilike.%mail-daemon%',
-          'body_text.ilike.%Final-Recipient:%',
-          'body_text.ilike.%Diagnostic-Code:%',
-        ].join(',')
-      )
+      .select(BOUNCE_COLUMNS)
+      .eq('is_bounce', true)
       .order('sent_at', { ascending: false, nullsFirst: false })
       .limit(limit);
     if (error) throw new Error(error.message);
-    return (data ?? []) as EmailMessage[];
+    return (data ?? []) as unknown as BounceMessage[];
   }
 
   /** Uma mensagem específica por id (usado ao abrir via notificação). */
