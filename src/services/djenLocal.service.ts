@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { dividirEmLotes } from '../utils/queryBatches';
 import type {
   DjenComunicacaoLocal,
   CreateDjenComunicacaoDTO,
@@ -619,18 +620,27 @@ class DjenLocalService {
   async marcarTodasComoLidas(ids: string[]): Promise<number> {
     if (ids.length === 0) return 0;
     const now = new Date().toISOString();
-    const { data, error } = await supabase
-      .from(this.tableName)
-      .update({ lida: true, lida_em: now })
-      .in('id', ids)
-      .select('id');
 
-    if (error) {
-      console.error('Erro ao marcar todas como lidas:', error);
-      throw new Error(error.message);
+    // Em lotes: o `in.(...)` vai na URL, e "todas" aqui são as intimações
+    // carregadas na sessão — passavam de 800. O filtro estourava o teto de URL
+    // do servidor e voltava 400, sem marcar nada.
+    let marcadas = 0;
+    for (const lote of dividirEmLotes(ids)) {
+      const { data, error } = await supabase
+        .from(this.tableName)
+        .update({ lida: true, lida_em: now })
+        .in('id', lote)
+        .select('id');
+
+      if (error) {
+        console.error('Erro ao marcar todas como lidas:', error);
+        throw new Error(error.message);
+      }
+
+      marcadas += data?.length ?? 0;
     }
 
-    return data?.length ?? 0;
+    return marcadas;
   }
 
   /**
@@ -653,18 +663,25 @@ class DjenLocalService {
       return 0;
     }
 
-    const { data, error } = await supabase
-      .from(this.tableName)
-      .delete()
-      .in('id', ids)
-      .select('id');
+    // Em lotes, pelo mesmo motivo de marcarTodasComoLidas: uma seleção grande
+    // estourava o teto de URL e nada era removido.
+    let removidas = 0;
+    for (const lote of dividirEmLotes(ids)) {
+      const { data, error } = await supabase
+        .from(this.tableName)
+        .delete()
+        .in('id', lote)
+        .select('id');
 
-    if (error) {
-      console.error('Erro ao remover intimações selecionadas:', error);
-      throw new Error(error.message);
+      if (error) {
+        console.error('Erro ao remover intimações selecionadas:', error);
+        throw new Error(error.message);
+      }
+
+      removidas += data?.length || 0;
     }
 
-    return data?.length || 0;
+    return removidas;
   }
 
   async deleteRead(): Promise<number> {

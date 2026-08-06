@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import type { IntimationAnalysis } from '../types/ai.types';
+import { dividirEmLotes } from '../utils/queryBatches';
 
 export interface IntimationAIAnalysisDB {
   id: string;
@@ -96,19 +97,27 @@ class IntimationAnalysisService {
       return new Map();
     }
 
-    const { data, error } = await supabase
-      .from('intimation_ai_analysis')
-      .select('*')
-      .in('intimation_id', intimationIds);
-
-    if (error) {
-      throw new Error(`Erro ao buscar análises: ${error.message}`);
-    }
-
+    // Em lotes: o `in.(...)` vai na URL, e com as ~837 intimações da tela o
+    // filtro passava de 32 kB. O servidor recusava com 400 antes de olhar a
+    // consulta, então as análises salvas simplesmente nunca apareciam — e o
+    // erro só dizia "Bad Request".
     const map = new Map<string, IntimationAIAnalysisDB>();
-    data?.forEach((analysis) => {
-      map.set(analysis.intimation_id, analysis);
-    });
+
+    const lotes = dividirEmLotes(intimationIds);
+    const respostas = await Promise.all(
+      lotes.map((lote) =>
+        supabase.from('intimation_ai_analysis').select('*').in('intimation_id', lote),
+      ),
+    );
+
+    for (const { data, error } of respostas) {
+      if (error) {
+        throw new Error(`Erro ao buscar análises: ${error.message}`);
+      }
+      data?.forEach((analysis) => {
+        map.set(analysis.intimation_id, analysis);
+      });
+    }
 
     return map;
   }

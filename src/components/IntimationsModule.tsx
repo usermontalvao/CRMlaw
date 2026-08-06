@@ -435,7 +435,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         ? intimation.djen_destinatarios.map(d => d.nome)
         : extractPartesFromTexto(htmlToText(intimation.texto || '')).map(p => p.nome);
       
-      console.log(`📋 Intimação ${intimation.id.substring(0, 8)}: ${partes.length} partes encontradas`, partes.slice(0, 2));
+      // Só a contagem, e só em desenvolvimento: os nomes das partes são dado de
+      // cliente, e uma linha por intimação enchia o console de produção com
+      // umas 800 delas — duas vezes, porque o StrictMode monta o efeito duas.
+      if (import.meta.env.DEV) {
+        console.log(`📋 Intimação ${intimation.id.substring(0, 8)}: ${partes.length} partes encontradas`);
+      }
       
       // Verificar se alguma parte corresponde a um cliente
       for (const parteNome of partes) {
@@ -446,7 +451,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           try {
             await djenLocalService.vincularCliente(intimation.id, matchedClientId);
             linkedCount++;
-            console.log(`🔗 Vinculação automática: "${parteNome}" -> cliente ${matchedClientId.substring(0, 8)}`);
+            // Sem o nome da parte: identifica pelo par de ids, que basta para
+            // rastrear a vinculação sem publicar nome de cliente no console.
+            console.log(
+              `🔗 Vinculação automática: intimação ${intimation.id.substring(0, 8)} -> cliente ${matchedClientId.substring(0, 8)}`,
+            );
             break; // Vincula apenas ao primeiro match
           } catch (err) {
             console.error(`Erro ao vincular automaticamente:`, err);
