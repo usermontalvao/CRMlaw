@@ -35,6 +35,8 @@ import {
 } from './whatsapp/ui';
 import { TransferModal, BlockContactModal, CloseConversationModal, LegalHoldModal } from './whatsapp/conversationModals';
 import { TemplatePickerModal, ScheduleMessageModal } from './whatsapp/messageModals';
+import { ForwardMessageModal } from './whatsapp/forwardMessageModal';
+import { stripAgentSignature } from './whatsapp/waRichText';
 import { ConversationSummaryModal, ConversationTimelineModal } from './whatsapp/infoModals';
 import { RequestDocumentModal } from './whatsapp/RequestDocumentModal';
 import { ClientPickerModal, NewConversationModal } from './whatsapp/clientPickerModals';
@@ -330,6 +332,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Fase H: ação jurídica a partir de mensagem
   const [deadlineSource, setDeadlineSource] = useState<WhatsAppMessage | null>(null);
   const [taskSource, setTaskSource] = useState<WhatsAppMessage | null>(null);
+  // Encaminhar mensagem: origem escolhida no menu da bolha + envio em curso.
+  const [forwardSource, setForwardSource] = useState<WhatsAppMessage | null>(null);
+  const [forwarding, setForwarding] = useState(false);
   // Fase I/360: estado dos modais operacionais + workspace → useWaOperationalModals (abaixo).
   // Fase M: filtro por etiqueta + resumo automático por IA
   const [labelFilter, setLabelFilter] = useState(
@@ -498,7 +503,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     overview, setOverview, reloadOverview,
     effectiveDocStatus, trackedSignatureStatus, effectiveConversationStatus,
     dismissDocReady, stopTemplateFillTracking, stopSignatureTracking,
-  } = useClientOverview(selectedClientId, conversations);
+  } = useClientOverview(selectedClientId, conversations, selected?.contact_phone ?? null);
 
   // Move uma conversa para uma ETAPA do funil (etapa única: remove etiquetas de
   // funil anteriores, mantém tags livres). Usado por automações como "ao pedir
@@ -1293,6 +1298,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     retry: (m: WhatsAppMessage) => void; discard: (m: WhatsAppMessage) => void;
     resend: (m: WhatsAppMessage) => void; cancel: (m: WhatsAppMessage) => void;
     createDeadline: (m: WhatsAppMessage) => void; createTask: (m: WhatsAppMessage) => void;
+    forward: (m: WhatsAppMessage) => void;
   }>(null!);
   bubbleImplRef.current = {
     reply: (m) => { setReplyTo(m); setEditing(null); },
@@ -1303,10 +1309,51 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     cancel: (m) => { if (m._tempId) cancelUpload(m._tempId); },
     createDeadline: (m) => setDeadlineSource(m),
     createTask: (m) => setTaskSource(m),
+    forward: (m) => setForwardSource(m),
   };
+  /**
+   * Encaminha a mensagem para outras conversas. Mídia vai pelo CAMINHO DO
+   * STORAGE (`sendMedia({ storagePath })`), sem baixar e subir o arquivo de
+   * novo — é o mesmo objeto que já está lá. Cada destino é independente: um
+   * número fora do ar não pode derrubar os outros envios, então o resultado é
+   * contado no fim.
+   */
+  const forwardMessage = async (m: WhatsAppMessage, targets: WhatsAppConversation[]) => {
+    if (targets.length === 0) return;
+    setForwarding(true);
+    // Texto que sai daqui já leva a assinatura do atendente; encaminhar sem
+    // tirá-la colaria a assinatura antiga no meio da mensagem nova.
+    const text = m.content ? (m.direction === 'out' ? stripAgentSignature(m.content) : m.content) : '';
+    const results = await Promise.allSettled(targets.map(target => {
+      if (m.type === 'text') return whatsappService.sendText({ conversationId: target.id, text });
+      if (!m.storage_path) return Promise.reject(new Error('arquivo indisponível'));
+      return whatsappService.sendMedia({
+        conversationId: target.id,
+        type: (m.type === 'sticker' ? 'image' : m.type) as 'image' | 'video' | 'audio' | 'document',
+        text: text || undefined,
+        storagePath: m.storage_path,
+        mimeType: m.media_mime || 'application/octet-stream',
+        fileName: m.file_name || undefined,
+      });
+    }));
+    setForwarding(false);
+    const failed = results.filter(r => r.status === 'rejected').length;
+    const ok = results.length - failed;
+    if (ok > 0) toast.success(`Mensagem encaminhada para ${ok} ${ok === 1 ? 'conversa' : 'conversas'}.`);
+    if (failed > 0) {
+      const reason = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined;
+      toast.error(`Falha ao encaminhar para ${failed} ${failed === 1 ? 'conversa' : 'conversas'}`, reason?.reason?.message);
+    }
+    if (ok > 0) {
+      setForwardSource(null);
+      loadConversations();
+    }
+  };
+
   const bubbleHandlers = useMemo(() => ({
     onReply: (m: WhatsAppMessage) => bubbleImplRef.current.reply(m),
     onEdit: (m: WhatsAppMessage) => bubbleImplRef.current.edit(m),
+    onForward: (m: WhatsAppMessage) => bubbleImplRef.current.forward(m),
     onRetry: (m: WhatsAppMessage) => bubbleImplRef.current.retry(m),
     onDiscard: (m: WhatsAppMessage) => bubbleImplRef.current.discard(m),
     onResend: (m: WhatsAppMessage) => bubbleImplRef.current.resend(m),
@@ -1972,7 +2019,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               </div>
             )}
 
-            {selected.client_id && <ConversationSummaryBanner embedded={embedded} overview={overview} docStatus={effectiveDocStatus(selected.client_id)} clientId={selected.client_id} onOpenWorkspace={openWa} onDismissDocReady={() => dismissDocReady(selected.client_id!)} onDismissTemplateFill={stopTemplateFillTracking} />}
+            {/* Sem cliente vinculado o resumo continua existindo pelo que veio do
+                telefone do contato — é ali que aparece a faixa de "cliente
+                assinou". O próprio banner some quando não há nada a dizer. */}
+            <ConversationSummaryBanner embedded={embedded} overview={overview} docStatus={selected.client_id ? effectiveDocStatus(selected.client_id) : null} clientId={selected.client_id} onOpenWorkspace={openWa} onDismissDocReady={() => selected.client_id && dismissDocReady(selected.client_id)} onDismissTemplateFill={stopTemplateFillTracking} onStopSignatureTracking={stopSignatureTracking} />
 
             {/* Fase J: banner de sessão de IA ativa */}
             {aiSession?.status === 'active' && (
@@ -2515,9 +2565,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
           <ScheduledMessagesPanel conversationId={selected.id} canSchedule={perms.canSchedule} confirm={confirm} />
 
-          {/* 360: Ações do cliente — tudo vinculado ao cliente desta conversa */}
-          {selected.client_id && (
-            <div className="space-y-1.5">
+          {/* 360: Ações do cliente — tudo vinculado ao cliente desta conversa.
+              Sem cadastro elas aparecem DESABILITADAS, e não sumidas: some a
+              ação e some junto a explicação de por que ela não está ali. O
+              atendente ficava procurando "Documento" sem descobrir que o que
+              faltava era vincular o cliente. */}
+          <div className="space-y-1.5">
             <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações rápidas</p>
             <div className="grid grid-cols-2 gap-1.5">
               {[
@@ -2527,15 +2580,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 { label: 'Documento', icon: <FileText size={15} />, on: () => openWa({ type: 'document_generate', clientId: selected.client_id!, clientName: selected.client_name || selected.contact_name || undefined, processCode: (overview?.processes ?? [])[0]?.process_code }) },
                 { label: 'Pedir doc.', icon: <FilePlus size={15} />, on: () => setDocRequestOpen(true) },
               ].map(a => (
-                <button key={a.label} onClick={a.on}
-                  className="flex flex-col items-center gap-1 px-1 py-1.5 rounded-lg border border-[#e7e5df] text-slate-600 hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700 transition">
+                <button key={a.label} onClick={a.on} disabled={!selected.client_id}
+                  title={selected.client_id ? a.label : `Vincule um cliente a esta conversa para usar "${a.label}"`}
+                  className="flex flex-col items-center gap-1 px-1 py-1.5 rounded-lg border border-[#e7e5df] text-slate-600 transition enabled:hover:bg-amber-50 enabled:hover:border-amber-200 enabled:hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-45">
                   <span className="text-amber-600">{a.icon}</span>
                   <span className="text-[10px] font-semibold leading-none">{a.label}</span>
                 </button>
               ))}
             </div>
-            </div>
-          )}
+            {!selected.client_id && (
+              <p className="text-[10px] leading-snug text-slate-400">
+                Vincule um cliente no painel acima para liberar estas ações. O acompanhamento de assinaturas já funciona pelo telefone do contato.
+              </p>
+            )}
+          </div>
 
           {/* 360: Casos (processos + requerimentos) com ações inline */}
           {selected.client_id && (
@@ -2554,7 +2612,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           {selected.client_id && <ClientPendingsPanel pendings={overview?.pendings ?? null} confirm={confirm} onChanged={reloadOverview} />}
           {selected.client_id && <ClientCloudDocsLink clientId={selected.client_id} clientName={selected.client_name || selected.contact_name || undefined} />}
           {selected.client_id && <ClientFillLinksPanel links={overview?.templateFillLinks ?? null} signatures={overview?.signatures ?? null} onStopTracking={stopTemplateFillTracking} />}
-          {selected.client_id && <ClientSignaturesPanel signatures={overview?.signatures ?? null} links={overview?.templateFillLinks ?? null} onStopTracking={stopTemplateFillTracking} onStopSignatureTracking={stopSignatureTracking} />}
+          {/* Assinaturas aparecem MESMO sem cliente vinculado: sem cadastro, elas
+              vêm pelo telefone do contato (ver `listSignaturesByContactPhone`).
+              Documento enviado para assinar é acompanhamento de atendimento, não
+              privilégio de quem já virou cadastro. */}
+          <ClientSignaturesPanel signatures={overview?.signatures ?? null} links={overview?.templateFillLinks ?? null} onStopTracking={stopTemplateFillTracking} onStopSignatureTracking={stopSignatureTracking} />
 
           {/* 360: Financeiro — acordos clicáveis abrem detalhes em modal */}
           {selected.client_id && (
@@ -2749,7 +2811,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       )}
 
       {lightbox && (
-        <WaLightbox image={lightbox} images={lightboxImages} onClose={() => setLightbox(null)} onNavigate={setLightbox} />
+        <WaLightbox image={lightbox} images={lightboxImages} onClose={() => setLightbox(null)} />
       )}
 
       {/* Fase M: dashboard de atendimento (oculto no modo embutido) */}
@@ -2810,6 +2872,17 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           clientName={selected.client_name || selected.contact_name || ''}
           processes={overview?.processes ?? []}
           onClose={() => setTaskSource(null)}
+        />
+      )}
+
+      {forwardSource && (
+        <ForwardMessageModal
+          message={forwardSource}
+          conversations={conversations}
+          currentConversationId={selected?.id ?? null}
+          sending={forwarding}
+          onClose={() => { if (!forwarding) setForwardSource(null); }}
+          onConfirm={targets => { void forwardMessage(forwardSource, targets); }}
         />
       )}
     </div>

@@ -116,24 +116,15 @@ export function useWaThread(
   }, [allMessages]);
 
   // Galeria do lightbox: URLs das imagens da conversa, em ordem — permite navegar
-  // (slider ‹ ›) entre todas as imagens ao ampliar uma.
+  // (slider ‹ ›) entre todas as imagens ao ampliar uma. Sem repetição: a galeria
+  // se localiza pela URL, então a mesma foto enviada duas vezes fazia o ‹ › pular
+  // para a primeira cópia. Teclado (← → Esc) e índice vivem dentro do WaLightbox.
   const lightboxImages = useMemo(
-    () => allMessages.filter(m => m.type === 'image' && m.media_url).map(m => m.media_url as string),
+    () => Array.from(new Set(
+      allMessages.filter(m => m.type === 'image' && m.media_url).map(m => m.media_url as string),
+    )),
     [allMessages],
   );
-  // Navegação por teclado no lightbox (← → Esc).
-  useEffect(() => {
-    if (!lightbox) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setLightbox(null); return; }
-      const idx = lightboxImages.indexOf(lightbox);
-      if (idx < 0) return;
-      if (e.key === 'ArrowRight') setLightbox(lightboxImages[Math.min(idx + 1, lightboxImages.length - 1)]);
-      else if (e.key === 'ArrowLeft') setLightbox(lightboxImages[Math.max(idx - 1, 0)]);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [lightbox, lightboxImages]);
 
   // Salto instantâneo ao fim (sem animação). Reconcilia em passes encadeados de
   // requestAnimationFrame: o conteúdo que muda de altura logo após o commit

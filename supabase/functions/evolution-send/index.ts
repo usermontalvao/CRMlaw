@@ -13,6 +13,7 @@
  * Servidor (base_url + api_key) global. Requer JWT (equipe).
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { slimWaRaw } from '../_shared/wa-raw.ts';
 
 const MEDIA_BUCKET = 'whatsapp-media';
 const EVO_TIMEOUT_MS = 30_000;
@@ -320,7 +321,9 @@ Deno.serve(async (req: Request) => {
     const out = await res.json().catch(() => ({}));
     if (!res.ok) return json({ error: evoError(out, `Evolution retornou ${res.status}`) }, 502);
     evoId = out?.key?.id || out?.messageId || null;
-    if (out?.key) evoRaw = { key: out.key, message: out.message };
+    // Sem os blobs: a resposta da Evolution traz miniatura em base64 da mídia
+    // que acabamos de enviar, e ela já está no storage. Ver _shared/wa-raw.ts.
+    if (out?.key) evoRaw = slimWaRaw({ key: out.key, message: out.message });
   } catch (err) {
     return json({ error: evoNetworkError(err) }, 502);
   }

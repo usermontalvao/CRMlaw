@@ -493,6 +493,38 @@ export const client360Api = {
   },
 
   /**
+   * Assinaturas de um CONTATO pelo telefone do signatário — o caminho para
+   * acompanhar quem ainda não virou cadastro. A solicitação de assinatura pode
+   * nascer sem `client_id` (documento avulso enviado para alguém que só existe
+   * como contato do WhatsApp); antes disto, essa assinatura simplesmente não
+   * aparecia na conversa e não havia como acompanhar se a pessoa abriu/assinou.
+   *
+   * A busca é grossa no banco (últimos 4 dígitos, que sobrevivem a qualquer
+   * formatação de telefone) e fina no cliente, com `samePhone` — que já trata o
+   * 9º dígito de celular.
+   */
+  async listSignaturesByContactPhone(phone: string): Promise<SignatureRequestWithSigners[]> {
+    const digits = normalizePhone(phone);
+    if (!digits) return [];
+    const tail = digits.slice(-4);
+    const { data, error } = await supabase
+      .from('signature_signers')
+      .select('signature_request_id, phone')
+      .not('phone', 'is', null)
+      .ilike('phone', `%${tail}%`)
+      .limit(400);
+    if (error) throw new Error(error.message);
+
+    const ids = Array.from(new Set(
+      ((data || []) as { signature_request_id: string; phone: string | null }[])
+        .filter(row => samePhone(row.phone, phone))
+        .map(row => row.signature_request_id),
+    ));
+    if (ids.length === 0) return [];
+    return signatureService.listRequestsWithSigners({ ids });
+  },
+
+  /**
    * Carrega o pacote 360 do cliente de uma vez (processos + agenda + pendências),
    * em paralelo. Banner-resumo e painéis laterais consomem este único resultado,
    * evitando os fetches duplicados de antes. Falha parcial vira vazio.

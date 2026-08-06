@@ -21,6 +21,7 @@ import { useEffect, useRef } from 'react';
 import { whatsappService } from '../services/whatsapp.service';
 import { muteStore } from '../services/whatsapp/muteStore';
 import { notifyScope } from '../services/whatsapp/notifyScope';
+import { resolveAvatarUrl } from '../services/whatsapp/shared';
 import { playNotificationSound, isNotifySoundMuted, isInChatSoundMuted } from '../utils/notificationSound';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 
@@ -41,12 +42,18 @@ function claimNotification(key: string): boolean {
   return true;
 }
 
-// Cache de metadados de conversa (atribuição/nome) para filtrar sem fetch.
-interface ConvMeta { assigned_user_id: string | null; contact_name: string | null; contact_phone: string; is_blocked: boolean; }
+// Cache de metadados de conversa (atribuição/nome/foto) para filtrar sem fetch.
+interface ConvMeta {
+  assigned_user_id: string | null;
+  contact_name: string | null;
+  contact_phone: string;
+  is_blocked: boolean;
+  contact_avatar_path: string | null;
+}
 const convMetaCache = new Map<string, ConvMeta>();
 
 /** Preview curto da mensagem a partir da própria linha (sem esperar a conversa). */
-function previewOf(msg: Record<string, any>): string {
+function previewOf(msg: { content?: string | null; type?: string | null }): string {
   const content = (msg.content ?? '').toString().trim();
   if (content) return content.slice(0, 120);
   switch (msg.type) {
@@ -107,14 +114,14 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         contact_name: row.contact_name ?? null,
         contact_phone: (row.contact_phone ?? '').toString(),
         is_blocked: row.is_blocked === true,
+        contact_avatar_path: row.contact_avatar_path ?? null,
       });
     });
 
     // Gatilho rápido: INSERT da mensagem recebida.
-    const unsubMsg = whatsappService.subscribeInboundMessages((payload) => {
-      const msg = payload.new as Record<string, any> | undefined;
-      if (!msg?.id || msg.direction !== 'in') return;
-      const convId: string = msg.conversation_id;
+    const unsubMsg = whatsappService.subscribeInboundMessages((msg) => {
+      if (msg.direction !== 'in') return;
+      const convId = msg.conversation_id;
       if (!convId) return;
 
       // Dedup por mensagem (id é único e estável).
@@ -131,6 +138,7 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
               contact_name: fetched.contact_name,
               contact_phone: fetched.contact_phone,
               is_blocked: fetched.is_blocked,
+              contact_avatar_path: fetched.contact_avatar_path ?? null,
             };
             convMetaCache.set(convId, meta);
           }
@@ -164,8 +172,14 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         // (WhatsAppNotifyHost) — aparece em qualquer tela, inclusive dentro do
         // módulo. Na conversa já aberta não há cartão: a mensagem está entrando
         // na tela e um aviso apontando para ela seria ruído.
+        // O CAMINHO da foto vai no evento, não a URL assinada: assinar é uma ida
+        // à rede, e o cartão não pode esperar por ela para aparecer. Quem exibe
+        // resolve a foto depois e ela entra por cima das iniciais.
         if (tier !== 'in-chat') {
-          events.emit(SYSTEM_EVENTS.WHATSAPP_NOTIFY, { conversationId: convId, name, preview, tier });
+          events.emit(SYSTEM_EVENTS.WHATSAPP_NOTIFY, {
+            conversationId: convId, name, preview, tier,
+            avatarPath: meta.contact_avatar_path,
+          });
         }
 
         // Som (respeitando o mute por preferência local). O toque da conversa
@@ -185,7 +199,15 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         // operacional — é o tipo de excesso que faz desligar tudo.
         if (!documentVisible && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
           try {
-            const n = new Notification(`WhatsApp · ${name}`, { body: preview, tag: `wa:${convId}` });
+            // Com a aba escondida ninguém está esperando o aviso na tela, então
+            // aqui dá para assinar a foto antes de mostrar: a notificação do
+            // sistema sai com o rosto do contato, como a do celular.
+            const icon = await resolveAvatarUrl(meta.contact_avatar_path).catch(() => null);
+            const n = new Notification(name, {
+              body: preview,
+              tag: `wa:${convId}`,
+              ...(icon ? { icon } : {}),
+            });
             n.onclick = () => { window.focus(); onOpenRef.current(convId); n.close(); };
           } catch { /* alguns ambientes exigem ServiceWorker; o aviso visual já cobre */ }
         }

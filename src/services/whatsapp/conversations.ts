@@ -10,6 +10,7 @@ import {
   openResilientChannel, type WhatsAppInternalNote,
 } from './shared';
 import { messagesApi } from './messages';
+import { subscribeWaMessageEvents, type WaMessageEvent } from './messageEvents';
 
 export const conversationsApi = {
   // ── Conversas ────────────────────────────────────────────────
@@ -609,22 +610,35 @@ export const conversationsApi = {
    * conversa que mudou, atualizar só a thread aberta) em vez de recarregar tudo.
    */
   subscribe(handlers: {
-    onMessageChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
+    /**
+     * Mensagem criada/alterada/removida, já normalizada — chega pelo broadcast
+     * (`whatsapp:messages`) ou pela rede de postgres_changes, indiferente para
+     * quem consome. Ver src/services/whatsapp/messageEvents.ts.
+     */
+    onMessageChange?: (evento: WaMessageEvent) => void;
     onConversationChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;
     /**
      * Saúde do canal. 'live' = recebendo eventos; 'down' = caiu e está tentando
      * voltar. Quem consome usa isso para ressincronizar por HTTP o que foi
      * perdido enquanto o canal esteve fora — nenhum evento é reenviado depois.
+     *
+     * Vem do canal de conversas, que segue em postgres_changes: os dois canais
+     * viajam no MESMO websocket, então ele fora é o outro fora também.
      */
     onStatusChange?: (status: 'live' | 'down') => void;
   }) {
-    return openResilientChannel({
+    // As conversas continuam em postgres_changes de propósito: a linha tem ~400
+    // bytes e o payload é usado inteiro no merge da lista (preview, contador,
+    // ordem, presença). Trocar por broadcast não economizaria nada e obrigaria a
+    // repetir a linha inteira dentro do aviso.
+    const pararConversas = openResilientChannel({
       name: 'whatsapp-realtime',
       bind: ch => ch
-        .on('postgres_changes', { event: '*', schema: 'public', table: MSG_TABLE }, p => handlers.onMessageChange?.(p))
         .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => handlers.onConversationChange?.(p)),
       onStatusChange: handlers.onStatusChange,
     });
+    const pararMensagens = subscribeWaMessageEvents(e => handlers.onMessageChange?.(e));
+    return () => { pararConversas(); pararMensagens(); };
   },
 
   /**
@@ -646,24 +660,23 @@ export const conversationsApi = {
    * Assina o INSERT de mensagens — o sinal MAIS CEDO de "mensagem nova" (dispara
    * assim que a linha é inserida, antes do UPDATE da conversa). Usado pelo
    * notificador para reduzir a latência percebida do aviso.
+   *
+   * Entra na MESMA fonte que o módulo: antes eram dois canais postgres_changes
+   * separados sobre a mesma tabela, e cada mensagem era decodificada e trafegada
+   * duas vezes por aba. Agora é fan-out local de um canal só.
    */
-  subscribeInboundMessages(
-    onInsert: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void,
-  ) {
-    return openResilientChannel({
-      name: 'whatsapp-notify-msg',
-      bind: ch => ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: MSG_TABLE }, p => onInsert(p)),
-    });
+  subscribeInboundMessages(onInsert: (evento: WaMessageEvent) => void) {
+    return subscribeWaMessageEvents(e => { if (e.op === 'INSERT') onInsert(e); });
   },
 
   /** Metadados enxutos da conversa para o notificador (fallback de cache-miss). */
   async getConversationMeta(id: string): Promise<{
     id: string; assigned_user_id: string | null; contact_name: string | null;
-    contact_phone: string; is_blocked: boolean;
+    contact_phone: string; is_blocked: boolean; contact_avatar_path: string | null;
   } | null> {
     const { data } = await supabase
       .from(CONV_TABLE)
-      .select('id, assigned_user_id, contact_name, contact_phone, is_blocked')
+      .select('id, assigned_user_id, contact_name, contact_phone, is_blocked, contact_avatar_path')
       .eq('id', id)
       .maybeSingle();
     return (data as any) ?? null;

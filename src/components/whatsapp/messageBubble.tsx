@@ -6,12 +6,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Pencil, RotateCcw, Calendar, ListTodo, CornerUpLeft, Loader2, AlertCircle,
-  CheckCheck, Check, X, Pause, Play, FileText, Download, ChevronDown,
+  CheckCheck, Check, X, Pause, Play, FileText, Download, ChevronDown, Forward,
   Image as ImageIcon, Video as VideoIcon,
 } from 'lucide-react';
 import { formatTime, typeLabel, maskSensitive, fmtAudioTime, formatBytes } from './format';
 import { WaRichText } from './WaRichTextView';
 import { waPlainText, stripAgentSignature } from './waRichText';
+import { WaPdfCard, isPdfMessage } from './pdfPreview';
+import { WaVideoLightbox } from './lightbox';
 import type { WhatsAppMessage } from '../../types/whatsapp.types';
 
 const WA_MESSAGE_MENU_EVENT = 'wa-message-menu-open';
@@ -28,6 +30,8 @@ export const MessageBubble: React.FC<{
   canCreateFollowups?: boolean;
   onReply: (m: WhatsAppMessage) => void;
   onEdit: (m: WhatsAppMessage) => void;
+  /** Encaminhar para outras conversas. Ausente = recurso indisponível no host. */
+  onForward?: (m: WhatsAppMessage) => void;
   onOpenImage: (url: string) => void;
   onRetry: (m: WhatsAppMessage) => void;
   onDiscard: (m: WhatsAppMessage) => void;
@@ -36,7 +40,7 @@ export const MessageBubble: React.FC<{
   onCancel: (m: WhatsAppMessage) => void;
   onCreateDeadline: (m: WhatsAppMessage) => void;
   onCreateTask: (m: WhatsAppMessage) => void;
-}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask }) => {
+}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask }) => {
   const out = m.direction === 'out';
   const failed = m._local === 'failed' || m.status === 'failed';
   const busy = m._local === 'uploading' || m._local === 'sending';
@@ -46,6 +50,11 @@ export const MessageBubble: React.FC<{
   const menuId = m._tempId || m.id;
   // Reenvio rápido: só faz sentido para mídia já entregue (com objeto no storage).
   const canResend = out && !busy && !failed && m.type !== 'text' && !!m.storage_path;
+  // Encaminhar: precisa de algo para reenviar — texto escrito ou arquivo que já
+  // está no storage (a mídia vai pelo caminho do storage, sem baixar e subir de
+  // novo). Mensagem ainda em envio ou falhada não é encaminhável.
+  const canForward = !!onForward && !busy && !failed
+    && (m.type === 'text' ? !!m.content : !!m.storage_path);
   // Imagem/vídeo sem legenda/reply/nome → bolha sem moldura (igual WhatsApp):
   // a mídia "sangra" até a borda e a hora fica sobreposta num canto.
   // Reserva a bolha de mídia mesmo enquanto a URL assinada ainda não chegou.
@@ -88,6 +97,7 @@ export const MessageBubble: React.FC<{
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
     const actionCount = 1
+      + (canForward ? 1 : 0)
       + (out && m.type === 'text' && m.evolution_message_id ? 1 : 0)
       + (canResend ? 1 : 0)
       + (canCreateFollowups && !m._tempId ? 2 : 0);
@@ -111,9 +121,12 @@ export const MessageBubble: React.FC<{
     action();
   };
 
+  // Figurinha não tem moldura nem fundo: encostada na mídia de cima (um vídeo,
+  // por exemplo) ela parece grudada no player. Por isso pede um respiro próprio,
+  // dos dois lados, em vez dos 2px do agrupamento normal.
   return (
-    <div className={`wa-message-row group flex items-end ${groupStart ? 'mt-2' : 'mt-[2px]'} ${out ? 'justify-end' : 'justify-start'}`}>
-      <div className={`wa-bubble-in ${stickerOnly ? 'wa-sticker-bubble' : `wa-bubble ${out ? 'wa-bubble-out origin-bottom-right' : 'wa-bubble-incoming origin-bottom-left'} ${groupStart ? (out ? 'wa-bubble-tail-out' : 'wa-bubble-tail-in') : ''}`} ${out ? 'origin-bottom-right' : 'origin-bottom-left'} ${groupEnd ? '' : 'wa-bubble-continued'} relative text-[14px] leading-[1.36] text-slate-800 ${mediaOnly ? `wa-bubble-media max-w-[300px] p-0 ${stickerOnly ? '' : 'bg-black/5'}` : 'wa-bubble-content px-[9px] pt-[6px] pb-[5px]'}`}>
+    <div className={`wa-message-row group flex items-end ${stickerOnly ? 'my-2.5' : groupStart ? 'mt-2' : 'mt-[2px]'} ${out ? 'justify-end' : 'justify-start'}`}>
+      <div className={`wa-bubble-in ${stickerOnly ? 'wa-sticker-bubble' : `wa-bubble ${out ? 'wa-bubble-out origin-bottom-right' : 'wa-bubble-incoming origin-bottom-left'} ${groupStart ? (out ? 'wa-bubble-tail-out' : 'wa-bubble-tail-in') : ''}`} ${out ? 'origin-bottom-right' : 'origin-bottom-left'} ${groupEnd ? '' : 'wa-bubble-continued'} relative text-[14px] leading-[1.36] text-slate-800 ${mediaOnly ? `wa-bubble-media max-w-[300px] p-0 ${stickerOnly ? '' : 'wa-bubble-media-surface'}` : 'wa-bubble-content px-[9px] pt-[6px] pb-[5px]'}`}>
         {!busy && (
           <button ref={menuTriggerRef} type="button" title="Ações da mensagem" aria-label="Ações da mensagem" aria-expanded={menuOpen}
             onClick={toggleMenu}
@@ -127,6 +140,7 @@ export const MessageBubble: React.FC<{
             <div role="menu" aria-label="Ações da mensagem" style={{ top: menuPosition.top, left: menuPosition.left, width: WA_MESSAGE_MENU_WIDTH }}
               className="fixed z-[9991] overflow-hidden rounded-xl bg-white py-1.5 shadow-[0_12px_38px_rgba(15,23,42,0.24)] ring-1 ring-black/[0.08]">
               <MessageAction icon={<CornerUpLeft size={15} />} label="Responder" onClick={() => runAction(() => onReply(m))} />
+              {canForward && <MessageAction icon={<Forward size={15} />} label="Encaminhar" onClick={() => runAction(() => onForward?.(m))} />}
               {out && m.type === 'text' && m.evolution_message_id && (
                 <MessageAction icon={<Pencil size={15} />} label="Editar mensagem" onClick={() => runAction(() => onEdit(m))} />
               )}
@@ -319,7 +333,7 @@ const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (u
 
   if (m.type === 'video') {
     return url
-      ? <WaVideo key={url} src={url} cacheKey={mediaKey} autoLoop={isAnimatedVideo(m)} />
+      ? <WaVideo key={url} src={url} cacheKey={mediaKey} autoLoop={isAnimatedVideo(m)} name={m.file_name} />
       : <MediaSkeleton kind="video" frame={mediaFrameCache.get(mediaKey)} />;
   }
 
@@ -347,6 +361,11 @@ const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (u
       </div>
     );
   }
+
+  // PDF: miniatura da 1ª página + visualizador ao clicar. É o anexo mais comum
+  // do escritório (contrato, comprovante, decisão) e o cartão mudo obrigava a
+  // baixar arquivo por arquivo só para saber qual era qual.
+  if (isPdfMessage(m)) return <WaPdfCard m={m} out={out} />;
 
   // documento
   return (
@@ -459,34 +478,82 @@ const WaImage: React.FC<{ src: string; cacheKey: string; alt: string; onOpen: ()
   );
 };
 
-const WaVideo: React.FC<{ src: string; cacheKey: string; autoLoop?: boolean }> = ({ src, cacheKey, autoLoop = false }) => {
+const WaVideo: React.FC<{ src: string; cacheKey: string; autoLoop?: boolean; name?: string | null }> = ({ src, cacheKey, autoLoop = false, name }) => {
   const [state, setState] = useState<MediaLoadState>('loading');
-  const [frame, setFrame] = useState<MediaFrame>(() => mediaFrameCache.get(cacheKey) || DEFAULT_MEDIA_FRAME);
+  // `null` = ainda não sei o formato do vídeo. Enquanto não sei, a caixa é uma
+  // estimativa; assim que os metadados chegam, quem manda na forma é o PRÓPRIO
+  // vídeo — era o `object-contain` dentro de uma caixa palpitada que desenhava
+  // as faixas vazias ao lado de vídeo vertical (o formato que mais chega).
+  const [frame, setFrame] = useState<MediaFrame | null>(() => mediaFrameCache.get(cacheKey) ?? null);
+  const [duration, setDuration] = useState(0);
+  const [open, setOpen] = useState(false);
+  const loaded = state === 'loaded';
+  // Só o vídeo com dimensão conhecida pode vestir a bolha sozinho.
+  const shaped = loaded && !!frame;
+
   const handleMetadata = (video: HTMLVideoElement) => {
-    // Mesma regra da imagem: metadados sem dimensão não podem reescrever a
-    // proporção da caixa com um palpite quadrado.
+    if (Number.isFinite(video.duration) && video.duration > 0) setDuration(video.duration);
     const nextFrame = fitMediaFrame(video.videoWidth, video.videoHeight);
     if (!nextFrame) return;
     mediaFrameCache.set(cacheKey, nextFrame);
     setFrame(nextFrame);
   };
+
+  // `#t=0.1` faz o navegador desenhar o primeiro quadro como capa; sem isso o
+  // vídeo parado aparece como um retângulo preto na conversa.
+  const media = (
+    <video src={autoLoop ? src : `${src}#t=0.1`} preload={autoLoop ? 'auto' : 'metadata'}
+      autoPlay={autoLoop} loop={autoLoop} muted playsInline
+      onLoadedMetadata={event => handleMetadata(event.currentTarget)}
+      onLoadedData={() => setState('loaded')} onError={() => setState('error')}
+      className={shaped
+        ? 'block h-auto w-full bg-[#dfe3e5]'
+        : `absolute inset-0 h-full w-full bg-[#dfe3e5] object-contain transition-opacity duration-200 ${loaded ? 'opacity-100' : 'pointer-events-none opacity-0'}`} />
+  );
+  const boxStyle = shaped && frame ? { width: `${frame.width}px` } : mediaFrameStyle(frame ?? undefined);
+  const skeleton = !loaded && <MediaSkeleton kind="video" frame={frame ?? undefined} failed={state === 'error'} />;
+
+  // GIF continua tocando sozinho na conversa, sem controles e sem abrir nada.
+  if (autoLoop) {
+    return (
+      <span style={boxStyle} className="wa-media-frame relative block overflow-hidden">
+        {skeleton}
+        {media}
+        {loaded && (
+          <span className="absolute left-1.5 top-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">GIF</span>
+        )}
+      </span>
+    );
+  }
+
+  // Vídeo comum: capa com botão de play. Os controles nativos dentro de uma
+  // bolha estreita ficavam espremidos e mal davam para acertar; agora o clique
+  // abre o vídeo grande, na frente da conversa, com os controles em tamanho de
+  // gente.
   return (
-    <span style={mediaFrameStyle(frame)} className="wa-media-frame relative block overflow-hidden">
-      {state !== 'loaded' && <MediaSkeleton kind="video" frame={frame} failed={state === 'error'} />}
-      {/* GIF: toca sozinho, em laço, mudo e sem controles — `muted` e
-          `playsInline` são o que os navegadores exigem para permitir autoplay.
-          Vídeo comum mantém os controles e não toca sem o usuário pedir. */}
-      <video src={src} preload={autoLoop ? 'auto' : 'metadata'}
-        controls={!autoLoop} autoPlay={autoLoop} loop={autoLoop} muted={autoLoop} playsInline
-        onLoadedMetadata={event => handleMetadata(event.currentTarget)}
-        onLoadedData={() => setState('loaded')} onError={() => setState('error')}
-        className={`absolute inset-0 h-full w-full bg-[#dfe3e5] object-contain transition-opacity duration-200 ${state === 'loaded' ? 'opacity-100' : 'pointer-events-none opacity-0'}`} />
-      {autoLoop && state === 'loaded' && (
-        <span className="absolute left-1.5 top-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-          GIF
-        </span>
-      )}
-    </span>
+    <>
+      <button type="button" onClick={() => loaded && setOpen(true)} disabled={!loaded}
+        aria-label="Abrir vídeo" style={boxStyle}
+        className="wa-media-frame group/video relative block overflow-hidden text-left">
+        {skeleton}
+        {media}
+        {loaded && (
+          <>
+            <span className="absolute inset-0 flex items-center justify-center bg-black/10 transition group-hover/video:bg-black/25">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/25 transition group-hover/video:scale-105">
+                <Play size={22} fill="currentColor" />
+              </span>
+            </span>
+            {duration > 0 && (
+              <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-white">
+                <VideoIcon size={11} /> {fmtAudioTime(duration)}
+              </span>
+            )}
+          </>
+        )}
+      </button>
+      {open && <WaVideoLightbox src={src} name={name || 'Vídeo'} onClose={() => setOpen(false)} />}
+    </>
   );
 };
 

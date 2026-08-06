@@ -50,37 +50,53 @@ export interface ClientOverviewApi {
 export function useClientOverview(
   selectedClientId: string | null,
   conversations: WhatsAppConversation[],
+  /** Telefone do contato da conversa aberta. Sem cliente vinculado ele é a
+   *  ÚNICA chave que liga a conversa às assinaturas em andamento. */
+  selectedPhone: string | null = null,
 ): ClientOverviewApi {
   const toast = useToastContext();
 
   // Pacote 360 do cliente carregado uma vez ao abrir a conversa (Fase 10).
   const [overview, setOverview] = useState<ClientOverview | null>(null);
   // Recarrega o pacote 360 sob demanda (ex.: após criar uma solicitação de documento).
+  // Sem cliente vinculado ainda há o que acompanhar: as assinaturas enviadas
+  // para o telefone do contato. Antes, a conversa sem cadastro devolvia `null`
+  // e o painel de assinaturas nem aparecia — não dava para saber se a pessoa
+  // tinha aberto ou assinado o documento.
+  const loadOverview = useCallback((): Promise<ClientOverview> | null => {
+    if (selectedClientId) return whatsappService.getClientOverview(selectedClientId);
+    if (selectedPhone) {
+      return whatsappService.listSignaturesByContactPhone(selectedPhone)
+        .then(signatures => ({ ...EMPTY_OVERVIEW, signatures }));
+    }
+    return null;
+  }, [selectedClientId, selectedPhone]);
+
   const reloadOverview = useCallback(() => {
-    if (!selectedClientId) { setOverview(null); return; }
-    whatsappService.getClientOverview(selectedClientId)
-      .then(setOverview)
-      .catch(() => setOverview({ ...EMPTY_OVERVIEW }));
-  }, [selectedClientId]);
+    const promise = loadOverview();
+    if (!promise) { setOverview(null); return; }
+    promise.then(setOverview).catch(() => setOverview({ ...EMPTY_OVERVIEW }));
+  }, [loadOverview]);
 
   useEffect(() => {
-    if (!selectedClientId) { setOverview(null); return; }
+    const promise = loadOverview();
+    if (!promise) { setOverview(null); return; }
     let alive = true;
     setOverview(null);
-    whatsappService.getClientOverview(selectedClientId)
+    promise
       .then(o => { if (alive) setOverview(o); })
       .catch(() => { if (alive) setOverview({ ...EMPTY_OVERVIEW }); });
     return () => { alive = false; };
-  }, [selectedClientId]);
+  }, [loadOverview]);
 
   // Histórico do kit em tempo real: os heartbeats de presença (opened_at/
   // last_seen_at do link e do signatário) não disparam realtime de assinatura,
   // então revalidamos o overview periodicamente enquanto a conversa está aberta.
   useEffect(() => {
-    if (!selectedClientId) return;
+    if (!selectedClientId && !selectedPhone) return;
     const id = window.setInterval(() => reloadOverview(), 12_000);
     return () => window.clearInterval(id);
-  }, [selectedClientId, reloadOverview]);
+  }, [selectedClientId, selectedPhone, reloadOverview]);
 
   // ── Status de documentos por cliente (chips de lista/cabeçalho), em tempo real ──
   const [docStatusByClient, setDocStatusByClient] = useState<Record<string, 'awaiting' | 'ready'>>({});

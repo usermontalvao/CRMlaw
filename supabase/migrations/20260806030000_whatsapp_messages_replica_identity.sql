@@ -1,0 +1,22 @@
+-- whatsapp_messages: REPLICA IDENTITY FULL → DEFAULT.
+--
+-- Com FULL, todo UPDATE grava no WAL a linha ANTIGA inteira além da nova, e todo
+-- DELETE grava a linha inteira. Numa tabela onde cada linha carrega o payload da
+-- Evolution, mudar o status de uma mensagem (sent → delivered → read) custava o
+-- dobro do peso da linha em WAL — WAL que o Realtime decodifica em memória e
+-- replica para toda aba aberta do CRM. Com DEFAULT, o UPDATE identifica a linha
+-- pela chave primária e o custo do "antes" desaparece.
+--
+-- O que muda no comportamento: no evento DELETE, `payload.old` passa a trazer só
+-- `id` em vez da linha inteira. O único DELETE de mensagem no produto é o
+-- "limpar conversa" (whatsappService.clearConversation); useWaRealtime foi
+-- ajustado para remover a mensagem da thread pelo id, o que funciona nos dois
+-- modos — por isso o front vai ao ar ANTES desta migration.
+--
+-- INSERT e UPDATE não mudam: `payload.new` continua com a linha completa, e a
+-- checagem de RLS que o Realtime faz sobre ela (wa_msg_select, que lê
+-- conversation_id) segue funcionando igual.
+--
+-- whatsapp_conversations continua FULL de propósito: a linha tem ~400 bytes, o
+-- ganho seria irrelevante e o risco não é zero.
+alter table public.whatsapp_messages replica identity default;
