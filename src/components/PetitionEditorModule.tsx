@@ -96,6 +96,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { supabase } from '../config/supabase';
+import { ligarRealtimeComFallback } from '../utils/realtimeWithFallback';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 import PetitionAiChat from './PetitionAiChat';
 import PetitionLiveStatusBar from './petition/PetitionLiveStatusBar';
@@ -2052,7 +2053,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const hasUnsavedChangesRef = useRef(false);
   const isOnlineRef = useRef(true);
   const serverReachableRef = useRef(true);
-  const realtimeRefreshTimerRef = useRef<number | null>(null);
   const cursorPersistTimerRef = useRef<number | null>(null);
 
   // PetiçÃµes salvas
@@ -2529,24 +2529,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     if (!user?.id) return;
     if (isCloudImportMode) return;
 
-    const scheduleRefresh = () => {
-      if (realtimeRefreshTimerRef.current) {
-        window.clearTimeout(realtimeRefreshTimerRef.current);
-        realtimeRefreshTimerRef.current = null;
-      }
-
-      realtimeRefreshTimerRef.current = window.setTimeout(() => {
-        setSavedPetitionsLoading(true);
-        petitionEditorService
-          .listPetitions()
-          .then((petitionsData) => setSavedPetitions((petitionsData || []).map(sanitizeSavedPetitionRecord)))
-          .catch(() => {
-            // ignore
-          })
-          .finally(() => setSavedPetitionsLoading(false));
-      }, 1500);
-    };
-
     // Broadcast, e não postgres_changes. Dois motivos:
     //
     // 1. O handler descarta o payload e só recarrega a lista — e cada linha de
@@ -2556,18 +2538,37 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     //    atualização automática nunca chegou a funcionar. `listPetitions()`
     //    não filtra por dono, devolve a lista do escritório — então o tópico
     //    também é único.
-    const channel = supabase
-      .channel('petitions:changes', { config: { private: true } })
-      .on('broadcast', { event: 'changed' }, scheduleRefresh)
-      .subscribe();
-
-    return () => {
-      if (realtimeRefreshTimerRef.current) {
-        window.clearTimeout(realtimeRefreshTimerRef.current);
-        realtimeRefreshTimerRef.current = null;
-      }
-      supabase.removeChannel(channel);
-    };
+    //
+    // O postgres_changes segue como rede, aberto só se o canal privado for
+    // recusado — ver src/utils/realtimeWithFallback.ts. Vai sem o filtro por
+    // dono, justamente porque ele nunca casou: rede que não recebe evento não é
+    // rede. Temporário: sai quando o Broadcast estiver confirmado com sessão
+    // real, e só então saved_petitions sai da publicação.
+    return ligarRealtimeComFallback({
+      escopo: 'Petitions',
+      atrasoMs: 1500,
+      recarregar: () => {
+        setSavedPetitionsLoading(true);
+        petitionEditorService
+          .listPetitions()
+          .then((petitionsData) => setSavedPetitions((petitionsData || []).map(sanitizeSavedPetitionRecord)))
+          .catch(() => {
+            // ignore
+          })
+          .finally(() => setSavedPetitionsLoading(false));
+      },
+      abrirBroadcast: (aoEvento, aoStatus) =>
+        supabase
+          .channel('petitions:changes', { config: { private: true } })
+          .on('broadcast', { event: 'changed' }, aoEvento)
+          .subscribe(aoStatus),
+      abrirFallback: (aoEvento, aoStatus) =>
+        supabase
+          .channel('petition-editor-saved-petitions')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'saved_petitions' }, aoEvento)
+          .subscribe(aoStatus),
+      remover: (canal) => { void supabase.removeChannel(canal); },
+    });
   }, [user?.id, isCloudImportMode]);
 
   const formatRelativeTime = (dateString?: string | null): string => {
