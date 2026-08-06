@@ -2,9 +2,20 @@
  * O formato único de "mensagem mudou" do módulo WhatsApp.
  *
  * Existem dois caminhos para o mesmo fato: o broadcast (`whatsapp:messages`,
- * seis campos escolhidos a dedo pelo gatilho no banco) e o postgres_changes
+ * campos escolhidos a dedo pelo gatilho no banco) e o postgres_changes
  * (linha inteira, incluindo `raw` e `transcription_text`), que segue como rede
  * de segurança enquanto o canal privado não estiver confirmado em produção.
+ *
+ * O broadcast manda o MÍNIMO por operação, e não um formato fixo:
+ *   · INSERT — id, conversation_id, direction, type, status, content (120) e
+ *     refresh=true. `direction`/`type`/`content` existem só porque o notificador
+ *     os usa (filtra 'in' e monta o preview); a thread não lê nenhum dos três.
+ *   · UPDATE — id, conversation_id, status e refresh. Sem `content`: ninguém lê
+ *     texto de mensagem no UPDATE, e mandá-lo a cada `sent → delivered → read`
+ *     era espalhar conteúdo por toda aba aberta sem consumidor.
+ *   · DELETE — id e conversation_id.
+ *
+ * Por isso os campos extras são opcionais aqui: ausência é o normal, não erro.
  *
  * Normalizar os dois aqui é o que permite `useWaRealtime` e o notificador não
  * saberem por qual caminho o evento chegou.

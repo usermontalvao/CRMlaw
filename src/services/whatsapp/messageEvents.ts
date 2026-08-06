@@ -16,7 +16,14 @@ import { normalizarBroadcast, normalizarPostgres, type WaMessageEvent } from './
 
 export type { WaMessageEvent } from './waMessageEvent';
 
-/** Nome do canal = tópico do broadcast. Precisa bater com o gatilho no banco. */
+/**
+ * Nome do canal = tópico do broadcast. Precisa bater com o gatilho no banco.
+ *
+ * O tópico é privado e a policy de `realtime.messages` só aceita equipe interna
+ * ATIVA (`public.wa_can_read_message_broadcast`). Portal do Cliente e `anon`
+ * assinam e não recebem nada — se um dia a assinatura começar a cair em
+ * CHANNEL_ERROR para todo mundo, é aí que se olha primeiro.
+ */
 const TOPICO = 'whatsapp:messages';
 const MARCA = '[Jurius Realtime][WhatsApp]';
 
