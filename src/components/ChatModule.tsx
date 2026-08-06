@@ -1042,12 +1042,6 @@ const ChatModule: React.FC = () => {
     setReactionPickerFor(null);
     chatService.listReactions(selectedRoomId).then(setReactions).catch(() => setReactions([]));
 
-    const unsubReactions = chatService.subscribeToRoomReactions({
-      roomId: selectedRoomId,
-      onChange: () => {
-        chatService.listReactions(selectedRoomId).then(setReactions).catch(() => {});
-      },
-    });
     const unsubUpdates = chatService.subscribeToRoomMessageUpdates({
       roomId: selectedRoomId,
       onUpdate: (m) => setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, ...m } : x))),
@@ -1056,7 +1050,7 @@ const ChatModule: React.FC = () => {
     const refreshReads = () => chatService.getRoomReadStates(rid).then(setReadStates).catch(() => {});
     refreshReads();
     const readPoll = window.setInterval(refreshReads, 8000);
-    return () => { unsubReactions(); unsubUpdates(); window.clearInterval(readPoll); };
+    return () => { unsubUpdates(); window.clearInterval(readPoll); };
   }, [selectedRoomId]);
 
   const triggerShake = useCallback((fromName?: string) => {

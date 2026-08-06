@@ -593,14 +593,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           scheduleDataRefresh(150);
         }
       )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'generated_documents' },
-        (payload) => {
-          console.log('[Realtime] generated_documents change:', payload.eventType);
-          scheduleDataRefresh(150);
-        }
-      )
+      // generated_documents saiu daqui: a tabela não está na publicação
+      // `supabase_realtime`, então esse handler nunca chegou a rodar. As
+      // demais assinaturas deste mesmo canal já chamam scheduleDataRefresh,
+      // então nada deixa de ser atualizado.
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'signature_signers' },

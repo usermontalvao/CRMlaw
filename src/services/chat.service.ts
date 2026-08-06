@@ -607,16 +607,10 @@ class ChatService {
     }
   }
 
-  subscribeToRoomReactions(params: { roomId: string; onChange: () => void }): () => void {
-    const channel = supabase.channel(`chat_reactions_${params.roomId}`);
-    channel.on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'chat_message_reactions' },
-      () => params.onChange(),
-    );
-    channel.subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }
+  // subscribeToRoomReactions saiu daqui: chat_message_reactions não está na
+  // publicação `supabase_realtime`, então o canal nunca recebeu evento algum —
+  // a reação do outro só aparecia ao reabrir a sala, e continua assim. Abria
+  // um canal por sala selecionada, custo que o walrus pagava por nada.
 
   subscribeToRoomMessageUpdates(params: {
     roomId: string;

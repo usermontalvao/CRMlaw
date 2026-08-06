@@ -930,22 +930,15 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       : 'Editar registro'
     : 'Editar';
 
-  useEffect(() => {
-    const channel = supabase
-      .channel('calendar-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_events' }, () => {
-        calendarService.listEvents().then(setCalendarEventsData).catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'deadlines' }, () => {
-        deadlineService.listDeadlines().then(setDeadlines).catch(() => {});
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'representative_appointments' }, () => {
-        representativeService.listAppointments().then(setRepresentativeAppointments).catch(() => {});
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+  // Aqui havia um canal Realtime para calendar_events, deadlines e
+  // representative_appointments. Ele nunca funcionou: nenhuma das três está na
+  // publicação `supabase_realtime`, então os eventos jamais chegaram — o canal
+  // só ocupava uma assinatura e fazia o walrus trabalhar à toa.
+  //
+  // Quem mantém a tela fresca é o `calendarSyncTick` abaixo, que reage ao
+  // syncBus quando algo muda nesta mesma aba. Atualização entre usuários
+  // diferentes nunca existiu nesta tela; para passar a existir, seria preciso
+  // publicar as tabelas de propósito.
 
   const calendarSyncTick = useSyncTick(['calendar', 'deadlines']);
 

@@ -95,30 +95,14 @@ export const usePermissions = () => {
     }
   };
 
-  // Realtime: recarregar overrides quando admin inserir/atualizar/deletar
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const channel = supabase
-      .channel(`user-module-overrides-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_module_overrides',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          loadOverrides(user.id);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
+  // Aqui havia um canal Realtime que recarregaria os overrides quando um admin
+  // concedesse ou revogasse um módulo. Ele nunca funcionou: user_module_overrides
+  // não está na publicação `supabase_realtime`, então o evento nunca chegou.
+  //
+  // Na prática os overrides já são carregados na montagem, e a expiração
+  // automática logo abaixo cuida dos temporários. Para a mudança de permissão
+  // valer sem recarregar a página, a tabela precisaria ser publicada de
+  // propósito — é decisão de produto, não de desempenho.
 
   // Expiração automática: agenda um timeout para remover overrides vencidos sem precisar recarregar a página
   useEffect(() => {
