@@ -49,6 +49,49 @@ test('broadcast: payload sem op ou sem id é descartado', () => {
   assert.equal(normalizarBroadcast(null), null);
 });
 
+// ── Payload mínimo do gatilho ────────────────────────────────────────────────
+// Os três testes abaixo travam o CONTRATO com
+// supabase/migrations/20260806234746_whatsapp_broadcast_hardening.sql: se o
+// gatilho voltar a mandar `content` no UPDATE, ou parar de mandar no INSERT, é
+// aqui que quebra.
+
+test('broadcast: UPDATE não carrega content — a thread não lê texto no UPDATE', () => {
+  // Forma exata que o gatilho emite hoje para "status mudou".
+  const e = normalizarBroadcast({
+    op: 'UPDATE', id: 'm1', conversation_id: 'c1', status: 'delivered', refresh: false,
+  });
+  assert.equal(e?.content, null);
+  assert.equal(e?.direction, null);
+  assert.equal(e?.type, null);
+  // O que o merge cirúrgico de useWaRealtime precisa continua chegando.
+  assert.equal(e?.status, 'delivered');
+  assert.equal(e?.refresh, false);
+  assert.equal(e?.conversation_id, 'c1');
+});
+
+test('broadcast: INSERT preserva o que o notificador usa de verdade', () => {
+  // `direction` filtra 'in' e `content`/`type` montam o preview do cartão —
+  // ver previewOf em src/hooks/useWhatsAppNotifications.ts.
+  const e = normalizarBroadcast({
+    op: 'INSERT', id: 'm1', conversation_id: 'c1',
+    direction: 'in', type: 'image', status: 'delivered', content: 'oi', refresh: true,
+  });
+  assert.equal(e?.direction, 'in');
+  assert.equal(e?.type, 'image');
+  assert.equal(e?.content, 'oi');
+  assert.equal(e?.refresh, true);
+});
+
+test('broadcast: UPDATE de edição relê, e o texto novo NÃO vem no aviso', () => {
+  // Mensagem editada: o gatilho marca refresh=true porque content/edited_at
+  // mudaram, mas o texto em si a tela pega no refreshMessages.
+  const e = normalizarBroadcast({
+    op: 'UPDATE', id: 'm1', conversation_id: 'c1', status: 'read', refresh: true,
+  });
+  assert.equal(e?.refresh, true);
+  assert.equal(e?.content, null);
+});
+
 test('rede postgres_changes: UPDATE com status mescla, sem status relê', () => {
   const comStatus = normalizarPostgres({
     eventType: 'UPDATE', new: { id: 'm1', conversation_id: 'c1', status: 'read' },
