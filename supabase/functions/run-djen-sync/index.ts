@@ -119,10 +119,22 @@ serve(async (req) => {
         .not('lawyer_full_name', 'is', null)
         .neq('lawyer_full_name', '')
 
+      // Só os quatro campos que esta função usa (id, client_id, process_code e
+      // court). Com `select('*')` vinha junto a coluna `notes`, que sozinha tem
+      // 63 MB nas 187 linhas: 4 s por execução e 138 mil blocos de buffer, para
+      // ler número de processo.
       const { data: processes } = await supabaseClient
         .from('processes')
-        .select('*')
+        .select('id, client_id, process_code, court')
         .limit(1000)
+
+      // Clientes: são a segunda âncora da vinculação. A maioria das intimações
+      // deste escritório é de processo não cadastrado, mas de cliente cadastrado
+      // e nomeado no cabeçalho da publicação.
+      const { data: clients } = await supabaseClient
+        .from('clients')
+        .select('id, full_name')
+        .limit(5000)
 
       const { data: djenExistentes } = await supabaseClient
         .from('djen_comunicacoes')
@@ -133,6 +145,7 @@ serve(async (req) => {
       console.log(`\n📊 [${executionId}] DADOS ENCONTRADOS:`)
       console.log(`   👤 Perfis com advogado: ${profiles?.length || 0}`)
       console.log(`   📁 Processos: ${processes?.length || 0}`)
+      console.log(`   🧑 Clientes: ${clients?.length || 0}`)
       console.log(`   📰 Processos com DJEN existente: ${processIdsComDjen.size}`)
 
       // ── Time budget global: conta desde o início da função (inclui ETAPA 1 + ETAPA 2) ──
@@ -163,7 +176,7 @@ serve(async (req) => {
             const data = res.data
             if (data.items && data.items.length > 0) {
               totalFound += data.items.length
-              const result = await saveCommunications(supabaseClient, data.items, processes || [])
+              const result = await saveCommunications(supabaseClient, data.items, processes || [], clients || [])
               totalSaved += result.saved
             }
           } else {
@@ -206,7 +219,7 @@ serve(async (req) => {
             const data = res.data
             if (data.items?.length > 0) {
               totalFound += data.items.length
-              const result = await saveCommunications(supabaseClient, data.items, processes)
+              const result = await saveCommunications(supabaseClient, data.items, processes, clients || [])
               totalSaved += result.saved
             }
           } else {
@@ -257,7 +270,7 @@ serve(async (req) => {
               const data = res.data
               if (data.items?.length > 0) {
                 totalFound += data.items.length
-                const result = await saveCommunications(supabaseClient, data.items, processes)
+                const result = await saveCommunications(supabaseClient, data.items, processes, clients || [])
                 totalSaved += result.saved
                 foundAny = true
                 console.log(`      ✅ ${data.items.length} publ. em ${inicio.toISOString().split('T')[0]}~${windowEnd.toISOString().split('T')[0]}`)
@@ -273,6 +286,19 @@ serve(async (req) => {
 
           if (!foundAny) console.log(`      ℹ️  Nenhuma publicação DJEN encontrada`)
         }
+      }
+
+      // ── ETAPA 2b: auto-cura das órfãs ──
+      // Roda mesmo quando nada novo chegou: o que muda entre um dia e outro não
+      // é só o DJEN, é o cadastro. Cliente ou processo criado hoje conserta as
+      // intimações de ontem sem ninguém precisar refazer nada à mão.
+      if (timeLeft() > 10_000) {
+        const relink = await relinkOrphans(supabaseClient, processes || [], clients || [])
+        if (relink.examined > 0) {
+          console.log(`\n🔗 [${executionId}] ETAPA 2b: auto-cura — ${relink.linked} de ${relink.examined} órfãs vinculadas`)
+        }
+      } else {
+        console.log(`   ⏱️  Budget esgotado — auto-cura de órfãs adiada para a próxima execução`)
       }
 
     } catch (syncError: any) {
@@ -474,7 +500,193 @@ async function fetchDjenWithRetry(
   return { ok: false, error: `${lastError} (após ${retries} tentativas)` }
 }
 
-async function saveCommunications(supabase: any, communications: any[], processes: any[]): Promise<{ saved: number, processesUpdated: string[] }> {
+// ── Vinculação de intimação a processo/cliente ────────────────────────────────
+//
+// Espelho de src/utils/intimationPartyMatch.ts, que é onde a regra é documentada
+// e testada. O Deno não enxerga src/; mexeu lá, mexa aqui.
+//
+// Antes esta função só casava pelo número do processo. Sem o processo cadastrado,
+// a intimação entrava sem processo E sem cliente — mesmo com o cliente cadastrado
+// e o nome dele escrito no cabeçalho da publicação. Como o cron é quem roda todo
+// dia, a regra efetiva do sistema virou "só vincula se o processo estiver
+// cadastrado", e o operador vinculava o resto à mão, todo dia.
+
+const ROTULOS_DE_PARTE = [
+  // RECLAMANTE/RECLAMADO é o vocabulário da Justiça do Trabalho, que é quase todo
+  // o volume deste escritório — e era justamente o que faltava.
+  'RECLAMANTE', 'RECLAMADO', 'RECLAMADA',
+  'REQUERENTE', 'REQUERIDO', 'REQUERIDA',
+  'AUTOR', 'AUTORA', 'R[EÉ]U', 'R[EÉ]',
+  'EXEQUENTE', 'EXECUTADO', 'EXECUTADA',
+  'IMPETRANTE', 'IMPETRADO',
+  'AGRAVANTE', 'AGRAVADO',
+  'RECORRENTE', 'RECORRIDO',
+  'EMBARGANTE', 'EMBARGADO',
+]
+
+// O separador de campo é espaço DUPLO, não quebra de linha: o texto do DJEN vem
+// numa linha só, sem nenhum \n. Parando em [^\n;\r]+ a captura engolia a
+// publicação inteira como se fosse o nome da parte, e nenhum cliente casava.
+const PADRAO_PARTE_FONTE = `(?:${ROTULOS_DE_PARTE.join('|')})\\s*[:\\-]\\s*([^\\n;\\r]+?)(?=\\s{2,}|[\\n;\\r]|$)`
+const TAMANHO_MAXIMO_NOME = 120
+const PADRAO_CNJ = /\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b/
+
+function normalizarNome(valor?: string | null): string {
+  if (!valor) return ''
+  return valor.normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().replace(/\s+/g, ' ').trim()
+}
+
+function normalizarNumeroProcesso(valor?: string | null): string {
+  return valor ? valor.replace(/\D/g, '') : ''
+}
+
+function extrairNumeroCnj(texto?: string | null): string | null {
+  const match = PADRAO_CNJ.exec(texto || '')
+  return match ? match[0] : null
+}
+
+function extrairNomesDePartes(texto?: string | null): string[] {
+  if (!texto) return []
+
+  const nomes: string[] = []
+  const padrao = new RegExp(PADRAO_PARTE_FONTE, 'gi')
+  let match: RegExpExecArray | null
+
+  while ((match = padrao.exec(texto)) !== null) {
+    const bruto = (match[1] || '')
+      .replace(/\s+/g, ' ')
+      .replace(/\s+E\s+OUTROS?\s*\(\d+\)\s*$/i, '')
+      .trim()
+    if (!bruto) continue
+
+    bruto
+      .split(/\s+(?:E|E\/OU)\s+|\s*[,;]\s*/i)
+      .map((parte) => parte.trim())
+      .filter((parte) => parte.length >= 5 && parte.length <= TAMANHO_MAXIMO_NOME && !/^OUTROS?\b/i.test(parte))
+      .forEach((parte) => nomes.push(parte))
+  }
+
+  return Array.from(new Set(nomes)).slice(0, 10)
+}
+
+function casarCliente(nomes: string[], clientes: any[]): string | null {
+  const normalizados = nomes.map(normalizarNome).filter(Boolean)
+  if (normalizados.length === 0) return null
+
+  const porNome = new Map<string, string>()
+  for (const cliente of clientes) {
+    const nome = normalizarNome(cliente.full_name)
+    if (nome && !porNome.has(nome)) porNome.set(nome, cliente.id)
+  }
+
+  // Exato em todos os nomes antes de tentar "conter": um nome curto contido em
+  // dois clientes não pode ganhar de um que casa inteiro.
+  for (const nome of normalizados) {
+    const exato = porNome.get(nome)
+    if (exato) return exato
+  }
+
+  for (const nome of normalizados) {
+    if (nome.length < 10) continue
+    for (const [nomeCliente, id] of porNome) {
+      if (nomeCliente.includes(nome) || nome.includes(nomeCliente)) return id
+    }
+  }
+
+  return null
+}
+
+function casarProcesso(numeroProcesso: string | null, processos: any[]): { processId: string, clientId: string | null } | null {
+  const numero = normalizarNumeroProcesso(numeroProcesso)
+  if (!numero) return null
+
+  for (const processo of processos) {
+    if (normalizarNumeroProcesso(processo.process_code) === numero) {
+      return { processId: processo.id, clientId: processo.client_id ?? null }
+    }
+  }
+
+  return null
+}
+
+function resolverVinculoDaIntimacao(
+  intimacao: { numero_processo?: string | null, texto?: string | null, destinatarios?: (string | null)[] },
+  cadastro: { processos: any[], clientes: any[] },
+): { process_id: string | null, client_id: string | null, linkedProcess: any | null } {
+  const numero = intimacao.numero_processo || extrairNumeroCnj(intimacao.texto)
+  const porProcesso = casarProcesso(numero, cadastro.processos)
+  const linkedProcess = porProcesso
+    ? cadastro.processos.find((p: any) => p.id === porProcesso.processId) ?? null
+    : null
+
+  if (porProcesso?.clientId) {
+    return { process_id: porProcesso.processId, client_id: porProcesso.clientId, linkedProcess }
+  }
+
+  const nomes = [
+    ...(intimacao.destinatarios ?? []).filter((n): n is string => !!n),
+    ...extrairNomesDePartes(intimacao.texto),
+  ]
+
+  return {
+    process_id: porProcesso?.processId ?? null,
+    client_id: casarCliente(nomes, cadastro.clientes),
+    linkedProcess,
+  }
+}
+
+/**
+ * Passada de auto-cura: revisita intimações que ficaram sem processo E sem
+ * cliente e tenta vincular de novo com o cadastro de hoje.
+ *
+ * Sem isto, quem nasceu órfã morre órfã: a importação só olha cada comunicação
+ * uma vez (pula por hash), então cadastrar o cliente ou o processo depois não
+ * conserta o passado — e o operador tem que refazer a vinculação na mão.
+ *
+ * Limitada por lote e por orçamento de tempo: é rede de segurança diária, não
+ * varredura completa. O que sobrar hoje é tentado amanhã.
+ */
+async function relinkOrphans(
+  supabase: any,
+  processes: any[],
+  clients: any[],
+  limit = 100,
+): Promise<{ examined: number, linked: number }> {
+  const { data: orfas, error } = await supabase
+    .from('djen_comunicacoes')
+    .select('id, numero_processo, texto')
+    .is('process_id', null)
+    .is('client_id', null)
+    .order('data_disponibilizacao', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    console.error('⚠️ Erro ao buscar intimações órfãs:', error)
+    return { examined: 0, linked: 0 }
+  }
+
+  let linked = 0
+
+  for (const orfa of orfas ?? []) {
+    const vinculo = resolverVinculoDaIntimacao(
+      { numero_processo: orfa.numero_processo, texto: orfa.texto },
+      { processos: processes, clientes: clients },
+    )
+    if (!vinculo.process_id && !vinculo.client_id) continue
+
+    const payload: any = { updated_at: new Date().toISOString() }
+    if (vinculo.process_id) payload.process_id = vinculo.process_id
+    if (vinculo.client_id) payload.client_id = vinculo.client_id
+
+    const { error: upErr } = await supabase.from('djen_comunicacoes').update(payload).eq('id', orfa.id)
+    if (upErr) console.error(`⚠️ Erro ao revincular ${orfa.id}:`, upErr)
+    else linked++
+  }
+
+  return { examined: (orfas ?? []).length, linked }
+}
+
+async function saveCommunications(supabase: any, communications: any[], processes: any[], clients: any[] = []): Promise<{ saved: number, processesUpdated: string[] }> {
   let savedCount = 0
   const processesUpdated: string[] = []
 
@@ -509,21 +721,22 @@ async function saveCommunications(supabase: any, communications: any[], processe
         }
       }
 
-      let processId = null
-      let clientId = null
-      let linkedProcess = null
+      // Processo pelo número; cliente pelo processo e, faltando processo
+      // cadastrado, pelos nomes das partes no cabeçalho da publicação.
+      const destinatarios = (comm.destinatarios ?? comm.destinatarios_polo ?? [])
+        .map((d: any) => (typeof d === 'string' ? d : d?.nome))
+        .filter(Boolean)
 
-      if (numeroProcesso) {
-        const processNumber = numeroProcesso.replace(/[^0-9]/g, '')
-        linkedProcess = processes.find((p: any) =>
-          p.process_code?.replace(/[^0-9]/g, '') === processNumber
-        )
-        if (linkedProcess) {
-          processId = linkedProcess.id
-          clientId = linkedProcess.client_id
-          console.log(`   🔗 Vinculado ao processo: ${linkedProcess.process_code}`)
-        }
-      }
+      const vinculo = resolverVinculoDaIntimacao(
+        { numero_processo: numeroProcesso, texto: comm.texto, destinatarios },
+        { processos: processes, clientes: clients },
+      )
+      const processId = vinculo.process_id
+      const clientId = vinculo.client_id
+      const linkedProcess = vinculo.linkedProcess
+
+      if (linkedProcess) console.log(`   🔗 Vinculado ao processo: ${linkedProcess.process_code}`)
+      else if (clientId) console.log(`   👤 Sem processo cadastrado — vinculado ao cliente pelo nome da parte`)
 
       const { error } = await supabase
         .from('djen_comunicacoes')

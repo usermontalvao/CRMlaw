@@ -1,5 +1,11 @@
 import { supabase } from '../config/supabase';
 import { dividirEmLotes } from '../utils/queryBatches';
+import {
+  extrairNomesDePartes,
+  extrairNumeroCnj,
+  normalizarNome,
+  normalizarNumeroProcesso,
+} from '../utils/intimationPartyMatch';
 import type {
   DjenComunicacaoLocal,
   CreateDjenComunicacaoDTO,
@@ -154,55 +160,14 @@ class DjenLocalService {
 
     console.log(`📦 saveComunicacoes: ${comunicacoes.length} comunicações, clients=${options?.clients?.length || 0}, processes=${options?.processes?.length || 0}`);
 
-    const normalizeName = (value: string) =>
-      value
-        ? value
-            .normalize('NFD')
-            .replace(/\p{Diacritic}/gu, '')
-            .toUpperCase()
-            .replace(/\s+/g, ' ')
-            .trim()
-        : '';
-
-    const normalizeProcessNumber = (value: string) => (value ? value.replace(/\D/g, '') : '');
-
-    const CNJ_PATTERN = /\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b/;
-    const extractCnjFromText = (texto: string): string | null => {
-      const match = CNJ_PATTERN.exec(texto || '');
-      return match ? match[0] : null;
-    };
-
-    const extractCandidateNamesFromText = (value: string): string[] => {
-      if (!value) return [];
-
-      const candidates: string[] = [];
-      const patterns: RegExp[] = [
-        /(REQUERENTE|REQUERIDO|AUTOR|R[EÉ]U|EXEQUENTE|EXECUTADO|IMPETRANTE|IMPETRADO)\s*[:\-]\s*([^\n;\r]+)/gi,
-      ];
-
-      for (const pattern of patterns) {
-        let match: RegExpExecArray | null;
-        while ((match = pattern.exec(value)) !== null) {
-          const raw = (match[2] || '')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-          if (!raw) continue;
-
-          raw
-            .split(/\s+(?:E|E\/OU)\s+|\s*[,;]\s*/i)
-            .map((s) => s.trim())
-            .filter(Boolean)
-            .forEach((part) => {
-              if (part.length >= 5) {
-                candidates.push(part);
-              }
-            });
-        }
-      }
-
-      return Array.from(new Set(candidates)).slice(0, 10);
-    };
+    // Extração de nomes e normalização vivem em utils/intimationPartyMatch, que é
+    // onde a regra é testada — e é a mesma que o cron usa. Estavam duplicadas
+    // aqui, com o vocabulário trabalhista faltando (RECLAMANTE/RECLAMADO) e a
+    // captura parando em \n, que o texto do DJEN não tem.
+    const normalizeName = normalizarNome;
+    const normalizeProcessNumber = normalizarNumeroProcesso;
+    const extractCnjFromText = extrairNumeroCnj;
+    const extractCandidateNamesFromText = extrairNomesDePartes;
 
     const clientMapByName = new Map<string, Client>();
     options?.clients?.forEach((client) => {
