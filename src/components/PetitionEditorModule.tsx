@@ -2547,18 +2547,18 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       }, 1500);
     };
 
+    // Broadcast, e não postgres_changes. Dois motivos:
+    //
+    // 1. O handler descarta o payload e só recarrega a lista — e cada linha de
+    //    saved_petitions carrega o .docx inteiro (83 MB de TOAST na tabela).
+    // 2. O filtro antigo era `created_by=eq.<usuário>`, mas created_by está
+    //    NULL em todas as linhas: aquele filtro nunca casou, e esta
+    //    atualização automática nunca chegou a funcionar. `listPetitions()`
+    //    não filtra por dono, devolve a lista do escritório — então o tópico
+    //    também é único.
     const channel = supabase
-      .channel(`petition-editor-saved-petitions-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'saved_petitions',
-          filter: `created_by=eq.${user.id}`,
-        },
-        scheduleRefresh
-      )
+      .channel('petitions:changes', { config: { private: true } })
+      .on('broadcast', { event: 'changed' }, scheduleRefresh)
       .subscribe();
 
     return () => {

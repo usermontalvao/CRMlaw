@@ -921,9 +921,15 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => { void loadRef.current(true); }, 1200);
     };
+    // Broadcast, e não postgres_changes: este handler descarta o payload e só
+    // recarrega. Pelo postgres_changes, cada e-mail vinha com corpo e anexos
+    // decodificados em JSON para serem jogados fora — e email_messages é a
+    // maior tabela do banco. O aviso vem de um gatilho por comando, então um
+    // backfill de milhares vira um aviso só. Canal privado: só quem está
+    // autenticado entra (policy em realtime.messages).
     const ch = supabase
-      .channel('email-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'email_messages' }, scheduleReload)
+      .channel('email:changes', { config: { private: true } })
+      .on('broadcast', { event: 'changed' }, scheduleReload)
       .subscribe();
     return () => { if (timer) clearTimeout(timer); supabase.removeChannel(ch); };
   }, []);
