@@ -24,6 +24,7 @@ import { useAuth } from '../contexts/AuthContext';
 import usePermissions from '../hooks/usePermissions';
 import { supabase } from '../config/supabase';
 import { pushNotifications } from '../utils/pushNotifications';
+import { armarDestravamentoDeAudio } from '../utils/notificationSound';
 import type { UserNotification } from '../types/user-notification.types';
 
 interface NotificationBellProps {
@@ -32,6 +33,22 @@ interface NotificationBellProps {
 
 // AudioContext compartilhado — criado/resumido só após gesto do usuário
 let sharedAudioContext: AudioContext | null = null;
+
+// Sem isto, o `resume()` abaixo nunca era aceito: ele só roda quando chega uma
+// notificação, e notificação chega por websocket — nunca dentro de um gesto do
+// usuário, que é a única hora em que o navegador libera o áudio. O contexto
+// ficava suspenso para sempre e o sino era mudo na hospedagem. No localhost o
+// Chrome libera autoplay, então o problema não aparecia.
+armarDestravamentoDeAudio(() => {
+  try {
+    if (!sharedAudioContext) {
+      sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    return sharedAudioContext;
+  } catch {
+    return null;
+  }
+});
 
 const getAudioContext = (): AudioContext | null => {
   try {

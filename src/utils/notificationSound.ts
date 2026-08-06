@@ -59,6 +59,48 @@ function getCtx(): AudioContext | null {
 }
 
 /**
+ * Destrava o áudio no primeiro gesto do usuário.
+ *
+ * Um AudioContext criado sem interação prévia nasce `suspended`, e o navegador
+ * só aceita `resume()` a partir de um gesto. O aviso de mensagem nova chega por
+ * websocket — nunca dentro de um gesto —, então sem isto o contexto ficava
+ * suspenso para sempre e o som não saía nunca.
+ *
+ * No localhost isso não aparecia: o Chrome libera autoplay ali, o contexto já
+ * nascia `running` e não havia nada a destravar. Só na hospedagem o toque
+ * sumia — e sumia calado, porque áudio bloqueado não levanta erro.
+ *
+ * Os ouvintes são passivos, disparam uma vez e saem sozinhos assim que o
+ * contexto está de pé.
+ */
+export function armarDestravamentoDeAudio(obterContexto: () => AudioContext | null = getCtx): void {
+  if (typeof window === 'undefined') return;
+
+  const destravar = () => {
+    const ac = obterContexto();
+    if (!ac) return soltar();
+    if (ac.state === 'running') return soltar();
+    void ac.resume().then(soltar).catch(() => { /* outro gesto tentará de novo */ });
+  };
+
+  const soltar = () => {
+    window.removeEventListener('pointerdown', destravar);
+    window.removeEventListener('keydown', destravar);
+    window.removeEventListener('touchstart', destravar);
+  };
+
+  window.addEventListener('pointerdown', destravar, { passive: true });
+  window.addEventListener('keydown', destravar, { passive: true });
+  window.addEventListener('touchstart', destravar, { passive: true });
+}
+
+// Armado na importação: o módulo entra junto com a tela, muito antes de a
+// primeira mensagem chegar, então o primeiro clique em qualquer lugar do CRM já
+// deixa o áudio pronto. Não cria o AudioContext aqui — só no gesto, que é
+// quando o navegador aceita.
+armarDestravamentoDeAudio();
+
+/**
  * Parciais de um sino: amplitude relativa, multiplicador de frequência e quanto
  * do tempo total cada um dura. O agudo entra junto e sai primeiro — é o que dá o
  * "toc" metálico do ataque sem deixar o som estridente na cauda.
@@ -174,7 +216,14 @@ export function playNotificationSound(tone: NotifyTone = 'global'): void {
   try {
     const ac = getCtx();
     if (!ac) return;
-    if (ac.state === 'suspended') void ac.resume();
+    if (ac.state !== 'running') {
+      // Não agenda com o relógio parado: `currentTime` não avança enquanto o
+      // contexto está suspenso, então as notas nasceriam no passado e o toque
+      // se perderia justamente na vez em que ele importava. Melhor perder o
+      // primeiro aviso e tocar todos os seguintes.
+      void ac.resume().catch(() => { /* o próximo gesto destrava */ });
+      return;
+    }
     scheduleNotificationTone(ac, ac.destination, tone);
   } catch {
     /* áudio é um extra; nunca deixa a notificação visual quebrar */
