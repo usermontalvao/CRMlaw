@@ -16,12 +16,23 @@ const read = (key: string): string | null => {
   try { return localStorage.getItem(key); } catch { return null; }
 };
 const write = (key: string, value: string) => {
-  try { localStorage.setItem(key, value); } catch { /* storage indisponível */ }
+  try {
+    // Vazio some da chave em vez de virar "". `getItem` devolve a string vazia
+    // como valor legítimo, e aí um "nenhuma conversa" gravado volta como id —
+    // falsy, mas diferente de null, o que passa por qualquer guarda `!== null`.
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch { /* storage indisponível */ }
 };
 
-/** Conversa aberta na última sessão (só no módulo cheio; o widget é efêmero). */
+/**
+ * Conversa aberta na última sessão (só no módulo cheio; o widget é efêmero).
+ *
+ * Normaliza "" para null: quem já tem a string vazia gravada de antes continua
+ * recebendo null aqui, sem depender de uma nova gravação para limpar.
+ */
 export function readStoredConversationId(enabled: boolean): string | null {
-  return enabled ? read(SELECTED_KEY) : null;
+  return (enabled ? read(SELECTED_KEY) : null) || null;
 }
 
 export interface WaInboxPositionApi {

@@ -142,7 +142,11 @@ export function useWaComposer({
   useEffect(() => {
     const prev = prevSelIdRef.current;
     if (prev === selectedId) return;
-    if (prev !== null) {
+    // `prev` e não `prev !== null`: id vazio não é conversa. Vinha um "" da
+    // seleção guardada no localStorage, e ele passava pela checagem de null —
+    // o rascunho ia para `conversation_id=eq.`, que o Postgres não converte
+    // para uuid. O 400 caía no catch abaixo e ninguém via.
+    if (prev) {
       const v = draftValRef.current;
       draftsRef.current[prev] = v;
       setDraftMap(m => (m[prev] === v ? m : { ...m, [prev]: v }));

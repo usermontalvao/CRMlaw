@@ -96,6 +96,10 @@ export const conversationsApi = {
 
   /** Salva (ou apaga, se vazio) o rascunho da conversa para o usuário atual. */
   async saveDraft(conversationId: string, content: string): Promise<void> {
+    // Sem conversa não há rascunho para guardar. Um id vazio viraria
+    // `conversation_id=eq.` na URL, e o Postgres devolve 400 ao tentar
+    // converter "" para uuid — erro que o chamador engole no catch.
+    if (!conversationId) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Não autenticado');
     const text = content.trim();
