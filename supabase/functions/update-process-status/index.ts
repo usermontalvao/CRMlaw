@@ -63,10 +63,12 @@ serve(async (req) => {
     console.log(`📅 Data/Hora: ${new Date().toISOString()}`)
     console.log(`${'='.repeat(60)}\n`)
 
-    // Buscar processos que NÃO estão arquivados
+    // Buscar processos que NÃO estão arquivados.
+    // Só os quatro campos que o laço abaixo lê. Com `select('*')` vinha junto a
+    // coluna `notes` (63 MB nas 187 linhas), 3,2 s por execução.
     const { data: processes, error: processError } = await supabaseClient
       .from('processes')
-      .select('*')
+      .select('id, process_code, status, responsible_lawyer_id')
       .neq('status', 'arquivado')
       .not('process_code', 'is', null)
       .neq('process_code', '')

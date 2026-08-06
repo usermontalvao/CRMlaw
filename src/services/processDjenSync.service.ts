@@ -129,9 +129,11 @@ class ProcessDjenSyncService {
       const oneDayAgo = new Date();
       oneDayAgo.setDate(oneDayAgo.getDate() - 1);
 
+      // Só o que `syncProcessWithDjen` lê. `select('*')` traria a coluna `notes`
+      // (63 MB nas 187 linhas) para 50 processos, sem nenhum uso.
       const { data: processes, error } = await supabase
         .from('processes')
-        .select('*')
+        .select('id, process_code, court, practice_area, distributed_at')
         .or(`djen_synced.is.null,and(djen_has_data.eq.false,djen_last_sync.lt.${oneDayAgo.toISOString()})`)
         .eq('status', 'andamento') // Apenas processos em andamento
         .limit(50); // Limitar para não sobrecarregar
