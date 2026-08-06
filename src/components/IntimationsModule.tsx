@@ -423,7 +423,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     }
 
     let linkedCount = 0;
-    
+    // Resumo no fim, em vez de uma linha por intimação: eram ~840 linhas por
+    // passagem, e o StrictMode roda o efeito duas vezes em desenvolvimento. O
+    // console ficava com 1.700 linhas de varredura afogando qualquer outra
+    // coisa — inclusive os avisos de Realtime, que é onde se olha quando a tela
+    // não atualiza. O que interessa aqui é quantas não tinham parte nenhuma
+    // para casar, não o número de partes de cada uma.
+    let semPartes = 0;
+
     for (const intimation of intimationsData) {
       // Pular se já tem cliente ou processo vinculado
       if (intimation.client_id && intimation.process_id) {
@@ -435,13 +442,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         ? intimation.djen_destinatarios.map(d => d.nome)
         : extractPartesFromTexto(htmlToText(intimation.texto || '')).map(p => p.nome);
       
-      // Só a contagem, e só em desenvolvimento: os nomes das partes são dado de
-      // cliente, e uma linha por intimação enchia o console de produção com
-      // umas 800 delas — duas vezes, porque o StrictMode monta o efeito duas.
-      if (import.meta.env.DEV) {
-        console.log(`📋 Intimação ${intimation.id.substring(0, 8)}: ${partes.length} partes encontradas`);
-      }
-      
+      if (partes.length === 0) semPartes++;
+
       // Verificar se alguma parte corresponde a um cliente
       for (const parteNome of partes) {
         const normalizedParte = parteNome.trim().toUpperCase();
@@ -496,7 +498,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     if (linkedCount > 0) {
       console.log(`✅ ${linkedCount} intimação(ões) vinculada(s) automaticamente`);
     } else {
-      console.log(`ℹ️ Nenhuma intimação vinculada automaticamente`);
+      // `semPartes` é o diagnóstico útil quando nada casa: distingue "não achou
+      // parte para comparar" de "achou parte e nenhuma bateu com cliente".
+      console.log(
+        `ℹ️ Nenhuma intimação vinculada automaticamente (${semPartes} de ${intimationsData.length} sem parte identificável)`,
+      );
     }
     
     return linkedCount;
