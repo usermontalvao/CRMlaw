@@ -371,7 +371,7 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   // receber o comunicado comercial mesmo quando a conversa estava encerrada.
   // O cooldown sobrevive a encerramento/reabertura e evita repetição excessiva.
   if (!fromMe) {
-    const job = maybeAutoSendAbsence(admin, instanceId, instanceName, conv.id, remoteJid);
+    const job = maybeAutoSendAbsence(admin, instanceId, conv.id);
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(job);
     else await job.catch(() => {});
   }
@@ -654,9 +654,7 @@ async function classifyReopenWithAI(admin: any, convId: string, text: string): P
  * Disparada async para cada inbound. Cooldown: não reenvia se já enviou nas
  * últimas 12 horas para a mesma conversa (anti-loop).
  */
-async function maybeAutoSendAbsence(
-  admin: any, instanceId: string, instanceName: string, convId: string, remoteJid: string,
-) {
+async function maybeAutoSendAbsence(admin: any, instanceId: string, convId: string) {
   try {
     const { data: ch } = await admin.from('whatsapp_instances')
       .select('absence_enabled, absence_message, timezone')
