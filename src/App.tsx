@@ -1505,6 +1505,20 @@ const MainApp: React.FC = () => {
           const data = await profileService.getProfile(user.id);
 
           if (data) {
+            // Avatares antigos foram gravados como data URL dentro da coluna,
+            // e profiles é lida em toda listagem de membros. Na primeira vez
+            // que o dono do perfil entra, a foto sobe para o Storage e a
+            // coluna passa a guardar só a URL.
+            if (data.avatar_url?.startsWith('data:')) {
+              const migratedAvatar = await profileService
+                .migrateInlineAvatarToStorage(user.id, data.avatar_url)
+                .catch((err) => {
+                  console.error('Falha ao migrar avatar para o Storage:', err);
+                  return null;
+                });
+              if (migratedAvatar) data.avatar_url = migratedAvatar;
+            }
+
             const effectiveEmail = (data.email || user.email || '').trim();
             let effectiveCpf = data.cpf ? formatCPF(String(data.cpf)) : '';
 

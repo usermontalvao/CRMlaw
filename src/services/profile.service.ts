@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { settingsService } from './settings.service';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 export type PresenceStatus = 'online' | 'away' | 'offline';
@@ -74,6 +75,18 @@ export interface UpdateProfileInput {
   theme_preference?: ThemePreference;
   petition_editor_theme_preference?: PetitionEditorThemePreference | null;
 }
+
+/**
+ * Colunas usadas nas listagens de membros. Deixa de fora as preferências
+ * pessoais (tema, barra lateral e os estilos do editor de petições, que são um
+ * jsonb que pode crescer bastante) — nenhuma tela precisa da preferência dos
+ * outros, e essas listagens são das leituras mais frequentes do sistema.
+ */
+/** Migrações de avatar em voo, para que chamadas simultâneas não subam duas vezes. */
+const inlineAvatarMigrations = new Map<string, Promise<string>>();
+
+const MEMBER_COLUMNS =
+  'id,user_id,name,role,email,phone,oab,bio,avatar_url,cover_url,badge,location,gender,cpf,lawyer_full_name,presence_status,last_seen_at,is_active,joined_at,created_at,updated_at' as const;
 
 class ProfileService {
   private tableName = 'profiles';
@@ -160,7 +173,7 @@ class ProfileService {
   async listMembers(): Promise<Profile[]> {
     const { data, error } = await supabase
       .from(this.tableName)
-      .select('*')
+      .select(MEMBER_COLUMNS)
       .eq('is_active', true)
       .order('name', { ascending: true });
 
@@ -174,7 +187,7 @@ class ProfileService {
 
     const { data, error } = await supabase
       .from(this.tableName)
-      .select('*')
+      .select(MEMBER_COLUMNS)
       .or(`name.ilike.%${query}%,email.ilike.%${query}%`)
       .order('name', { ascending: true })
       .limit(10);
@@ -307,6 +320,65 @@ class ProfileService {
     }
 
     return true;
+  }
+
+  /**
+   * Envia a foto de perfil para o bucket `perfil` e devolve a URL pública.
+   *
+   * O avatar nunca deve ser gravado como base64 na coluna: `profiles` é lida
+   * em toda listagem de membros e é publicada no Realtime — uma foto embutida
+   * viaja junto em cada leitura.
+   */
+  async uploadAvatar(userId: string, file: File): Promise<string> {
+    const extFromName = file.name?.split('.').pop()?.toLowerCase();
+    const extFromType = file.type?.split('/').pop()?.toLowerCase();
+    const ext = (extFromName && extFromName.length <= 5 ? extFromName : extFromType) || 'jpg';
+    const filePath = `avatars/avatar_${userId}_${Date.now()}.${ext}`;
+    return settingsService.uploadToProfileBucket(filePath, file);
+  }
+
+  /**
+   * Converte um avatar que ficou gravado como data URL em arquivo no Storage.
+   *
+   * Roda uma vez por usuário afetado, com a sessão do próprio usuário (logo
+   * passa pelo RLS). Devolve a nova URL, ou null se não havia nada a migrar.
+   *
+   * O carregamento do perfil pode disparar mais de uma vez em paralelo (efeito
+   * remontado, StrictMode), e as duas execuções enxergariam o mesmo base64
+   * antes de qualquer uma gravar — o que subiria o mesmo arquivo duas vezes.
+   * Por isso as chamadas simultâneas do mesmo usuário compartilham uma única
+   * migração.
+   */
+  async migrateInlineAvatarToStorage(userId: string, avatarUrl?: string | null): Promise<string | null> {
+    if (!avatarUrl || !avatarUrl.startsWith('data:')) return null;
+
+    const emAndamento = inlineAvatarMigrations.get(userId);
+    if (emAndamento) return emAndamento;
+
+    const migracao = (async () => {
+      const response = await fetch(avatarUrl);
+      const blob = await response.blob();
+      const mime = blob.type || 'image/jpeg';
+      const ext = mime.split('/').pop()?.toLowerCase() || 'jpg';
+      const file = new File([blob], `avatar_${userId}.${ext}`, { type: mime });
+
+      const publicUrl = await this.uploadAvatar(userId, file);
+
+      const { error } = await supabase
+        .from(this.tableName)
+        .update({ avatar_url: publicUrl })
+        .eq('user_id', userId);
+
+      if (error) throw new Error(error.message);
+      return publicUrl;
+    })();
+
+    inlineAvatarMigrations.set(userId, migracao);
+    try {
+      return await migracao;
+    } finally {
+      inlineAvatarMigrations.delete(userId);
+    }
   }
 
   async setPresenceStatus(userId: string, status: PresenceStatus): Promise<void> {

@@ -141,6 +141,8 @@ export default function ProfileModal({
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dados');
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [message, setMessage] = useState<MessageState>(null);
 
   const [profileForm, setProfileForm] = useState<ProfileFormData>({
@@ -420,34 +422,51 @@ export default function ProfileModal({
     setProfileForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    event.target.value = '';
+    if (!file || !user) return;
 
     if (file.size > MAX_AVATAR_SIZE_MB * 1024 * 1024) {
       setMessage({
         type: 'error',
         text: `A imagem deve ter no máximo ${MAX_AVATAR_SIZE_MB}MB.`,
       });
-      event.target.value = '';
       return;
     }
 
+    // Pré-visualização local enquanto o arquivo sobe. A foto em si vai para o
+    // Storage: gravar base64 na coluna faria a imagem viajar em toda leitura
+    // de profiles, que é uma das tabelas mais lidas do sistema.
+    const previewUrl = URL.createObjectURL(file);
+    setAvatarPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return previewUrl;
+    });
+
+    setUploadingAvatar(true);
+    setMessage(null);
+
     try {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setProfileForm((prev) => ({
-          ...prev,
-          avatarUrl: (reader.result as string) || GENERIC_AVATAR,
-        }));
-      };
-      reader.readAsDataURL(file);
-    } catch {
-      setMessage({ type: 'error', text: 'Erro ao carregar imagem.' });
+      const publicUrl = await profileService.uploadAvatar(user.id, file);
+      setProfileForm((prev) => ({ ...prev, avatarUrl: publicUrl }));
+    } catch (error) {
+      console.error('Erro ao enviar avatar:', error);
+      setMessage({ type: 'error', text: 'Erro ao enviar a imagem. Tente novamente.' });
+      setAvatarPreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
     } finally {
-      event.target.value = '';
+      setUploadingAvatar(false);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+    };
+  }, [avatarPreview]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -456,6 +475,17 @@ export default function ProfileModal({
     try {
       setSaving(true);
       setMessage(null);
+
+      // Rede de segurança: se o perfil ainda carrega um avatar embutido
+      // (data URL) vindo do formato antigo, ele vai para o Storage antes de
+      // ser regravado na coluna.
+      let avatarUrl = profileForm.avatarUrl || GENERIC_AVATAR;
+      if (avatarUrl.startsWith('data:')) {
+        const migrated = await profileService
+          .migrateInlineAvatarToStorage(user.id, avatarUrl)
+          .catch(() => null);
+        avatarUrl = migrated || GENERIC_AVATAR;
+      }
 
       const payload = {
         name: profileForm.name.trim(),
@@ -466,7 +496,7 @@ export default function ProfileModal({
         oab: profileForm.oab || null,
         lawyer_full_name: profileForm.lawyerFullName || null,
         bio: profileForm.bio || null,
-        avatar_url: profileForm.avatarUrl || GENERIC_AVATAR,
+        avatar_url: avatarUrl,
       };
 
       await profileService.upsertProfile(user.id, payload);
@@ -588,16 +618,25 @@ export default function ProfileModal({
                 <div className="flex flex-col items-start gap-3 pb-4 border-b border-[#e7e5df] sm:flex-row sm:items-center sm:gap-4">
                   <div className="relative">
                     <img
-                      src={profileForm.avatarUrl}
+                      src={avatarPreview || profileForm.avatarUrl}
                       alt={profileForm.name}
-                      className="w-20 h-20 rounded-full object-cover ring-4 ring-slate-100"
+                      className={`w-20 h-20 rounded-full object-cover ring-4 ring-slate-100 ${uploadingAvatar ? 'opacity-60' : ''}`}
                     />
-                    <label className="absolute -bottom-1 -right-1 w-8 h-8 bg-orange-500 hover:bg-orange-600 text-white rounded-full flex items-center justify-center cursor-pointer transition-colors shadow-lg">
-                      <Camera className="w-4 h-4" />
+                    <label
+                      className={`absolute -bottom-1 -right-1 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center transition-colors shadow-lg ${
+                        uploadingAvatar ? 'cursor-wait opacity-70' : 'cursor-pointer hover:bg-orange-600'
+                      }`}
+                    >
+                      {uploadingAvatar ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Camera className="w-4 h-4" />
+                      )}
                       <input
                         type="file"
                         className="hidden"
                         accept="image/*"
+                        disabled={uploadingAvatar}
                         onChange={handleAvatarChange}
                       />
                     </label>
