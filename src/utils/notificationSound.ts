@@ -73,11 +73,11 @@ function getCtx(): AudioContext | null {
  * Os ouvintes são passivos, disparam uma vez e saem sozinhos assim que o
  * contexto está de pé.
  */
-export function armarDestravamentoDeAudio(obterContexto: () => AudioContext | null = getCtx): void {
+export function armarDestravamentoDeAudio(): void {
   if (typeof window === 'undefined') return;
 
   const destravar = () => {
-    const ac = obterContexto();
+    const ac = getCtx();
     if (!ac) return soltar();
     if (ac.state === 'running') return soltar();
     void ac.resume().then(soltar).catch(() => { /* outro gesto tentará de novo */ });
@@ -99,6 +99,25 @@ export function armarDestravamentoDeAudio(obterContexto: () => AudioContext | nu
 // deixa o áudio pronto. Não cria o AudioContext aqui — só no gesto, que é
 // quando o navegador aceita.
 armarDestravamentoDeAudio();
+
+/**
+ * O AudioContext compartilhado — e só quando ele já está tocável.
+ *
+ * Existe para quem toca um som próprio (o sino do NotificationBell) não precisar
+ * abrir o seu: dois contextos significam dois destravamentos, e um deles sempre
+ * fica para trás. Nunca cria o contexto: fora de um gesto ele nasceria
+ * `suspended` e o navegador registraria um aviso no console a cada tentativa.
+ * Antes do primeiro clique devolve `null`, e quem chama fica em silêncio.
+ */
+export function getContextoTocavel(): AudioContext | null {
+  if (!ctx) return null;
+  if (ctx.state !== 'running') {
+    // Pode ter sido suspenso por inatividade; o próximo gesto termina o serviço.
+    void ctx.resume().catch(() => { /* sem áudio agora — não é erro */ });
+    return null;
+  }
+  return ctx;
+}
 
 /**
  * Parciais de um sino: amplitude relativa, multiplicador de frequência e quanto

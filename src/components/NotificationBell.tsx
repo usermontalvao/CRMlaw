@@ -24,48 +24,19 @@ import { useAuth } from '../contexts/AuthContext';
 import usePermissions from '../hooks/usePermissions';
 import { supabase } from '../config/supabase';
 import { pushNotifications } from '../utils/pushNotifications';
-import { armarDestravamentoDeAudio } from '../utils/notificationSound';
+import { getContextoTocavel } from '../utils/notificationSound';
 import type { UserNotification } from '../types/user-notification.types';
 
 interface NotificationBellProps {
   onNavigateToModule?: (moduleKey: string, params?: any) => void;
 }
 
-// AudioContext compartilhado — criado/resumido só após gesto do usuário
-let sharedAudioContext: AudioContext | null = null;
-
-// Sem isto, o `resume()` abaixo nunca era aceito: ele só roda quando chega uma
-// notificação, e notificação chega por websocket — nunca dentro de um gesto do
-// usuário, que é a única hora em que o navegador libera o áudio. O contexto
-// ficava suspenso para sempre e o sino era mudo na hospedagem. No localhost o
-// Chrome libera autoplay, então o problema não aparecia.
-armarDestravamentoDeAudio(() => {
-  try {
-    if (!sharedAudioContext) {
-      sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    return sharedAudioContext;
-  } catch {
-    return null;
-  }
-});
-
-const getAudioContext = (): AudioContext | null => {
-  try {
-    if (!sharedAudioContext) {
-      sharedAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    // Tenta retomar se suspenso (navegador pode suspender após inatividade)
-    if (sharedAudioContext.state === 'suspended') {
-      sharedAudioContext.resume().catch(() => {});
-    }
-    // Bloqueia se ainda não foi liberado pelo browser (sem gesto do usuário ainda)
-    if (sharedAudioContext.state === 'running') return sharedAudioContext;
-    return null;
-  } catch {
-    return null;
-  }
-};
+// O áudio vem do contexto compartilhado de `notificationSound`, que já se
+// destrava sozinho no primeiro gesto do usuário. Este arquivo mantinha um
+// AudioContext próprio, com o seu próprio destravamento: dois contextos, dois
+// destravamentos e um deles sempre ficando para trás — além de um contexto
+// criado antes de qualquer clique, que é o que enchia o console de "AudioContext
+// was not allowed to start". Aqui ficam só os tons; o contexto é de lá.
 
 // Toca um tom único com envelope suave (ataque/descida em rampa) — evita o
 // "clique" de começar/terminar o som no volume cheio.
@@ -95,7 +66,7 @@ const playTone = (
 // 'default' = bipe único, agora com envelope suave (sem clique) e volume menor.
 const playNotificationSound = (kind: 'default' | 'email' = 'default') => {
   try {
-    const ctx = getAudioContext();
+    const ctx = getContextoTocavel();
     if (!ctx) return; // sem gesto do usuário ainda — silencioso
     if (kind === 'email') {
       // dois tons ascendentes, suaves, sobrepondo levemente — tipo "tlim-tlim"
@@ -341,21 +312,6 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
 
   useEffect(() => {
     pushNotifications.initialize().catch(() => {});
-  }, []);
-
-  // Desbloqueia AudioContext no primeiro gesto do usuário (política do navegador)
-  useEffect(() => {
-    const unlock = () => {
-      if (sharedAudioContext && sharedAudioContext.state === 'suspended') {
-        sharedAudioContext.resume().catch(() => {});
-      }
-    };
-    window.addEventListener('click', unlock, { once: true });
-    window.addEventListener('keydown', unlock, { once: true });
-    return () => {
-      window.removeEventListener('click', unlock);
-      window.removeEventListener('keydown', unlock);
-    };
   }, []);
 
   const normalizeRoleKey = useCallback((role?: string | null) => {
