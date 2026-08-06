@@ -7,6 +7,7 @@ import type {
   DeadlineFilters,
   DeadlineStatus,
 } from '../types/deadline.types';
+import { dividirEmLotes } from '../utils/queryBatches';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
@@ -263,17 +264,97 @@ class DeadlineService {
   async getIntimationIdsWithDeadlines(intimationIds: string[]): Promise<Set<string>> {
     if (intimationIds.length === 0) return new Set();
 
+    // Em lotes: o `in.(...)` vai na URL e estoura o teto do servidor com algumas
+    // centenas de ids — e aqui a falha é pior que uma tela vazia, porque quem
+    // chama é o Guardião.
+    const encontrados = new Set<string>();
+
+    const respostas = await Promise.all(
+      dividirEmLotes(intimationIds).map((lote) =>
+        supabase.from(this.tableName).select('intimation_id').in('intimation_id', lote),
+      ),
+    );
+
+    for (const { data, error } of respostas) {
+      if (error) {
+        console.error('Erro ao verificar prazos vinculados a intimações:', error);
+        throw new Error(error.message);
+      }
+      for (const linha of data ?? []) encontrados.add(linha.intimation_id as string);
+    }
+
+    return encontrados;
+  }
+
+  /**
+   * Guardião de prazos, vínculo fraco: prazos que podem ser de uma intimação sem
+   * `intimation_id` gravado.
+   *
+   * Busca pelas duas âncoras — processo e cliente — porque o cadastro do
+   * escritório é centrado no cliente: a maioria dos prazos não tem processo, e
+   * boa parte das intimações também não. Duas consultas em vez de um `or(...)`
+   * porque cada lado tem seu próprio lote e o filtro vai na URL.
+   *
+   * Traz tudo que não está cancelado e deixa o filtro fino para
+   * `casamentoDePrazo` — a regra mora num módulo puro e testado, não espalhada
+   * em cláusula de consulta.
+   */
+  async getDeadlineCandidates(ancoras: {
+    processIds?: string[];
+    clientIds?: string[];
+  }): Promise<Deadline[]> {
+    const processIds = Array.from(new Set((ancoras.processIds ?? []).filter(Boolean)));
+    const clientIds = Array.from(new Set((ancoras.clientIds ?? []).filter(Boolean)));
+    if (processIds.length === 0 && clientIds.length === 0) return [];
+
+    const consultas = [
+      ...dividirEmLotes(processIds).map((lote) =>
+        supabase.from(this.tableName).select('*').in('process_id', lote).neq('status', 'cancelado'),
+      ),
+      ...dividirEmLotes(clientIds).map((lote) =>
+        supabase.from(this.tableName).select('*').in('client_id', lote).neq('status', 'cancelado'),
+      ),
+    ];
+
+    // Um prazo com processo E cliente na lista volta nas duas consultas.
+    const porId = new Map<string, Deadline>();
+
+    for (const { data, error } of await Promise.all(consultas)) {
+      if (error) {
+        console.error('Erro ao buscar prazos candidatos:', error);
+        throw new Error(error.message);
+      }
+      for (const prazo of (data ?? []) as Deadline[]) porId.set(prazo.id, prazo);
+    }
+
+    return Array.from(porId.values());
+  }
+
+  /**
+   * Promove o vínculo fraco a forte: grava `intimation_id` no prazo que o
+   * operador confirmou ser o desta intimação. `confirmed_at` marca que quem
+   * confirmou foi gente — o backfill deixa nulo.
+   */
+  async linkDeadlineToIntimation(deadlineId: string, intimationId: string): Promise<Deadline> {
     const { data, error } = await supabase
       .from(this.tableName)
-      .select('intimation_id')
-      .in('intimation_id', intimationIds);
+      .update({
+        intimation_id: intimationId,
+        confirmed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', deadlineId)
+      .select()
+      .single();
 
     if (error) {
-      console.error('Erro ao verificar prazos vinculados a intimações:', error);
+      console.error('Erro ao vincular prazo à intimação:', error);
       throw new Error(error.message);
     }
 
-    return new Set((data ?? []).map((d) => d.intimation_id as string));
+    this.invalidateCache();
+    syncBus.emit('deadlines');
+    return data;
   }
 
   async getOverdueDeadlines(): Promise<Deadline[]> {

@@ -73,7 +73,9 @@ export const formatDate = (date: Date | string | null | undefined): string => {
 
   if (typeof date === 'string') {
     const raw = date.trim();
-    const datePart = raw.includes('T') ? raw.split('T')[0] : raw;
+    // Corta no 'T' (ISO) e também no espaço: o Postgres devolve
+    // "2026-08-10 00:00:00+00", que sem isto cai no `new Date(raw)` e recua um dia.
+    const datePart = raw.split(/[T ]/)[0];
     if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
       [yyyy, mm, dd] = datePart.split('-');
     } else {
@@ -131,13 +133,20 @@ export const formatTime = (date: Date | string): string => {
 };
 
 /**
- * Formata data por extenso
+ * Formata data por extenso: "segunda-feira, 10 de agosto de 2026".
+ *
+ * Lê a data do próprio texto ISO em vez de converter fuso — datas de prazo são
+ * gravadas à meia-noite UTC, e passá-las por `new Date(...).toLocaleDateString()`
+ * em Cuiabá (UTC-4) devolve as 20h do dia ANTERIOR. Era assim que um prazo
+ * gravado para 10/08 aparecia no card vencendo em 09/08, um domingo.
  */
 export const formatDateLong = (date: Date | string): string => {
   let d: Date;
   if (typeof date === 'string') {
     const raw = date.trim();
-    const datePart = raw.includes('T') ? raw.split('T')[0] : raw;
+    // Corta no 'T' (ISO) e também no espaço: o Postgres devolve
+    // "2026-08-10 00:00:00+00", que sem isto cai no `new Date(raw)` e recua um dia.
+    const datePart = raw.split(/[T ]/)[0];
     if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
       const [yyyy, mm, dd] = datePart.split('-').map((x) => Number(x));
       d = new Date(yyyy, mm - 1, dd);
@@ -152,6 +161,7 @@ export const formatDateLong = (date: Date | string): string => {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
+    year: 'numeric',
   });
 };
 

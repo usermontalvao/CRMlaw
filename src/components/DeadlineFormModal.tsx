@@ -12,6 +12,7 @@ import type { Requirement } from '../types/requirement.types';
 import type { Profile } from '../services/profile.service';
 import type { Client } from '../types/client.types';
 import { useFormLayout } from '../hooks/useFormLayout';
+import { formatDateLong } from '../utils/formatters';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -488,7 +489,7 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
           {source === 'intimation' && intimationContext?.analysis_due_date && (
             <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
               <p className="text-xs text-amber-900 font-semibold">
-                ⚠️ Prazo Final: {new Date(intimationContext.analysis_due_date).toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                ⚠️ Prazo Final: {formatDateLong(intimationContext.analysis_due_date)}
               </p>
               <p className="text-xs text-amber-700 mt-0.5">✓ Data pré-preenchida com 1 dia de margem</p>
             </div>

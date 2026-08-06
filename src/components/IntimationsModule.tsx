@@ -47,7 +47,7 @@ import { deadlineService } from '../services/deadline.service';
 import { calendarService } from '../services/calendar.service';
 import { profileService } from '../services/profile.service';
 import { matchesNormalizedSearch } from '../utils/search';
-import { formatDate as formatDateValue, formatDateTime as formatDateTimeValue } from '../utils/formatters';
+import { formatDate as formatDateValue, formatDateLong, formatDateTime as formatDateTimeValue } from '../utils/formatters';
 import { settingsService, type DjenConfig, DEADLINE_MODULE_DEFAULTS } from '../services/settings.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { intimationAnalysisService } from '../services/intimationAnalysis.service';
@@ -63,11 +63,12 @@ import { useSelectionState } from '../hooks/useSelectionState';
 import type { DjenComunicacaoLocal, DjenConsultaParams, UpdateDjenComunicacaoDTO } from '../types/djen.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
-import type { CreateDeadlineDTO, DeadlineType, DeadlinePriority, DeadlineStatus } from '../types/deadline.types';
+import type { CreateDeadlineDTO, Deadline, DeadlineType, DeadlinePriority, DeadlineStatus } from '../types/deadline.types';
 import type { CreateCalendarEventDTO, CalendarEventType } from '../types/calendar.types';
 import type { Profile } from '../services/profile.service';
 import type { IntimationAnalysis } from '../types/ai.types';
 import { addMinutesToWallTime } from '../utils/officeTime';
+import { escolherMelhorCandidato, resolverAncora, type AncoraCasamento } from '../utils/deadlineIntimationMatch';
 
 interface ModuleSettings {
   defaultGroupByProcess: boolean;
@@ -221,12 +222,17 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [prescriptionSuccess, setPrescriptionSuccess] = useState<string | null>(null);
 
   // Guardião de prazos: bloqueia "marcar como lida" quando há prazo (IA)
-  // detectado sem cadastro vinculado.
+  // detectado sem cadastro vinculado. `candidate` é o prazo que existe no mesmo
+  // processo mas nasceu sem `intimation_id` — nesse caso não é bloqueio, é a
+  // pergunta "é este aqui?".
   const [readGuard, setReadGuard] = useState<{
     intimation: DjenComunicacaoLocal;
     dueDate?: string | null;
     days?: number | null;
+    candidate?: Deadline | null;
+    ancora?: AncoraCasamento | null;
   } | null>(null);
+  const [linkingDeadline, setLinkingDeadline] = useState(false);
   const pendingReadAfterDeadlineRef = useRef<string | null>(null);
 
   // Seleção múltipla
@@ -925,16 +931,92 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // Sincronização automática movida para cron no Supabase
 
+  // Guardião de prazos: procura o prazo já cadastrado desta intimação.
+  //
+  // Primeiro o vínculo forte (deadlines.intimation_id). Falhando ele, o vínculo
+  // fraco — mesmo processo, cadastrado logo depois, vencendo na janela — porque
+  // o campo forte só é preenchido quando o prazo nasce pelo card da intimação, e
+  // quase todo prazo do escritório nasce pelo módulo de Prazos.
+  const findExistingDeadline = async (
+    intimation: DjenComunicacaoLocal,
+    estimativaVencimento: string | null,
+  ): Promise<{ linked: boolean; candidate: Deadline | null; ancora: AncoraCasamento | null }> => {
+    const linked = await deadlineService.getIntimationIdsWithDeadlines([intimation.id]);
+    if (linked.has(intimation.id)) return { linked: true, candidate: null, ancora: null };
+
+    // A intimação pode ter chegado sem processo e sem cliente; nesse caso as
+    // irmãs de mesmo número de processo emprestam a âncora delas.
+    const ancoras = resolverAncora(intimation, intimations);
+    if (!ancoras.process_id && !ancoras.client_id) {
+      return { linked: false, candidate: null, ancora: null };
+    }
+
+    const prazos = await deadlineService.getDeadlineCandidates({
+      processIds: ancoras.process_id ? [ancoras.process_id] : [],
+      clientIds: ancoras.client_id ? [ancoras.client_id] : [],
+    });
+    const escolhido = escolherMelhorCandidato(prazos, {
+      id: intimation.id,
+      ...ancoras,
+      data_disponibilizacao: intimation.data_disponibilizacao,
+      estimativaVencimento,
+    });
+
+    return {
+      linked: false,
+      candidate: escolhido?.prazo ?? null,
+      ancora: escolhido?.ancora ?? null,
+    };
+  };
+
   // Guardião de prazos: retorna os IDs (entre os informados) que têm prazo
-  // detectado pela IA e NENHUM prazo cadastrado vinculado. Consulta o banco
-  // (não o estado local) para cobrir intimações cuja análise não está carregada.
+  // detectado pela IA e NENHUM prazo cadastrado — nem vinculado, nem casável no
+  // mesmo processo. Consulta o banco (não o estado local) para cobrir intimações
+  // cuja análise não está carregada.
   const getUnprotectedIntimationIds = async (ids: string[]): Promise<string[]> => {
     if (ids.length === 0) return [];
     const analyses = await intimationAnalysisService.getAnalysesByIntimationIds(ids);
     const withAiDeadline = ids.filter(id => analyses.get(id)?.deadline_due_date);
     if (withAiDeadline.length === 0) return [];
+
     const linked = await deadlineService.getIntimationIdsWithDeadlines(withAiDeadline);
-    return withAiDeadline.filter(id => !linked.has(id));
+    const semVinculoForte = withAiDeadline.filter(id => !linked.has(id));
+    if (semVinculoForte.length === 0) return [];
+
+    const porId = new Map(intimations.map(i => [i.id, i]));
+    // Resolve a âncora de cada uma (emprestando das irmãs quando órfã) antes de
+    // ir ao banco, para as duas consultas cobrirem o lote inteiro. O vínculo
+    // fraco não pode custar uma ida ao banco por intimação quando o operador
+    // marca 300 de uma vez.
+    const ancorasPorId = new Map<string, { process_id: string | null; client_id: string | null }>();
+    for (const id of semVinculoForte) {
+      const intimation = porId.get(id);
+      if (intimation) ancorasPorId.set(id, resolverAncora(intimation, intimations));
+    }
+
+    const coletar = (campo: 'process_id' | 'client_id') =>
+      Array.from(ancorasPorId.values())
+        .map(ancora => ancora[campo])
+        .filter((valor): valor is string => !!valor);
+
+    const processIds = coletar('process_id');
+    const clientIds = coletar('client_id');
+    if (processIds.length === 0 && clientIds.length === 0) return semVinculoForte;
+
+    const prazos = await deadlineService.getDeadlineCandidates({ processIds, clientIds });
+
+    return semVinculoForte.filter(id => {
+      const intimation = porId.get(id);
+      const ancoras = ancorasPorId.get(id);
+      if (!intimation || !ancoras) return true;
+      const candidato = escolherMelhorCandidato(prazos, {
+        id,
+        ...ancoras,
+        data_disponibilizacao: intimation.data_disponibilizacao,
+        estimativaVencimento: analyses.get(id)?.deadline_due_date ?? null,
+      });
+      return !candidato;
+    });
   };
 
   // Marcar como lida
@@ -948,15 +1030,21 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       // 1) Guardião de prazos
       if (intimation && analysis?.deadline) {
         let hasLinkedDeadline = false;
+        let candidate: Deadline | null = null;
+        let ancora: AncoraCasamento | null = null;
         try {
-          const linked = await deadlineService.getIntimationIdsWithDeadlines([id]);
-          hasLinkedDeadline = linked.has(id);
+          const found = await findExistingDeadline(intimation, analysis.deadline.dueDate || null);
+          hasLinkedDeadline = found.linked;
+          candidate = found.candidate;
+          ancora = found.ancora;
         } catch { /* fail-closed */ }
         if (!hasLinkedDeadline) {
           setReadGuard({
             intimation,
             dueDate: analysis.deadline.dueDate || null,
             days: analysis.deadline.days ?? null,
+            candidate,
+            ancora,
           });
           return;
         }
@@ -981,6 +1069,25 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       toast.success('Marcado como lida');
     } catch (err: any) {
       toast.error('Erro ao marcar', err.message);
+    }
+  };
+
+  // Guardião de prazos: o operador confirmou que o prazo achado no processo é o
+  // desta intimação. Grava o vínculo forte e segue com a marcação — a partir
+  // daqui esta intimação não volta a ser cobrada.
+  const handleLinkCandidateDeadline = async () => {
+    if (!readGuard?.candidate || linkingDeadline) return;
+    const { intimation, candidate } = readGuard;
+    setLinkingDeadline(true);
+    try {
+      await deadlineService.linkDeadlineToIntimation(candidate.id, intimation.id);
+      setReadGuard(null);
+      toast.success('Prazo vinculado', `"${candidate.title}" agora está ligado a esta intimação.`);
+      await handleMarkAsRead(intimation.id, true);
+    } catch (err: any) {
+      toast.error('Erro ao vincular', err.message || 'Não foi possível vincular o prazo.');
+    } finally {
+      setLinkingDeadline(false);
     }
   };
 
@@ -1471,11 +1578,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     setQuickViewProcessId(linkedProcess.id);
   };
 
-  const formatDate = (dateStr: string) => {
+  const formatDate = (dateStr: Date | string): string => {
     try {
       return formatDateValue(dateStr);
     } catch {
-      return dateStr;
+      return typeof dateStr === 'string' ? dateStr : dateStr.toISOString().slice(0, 10);
     }
   };
 
@@ -1880,7 +1987,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   <div className="shrink-0 text-right">
                     <p className="text-sm font-bold text-slate-900">{detailAnalysis.deadline.days}d úteis</p>
                     {detailAnalysis.deadline.dueDate && (
-                      <p className="text-[10px] text-slate-600">{new Date(detailAnalysis.deadline.dueDate).toLocaleDateString('pt-BR')}</p>
+                      <p className="text-[10px] text-slate-600">{formatDate(detailAnalysis.deadline.dueDate)}</p>
                     )}
                   </div>
                 )}
@@ -2513,7 +2620,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                     </p>
                                     <p className="text-slate-700"><strong>{analysis.deadline.days} dias úteis</strong> — {analysis.deadline.description}</p>
                                     {analysis.deadline.dueDate && (
-                                      <p className="text-slate-700 font-medium">Vencimento: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                                      <p className="text-slate-700 font-medium">Vencimento: {formatDateLong(analysis.deadline.dueDate)}</p>
                                     )}
                                   </div>
                                 )}
@@ -2794,8 +2901,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               <p className="text-slate-700"><strong>{analysis.deadline.days} dias úteis</strong> — {analysis.deadline.description}</p>
                               {analysis.deadline.dueDate && (
                                 <>
-                                  <p className="text-slate-500">Publicado: {new Date(intimation.data_disponibilizacao).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
-                                  <p className="text-slate-700 font-medium">Vencimento: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                                  <p className="text-slate-500">Disponibilizado: {formatDate(intimation.data_disponibilizacao)}</p>
+                                  <p className="text-slate-700 font-medium">Vencimento: {formatDateLong(analysis.deadline.dueDate)}</p>
                                   <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
                                     ⚠️ Cálculo sem feriados — confira o calendário oficial!
                                   </p>
@@ -3195,7 +3302,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       <Modal
         open={!!readGuard}
         onClose={() => setReadGuard(null)}
-        title="Prazo detectado sem cadastro"
+        title={readGuard?.candidate ? 'Prazo encontrado neste processo' : 'Prazo detectado sem cadastro'}
         eyebrow="Guardião de Prazos"
         size="md"
         zIndex={80}
@@ -3204,7 +3311,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <button
               type="button"
               onClick={() => setReadGuard(null)}
-              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
+              disabled={linkingDeadline}
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition disabled:opacity-50"
             >
               Cancelar
             </button>
@@ -3216,7 +3324,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 setReadGuard(null);
                 handleMarkAsRead(id, true);
               }}
-              className="px-3 py-1.5 text-[13px] font-medium text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition"
+              disabled={linkingDeadline}
+              className="px-3 py-1.5 text-[13px] font-medium text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition disabled:opacity-50"
             >
               Marcar como lida sem prazo
             </button>
@@ -3229,38 +3338,87 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 pendingReadAfterDeadlineRef.current = intimation.id;
                 handleCreateDeadline(intimation);
               }}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
+              disabled={linkingDeadline}
+              className={
+                readGuard?.candidate
+                  ? 'px-3 py-1.5 text-[13px] font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition disabled:opacity-50'
+                  : 'px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50'
+              }
             >
-              <Clock className="w-4 h-4" />
-              Criar prazo agora
+              {readGuard?.candidate ? null : <Clock className="w-4 h-4" />}
+              {readGuard?.candidate ? 'Criar outro prazo' : 'Criar prazo agora'}
             </button>
+            {readGuard?.candidate && (
+              <button
+                type="button"
+                onClick={handleLinkCandidateDeadline}
+                disabled={linkingDeadline}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+              >
+                {linkingDeadline ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                Vincular e marcar como lida
+              </button>
+            )}
           </div>
         }
       >
         <ModalBody className="px-5 py-4">
           {readGuard ? (
             <div className="space-y-3">
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <p className="text-sm text-amber-900 font-semibold">
-                  ⚠️ A IA detectou um prazo nesta intimação e nenhum prazo foi cadastrado no sistema.
-                </p>
-                <p className="text-xs text-amber-800 mt-1.5">
-                  <strong>Processo:</strong>{' '}
-                  {readGuard.intimation.numero_processo_mascara || readGuard.intimation.numero_processo || 'Sem número'}
-                </p>
-                {readGuard.days != null && (
-                  <p className="text-xs text-amber-800 mt-0.5">
-                    <strong>Prazo estimado:</strong> {readGuard.days} dia(s)
-                    {readGuard.dueDate && (
-                      <> — vencimento {new Date(readGuard.dueDate).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}</>
-                    )}
+              {readGuard.candidate ? (
+                <>
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                    <p className="text-sm text-emerald-900 font-semibold">
+                      {readGuard.ancora === 'cliente'
+                        ? '✅ Já existe um prazo aberto deste cliente na mesma janela. Ele só não está vinculado a esta intimação.'
+                        : '✅ Já existe um prazo cadastrado neste processo. Ele só não está vinculado a esta intimação.'}
+                    </p>
+                    <div className="mt-2 rounded-md bg-white/70 border border-emerald-200 px-2.5 py-2">
+                      <p className="text-sm font-semibold text-slate-800">{readGuard.candidate.title}</p>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        Vence em <strong>{formatDate(readGuard.candidate.due_date)}</strong>
+                        {' · '}
+                        {deadlineStatusOptions.find(s => s.key === readGuard.candidate?.status)?.label
+                          ?? readGuard.candidate.status}
+                        {readGuard.candidate.deadline_days != null && (
+                          <> · {readGuard.candidate.deadline_days} dias
+                            {readGuard.candidate.counting_type === 'processual' ? ' úteis' : ' corridos'}</>
+                        )}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Cadastrado em {formatDate(readGuard.candidate.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    Vincular grava a ligação entre este prazo e a intimação, e o Guardião para de cobrar.
+                    {readGuard.ancora === 'cliente' && ' Este prazo não tem processo vinculado, então a ligação é pelo cliente — confira o título antes de confirmar.'}
+                    {' '}Se não for este o prazo, use "Criar outro prazo".
                   </p>
-                )}
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300">
-                Marcar como lida sem cadastrar o prazo remove esta intimação do radar de pendências.
-                A estimativa da IA usa dias corridos — confirme a contagem em dias úteis ao criar o prazo.
-              </p>
+                </>
+              ) : (
+                <>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-sm text-amber-900 font-semibold">
+                      ⚠️ A IA detectou um prazo nesta intimação e nenhum prazo foi cadastrado no sistema.
+                    </p>
+                    <p className="text-xs text-amber-800 mt-1.5">
+                      <strong>Processo:</strong>{' '}
+                      {readGuard.intimation.numero_processo_mascara || readGuard.intimation.numero_processo || 'Sem número'}
+                    </p>
+                    {readGuard.days != null && (
+                      <p className="text-xs text-amber-800 mt-0.5">
+                        <strong>Prazo estimado:</strong> {readGuard.days} dia(s)
+                        {readGuard.dueDate && <> — vencimento {formatDate(readGuard.dueDate)}</>}
+                      </p>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    Marcar como lida sem cadastrar o prazo remove esta intimação do radar de pendências.
+                    A estimativa da IA usa dias corridos — confirme a contagem em dias úteis ao criar o prazo.
+                  </p>
+                </>
+              )}
             </div>
           ) : null}
         </ModalBody>
@@ -3337,7 +3495,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           d.setDate(Math.min(day, lastDay));
                           return d;
                         };
-                        return addMonths(new Date(prescriptionBaseDate), 24).toLocaleDateString('pt-BR');
+                        // T12:00 fixa o dia: 'YYYY-MM-DD' puro vira meia-noite UTC e, em
+                        // Cuiabá (UTC-4), a exibição volta para o dia anterior.
+                        return formatDate(addMonths(new Date(`${prescriptionBaseDate}T12:00:00`), 24));
                       })()}
                     </p>
                     <p className="text-xs text-amber-700">
@@ -3351,7 +3511,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           d.setDate(Math.min(day, lastDay));
                           return d;
                         };
-                        return addMonths(new Date(prescriptionBaseDate), 18).toLocaleDateString('pt-BR');
+                        // T12:00 fixa o dia: 'YYYY-MM-DD' puro vira meia-noite UTC e, em
+                        // Cuiabá (UTC-4), a exibição volta para o dia anterior.
+                        return formatDate(addMonths(new Date(`${prescriptionBaseDate}T12:00:00`), 18));
                       })()} (6 meses antes)
                     </p>
                   </div>
@@ -3599,12 +3761,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
             {analysis?.deadline?.dueDate && (
               <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-xs text-amber-900 font-semibold">
-                  ⚠️ Prazo Final: {new Date(analysis.deadline.dueDate).toLocaleDateString('pt-BR', { 
-                    weekday: 'long', 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric' 
-                  })}
+                  ⚠️ Prazo Final: {formatDateLong(analysis.deadline.dueDate)}
                 </p>
                 <p className="text-xs text-amber-700 mt-1">
                   ✓ Data sugerida preenchida: 1 dia antes (margem de segurança)

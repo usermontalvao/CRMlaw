@@ -5,9 +5,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
  * deadline-guard — Edge Function (Guardião de Prazos, camada 2)
  *
  * Rede de segurança diária. Varre intimações que têm PRAZO detectado pela IA
- * (intimation_ai_analysis.deadline_due_date) mas NENHUM prazo cadastrado
- * vinculado (deadlines.intimation_id) dentro da "banda de perigo": do vencimento
- * já vencido há até 7 dias até 7 dias no futuro. Notifica os usuários ativos.
+ * (intimation_ai_analysis.deadline_due_date) mas NENHUM prazo cadastrado dentro
+ * da "banda de perigo": do vencimento já vencido há até 7 dias até 7 dias no
+ * futuro. Notifica os usuários ativos.
+ *
+ * "Nenhum prazo cadastrado" tem dois níveis. O vínculo forte é
+ * deadlines.intimation_id — mas ele só é gravado quando o prazo nasce pelo card
+ * da intimação, e a maioria esmagadora dos prazos nasce pelo módulo de Prazos,
+ * com esse campo nulo. Olhar só para ele fazia o guardião cobrar prazo de
+ * intimação que JÁ tinha prazo, todo dia, até o alerta virar ruído. Por isso o
+ * vínculo fraco abaixo: mesma âncora (processo ou cliente) e vencimento na
+ * janela plausível. Se um humano já cadastrou prazo para aquele cliente naquela
+ * janela, não há esquecimento a denunciar.
  *
  * Complementa a trava em tempo real do IntimationsModule (que só age quando o
  * operador marca como lida). Aqui cobrimos o caso do prazo que ficou esquecido
@@ -36,6 +45,56 @@ const FUTURE_WINDOW_DAYS = 7; // vence dentro de N dias
 // Janela de deduplicação: no máx. uma notificação-guardião por (usuário,intimação)
 const DEDUPE_HOURS = 20;
 
+// Vínculo fraco — espelho de src/utils/deadlineIntimationMatch.ts, que é onde a
+// regra é documentada e testada. O Deno não enxerga src/; mexeu lá, mexa aqui.
+const DIA_MS = 86400000;
+const DIAS_FOLGA_ESTIMATIVA = 21;
+
+interface DeadlineRow {
+  id: string;
+  process_id: string | null;
+  client_id: string | null;
+  intimation_id: string | null;
+  status: string | null;
+  due_date: string;
+}
+
+/**
+ * Por onde prazo e intimação se ligam — processo quando os dois lados têm (e aí
+ * processos diferentes são "não" definitivo), cliente como plano B, que é a
+ * maioria dos casos: o cadastro do escritório é centrado no cliente.
+ */
+function ancoraDoCasamento(
+  prazo: DeadlineRow,
+  intimation: IntimationRow,
+): "processo" | "cliente" | null {
+  if (prazo.process_id && intimation.process_id) {
+    return prazo.process_id === intimation.process_id ? "processo" : null;
+  }
+  if (prazo.client_id && intimation.client_id && prazo.client_id === intimation.client_id) {
+    return "cliente";
+  }
+  return null;
+}
+
+function prazoCasaComIntimacao(
+  prazo: DeadlineRow,
+  intimation: IntimationRow,
+  estimativaVencimento: string,
+): boolean {
+  if (prazo.intimation_id && prazo.intimation_id !== intimation.id) return false;
+  if (prazo.status === "cancelado") return false;
+  if (!intimation.data_disponibilizacao) return false;
+  if (!ancoraDoCasamento(prazo, intimation)) return false;
+
+  const disponibilizacaoMs = new Date(intimation.data_disponibilizacao).getTime();
+  const vencimentoMs = new Date(prazo.due_date).getTime();
+  if ([disponibilizacaoMs, vencimentoMs].some(Number.isNaN)) return false;
+
+  const fimMs = new Date(estimativaVencimento).getTime() + DIAS_FOLGA_ESTIMATIVA * DIA_MS;
+  return vencimentoMs >= disponibilizacaoMs && vencimentoMs <= fimMs;
+}
+
 interface AnalysisRow {
   intimation_id: string;
   deadline_days: number | null;
@@ -48,7 +107,34 @@ interface IntimationRow {
   numero_processo_mascara: string | null;
   sigla_tribunal: string | null;
   process_id: string | null;
+  client_id: string | null;
+  data_disponibilizacao: string | null;
   lida: boolean;
+}
+
+/**
+ * Âncora da intimação, emprestando das irmãs de mesmo número de processo quando
+ * ela chegou sem processo E sem cliente — espelho de `resolverAncora` em
+ * src/utils/deadlineIntimationMatch.ts.
+ */
+function resolverAncora(
+  intimation: IntimationRow,
+  irmas: readonly { numero_processo: string | null; process_id: string | null; client_id: string | null }[],
+): { process_id: string | null; client_id: string | null } {
+  let processId = intimation.process_id;
+  let clientId = intimation.client_id;
+  if ((processId && clientId) || !intimation.numero_processo) {
+    return { process_id: processId, client_id: clientId };
+  }
+
+  for (const irma of irmas) {
+    if (irma.numero_processo !== intimation.numero_processo) continue;
+    processId = processId ?? irma.process_id;
+    clientId = clientId ?? irma.client_id;
+    if (processId && clientId) break;
+  }
+
+  return { process_id: processId, client_id: clientId };
 }
 
 function daysUntil(iso: string): number {
@@ -115,7 +201,15 @@ Deno.serve(async (req: Request) => {
 
     if (aErr) throw new Error(`análises: ${aErr.message}`);
     if (!analyses || analyses.length === 0) {
-      return json({ success: true, dry_run: dryRun, candidates: 0, unprotected: 0, notified: 0 });
+      return json({
+        success: true,
+        dry_run: dryRun,
+        candidates: 0,
+        without_link: 0,
+        covered_by_existing_deadline: 0,
+        unprotected: 0,
+        notified: 0,
+      });
     }
 
     const analysisByIntimation = new Map<string, AnalysisRow>();
@@ -132,15 +226,90 @@ Deno.serve(async (req: Request) => {
 
     const unprotectedIds = intimationIds.filter((id) => !linkedSet.has(id));
     if (unprotectedIds.length === 0) {
-      return json({ success: true, dry_run: dryRun, candidates: intimationIds.length, unprotected: 0, notified: 0 });
+      return json({
+        success: true,
+        dry_run: dryRun,
+        candidates: intimationIds.length,
+        without_link: 0,
+        covered_by_existing_deadline: 0,
+        unprotected: 0,
+        notified: 0,
+      });
     }
 
     // 3) Dados das intimações desprotegidas
-    const { data: intimations, error: iErr } = await supabase
+    const { data: intimationRows, error: iErr } = await supabase
       .from("djen_comunicacoes")
-      .select("id, numero_processo, numero_processo_mascara, sigla_tribunal, process_id, lida")
+      .select("id, numero_processo, numero_processo_mascara, sigla_tribunal, process_id, client_id, data_disponibilizacao, lida")
       .in("id", unprotectedIds);
     if (iErr) throw new Error(`intimações: ${iErr.message}`);
+
+    // 3b) Vínculo fraco: prazo cadastrado pelo módulo de Prazos não tem
+    // intimation_id. Sem esta passada o guardião cobra prazo que já existe.
+    const linhas = (intimationRows ?? []) as IntimationRow[];
+
+    // Irmãs: intimações de mesmo número de processo que já estão vinculadas
+    // emprestam a âncora para as que chegaram órfãs.
+    const numeros = Array.from(new Set(linhas.map((i) => i.numero_processo).filter(Boolean))) as string[];
+    let irmas: { numero_processo: string | null; process_id: string | null; client_id: string | null }[] = [];
+    if (numeros.length > 0) {
+      const { data, error: sErr } = await supabase
+        .from("djen_comunicacoes")
+        .select("numero_processo, process_id, client_id")
+        .in("numero_processo", numeros)
+        .or("process_id.not.is.null,client_id.not.is.null");
+      if (sErr) throw new Error(`irmãs: ${sErr.message}`);
+      irmas = data ?? [];
+    }
+
+    const ancoraPorIntimacao = new Map<string, { process_id: string | null; client_id: string | null }>();
+    for (const intimation of linhas) {
+      ancoraPorIntimacao.set(intimation.id, resolverAncora(intimation, irmas));
+    }
+
+    const idsUnicos = (campo: "process_id" | "client_id") =>
+      Array.from(
+        new Set(Array.from(ancoraPorIntimacao.values()).map((a) => a[campo]).filter(Boolean)),
+      ) as string[];
+
+    // Busca pelas duas âncoras: a maioria dos prazos não tem processo, só cliente.
+    const prazosCandidatos: DeadlineRow[] = [];
+    for (
+      const [coluna, valores] of [
+        ["process_id", idsUnicos("process_id")],
+        ["client_id", idsUnicos("client_id")],
+      ] as const
+    ) {
+      if (valores.length === 0) continue;
+      const { data: prazos, error: pErr } = await supabase
+        .from("deadlines")
+        .select("id, process_id, client_id, intimation_id, status, due_date")
+        .in(coluna, valores)
+        .neq("status", "cancelado");
+      if (pErr) throw new Error(`prazos por ${coluna}: ${pErr.message}`);
+      prazosCandidatos.push(...((prazos ?? []) as DeadlineRow[]));
+    }
+
+    const intimations: IntimationRow[] = [];
+    const cobertasPorVinculoFraco: string[] = [];
+    for (const intimation of linhas) {
+      const analysis = analysisByIntimation.get(intimation.id);
+      // Casa contra a âncora resolvida, não contra a que veio na linha.
+      const ancorada = { ...intimation, ...ancoraPorIntimacao.get(intimation.id) };
+      const casou = analysis
+        ? prazosCandidatos.some((p) =>
+          prazoCasaComIntimacao(p, ancorada, analysis.deadline_due_date)
+        )
+        : false;
+      if (casou) cobertasPorVinculoFraco.push(intimation.id);
+      else intimations.push(intimation);
+    }
+
+    if (cobertasPorVinculoFraco.length > 0) {
+      console.log(
+        `🔗 ${cobertasPorVinculoFraco.length} intimação(ões) já têm prazo no processo sem intimation_id — sem alerta`,
+      );
+    }
 
     // 4) Usuários ativos (destinatários — mesmo modelo do analyze-intimations)
     const { data: users, error: uErr } = await supabase
@@ -155,7 +324,7 @@ Deno.serve(async (req: Request) => {
     const preview: any[] = [];
     let notified = 0;
 
-    for (const intimation of (intimations ?? []) as IntimationRow[]) {
+    for (const intimation of intimations) {
       const analysis = analysisByIntimation.get(intimation.id);
       if (!analysis) continue;
       const days = daysUntil(analysis.deadline_due_date);
@@ -205,13 +374,17 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    console.log(`🛡️ deadline-guard: ${unprotectedIds.length} desprotegidas, ${notified} notificações${dryRun ? " (DRY RUN)" : ""}`);
+    console.log(
+      `🛡️ deadline-guard: ${unprotectedIds.length} sem vínculo, ${cobertasPorVinculoFraco.length} cobertas por prazo já cadastrado, ${intimations.length} realmente desprotegidas, ${notified} notificações${dryRun ? " (DRY RUN)" : ""}`,
+    );
 
     return json({
       success: true,
       dry_run: dryRun,
       candidates: intimationIds.length,
-      unprotected: unprotectedIds.length,
+      without_link: unprotectedIds.length,
+      covered_by_existing_deadline: cobertasPorVinculoFraco.length,
+      unprotected: intimations.length,
       active_users: activeUserIds.length,
       notified,
       ...(dryRun ? { preview } : {}),
