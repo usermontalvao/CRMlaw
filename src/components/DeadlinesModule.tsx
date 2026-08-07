@@ -42,6 +42,7 @@ import {
   Paperclip,
   ImageIcon,
   ChevronLeft,
+  ChevronDown,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -3801,24 +3802,22 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             value: monthlyCompleted.length,
             icon: CheckCircle,
             color: 'emerald',
-            active: false,
-            onClick: undefined,
+            active: activeStatusTab === 'cumprido',
+            onClick: () => setActiveStatusTab('cumprido'),
             gradient: 'from-emerald-500 to-emerald-600',
-            ring: '',
-            bg: '',
+            ring: 'ring-emerald-400',
+            bg: 'bg-emerald-50',
           },
         ].map(({ label, value, icon: Icon, active, onClick, gradient, ring, bg, pulse }) => (
           <button
             key={label}
             type="button"
             onClick={onClick}
-            disabled={!onClick}
+            aria-pressed={active}
             className={`group relative flex flex-col gap-3 p-4 rounded-2xl border transition-all text-left overflow-hidden ${
               active
                 ? `${bg} border-transparent ring-2 ${ring}`
-                : onClick
-                ? 'bg-[#f8f7f5] border-[#e7e5df] hover:shadow-md hover:border-slate-300'
-                : 'bg-[#f8f7f5] border-[#e7e5df] cursor-default'
+                : 'bg-[#f8f7f5] border-[#e7e5df] hover:shadow-md hover:border-slate-300'
             }`}
           >
             <div className="flex items-center justify-between">
@@ -4623,13 +4622,21 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         />
                       </td>
                       {/* Coluna PRAZO */}
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="text-sm font-semibold text-blue-600 hover:text-blue-700 cursor-pointer" onClick={() => handleViewDeadline(deadline)}>
-                            {deadline.title.toUpperCase()}
-                          </p>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            {linkedProcess ? `Prazos vinculados aos prazos` : 'Prazos vinculados aos prazos'}
+                      <td className="px-4 py-3 max-w-[22rem]">
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => handleViewDeadline(deadline)}
+                            title={deadline.title}
+                            className="block w-full text-left text-sm font-semibold text-blue-600 hover:text-blue-700 hover:underline truncate"
+                          >
+                            {deadline.title}
+                          </button>
+                          {/* Subtítulo: o processo vinculado quando existe; senão o tipo do prazo. */}
+                          <p className="text-xs text-slate-400 mt-0.5 truncate">
+                            {linkedProcess?.process_code
+                              ? `Processo ${linkedProcess.process_code}`
+                              : getTypeLabel(deadline.type)}
                           </p>
                         </div>
                       </td>
@@ -4642,9 +4649,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       {/* Coluna DIAS */}
                       <td className="px-4 py-3">
                         {deadline.status === 'cancelado' ? (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
-                            Cancelado
-                          </span>
+                          // A coluna de status já diz "Cancelado" — repetir aqui só polui.
+                          <span className="text-xs text-slate-400">—</span>
                         ) : deadline.status === 'cumprido' ? (
                           (() => {
                             const onTime = (() => {
@@ -4660,54 +4666,56 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             );
                           })()
                         ) : daysUntil >= 0 ? (
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap ${
                             dueSoon ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
                           }`}>
-                            {daysUntil} dias
+                            {daysUntil === 0 ? 'Vence hoje' : `${daysUntil} ${daysUntil === 1 ? 'dia' : 'dias'}`}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-red-500 text-white">
-                            {Math.abs(daysUntil)} dias
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap bg-red-500 text-white">
+                            {Math.abs(daysUntil)} {Math.abs(daysUntil) === 1 ? 'dia' : 'dias'} em atraso
                           </span>
                         )}
                       </td>
                       
                       {/* Coluna CLIENTE / PRIORIDADE */}
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-sm text-slate-800">
-                            {clientItem ? clientItem.full_name : '-'}
+                      <td className="px-4 py-3 max-w-[16rem]">
+                        <div className="flex flex-col items-start gap-1 min-w-0">
+                          <span className="text-sm text-slate-800 truncate max-w-full" title={clientItem?.full_name}>
+                            {clientItem ? clientItem.full_name : '—'}
                           </span>
-                          <div className="flex items-center gap-1.5">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${
-                              deadline.priority === 'media' ? 'bg-amber-100 text-amber-700' :
-                              deadline.priority === 'alta' ? 'bg-red-100 text-red-700' :
-                              deadline.priority === 'urgente' ? 'bg-red-500 text-white' :
-                              'bg-slate-100 text-slate-600'
-                            }`}>
-                              {priorityConfig?.label}
-                            </span>
-                            {(deadline.priority === 'alta' || deadline.priority === 'urgente') && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">
-                                Alta
-                              </span>
-                            )}
-                          </div>
+                          {/* Badge vem das configurações do módulo, igual ao card e ao kanban. */}
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${getPriorityBadge(deadline.priority)}`}>
+                            {priorityConfig && <priorityConfig.icon className="w-2.5 h-2.5" />}
+                            {getPriorityLabel(deadline.priority)}
+                          </span>
                         </div>
                       </td>
                       
-                      {/* Coluna STATUS */}
+                      {/* Coluna STATUS — badge configurável que também troca o status. */}
                       <td className="px-4 py-3">
-                        <select
-                          value={deadline.status}
-                          onChange={(e) => handleStatusChange(deadline.id, e.target.value as DeadlineStatus)}
-                          disabled={isUpdating}
-                          className="text-xs font-medium px-3 py-1.5 rounded-md border border-[#e7e5df] bg-[#f8f7f5] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:opacity-50 cursor-pointer"
+                        <span
+                          className={`relative inline-flex items-center rounded-md text-xs font-semibold transition focus-within:ring-2 focus-within:ring-blue-500/30 ${getStatusBadge(deadline.status)} ${isUpdating ? 'opacity-50' : ''}`}
                         >
-                          {statusOptions.map((opt) => (
-                            <option key={opt.key} value={opt.key}>{opt.label}</option>
-                          ))}
-                        </select>
+                          <select
+                            value={deadline.status}
+                            onChange={(e) => handleStatusChange(deadline.id, e.target.value as DeadlineStatus)}
+                            disabled={isUpdating}
+                            aria-label={`Status: ${getStatusLabel(deadline.status)}`}
+                            className="appearance-none bg-transparent text-current font-semibold pl-3 pr-7 py-1.5 rounded-md border-0 focus:outline-none cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            {statusOptions.map((opt) => (
+                              <option key={opt.key} value={opt.key} className="text-slate-700 bg-white font-medium">
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          {isUpdating ? (
+                            <Loader2 className="absolute right-2 w-3 h-3 animate-spin pointer-events-none" />
+                          ) : (
+                            <ChevronDown className="absolute right-2 w-3 h-3 opacity-70 pointer-events-none" />
+                          )}
+                        </span>
                       </td>
                       
                       {/* Coluna AÇÕES */}
