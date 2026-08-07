@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { DeadlineFormModal } from './DeadlineFormModal';
 import { Modal, ModalBody, DeadlinesSkeleton } from './ui';
 import {
@@ -38,11 +39,15 @@ import {
   Send,
   SquareCheck,
   ChevronRight,
+  Paperclip,
+  ImageIcon,
+  ChevronLeft,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { matchesNormalizedSearch } from '../utils/search';
+import { imagesFromClipboard, isPastedImage } from '../utils/clipboardImages';
 import { supabase } from '../config/supabase';
 import { deadlineService } from '../services/deadline.service';
 import { processService } from '../services/process.service';
@@ -57,7 +62,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { useMinLoading } from '../hooks/useMinLoading';
-import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType } from '../types/deadline.types';
+import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType, DeadlineCancellation, DeadlineCancellationAttachment } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 import type { Profile } from '../services/profile.service';
@@ -73,8 +78,226 @@ const STATUS_OPTIONS: {
   { key: 'pendente', label: 'Pendentes', badge: 'bg-blue-500 text-white', icon: Clock },
   { key: 'cumprido', label: 'Cumpridos', badge: 'bg-green-600 text-white', icon: CheckCircle2 },
   { key: 'vencido', label: 'Vencidos', badge: 'bg-red-600 text-white', icon: AlertCircle },
-  { key: 'cancelado', label: 'Cancelados', badge: 'bg-slate-400 text-white', icon: XCircle },
+  { key: 'cancelado', label: 'Cancelados', badge: 'bg-red-600 text-white', icon: XCircle },
 ];
+
+// Prazos que saíram da fila de tarefas: não exigem mais ação, só consulta.
+// Ficam no histórico embaixo da lista, nunca no meio dos pendentes.
+const ARCHIVED_STATUSES: DeadlineStatus[] = ['cumprido', 'vencido', 'cancelado'];
+
+// Teto por anexo do cancelamento — o bucket anexos_chat aceita 50 MB, mas print
+// nenhum chega perto disso e o limite evita subir um vídeo por engano.
+const MAX_CANCEL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+const formatAttachmentSize = (bytes: number) => {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+/**
+ * Anexos do motivo do cancelamento. O bucket é privado, então cada arquivo
+ * precisa de URL assinada — geradas uma vez quando a lista aparece.
+ *
+ * Imagem abre na galeria interna (portal sobre o modal, com setas e teclado);
+ * arquivo que não é imagem cai no download, que é o único destino útil.
+ */
+const CancellationAttachments: React.FC<{ attachments: DeadlineCancellationAttachment[] }> = ({ attachments }) => {
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setUrls({});
+    void Promise.all(
+      attachments.map(async (att) => [att.path, await deadlineService.getCancellationAttachmentUrl(att.path)] as const),
+    ).then((pares) => {
+      if (!active) return;
+      const mapa: Record<string, string> = {};
+      pares.forEach(([path, url]) => { if (url) mapa[path] = url; });
+      setUrls(mapa);
+    });
+    return () => { active = false; };
+  }, [attachments]);
+
+  // Só imagens entram na galeria — a navegação por setas é entre elas.
+  const images = useMemo(
+    () => attachments.filter((att) => (att.mime || '').startsWith('image/')),
+    [attachments],
+  );
+
+  useEffect(() => {
+    if (viewerIndex === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); setViewerIndex(null); }
+      else if (e.key === 'ArrowRight') setViewerIndex((i) => (i === null ? i : Math.min(i + 1, images.length - 1)));
+      else if (e.key === 'ArrowLeft') setViewerIndex((i) => (i === null ? i : Math.max(i - 1, 0)));
+    };
+    // Captura: o Modal fecha no Escape e fecharia junto com a galeria.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [viewerIndex, images.length]);
+
+  if (!attachments.length) return null;
+
+  const current = viewerIndex !== null ? images[viewerIndex] : null;
+
+  return (
+    <>
+      <div className="flex flex-wrap gap-2 mt-2.5">
+        {attachments.map((att) => {
+          const url = urls[att.path];
+          const isImage = (att.mime || '').startsWith('image/');
+          const galleryIndex = isImage ? images.findIndex((img) => img.path === att.path) : -1;
+
+          if (isImage) {
+            return (
+              <button
+                key={att.path}
+                type="button"
+                disabled={!url}
+                onClick={() => setViewerIndex(galleryIndex)}
+                title={att.name}
+                className="group relative w-24 h-24 rounded-lg border border-red-200 overflow-hidden bg-white hover:ring-2 hover:ring-red-300 transition disabled:opacity-60"
+              >
+                {url
+                  ? <img src={url} alt={att.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                  : <span className="flex items-center justify-center w-full h-full"><Loader2 className="w-4 h-4 animate-spin text-red-300" /></span>}
+                <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-center justify-center">
+                  <Eye className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition" />
+                </span>
+              </button>
+            );
+          }
+
+          return (
+            <a
+              key={att.path}
+              href={url || undefined}
+              target="_blank"
+              rel="noreferrer"
+              title={att.name}
+              className={`w-24 h-24 rounded-lg border border-red-200 overflow-hidden bg-white hover:ring-2 hover:ring-red-300 transition flex flex-col items-center justify-center gap-1 px-1 ${url ? '' : 'pointer-events-none opacity-60'}`}
+            >
+              <FileText className="w-5 h-5 text-red-400" />
+              <span className="text-[9px] text-red-600 text-center leading-tight line-clamp-2 break-all">{att.name}</span>
+            </a>
+          );
+        })}
+      </div>
+
+      {/* Galeria */}
+      {current && createPortal(
+        <div
+          className="fixed inset-0 z-[99999] bg-black/90 flex flex-col"
+          style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+          onClick={() => setViewerIndex(null)}
+        >
+          {/* Barra superior */}
+          <div
+            className="flex items-center justify-between gap-3 px-4 py-3 text-white/90"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate">{current.name}</p>
+              <p className="text-[11px] text-white/50">
+                {images.length > 1 ? `${(viewerIndex ?? 0) + 1} de ${images.length} · ` : ''}
+                {formatAttachmentSize(current.size)}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <a
+                href={urls[current.path] || undefined}
+                download={current.name}
+                target="_blank"
+                rel="noreferrer"
+                className="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition"
+                title="Baixar"
+              >
+                <Download className="w-4 h-4" />
+              </a>
+              <button
+                type="button"
+                onClick={() => setViewerIndex(null)}
+                className="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition"
+                title="Fechar (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Imagem */}
+          <div className="flex-1 flex items-center justify-center px-4 pb-2 min-h-0" onClick={() => setViewerIndex(null)}>
+            {images.length > 1 && (
+              <button
+                type="button"
+                disabled={viewerIndex === 0}
+                onClick={(e) => { e.stopPropagation(); setViewerIndex((i) => Math.max((i ?? 0) - 1, 0)); }}
+                className="absolute left-3 top-1/2 -translate-y-1/2 h-11 w-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition disabled:opacity-20 disabled:cursor-default"
+                title="Anterior (←)"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+
+            <img
+              src={urls[current.path]}
+              alt={current.name}
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-full max-h-full object-contain rounded-xl shadow-[0_30px_70px_rgba(0,0,0,.7)]"
+            />
+
+            {images.length > 1 && (
+              <button
+                type="button"
+                disabled={viewerIndex === images.length - 1}
+                onClick={(e) => { e.stopPropagation(); setViewerIndex((i) => Math.min((i ?? 0) + 1, images.length - 1)); }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 h-11 w-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition disabled:opacity-20 disabled:cursor-default"
+                title="Próxima (→)"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+          </div>
+
+          {/* Miniaturas */}
+          {images.length > 1 && (
+            <div className="flex items-center justify-center gap-2 px-4 py-3 overflow-x-auto" onClick={(e) => e.stopPropagation()}>
+              {images.map((img, idx) => (
+                <button
+                  key={img.path}
+                  type="button"
+                  onClick={() => setViewerIndex(idx)}
+                  className={`w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 transition ${
+                    idx === viewerIndex ? 'ring-2 ring-white' : 'opacity-50 hover:opacity-100'
+                  }`}
+                  title={img.name}
+                >
+                  <img src={urls[img.path]} alt={img.name} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+};
+
+// Atalhos do modal de cancelamento — os motivos que mais aparecem no dia a dia.
+const CANCEL_REASON_SUGGESTIONS = [
+  'Prazo duplicado',
+  'Intimação não se aplica ao escritório',
+  'Processo encerrado',
+  'Cliente desistiu',
+  'Substituído por outro prazo',
+];
+
+const isArchivedDeadline = (deadline: Deadline) => ARCHIVED_STATUSES.includes(deadline.status);
+const getArchivedAt = (deadline: Deadline) => deadline.completed_at || deadline.updated_at;
 
 
 const PRIORITY_OPTIONS: {
@@ -450,6 +673,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [selectedDeadlineForView, setSelectedDeadlineForView] = useState<Deadline | null>(null);
   const [showViewDeadlineModal, setShowViewDeadlineModal] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  // Cancelamento com motivo obrigatório
+  const [cancelTarget, setCancelTarget] = useState<{ ids: string[]; label: string } | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelSaving, setCancelSaving] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  // Prints colados (Ctrl+V), arrastados ou escolhidos no seletor de arquivos.
+  const [cancelFiles, setCancelFiles] = useState<{ id: string; file: File; preview: string | null }[]>([]);
+  const [cancelDragOver, setCancelDragOver] = useState(false);
+  const cancelFileInputRef = useRef<HTMLInputElement>(null);
+  const [viewCancellation, setViewCancellation] = useState<DeadlineCancellation | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
@@ -510,6 +743,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   // Estados do histórico
   const [historySearch, setHistorySearch] = useState('');
+  const [historyStatus, setHistoryStatus] = useState<DeadlineStatus | ''>('');
   const [historyMonth, setHistoryMonth] = useState<number | ''>('');
   const [historyYear, setHistoryYear] = useState<number | ''>('');
   const [historyType, setHistoryType] = useState<DeadlineType | ''>('');
@@ -622,8 +856,89 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     }
   }, [selectedIds, confirmDelete, notifyDeleted]);
 
+  // ── Cancelamento com motivo ──────────────────────────────────────────────
+  // Nenhum caminho da UI cancela direto: todos passam por este modal, para que
+  // o prazo nunca vá para o histórico sem justificativa registrada.
+  const clearCancelFiles = useCallback(() => {
+    setCancelFiles((prev) => {
+      prev.forEach((item) => { if (item.preview) URL.revokeObjectURL(item.preview); });
+      return [];
+    });
+  }, []);
+
+  const requestCancelDeadline = useCallback((ids: string[], label: string) => {
+    if (!ids.length) return;
+    setCancelReason('');
+    setCancelError(null);
+    clearCancelFiles();
+    setCancelTarget({ ids, label });
+  }, [clearCancelFiles]);
+
+  const closeCancelModal = useCallback(() => {
+    setCancelTarget(null);
+    setCancelReason('');
+    setCancelError(null);
+    setCancelDragOver(false);
+    clearCancelFiles();
+  }, [clearCancelFiles]);
+
+  // Aceita print colado, arquivo arrastado e escolha manual — o mesmo caminho
+  // para os três, com miniatura só para imagem.
+  const addCancelFiles = useCallback((files: File[]) => {
+    const novos = files.filter((f) => f.size > 0);
+    if (!novos.length) return;
+    const grandes = novos.filter((f) => f.size > MAX_CANCEL_ATTACHMENT_BYTES);
+    if (grandes.length) {
+      setCancelError(`Arquivo acima de 25 MB: ${grandes.map((f) => f.name).join(', ')}`);
+    }
+    const aceitos = novos.filter((f) => f.size <= MAX_CANCEL_ATTACHMENT_BYTES);
+    if (!aceitos.length) return;
+    setCancelFiles((prev) => [
+      ...prev,
+      ...aceitos.map((file) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        file,
+        preview: isPastedImage(file.type) ? URL.createObjectURL(file) : null,
+      })),
+    ]);
+  }, []);
+
+  const removeCancelFile = useCallback((id: string) => {
+    setCancelFiles((prev) => {
+      const alvo = prev.find((item) => item.id === id);
+      if (alvo?.preview) URL.revokeObjectURL(alvo.preview);
+      return prev.filter((item) => item.id !== id);
+    });
+  }, []);
+
+  // Ctrl+V em qualquer ponto do modal aberto — não só dentro do textarea, que é
+  // onde a colagem falharia se o foco estivesse num botão.
+  useEffect(() => {
+    if (!cancelTarget) return;
+    const onPaste = (event: ClipboardEvent) => {
+      const imagens = imagesFromClipboard(event.clipboardData);
+      if (!imagens.length) return;
+      // Só engole a colagem quando veio imagem: texto colado segue normal.
+      event.preventDefault();
+      addCancelFiles(imagens);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [cancelTarget, addCancelFiles]);
+
+  const handleCancelDrop = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    setCancelDragOver(false);
+    addCancelFiles(Array.from(event.dataTransfer?.files || []));
+  }, [addCancelFiles]);
+
   const handleBulkStatusChange = useCallback(async (status: DeadlineStatus) => {
     if (!selectedIds.size) return;
+    if (status === 'cancelado') {
+      const ids = [...selectedIds];
+      requestCancelDeadline(ids, `${ids.length} prazo(s) selecionado(s)`);
+      return;
+    }
     setBulkActionLoading(true);
     try {
       await Promise.all([...selectedIds].map((id) => deadlineService.updateStatus(id, status)));
@@ -634,7 +949,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     } finally {
       setBulkActionLoading(false);
     }
-  }, [selectedIds]);
+  }, [selectedIds, requestCancelDeadline]);
 
   const handleBulkResponsibleChange = useCallback(async (responsibleId: string) => {
     if (!selectedIds.size || !responsibleId) return;
@@ -859,7 +1174,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     if (activeStatusTab !== 'todos') {
       filtered = filtered.filter((deadline) => deadline.status === activeStatusTab);
     } else {
-      filtered = filtered.filter((deadline) => deadline.status !== 'cumprido');
+      // A fila mostra só o que ainda pede ação — cumpridos, vencidos e cancelados
+      // vão para o histórico no rodapé do módulo.
+      filtered = filtered.filter((deadline) => !isArchivedDeadline(deadline));
     }
 
     return filtered.slice().sort((a, b) => {
@@ -870,6 +1187,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
     });
   }, [deadlines, activeStatusTab, matchesSecondaryFilters]);
+
+  // O kanban mostra uma coluna por status e por isso ignora o recorte da fila.
+  const kanbanDeadlines = useMemo(
+    () => deadlines.filter(matchesSecondaryFilters),
+    [deadlines, matchesSecondaryFilters],
+  );
 
   const pageSize = 20;
   const totalPages = Math.max(1, Math.ceil(filteredDeadlines.length / pageSize));
@@ -966,10 +1289,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     return alerts;
   }, [overdueDeadlines.length, criticalDeadlines.length, unassignedPending.length, applyFilterPreset]);
 
-  const completedDeadlines = useMemo(() => {
+  // Base do histórico: cumpridos, vencidos e cancelados, do mais recente para o mais antigo.
+  const archivedDeadlines = useMemo(() => {
     return deadlines
-      .filter((d) => d.status === 'cumprido')
-      .sort((a, b) => new Date(b.completed_at || b.updated_at).getTime() - new Date(a.completed_at || a.updated_at).getTime());
+      .filter(isArchivedDeadline)
+      .sort((a, b) => new Date(getArchivedAt(b)).getTime() - new Date(getArchivedAt(a)).getTime());
   }, [deadlines]);
 
   const dueTodayDeadlines = useMemo(() => {
@@ -1031,6 +1355,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     });
   }, [deadlines, internalCalendarMonth, internalCalendarYear, matchesSecondaryFilters]);
 
+  const monthlyArchived = useMemo(() => {
+    return archivedDeadlines.filter((deadline) => {
+      if (!matchesSecondaryFilters(deadline)) return false;
+      const archivedAt = new Date(getArchivedAt(deadline));
+      return archivedAt.getMonth() === internalCalendarMonth && archivedAt.getFullYear() === internalCalendarYear;
+    });
+  }, [archivedDeadlines, internalCalendarMonth, internalCalendarYear, matchesSecondaryFilters]);
+
   const monthlyDueToday = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -1077,8 +1409,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
   // ── Histórico filtrado ────────────────────────────────────────────────────
   const filteredHistory = useMemo(() => {
-    let base = isPastMonth ? monthlyCompleted : completedDeadlines;
+    let base = isPastMonth ? monthlyArchived : archivedDeadlines;
 
+    if (historyStatus) base = base.filter((d) => d.status === historyStatus);
     if (historySearch.trim()) {
       const term = historySearch.trim().toLowerCase();
       base = base.filter((d) =>
@@ -1103,15 +1436,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     if (historyPriority) base = base.filter((d) => d.priority === historyPriority);
     if (historyResponsible) base = base.filter((d) => d.responsible_id === historyResponsible);
     return base;
-  }, [isPastMonth, monthlyCompleted, completedDeadlines, historySearch, historyMonth, historyYear, historyType, historyPriority, historyResponsible, clientMap]);
+  }, [isPastMonth, monthlyArchived, archivedDeadlines, historyStatus, historySearch, historyMonth, historyYear, historyType, historyPriority, historyResponsible, clientMap]);
 
   const historyTotalPages = Math.max(1, Math.ceil(filteredHistory.length / HISTORY_PAGE_SIZE));
   const paginatedHistory = filteredHistory.slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE);
 
   const historyYears = useMemo(() => {
-    const years = new Set(completedDeadlines.map((d) => new Date(d.completed_at || d.updated_at).getFullYear()));
+    const years = new Set(archivedDeadlines.map((d) => new Date(getArchivedAt(d)).getFullYear()));
     return Array.from(years).sort((a, b) => b - a);
-  }, [completedDeadlines]);
+  }, [archivedDeadlines]);
 
   // ── Exportar lista filtrada ───────────────────────────────────────────────
   const handleExportFiltered = useCallback(() => {
@@ -1601,11 +1934,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       setSaving(true);
       setError(null);
 
+      // Cancelar pelo formulário também exige motivo: salva o resto mantendo o
+      // status atual e abre o modal de cancelamento logo depois.
+      const wantsCancel = !!selectedDeadline && formData.status === 'cancelado' && selectedDeadline.status !== 'cancelado';
+
       const payloadBase = {
         title: formData.title.trim(),
         description: formData.description?.trim() || null,
         due_date: new Date(formData.due_date).toISOString(),
-        status: formData.status,
+        status: wantsCancel && selectedDeadline ? selectedDeadline.status : formData.status,
         priority: formData.priority,
         type: formData.type,
         process_id: formData.process_id || null,
@@ -1708,6 +2045,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       setRequirementSearchTerm('');
       setDataPublicacao('');
       setDiasPrazo('');
+
+      if (wantsCancel && editingDeadline) {
+        requestCancelDeadline([editingDeadline.id], payloadBase.title);
+      }
     } catch (err: any) {
       setError(err.message || 'Não foi possível salvar o prazo.');
     } finally {
@@ -1753,6 +2094,23 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showViewDeadlineModal, viewMode, selectedDeadlineForView?.id]);
 
+  // Motivo do cancelamento: só busca quando o prazo aberto está cancelado.
+  useEffect(() => {
+    const deadline = selectedDeadlineForView;
+    const isOpen = showViewDeadlineModal || viewMode === 'details';
+    if (!isOpen || !deadline || deadline.status !== 'cancelado') {
+      setViewCancellation(null);
+      return;
+    }
+    let active = true;
+    setViewCancellation(null);
+    void deadlineService.getCancellation(deadline.id).then((row) => {
+      if (active) setViewCancellation(row);
+    });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showViewDeadlineModal, viewMode, selectedDeadlineForView?.id, selectedDeadlineForView?.status]);
+
   const handleCloseViewDeadlineModal = () => {
     setShowViewDeadlineModal(false);
     setSelectedDeadlineForView(null);
@@ -1764,10 +2122,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   };
 
   const handleStatusChange = async (deadlineId: string, newStatus: DeadlineStatus) => {
+    if (newStatus === 'cancelado') {
+      const target = deadlines.find((d) => d.id === deadlineId);
+      requestCancelDeadline([deadlineId], target?.title || 'este prazo');
+      return;
+    }
     try {
       setStatusUpdatingId(deadlineId);
       const deadline = deadlines.find((d) => d.id === deadlineId);
-      
+
       await deadlineService.updateStatus(deadlineId, newStatus);
       
       // Se o prazo for de exigência e foi marcado como cumprido, atualizar o requerimento para em_analise
@@ -1806,6 +2169,43 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       setStatusUpdatingId(null);
     }
   };
+
+  const handleConfirmCancel = useCallback(async () => {
+    if (!cancelTarget) return;
+    const reason = cancelReason.trim();
+    if (!reason) {
+      setCancelError('Descreva o motivo do cancelamento.');
+      return;
+    }
+    setCancelSaving(true);
+    setCancelError(null);
+    try {
+      // Os prints sobem uma vez só e o mesmo descritor vai para todos os prazos
+      // do lote — é o mesmo motivo, não faz sentido duplicar o arquivo.
+      const uploaded: DeadlineCancellationAttachment[] = [];
+      for (const item of cancelFiles) {
+        uploaded.push(await deadlineService.uploadCancellationAttachment(cancelTarget.ids[0], item.file));
+      }
+      for (const id of cancelTarget.ids) {
+        await deadlineService.cancelDeadline(id, reason, user?.id ?? null, uploaded);
+      }
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        cancelTarget.ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      if (selectedDeadlineForView && cancelTarget.ids.includes(selectedDeadlineForView.id)) {
+        setSelectedDeadlineForView((prev) => (prev ? { ...prev, status: 'cancelado' } : prev));
+      }
+      closeCancelModal();
+      await handleReload();
+    } catch (err: any) {
+      setCancelError(err.message || 'Não foi possível cancelar o prazo.');
+    } finally {
+      setCancelSaving(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cancelTarget, cancelReason, cancelFiles, user?.id, selectedDeadlineForView, closeCancelModal]);
 
   const getStatusConfig = (status: DeadlineStatus) => statusOptions.find((s) => s.key === status);
   const getPriorityConfig = (priority: DeadlinePriority) => priorityOptions.find((p) => p.key === priority);
@@ -2626,13 +3026,158 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     );
   };
 
+  const cancelDeadlineModal = (
+    <Modal
+      open={!!cancelTarget}
+      onClose={() => { if (!cancelSaving) closeCancelModal(); }}
+      title="Cancelar prazo"
+      eyebrow={cancelTarget?.label}
+      icon={<XCircle className="w-5 h-5" />}
+      size="md"
+      zIndex={90}
+      accentBarClassName="bg-red-500"
+      iconContainerClassName="bg-red-500 text-white"
+      footer={
+        <div className="flex items-center justify-end gap-2 w-full">
+          <button
+            type="button"
+            onClick={closeCancelModal}
+            disabled={cancelSaving}
+            className="px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-700 transition disabled:opacity-50"
+          >
+            Voltar
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleConfirmCancel()}
+            disabled={cancelSaving || !cancelReason.trim()}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {cancelSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+            {cancelSaving && cancelFiles.length > 0 ? 'Enviando anexos...' : 'Confirmar cancelamento'}
+          </button>
+        </div>
+      }
+    >
+      <ModalBody
+        className="px-5 py-4 space-y-4"
+        onDragOver={(e: React.DragEvent) => { e.preventDefault(); setCancelDragOver(true); }}
+        onDragLeave={() => setCancelDragOver(false)}
+        onDrop={handleCancelDrop}
+      >
+        <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-900/50 px-3 py-2.5">
+          <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+          <p className="text-[13px] text-red-700 dark:text-red-300 leading-relaxed">
+            O prazo sai da fila de tarefas e passa para o histórico. O motivo fica registrado e aparece
+            sempre que alguém abrir este prazo.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+            Motivo do cancelamento <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            value={cancelReason}
+            onChange={(e) => { setCancelReason(e.target.value); if (cancelError) setCancelError(null); }}
+            rows={4}
+            autoFocus
+            placeholder="Ex.: prazo duplicado da intimação do dia 12/05, já cumprido no prazo original."
+            className="w-full px-3 py-2 text-[13px] border border-[#e7e5df] dark:border-zinc-700 rounded-lg bg-[#f8f7f5] dark:bg-zinc-800 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400 resize-none"
+          />
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {CANCEL_REASON_SUGGESTIONS.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() => { setCancelReason(suggestion); setCancelError(null); }}
+                className="px-2.5 py-1 text-[11px] font-medium rounded-full border border-[#e7e5df] dark:border-zinc-700 text-slate-500 dark:text-slate-400 hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+          {cancelError && <p className="mt-2 text-xs font-medium text-red-600">{cancelError}</p>}
+        </div>
+
+        {/* Prints e arquivos */}
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Prints e arquivos {cancelFiles.length > 0 && <span className="text-slate-400">({cancelFiles.length})</span>}
+            </label>
+            <button
+              type="button"
+              onClick={() => cancelFileInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium rounded-lg border border-[#e7e5df] dark:border-zinc-700 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition"
+            >
+              <Paperclip className="w-3 h-3" /> Anexar
+            </button>
+            <input
+              ref={cancelFileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => { addCancelFiles(Array.from(e.target.files || [])); e.target.value = ''; }}
+            />
+          </div>
+
+          <div
+            onClick={() => { if (!cancelFiles.length) cancelFileInputRef.current?.click(); }}
+            className={`rounded-lg border border-dashed px-3 py-3 transition ${
+              cancelDragOver
+                ? 'border-red-400 bg-red-50/70'
+                : 'border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-800/50'
+            } ${cancelFiles.length ? '' : 'cursor-pointer'}`}
+          >
+            {cancelFiles.length === 0 ? (
+              <p className="text-[12px] text-slate-400 flex items-center gap-2">
+                <ImageIcon className="w-3.5 h-3.5" />
+                Cole um print com <b className="text-slate-500">Ctrl+V</b> (⌘+V no Mac), arraste o arquivo aqui ou clique para escolher.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {cancelFiles.map((item) => (
+                  <div key={item.id} className="relative group">
+                    {item.preview ? (
+                      <img
+                        src={item.preview}
+                        alt={item.file.name}
+                        className="w-20 h-20 object-cover rounded-lg border border-[#e7e5df] dark:border-zinc-700"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-white dark:bg-zinc-800 flex flex-col items-center justify-center gap-1 px-1">
+                        <FileText className="w-5 h-5 text-slate-400" />
+                        <span className="text-[9px] text-slate-500 text-center leading-tight line-clamp-2 break-all">{item.file.name}</span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeCancelFile(item.id)}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow hover:bg-red-700 transition"
+                      title="Remover"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </ModalBody>
+    </Modal>
+  );
+
   const viewDeadlineModal = (() => {
     const d = selectedDeadlineForView;
     if (!d) return null;
       const daysLeft = getDaysUntilDue(d.due_date);
       const isCumprido = d.status === 'cumprido';
-      const isOverdue = !isCumprido && daysLeft < 0;
-      const isUrgent = !isCumprido && daysLeft >= 0 && daysLeft <= 3;
+      const isCancelado = d.status === 'cancelado';
+      // Prazo cancelado não corre mais: nada de "X dias atrasado" nem contagem regressiva.
+      const isOverdue = !isCumprido && !isCancelado && daysLeft < 0;
+      const isUrgent = !isCumprido && !isCancelado && daysLeft >= 0 && daysLeft <= 3;
       const accentColor =
         d.priority === 'urgente' ? 'bg-red-500' :
         d.priority === 'alta' ? 'bg-orange-500' :
@@ -2672,9 +3217,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           headerActions={
             <div className="flex items-center gap-2">
               {d.status === 'pendente' && (
-                <button onClick={() => { void handleStatusChange(d.id, 'cumprido'); handleCloseViewDeadlineModal(); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Marcar cumprido
-                </button>
+                <>
+                  <button onClick={() => { void handleStatusChange(d.id, 'cumprido'); handleCloseViewDeadlineModal(); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Marcar cumprido
+                  </button>
+                  <button onClick={() => requestCancelDeadline([d.id], d.title)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition">
+                    <XCircle className="w-3.5 h-3.5" /> Cancelar prazo
+                  </button>
+                </>
               )}
               <button onClick={() => { handleCloseViewDeadlineModal(); handleOpenModal(d); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition">
                 <Edit2 className="w-3.5 h-3.5" /> Editar
@@ -2747,7 +3297,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 <div className="divide-y divide-[#e7e5df] dark:divide-zinc-700">
                   <div className="px-3 py-2.5 flex items-center justify-between gap-2">
                     <span className="text-slate-500 dark:text-slate-400 shrink-0">Prazo</span>
-                    {isCumprido ? (
+                    {isCancelado ? (
+                      <span className="font-semibold text-red-600">Cancelado</span>
+                    ) : isCumprido ? (
                       <span className={`font-semibold ${completedOnTime ? 'text-emerald-600' : 'text-amber-600'}`}>
                         {completedOnTime ? '✓ No prazo' : '✓ Fora do prazo'}
                       </span>
@@ -2781,6 +3333,30 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
               </div>
             </div>
+
+            {/* Motivo do cancelamento */}
+            {isCancelado && (
+              <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-900/50 px-3 py-2.5">
+                <div className="flex items-center gap-2 mb-1">
+                  <XCircle className="w-3.5 h-3.5 text-red-500" />
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">Motivo do cancelamento</p>
+                </div>
+                <p className="text-[13px] text-red-800 dark:text-red-200 leading-relaxed whitespace-pre-wrap">
+                  {viewCancellation?.reason || 'Motivo não registrado.'}
+                </p>
+                {viewCancellation?.attachments?.length ? (
+                  <CancellationAttachments attachments={viewCancellation.attachments} />
+                ) : null}
+                {viewCancellation && (
+                  <p className="text-[11px] text-red-500/80 dark:text-red-400/70 mt-1.5">
+                    {formatDateTime(viewCancellation.created_at)}
+                    {viewCancellation.cancelled_by
+                      ? ` · ${members.find((m) => m.user_id === viewCancellation.cancelled_by)?.name || 'Usuário'}`
+                      : ''}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Descrição */}
             {d.description && (
@@ -2950,7 +3526,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <div>
               <label className="text-xs font-semibold text-slate-500 uppercase">Data de Vencimento</label>
               <p className="text-base text-slate-900 mt-1">{formatDate(selectedDeadlineForView.due_date)}</p>
-              {selectedDeadlineForView.status === 'cumprido' ? (
+              {selectedDeadlineForView.status === 'cancelado' ? (
+                <p className="text-xs text-red-600 mt-1 font-semibold">Prazo cancelado</p>
+              ) : selectedDeadlineForView.status === 'cumprido' ? (
                 (() => {
                   const onTime = (() => {
                     const due = parseDateOnly(selectedDeadlineForView.due_date);
@@ -3029,6 +3607,28 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 {responsibleProfile ? responsibleProfile.name : 'Não definido'}
               </p>
             </div>
+
+            {selectedDeadlineForView.status === 'cancelado' && (
+              <div className="md:col-span-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                <label className="text-xs font-semibold text-red-600 uppercase flex items-center gap-1.5">
+                  <XCircle className="w-3.5 h-3.5" /> Motivo do cancelamento
+                </label>
+                <p className="text-base text-red-800 mt-1 whitespace-pre-wrap">
+                  {viewCancellation?.reason || 'Motivo não registrado.'}
+                </p>
+                {viewCancellation?.attachments?.length ? (
+                  <CancellationAttachments attachments={viewCancellation.attachments} />
+                ) : null}
+                {viewCancellation && (
+                  <p className="text-xs text-red-500/80 mt-1">
+                    {formatDateTime(viewCancellation.created_at)}
+                    {viewCancellation.cancelled_by
+                      ? ` · ${members.find((m) => m.user_id === viewCancellation.cancelled_by)?.name || 'Usuário'}`
+                      : ''}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="md:col-span-2">
               <label className="text-xs font-semibold text-slate-500 uppercase">Descrição</label>
@@ -3151,6 +3751,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           </div>
         </div>
         {deadlineModal}
+        {cancelDeadlineModal}
       </div>
     );
   }
@@ -3550,11 +4151,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         <div className="grid grid-cols-1 @md:grid-cols-2 @xl:grid-cols-3 gap-4">
           {statusFilterOptions.map((statusOption) => {
             const StatusIcon = statusOption.icon;
-            const statusDeadlines = filteredDeadlines.filter((d) => d.status === statusOption.key);
+            // O kanban tem uma coluna por status, então parte da lista completa —
+            // a fila (filteredDeadlines) já deixa cumpridos/vencidos/cancelados de fora.
+            const statusDeadlines = kanbanDeadlines.filter((d) => d.status === statusOption.key);
             const columnColors: Record<string, { bg: string; border: string; headerBg: string }> = {
               pendente: { bg: 'bg-blue-50/50', border: 'border-blue-200', headerBg: 'bg-blue-500' },
               vencido: { bg: 'bg-red-50/50', border: 'border-red-200', headerBg: 'bg-red-500' },
-              cancelado: { bg: 'bg-slate-50/50', border: 'border-[#e7e5df]', headerBg: 'bg-slate-500' },
+              cancelado: { bg: 'bg-red-50/40', border: 'border-red-200', headerBg: 'bg-red-600' },
             };
             const colors = columnColors[statusOption.key] || columnColors.pendente;
             
@@ -3616,7 +4219,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         {/* Data e dias */}
                         <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                           <span className="text-[10px] text-slate-400">{formatDate(deadline.due_date)}</span>
-                          {deadline.status === 'cumprido' ? (
+                          {deadline.status === 'cancelado' ? (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700">cancelado</span>
+                          ) : deadline.status === 'cumprido' ? (
                             (() => {
                               const onTime = (() => { const due = parseDateOnly(deadline.due_date); const comp = deadline.completed_at ? parseDateOnly(deadline.completed_at) : null; if (!due) return daysUntil >= 0; return comp ? comp.getTime() <= due.getTime() : daysUntil >= 0; })();
                               return (
@@ -3872,7 +4477,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     </div>
                     <div>
                       <span className="text-slate-500">Situação:</span>
-                      {deadline.status === 'cumprido' ? (
+                      {deadline.status === 'cancelado' ? (
+                        <p className="font-medium text-red-600">Cancelado</p>
+                      ) : deadline.status === 'cumprido' ? (
                         (() => {
                           const onTime = (() => {
                             const due = parseDateOnly(deadline.due_date);
@@ -4034,7 +4641,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       
                       {/* Coluna DIAS */}
                       <td className="px-4 py-3">
-                        {deadline.status === 'cumprido' ? (
+                        {deadline.status === 'cancelado' ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-red-50 text-red-600 border border-red-200">
+                            Cancelado
+                          </span>
+                        ) : deadline.status === 'cumprido' ? (
                           (() => {
                             const onTime = (() => {
                               const due = parseDateOnly(deadline.due_date);
@@ -4244,20 +4855,33 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
       {deadlineModal}
       {viewDeadlineModal}
+      {cancelDeadlineModal}
       {reportModal}
 
-      {/* ── Histórico de Prazos Cumpridos ───────────────────────────────── */}
+      {/* ── Histórico de Prazos (cumpridos / vencidos / cancelados) ─────── */}
       <div className="bg-[#f8f7f5] rounded-2xl overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]">
 
         {/* Header */}
         <div className="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-            <h4 className="text-sm font-bold text-slate-800">Histórico de Prazos Cumpridos</h4>
+            <h4 className="text-sm font-bold text-slate-800">Histórico de Prazos</h4>
             <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{filteredHistory.length}</span>
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Status */}
+            <select
+              value={historyStatus}
+              onChange={(e) => { setHistoryStatus(e.target.value as DeadlineStatus | ''); setHistoryPage(1); }}
+              className="h-7 px-2 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] focus:outline-none cursor-pointer text-slate-600"
+            >
+              <option value="">Todos</option>
+              {ARCHIVED_STATUSES.map((key) => (
+                <option key={key} value={key}>{statusOptions.find((s) => s.key === key)?.label || key}</option>
+              ))}
+            </select>
+
             {/* Busca inline */}
             <div className="relative hidden @sm:block">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
@@ -4307,9 +4931,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             </button>
 
             {/* Limpar */}
-            {(historySearch || historyMonth !== '' || historyYear !== '' || historyType || historyPriority || historyResponsible) && (
+            {(historySearch || historyStatus || historyMonth !== '' || historyYear !== '' || historyType || historyPriority || historyResponsible) && (
               <button
-                onClick={() => { setHistorySearch(''); setHistoryMonth(''); setHistoryYear(''); setHistoryType(''); setHistoryPriority(''); setHistoryResponsible(''); setHistoryPage(1); }}
+                onClick={() => { setHistorySearch(''); setHistoryStatus(''); setHistoryMonth(''); setHistoryYear(''); setHistoryType(''); setHistoryPriority(''); setHistoryResponsible(''); setHistoryPage(1); }}
                 className="h-7 px-2 text-xs text-red-500 hover:text-red-700 transition"
               >
                 Limpar
@@ -4348,15 +4972,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         {filteredHistory.length === 0 ? (
           <div className="py-12 text-center">
             <CheckCircle2 className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-            <p className="text-sm text-slate-400">Nenhum prazo cumprido encontrado.</p>
+            <p className="text-sm text-slate-400">Nenhum prazo no histórico.</p>
           </div>
         ) : (
           <>
             {/* Header da tabela */}
-            <div className="hidden @sm:grid grid-cols-[1fr_auto_auto_auto_auto] gap-4 px-5 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <div className="hidden @sm:grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-4 px-5 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
               <span>Prazo / Cliente</span>
+              <span className="w-24 text-center">Situação</span>
               <span className="w-24 text-center">Vencimento</span>
-              <span className="w-24 text-center">Cumprido em</span>
+              <span className="w-24 text-center">Encerrado em</span>
               <span className="w-28 text-center">Responsável</span>
               <span className="w-16 text-right">Ações</span>
             </div>
@@ -4368,8 +4993,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 const priorityDot: Record<string, string> = {
                   urgente: 'bg-red-500', alta: 'bg-orange-400', media: 'bg-amber-400', baixa: 'bg-slate-300',
                 };
+                const historyStatusStyle: Record<string, string> = {
+                  cumprido: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                  vencido: 'bg-red-50 text-red-700 border-red-200',
+                  cancelado: 'bg-red-50 text-red-600 border-red-200',
+                };
+                const historyStatusLabel: Record<string, string> = {
+                  cumprido: 'Cumprido', vencido: 'Vencido', cancelado: 'Cancelado',
+                };
                 return (
-                  <div key={deadline.id} className="grid grid-cols-1 @sm:grid-cols-[1fr_auto_auto_auto_auto] gap-4 items-center px-5 py-3 hover:bg-slate-50/70 transition group">
+                  <div key={deadline.id} className="grid grid-cols-1 @sm:grid-cols-[1fr_auto_auto_auto_auto_auto] gap-4 items-center px-5 py-3 hover:bg-slate-50/70 transition group">
                     {/* Prazo */}
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className={`w-2 h-2 rounded-full flex-shrink-0 ${priorityDot[deadline.priority] || 'bg-slate-300'}`} />
@@ -4378,13 +5011,21 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         {clientItem && <p className="text-xs text-slate-400 truncate">{clientItem.full_name}</p>}
                       </div>
                     </div>
+                    {/* Situação */}
+                    <div className="w-24 flex justify-center">
+                      <span className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${historyStatusStyle[deadline.status] || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                        {historyStatusLabel[deadline.status] || deadline.status}
+                      </span>
+                    </div>
                     {/* Vencimento */}
                     <div className="w-24 text-center">
                       <p className="text-xs text-slate-600 font-medium">{formatDate(deadline.due_date)}</p>
                     </div>
-                    {/* Cumprido em */}
+                    {/* Encerrado em */}
                     <div className="w-24 text-center">
-                      <p className="text-xs font-semibold text-emerald-600">{deadline.completed_at ? formatDate(deadline.completed_at) : '—'}</p>
+                      <p className={`text-xs font-semibold ${deadline.status === 'cumprido' ? 'text-emerald-600' : 'text-slate-500'}`}>
+                        {formatDate(getArchivedAt(deadline))}
+                      </p>
                     </div>
                     {/* Responsável */}
                     <div className="w-28 text-center">

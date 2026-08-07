@@ -958,7 +958,7 @@ export const DEADLINE_MODULE_DEFAULTS: DeadlineModuleConfig = {
     { key: 'pendente',  label: 'Pendentes',   badge: 'bg-blue-500 text-white' },
     { key: 'cumprido',  label: 'Cumpridos',   badge: 'bg-green-600 text-white' },
     { key: 'vencido',   label: 'Vencidos',    badge: 'bg-red-600 text-white' },
-    { key: 'cancelado', label: 'Cancelados',  badge: 'bg-slate-400 text-white' },
+    { key: 'cancelado', label: 'Cancelados',  badge: 'bg-red-600 text-white' },
   ],
   priorities: [
     { key: 'urgente', label: 'Urgente', badge: 'bg-red-600 text-white' },

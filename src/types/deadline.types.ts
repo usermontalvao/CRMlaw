@@ -64,6 +64,24 @@ export interface UpdateDeadlineDTO extends Partial<Omit<CreateDeadlineDTO, 'resp
   completed_at?: string | null;
 }
 
+/** Print/arquivo anexado ao motivo do cancelamento (bucket anexos_chat). */
+export interface DeadlineCancellationAttachment {
+  path: string;
+  name: string;
+  mime: string;
+  size: number;
+}
+
+/** Motivo registrado quando um prazo é cancelado (tabela deadline_cancellations). */
+export interface DeadlineCancellation {
+  id: string;
+  deadline_id: string;
+  reason: string;
+  cancelled_by?: string | null;
+  created_at: string;
+  attachments?: DeadlineCancellationAttachment[] | null;
+}
+
 export interface DeadlineFilters {
   status?: DeadlineStatus;
   priority?: DeadlinePriority;

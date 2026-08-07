@@ -6,9 +6,14 @@ import type {
   UpdateDeadlineDTO,
   DeadlineFilters,
   DeadlineStatus,
+  DeadlineCancellation,
+  DeadlineCancellationAttachment,
 } from '../types/deadline.types';
 import { dividirEmLotes } from '../utils/queryBatches';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+
+// Prints do motivo do cancelamento — mesmo bucket privado dos anexos de chat/feed.
+const CANCELLATION_BUCKET = 'anexos_chat';
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 // Cache em memória por chave de filtros server-side (eq + date ranges).
@@ -218,6 +223,83 @@ class DeadlineService {
     this.invalidateCache();
     syncBus.emit('deadlines');
     return data;
+  }
+
+  /**
+   * Cancela o prazo registrando o motivo em deadline_cancellations.
+   * O motivo é gravado antes da troca de status: se o insert falhar,
+   * o prazo continua na fila em vez de virar um cancelamento sem justificativa.
+   */
+  async cancelDeadline(
+    id: string,
+    reason: string,
+    cancelledBy?: string | null,
+    attachments: DeadlineCancellationAttachment[] = [],
+  ): Promise<Deadline> {
+    const trimmed = reason.trim();
+    if (!trimmed) throw new Error('Informe o motivo do cancelamento.');
+
+    const { error: reasonError } = await supabase
+      .from('deadline_cancellations')
+      .insert({ deadline_id: id, reason: trimmed, cancelled_by: cancelledBy ?? null, attachments });
+
+    if (reasonError) {
+      console.error('Erro ao registrar motivo do cancelamento:', reasonError);
+      throw new Error(reasonError.message);
+    }
+
+    return this.updateStatus(id, 'cancelado');
+  }
+
+  /**
+   * Sobe um print/arquivo do motivo do cancelamento e devolve o descritor.
+   * O binário vai para o bucket privado anexos_chat; a tabela guarda só o caminho.
+   */
+  async uploadCancellationAttachment(deadlineId: string, file: File): Promise<DeadlineCancellationAttachment> {
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_') || 'anexo';
+    const path = `prazos/cancelamentos/${deadlineId}/${crypto.randomUUID()}_${safeName}`;
+
+    const { error } = await supabase.storage
+      .from(CANCELLATION_BUCKET)
+      .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+
+    if (error) {
+      console.error('Erro ao enviar anexo do cancelamento:', error);
+      throw new Error(`Falha ao enviar "${file.name}": ${error.message}`);
+    }
+
+    return { path, name: file.name, mime: file.type || 'application/octet-stream', size: file.size };
+  }
+
+  /** URL assinada para exibir/baixar um anexo do cancelamento. */
+  async getCancellationAttachmentUrl(path: string, expiresIn = 60 * 10): Promise<string | null> {
+    const { data, error } = await supabase.storage
+      .from(CANCELLATION_BUCKET)
+      .createSignedUrl(path, expiresIn);
+
+    if (error) {
+      console.error('Erro ao assinar anexo do cancelamento:', error);
+      return null;
+    }
+    return data?.signedUrl ?? null;
+  }
+
+  /** Último motivo de cancelamento do prazo (null quando nunca foi cancelado). */
+  async getCancellation(deadlineId: string): Promise<DeadlineCancellation | null> {
+    const { data, error } = await supabase
+      .from('deadline_cancellations')
+      .select('id, deadline_id, reason, cancelled_by, created_at, attachments')
+      .eq('deadline_id', deadlineId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar motivo do cancelamento:', error);
+      return null;
+    }
+
+    return (data as DeadlineCancellation) ?? null;
   }
 
   async deleteDeadline(id: string): Promise<void> {
