@@ -963,6 +963,43 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.317',
+    date: '07/08/2026',
+    summary: 'A atualização ao vivo do e-mail e das petições passa a vir só pelo canal de avisos (broadcast), sem o segundo caminho que trafegava a linha inteira do banco. E ouvir esses avisos passou a exigir usuário interno ativo — o Portal do Cliente não os recebe mais.',
+    modules: [
+      {
+        moduleId: 'email',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Atualização ao vivo só pelo canal de avisos',
+            description: 'A caixa de entrada continua se atualizando sozinha, mas agora só pelo aviso curto do banco: o caminho antigo, que enviava cada e-mail inteiro (corpo e anexos) para o navegador apenas para ser descartado, foi removido. E-mail é a maior tabela do sistema, e era ela que puxava o custo do Realtime.',
+          },
+          {
+            type: 'security',
+            title: 'Só equipe interna ativa recebe o aviso',
+            description: 'O canal de avisos de e-mail aceitava qualquer sessão autenticada, o que incluía o Portal do Cliente. Agora exige perfil interno ativo — a mesma regra já aplicada ao WhatsApp.',
+          },
+        ],
+      },
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Lista de petições atualiza pelo canal de avisos',
+            description: 'Mesma mudança do e-mail: sai o caminho que trafegava o .docx inteiro de cada petição salva, fica o aviso curto que manda a lista recarregar.',
+          },
+          {
+            type: 'security',
+            title: 'Só equipe interna ativa recebe o aviso',
+            description: 'O canal de avisos de petições passou a exigir perfil interno ativo, deixando de ser audível para sessões do Portal do Cliente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.316',
     date: '23/07/2026',
     summary: 'O sistema passou a ter um único login (o PortalLogin, que já atende equipe e cliente): a tela antiga foi aposentada e sessões expiradas caem direto no portal, sem loop. No e-mail, marcar todas como lidas agora pede confirmação e o filtro por intervalo de datas ganhou rótulos De/Até.',

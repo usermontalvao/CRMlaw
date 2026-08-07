@@ -96,7 +96,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { supabase } from '../config/supabase';
-import { ligarRealtimeComFallback } from '../utils/realtimeWithFallback';
+import { ligarRecargaPorBroadcast } from '../utils/broadcastReloadChannel';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 import PetitionAiChat from './PetitionAiChat';
 import PetitionLiveStatusBar from './petition/PetitionLiveStatusBar';
@@ -2539,13 +2539,14 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
     //    não filtra por dono, devolve a lista do escritório — então o tópico
     //    também é único.
     //
-    // O postgres_changes segue como rede, aberto só se o canal privado for
-    // recusado — ver src/utils/realtimeWithFallback.ts. Vai sem o filtro por
-    // dono, justamente porque ele nunca casou: rede que não recebe evento não é
-    // rede. Temporário: sai quando o Broadcast estiver confirmado com sessão
-    // real, e só então saved_petitions sai da publicação.
-    return ligarRealtimeComFallback({
+    // Fonte única: a rede de postgres_changes saiu junto com saved_petitions da
+    // publicação `supabase_realtime` — sobre tabela despublicada aquele canal
+    // não receberia evento nenhum. O canal é privado e a policy de
+    // realtime.messages só aceita equipe interna ATIVA. Ver
+    // src/utils/broadcastReloadChannel.ts.
+    return ligarRecargaPorBroadcast({
       escopo: 'Petitions',
+      topico: 'petitions:changes',
       atrasoMs: 1500,
       recarregar: () => {
         setSavedPetitionsLoading(true);
@@ -2557,17 +2558,6 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
           })
           .finally(() => setSavedPetitionsLoading(false));
       },
-      abrirBroadcast: (aoEvento, aoStatus) =>
-        supabase
-          .channel('petitions:changes', { config: { private: true } })
-          .on('broadcast', { event: 'changed' }, aoEvento)
-          .subscribe(aoStatus),
-      abrirFallback: (aoEvento, aoStatus) =>
-        supabase
-          .channel('petition-editor-saved-petitions')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'saved_petitions' }, aoEvento)
-          .subscribe(aoStatus),
-      remover: (canal) => { void supabase.removeChannel(canal); },
     });
   }, [user?.id, isCloudImportMode]);
 

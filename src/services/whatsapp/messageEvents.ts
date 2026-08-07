@@ -19,10 +19,11 @@
  *
  * Este arquivo é só a ligação com o Supabase. As duas partes com regra própria
  * moram em módulos puros, testáveis sem rede, e é lá que está escrito o porquê:
- * a política de conexão em `broadcastGate.ts` e o fan-out em `waMessageFanOut.ts`.
+ * a política de conexão em `src/utils/broadcastGate.ts` (compartilhada hoje com o
+ * e-mail e as petições) e o fan-out em `waMessageFanOut.ts`.
  */
 import { supabase } from '../../config/supabase';
-import { criarPortaoBroadcast, type PortaoBroadcast } from './broadcastGate';
+import { criarPortaoBroadcast, type PortaoBroadcast } from '../../utils/broadcastGate';
 import { criarFanOutDeMensagens, type FanOutDeMensagens } from './waMessageFanOut';
 import { normalizarBroadcast, type WaMessageEvent } from './waMessageEvent';
 import { registrarEventoRecebido } from './realtimeDebug';

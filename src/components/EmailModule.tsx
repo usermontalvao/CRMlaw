@@ -16,7 +16,7 @@ import { dashboardPreferencesService } from '../services/dashboardPreferences.se
 import { useAuth } from '../contexts/AuthContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { supabase } from '../config/supabase';
-import { ligarRealtimeComFallback } from '../utils/realtimeWithFallback';
+import { ligarRecargaPorBroadcast } from '../utils/broadcastReloadChannel';
 import type { EmailFolder, EmailMessage, EmailSignature, SendEmailDTO, EmailSpamRule, SpamRuleKind, SpamRuleMatch, EmailSearchFilters } from '../types/email.types';
 import type { Client } from '../types/client.types';
 import { Modal, ModalBody, ModalFooter, Button, Input, Label } from './ui';
@@ -916,33 +916,22 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   const loadRef = useRef(load);
   useEffect(() => { loadRef.current = load; }, [load]);
   useEffect(() => {
-    // Broadcast, e não postgres_changes: este handler descarta o payload e só
-    // recarrega. Pelo postgres_changes, cada e-mail vinha com corpo e anexos
-    // decodificados em JSON para serem jogados fora — e email_messages é a
-    // maior tabela do banco. O aviso vem de um gatilho por comando, então um
-    // backfill de milhares vira um aviso só. Canal privado: só quem está
-    // autenticado entra (policy em realtime.messages).
+    // Broadcast, e fonte única: este handler descarta o payload e só recarrega.
+    // Pelo postgres_changes, cada e-mail vinha com corpo e anexos decodificados
+    // em JSON para serem jogados fora — e email_messages é a maior tabela do
+    // banco (184 MB, 124 MB só de corpos em TOAST). O aviso vem de um gatilho
+    // por comando, então um backfill de milhares vira um aviso só.
     //
-    // O postgres_changes segue como rede, aberto só se o canal privado for
-    // recusado — ver src/utils/realtimeWithFallback.ts. Temporário: sai quando
-    // o Broadcast estiver confirmado com sessão real em produção, e só então
-    // email_messages sai da publicação.
-    return ligarRealtimeComFallback({
+    // Canal privado, e a policy de realtime.messages só aceita equipe interna
+    // ATIVA. A rede de postgres_changes que acompanhava isto saiu junto com
+    // email_messages da publicação: sobre tabela despublicada aquele canal não
+    // receberia evento nenhum. Ver src/utils/broadcastReloadChannel.ts.
+    return ligarRecargaPorBroadcast({
       escopo: 'Email',
-      // Debounce: rajadas (ex.: backfill de milhares) colapsam numa recarga só.
+      topico: 'email:changes',
+      // Rajadas (ex.: backfill de milhares) colapsam numa recarga só.
       atrasoMs: 1200,
       recarregar: () => { void loadRef.current(true); },
-      abrirBroadcast: (aoEvento, aoStatus) =>
-        supabase
-          .channel('email:changes', { config: { private: true } })
-          .on('broadcast', { event: 'changed' }, aoEvento)
-          .subscribe(aoStatus),
-      abrirFallback: (aoEvento, aoStatus) =>
-        supabase
-          .channel('email-live')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'email_messages' }, aoEvento)
-          .subscribe(aoStatus),
-      remover: (canal) => { void supabase.removeChannel(canal); },
     });
   }, []);
 

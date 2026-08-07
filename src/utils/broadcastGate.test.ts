@@ -1,5 +1,6 @@
-// Cobertura da política de conexão do canal privado `whatsapp:messages`: quando
-// o canal PODE ser aberto, quantas vezes se insiste, e o que sobra depois.
+// Cobertura da política de conexão de canal privado de broadcast — a mesma para
+// `whatsapp:messages`, `email:changes` e `petitions:changes`: quando o canal
+// PODE ser aberto, quantas vezes se insiste, e o que sobra depois.
 //
 // O que estes testes travam é o laço real: canal negado deixado de pé, rejuntado
 // pela biblioteca a cada 10s, para sempre. Ver broadcastGate.ts.
@@ -7,7 +8,7 @@
 // E, desde que a rede de postgres_changes saiu, travam também a fonte ÚNICA: o
 // portão não pode abrir nenhum canal que não seja o broadcast.
 //
-// Execução: `node --test --import ts-node/esm src/services/whatsapp/broadcastGate.test.ts`
+// Execução: `node --test --import ts-node/esm src/utils/broadcastGate.test.ts`
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {

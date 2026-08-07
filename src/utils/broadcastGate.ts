@@ -1,5 +1,13 @@
 /**
- * A política de conexão do canal privado `whatsapp:messages`.
+ * A política de conexão de canal privado de broadcast.
+ *
+ * Vale para os três tópicos do escritório — `whatsapp:messages`,
+ * `email:changes` e `petitions:changes`. Nasceu no WhatsApp, e mudou de lugar
+ * (era `src/services/whatsapp/broadcastGate.ts`) quando o e-mail e as petições
+ * perderam a rede de `postgres_changes`: sem rede, um join recusado por corrida
+ * de token deixaria a tela sem atualização até o F5 — e alimentaria o mesmo laço
+ * descrito abaixo. Não há regra de WhatsApp aqui dentro; o que é específico de
+ * cada módulo entra pelas dependências.
  *
  * Existe por causa de um laço concreto, medido em produção. O canal é privado, e
  * o Realtime só aceita o join se o JWT do atendente já estiver no RealtimeClient
@@ -26,18 +34,19 @@
  *     backoff e com FIM: quatro tentativas e para. Um tópico negado por RLS não
  *     vira liberado por insistência — insistir só cobra do banco.
  *
- * Até esta versão havia uma terceira peça: uma rede de `postgres_changes` sobre
- * `whatsapp_messages`, aberta a cada erro do broadcast. Ela existia para cobrir o
- * período em que o canal privado ainda não estava provado em produção. Está
- * provado — AUTH_READY, CHANNEL_CREATED, SUBSCRIBED e evento real, sem a rede ter
- * sido convocada uma vez —, e a rede saiu: ela trafegava a LINHA INTEIRA de cada
- * mensagem (com `raw` e `transcription_text`) para toda aba aberta, que é o custo
- * que motivou o broadcast.
+ * Houve uma terceira peça, em todos os módulos: uma rede de `postgres_changes`
+ * aberta a cada erro do broadcast, para cobrir o período em que o canal privado
+ * ainda não estava provado em produção. Está provado — AUTH_READY,
+ * CHANNEL_CREATED, SUBSCRIBED e evento real, sem a rede ter sido convocada uma
+ * vez —, e a rede saiu: ela trafegava a LINHA INTEIRA (o `raw` e o
+ * `transcription_text` da mensagem, o corpo do e-mail, o .docx da petição) para
+ * toda aba aberta, que é o custo que motivou o broadcast.
  *
  * O que cobre o buraco quando o broadcast não está entregando não é mais um
  * segundo socket, é HTTP: `useWaRealtime` repõe lista e thread ao voltar para a
  * aba, ao recuperar a conexão e a cada 15s enquanto o canal de conversas
- * (`postgres_changes`, mesmo websocket) se declara fora.
+ * (`postgres_changes`, mesmo websocket) se declara fora; no e-mail e nas
+ * petições, a recarga da própria tela.
  *
  * Sem imports de propósito: o módulo é puro para o ts-node do `npm test`
  * conseguir carregá-lo sem arrastar a cadeia de imports do cliente Supabase.

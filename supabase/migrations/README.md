@@ -30,6 +30,7 @@ Elas foram — com outra `version`:
 | `20260806210000_whatsapp_messages_broadcast.sql` | `20260806231703` | `whatsapp_messages_broadcast` |
 | `20260806211000_whatsapp_raw_backfill.sql` | `20260806231723` | `whatsapp_raw_backfill` |
 | `20260806234746_whatsapp_broadcast_hardening.sql` | `20260806234746` | `whatsapp_broadcast_hardening` |
+| `20260807041550_broadcast_office_topics_hardening.sql` | `20260807041550` | `broadcast_office_topics_hardening` |
 
 Duas migrations existem **só no banco**, sem arquivo no repositório — aplicadas
 direto pelo MCP e nunca versionadas:
