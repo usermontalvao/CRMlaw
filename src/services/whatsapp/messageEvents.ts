@@ -11,11 +11,11 @@
  * — o notificador vive fora do módulo e não pode manter socket aberto sozinho.
  *
  * Hoje o broadcast é a ÚNICA fonte. A rede de `postgres_changes` que o
- * acompanhava saiu depois de o canal privado ser validado em produção; o que
- * repõe o que o socket perde é HTTP, em `useWaRealtime`. A tabela
- * `whatsapp_messages` segue publicada em `supabase_realtime` de propósito — a
- * despublicação é passo separado, e enquanto ela estiver lá o `git revert` deste
- * commit basta para voltar atrás.
+ * acompanhava saiu depois de o canal privado ser validado em produção, e a
+ * tabela `whatsapp_messages` saiu da publicação `supabase_realtime` logo em
+ * seguida (migration `realtime_drop_whatsapp_messages`): um canal de
+ * `postgres_changes` sobre ela hoje não receberia evento nenhum. O que repõe o
+ * que o socket perde é HTTP, em `useWaRealtime`.
  *
  * Este arquivo é só a ligação com o Supabase. As duas partes com regra própria
  * moram em módulos puros, testáveis sem rede, e é lá que está escrito o porquê:
