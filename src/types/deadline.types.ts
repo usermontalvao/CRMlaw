@@ -82,6 +82,30 @@ export interface DeadlineCancellation {
   attachments?: DeadlineCancellationAttachment[] | null;
 }
 
+/**
+ * Evento de auditoria do prazo — quem mexeu, quando e em quê.
+ * Vem de audit_log via RPC get_deadline_timeline; o gatilho do banco é quem
+ * grava, então o registro existe mesmo para alterações feitas fora do CRM.
+ */
+export interface DeadlineTimelineEvent {
+  id: string;
+  action: string;
+  user_id?: string | null;
+  user_name?: string | null;
+  created_at: string;
+  status_from?: string | null;
+  status_to?: string | null;
+}
+
+/** Quem deu a baixa (cumpriu ou cancelou) — evento de fechamento mais recente. */
+export interface DeadlineClosure {
+  deadline_id: string;
+  action: string;
+  user_id?: string | null;
+  user_name?: string | null;
+  created_at: string;
+}
+
 export interface DeadlineFilters {
   status?: DeadlineStatus;
   priority?: DeadlinePriority;

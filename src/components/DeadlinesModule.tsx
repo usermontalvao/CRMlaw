@@ -63,7 +63,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { useMinLoading } from '../hooks/useMinLoading';
-import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType, DeadlineCancellation, DeadlineCancellationAttachment } from '../types/deadline.types';
+import type { Deadline, DeadlineStatus, DeadlinePriority, DeadlineType, DeadlineCancellation, DeadlineCancellationAttachment, DeadlineTimelineEvent, DeadlineClosure } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 import type { Profile } from '../services/profile.service';
@@ -465,6 +465,80 @@ const formatDateTime = (value?: string | null) => {
   return fmtDateTimeGlobal(value);
 };
 
+// ── Linha do tempo do prazo (audit_log) ──────────────────────────────────────
+// Os rótulos espelham as ações que o gatilho fn_audit_log_trigger grava.
+const TIMELINE_ACTION_LABELS: Record<string, string> = {
+  insert: 'Prazo criado',
+  update: 'Prazo editado',
+  delete: 'Prazo excluído',
+  deadline_completed: 'Prazo cumprido',
+  deadline_cancelled: 'Prazo cancelado',
+  deadline_reopened: 'Prazo reaberto',
+  deadline_due_date_changed: 'Vencimento alterado',
+  deadline_responsible_changed: 'Responsável alterado',
+  deadline_status_changed: 'Status alterado',
+};
+
+const TIMELINE_ACTION_TONE: Record<string, { dot: string; text: string }> = {
+  deadline_completed: { dot: 'bg-emerald-500', text: 'text-emerald-700' },
+  deadline_cancelled: { dot: 'bg-red-500', text: 'text-red-700' },
+  deadline_reopened: { dot: 'bg-amber-500', text: 'text-amber-700' },
+  delete: { dot: 'bg-red-500', text: 'text-red-700' },
+};
+
+// O Postgres pode devolver "2026-08-07 19:00:53+00"; o formatador só lê ISO.
+const toIsoInstant = (value: string) => (value.includes('T') ? value : value.replace(' ', 'T'));
+
+const CLOSING_ACTIONS = ['deadline_completed', 'deadline_cancelled'];
+
+// "Pedro Rodrigues Montalvao Neto" → "Pedro Neto": na coluna do histórico o nome
+// inteiro só cabe truncado. O completo fica no title de quem passa o mouse.
+const shortPersonName = (name?: string | null) => {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'Usuário';
+  if (parts.length <= 2) return parts.join(' ');
+  return `${parts[0]} ${parts[parts.length - 1]}`;
+};
+
+const DeadlineTimeline: React.FC<{ events: DeadlineTimelineEvent[]; loading: boolean }> = ({ events, loading }) => {
+  if (loading) {
+    return (
+      <p className="text-[12px] text-slate-400 flex items-center gap-2">
+        <Loader2 className="w-3 h-3 animate-spin" /> Carregando histórico…
+      </p>
+    );
+  }
+
+  if (!events.length) {
+    return <p className="text-[12px] text-slate-400">Nenhum registro de alteração para este prazo.</p>;
+  }
+
+  return (
+    <ol className="space-y-2.5">
+      {events.map((event) => {
+        const tone = TIMELINE_ACTION_TONE[event.action];
+        const label = TIMELINE_ACTION_LABELS[event.action] || event.action;
+        return (
+          <li key={event.id} className="flex items-start gap-2.5">
+            <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${tone?.dot || 'bg-slate-300'}`} />
+            <div className="min-w-0">
+              <p className={`text-[13px] font-medium ${tone?.text || 'text-slate-700 dark:text-slate-200'}`}>
+                {label}
+                {event.action === 'deadline_status_changed' && event.status_from && event.status_to && (
+                  <span className="font-normal text-slate-500"> · {event.status_from} → {event.status_to}</span>
+                )}
+              </p>
+              <p className="text-[11px] text-slate-400 tabular-nums">
+                {event.user_name || 'Usuário'} · {formatDateTime(toIsoInstant(event.created_at))}
+              </p>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+};
+
 // Calcula data de vencimento baseado em dias úteis (exclui finais de semana)
 // Prazos processuais começam no dia subsequente à publicação
 type TipoPrazo = 'processual' | 'material';
@@ -684,6 +758,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [cancelDragOver, setCancelDragOver] = useState(false);
   const cancelFileInputRef = useRef<HTMLInputElement>(null);
   const [viewCancellation, setViewCancellation] = useState<DeadlineCancellation | null>(null);
+  const [viewTimeline, setViewTimeline] = useState<DeadlineTimelineEvent[]>([]);
+  const [viewTimelineLoading, setViewTimelineLoading] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([]);
@@ -750,9 +826,15 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [historyType, setHistoryType] = useState<DeadlineType | ''>('');
   const [historyPriority, setHistoryPriority] = useState<DeadlinePriority | ''>('');
   const [historyResponsible, setHistoryResponsible] = useState('');
+  // "Baixado por" guarda o user_id da auth, não o id do membro: quem fecha o
+  // prazo vem do audit_log, que registra auth.uid().
+  const [historyClosedBy, setHistoryClosedBy] = useState('');
   const [historyPage, setHistoryPage] = useState(1);
   const [historyFiltersExpanded, setHistoryFiltersExpanded] = useState(false);
   const HISTORY_PAGE_SIZE = 10;
+
+  // Quem cumpriu/cancelou cada prazo arquivado, indexado por id do prazo.
+  const [closuresByDeadline, setClosuresByDeadline] = useState<Map<string, DeadlineClosure>>(new Map());
 
   const applyFilterPreset = useCallback(
     (preset: {
@@ -1436,8 +1518,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     if (historyType) base = base.filter((d) => d.type === historyType);
     if (historyPriority) base = base.filter((d) => d.priority === historyPriority);
     if (historyResponsible) base = base.filter((d) => d.responsible_id === historyResponsible);
+    // Responsável é quem o prazo estava designado; baixado por é quem executou.
+    if (historyClosedBy) base = base.filter((d) => closuresByDeadline.get(d.id)?.user_id === historyClosedBy);
     return base;
-  }, [isPastMonth, monthlyArchived, archivedDeadlines, historyStatus, historySearch, historyMonth, historyYear, historyType, historyPriority, historyResponsible, clientMap]);
+  }, [isPastMonth, monthlyArchived, archivedDeadlines, historyStatus, historySearch, historyMonth, historyYear, historyType, historyPriority, historyResponsible, historyClosedBy, closuresByDeadline, clientMap]);
 
   const historyTotalPages = Math.max(1, Math.ceil(filteredHistory.length / HISTORY_PAGE_SIZE));
   const paginatedHistory = filteredHistory.slice((historyPage - 1) * HISTORY_PAGE_SIZE, historyPage * HISTORY_PAGE_SIZE);
@@ -1446,6 +1530,40 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     const years = new Set(archivedDeadlines.map((d) => new Date(getArchivedAt(d)).getFullYear()));
     return Array.from(years).sort((a, b) => b - a);
   }, [archivedDeadlines]);
+
+  // ── Quem deu a baixa em cada prazo do histórico ───────────────────────────
+  // Uma chamada para o conjunto inteiro, não uma por linha. A chave é a lista
+  // de ids ordenada: reordenar ou refiltrar o histórico não dispara nova busca.
+  const historyBaseIds = useMemo(() => {
+    const base = isPastMonth ? monthlyArchived : archivedDeadlines;
+    return base.map((d) => d.id).sort();
+  }, [isPastMonth, monthlyArchived, archivedDeadlines]);
+  const historyBaseIdsKey = historyBaseIds.join(',');
+
+  useEffect(() => {
+    if (!historyBaseIds.length) {
+      setClosuresByDeadline(new Map());
+      return;
+    }
+    let active = true;
+    void deadlineService.getClosures(historyBaseIds).then((rows) => {
+      if (!active) return;
+      setClosuresByDeadline(new Map(rows.map((row) => [row.deadline_id, row])));
+    });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyBaseIdsKey]);
+
+  // Só entra na lista quem realmente aparece como autor de alguma baixa —
+  // um seletor com o escritório inteiro teria opção que nunca filtra nada.
+  const historyClosers = useMemo(() => {
+    const porUsuario = new Map<string, string>();
+    closuresByDeadline.forEach((closure) => {
+      if (closure.user_id) porUsuario.set(closure.user_id, closure.user_name || 'Usuário');
+    });
+    return Array.from(porUsuario, ([userId, name]) => ({ userId, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [closuresByDeadline]);
 
   // ── Exportar lista filtrada ───────────────────────────────────────────────
   const handleExportFiltered = useCallback(() => {
@@ -2107,6 +2225,27 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     setViewCancellation(null);
     void deadlineService.getCancellation(deadline.id).then((row) => {
       if (active) setViewCancellation(row);
+    });
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showViewDeadlineModal, viewMode, selectedDeadlineForView?.id, selectedDeadlineForView?.status]);
+
+  // Linha do tempo do prazo: quem cumpriu, quem cancelou, quem mudou a data.
+  // Recarrega quando o status muda para que a baixa feita com o modal aberto
+  // apareça sem precisar fechar e abrir de novo.
+  useEffect(() => {
+    const deadline = selectedDeadlineForView;
+    const isOpen = showViewDeadlineModal || viewMode === 'details';
+    if (!isOpen || !deadline) {
+      setViewTimeline([]);
+      return;
+    }
+    let active = true;
+    setViewTimelineLoading(true);
+    void deadlineService.getTimeline(deadline.id).then((rows) => {
+      if (!active) return;
+      setViewTimeline(rows);
+      setViewTimelineLoading(false);
     });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3206,6 +3345,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         : 'text-slate-800';
       const countdownLabel = isOverdue ? 'dias atrasado' : daysLeft === 0 ? 'vence hoje' : 'dias restantes';
 
+      // Quem deu a baixa: evento de fechamento mais recente do log de auditoria
+      // (a linha do tempo já vem do mais novo para o mais antigo).
+      const closingEvent = viewTimeline.find((event) => CLOSING_ACTIONS.includes(event.action)) || null;
+
       return (
         <Modal
           open={showViewDeadlineModal && !!selectedDeadlineForView}
@@ -3359,6 +3502,34 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               </div>
             )}
 
+            {/* Registro da baixa — quem cumpriu, em que dia e a que horas.
+                Vem do log de auditoria; o completed_at do prazo é o reserva para
+                as baixas anteriores ao gatilho de auditoria. */}
+            {isCumprido && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-900/50 px-3 py-2.5">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Registro da baixa</p>
+                </div>
+                {closingEvent ? (
+                  <p className="text-[13px] text-emerald-800 dark:text-emerald-200">
+                    Cumprido por <span className="font-semibold">{closingEvent.user_name || 'Usuário'}</span>
+                    {' em '}
+                    <span className="font-semibold tabular-nums">{formatDateTime(toIsoInstant(closingEvent.created_at))}</span>
+                  </p>
+                ) : viewTimelineLoading ? (
+                  <p className="text-[13px] text-emerald-700/70 flex items-center gap-2">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Buscando quem deu a baixa…
+                  </p>
+                ) : (
+                  <p className="text-[13px] text-emerald-800 dark:text-emerald-200">
+                    Cumprido em <span className="font-semibold tabular-nums">{formatDateTime(d.completed_at)}</span>
+                    <span className="block text-[11px] text-emerald-600/80 mt-0.5">Autor não registrado — baixa anterior ao log de auditoria.</span>
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Descrição */}
             {d.description && (
               <div className="border-t border-[#e7e5df] dark:border-zinc-700 pt-3">
@@ -3366,6 +3537,18 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 <p className="text-[13px] text-slate-600 dark:text-slate-300 leading-relaxed">{d.description}</p>
               </div>
             )}
+
+            {/* Linha do tempo do prazo */}
+            <div className="border-t border-[#e7e5df] dark:border-zinc-700 pt-3">
+              <div className="flex items-center gap-2 mb-3">
+                <Clock className="w-4 h-4 text-slate-400" />
+                <h4 className="text-[13px] font-semibold text-slate-700 dark:text-slate-200">Histórico de alterações</h4>
+                {viewTimeline.length > 0 && (
+                  <span className="text-[11px] bg-slate-100 dark:bg-zinc-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full font-medium">{viewTimeline.length}</span>
+                )}
+              </div>
+              <DeadlineTimeline events={viewTimeline} loading={viewTimelineLoading} />
+            </div>
 
             {/* Comentários */}
             <div className="border-t border-[#e7e5df] dark:border-zinc-700 pt-3">
@@ -4955,20 +5138,20 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <button
               onClick={() => setHistoryFiltersExpanded(!historyFiltersExpanded)}
               className={`h-7 px-2.5 text-xs border rounded-lg font-medium transition flex items-center gap-1 ${
-                historyFiltersExpanded || historyType || historyPriority || historyResponsible
+                historyFiltersExpanded || historyType || historyPriority || historyResponsible || historyClosedBy
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                   : 'border-[#e7e5df] text-slate-500 hover:bg-slate-50'
               }`}
             >
               <Filter className="w-3 h-3" />
               Filtros
-              {(historyType || historyPriority || historyResponsible) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+              {(historyType || historyPriority || historyResponsible || historyClosedBy) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
             </button>
 
             {/* Limpar */}
-            {(historySearch || historyStatus || historyMonth !== '' || historyYear !== '' || historyType || historyPriority || historyResponsible) && (
+            {(historySearch || historyStatus || historyMonth !== '' || historyYear !== '' || historyType || historyPriority || historyResponsible || historyClosedBy) && (
               <button
-                onClick={() => { setHistorySearch(''); setHistoryStatus(''); setHistoryMonth(''); setHistoryYear(''); setHistoryType(''); setHistoryPriority(''); setHistoryResponsible(''); setHistoryPage(1); }}
+                onClick={() => { setHistorySearch(''); setHistoryStatus(''); setHistoryMonth(''); setHistoryYear(''); setHistoryType(''); setHistoryPriority(''); setHistoryResponsible(''); setHistoryClosedBy(''); setHistoryPage(1); }}
                 className="h-7 px-2 text-xs text-red-500 hover:text-red-700 transition"
               >
                 Limpar
@@ -4996,9 +5179,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               <option value="baixa">Baixa</option>
             </select>
             <select value={historyResponsible} onChange={(e) => { setHistoryResponsible(e.target.value); setHistoryPage(1); }}
+              title="Responsável designado no cadastro do prazo"
               className="h-7 px-2 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] focus:outline-none cursor-pointer text-slate-600">
               <option value="">Responsável</option>
               {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            <select value={historyClosedBy} onChange={(e) => { setHistoryClosedBy(e.target.value); setHistoryPage(1); }}
+              title="Quem efetivamente cumpriu ou cancelou o prazo"
+              className="h-7 px-2 text-xs border border-[#e7e5df] rounded-lg bg-[#f8f7f5] focus:outline-none cursor-pointer text-slate-600">
+              <option value="">Baixado por</option>
+              {historyClosers.map((c) => <option key={c.userId} value={c.userId}>{c.name}</option>)}
             </select>
           </div>
         )}
@@ -5012,12 +5202,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         ) : (
           <>
             {/* Header da tabela */}
-            <div className="hidden @sm:grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-4 px-5 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            <div className="hidden @sm:grid grid-cols-[1fr_auto_auto_auto_auto_auto_auto] gap-4 px-5 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
               <span>Prazo / Cliente</span>
               <span className="w-24 text-center">Situação</span>
               <span className="w-24 text-center">Vencimento</span>
               <span className="w-24 text-center">Encerrado em</span>
               <span className="w-28 text-center">Responsável</span>
+              <span className="w-28 text-center">Baixado por</span>
               <span className="w-16 text-right">Ações</span>
             </div>
 
@@ -5036,8 +5227,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 const historyStatusLabel: Record<string, string> = {
                   cumprido: 'Cumprido', vencido: 'Vencido', cancelado: 'Cancelado',
                 };
+                const closure = closuresByDeadline.get(deadline.id);
                 return (
-                  <div key={deadline.id} className="grid grid-cols-1 @sm:grid-cols-[1fr_auto_auto_auto_auto_auto] gap-4 items-center px-5 py-3 hover:bg-slate-50/70 transition group">
+                  <div key={deadline.id} className="grid grid-cols-1 @sm:grid-cols-[1fr_auto_auto_auto_auto_auto_auto] gap-4 items-center px-5 py-3 hover:bg-slate-50/70 transition group">
                     {/* Prazo */}
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className={`w-2 h-2 rounded-full flex-shrink-0 ${priorityDot[deadline.priority] || 'bg-slate-300'}`} />
@@ -5065,6 +5257,16 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     {/* Responsável */}
                     <div className="w-28 text-center">
                       <p className="text-xs text-slate-500 truncate">{responsibleItem?.name || '—'}</p>
+                    </div>
+                    {/* Baixado por — do log de auditoria, não do cadastro */}
+                    <div className="w-28 text-center">
+                      {closure ? (
+                        <p className="text-xs text-slate-600 truncate" title={`${closure.user_name || 'Usuário'} · ${formatDateTime(toIsoInstant(closure.created_at))}`}>
+                          {shortPersonName(closure.user_name)}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-300">—</p>
+                      )}
                     </div>
                     {/* Ações */}
                     <div className="w-16 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition">

@@ -8,6 +8,8 @@ import type {
   DeadlineStatus,
   DeadlineCancellation,
   DeadlineCancellationAttachment,
+  DeadlineTimelineEvent,
+  DeadlineClosure,
 } from '../types/deadline.types';
 import { dividirEmLotes } from '../utils/queryBatches';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
@@ -300,6 +302,52 @@ class DeadlineService {
     }
 
     return (data as DeadlineCancellation) ?? null;
+  }
+
+  /**
+   * Linha do tempo do prazo: quem cumpriu, quem cancelou, quem mudou a data.
+   * Sai de audit_log, alimentada pelo gatilho fn_audit_log_trigger — o registro
+   * é do banco, não do CRM, então vale mesmo para mudanças feitas por fora.
+   * A leitura vai por RPC: a policy de audit_log usa is_office_staff() como
+   * barreira e sob ela o planner abandona o índice de entity_id.
+   */
+  async getTimeline(deadlineId: string): Promise<DeadlineTimelineEvent[]> {
+    const { data, error } = await supabase.rpc('get_deadline_timeline', {
+      p_deadline_id: deadlineId,
+    });
+
+    if (error) {
+      console.error('Erro ao buscar histórico do prazo:', error);
+      return [];
+    }
+    return (data as DeadlineTimelineEvent[]) ?? [];
+  }
+
+  /**
+   * Quem fechou cada prazo da lista (cumpriu ou cancelou), em uma chamada só.
+   * Usado pelo filtro "Baixado por" do histórico — sem isso seria uma consulta
+   * de auditoria por linha da tabela.
+   */
+  async getClosures(deadlineIds: string[]): Promise<DeadlineClosure[]> {
+    const ids = Array.from(new Set(deadlineIds.filter(Boolean)));
+    if (!ids.length) return [];
+
+    // A RPC recusa acima de 1000 ids; os lotes mantêm a chamada dentro do teto.
+    const lotes = dividirEmLotes(ids, 1000);
+    const resultados: DeadlineClosure[] = [];
+
+    for (const lote of lotes) {
+      const { data, error } = await supabase.rpc('get_deadline_closures', {
+        p_deadline_ids: lote,
+      });
+      if (error) {
+        console.error('Erro ao buscar responsáveis pela baixa:', error);
+        return [];
+      }
+      resultados.push(...((data as DeadlineClosure[]) ?? []));
+    }
+
+    return resultados;
   }
 
   async deleteDeadline(id: string): Promise<void> {
