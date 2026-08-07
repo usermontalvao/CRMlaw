@@ -15,9 +15,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SYSTEM_EVENTS } from '../../utils/events';
 import type { NotifyTier } from '../../services/whatsapp/notifyScope';
+import { resolveAvatarUrl } from '../../services/whatsapp/shared';
+import { signatureService } from '../../services/signature.service';
 import WhatsAppMessageToast, {
   WHATSAPP_TOAST_DURATION_MS,
   type WhatsAppMessageToastData,
+  type WhatsAppToastKind,
 } from './WhatsAppMessageToast';
 
 /** Quantos cartões ficam visíveis ao mesmo tempo (os mais antigos saem). */
@@ -28,6 +31,27 @@ interface Incoming {
   name?: string;
   preview?: string;
   tier?: NotifyTier;
+  /** Foto do CADASTRO do cliente vinculado (bucket das assinaturas/documentos). */
+  clientPhotoPath?: string | null;
+  /** Foto do perfil do WhatsApp (bucket de mídia) — usada quando não há cadastro. */
+  avatarPath?: string | null;
+  kind?: WhatsAppToastKind;
+  fileName?: string | null;
+  at?: number;
+}
+
+/**
+ * Assina a foto na ordem que o escritório reconhece: primeiro o rosto do
+ * cadastro (é quem a equipe conhece pelo nome completo), e só então o avatar
+ * que o contato escolheu no aplicativo. Roda FORA do caminho crítico — o
+ * cartão já está na tela com as iniciais quando a URL chega.
+ */
+async function resolvePhotoUrl(clientPhotoPath?: string | null, avatarPath?: string | null): Promise<string | null> {
+  if (clientPhotoPath) {
+    const fromClient = await signatureService.getSignedImageUrl(clientPhotoPath, 3600).catch(() => null);
+    if (fromClient) return fromClient;
+  }
+  return resolveAvatarUrl(avatarPath).catch(() => null);
 }
 
 export const WhatsAppNotifyHost: React.FC<{
@@ -52,9 +76,13 @@ export const WhatsAppNotifyHost: React.FC<{
       const id = `${conversationId}:${Date.now()}`;
       setStack(prev => {
         // Rajada da MESMA conversa não vira pilha de cartões iguais: o mais
-        // recente substitui o anterior daquela conversa, como no celular.
+        // recente substitui o anterior daquela conversa, como no celular — e
+        // herda a contagem, para o cartão dizer "3 novas" em vez de esconder
+        // as duas anteriores.
+        let acumuladas = 0;
         const semRepetida = prev.filter(t => {
           if (t.conversationId !== conversationId) return true;
+          acumuladas = Math.max(acumuladas, t.count ?? 1);
           const timer = timersRef.current.get(t.id);
           if (timer) { window.clearTimeout(timer); timersRef.current.delete(t.id); }
           return false;
@@ -63,7 +91,11 @@ export const WhatsAppNotifyHost: React.FC<{
           id,
           conversationId,
           name: data?.name || 'Contato',
-          preview: data?.preview || 'Nova mensagem',
+          preview: data?.preview || '',
+          kind: data?.kind ?? 'text',
+          fileName: data?.fileName ?? null,
+          at: data?.at ?? Date.now(),
+          count: acumuladas + 1,
         }];
         // Estourou o teto: os mais antigos saem (e levam seus temporizadores).
         while (proxima.length > MAX_VISIBLE) {
@@ -74,6 +106,16 @@ export const WhatsAppNotifyHost: React.FC<{
         return proxima;
       });
       timersRef.current.set(id, window.setTimeout(() => dismiss(id), WHATSAPP_TOAST_DURATION_MS));
+
+      // A foto entra por cima das iniciais quando a assinatura volta; se o
+      // cartão já saiu (ou foi substituído pela rajada), o update não acha o id
+      // e nada acontece.
+      if (data?.clientPhotoPath || data?.avatarPath) {
+        void resolvePhotoUrl(data.clientPhotoPath, data.avatarPath).then(url => {
+          if (!url) return;
+          setStack(prev => prev.map(t => (t.id === id ? { ...t, avatarUrl: url } : t)));
+        });
+      }
     };
 
     // Escuta o CustomEvent nativo no window (o emitter sempre o dispara), o que

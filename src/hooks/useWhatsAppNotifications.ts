@@ -18,10 +18,12 @@
 // (assigned_user_id) mantido vivo pelos eventos de conversa, com fetch só no
 // cache-miss — assim o aviso sai praticamente junto com a mensagem.
 import { useEffect, useRef } from 'react';
+import { supabase } from '../config/supabase';
 import { whatsappService } from '../services/whatsapp.service';
 import { muteStore } from '../services/whatsapp/muteStore';
 import { notifyScope } from '../services/whatsapp/notifyScope';
 import { resolveAvatarUrl } from '../services/whatsapp/shared';
+import { signatureService } from '../services/signature.service';
 import { playNotificationSound, isNotifySoundMuted, isInChatSoundMuted } from '../utils/notificationSound';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 
@@ -49,18 +51,68 @@ interface ConvMeta {
   contact_phone: string;
   is_blocked: boolean;
   contact_avatar_path: string | null;
+  client_id: string | null;
 }
 const convMetaCache = new Map<string, ConvMeta>();
 
-/** Preview curto da mensagem a partir da própria linha (sem esperar a conversa). */
+/**
+ * Cadastro do cliente vinculado (nome completo + foto pinada). O aviso mostra o
+ * nome do CADASTRO, não o apelido que o contato escolheu no WhatsApp: é o nome
+ * pelo qual o escritório conhece a pessoa, o mesmo que aparece na lista de
+ * conversas e no cabeçalho da conversa. Cache no escopo do módulo — uma
+ * consulta por cliente, não por mensagem.
+ */
+interface ClientMeta { full_name: string | null; photo_path: string | null }
+const clientMetaCache = new Map<string, ClientMeta>();
+
+async function clientMetaOf(clientId: string): Promise<ClientMeta | null> {
+  const cached = clientMetaCache.get(clientId);
+  if (cached) return cached;
+  const { data } = await supabase
+    .from('clients')
+    .select('full_name, photo_path')
+    .eq('id', clientId)
+    .maybeSingle();
+  if (!data) return null;
+  const meta: ClientMeta = {
+    full_name: (data as any).full_name ?? null,
+    photo_path: (data as any).photo_path ?? null,
+  };
+  clientMetaCache.set(clientId, meta);
+  return meta;
+}
+
+/** O que chegou — o cartão desenha o ícone e a frase a partir disso. */
+type NotifyKind = 'text' | 'audio' | 'image' | 'video' | 'document' | 'sticker';
+function kindOf(type?: string | null): NotifyKind {
+  switch (type) {
+    case 'audio': case 'image': case 'video': case 'document': case 'sticker':
+      return type;
+    default:
+      return 'text';
+  }
+}
+
+/**
+ * Preview curto da mensagem a partir da própria linha (sem esperar a conversa).
+ * Mídia sem legenda volta VAZIA de propósito: quem diz "Mensagem de voz" ou
+ * "Foto" é o cartão, com ícone — escrever a palavra aqui produzia aquele
+ * "Áudio" solto no lugar da mensagem.
+ */
 function previewOf(msg: { content?: string | null; type?: string | null }): string {
   const content = (msg.content ?? '').toString().trim();
   if (content) return content.slice(0, 120);
-  switch (msg.type) {
-    case 'image': return '📷 Imagem';
-    case 'audio': return '🎤 Áudio';
+  return kindOf(msg.type) === 'text' ? 'Nova mensagem' : '';
+}
+
+/** Texto para a notificação do sistema, que só aceita uma linha de corpo. */
+function systemBodyOf(preview: string, kind: NotifyKind, fileName?: string | null): string {
+  if (preview) return preview;
+  switch (kind) {
+    case 'audio': return '🎤 Mensagem de voz';
+    case 'image': return '📷 Foto';
     case 'video': return '🎬 Vídeo';
-    case 'document': return '📄 Documento';
+    case 'document': return `📄 ${fileName || 'Documento'}`;
     case 'sticker': return 'Figurinha';
     default: return 'Nova mensagem';
   }
@@ -103,6 +155,7 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
     // recepção — herdaria as atribuições de quem saiu, e o filtro "é minha?"
     // responderia pela pessoa errada. Cada login começa do zero.
     convMetaCache.clear();
+    clientMetaCache.clear();
 
     // Mantém o cache de atribuição fresco (a conversa muda de dono ao ser assumida/
     // transferida). Não notifica daqui — é só cache para o gatilho de mensagem.
@@ -115,6 +168,7 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         contact_phone: (row.contact_phone ?? '').toString(),
         is_blocked: row.is_blocked === true,
         contact_avatar_path: row.contact_avatar_path ?? null,
+        client_id: row.client_id ?? null,
       });
     });
 
@@ -139,6 +193,7 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
               contact_phone: fetched.contact_phone,
               is_blocked: fetched.is_blocked,
               contact_avatar_path: fetched.contact_avatar_path ?? null,
+              client_id: fetched.client_id ?? null,
             };
             convMetaCache.set(convId, meta);
           }
@@ -165,8 +220,14 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         // decidir se confirma seria arbitrário.
         if (tier !== 'in-chat' && meta.assigned_user_id !== userId) return;
 
-        const name = meta.contact_name || meta.contact_phone || 'Contato';
+        // Nome e rosto: o CADASTRO manda. O contato pode ter salvo "Zé" no
+        // perfil do WhatsApp; na tela do escritório ele é "José Carlos da Silva
+        // Pereira", com a foto do cadastro. Sem cliente vinculado (ou sem
+        // cadastro achado), cai no nome/avatar do WhatsApp e, por fim, no número.
+        const client = meta.client_id ? await clientMetaOf(meta.client_id).catch(() => null) : null;
+        const name = client?.full_name || meta.contact_name || meta.contact_phone || 'Contato';
         const preview = previewOf(msg);
+        const kind = kindOf(msg.type);
 
         // Visual (in-app): cartão clicável, renderizado pelo host global
         // (WhatsAppNotifyHost) — aparece em qualquer tela, inclusive dentro do
@@ -177,7 +238,9 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         // resolve a foto depois e ela entra por cima das iniciais.
         if (tier !== 'in-chat') {
           events.emit(SYSTEM_EVENTS.WHATSAPP_NOTIFY, {
-            conversationId: convId, name, preview, tier,
+            conversationId: convId, name, preview, tier, kind,
+            at: Date.now(),
+            clientPhotoPath: client?.photo_path ?? null,
             avatarPath: meta.contact_avatar_path,
           });
         }
@@ -201,10 +264,14 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
           try {
             // Com a aba escondida ninguém está esperando o aviso na tela, então
             // aqui dá para assinar a foto antes de mostrar: a notificação do
-            // sistema sai com o rosto do contato, como a do celular.
-            const icon = await resolveAvatarUrl(meta.contact_avatar_path).catch(() => null);
+            // sistema sai com o rosto do contato, como a do celular. A foto do
+            // cadastro tem preferência, igual ao cartão.
+            const fromClient = client?.photo_path
+              ? await signatureService.getSignedImageUrl(client.photo_path, 3600).catch(() => null)
+              : null;
+            const icon = fromClient ?? await resolveAvatarUrl(meta.contact_avatar_path).catch(() => null);
             const n = new Notification(name, {
-              body: preview,
+              body: systemBodyOf(preview, kind),
               tag: `wa:${convId}`,
               ...(icon ? { icon } : {}),
             });

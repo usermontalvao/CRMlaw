@@ -1,28 +1,44 @@
 // Cartão de mensagem nova — o aviso que aparece por cima de qualquer tela do CRM.
 //
-// A referência é a notificação do próprio WhatsApp no computador: vidro escuro
-// (ou claro, conforme o tema), a FOTO do contato em vez de iniciais, o selo do
-// WhatsApp no canto da foto, nome em destaque, a mensagem embaixo e um convite
-// discreto para abrir a conversa. O cartão anterior era um retângulo branco de
-// 286px com as iniciais — informava, mas não parecia parte do produto.
+// A referência é a notificação do próprio WhatsApp no computador: uma faixa de
+// vidro com o rosto de quem falou, o nome, e uma linha dizendo o que chegou.
+// Nada além disso. A versão anterior tinha barra de progresso verde, borda
+// verde no topo, badge "3 mensagens" e um link "Abrir conversa →" — quatro
+// elementos disputando atenção com a única informação que importa (quem falou
+// e o quê), e ainda escrevia a palavra "Áudio" no lugar da mensagem.
 //
-// Detalhes que fazem o cartão parecer nativo:
-//  • entra deslizando da direita (é de lá que ele "vem"), não de baixo;
-//  • a foto chega depois das iniciais, com fade — o cartão nunca espera a rede;
-//  • rajada da mesma conversa vira "3 mensagens" em vez de três cartões;
-//  • a barra de tempo é fina e some junto com o cartão.
+// Decisões desta versão:
+//  • uma linha de conteúdo, altura de ~66px: o cartão informa de relance;
+//  • o tipo de mídia é dito por ÍCONE ("Mensagem de voz" com microfone e onda),
+//    como no WhatsApp — a palavra solta "Áudio" não parecia produto;
+//  • a HORA real no lugar de "agora": aos dois minutos o "agora" já mente;
+//  • a foto é a do CLIENTE VINCULADO quando existe (o cadastro do escritório
+//    vale mais que o apelido e o avatar que o contato escolheu no aplicativo);
+//  • 400px de largura para caber nome completo de cliente ("Pedro Rodrigues
+//    Montalvão Neto") sem cortar, com reticências só nos casos extremos;
+//  • entra e sai em fade — some sozinho aos 8s, sem cronômetro à vista.
 import React, { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { FileText, Image as ImageIcon, Mic, Sticker, Video, X } from 'lucide-react';
 
-export const WHATSAPP_TOAST_DURATION_MS = 6000;
+export const WHATSAPP_TOAST_DURATION_MS = 8000;
+/** Duração do fade de saída (o cartão só é removido depois dele). */
+export const WHATSAPP_TOAST_OUT_MS = 420;
+
+export type WhatsAppToastKind = 'text' | 'audio' | 'image' | 'video' | 'document' | 'sticker';
 
 export interface WhatsAppMessageToastData {
   id: string;
   conversationId: string;
   name: string;
   preview: string;
-  /** URL já assinada da foto do contato (resolvida pelo host, pode faltar). */
+  /** URL já assinada da foto (resolvida pelo host, pode faltar ou chegar depois). */
   avatarUrl?: string | null;
+  /** O que chegou — decide o ícone e a frase da segunda linha. */
+  kind?: WhatsAppToastKind;
+  /** Nome do arquivo, quando a mensagem é um documento. */
+  fileName?: string | null;
+  /** Quando a mensagem chegou (epoch ms) — vira a hora no canto. */
+  at?: number;
   /** Quantas mensagens desta conversa este cartão está representando. */
   count?: number;
 }
@@ -50,22 +66,8 @@ function initialsOf(name: string): string {
     .toUpperCase() || 'W';
 }
 
-/**
- * Cor do círculo de iniciais derivada do nome: o mesmo contato tem sempre a
- * mesma cor, então o olho reconhece quem é antes de ler.
- */
-const AVATAR_TONES = [
-  'from-emerald-400 to-teal-500',
-  'from-sky-400 to-indigo-500',
-  'from-amber-400 to-orange-500',
-  'from-rose-400 to-pink-500',
-  'from-violet-400 to-purple-500',
-  'from-lime-400 to-emerald-500',
-];
-function toneOf(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  return AVATAR_TONES[hash % AVATAR_TONES.length];
+function timeOf(at?: number): string {
+  return new Date(at ?? Date.now()).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
 const WhatsAppGlyph: React.FC<{ className?: string }> = ({ className }) => (
@@ -74,24 +76,100 @@ const WhatsAppGlyph: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+/** Onda estática de áudio — o mesmo desenho que o WhatsApp usa no aviso de voz. */
+const VoiceWave: React.FC = () => (
+  <span className="flex items-end gap-[2px]" aria-hidden>
+    {[8, 13, 10, 16, 7, 11].map((height, index) => (
+      <span key={index} className="wa-toast-wave w-[2px] rounded-full" style={{ height }} />
+    ))}
+  </span>
+);
+
+/**
+ * A segunda linha do cartão. Texto puro mostra a mensagem; mídia mostra o que é,
+ * com ícone — que é como o WhatsApp escreve "🎤 Mensagem de voz".
+ */
+const PreviewLine: React.FC<{ toast: WhatsAppMessageToastData }> = ({ toast }) => {
+  const kind = toast.kind ?? 'text';
+  const line = 'flex min-w-0 flex-1 items-center gap-[7px] text-[13.5px] leading-tight text-slate-600 dark:text-slate-300';
+
+  if (kind === 'audio') {
+    return (
+      <span className={line}>
+        <Mic className="wa-toast-ico-voice h-[15px] w-[15px] shrink-0" />
+        <VoiceWave />
+        <span className="truncate">Mensagem de voz</span>
+      </span>
+    );
+  }
+
+  if (kind === 'document') {
+    return (
+      <span className={line}>
+        <FileText className="wa-toast-ico-doc h-[15px] w-[15px] shrink-0" />
+        <span className="truncate">{toast.fileName || 'Documento'}</span>
+      </span>
+    );
+  }
+
+  if (kind === 'sticker') {
+    return (
+      <span className={line}>
+        <Sticker className="wa-toast-ico-media h-[15px] w-[15px] shrink-0" />
+        <span className="truncate">Figurinha</span>
+      </span>
+    );
+  }
+
+  // Imagem e vídeo com legenda mostram a legenda (é o que a pessoa escreveu);
+  // sem legenda, o ícone e a palavra fazem o papel do texto.
+  if ((kind === 'image' || kind === 'video') && !toast.preview) {
+    const Icon = kind === 'image' ? ImageIcon : Video;
+    return (
+      <span className={line}>
+        <Icon className="wa-toast-ico-media h-[15px] w-[15px] shrink-0" />
+        <span className="truncate">{kind === 'image' ? 'Foto' : 'Vídeo'}</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="line-clamp-2 min-w-0 flex-1 text-[13.5px] leading-[1.35] text-slate-600 dark:text-slate-300">
+      {toast.preview}
+    </span>
+  );
+};
+
+/** Quadradinho à direita que anuncia foto/vídeo sem baixar a mídia. */
+const MediaChip: React.FC<{ kind: WhatsAppToastKind }> = ({ kind }) => {
+  if (kind !== 'image' && kind !== 'video') return null;
+  const Icon = kind === 'image' ? ImageIcon : Video;
+  return (
+    <span className="wa-toast-chip flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[9px]">
+      <Icon className="h-[18px] w-[18px]" />
+    </span>
+  );
+};
+
 export const WhatsAppMessageToast: React.FC<WhatsAppMessageToastProps> = ({ toast, onDismiss, onOpen }) => {
   // A foto pode chegar depois (assinatura da URL) ou falhar (link expirado):
   // nos dois casos as iniciais continuam valendo, sem buraco no cartão.
   const [photoOk, setPhotoOk] = useState(false);
   useEffect(() => { setPhotoOk(false); }, [toast.avatarUrl]);
 
+  const kind = toast.kind ?? 'text';
   const count = toast.count && toast.count > 1 ? toast.count : 0;
 
   return (
     <div
       data-testid="whatsapp-message-toast"
-      className="wa-toast mb-2.5 w-[352px] max-w-[calc(100vw-24px)]"
+      className="wa-toast mb-2.5 w-[400px] max-w-[calc(100vw-24px)]"
       style={{
-        animation: `whatsappToastIn 320ms cubic-bezier(.16,1,.3,1) both, whatsappToastOut 260ms ${WHATSAPP_TOAST_DURATION_MS - 260}ms cubic-bezier(.4,0,1,1) both`,
+        animation: `waToastIn 260ms cubic-bezier(.16,1,.3,1) both, waToastOut ${WHATSAPP_TOAST_OUT_MS}ms ${WHATSAPP_TOAST_DURATION_MS - WHATSAPP_TOAST_OUT_MS}ms ease-in both`,
       }}
     >
       <div
-        className="group relative overflow-hidden rounded-[18px] border border-white/70 bg-white/80 dark:border-white/10 dark:bg-[#1f2124]/85"
+        className="wa-toast-card group relative overflow-hidden rounded-[18px] border border-white/70 bg-white/85 dark:border-white/10 dark:bg-[#1f2124]/88"
         style={{
           boxShadow:
             '0 18px 44px -20px rgba(15,23,42,.45), 0 6px 16px -10px rgba(15,23,42,.28), inset 0 1px 0 0 rgba(255,255,255,.55)',
@@ -99,17 +177,10 @@ export const WhatsAppMessageToast: React.FC<WhatsAppMessageToastProps> = ({ toas
           WebkitBackdropFilter: 'blur(22px) saturate(180%)',
         }}
       >
-        {/* Brilho verde no topo: a assinatura de cor do WhatsApp sem pintar o cartão inteiro. */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-px"
-          style={{ background: 'linear-gradient(90deg,transparent,rgba(37,211,102,.85),transparent)' }}
-        />
-
         <button
           type="button"
           onClick={event => { event.stopPropagation(); onDismiss(); }}
-          className="absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full text-slate-400 opacity-0 transition-all duration-150 hover:bg-slate-900/10 hover:text-slate-700 focus-visible:opacity-100 group-hover:opacity-100 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
+          className="wa-toast-close absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-full text-slate-400 opacity-0 transition-all duration-150 hover:text-slate-700 focus-visible:opacity-100 group-hover:opacity-100 dark:text-slate-500 dark:hover:text-slate-200"
           title="Dispensar"
           aria-label="Dispensar notificação"
         >
@@ -119,13 +190,11 @@ export const WhatsAppMessageToast: React.FC<WhatsAppMessageToastProps> = ({ toas
         <button
           type="button"
           aria-label={`Abrir conversa com ${toast.name}`}
-          className="relative flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-slate-900/[.035] active:bg-slate-900/[.06] dark:hover:bg-white/[.06] dark:active:bg-white/[.09]"
+          className="wa-toast-open relative flex w-full items-center gap-[13px] px-[15px] py-[13px] text-left transition-colors"
           onClick={() => { void onOpen(toast.conversationId); }}
         >
-          <span className="relative mt-px shrink-0">
-            <span
-              className={`relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${toneOf(toast.name)} text-[13px] font-bold text-white ring-2 ring-white/70 dark:ring-white/10`}
-            >
+          <span className="relative shrink-0">
+            <span className="wa-toast-avatar relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full text-[15px] font-semibold text-slate-600 dark:text-slate-300">
               {!photoOk && <span>{initialsOf(toast.name)}</span>}
               {toast.avatarUrl && (
                 <img
@@ -139,47 +208,34 @@ export const WhatsAppMessageToast: React.FC<WhatsAppMessageToastProps> = ({ toas
               )}
             </span>
             {/* Selo do WhatsApp no canto da foto: diz de onde veio sem escrever. */}
-            <span className="absolute -bottom-0.5 -right-0.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-white shadow-sm dark:bg-[#1f2124]">
-              <span className="flex h-[15px] w-[15px] items-center justify-center rounded-full bg-[#25d366] text-white">
-                <WhatsAppGlyph className="h-[10px] w-[10px]" />
-              </span>
+            <span className="wa-toast-badge absolute -bottom-0.5 -right-0.5 flex h-[19px] w-[19px] items-center justify-center rounded-full text-white">
+              <WhatsAppGlyph className="h-[11px] w-[11px]" />
             </span>
           </span>
 
-          <span className="block min-w-0 flex-1 pr-5">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold leading-tight tracking-[-.01em] text-slate-900 dark:text-slate-50">
+          <span className="block min-w-0 flex-1">
+            <span className="flex min-w-0 items-baseline gap-2.5">
+              <span className="min-w-0 flex-1 truncate text-[14.5px] font-semibold leading-tight tracking-[-.01em] text-slate-900 dark:text-slate-50">
                 {displayContactName(toast.name)}
               </span>
-              <span className="shrink-0 text-[10px] font-medium text-slate-400 dark:text-slate-500">agora</span>
-            </span>
-
-            <span className="mt-1 block text-[12px] leading-[1.35] text-slate-600 line-clamp-2 dark:text-slate-300">
-              {toast.preview}
-            </span>
-
-            <span className="mt-1.5 flex items-center gap-2">
-              {count > 0 && (
-                <span className="rounded-full bg-[#25d366]/15 px-1.5 py-px text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-                  {count} mensagens
-                </span>
-              )}
-              <span className="text-[10.5px] font-semibold text-emerald-600 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:text-emerald-400">
-                Abrir conversa →
+              <span className="shrink-0 text-[11.5px] font-medium text-slate-400 dark:text-slate-500">
+                {timeOf(toast.at)}
               </span>
             </span>
+            {/* A contagem da rajada mora na SEGUNDA linha: na primeira ela
+                comeria justamente o espaço do nome completo do cliente. */}
+            <span className="mt-0.5 flex items-center gap-2">
+              <PreviewLine toast={toast} />
+              {count > 0 && (
+                <span className="wa-toast-count shrink-0 rounded-full px-[9px] py-[2px] text-[11.5px] font-semibold">
+                  {count} novas
+                </span>
+              )}
+            </span>
           </span>
-        </button>
 
-        <span className="block h-[2px] overflow-hidden bg-slate-900/5 dark:bg-white/10">
-          <span
-            className="block h-full w-full origin-left"
-            style={{
-              background: 'linear-gradient(90deg,#25d366,#12a150)',
-              animation: `whatsappToastProgress ${WHATSAPP_TOAST_DURATION_MS}ms linear both`,
-            }}
-          />
-        </span>
+          <MediaChip kind={kind} />
+        </button>
       </div>
     </div>
   );

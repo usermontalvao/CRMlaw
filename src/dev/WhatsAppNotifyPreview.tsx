@@ -14,10 +14,12 @@ import { playNotificationSound, type NotifyTone } from '../utils/notificationSou
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import type { NotifyTier } from '../services/whatsapp/notifyScope';
 
+// Nomes longos de propósito: é o caso real (o cartão mostra o nome do CADASTRO,
+// não o apelido do WhatsApp) e é onde o layout quebra se a largura estiver curta.
 const CONTATOS = [
-  { id: 'conv-1', name: 'Maria Oliveira', preview: 'Doutor, consegui o documento que o senhor pediu' },
-  { id: 'conv-2', name: 'João Batista', preview: '📷 Imagem' },
-  { id: 'conv-3', name: 'Cartório 2º Ofício', preview: 'Seguem as certidões solicitadas ontem' },
+  { id: 'conv-1', name: 'Pedro Rodrigues Montalvão Neto', preview: '', kind: 'audio' as const },
+  { id: 'conv-2', name: 'Michele da Cunha Leite', preview: 'Doutor, consegui separar os documentos que o senhor pediu ontem à tarde', kind: 'image' as const },
+  { id: 'conv-3', name: 'Jeanderson Santana da Silva', preview: '', kind: 'document' as const, fileName: 'comprovante-rpv.pdf' },
 ];
 
 const CAMADAS: Array<{ tier: NotifyTier | 'in-chat'; titulo: string; quando: string; cartao: boolean }> = [
@@ -39,6 +41,7 @@ export default function WhatsAppNotifyPreview() {
     if (cartao) {
       events.emit(SYSTEM_EVENTS.WHATSAPP_NOTIFY, {
         conversationId: alvo.id, name: alvo.name, preview: alvo.preview, tier,
+        kind: alvo.kind, fileName: 'fileName' in alvo ? alvo.fileName : null, at: Date.now(),
       });
     }
   };
@@ -93,8 +96,8 @@ export default function WhatsAppNotifyPreview() {
         </button>
 
         <p className="mt-4 text-[11.5px] leading-relaxed text-slate-400">
-          O cartão some sozinho em 5,5s, ou ao clicar. Mensagem repetida da mesma conversa substitui
-          o cartão anterior em vez de empilhar mais um.
+          O cartão some sozinho em 8s (fade), ou ao clicar. Mensagem repetida da mesma conversa
+          substitui o cartão anterior e vira "N novas" em vez de empilhar mais um.
         </p>
       </section>
 

@@ -820,6 +820,19 @@ body,
   to { opacity: 1; }
 }
 
+/* Cartão de mensagem nova do WhatsApp: entra vindo da direita (é de lá que ele
+   nasce) e sai em fade puro, sem cronômetro nem barra à vista. */
+@keyframes waToastIn {
+  from { opacity: 0; transform: translate3d(24px, -6px, 0) scale(0.97); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes waToastOut {
+  from { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  to { opacity: 0; transform: translate3d(0, -6px, 0) scale(0.98); }
+}
+
+
 @keyframes slideUp {
   from {
     opacity: 0;
@@ -2907,6 +2920,66 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   .dark [data-event-type="pericia"] {
     background-color: #ea580c !important;
     border-color: #c2410c !important;
+  }
+
+  /* O cartão de mensagem nova do WhatsApp escapa da varredura acima.
+     `.dark div[class*="rounded"][class*="border"]` repinta QUALQUER caixa
+     arredondada com borda de #171717 opaco, e as regras de evento pintam de
+     laranja/roxo por atributo — juntas apagavam o vidro do cartão, que é
+     justamente o que o faz parecer o aviso do WhatsApp. Precisa morar DENTRO
+     desta camada: declaração !important em camada vence !important sem camada,
+     por mais específico que o seletor de fora seja. */
+  .dark div.wa-toast > div.wa-toast-card {
+    background-color: rgba(31, 33, 36, 0.88) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  /* O realce de mouse do cartão também mora aqui, e não em utilitário Tailwind:
+     `.dark [class*="bg-slate-900"]` acima pinta de laranja sólido qualquer
+     elemento com "bg-slate-900" no NOME da classe — inclusive um
+     `hover:bg-slate-900/[.035]`, que só deveria valer no hover. */
+  .wa-toast-open:hover { background-color: rgba(15, 23, 42, 0.035); }
+  .wa-toast-open:active { background-color: rgba(15, 23, 42, 0.06); }
+  .wa-toast-close:hover { background-color: rgba(15, 23, 42, 0.1); }
+  .dark .wa-toast-open:hover { background-color: rgba(255, 255, 255, 0.06); }
+  .dark .wa-toast-open:active { background-color: rgba(255, 255, 255, 0.09); }
+  .dark .wa-toast-close:hover { background-color: rgba(255, 255, 255, 0.1); }
+
+  /* Foto e selo do WhatsApp: cor definida aqui para não depender de utilitário
+     que o tema escuro possa reescrever. O anel do selo é o recorte que separa
+     o verde da foto — sem ele o selo encosta no rosto. */
+  .wa-toast-avatar { background-color: #e2e8f0; }
+  .wa-toast-badge {
+    background-color: #25d366;
+    box-shadow: 0 0 0 2.5px #ffffff;
+  }
+  .dark .wa-toast-avatar { background-color: rgba(255, 255, 255, 0.12); }
+  .dark .wa-toast-badge { box-shadow: 0 0 0 2.5px #1f2124; }
+
+  /* Cores do cartão declaradas por classe própria: as regras de tema escuro
+     acima reescrevem por PEDAÇO DE NOME de classe utilitária
+     (`[class*="text-emerald-600"]` vira azul, por exemplo), e o microfone da
+     mensagem de voz saía azul. Aqui elas não alcançam. */
+  .wa-toast-ico-voice { color: #059669; }
+  .wa-toast-ico-doc { color: #0284c7; }
+  .wa-toast-ico-media { color: #8b5cf6; }
+  .wa-toast-wave { background-color: rgba(16, 185, 129, 0.7); }
+  .wa-toast-chip { background-color: #ede9fe; color: #7c3aed; }
+  .wa-toast-count { background-color: #ecfdf5; color: #047857; }
+  .dark .wa-toast-ico-voice { color: #34d399; }
+  .dark .wa-toast-ico-doc { color: #38bdf8; }
+  .dark .wa-toast-ico-media { color: #a78bfa; }
+  .dark .wa-toast-wave { background-color: rgba(52, 211, 153, 0.75); }
+  /* Estes dois precisam do seletor longo: `.dark span:not([class*="text-"])`
+     pinta de cinza qualquer span sem utilitário de cor no nome — e o selo de
+     mídia e a contagem são exatamente isso. */
+  .dark div.wa-toast span.wa-toast-chip {
+    background-color: rgba(139, 92, 246, 0.18) !important;
+    color: #c4b5fd !important;
+  }
+  .dark div.wa-toast span.wa-toast-count {
+    background-color: rgba(16, 185, 129, 0.16) !important;
+    color: #6ee7b7 !important;
   }
 }
 

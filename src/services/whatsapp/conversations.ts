@@ -672,10 +672,11 @@ export const conversationsApi = {
   async getConversationMeta(id: string): Promise<{
     id: string; assigned_user_id: string | null; contact_name: string | null;
     contact_phone: string; is_blocked: boolean; contact_avatar_path: string | null;
+    client_id: string | null;
   } | null> {
     const { data } = await supabase
       .from(CONV_TABLE)
-      .select('id, assigned_user_id, contact_name, contact_phone, is_blocked, contact_avatar_path')
+      .select('id, assigned_user_id, contact_name, contact_phone, is_blocked, contact_avatar_path, client_id')
       .eq('id', id)
       .maybeSingle();
     return (data as any) ?? null;
