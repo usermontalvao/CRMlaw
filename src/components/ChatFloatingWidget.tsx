@@ -12,6 +12,7 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch } from '../utils/search';
 import WhatsAppModule from './WhatsAppModule';
 import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
+import { criarControleDePresenca } from '../services/realtime/presenceTrack';
 
 // Tamanho padrão do widget (usado no reset e quando não há preferência salva).
 const WIDGET_DEFAULT_W = 384;
@@ -1062,8 +1063,11 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       .subscribe();
     typingChannelRef.current = channel;
 
-    // Para salas portal_client, cria canal para broadcast de digitação ao cliente
-    const selectedRoom = rooms.find(r => r.id === selectedRoomId);
+    // Para salas portal_client, cria canal para broadcast de digitação ao cliente.
+    // Lido de uma ref: o array `rooms` inteiro nas dependências fazia toda
+    // recarga da lista derrubar e refazer o canal da sala ABERTA, no meio da
+    // conversa. O que importa aqui é só se esta sala é do portal.
+    const selectedRoom = roomsRef.current.find(r => r.id === selectedRoomId);
     if (selectedRoom?.portal_client_id) {
       const portalCh = supabase.channel(`portal-attendant-typing:${selectedRoomId}`);
       portalCh.subscribe();
@@ -1079,29 +1083,43 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         portalAttendantTypingRef.current = null;
       }
     };
-  }, [selectedRoomId, user, rooms]);
+  }, [selectedRoomId, user?.id]);
 
   // Typing indicator nas salas — subscibe a todos os canais quando a lista está visível
+  /**
+   * Identidade estável da lista de salas: só os ids, ordenados, numa string.
+   *
+   * O efeito abaixo abre UM canal por sala. Com `rooms` (o array) na lista de
+   * dependências, toda recarga da lista — que devolve objetos novos com o mesmo
+   * conteúdo — derrubava e reabria TODOS eles de uma vez. Era a maior fonte de
+   * criação e remoção de canais do CRM.
+   */
+  const roomIdsKey = useMemo(
+    () => rooms.map((r) => r.id).sort().join(','),
+    [rooms],
+  );
+
   useEffect(() => {
-    if (selectedRoomId || !user || !rooms.length) {
+    const roomIds = roomIdsKey ? roomIdsKey.split(',') : [];
+    if (selectedRoomId || !user || roomIds.length === 0) {
       setRoomTypingUsers(new Map());
       return;
     }
-    const channels = rooms.map((room) =>
+    const channels = roomIds.map((roomId) =>
       supabase
-        .channel(`typing:${room.id}`)
+        .channel(`typing:${roomId}`)
         .on('broadcast', { event: 'typing' }, ({ payload }: any) => {
           const { user_id, name, action } = payload ?? {};
           if (!user_id || user_id === user.id) return;
           setRoomTypingUsers((prev) => {
             const next = new Map(prev);
-            const current = next.get(room.id) ?? [];
+            const current = next.get(roomId) ?? [];
             if (action === 'start') {
-              next.set(room.id, current.includes(name) ? current : [...current, name]);
+              next.set(roomId, current.includes(name) ? current : [...current, name]);
             } else {
               const filtered = current.filter((n) => n !== name);
-              if (filtered.length) next.set(room.id, filtered);
-              else next.delete(room.id);
+              if (filtered.length) next.set(roomId, filtered);
+              else next.delete(roomId);
             }
             return next;
           });
@@ -1112,7 +1130,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       channels.forEach((ch) => supabase.removeChannel(ch));
       setRoomTypingUsers(new Map());
     };
-  }, [selectedRoomId, user, rooms]);
+  }, [selectedRoomId, user?.id, roomIdsKey]);
 
   // Recebe "chamar atenção"
   useEffect(() => {
@@ -1173,13 +1191,26 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     membersByUserIdRef.current = map;
   }, [members]);
 
+  // A lista de salas lida de dentro de efeitos que NÃO devem reagir a ela.
+  // Ver o canal de digitação da sala aberta, logo abaixo.
+  const roomsRef = useRef<ChatRoom[]>([]);
+  roomsRef.current = rooms;
+
   useEffect(() => {
     if (!user) return;
 
-    const doTrack = async () => {
+    // `focus` e `visibilitychange` disparam JUNTOS ao voltar para a aba, então
+    // todo retorno mandava duas presenças idênticas. A deduplicação por conteúdo
+    // resolve sem precisar coordenar os dois eventos.
+    const controle = criarControleDePresenca<Record<string, unknown>>({
+      marca: '[Jurius Realtime][Presence][ChatWidget]',
+      enviar: (payload) => { void channel.track(payload); },
+    });
+
+    const doTrack = () => {
       if (channel.state !== 'joined') return;
       const me = membersByUserIdRef.current.get(user.id);
-      await channel.track({
+      controle.publicar({
         user_id: user.id,
         name: me?.name || user.email || 'Usuário',
         status: 'online',
@@ -1199,9 +1230,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         setOnlineUserIds(set);
         events.emit(SYSTEM_EVENTS.PRESENCE_UPDATED, Array.from(set));
       })
-      .subscribe(async (status) => {
+      .subscribe((status) => {
         if (status !== 'SUBSCRIBED') return;
-        await doTrack();
+        // Reconexão: o servidor esqueceu esta sessão, então a deduplicação
+        // precisa esquecer também — senão a pessoa some da lista dos colegas.
+        controle.esquecer();
+        doTrack();
       });
 
     // Re-track when tab becomes visible again (browsers throttle WS heartbeats when hidden)
@@ -1217,9 +1251,13 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('focus', onFocus);
+      controle.encerrar();
       supabase.removeChannel(channel);
     };
-  }, [user]);
+    // `user?.id`/`user?.email` e não `user`: o objeto do contexto é recriado a
+    // cada renovação de sessão, e com ele aqui o canal de presença era derrubado
+    // e refeito sem nada ter mudado.
+  }, [user?.id, user?.email]);
 
   const membersByUserId = useMemo(() => {
     const map = new Map<string, Profile>();

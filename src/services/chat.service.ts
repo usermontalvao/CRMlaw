@@ -1,8 +1,14 @@
 import { supabase } from '../config/supabase';
 import type { ChatMessage, ChatRoom, ChatReaction } from '../types/chat.types';
 import { userNotificationService } from './userNotification.service';
+import { criarRegistroCompartilhado } from './realtime/sharedResource';
 
 const ATTACHMENT_PREFIX = '__anexo__:';
+
+// Nomes de tabela no escopo do módulo: as assinaturas compartilhadas do fim do
+// arquivo vivem fora da classe e não alcançam `this`.
+const CHAT_ROOMS_TABLE = 'chat_rooms';
+const CHAT_MESSAGES_TABLE = 'chat_messages';
 
 const toTitleCase = (value: string) =>
   value.toLowerCase().replace(/\b\w/g, (letter: string) => letter.toUpperCase());
@@ -320,12 +326,7 @@ class ChatService {
     userId: string;
     onNudge: (data: { fromUserId: string; fromName: string; roomId: string }) => void;
   }): () => void {
-    const channel = supabase.channel(`chat_nudge_${params.userId}`);
-    channel.on('broadcast', { event: 'nudge' }, (msg) => {
-      params.onNudge(msg.payload as { fromUserId: string; fromName: string; roomId: string });
-    });
-    channel.subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return nudgesPorUsuario.assinar(params.userId, params.onNudge);
   }
 
   async getUnreadCount(userId: string): Promise<number> {
@@ -670,14 +671,7 @@ class ChatService {
    * remover a sala da lista de quem não a aceitou.
    */
   subscribeToTicketRoomUpdates(params: { onUpdate: (room: ChatRoom) => void }): () => void {
-    const channel = supabase.channel('chat_rooms_portal_update');
-    channel.on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: this.roomsTable, filter: 'type=eq.portal_client' },
-      (payload) => params.onUpdate(payload.new as ChatRoom),
-    );
-    channel.subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return salasDoPortalAtualizadas.assinar('portal', params.onUpdate);
   }
 
   subscribeToAllMessages(params: {
@@ -685,41 +679,84 @@ class ChatService {
     /** UPDATE em mensagens (edição e soft-delete via edited_at/deleted_at). Opcional. */
     onUpdate?: (message: ChatMessage) => void;
   }): () => void {
-    const channel = supabase.channel('chat_messages_all');
-
-    channel.on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: this.messagesTable,
-      },
-      (payload) => {
-        const msg = payload.new as ChatMessage;
-        params.onInsert(msg);
-      }
-    );
-
-    if (params.onUpdate) {
-      channel.on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: this.messagesTable,
-        },
-        (payload) => {
-          params.onUpdate!(payload.new as ChatMessage);
-        }
-      );
-    }
-
-    channel.subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return todasAsMensagens.assinar('todas', (evento) => {
+      if (evento.kind === 'INSERT') params.onInsert(evento.message);
+      else params.onUpdate?.(evento.message);
+    });
   }
 }
+
+// ── Assinaturas compartilhadas ────────────────────────────────
+//
+// O módulo de chat e o widget flutuante ficam montados ao mesmo tempo (o widget
+// é global; o módulo entra quando a aba abre, e ainda pode haver uma janela
+// flutuante). Cada um abria o SEU canal com o MESMO nome — `chat_messages_all`,
+// `chat_nudge_<usuário>`, `chat_rooms_portal_update`.
+//
+// Isso não era só desperdício: o supabase-js, ao entrar num tópico que já está
+// aberto, ABANDONA o canal anterior (`_leaveOpenTopic`). Quem tinha assinado
+// primeiro parava de receber, em silêncio. É por isso que o widget tinha de se
+// calar quando o módulo estava ativo, e é por isso que "chamar atenção" podia
+// simplesmente não chegar.
+//
+// Agora é um canal por responsabilidade, com contagem de referências: o primeiro
+// consumidor abre, os demais entram na lista, o último a sair fecha.
+//
+// `reentregarUltimo: false` em todos: aqui trafega EVENTO, não estado. Reentregar
+// o último a quem chega depois faria uma mensagem antiga tocar o aviso de novo a
+// cada vez que o chat fosse aberto.
+
+type EventoDeMensagem = { kind: 'INSERT' | 'UPDATE'; message: ChatMessage };
+
+const todasAsMensagens = criarRegistroCompartilhado<EventoDeMensagem>({
+  marca: '[Jurius Realtime][Chat][AllMessages]',
+  reentregarUltimo: false,
+  abrir: (_chave, publicar) => {
+    const channel = supabase
+      .channel('chat_messages_all')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: CHAT_MESSAGES_TABLE },
+        (payload) => publicar({ kind: 'INSERT', message: payload.new as ChatMessage }),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: CHAT_MESSAGES_TABLE },
+        (payload) => publicar({ kind: 'UPDATE', message: payload.new as ChatMessage }),
+      );
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
+  },
+});
+
+const nudgesPorUsuario = criarRegistroCompartilhado<{
+  fromUserId: string; fromName: string; roomId: string;
+}>({
+  marca: '[Jurius Realtime][Chat][Nudge]',
+  reentregarUltimo: false,
+  abrir: (userId, publicar) => {
+    const channel = supabase.channel(`chat_nudge_${userId}`);
+    channel.on('broadcast', { event: 'nudge' }, (msg) => {
+      publicar(msg.payload as { fromUserId: string; fromName: string; roomId: string });
+    });
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
+  },
+});
+
+const salasDoPortalAtualizadas = criarRegistroCompartilhado<ChatRoom>({
+  marca: '[Jurius Realtime][Chat][PortalRooms]',
+  reentregarUltimo: false,
+  abrir: (_chave, publicar) => {
+    const channel = supabase.channel('chat_rooms_portal_update');
+    channel.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: CHAT_ROOMS_TABLE, filter: 'type=eq.portal_client' },
+      (payload) => publicar(payload.new as ChatRoom),
+    );
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
+  },
+});
 
 export const chatService = new ChatService();

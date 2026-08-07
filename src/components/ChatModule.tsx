@@ -10,6 +10,7 @@ import type { ChatMessage, ChatRoom, ChatReaction } from '../types/chat.types';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { ModuleSkeleton } from './ui';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { criarControleDePresenca, type ControleDePresenca } from '../services/realtime/presenceTrack';
 
 const DEFAULT_ROOM_NAME = 'Geral';
 
@@ -429,6 +430,13 @@ const ChatModule: React.FC = () => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const typingChannelRef = useRef<any | null>(null);
+  /**
+   * Presença de digitação com deduplicação. Sem ele, cada TECLA virava um
+   * `track()` — foi o que estourou o limite do Realtime
+   * (`ClientPresenceRateLimitReached`). O payload é idêntico tecla após tecla,
+   * então a deduplicação por conteúdo sozinha já reduz a rajada a um envio.
+   */
+  const typingPresenceRef = useRef<ControleDePresenca<Record<string, unknown>> | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const cancelRecordingRef = useRef(false);
@@ -1177,6 +1185,12 @@ const ChatModule: React.FC = () => {
     const channel = supabase.channel(`chat_typing_${selectedRoomId}`);
     typingChannelRef.current = channel;
 
+    const controle = criarControleDePresenca<Record<string, unknown>>({
+      marca: '[Jurius Realtime][Presence][ChatTyping]',
+      enviar: (payload) => { void channel.track(payload); },
+    });
+    typingPresenceRef.current = controle;
+
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
@@ -1224,22 +1238,37 @@ const ChatModule: React.FC = () => {
         setTypingUsers(typing);
       })
       .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({
-            user_id: user?.id,
-            name: myProfile?.name || user?.email || 'Usuário',
-            typing: false,
-          });
-        }
+        // `track()` só depois de SUBSCRIBED: antes disso o canal não entrou na
+        // sala e a publicação se perderia em silêncio.
+        if (status !== 'SUBSCRIBED') return;
+        // Uma reconexão precisa republicar: o servidor esqueceu o estado desta
+        // sessão, e a deduplicação, sozinha, acharia que já está lá.
+        controle.esquecer();
+        controle.publicar({
+          user_id: user?.id,
+          name: myProfile?.name || user?.email || 'Usuário',
+          typing: false,
+        });
       });
 
     return () => {
       if (typingChannelRef.current === channel) {
         typingChannelRef.current = null;
+        typingPresenceRef.current = null;
+      }
+      // O envio adiado precisa morrer junto com o canal, senão dispara sobre um
+      // canal já removido depois de trocar de sala.
+      controle.encerrar();
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
       }
       supabase.removeChannel(channel);
     };
-  }, [selectedRoomId, user, myProfile]);
+    // `myProfile?.name` e não `myProfile`: o objeto é recriado a cada carga de
+    // perfil, e com ele nas dependências o canal de digitação era derrubado e
+    // refeito sem nada ter mudado de fato.
+  }, [selectedRoomId, user?.id, user?.email, myProfile?.name]);
 
   const isChatAdmin = useMemo(
     () => (myProfile?.role || '').toLowerCase().includes('admin'),
@@ -1346,27 +1375,36 @@ const ChatModule: React.FC = () => {
     messageInputRef.current?.focus();
   };
 
+  /**
+   * Anuncia "está digitando". Chamado a cada tecla — por isso NADA aqui pode
+   * falar direto com o canal: quinze teclas em dois segundos eram quinze
+   * `track()`, e foi assim que o Realtime passou a responder
+   * `ClientPresenceRateLimitReached`.
+   *
+   * O payload é idêntico tecla após tecla (o texto da mensagem não entra nele),
+   * então o controle deduplica e só a primeira sobe. O `typing: false` do fim
+   * é um payload diferente, então esse passa.
+   */
   const handleTypingStart = () => {
     if (!user || !selectedRoomId) return;
 
-    const channel = typingChannelRef.current;
-    if (!channel) return;
-    channel.track({
+    const controle = typingPresenceRef.current;
+    if (!controle) return;
+    const identidade = {
       user_id: user.id,
       name: myProfile?.name || user.email || 'Usuário',
-      typing: true,
-    });
+    };
+    controle.publicar({ ...identidade, typing: true });
 
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
+    // Parou de digitar por 3s: o aviso sai. É o único envio que a rajada de
+    // teclas realmente precisa produzir além do primeiro.
     typingTimeoutRef.current = setTimeout(() => {
-      channel.track({
-        user_id: user.id,
-        name: myProfile?.name || user.email || 'Usuário',
-        typing: false,
-      });
+      typingTimeoutRef.current = null;
+      typingPresenceRef.current?.publicar({ ...identidade, typing: false });
     }, 3000);
   };
 

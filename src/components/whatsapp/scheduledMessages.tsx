@@ -12,15 +12,15 @@ import type { WhatsAppScheduledMessage } from '../../types/whatsapp.types';
 export const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMode: boolean; confirm: ConfirmFn }> = ({ conversationId, privateMode, confirm }) => {
   const toast = useToastContext();
   const [items, setItems] = useState<WhatsAppScheduledMessage[] | null>(null);
+  // A lista vem PRONTA da fonte compartilhada — este componente e o painel
+  // lateral mostram a mesma coisa e agora dividem um canal e uma consulta.
   const load = useCallback(() => {
-    whatsappService.listScheduled(conversationId).then(setItems).catch(() => setItems([]));
+    whatsappService.refreshScheduled(conversationId);
   }, [conversationId]);
   useEffect(() => {
     setItems(null);
-    load();
-    const unsub = whatsappService.subscribeScheduled(conversationId, load);
-    return () => unsub();
-  }, [conversationId, load]);
+    return whatsappService.subscribeScheduled(conversationId, setItems);
+  }, [conversationId]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
@@ -133,16 +133,16 @@ export const ScheduledMessagesPanel: React.FC<{ conversationId: string; canSched
   const toast = useToastContext();
   const [items, setItems] = useState<WhatsAppScheduledMessage[] | null>(null);
 
+  // Mesma fonte compartilhada das bolhas-fantasma da thread: um canal e uma
+  // consulta para os dois, em vez de um par para cada.
   const load = useCallback(() => {
-    whatsappService.listScheduled(conversationId).then(setItems).catch(() => setItems([]));
+    whatsappService.refreshScheduled(conversationId);
   }, [conversationId]);
 
   useEffect(() => {
     setItems(null);
-    load();
-    const unsub = whatsappService.subscribeScheduled(conversationId, load);
-    return () => unsub();
-  }, [conversationId, load]);
+    return whatsappService.subscribeScheduled(conversationId, setItems);
+  }, [conversationId]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');

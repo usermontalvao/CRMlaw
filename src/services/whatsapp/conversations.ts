@@ -7,10 +7,11 @@ import type { WhatsAppConversation, WhatsAppClientLite, TimelineEvent } from '..
 import {
   CONV_TABLE, MSG_TABLE, TRANSFER_TABLE, NOTES_TABLE,
   attachAvatarUrls, attachClientNames, invokeFn, normalizePhone, phoneVariants,
-  openResilientChannel, type WhatsAppInternalNote,
+  type WhatsAppInternalNote,
 } from './shared';
 import { messagesApi } from './messages';
 import { subscribeWaMessageEvents, type WaMessageEvent } from './messageEvents';
+import { subscribeWaConversationEvents } from './conversationEvents';
 
 export const conversationsApi = {
   // ── Conversas ────────────────────────────────────────────────
@@ -627,14 +628,11 @@ export const conversationsApi = {
      */
     onStatusChange?: (status: 'live' | 'down') => void;
   }) {
-    // As conversas continuam em postgres_changes de propósito: a linha tem ~400
-    // bytes e o payload é usado inteiro no merge da lista (preview, contador,
-    // ordem, presença). Trocar por broadcast não economizaria nada e obrigaria a
-    // repetir a linha inteira dentro do aviso.
-    const pararConversas = openResilientChannel({
-      name: 'whatsapp-realtime',
-      bind: ch => ch
-        .on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => handlers.onConversationChange?.(p)),
+    // Uma fonte só para conversa e outra para mensagem, as duas com fan-out
+    // local — este módulo e o notificador global entram nas MESMAS, sem abrir
+    // socket próprio. Ver conversationEvents.ts e messageEvents.ts.
+    const pararConversas = subscribeWaConversationEvents({
+      onChange: p => handlers.onConversationChange?.(p),
       onStatusChange: handlers.onStatusChange,
     });
     const pararMensagens = subscribeWaMessageEvents(e => handlers.onMessageChange?.(e));
@@ -642,18 +640,19 @@ export const conversationsApi = {
   },
 
   /**
-   * Canal dedicado para o notificador global (sino/som de mensagem nova) — vive
-   * fora do módulo, então usa um nome de canal próprio para não colidir com o
-   * `subscribe` do módulo. Recebe toda mudança de conversa; usado para manter
-   * fresco o cache de atribuição (assigned_user_id) do notificador.
+   * Mudanças de conversa para o notificador global (sino/som de mensagem nova),
+   * que vive fora do módulo. Mantém fresco o cache de atribuição
+   * (assigned_user_id) usado para decidir "esta conversa é minha?".
+   *
+   * Entra na MESMA fonte que o módulo: antes eram dois canais postgres_changes
+   * sobre a mesma tabela, sem filtro e com `event: '*'` nos dois — com o módulo
+   * aberto, cada mudança de conversa era decodificada e trafegada duas vezes por
+   * aba, e a linha tem ~400 bytes.
    */
   subscribeConversationNotifications(
     onChange: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void,
   ) {
-    return openResilientChannel({
-      name: 'whatsapp-notify',
-      bind: ch => ch.on('postgres_changes', { event: '*', schema: 'public', table: CONV_TABLE }, p => onChange(p)),
-    });
+    return subscribeWaConversationEvents({ onChange });
   },
 
   /**

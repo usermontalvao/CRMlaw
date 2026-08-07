@@ -1,6 +1,7 @@
 // Camada 360 do cliente: busca/match, agenda, pendências e overview consolidado.
 import { supabase } from '../../config/supabase';
 import { normalizePhone, samePhone, openResilientChannel } from './shared';
+import { chaveDeConsulta, criarCompartilhadorDeConsultas } from '../realtime/inFlight';
 import { clientChangeHistoryService } from '../clientChangeHistory.service';
 import { deadlineService } from '../deadline.service';
 import { requirementService } from '../requirement.service';
@@ -22,6 +23,17 @@ import type { ClientSchedule, ScheduleDeadline, ClientPendings, ClientDocRequest
  * pauta do atendimento de hoje.
  */
 const STALE_DEADLINE_DAYS = 30;
+
+/**
+ * Compartilhador das consultas que várias partes da mesma tela pedem juntas.
+ *
+ * Os chips da lista, o cabeçalho e o painel do cliente pedem o MESMO conjunto ao
+ * mesmo tempo, e o StrictMode monta cada efeito duas vezes — daí as consultas
+ * idênticas de `document_requests`, `signature_requests`, `signature_signers` e
+ * `template_fill_links` saindo três, quatro e cinco vezes em poucos
+ * milissegundos nos logs da API. Aqui elas viram uma só.
+ */
+const consultasEmVoo = criarCompartilhadorDeConsultas({ marca: '[Jurius Fetch][WhatsApp]' });
 
 /** Dias de atraso de um vencimento (0 quando ainda não venceu). */
 function daysOverdue(due: string, startOfToday: Date): number {
@@ -258,6 +270,14 @@ export const client360Api = {
    */
   async getDocStatusByClients(clientIds: string[]): Promise<Record<string, 'awaiting' | 'ready'>> {
     if (clientIds.length === 0) return {};
+    return consultasEmVoo.compartilhar(
+      chaveDeConsulta('document_requests.status', { clientIds }),
+      () => client360Api.lerStatusDeDocumentos(clientIds),
+    );
+  },
+
+  /** @internal Implementação de `getDocStatusByClients`, sem o compartilhador. */
+  async lerStatusDeDocumentos(clientIds: string[]): Promise<Record<string, 'awaiting' | 'ready'>> {
     const { data, error } = await supabase
       .from('document_requests')
       .select('client_id, status')
@@ -274,7 +294,14 @@ export const client360Api = {
 
   async getTrackedSignatureStatusByClients(clientIds: string[]): Promise<Record<string, ClientTrackedSignatureStatus>> {
     if (clientIds.length === 0) return {};
+    return consultasEmVoo.compartilhar(
+      chaveDeConsulta('signatures.tracked', { clientIds }),
+      () => client360Api.lerStatusDeAssinaturas(clientIds),
+    );
+  },
 
+  /** @internal Implementação de `getTrackedSignatureStatusByClients`, sem o compartilhador. */
+  async lerStatusDeAssinaturas(clientIds: string[]): Promise<Record<string, ClientTrackedSignatureStatus>> {
     // Fonte A: links de preenchimento de kit (presença na página de preenchimento +
     // assinatura gerada a partir do kit).
     // Fonte B: assinaturas criadas DIRETO (sem kit) — antes ficavam invisíveis na

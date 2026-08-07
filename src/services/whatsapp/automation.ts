@@ -2,8 +2,48 @@
 import { supabase } from '../../config/supabase';
 import type { WhatsAppScheduledMessage, WhatsAppAiSession } from '../../types/whatsapp.types';
 import { SCHEDULED_TABLE, openResilientChannel } from './shared';
+import { criarRegistroCompartilhado } from '../realtime/sharedResource';
 
 const AI_SESSIONS_TABLE = 'whatsapp_ai_sessions';
+
+/** Recarrega a lista de uma conversa aberta. Preenchido no `abrir` abaixo. */
+const recarregadores = new Map<string, () => void>();
+
+function recarregarAgendadas(conversationId: string): void {
+  recarregadores.get(conversationId)?.();
+}
+
+/**
+ * Lista de agendadas por conversa: um canal e uma consulta, muitos consumidores.
+ * Ver `criarRegistroCompartilhado` para o porquê.
+ */
+const agendadasPorConversa = criarRegistroCompartilhado<WhatsAppScheduledMessage[]>({
+  marca: '[Jurius Realtime][Scheduled]',
+  abrir: (conversationId, publicar) => {
+    let vivo = true;
+    const carregar = () => {
+      automationApi
+        .listScheduled(conversationId)
+        .then((items) => { if (vivo) publicar(items); })
+        .catch(() => { if (vivo) publicar([]); });
+    };
+    recarregadores.set(conversationId, carregar);
+    carregar();
+
+    const fecharCanal = openResilientChannel({
+      name: `wa-sched-${conversationId}`,
+      bind: ch => ch.on('postgres_changes',
+        { event: '*', schema: 'public', table: SCHEDULED_TABLE, filter: `conversation_id=eq.${conversationId}` },
+        () => carregar()),
+    });
+
+    return () => {
+      vivo = false;
+      recarregadores.delete(conversationId);
+      fecharCanal();
+    };
+  },
+});
 
 export const automationApi = {
   async listScheduled(conversationId: string): Promise<WhatsAppScheduledMessage[]> {
@@ -192,14 +232,26 @@ export const automationApi = {
     if (error) throw new Error(error.message);
   },
 
-  /** Realtime das mensagens agendadas de uma conversa (para o painel reagir). */
-  subscribeScheduled(conversationId: string, onChange: () => void): () => void {
-    return openResilientChannel({
-      name: `wa-sched-${conversationId}`,
-      bind: ch => ch.on('postgres_changes',
-        { event: '*', schema: 'public', table: SCHEDULED_TABLE, filter: `conversation_id=eq.${conversationId}` },
-        () => onChange()),
-    });
+  /**
+   * Lista das mensagens agendadas de uma conversa, ao vivo.
+   *
+   * UM canal e UMA consulta por conversa, com fan-out local. As bolhas-fantasma
+   * da thread e o painel lateral mostram exatamente a mesma lista: antes cada um
+   * abria o seu `wa-sched-<conversa>` e disparava o seu `listScheduled`, lado a
+   * lado, para o mesmo dado na mesma tela.
+   *
+   * O ouvinte recebe a lista pronta — não precisa buscar nada.
+   */
+  subscribeScheduled(
+    conversationId: string,
+    onList: (items: WhatsAppScheduledMessage[]) => void,
+  ): () => void {
+    return agendadasPorConversa.assinar(conversationId, onList);
+  },
+
+  /** Força a releitura da lista compartilhada (após cancelar/editar aqui mesmo). */
+  refreshScheduled(conversationId: string): void {
+    recarregarAgendadas(conversationId);
   },
 
   /** Reage às retenções do próprio atendente em todas as conversas. */
