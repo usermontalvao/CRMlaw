@@ -9,9 +9,15 @@
  *
  * O canal é aberto na primeira assinatura e fechado quando o último ouvinte sai
  * — o notificador vive fora do módulo e não pode manter socket aberto sozinho.
+ *
+ * Este arquivo é só a ligação com o Supabase. As duas partes com regra própria
+ * moram em módulos puros, testáveis sem rede, e é lá que está escrito o porquê:
+ * a política de conexão em `broadcastGate.ts` e o fan-out em `waMessageFanOut.ts`.
  */
 import { supabase } from '../../config/supabase';
 import { MSG_TABLE } from './shared';
+import { criarPortaoBroadcast, type PortaoBroadcast } from './broadcastGate';
+import { criarFanOutDeMensagens, type FanOutDeMensagens } from './waMessageFanOut';
 import { normalizarBroadcast, normalizarPostgres, type WaMessageEvent } from './waMessageEvent';
 
 export type { WaMessageEvent } from './waMessageEvent';
@@ -28,90 +34,100 @@ const TOPICO = 'whatsapp:messages';
 const MARCA = '[Jurius Realtime][WhatsApp]';
 
 type Ouvinte = (evento: WaMessageEvent) => void;
+type Canal = ReturnType<typeof supabase.channel>;
 
-const ouvintes = new Set<Ouvinte>();
-let fechar: (() => void) | null = null;
+let fanOut: FanOutDeMensagens | null = null;
+let portao: PortaoBroadcast | null = null;
+let pararDeOuvirSessao: (() => void) | null = null;
 
-function emitir(evento: WaMessageEvent | null): void {
-  if (!evento) return;
-  // Cópia da lista: um ouvinte que se desinscreve dentro do próprio callback
-  // (acontece no unmount durante uma rajada) não pode quebrar a iteração.
-  for (const ouvinte of [...ouvintes]) {
-    try {
-      ouvinte(evento);
-    } catch (erro) {
-      // Um consumidor que estoura não pode derrubar os outros nem o canal.
-      console.warn(`${MARCA} LISTENER_ERROR`, erro instanceof Error ? erro.message : '');
-    }
-  }
+function criarPortao(entregar: FanOutDeMensagens): PortaoBroadcast {
+  return criarPortaoBroadcast<Canal>({
+    marca: MARCA,
+
+    lerToken: async () => {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token ?? null;
+    },
+
+    // O token precisa estar no RealtimeClient ANTES de `channel()`: o
+    // `subscribe()` lê `accessTokenValue` de forma síncrona ao montar o join, e
+    // o que não estiver lá nessa hora vira um join `anon` — negado pela policy.
+    aplicarToken: (token) => supabase.realtime.setAuth(token),
+
+    abrirBroadcast: (aoStatus) =>
+      supabase
+        .channel(TOPICO, { config: { private: true } })
+        .on('broadcast', { event: 'changed' }, (msg) =>
+          entregar.emitir(
+            normalizarBroadcast((msg as { payload?: Record<string, unknown> }).payload),
+          ),
+        )
+        .subscribe(aoStatus),
+
+    abrirFallback: () =>
+      supabase
+        .channel(`whatsapp-messages-fallback-${Date.now()}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: MSG_TABLE }, (p) =>
+          entregar.emitir(normalizarPostgres(p as unknown as Record<string, unknown>)),
+        )
+        .subscribe(),
+
+    // Só os canais deste módulo. `removeAllChannels()` derrubaria os da agenda,
+    // do chat interno e da nuvem junto.
+    remover: (canal) => {
+      void supabase.removeChannel(canal);
+    },
+
+    agendar: (fn, ms) => window.setTimeout(fn, ms),
+    cancelar: (id) => window.clearTimeout(id as number),
+  });
 }
 
 /**
- * Abre o broadcast e, se ele for recusado, a rede de postgres_changes.
- *
- * A rede existe porque o canal privado só é aceito se o token já tiver chegado
- * ao RealtimeClient quando o join sobe — a mesma corrida documentada em
- * src/utils/realtimeWithFallback.ts. Sai quando o broadcast estiver confirmado
- * em produção, junto com a saída da tabela da publicação.
+ * Liga o portão à sessão. Sem isto, um `RETRY_ABORTED` seria definitivo até o
+ * próximo F5: é o login (ou a renovação do token) que muda a resposta da policy.
  */
-function abrirCanal(): () => void {
-  let desmontado = false;
-  let rede: ReturnType<typeof supabase.channel> | null = null;
-
-  const abrirRede = () => {
-    // Idempotente: uma sequência de CHANNEL_ERROR não pode virar pilha de canais.
-    if (rede !== null || desmontado) return;
-    console.warn(`${MARCA}[PostgresFallback] ABRINDO`);
-    rede = supabase
-      .channel(`whatsapp-messages-fallback-${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: MSG_TABLE }, (p) =>
-        emitir(normalizarPostgres(p as unknown as Record<string, unknown>)),
-      )
-      .subscribe();
-  };
-
-  const principal = supabase
-    .channel(TOPICO, { config: { private: true } })
-    .on('broadcast', { event: 'changed' }, (msg) =>
-      emitir(normalizarBroadcast((msg as { payload?: Record<string, unknown> }).payload)),
-    )
-    .subscribe((status, erro) => {
-      if (status === 'SUBSCRIBED') {
-        console.info(`${MARCA}[Broadcast] SUBSCRIBED`);
-        return;
-      }
-      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        console.warn(`${MARCA}[Broadcast] ${status} ${erro?.message ?? ''}`.trim());
-        abrirRede();
-      }
-    });
-
-  return () => {
-    desmontado = true;
-    void supabase.removeChannel(principal);
-    if (rede) {
-      void supabase.removeChannel(rede);
-      rede = null;
-    }
-  };
+function ouvirSessao(alvo: PortaoBroadcast): () => void {
+  const { data } = supabase.auth.onAuthStateChange((evento) => {
+    // Nada de consulta nem de assinatura aqui dentro: o callback do supabase-js
+    // roda dentro do lock de auth, e um `getSession()` daqui reentraria nele. O
+    // portão só recebe o nome do evento e faz o trabalho por fora.
+    alvo.aoEventoDeSessao(evento);
+  });
+  return () => data.subscription.unsubscribe();
 }
 
 /**
  * Assina os eventos de mensagem. Devolve o cleanup.
  *
- * Eventos podem chegar duplicados na janela em que broadcast e rede convivem —
- * os dois consumidores são idempotentes por id (mesclar status, reler a thread,
- * remover pelo id), então repetição não faz diferença.
+ * Idempotente por construção: o primeiro ouvinte abre o canal, os seguintes
+ * entram na lista, e só a saída do último desmonta tudo. Remontar o módulo não
+ * acumula canal nem listener.
  */
 export function subscribeWaMessageEvents(ouvinte: Ouvinte): () => void {
-  ouvintes.add(ouvinte);
-  if (fechar === null) fechar = abrirCanal();
+  if (fanOut === null) {
+    fanOut = criarFanOutDeMensagens({
+      aoErroDeOuvinte: (mensagem) => console.warn(`${MARCA} LISTENER_ERROR`, mensagem),
+    });
+  }
+  if (portao === null) {
+    portao = criarPortao(fanOut);
+    pararDeOuvirSessao = ouvirSessao(portao);
+  }
+
+  const cancelar = fanOut.assinar(ouvinte);
+  portao.iniciar();
 
   return () => {
-    ouvintes.delete(ouvinte);
-    if (ouvintes.size === 0 && fechar !== null) {
-      fechar();
-      fechar = null;
-    }
+    cancelar();
+    if (fanOut === null || fanOut.quantidade() > 0) return;
+    portao?.encerrar();
+    portao = null;
+    pararDeOuvirSessao?.();
+    pararDeOuvirSessao = null;
+    // Zera junto com o canal: a memória de repetição é da sessão do canal, e
+    // guardá-la entre montagens faria a primeira mensagem depois de reabrir a
+    // inbox ser descartada como "repetida".
+    fanOut = null;
   };
 }
