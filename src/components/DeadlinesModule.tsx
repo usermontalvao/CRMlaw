@@ -3760,73 +3760,76 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   return (
     <div className="@container space-y-4">
 
-      {/* Cards de Estatísticas */}
+      {/* Indicadores do mês — cada um filtra a fila pelo status correspondente.
+          Leitura sóbria: rótulo em cima, número embaixo, cor só no ícone e no
+          traço lateral do card ativo. */}
       <div className="grid grid-cols-2 @sm:grid-cols-4 gap-3">
         {[
           {
             label: 'Total do mês',
             value: monthlyDeadlines.length,
             icon: Calendar,
-            color: 'blue',
             active: activeStatusTab === 'todos',
             onClick: () => setActiveStatusTab('todos'),
-            gradient: 'from-blue-500 to-blue-600',
-            ring: 'ring-blue-400',
-            bg: 'bg-blue-50',
+            accent: 'bg-slate-400',
+            iconTone: 'bg-slate-100 text-slate-500',
+            valueTone: 'text-slate-900',
           },
           {
             label: 'Pendentes',
             value: allPending.length,
             icon: Clock,
-            color: 'amber',
             active: activeStatusTab === 'pendente',
             onClick: () => setActiveStatusTab('pendente'),
-            gradient: 'from-amber-400 to-amber-500',
-            ring: 'ring-amber-400',
-            bg: 'bg-amber-50',
+            accent: 'bg-blue-500',
+            iconTone: 'bg-blue-50 text-blue-600',
+            valueTone: 'text-slate-900',
           },
           {
             label: 'Atenção',
             value: allAttentionCount,
             icon: AlertCircle,
-            color: 'red',
             active: activeStatusTab === 'vencido',
             onClick: () => setActiveStatusTab('vencido'),
-            gradient: allAttentionCount > 0 ? 'from-red-500 to-red-600' : 'from-slate-300 to-slate-400',
-            ring: 'ring-red-400',
-            bg: 'bg-red-50',
-            pulse: allAttentionCount > 0,
+            accent: allAttentionCount > 0 ? 'bg-red-500' : 'bg-slate-300',
+            iconTone: allAttentionCount > 0 ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-400',
+            // O número em vermelho já chama atenção suficiente; nada pisca.
+            valueTone: allAttentionCount > 0 ? 'text-red-600' : 'text-slate-400',
           },
           {
             label: 'Concluídos',
             value: monthlyCompleted.length,
             icon: CheckCircle,
-            color: 'emerald',
             active: activeStatusTab === 'cumprido',
             onClick: () => setActiveStatusTab('cumprido'),
-            gradient: 'from-emerald-500 to-emerald-600',
-            ring: 'ring-emerald-400',
-            bg: 'bg-emerald-50',
+            accent: 'bg-emerald-500',
+            iconTone: 'bg-emerald-50 text-emerald-600',
+            valueTone: 'text-slate-900',
           },
-        ].map(({ label, value, icon: Icon, active, onClick, gradient, ring, bg, pulse }) => (
+        ].map(({ label, value, icon: Icon, active, onClick, accent, iconTone, valueTone }) => (
           <button
             key={label}
             type="button"
             onClick={onClick}
             aria-pressed={active}
-            className={`group relative flex flex-col gap-3 p-4 rounded-2xl border transition-all text-left overflow-hidden ${
+            className={`group relative flex flex-col gap-2.5 p-4 pl-5 rounded-xl border text-left overflow-hidden transition-colors ${
               active
-                ? `${bg} border-transparent ring-2 ${ring}`
-                : 'bg-[#f8f7f5] border-[#e7e5df] hover:shadow-md hover:border-slate-300'
+                ? 'bg-[#f8f7f5] border-slate-300 shadow-sm'
+                : 'bg-[#f8f7f5] border-[#e7e5df] hover:border-slate-300'
             }`}
           >
-            <div className="flex items-center justify-between">
-              <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-sm ${pulse ? 'animate-pulse' : ''}`}>
-                <Icon className="w-5 h-5 text-white" />
-              </div>
-              <p className="text-3xl font-black text-slate-900">{value}</p>
+            {/* Traço lateral: marca o card ativo sem inverter o fundo inteiro. */}
+            <span
+              aria-hidden
+              className={`absolute left-0 top-0 bottom-0 w-1 transition-opacity ${accent} ${active ? 'opacity-100' : 'opacity-0'}`}
+            />
+            <div className="flex items-center gap-2">
+              <span className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 ${iconTone}`}>
+                <Icon className="w-3.5 h-3.5" />
+              </span>
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide truncate">{label}</span>
             </div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
+            <p className={`text-2xl font-semibold tabular-nums leading-none ${valueTone}`}>{value}</p>
           </button>
         ))}
       </div>
@@ -3850,20 +3853,21 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className="bg-[#f8f7f5] rounded-2xl border border-[#e7e5df] shadow-sm overflow-hidden">
+      {/* Toolbar — três grupos: visões, período e busca/ações. Um divisor só
+          entre eles, tudo na mesma altura (h-9), para a linha não virar ruído. */}
+      <div className="bg-[#f8f7f5] rounded-xl border border-[#e7e5df] shadow-sm overflow-hidden">
         {/* Linha principal */}
         <div className="flex items-center gap-2 px-3 py-2">
           {/* Views */}
-          <div className="flex items-center gap-0.5 bg-slate-100 rounded-xl p-1">
+          <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
             {([
               { key: 'list', icon: List, label: 'Lista', action: () => setViewMode('list'), active: viewMode === 'list' },
               { key: 'kanban', icon: LayoutGrid, label: 'Kanban', action: () => setViewMode('kanban'), active: viewMode === 'kanban' },
               { key: 'calendar', icon: Calendar, label: 'Calendário', action: () => setCalendarExpanded(!calendarExpanded), active: calendarExpanded },
               { key: 'workload', icon: Users, label: 'Carga', action: () => setViewMode(viewMode === 'workload' ? 'list' : 'workload'), active: viewMode === 'workload' },
             ] as const).map(({ key, icon: Icon, label, action, active }) => (
-              <button key={key} onClick={action} title={label}
-                className={`w-8 h-8 flex items-center justify-center rounded-lg transition-all ${active ? 'bg-[#f8f7f5] text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+              <button key={key} onClick={action} title={label} aria-label={label} aria-pressed={active}
+                className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${active ? 'bg-[#f8f7f5] text-slate-900 shadow-sm ring-1 ring-black/[0.04]' : 'text-slate-400 hover:text-slate-700'}`}>
                 <Icon className="w-4 h-4" />
               </button>
             ))}
@@ -3873,14 +3877,25 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
           {/* Mês */}
           <div className="flex items-center gap-0.5">
-            <button onClick={() => { const m = internalCalendarMonth === 0 ? 11 : internalCalendarMonth - 1; const y = internalCalendarMonth === 0 ? internalCalendarYear - 1 : internalCalendarYear; setInternalCalendarMonth(m); setInternalCalendarYear(y); onCalendarChange?.(m, y); }} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            <button
+              onClick={() => { const m = internalCalendarMonth === 0 ? 11 : internalCalendarMonth - 1; const y = internalCalendarMonth === 0 ? internalCalendarYear - 1 : internalCalendarYear; setInternalCalendarMonth(m); setInternalCalendarYear(y); onCalendarChange?.(m, y); }}
+              title="Mês anterior"
+              aria-label="Mês anterior"
+              className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-sm font-semibold text-slate-800 capitalize w-36 text-center select-none">
+            {/* first-letter, não capitalize: "agosto de 2026" viraria "Agosto De 2026". */}
+            <span className="text-sm font-semibold text-slate-800 first-letter:uppercase min-w-[8.5rem] text-center select-none tabular-nums">
               {new Date(internalCalendarYear, internalCalendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
             </span>
-            <button onClick={() => { const m = internalCalendarMonth === 11 ? 0 : internalCalendarMonth + 1; const y = internalCalendarMonth === 11 ? internalCalendarYear + 1 : internalCalendarYear; setInternalCalendarMonth(m); setInternalCalendarYear(y); onCalendarChange?.(m, y); }} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            <button
+              onClick={() => { const m = internalCalendarMonth === 11 ? 0 : internalCalendarMonth + 1; const y = internalCalendarMonth === 11 ? internalCalendarYear + 1 : internalCalendarYear; setInternalCalendarMonth(m); setInternalCalendarYear(y); onCalendarChange?.(m, y); }}
+              title="Próximo mês"
+              aria-label="Próximo mês"
+              className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
 
@@ -3894,17 +3909,19 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               value={filterSearch}
               onChange={(e) => setFilterSearch(e.target.value)}
               placeholder="Buscar prazo..."
-              className="w-full h-8 pl-8 pr-3 bg-slate-50 border border-[#e7e5df] rounded-xl text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
+              aria-label="Buscar prazo"
+              className="w-full h-9 pl-8 pr-3 bg-white border border-[#e7e5df] rounded-lg text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
             />
           </div>
 
           {/* Filtros */}
           <button
             onClick={() => setFiltersExpanded(!filtersExpanded)}
-            className={`flex items-center gap-1.5 h-8 px-3 rounded-xl border text-sm font-medium transition-all ${
+            aria-expanded={filtersExpanded}
+            className={`flex items-center gap-1.5 h-9 px-3 rounded-lg border text-sm font-medium transition-colors ${
               filtersExpanded || filterType || filterPriority || filterResponsible
                 ? 'bg-blue-50 border-blue-200 text-blue-700'
-                : 'border-[#e7e5df] text-slate-500 hover:bg-slate-50'
+                : 'bg-white border-[#e7e5df] text-slate-600 hover:border-slate-300'
             }`}
           >
             <Filter className="w-3.5 h-3.5" />
@@ -3917,22 +3934,20 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           <div className="flex-1" />
 
           {/* Ações secundárias */}
-          <div className="flex items-center gap-1">
-            <button onClick={handleExportFiltered} title="Exportar lista filtrada"
-              className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
+          <div className="flex items-center gap-0.5">
+            <button onClick={handleExportFiltered} title="Exportar lista filtrada" aria-label="Exportar lista filtrada"
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
               <Download className="w-4 h-4" />
             </button>
-            <button onClick={() => setShowReportModal(true)} title="Relatórios"
-              className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
+            <button onClick={() => setShowReportModal(true)} title="Relatórios" aria-label="Relatórios"
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
               <BarChart3 className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="w-px h-5 bg-slate-200 mx-1" />
-
           <button
             onClick={() => handleOpenModal()}
-            className="flex items-center gap-1.5 h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-sm shadow-blue-600/20 transition-all active:scale-95"
+            className="ml-1 flex items-center gap-1.5 h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
           >
             <Plus className="w-4 h-4" />
             Prazo
@@ -4000,7 +4015,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               </button>
               
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-slate-800 capitalize">
+                <span className="text-sm font-semibold text-slate-800 first-letter:uppercase">
                   {new Date(internalCalendarYear, internalCalendarMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
                 </span>
                 {(internalCalendarMonth !== new Date().getMonth() || internalCalendarYear !== new Date().getFullYear()) && (
@@ -4153,38 +4168,43 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             // O kanban tem uma coluna por status, então parte da lista completa —
             // a fila (filteredDeadlines) já deixa cumpridos/vencidos/cancelados de fora.
             const statusDeadlines = kanbanDeadlines.filter((d) => d.status === statusOption.key);
-            const columnColors: Record<string, { bg: string; border: string; headerBg: string }> = {
-              pendente: { bg: 'bg-blue-50/50', border: 'border-blue-200', headerBg: 'bg-blue-500' },
-              vencido: { bg: 'bg-red-50/50', border: 'border-red-200', headerBg: 'bg-red-500' },
-              cancelado: { bg: 'bg-red-50/40', border: 'border-red-200', headerBg: 'bg-red-600' },
+            // A cor identifica a coluna num traço e no ícone; a barra cheia e
+            // saturada de antes competia com os cards que ela deveria emoldurar.
+            const columnColors: Record<string, { accent: string; icon: string }> = {
+              pendente: { accent: 'bg-blue-500', icon: 'text-blue-500' },
+              vencido: { accent: 'bg-red-500', icon: 'text-red-500' },
+              cumprido: { accent: 'bg-emerald-500', icon: 'text-emerald-500' },
+              cancelado: { accent: 'bg-red-600', icon: 'text-red-600' },
             };
             const colors = columnColors[statusOption.key] || columnColors.pendente;
-            
+
             return (
-              <div key={statusOption.key} className={`${colors.bg} border ${colors.border} rounded-2xl overflow-hidden`}>
+              <div key={statusOption.key} className="bg-[#f8f7f5] border border-[#e7e5df] rounded-xl overflow-hidden shadow-sm">
                 {/* Header da coluna */}
-                <div className={`${colors.headerBg} px-4 py-3 flex items-center justify-between`}>
+                <div className="relative px-4 py-2.5 flex items-center justify-between border-b border-slate-100">
+                  <span aria-hidden className={`absolute left-0 top-0 bottom-0 w-1 ${colors.accent}`} />
                   <div className="flex items-center gap-2">
-                    <StatusIcon className="w-4 h-4 text-white" />
-                    <h4 className="text-sm font-semibold text-white">{statusOption.label}</h4>
+                    <StatusIcon className={`w-4 h-4 ${colors.icon}`} />
+                    <h4 className="text-sm font-semibold text-slate-800">{statusOption.label}</h4>
                   </div>
-                  <span className="bg-[#f8f7f5]/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                  <span className="bg-slate-100 text-slate-500 text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full">
                     {statusDeadlines.length}
                   </span>
                 </div>
                 
-                {/* Cards */}
-                <div className="p-3 space-y-2 max-h-[500px] overflow-y-auto">
+                {/* Cards — o corpo da coluna é levemente mais escuro que o card,
+                    senão os dois usariam o mesmo off-white e o card sumiria. */}
+                <div className="p-3 space-y-2 max-h-[500px] overflow-y-auto bg-slate-50/70">
                   {statusDeadlines.map((deadline) => {
                     const daysUntil = getDaysUntilDue(deadline.due_date);
                     const dueSoon = checkIsDueSoon(deadline.due_date);
                     const priorityConfig = getPriorityConfig(deadline.priority);
                     const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
-                    
+
                     return (
                       <div
                         key={deadline.id}
-                        className={`bg-[#f8f7f5] rounded-xl p-3 shadow-sm hover:shadow-md transition-all cursor-pointer border-l-4 ${
+                        className={`bg-[#f8f7f5] border border-[#e7e5df] rounded-lg p-3 shadow-sm hover:shadow-md hover:border-slate-300 transition-all cursor-pointer border-l-4 ${
                           dueSoon || daysUntil < 0
                             ? 'border-l-red-500'
                             : deadline.priority === 'urgente'
@@ -4201,8 +4221,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <h5 className="text-sm font-semibold text-slate-800 line-clamp-2">{deadline.title}</h5>
                           {priorityConfig && (
-                            <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold ${getPriorityBadge(deadline.priority)}`}>
-                              {priorityConfig.label.slice(0, 3).toUpperCase()}
+                            // Rótulo inteiro: "URG"/"MÉD" abreviava o que já cabia.
+                            <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${getPriorityBadge(deadline.priority)}`}>
+                              {priorityConfig.label}
                             </span>
                           )}
                         </div>
@@ -4217,27 +4238,27 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         
                         {/* Data e dias */}
                         <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                          <span className="text-[10px] text-slate-400">{formatDate(deadline.due_date)}</span>
+                          <span className="text-[10px] text-slate-400 tabular-nums">{formatDate(deadline.due_date)}</span>
                           {deadline.status === 'cancelado' ? (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700">cancelado</span>
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700">Cancelado</span>
                           ) : deadline.status === 'cumprido' ? (
                             (() => {
                               const onTime = (() => { const due = parseDateOnly(deadline.due_date); const comp = deadline.completed_at ? parseDateOnly(deadline.completed_at) : null; if (!due) return daysUntil >= 0; return comp ? comp.getTime() <= due.getTime() : daysUntil >= 0; })();
                               return (
                                 <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${onTime ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                  {onTime ? '✓ no prazo' : '✓ com atraso'}
+                                  {onTime ? '✓ No prazo' : '✓ Com atraso'}
                                 </span>
                               );
                             })()
                           ) : daysUntil >= 0 ? (
-                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded tabular-nums ${
                               dueSoon ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
                             }`}>
-                              {daysUntil === 0 ? 'Hoje' : daysUntil === 1 ? 'Amanhã' : `${daysUntil}d`}
+                              {daysUntil === 0 ? 'Hoje' : daysUntil === 1 ? 'Amanhã' : `${daysUntil} dias`}
                             </span>
                           ) : (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-500 text-white">
-                              {Math.abs(daysUntil)}d atrás
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded tabular-nums bg-red-500 text-white">
+                              {Math.abs(daysUntil)} {Math.abs(daysUntil) === 1 ? 'dia' : 'dias'} em atraso
                             </span>
                           )}
                         </div>
@@ -4577,22 +4598,23 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   </tr>
                 </thead>
               )}
-              <thead className="border-b border-[#e7e5df]">
+              <thead className="border-b border-[#e7e5df] bg-slate-50/60">
                 <tr>
-                  <th className="pl-4 pr-2 py-3 w-8">
+                  <th className="pl-4 pr-2 py-2.5 w-8">
                     <input
                       type="checkbox"
+                      aria-label="Selecionar todos os prazos da página"
                       checked={paginatedDeadlines.length > 0 && paginatedDeadlines.every((d) => selectedIds.has(d.id))}
                       onChange={() => handleSelectAll(paginatedDeadlines.map((d) => d.id))}
                       className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Prazo</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Vencimento</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Dias</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Cliente / Prioridade</th>
-                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-                  <th className="px-4 py-3 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Ações</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Prazo</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Vencimento</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Dias</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Cliente / Prioridade</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -4607,7 +4629,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   return (
                     <tr
                       key={deadline.id}
-                      className={`hover:bg-slate-50 transition-colors ${
+                      className={`group relative hover:bg-slate-50 transition-colors ${
                         selectedIds.has(deadline.id) ? 'bg-blue-50/50' :
                         dueSoon && deadline.status === 'pendente' ? 'bg-red-50/30' : ''
                       }`}
@@ -4643,7 +4665,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       
                       {/* Coluna VENCIMENTO */}
                       <td className="px-4 py-3">
-                        <span className="text-sm text-slate-700">{formatDate(deadline.due_date)}</span>
+                        <span className="text-sm text-slate-700 tabular-nums whitespace-nowrap">{formatDate(deadline.due_date)}</span>
                       </td>
                       
                       {/* Coluna DIAS */}
@@ -4666,13 +4688,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             );
                           })()
                         ) : daysUntil >= 0 ? (
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap ${
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap tabular-nums ${
                             dueSoon ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'
                           }`}>
                             {daysUntil === 0 ? 'Vence hoje' : `${daysUntil} ${daysUntil === 1 ? 'dia' : 'dias'}`}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap bg-red-500 text-white">
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap tabular-nums bg-red-500 text-white">
                             {Math.abs(daysUntil)} {Math.abs(daysUntil) === 1 ? 'dia' : 'dias'} em atraso
                           </span>
                         )}
@@ -4718,36 +4740,41 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                         </span>
                       </td>
                       
-                      {/* Coluna AÇÕES */}
+                      {/* Coluna AÇÕES — discretas em repouso, nítidas ao passar o
+                          mouse ou ao chegar pelo teclado. */}
                       <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-0.5 opacity-50 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                           <button
                             onClick={() => handleViewDeadline(deadline)}
-                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
                             title="Ver"
+                            aria-label="Ver prazo"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleOpenModal(deadline)}
-                            className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
                             title="Editar"
+                            aria-label="Editar prazo"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           {isAdmin && (
                             <button
                               onClick={() => void handleCloneDeadline(deadline)}
-                              className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                              className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors"
                               title="Duplicar prazo"
+                              aria-label="Duplicar prazo"
                             >
                               <Copy className="w-4 h-4" />
                             </button>
                           )}
                           <button
                             onClick={() => handleDeleteDeadline(deadline.id)}
-                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                             title="Excluir"
+                            aria-label="Excluir prazo"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -4825,7 +4852,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             )}
                           </div>
                         </div>
-                        <span className="text-2xl font-black text-slate-200 flex-shrink-0">{total}</span>
+                        <span className="text-xl font-semibold tabular-nums text-slate-300 flex-shrink-0">{total}</span>
                       </div>
                       <div className="w-full bg-slate-100 rounded-full h-1.5">
                         <div className={`h-1.5 rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
