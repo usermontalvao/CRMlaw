@@ -2,7 +2,7 @@
 // conversa aberta + status de documentos/assinaturas por cliente (chips da lista
 // e do cabeçalho), em tempo real. Extraído do WhatsAppModule para isolar os
 // carregamentos auxiliares ligados ao cliente.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   whatsappService,
   type ClientOverview,
@@ -50,45 +50,101 @@ export interface ClientOverviewApi {
 export function useClientOverview(
   selectedClientId: string | null,
   conversations: WhatsAppConversation[],
+  /** Telefone do contato da conversa aberta. Sem cliente vinculado ele é a
+   *  ÚNICA chave que liga a conversa às assinaturas em andamento. */
+  selectedPhone: string | null = null,
 ): ClientOverviewApi {
   const toast = useToastContext();
 
   // Pacote 360 do cliente carregado uma vez ao abrir a conversa (Fase 10).
   const [overview, setOverview] = useState<ClientOverview | null>(null);
   // Recarrega o pacote 360 sob demanda (ex.: após criar uma solicitação de documento).
+  // Sem cliente vinculado ainda há o que acompanhar: as assinaturas enviadas
+  // para o telefone do contato. Antes, a conversa sem cadastro devolvia `null`
+  // e o painel de assinaturas nem aparecia — não dava para saber se a pessoa
+  // tinha aberto ou assinado o documento.
+  const loadOverview = useCallback((): Promise<ClientOverview> | null => {
+    if (selectedClientId) return whatsappService.getClientOverview(selectedClientId);
+    if (selectedPhone) {
+      return whatsappService.listSignaturesByContactPhone(selectedPhone)
+        .then(signatures => ({ ...EMPTY_OVERVIEW, signatures }));
+    }
+    return null;
+  }, [selectedClientId, selectedPhone]);
+
   const reloadOverview = useCallback(() => {
-    if (!selectedClientId) { setOverview(null); return; }
-    whatsappService.getClientOverview(selectedClientId)
-      .then(setOverview)
-      .catch(() => setOverview({ ...EMPTY_OVERVIEW }));
-  }, [selectedClientId]);
+    const promise = loadOverview();
+    if (!promise) { setOverview(null); return; }
+    promise.then(setOverview).catch(() => setOverview({ ...EMPTY_OVERVIEW }));
+  }, [loadOverview]);
 
   useEffect(() => {
-    if (!selectedClientId) { setOverview(null); return; }
+    const promise = loadOverview();
+    if (!promise) { setOverview(null); return; }
     let alive = true;
     setOverview(null);
-    whatsappService.getClientOverview(selectedClientId)
+    promise
       .then(o => { if (alive) setOverview(o); })
       .catch(() => { if (alive) setOverview({ ...EMPTY_OVERVIEW }); });
     return () => { alive = false; };
-  }, [selectedClientId]);
+  }, [loadOverview]);
 
-  // Histórico do kit em tempo real: os heartbeats de presença (opened_at/
-  // last_seen_at do link e do signatário) não disparam realtime de assinatura,
-  // então revalidamos o overview periodicamente enquanto a conversa está aberta.
+  /**
+   * Revalidação de fundo do pacote 360 da conversa aberta.
+   *
+   * Corrigido o motivo que estava escrito aqui: dizia que os heartbeats de
+   * presença (`opened_at`/`last_seen_at` do link e do signatário) não disparam
+   * realtime. Disparam — `signature_requests`, `signature_signers` e
+   * `template_fill_links` estão na publicação `supabase_realtime` e o canal
+   * `wa-signatures` ouve as três com `event: '*'`, então toda batida de presença
+   * já chega por lá e chama `reloadOverview`. A cada 12 segundos isto era, para
+   * assinaturas e documentos, uma releitura completa do pacote sem nada novo.
+   *
+   * O que sobra de motivo REAL é o resto do pacote: processos, prazos,
+   * compromissos, requerimentos e acordos não têm realtime nenhum aqui. Alguém
+   * cadastrar um prazo noutra tela precisa aparecer no painel sem o atendente
+   * ter de trocar de conversa e voltar. Para isso, um minuto basta.
+   */
   useEffect(() => {
-    if (!selectedClientId) return;
-    const id = window.setInterval(() => reloadOverview(), 12_000);
+    if (!selectedClientId && !selectedPhone) return;
+    const id = window.setInterval(() => {
+      // Aba escondida não tem ninguém olhando. Sem esta guarda, um CRM deixado
+      // aberto de um dia para o outro seguia relendo o pacote a noite inteira.
+      if (document.visibilityState !== 'visible') return;
+      reloadOverview();
+    }, 60_000);
     return () => window.clearInterval(id);
-  }, [selectedClientId, reloadOverview]);
+  }, [selectedClientId, selectedPhone, reloadOverview]);
 
   // ── Status de documentos por cliente (chips de lista/cabeçalho), em tempo real ──
   const [docStatusByClient, setDocStatusByClient] = useState<Record<string, 'awaiting' | 'ready'>>({});
   const [trackedSignatureStatusByClient, setTrackedSignatureStatusByClient] = useState<Record<string, ClientTrackedSignatureStatus>>({});
-  const convClientIds = useMemo(
-    () => Array.from(new Set(conversations.map(c => c.client_id).filter(Boolean) as string[])),
-    [conversations],
-  );
+  /**
+   * Ids de cliente da lista, com identidade ESTÁVEL enquanto o conjunto não muda.
+   *
+   * `conversations` é recriado a cada evento de realtime — toda mensagem que
+   * chega, todo `delivered`, todo `read`. Um `useMemo` comum devolveria um array
+   * novo em cada um deles, e como este array alimenta `loadDocStatus` e
+   * `loadTrackedSignatureStatus`, tudo que dependia deles reagia junto: as duas
+   * consultas saíam de novo E os canais `wa-docreqs`/`wa-signatures` eram
+   * derrubados e reabertos. Era a origem das rajadas idênticas de
+   * `document_requests`, `signature_requests`, `signature_signers` e
+   * `template_fill_links` nos logs da API.
+   *
+   * O conteúdo é que decide: mesma lista de clientes, mesma referência.
+   */
+  const convClientIdsRef = useRef<string[]>([]);
+  const convClientIds = useMemo(() => {
+    const proximo = Array.from(
+      new Set(conversations.map(c => c.client_id).filter(Boolean) as string[]),
+    ).sort();
+    const anterior = convClientIdsRef.current;
+    if (anterior.length === proximo.length && anterior.every((id, i) => id === proximo[i])) {
+      return anterior;
+    }
+    convClientIdsRef.current = proximo;
+    return proximo;
+  }, [conversations]);
   const loadDocStatus = useCallback(() => {
     if (convClientIds.length === 0) { setDocStatusByClient({}); return; }
     whatsappService.getDocStatusByClients(convClientIds).then(setDocStatusByClient).catch(() => {});
@@ -131,13 +187,46 @@ export function useClientOverview(
     const unsub = whatsappService.subscribeSignatures(() => { loadTrackedSignatureStatus(); reloadOverview(); });
     return unsub;
   }, [loadTrackedSignatureStatus, reloadOverview]);
-  // A "presença ativa" (live) é calculada por janela de 45s no momento do fetch.
-  // Este tick reavalia periodicamente para "Assinatura aberta" expirar sozinho.
+  /**
+   * Expiração do "está na página agora".
+   *
+   * Este é o único tique que o realtime NÃO pode substituir, e o motivo é sutil:
+   * o sinal aqui é a AUSÊNCIA de evento. A presença ativa é calculada por uma
+   * janela de tempo no momento da consulta, então "Assinatura aberta" só apaga
+   * quando alguém repara que não chega batida de presença há tempo demais — e
+   * ninguém emite um evento dizendo "parei de olhar a página".
+   *
+   * O que dá para evitar é rodar isso à toa, que era o caso:
+   *  · sem nada em acompanhamento não há badge para expirar. Uma assinatura nova
+   *    chega por realtime (`wa-signatures`), então não se perde nada esperando;
+   *  · aba escondida não tem ninguém para ver o badge apagar.
+   */
+  const trackedRef = useRef(trackedSignatureStatusByClient);
+  trackedRef.current = trackedSignatureStatusByClient;
   useEffect(() => {
     if (convClientIds.length === 0) return;
-    const id = window.setInterval(() => loadTrackedSignatureStatus(), 12_000);
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      if (Object.keys(trackedRef.current).length === 0) return;
+      loadTrackedSignatureStatus();
+    }, 12_000);
     return () => window.clearInterval(id);
   }, [convClientIds.length, loadTrackedSignatureStatus]);
+
+  /**
+   * Volta da aba escondida: repõe na hora o que os tiques deixaram de fazer
+   * enquanto ninguém olhava. É o que torna a pausa acima invisível — quem volta
+   * encontra o painel atualizado, sem esperar o próximo minuto.
+   */
+  useEffect(() => {
+    const aoVoltar = () => {
+      if (document.visibilityState !== 'visible') return;
+      reloadOverview();
+      loadTrackedSignatureStatus();
+    };
+    document.addEventListener('visibilitychange', aoVoltar);
+    return () => document.removeEventListener('visibilitychange', aoVoltar);
+  }, [reloadOverview, loadTrackedSignatureStatus]);
 
   // ── Dispensar o aviso "Documentos prontos" por cliente (só visual). ──
   const [dismissedDocReady, setDismissedDocReady] = useState<Set<string>>(() => {

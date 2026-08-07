@@ -15,6 +15,18 @@ export type SendResult = {
   reopened: boolean;
 };
 
+/**
+ * Colunas da mensagem que a tela usa — explícitas de propósito, no lugar de `*`.
+ *
+ * Fora daqui fica `raw`, o payload cru da Evolution: nada na UI lê esse campo, e
+ * ele é de longe a parte mais pesada da linha. Com `*`, abrir uma conversa
+ * baixava esse peso todo por mensagem só para jogá-lo fora.
+ *
+ * Literal numa linha só de propósito: o supabase-js tipa o retorno a partir do
+ * texto da consulta, e uma string montada em tempo de execução vira `unknown`.
+ */
+const MSG_COLUMNS = 'id, conversation_id, evolution_message_id, direction, type, content, media_url, media_mime, storage_path, media_size, media_sha256, file_name, transcription_text, transcription_status, is_animated, reply_to_id, edited_at, status, sender_user_id, wa_timestamp, created_at';
+
 export const messagesApi = {
   /**
    * Mensagens de uma conversa — ou de várias, quando o mesmo contato tem thread em
@@ -32,7 +44,7 @@ export const messagesApi = {
   ): Promise<WhatsAppMessage[]> {
     const ids = Array.isArray(conversationId) ? conversationId : [conversationId];
     if (ids.length === 0) return [];
-    let q = supabase.from(MSG_TABLE).select('*');
+    let q = supabase.from(MSG_TABLE).select(MSG_COLUMNS);
     q = ids.length === 1 ? q.eq('conversation_id', ids[0]) : q.in('conversation_id', ids);
     if (opts?.before) q = q.lt('wa_timestamp', opts.before);
     const limit = opts?.limit ?? 0;

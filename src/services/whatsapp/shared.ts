@@ -418,6 +418,18 @@ async function resolveSignedUrls(paths: string[]): Promise<Map<string, string>> 
   return result;
 }
 
+/**
+ * Assina UM caminho de avatar (o notificador conhece uma conversa por vez).
+ * Passa pelo mesmo cache das listas, então o cartão do aviso reaproveita a URL
+ * que a caixa de entrada já assinou — sem ida extra ao storage no caminho
+ * crítico do aviso.
+ */
+export async function resolveAvatarUrl(path: string | null | undefined): Promise<string | null> {
+  if (!path) return null;
+  const byPath = await resolveSignedUrls([path]);
+  return byPath.get(path) ?? null;
+}
+
 export async function attachAvatarUrls(convs: WhatsAppConversation[]): Promise<void> {
   const paths = convs.map(c => c.contact_avatar_path).filter((p): p is string => !!p);
   if (paths.length === 0) return;

@@ -136,22 +136,31 @@ export function useWaRealtime({
       },
       // Mensagem nova/alterada: atualiza só a thread aberta, em silêncio.
       // Para UPDATE de status (delivered/read), faz merge cirúrgico sem reload completo.
-      onMessageChange: (payload) => {
-        const convId = (payload.new as any)?.conversation_id ?? (payload.old as any)?.conversation_id;
-        if (!convId) return;
-        if (payload.eventType === 'UPDATE') {
-          const row = payload.new as Partial<WhatsAppMessage>;
-          if (row?.id && row?.status) {
-            setMessages(prev => {
-              const idx = prev.findIndex(m => m.id === row.id);
-              if (idx === -1) return prev;
-              const next = [...prev];
-              next[idx] = { ...next[idx], status: row.status! };
-              return next;
-            });
-            return;
-          }
+      onMessageChange: (evento) => {
+        // DELETE traz só a chave primária — e é tudo de que precisamos: tira a
+        // mensagem da thread aberta sem ida ao servidor. Filtrar por id já limita
+        // ao que está em tela, então evento de outra conversa não custa nada.
+        // Único DELETE do produto: "limpar conversa", que apaga a thread inteira
+        // mensagem a mensagem.
+        if (evento.op === 'DELETE') {
+          setMessages(prev => prev.filter(m => m.id !== evento.id));
+          return;
         }
+        // Mudou só o status (sent → delivered → read): mescla no lugar. Quem
+        // decide isso é o gatilho no banco, que sabe quais colunas mudaram —
+        // pela rede de postgres_changes a regra continua sendo "veio status".
+        if (!evento.refresh && evento.status) {
+          setMessages(prev => {
+            const idx = prev.findIndex(m => m.id === evento.id);
+            if (idx === -1) return prev;
+            const next = [...prev];
+            next[idx] = { ...next[idx], status: evento.status as WhatsAppMessage['status'] };
+            return next;
+          });
+          return;
+        }
+        const convId = evento.conversation_id;
+        if (!convId) return;
         const open = selectedIdRef.current;
         if (open && threadIdsRef.current.includes(convId)) refreshMessagesRef.current(open);
       },

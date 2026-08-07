@@ -3627,8 +3627,21 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 }
 .wa-bubble-content { max-width: min(76%, 560px); }
 .wa-bubble-media { max-width: min(76%, 320px); }
-.wa-bubble-out { background: #d9fdd3; }
-.wa-bubble-incoming { background: #fff; }
+/* `--wa-tail` é a cor do rabinho. Fica junto do `background` de cada variante,
+   e não solta lá embaixo na regra do rabinho, porque as duas TÊM de andar
+   juntas: o rabinho é um triângulo de borda CSS, que não herda o fundo do
+   balão. Era exatamente isso que estava quebrado — balão só-de-mídia trocava
+   o fundo e o rabinho continuava branco, aparecendo como um risco solto ao
+   lado do canto arredondado da foto/vídeo. */
+.wa-bubble-out { background: #d9fdd3; --wa-tail: #d9fdd3; }
+.wa-bubble-incoming { background: #fff; --wa-tail: #fff; }
+/* Só-mídia (sem legenda, sem citação): superfície opaca no lugar do véu
+   translúcido que havia aqui. Opaca porque o rabinho não consegue reproduzir
+   um `rgba` sobre o fundo texturizado da conversa sem descolar de tom — e o
+   tom é o mesmo `rgba(0,0,0,.05)` de antes já resolvido sobre `#efeae2`.
+   Depois de `wa-bubble-out`/`incoming` de propósito: mesma especificidade,
+   ganha quem vem por último. Figurinha não entra aqui (segue transparente). */
+.wa-bubble-media-surface { background: #e3ded7; --wa-tail: #e3ded7; }
 .group:hover .wa-bubble { box-shadow: 0 2px 5px rgba(11, 20, 26, 0.16); }
 
 .wa-bubble-tail-out::before,
@@ -3641,12 +3654,12 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 }
 .wa-bubble-tail-out::before {
   right: -8px;
-  border-top: 9px solid #d9fdd3;
+  border-top: 9px solid var(--wa-tail, #d9fdd3);
   border-right: 9px solid transparent;
 }
 .wa-bubble-tail-in::before {
   left: -8px;
-  border-top: 9px solid #fff;
+  border-top: 9px solid var(--wa-tail, #fff);
   border-left: 9px solid transparent;
 }
 .wa-bubble-menu-trigger {

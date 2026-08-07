@@ -24,6 +24,7 @@ import {
   absenceCooldownCutoff,
   isAbsenceCooldownActive,
 } from '../_shared/absence-cooldown.ts';
+import { slimWaRaw } from '../_shared/wa-raw.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
@@ -269,11 +270,17 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
         await reopenToQueue(admin, conv.id);
         conv = { ...conv, status: 'open' };
       } else {
-        await waSendText(admin, instanceName, remoteJid,
+        const failure = await waSendText(conv.id,
           'Olá! Recebi sua mensagem. 🙂 Posso te ajudar com mais alguma coisa? '
           + 'Se precisar, me conta rapidinho o que você precisa que eu reabro seu atendimento.');
-        await admin.from('whatsapp_conversations')
-          .update({ reopen_prompt_sent_at: new Date().toISOString() }).eq('id', conv.id);
+        // A marca só vale se a pergunta SAIU: marcar mesmo com falha fazia a
+        // conversa achar que já perguntou e, na dúvida seguinte, escalar para a
+        // fila por causa de uma pergunta que o cliente nunca viu.
+        if (failure) console.error('reopen prompt não enviado', conv.id, failure);
+        else {
+          await admin.from('whatsapp_conversations')
+            .update({ reopen_prompt_sent_at: new Date().toISOString() }).eq('id', conv.id);
+        }
         keptClosed = true;
       }
     } else {
@@ -346,7 +353,9 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
     transcription_status: transcriptionStatus,
     status: fromMe ? 'sent' : 'delivered',
     wa_timestamp: waTimestamp,
-    raw: m,
+    // Enxuto de propósito: os bytes da mídia já subiram para o storage acima
+    // (`resolveMediaBytes` leu o base64 do `m` original). Ver _shared/wa-raw.ts.
+    raw: slimWaRaw(m),
   }, { onConflict: 'conversation_id,evolution_message_id', ignoreDuplicates: true })
     .select('id').maybeSingle();
 
@@ -362,7 +371,7 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   // receber o comunicado comercial mesmo quando a conversa estava encerrada.
   // O cooldown sobrevive a encerramento/reabertura e evita repetição excessiva.
   if (!fromMe) {
-    const job = maybeAutoSendAbsence(admin, instanceId, instanceName, conv.id, remoteJid);
+    const job = maybeAutoSendAbsence(admin, instanceId, conv.id);
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(job);
     else await job.catch(() => {});
   }
@@ -431,21 +440,43 @@ async function reopenToQueue(admin: any, convId: string) {
   }).eq('id', convId);
 }
 
-/** Envia um texto pelo canal (usa a config do servidor Evolution em system_settings). */
-async function waSendText(admin: any, instanceName: string, remoteJid: string, text: string) {
+/**
+ * Envia um texto automático PELO CAMINHO DO CRM (`evolution-send`), como os
+ * followups já fazem.
+ *
+ * Antes daqui saía um `fetch` próprio direto para a Evolution. Ele nunca
+ * entregou: o aviso de ausência marcou `absence_sent_at` 7 vezes e o prompt de
+ * reabertura marcou `reopen_prompt_sent_at` 3 vezes, e não existe UMA linha
+ * dessas mensagens em `whatsapp_messages` — enquanto 109 mensagens do próprio
+ * celular do escritório chegaram normalmente pelo eco do webhook. Ou seja: a
+ * marca de "enviado" era só a reserva, o cliente não recebia nada e ninguém
+ * tinha como perceber.
+ *
+ * `evolution-send` resolve o JID pela própria Evolution (`resolveSendJid`), usa
+ * a config do servidor e — o que mais importa aqui — GRAVA a mensagem na
+ * conversa. Com service role ele entra como envio de sistema: não reabre
+ * conversa encerrada nem mexe na fila.
+ *
+ * Devolve o motivo da falha (ou null em caso de sucesso) para quem chamou
+ * decidir se desfaz a reserva.
+ */
+async function waSendText(convId: string, text: string): Promise<string | null> {
   try {
-    const { data: cfgRow } = await admin.from('system_settings')
-      .select('value').eq('key', 'whatsapp_evolution_config').maybeSingle();
-    const server = (cfgRow?.value || {}) as { base_url?: string; api_key?: string };
-    if (!server.base_url || !server.api_key) return;
-    const base = server.base_url.replace(/\/+$/, '');
-    await fetch(`${base}/message/sendText/${encodeURIComponent(instanceName)}`, {
+    const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/evolution-send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: server.api_key },
-      body: JSON.stringify({ number: remoteJid, text }),
-      signal: AbortSignal.timeout(15_000),
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+      },
+      body: JSON.stringify({ conversation_id: convId, sender_user_id: null, text }),
+      signal: AbortSignal.timeout(30_000),
     });
-  } catch (err) { console.error('waSendText error', err); }
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || out?.error) return String(out?.error || `HTTP ${res.status}`).slice(0, 300);
+    return null;
+  } catch (err) {
+    return String(err instanceof Error ? err.message : err).slice(0, 300);
+  }
 }
 
 /**
@@ -623,9 +654,7 @@ async function classifyReopenWithAI(admin: any, convId: string, text: string): P
  * Disparada async para cada inbound. Cooldown: não reenvia se já enviou nas
  * últimas 12 horas para a mesma conversa (anti-loop).
  */
-async function maybeAutoSendAbsence(
-  admin: any, instanceId: string, instanceName: string, convId: string, remoteJid: string,
-) {
+async function maybeAutoSendAbsence(admin: any, instanceId: string, convId: string) {
   try {
     const { data: ch } = await admin.from('whatsapp_instances')
       .select('absence_enabled, absence_message, timezone')
@@ -658,12 +687,6 @@ async function maybeAutoSendAbsence(
       if (curMins >= startMins && curMins < endMins) return; // dentro do horário
     }
 
-    const { data: cfgRow } = await admin.from('system_settings')
-      .select('value').eq('key', 'whatsapp_evolution_config').maybeSingle();
-    const server = (cfgRow?.value || {}) as { base_url?: string; api_key?: string };
-    if (!server.base_url || !server.api_key) return;
-    const base = server.base_url.replace(/\/+$/, '');
-
     // Reserva o disparo ANTES de chamar a Evolution. O UPDATE condicional é a
     // trava atômica: se dois webhooks da mesma conversa chegarem juntos, somente
     // um consegue atualizar a linha e o outro encerra sem enviar duplicado.
@@ -684,18 +707,12 @@ async function maybeAutoSendAbsence(
     }
     if (!claim) return;
 
-    const res = await fetch(
-      `${base}/message/sendText/${encodeURIComponent(instanceName)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: server.api_key },
-        body: JSON.stringify({ number: remoteJid, text: ch.absence_message }),
-        signal: AbortSignal.timeout(15_000),
-      },
-    );
-    if (!res.ok) {
-      console.error('absence auto-send failed', res.status, await res.text().catch(() => ''));
-      // Falha HTTP confirmada: devolve a reserva sem apagar uma marca posterior.
+    const failure = await waSendText(convId, ch.absence_message);
+    if (failure) {
+      console.error('absence auto-send failed', convId, failure);
+      // Falha confirmada: devolve a reserva sem apagar uma marca posterior. Como
+      // agora o envio passa pelo `evolution-send`, uma falha de verdade também
+      // deixa rastro — a mensagem não é gravada e o motivo vai para o log.
       await admin.from('whatsapp_conversations')
         .update({ absence_sent_at: conv.absence_sent_at || null })
         .eq('id', convId)

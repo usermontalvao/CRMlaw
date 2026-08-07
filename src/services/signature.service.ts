@@ -88,6 +88,9 @@ class SignatureService {
   async listRequests(filters?: {
     status?: string;
     client_id?: string;
+    /** Ids específicos — usado para acompanhar assinaturas achadas pelo telefone
+     *  do signatário, quando a conversa ainda não tem cliente cadastrado. */
+    ids?: string[];
     search?: string;
   }): Promise<SignatureRequest[]> {
     let query = supabase
@@ -102,6 +105,10 @@ class SignatureService {
     }
     if (filters?.client_id) {
       query = query.eq('client_id', filters.client_id);
+    }
+    if (filters?.ids) {
+      if (filters.ids.length === 0) return [];
+      query = query.in('id', filters.ids);
     }
     if (filters?.search) {
       query = query.or(
@@ -160,6 +167,7 @@ class SignatureService {
   async listRequestsWithSigners(filters?: {
     status?: string;
     client_id?: string;
+    ids?: string[];
     search?: string;
   }): Promise<SignatureRequestWithSigners[]> {
     const requests = await this.listRequests(filters);

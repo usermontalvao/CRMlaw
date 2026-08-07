@@ -12,6 +12,7 @@ import { useResizableLayout } from '../components/whatsapp/hooks/useResizableLay
 import { ContactIdentity, AttendanceSummary } from '../components/whatsapp/detailsPanelHeader';
 import { ConversationLabelsPanel } from '../components/whatsapp/conversationLabels';
 import { QuickActions } from '../components/whatsapp/quickActions';
+import { ForwardMessageModal } from '../components/whatsapp/forwardMessageModal';
 import { ToastProvider } from '../contexts/ToastContext';
 import type { FunnelLabel } from '../services/settings.service';
 import type { WhatsAppConversation, WhatsAppMessage } from '../types/whatsapp.types';
@@ -175,6 +176,79 @@ const AUDIO_TRANSCRITO = message({
   transcription_text: 'Doutor, consegui abrir o aplicativo. Aparece que o benefício está em análise desde o dia doze. Preciso levar mais algum documento na agência?',
 });
 
+// PDF de mentira (2 páginas, montado na hora com pdf-lib): serve para conferir
+// a miniatura da 1ª página no balão e o visualizador em tela cheia.
+const PDF_MSG = message({
+  id: 'pdf',
+  direction: 'in',
+  type: 'document',
+  wa_timestamp: '2026-08-04T15:16:00.000Z',
+  media_mime: 'application/pdf',
+  file_name: 'Contrato de honorarios.pdf',
+  media_size: 148_320,
+});
+
+// Vídeo VERTICAL de mentira (9:16), gravado na hora de um canvas. É o formato
+// que mais chega no atendimento — cliente filma com o celular na vertical — e
+// era justamente ele que aparecia com faixas vazias dos lados na bolha.
+const PREVIEW_VIDEO = message({
+  id: 'video',
+  direction: 'in',
+  type: 'video',
+  wa_timestamp: '2026-08-04T15:17:00.000Z',
+  media_mime: 'video/webm',
+  file_name: 'video-do-cliente.webm',
+  media_size: 380_400,
+});
+
+async function buildPreviewVideo(): Promise<string | null> {
+  if (typeof MediaRecorder === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = 405;
+  canvas.height = 720;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const stream = canvas.captureStream(15);
+  const chunks: Blob[] = [];
+  const rec = new MediaRecorder(stream);
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  const done = new Promise<void>(resolve => { rec.onstop = () => resolve(); });
+  rec.start();
+  let t = 0;
+  const timer = window.setInterval(() => {
+    t += 1;
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, 405, 720);
+    ctx.fillStyle = `hsl(${(t * 14) % 360} 70% 55%)`;
+    ctx.beginPath();
+    ctx.arc(202, 300 + Math.sin(t / 3) * 90, 90, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 26px system-ui';
+    ctx.fillText('video vertical 9:16', 60, 620);
+  }, 66);
+  window.setTimeout(() => { window.clearInterval(timer); rec.stop(); }, 1500);
+  await done;
+  return URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
+}
+
+async function buildPreviewPdf(): Promise<string> {
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  for (const [index, titulo] of ['CONTRATO DE HONORARIOS', 'CLAUSULA SEGUNDA'].entries()) {
+    const page = doc.addPage([595, 842]);
+    page.drawText(titulo, { x: 60, y: 760, size: 18, font: bold, color: rgb(0.1, 0.1, 0.12) });
+    for (let linha = 0; linha < 18; linha++) {
+      page.drawText(`Linha ${linha + 1} da pagina ${index + 1} do documento de exemplo usado na bancada.`,
+        { x: 60, y: 710 - linha * 26, size: 11, font, color: rgb(0.35, 0.38, 0.42) });
+    }
+  }
+  const bytes = await doc.save();
+  return URL.createObjectURL(new Blob([bytes.slice()], { type: 'application/pdf' }));
+}
+
 // Conversa de mentira para o painel de detalhes. Uma foto de verdade (retrato
 // gerado) porque o avatar grande é justamente o que se quer conferir aqui.
 const CONTACT_PHOTO = `data:image/svg+xml,${encodeURIComponent(`
@@ -204,6 +278,18 @@ const PREVIEW_CONVERSATION: WhatsAppConversation = {
   created_at: '2026-08-04T12:00:00.000Z', updated_at: '2026-08-04T15:15:00.000Z',
 };
 
+/** Outras conversas para conferir o modal de encaminhar. */
+const FORWARD_TARGETS: WhatsAppConversation[] = [
+  ['conv-2', '5565992216459', 'Marcos Antônio Silva', 'MARCOS ANTONIO SILVA'],
+  ['conv-3', '5565984112233', 'Joana Pereira', null],
+  ['conv-4', '5511987654321', 'Escritório — parceiro SP', null],
+  ['conv-5', '5565998877665', 'Dona Célia (mãe do cliente)', null],
+].map(([id, phone, contact, client]) => ({
+  ...PREVIEW_CONVERSATION,
+  id: id!, contact_phone: phone!, contact_name: contact!, client_name: client ?? null,
+  contact_avatar_url: null, labels: [],
+}));
+
 const PREVIEW_FUNNEL: FunnelLabel[] = [
   { key: 'Novo', stageKey: 'novo', stageLabel: 'Novo contato', color: '#0ea5e9', bg: '#0ea5e922' },
   { key: 'Atendimento', stageKey: 'em_atendimento', stageLabel: 'Em atendimento', color: '#dc2626', bg: '#dc262622' },
@@ -227,9 +313,23 @@ export default function WhatsAppConversationPreview() {
   const [detailsCollapsed, setDetailsCollapsed] = useState(false);
   const { panelWidth, startPanelResize } = useResizableLayout();
   const [previewImageReady, setPreviewImageReady] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   useEffect(() => {
     const timeout = window.setTimeout(() => setPreviewImageReady(true), 5_000);
     return () => window.clearTimeout(timeout);
+  }, []);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  // Encaminhar: a bancada abre o modal de verdade, com conversas de mentira.
+  const [forwardSource, setForwardSource] = useState<WhatsAppMessage | null>(null);
+  useEffect(() => {
+    let url: string | null = null;
+    buildPreviewPdf().then(out => { url = out; setPdfUrl(out); });
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, []);
+  useEffect(() => {
+    let url: string | null = null;
+    buildPreviewVideo().then(out => { url = out; setVideoUrl(out); });
+    return () => { if (url) URL.revokeObjectURL(url); };
   }, []);
 
   return (
@@ -255,14 +355,20 @@ export default function WhatsAppConversationPreview() {
         <main className="wa-thread-bg flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1050px] px-5 py-4">
             <DateDivider label="Hoje" />
-            <MessageBubble m={AUDIO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={AUDIO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} onForward={setForwardSource} />
             <MessageBubble m={FIRST_OUT} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd={false} {...bubbleActions} />
             <MessageBubble m={SECOND_OUT} repliedTo={null} senderName={null} senderRole="Administrador" groupStart={false} groupEnd {...bubbleActions} />
-            <MessageBubble m={OK} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={OK} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} onForward={setForwardSource} />
             <MessageBubble m={{ ...PREVIEW_PHOTO, media_url: previewImageReady ? PREVIEW_IMAGE : null }} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
             <MessageBubble m={PHONE_SHOT_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
             <MessageBubble m={WIDE_SHOT_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
-            <MessageBubble m={STICKER_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            {/* Vídeo vertical seguido de figurinha: o par que mostrava a bolha
+                com faixas vazias e a figurinha grudada no player. */}
+            <MessageBubble m={{ ...PREVIEW_VIDEO, media_url: videoUrl }} repliedTo={null} senderName={null} groupStart groupEnd={false} {...bubbleActions} />
+            <MessageBubble m={STICKER_MSG} repliedTo={null} senderName={null} groupStart={false} groupEnd {...bubbleActions} />
+            <MessageBubble m={{ ...PDF_MSG, media_url: pdfUrl, storage_path: pdfUrl ? 'preview/contrato.pdf' : null }} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} onForward={setForwardSource} />
+            {/* O mesmo PDF saindo do escritório: o cartão tem que vestir bem a bolha verde também. */}
+            <MessageBubble m={{ ...PDF_MSG, id: 'pdf-out', direction: 'out', sender_user_id: 'pedro', media_url: pdfUrl, storage_path: pdfUrl ? 'preview/contrato.pdf' : null, content: 'Segue o contrato para conferência.' }} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...bubbleActions} />
             <MessageBubble m={AUDIO_TRANSCRITO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
             <MessageBubble m={LAST_OUT} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...bubbleActions} />
           </div>
@@ -330,6 +436,17 @@ export default function WhatsAppConversationPreview() {
           </div>
         </aside>
       </div>
+
+      {forwardSource && (
+        <ForwardMessageModal
+          message={forwardSource}
+          conversations={FORWARD_TARGETS}
+          currentConversationId={PREVIEW_CONVERSATION.id}
+          sending={false}
+          onClose={() => setForwardSource(null)}
+          onConfirm={() => setForwardSource(null)}
+        />
+      )}
     </div>
     </ToastProvider>
   );
