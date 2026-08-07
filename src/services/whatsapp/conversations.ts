@@ -612,9 +612,9 @@ export const conversationsApi = {
    */
   subscribe(handlers: {
     /**
-     * Mensagem criada/alterada/removida, já normalizada — chega pelo broadcast
-     * (`whatsapp:messages`) ou pela rede de postgres_changes, indiferente para
-     * quem consome. Ver src/services/whatsapp/messageEvents.ts.
+     * Mensagem criada/alterada/removida, já normalizada. Chega pelo broadcast
+     * privado `whatsapp:messages` — fonte única desde que o canal foi validado
+     * em produção. Ver src/services/whatsapp/messageEvents.ts.
      */
     onMessageChange?: (evento: WaMessageEvent) => void;
     onConversationChange?: (payload: RealtimePostgresChangesPayload<Record<string, any>>) => void;

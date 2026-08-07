@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizarBroadcast, normalizarPostgres } from './waMessageEvent.ts';
+import { normalizarBroadcast, type WaMessageEvent } from './waMessageEvent.ts';
+import { criarFanOutDeMensagens } from './waMessageFanOut.ts';
 
 test('broadcast: mensagem nova manda reler a thread', () => {
   const e = normalizarBroadcast({
@@ -92,34 +93,60 @@ test('broadcast: UPDATE de edição relê, e o texto novo NÃO vem no aviso', ()
   assert.equal(e?.content, null);
 });
 
-test('rede postgres_changes: UPDATE com status mescla, sem status relê', () => {
-  const comStatus = normalizarPostgres({
-    eventType: 'UPDATE', new: { id: 'm1', conversation_id: 'c1', status: 'read' },
-  });
-  assert.equal(comStatus?.refresh, false);
+// ── O par INSERT+UPDATE que o banco produz em toda mensagem ──
+//
+// Toda mensagem recebida grava DUAS linhas em `realtime.messages`: o INSERT e,
+// menos de um segundo depois, o UPDATE de status. Em produção o par observado
+// foi 02:12:20.661 INSERT / 02:12:21.452 UPDATE, mesma mensagem. Isso não é
+// duplicidade — mas só não vira bolha repetida por causa do que se testa aqui:
+// o INSERT manda RELER a thread e o UPDATE manda MESCLAR no lugar.
 
-  const semStatus = normalizarPostgres({
-    eventType: 'UPDATE', new: { id: 'm1', conversation_id: 'c1', status: null },
-  });
-  assert.equal(semStatus?.refresh, true);
+test('o par INSERT+UPDATE da mesma mensagem dá um reload e um merge — nunca duas bolhas', () => {
+  const fanOut = criarFanOutDeMensagens();
+  const recebidos: WaMessageEvent[] = [];
+  fanOut.assinar((e) => recebidos.push(e));
+
+  // Exatamente o que o gatilho `broadcast_whatsapp_message_changed` publica.
+  fanOut.emitir(
+    normalizarBroadcast({
+      op: 'INSERT', id: 'm-par', conversation_id: 'c1',
+      direction: 'in', type: 'text', status: 'received', content: 'x', refresh: true,
+    }),
+    1_000,
+  );
+  fanOut.emitir(
+    normalizarBroadcast({
+      op: 'UPDATE', id: 'm-par', conversation_id: 'c1', status: 'read', refresh: false,
+    }),
+    1_791, // os ~0,8s reais entre as duas linhas: dentro da janela de repetição
+  );
+
+  assert.equal(recebidos.length, 2, 'os dois fatos chegam — o filtro não pode comer o UPDATE');
+  // O que decide a bolha: só o primeiro manda buscar mensagem no servidor.
+  assert.deepEqual(
+    recebidos.map((e) => e.refresh),
+    [true, false],
+  );
+  assert.equal(recebidos.filter((e) => e.refresh).length, 1, 'UM reload para o par inteiro');
+  assert.equal(recebidos[1].status, 'read', 'o merge no lugar precisa do status novo');
 });
 
-test('rede postgres_changes: INSERT sempre relê', () => {
-  const e = normalizarPostgres({
-    eventType: 'INSERT', new: { id: 'm1', conversation_id: 'c1', status: 'delivered', direction: 'in' },
-  });
-  assert.equal(e?.refresh, true);
-  assert.equal(e?.direction, 'in');
-});
+test('o mesmo INSERT entregue duas vezes ainda é um reload só', () => {
+  // Com o broadcast como fonte única, a cópia não vem mais de um segundo canal —
+  // vem do próprio: uma reconexão no meio da rajada reentrega o trecho. Se ela
+  // passasse, o INSERT dispararia dois refetch da thread e dois toques de aviso.
+  const fanOut = criarFanOutDeMensagens();
+  const recebidos: WaMessageEvent[] = [];
+  fanOut.assinar((e) => recebidos.push(e));
 
-test('rede postgres_changes: DELETE traz só a chave primária', () => {
-  const e = normalizarPostgres({ eventType: 'DELETE', old: { id: 'm9' } });
-  assert.equal(e?.op, 'DELETE');
-  assert.equal(e?.id, 'm9');
-  assert.equal(e?.conversation_id, null);
-});
+  const carga = {
+    op: 'INSERT', id: 'm-dup', conversation_id: 'c1',
+    direction: 'in', type: 'text', status: 'received', content: 'x', refresh: true,
+  };
 
-test('rede postgres_changes: linha sem id é descartada', () => {
-  assert.equal(normalizarPostgres({ eventType: 'INSERT', new: {} }), null);
-  assert.equal(normalizarPostgres({ eventType: 'DELETE', old: {} }), null);
+  fanOut.emitir(normalizarBroadcast(carga), 1_000);
+  fanOut.emitir(normalizarBroadcast(carga), 1_050);
+
+  assert.equal(recebidos.length, 1, 'duas entregas, um fato, um consumo');
+  assert.equal(recebidos[0].refresh, true);
 });

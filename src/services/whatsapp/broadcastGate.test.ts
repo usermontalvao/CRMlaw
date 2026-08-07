@@ -4,6 +4,9 @@
 // O que estes testes travam é o laço real: canal negado deixado de pé, rejuntado
 // pela biblioteca a cada 10s, para sempre. Ver broadcastGate.ts.
 //
+// E, desde que a rede de postgres_changes saiu, travam também a fonte ÚNICA: o
+// portão não pode abrir nenhum canal que não seja o broadcast.
+//
 // Execução: `node --test --import ts-node/esm src/services/whatsapp/broadcastGate.test.ts`
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +21,7 @@ import {
 } from './broadcastGate.ts';
 
 interface Canal {
-  tipo: 'broadcast' | 'fallback';
+  tipo: 'broadcast';
   n: number;
 }
 
@@ -59,12 +62,6 @@ function montarBancada(sobrescreve: Partial<DependenciasPortao<Canal>> = {}) {
       if (estourarNoBroadcast) throw new Error('socket recusado');
       dispararStatus = aoStatus;
       const canal: Canal = { tipo: 'broadcast', n: proximo++ };
-      abertos.push(canal);
-      return canal;
-    },
-    abrirFallback: () => {
-      ordem.push('channel:fallback');
-      const canal: Canal = { tipo: 'fallback', n: proximo++ };
       abertos.push(canal);
       return canal;
     },
@@ -118,7 +115,6 @@ function montarBancada(sobrescreve: Partial<DependenciasPortao<Canal>> = {}) {
     },
     temTimerPendente: () => pendente !== null,
     broadcasts: () => abertos.filter((c) => c.tipo === 'broadcast'),
-    fallbacks: () => abertos.filter((c) => c.tipo === 'fallback'),
     /** Canais abertos que nunca foram removidos — o que sobra de socket. */
     vazando: () => abertos.filter((c) => !removidos.includes(c)),
   };
@@ -158,8 +154,9 @@ test('sem sessão o canal privado NÃO é criado — era o join anon que a polic
   assert.equal(b.broadcasts().length, 0);
   assert.ok(!b.ordem.includes('channel:broadcast'));
   assert.ok(b.logs.some((l) => l.endsWith('AUTH_MISSING')));
-  // Sem broadcast, quem entrega mensagem é a rede.
-  assert.equal(b.fallbacks().length, 1);
+  // E nada é agendado: quem devolve a sessão é o onAuthStateChange, não o timer.
+  assert.ok(!b.temTimerPendente());
+  assert.equal(b.abertos.length, 0, 'nenhum socket aberto sem sessão');
 });
 
 test('o token vai para o Realtime ANTES de o canal existir', async () => {
@@ -327,7 +324,7 @@ test('INITIAL_SESSION rearma — é o evento do carregamento da página', async 
   // A sessão sai do localStorage DEPOIS do primeiro render. Quem tentou assinar
   // antes disso viu AUTH_MISSING; é o INITIAL_SESSION que conserta. Uma lista de
   // eventos permitidos sem ele deixaria o canal parado até a renovação seguinte
-  // do token — quase uma hora de caixa de entrada só na rede de segurança.
+  // do token — quase uma hora de caixa de entrada só na reposição por HTTP.
   const b = montarBancada();
   b.semSessao();
   b.portao.iniciar();
@@ -362,7 +359,7 @@ test('logout remove os canais e não deixa timer para trás', async () => {
   const b = montarBancada();
   b.portao.iniciar();
   await b.assentar();
-  b.status('CHANNEL_ERROR'); // abre a rede e agenda uma tentativa
+  b.status('CHANNEL_ERROR'); // agenda uma tentativa
   await b.assentar();
 
   b.portao.aoEventoDeSessao('SIGNED_OUT');
@@ -436,24 +433,47 @@ test('encerrar não é chamado duas vezes por engano', async () => {
   assert.equal(b.removidos.length, removidosDepoisDoPrimeiro);
 });
 
-// ── 12: o fallback continua de pé ────────────────────────────
+// ── 11: o broadcast é a fonte ÚNICA ──────────────────────────
+//
+// Esta é a garantia da release que tirou a rede de postgres_changes: o portão
+// abre UM tipo de canal e só. Se um segundo socket voltasse a aparecer por
+// qualquer caminho — erro, limite de tentativas, falha ao abrir —, cada mensagem
+// voltaria a trafegar a linha inteira (`raw`, `transcription_text`) para toda aba
+// aberta, que é exatamente o custo que o broadcast existe para não pagar.
 
-test('a rede de postgres_changes abre no primeiro erro e não vira pilha', async () => {
+test('nenhum caminho abre um segundo canal: só broadcast, do início ao fim', async () => {
   const b = montarBancada();
   b.portao.iniciar();
   await b.assentar();
+  b.status('SUBSCRIBED');
+  await b.assentar();
 
-  for (let i = 0; i < 3; i += 1) {
+  // Rotina: renovação de token de hora em hora, remontagem do módulo.
+  b.portao.aoEventoDeSessao('TOKEN_REFRESHED');
+  b.portao.aoEventoDeSessao('SIGNED_IN');
+  b.portao.iniciar();
+  await b.assentar();
+
+  // Adversidade: erros até o limite de tentativas acabar.
+  for (let i = 0; i <= BROADCAST_MAX_RETRIES; i += 1) {
     b.status('CHANNEL_ERROR');
     await b.assentar();
-    await b.avancar();
+    if (b.temTimerPendente()) await b.avancar();
   }
+  assert.ok(b.logs.some((l) => l.endsWith('RETRY_ABORTED')));
 
-  assert.equal(b.fallbacks().length, 1, 'uma rede só, por mais erros que venham');
-  assert.ok(!b.removidos.some((c) => c.tipo === 'fallback'), 'a rede continua entregando');
+  assert.ok(
+    b.abertos.every((c) => c.tipo === 'broadcast'),
+    'todo canal aberto tem de ser o broadcast',
+  );
+  assert.ok(!b.ordem.includes('channel:fallback'), 'nenhuma rede de postgres_changes');
+  assert.ok(!b.logs.some((l) => l.includes('PostgresFallback')), 'nem o log dela sobra');
 });
 
-test('a rede sobrevive ao RETRY_ABORTED — desistir do broadcast não é ficar sem mensagem', async () => {
+test('desistir do broadcast não deixa socket parado atrás', async () => {
+  // Sem a rede, RETRY_ABORTED significa "nada de realtime até a sessão mudar".
+  // O que não pode acontecer é sobrar canal de pé consumindo conexão sem
+  // entregar nada — quem repõe daqui em diante é o HTTP do useWaRealtime.
   const b = montarBancada();
   b.portao.iniciar();
   await b.assentar();
@@ -463,18 +483,59 @@ test('a rede sobrevive ao RETRY_ABORTED — desistir do broadcast não é ficar 
     if (b.temTimerPendente()) await b.avancar();
   }
 
-  assert.equal(b.fallbacks().length, 1);
-  assert.equal(b.vazando().filter((c) => c.tipo === 'fallback').length, 1);
+  assert.equal(b.vazando().length, 0, 'todo canal que falhou foi removido');
+  assert.ok(!b.temTimerPendente());
+
+  // E uma sessão nova ainda ressuscita: desistir não é desligar para sempre.
+  b.portao.aoEventoDeSessao('TOKEN_REFRESHED');
+  await b.assentar();
+  assert.equal(b.vazando().length, 1);
 });
 
-test('falha ao abrir o broadcast cai na rede e agenda, sem derrubar o portão', async () => {
+test('uma aba com o canal saudável = UM canal criado, por mais que o módulo remonte', async () => {
+  const b = montarBancada();
+  b.portao.iniciar();
+  await b.assentar();
+  b.status('SUBSCRIBED');
+
+  // Remontagens do módulo (troca de conversa, StrictMode, HMR) chamam `iniciar`
+  // de novo. Nenhuma delas pode virar uma assinatura a mais.
+  for (let i = 0; i < 5; i += 1) b.portao.iniciar();
+  await b.assentar();
+
+  const criados = b.logs.filter((l) => l.endsWith('CHANNEL_CREATED'));
+  assert.equal(criados.length, 1, 'CHANNEL_CREATED é a contagem de assinaturas no console');
+  assert.equal(b.vazando().length, 1, 'exatamente um socket de pé: o broadcast');
+});
+
+test('queda e recuperação não acumulam canal: um broadcast de pé, só', async () => {
+  const b = montarBancada();
+  b.portao.iniciar();
+  await b.assentar();
+  b.status('SUBSCRIBED');
+
+  b.status('CHANNEL_ERROR'); // cai
+  await b.assentar();
+  await b.avancar(); // a tentativa agendada roda
+  b.status('SUBSCRIBED'); // e volta
+  await b.assentar();
+
+  assert.equal(b.vazando().length, 1, 'um broadcast, não dois');
+
+  // E o cleanup leva embora.
+  b.portao.encerrar();
+  assert.equal(b.vazando().length, 0);
+});
+
+// ── 12: erro ao abrir não derruba o portão ───────────────────
+
+test('falha ao abrir o broadcast agenda de novo, sem derrubar o portão', async () => {
   const b = montarBancada();
   b.falharAoAbrir(true);
   b.portao.iniciar();
   await b.assentar();
 
   assert.equal(b.broadcasts().length, 0);
-  assert.equal(b.fallbacks().length, 1);
   assert.deepEqual(b.esperas, [2000]);
 
   b.falharAoAbrir(false);
@@ -496,7 +557,7 @@ test('nenhum log carrega token, telefone ou texto de mensagem', async () => {
   b.portao.encerrar();
 
   const permitido =
-    /^\[Jurius Realtime\]\[WhatsApp\](\[Broadcast\]|\[PostgresFallback\]) (AUTH_READY|AUTH_MISSING|SUBSCRIBED|CHANNEL_ERROR|RETRY_SCHEDULED|RETRY_ABORTED|CLEANED_UP|ABRINDO)/;
+    /^\[Jurius Realtime\]\[WhatsApp\]\[Broadcast\] (AUTH_READY|AUTH_MISSING|CHANNEL_CREATED|SUBSCRIBED|CHANNEL_ERROR|RETRY_SCHEDULED|RETRY_ABORTED|CLEANED_UP)/;
   for (const linha of b.logs) {
     assert.ok(permitido.test(linha), `log fora do formato: ${linha}`);
     assert.ok(!linha.includes(TOKEN), `token vazou no log: ${linha}`);

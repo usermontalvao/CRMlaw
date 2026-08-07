@@ -4,10 +4,12 @@
  *
  * Dois motivos para isto viver separado do `messageEvents.ts`:
  *
- *  · repetição — enquanto o broadcast e a rede de postgres_changes estiverem
- *    ligados juntos, a MESMA mudança chega pelos dois caminhos. Se a duplicata
- *    passasse daqui, ela viraria dois toques de notificação para uma mensagem
- *    só. Filtrar no fan-out mata o par antes de qualquer consumidor ver;
+ *  · repetição — o mesmo fato pode ser entregue mais de uma vez: o `subscribe`
+ *    do supabase-js reentrega o que estava no ar quando o canal se refaz, e uma
+ *    reconexão no meio de uma rajada repete o trecho. Se a duplicata passasse
+ *    daqui, ela viraria dois toques de notificação e dois refetch da thread para
+ *    uma mensagem só. Filtrar no fan-out mata a cópia antes de qualquer
+ *    consumidor ver;
  *
  *  · remontagem — quem entra e sai da lista é o React. Uma inscrição que não
  *    saísse na desmontagem acumularia a cada volta ao módulo, e a mesma mensagem

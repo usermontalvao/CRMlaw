@@ -10,15 +10,22 @@
  * O canal é aberto na primeira assinatura e fechado quando o último ouvinte sai
  * — o notificador vive fora do módulo e não pode manter socket aberto sozinho.
  *
+ * Hoje o broadcast é a ÚNICA fonte. A rede de `postgres_changes` que o
+ * acompanhava saiu depois de o canal privado ser validado em produção; o que
+ * repõe o que o socket perde é HTTP, em `useWaRealtime`. A tabela
+ * `whatsapp_messages` segue publicada em `supabase_realtime` de propósito — a
+ * despublicação é passo separado, e enquanto ela estiver lá o `git revert` deste
+ * commit basta para voltar atrás.
+ *
  * Este arquivo é só a ligação com o Supabase. As duas partes com regra própria
  * moram em módulos puros, testáveis sem rede, e é lá que está escrito o porquê:
  * a política de conexão em `broadcastGate.ts` e o fan-out em `waMessageFanOut.ts`.
  */
 import { supabase } from '../../config/supabase';
-import { MSG_TABLE } from './shared';
 import { criarPortaoBroadcast, type PortaoBroadcast } from './broadcastGate';
 import { criarFanOutDeMensagens, type FanOutDeMensagens } from './waMessageFanOut';
-import { normalizarBroadcast, normalizarPostgres, type WaMessageEvent } from './waMessageEvent';
+import { normalizarBroadcast, type WaMessageEvent } from './waMessageEvent';
+import { registrarEventoRecebido } from './realtimeDebug';
 
 export type { WaMessageEvent } from './waMessageEvent';
 
@@ -57,20 +64,17 @@ function criarPortao(entregar: FanOutDeMensagens): PortaoBroadcast {
     abrirBroadcast: (aoStatus) =>
       supabase
         .channel(TOPICO, { config: { private: true } })
-        .on('broadcast', { event: 'changed' }, (msg) =>
-          entregar.emitir(
-            normalizarBroadcast((msg as { payload?: Record<string, unknown> }).payload),
-          ),
-        )
+        .on('broadcast', { event: 'changed' }, (msg) => {
+          const evento = normalizarBroadcast(
+            (msg as { payload?: Record<string, unknown> }).payload,
+          );
+          // Antes do fan-out de propósito: o filtro de repetição descarta o que
+          // for repetido, e é justamente o que chega no fio que se quer enxergar
+          // ao conferir se o canal está entregando.
+          registrarEventoRecebido(`${MARCA}[Broadcast]`, evento);
+          entregar.emitir(evento);
+        })
         .subscribe(aoStatus),
-
-    abrirFallback: () =>
-      supabase
-        .channel(`whatsapp-messages-fallback-${Date.now()}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: MSG_TABLE }, (p) =>
-          entregar.emitir(normalizarPostgres(p as unknown as Record<string, unknown>)),
-        )
-        .subscribe(),
 
     // Só os canais deste módulo. `removeAllChannels()` derrubaria os da agenda,
     // do chat interno e da nuvem junto.

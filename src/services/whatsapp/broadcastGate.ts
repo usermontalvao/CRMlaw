@@ -26,6 +26,19 @@
  *     backoff e com FIM: quatro tentativas e para. Um tópico negado por RLS não
  *     vira liberado por insistência — insistir só cobra do banco.
  *
+ * Até esta versão havia uma terceira peça: uma rede de `postgres_changes` sobre
+ * `whatsapp_messages`, aberta a cada erro do broadcast. Ela existia para cobrir o
+ * período em que o canal privado ainda não estava provado em produção. Está
+ * provado — AUTH_READY, CHANNEL_CREATED, SUBSCRIBED e evento real, sem a rede ter
+ * sido convocada uma vez —, e a rede saiu: ela trafegava a LINHA INTEIRA de cada
+ * mensagem (com `raw` e `transcription_text`) para toda aba aberta, que é o custo
+ * que motivou o broadcast.
+ *
+ * O que cobre o buraco quando o broadcast não está entregando não é mais um
+ * segundo socket, é HTTP: `useWaRealtime` repõe lista e thread ao voltar para a
+ * aba, ao recuperar a conexão e a cada 15s enquanto o canal de conversas
+ * (`postgres_changes`, mesmo websocket) se declara fora.
+ *
  * Sem imports de propósito: o módulo é puro para o ts-node do `npm test`
  * conseguir carregá-lo sem arrastar a cadeia de imports do cliente Supabase.
  */
@@ -41,8 +54,9 @@ export type EventoSessao = 'SIGNED_IN' | 'TOKEN_REFRESHED' | 'SIGNED_OUT' | stri
  *
  * O caso que motivou o teto não é rede oscilando (essa volta sozinha) — é
  * autorização negada, que não muda por tentar de novo. Quatro tentativas cobrem
- * a corrida do token no carregamento da página; passou disso, a resposta é
- * parar e deixar a rede de postgres_changes trabalhando.
+ * a corrida do token no carregamento da página; passou disso, a resposta é parar
+ * e deixar a reposição por HTTP trabalhando. Um evento de sessão novo (login,
+ * renovação de token) rearma tudo do zero.
  */
 export const BROADCAST_RETRY_DELAYS = [2_000, 5_000, 15_000, 30_000] as const;
 
@@ -75,8 +89,6 @@ export interface DependenciasPortao<C> {
   abrirBroadcast: (
     aoStatus: (status: StatusAssinatura, erro?: { message?: string } | null) => void,
   ) => C;
-  /** Cria e assina a rede de postgres_changes. */
-  abrirFallback: () => C;
   remover: (canal: C) => void;
   agendar: (fn: () => void, ms: number) => unknown;
   cancelar: (id: unknown) => void;
@@ -113,7 +125,6 @@ export function criarPortaoBroadcast<C>(deps: DependenciasPortao<C>): PortaoBroa
   const marca = `${deps.marca}[Broadcast]`;
 
   let canal: C | null = null;
-  let fallback: C | null = null;
   let timer: unknown = null;
   let tentativa = 0;
   let abrindo = false;
@@ -138,30 +149,6 @@ export function criarPortaoBroadcast<C>(deps: DependenciasPortao<C>): PortaoBroa
     if (canal === null) return;
     deps.remover(canal);
     canal = null;
-  };
-
-  const removerFallback = () => {
-    if (fallback === null) return;
-    deps.remover(fallback);
-    fallback = null;
-  };
-
-  /**
-   * A rede de postgres_changes. Idempotente: uma sequência de CHANNEL_ERROR não
-   * pode virar pilha de canais. Uma vez aberta fica aberta — enquanto o broadcast
-   * não estiver comprovadamente estável, tirar a rede no primeiro SUBSCRIBED
-   * devolveria o buraco de entrega que ela existe para tapar.
-   */
-  const abrirFallback = () => {
-    if (fallback !== null || descartado) return;
-    try {
-      fallback = deps.abrirFallback();
-      registrar(`${deps.marca}[PostgresFallback] ABRINDO`);
-    } catch (erro) {
-      // A rede é a rede, não o trapézio: se ela falhar, o resto continua.
-      avisar(`${deps.marca}[PostgresFallback] CHANNEL_ERROR ${mensagemDe(erro)}`.trim());
-      fallback = null;
-    }
   };
 
   const agendarNovaTentativa = () => {
@@ -191,9 +178,6 @@ export function criarPortaoBroadcast<C>(deps: DependenciasPortao<C>): PortaoBroa
       }
       if (!isStatusDeQueda(status)) return; // 'joining' e afins não são notícia
       avisar(`${marca} CHANNEL_ERROR ${status} ${mensagemDe(erro)}`.trim());
-      // A rede entra ANTES de qualquer espera: o atendente não fica sem mensagem
-      // enquanto o backoff corre.
-      abrirFallback();
       // Remover é o ponto todo desta correção: é o que desarma o rejoinTimer da
       // biblioteca. Sem isto, o backoff daqui só se somaria ao laço de 10s dela.
       aposentar();
@@ -208,9 +192,11 @@ export function criarPortaoBroadcast<C>(deps: DependenciasPortao<C>): PortaoBroa
       if (descartado) return;
       if (!token) {
         // Sem sessão não se assina tópico privado: o join subiria como `anon` e
-        // seria negado — exatamente o erro que alimentava o laço.
+        // seria negado — exatamente o erro que alimentava o laço. Não se agenda
+        // tentativa aqui de propósito: quem devolve a sessão é o
+        // `onAuthStateChange` (INITIAL_SESSION no carregamento da página), e é
+        // ele quem rearma. Tentar por conta seria bater na porta antes da chave.
         avisar(`${marca} AUTH_MISSING`);
-        abrirFallback();
         return;
       }
       await deps.aplicarToken(token);
@@ -226,9 +212,12 @@ export function criarPortaoBroadcast<C>(deps: DependenciasPortao<C>): PortaoBroa
         return;
       }
       canal = novo;
+      // Contável no console: uma linha por canal que passou a valer. Com uma aba
+      // aberta e o canal saudável tem de aparecer UMA vez — é assim que se
+      // responde "existe assinatura duplicada?" sem abrir o depurador.
+      registrar(`${marca} CHANNEL_CREATED`);
     } catch (erro) {
       avisar(`${marca} CHANNEL_ERROR ${mensagemDe(erro)}`.trim());
-      abrirFallback();
       agendarNovaTentativa();
     } finally {
       abrindo = false;
@@ -248,9 +237,6 @@ export function criarPortaoBroadcast<C>(deps: DependenciasPortao<C>): PortaoBroa
       if (evento === 'SIGNED_OUT') {
         cancelarTimer();
         aposentar();
-        // A rede também sai: sem sessão ela não passa pela RLS de
-        // `whatsapp_messages`, e um canal sem dono é só socket parado.
-        removerFallback();
         tentativa = 0;
         registrar(`${marca} CLEANED_UP`);
         return;
@@ -274,7 +260,6 @@ export function criarPortaoBroadcast<C>(deps: DependenciasPortao<C>): PortaoBroa
       descartado = true;
       cancelarTimer();
       aposentar();
-      removerFallback();
       registrar(`${marca} CLEANED_UP`);
     },
   };

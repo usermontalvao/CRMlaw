@@ -9,6 +9,7 @@
 // forçar um fetch — que era exatamente o "sair da conversa e entrar de novo".
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { whatsappService } from '../../../services/whatsapp.service';
+import { registrarMarco } from '../../../services/whatsapp/realtimeDebug';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppAiSession,
 } from '../../../types/whatsapp.types';
@@ -26,6 +27,9 @@ const DOWN_POLL_MS = 15_000;
  * reconexão em si continua imediata: o que espera é só o que se diz na tela.
  */
 const DOWN_GRACE_MS = 2500;
+
+/** Prefixo do rastro de validação da thread. Ver services/whatsapp/realtimeDebug.ts. */
+const MARCA_THREAD = '[Jurius Realtime][WhatsApp][Thread]';
 
 interface WaRealtimeArgs {
   selectedId: string | null;
@@ -147,9 +151,12 @@ export function useWaRealtime({
           return;
         }
         // Mudou só o status (sent → delivered → read): mescla no lugar. Quem
-        // decide isso é o gatilho no banco, que sabe quais colunas mudaram —
-        // pela rede de postgres_changes a regra continua sendo "veio status".
+        // decide isso é o gatilho no banco, que sabe quais colunas mudaram.
         if (!evento.refresh && evento.status) {
+          // O UPDATE de status NÃO recarrega a thread: mescla no lugar. É por
+          // isso que o par INSERT+UPDATE da mesma mensagem dá UM reload, e não
+          // dois — o rastro registra os dois desfechos para deixar isso visível.
+          registrarMarco(MARCA_THREAD, 'MERGE_IN_PLACE', `id=${evento.id}`);
           setMessages(prev => {
             const idx = prev.findIndex(m => m.id === evento.id);
             if (idx === -1) return prev;
@@ -162,7 +169,18 @@ export function useWaRealtime({
         const convId = evento.conversation_id;
         if (!convId) return;
         const open = selectedIdRef.current;
-        if (open && threadIdsRef.current.includes(convId)) refreshMessagesRef.current(open);
+        if (open && threadIdsRef.current.includes(convId)) {
+          // Não há camada de agendamento entre o evento e a releitura: quem
+          // chega, relê. Por isso o rastro tem EXECUTED e não SCHEDULED — um
+          // "agendado" aqui seria um passo que o código não dá.
+          registrarMarco(MARCA_THREAD, 'RELOAD_EXECUTED', `id=${evento.id} conv=${open}`);
+          refreshMessagesRef.current(open);
+          return;
+        }
+        // Evento de conversa que não está aberta: nenhuma requisição. Registrado
+        // para que uma contagem de reloads menor que a de eventos não pareça
+        // evento perdido.
+        registrarMarco(MARCA_THREAD, 'RELOAD_SKIPPED', `id=${evento.id}`);
       },
       onStatusChange: (status) => {
         if (status === 'down') {
