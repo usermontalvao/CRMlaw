@@ -58,6 +58,7 @@ import {
   Layers,
   Newspaper,
   Target,
+  Bot,
   Scale,
   AlarmClock,
   Cloud,
@@ -72,6 +73,7 @@ import { ClientSearchSelect } from './ClientSearchSelect';
 import { profileService, type Profile } from '../services/profile.service';
 import UserManagementModule from './UserManagementModule';
 import WhatsAppIntegrationSettings from './WhatsAppIntegrationSettings';
+import AgentWorkbench from './whatsapp/agent/AgentWorkbench';
 import { AccessRequestsAdmin } from './AccessRequestsAdmin';
 import { accessRequestService } from '../services/accessRequest.service';
 import { aiService } from '../services/ai.service';
@@ -422,7 +424,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   const [navSearch, setNavSearch] = useState('');
 
   // Painéis recolhíveis da página unificada de WhatsApp (Módulos → WhatsApp)
-  const [waHubExpanded, setWaHubExpanded] = useState<Record<string, boolean>>({ connection: false, funnel: false });
+  const [waHubExpanded, setWaHubExpanded] = useState<Record<string, boolean>>({ connection: false, agent: false, funnel: false });
   const toggleWaHub = (k: string) => setWaHubExpanded(prev => ({ ...prev, [k]: !prev[k] }));
 
   // Sidebar grupos colapsáveis (estado salvo no localStorage)
@@ -3319,7 +3321,12 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
                 {/* ── Integrações → WhatsApp (Evolution) ── */}
                 {activeSection === 'integrations_whatsapp' && (
-                  <WhatsAppIntegrationSettings requirePin={requirePin} userName={currentProfile?.name} onFeedback={setFeedback} />
+                  <>
+                    <WhatsAppIntegrationSettings requirePin={requirePin} userName={currentProfile?.name} onFeedback={setFeedback} />
+                    <div style={{ padding: '0 40px 28px' }}>
+                      <AgentWorkbench currentUserId={currentProfile?.user_id ?? null} />
+                    </div>
+                  </>
                 )}
 
                 {/* ── Módulos → Financeiro ── */}
@@ -4463,6 +4470,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         {waHubExpanded.connection && (
                           <div style={{ borderTop: '1px solid #f1f0ec' }}>
                             <WhatsAppIntegrationSettings requirePin={requirePin} userName={currentProfile?.name} onFeedback={setFeedback} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Painel — Atendente de IA (decisões em modo sombra + agentes) */}
+                      <div className="settings-card" style={{ padding: 0, overflow: 'hidden' }}>
+                        {waPanelHeader('agent', Bot, 'Atendente de IA', 'Decisões do modo sombra, prompt e gatilhos de cada agente')}
+                        {waHubExpanded.agent && (
+                          <div style={{ borderTop: '1px solid #f1f0ec', padding: '20px 18px' }}>
+                            <AgentWorkbench currentUserId={currentProfile?.user_id ?? null} />
                           </div>
                         )}
                       </div>
