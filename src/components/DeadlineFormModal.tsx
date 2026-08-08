@@ -13,6 +13,7 @@ import type { Profile } from '../services/profile.service';
 import type { Client } from '../types/client.types';
 import { useFormLayout } from '../hooks/useFormLayout';
 import { formatDateLong } from '../utils/formatters';
+import { toOfficeTimestamp } from '../utils/officeTime';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ export type DeadlineFormData = {
   client_id: string;
   responsible_id: string;
   notify_days_before: string;
+  /** Data (YYYY-MM-DD) a partir da qual o prazo entra na fila. Vazio = agora. */
+  visible_from: string;
 };
 
 export interface DeadlineFormModalProps {
@@ -98,6 +101,7 @@ const emptyForm: DeadlineFormData = {
   client_id: '',
   responsible_id: '',
   notify_days_before: '2',
+  visible_from: '',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -162,6 +166,9 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
   const [dataPublicacao, setDataPublicacao] = useState('');
   const [diasPrazo, setDiasPrazo] = useState('');
   const [tipoPrazoCalculadora, setTipoPrazoCalculadora] = useState<TipoPrazo>('processual');
+  // Agendar a entrada na fila é exceção, não regra: o campo de data fica
+  // escondido atrás desta caixa para não sugerir que todo prazo precisa dela.
+  const [agendarEntrada, setAgendarEntrada] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fl = useFormLayout('deadlines');
@@ -198,10 +205,14 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
         client_id: selectedDeadline.client_id || '',
         responsible_id: selectedDeadline.responsible_id || '',
         notify_days_before: selectedDeadline.notify_days_before != null ? String(selectedDeadline.notify_days_before) : '2',
+        visible_from: toDateInputValue(selectedDeadline.visible_from),
       });
       setDataPublicacao(selectedDeadline.publication_date ? toDateInputValue(selectedDeadline.publication_date) : '');
       setDiasPrazo(selectedDeadline.deadline_days != null ? String(selectedDeadline.deadline_days) : '');
       setTipoPrazoCalculadora((selectedDeadline.counting_type as TipoPrazo) || 'processual');
+      // Editando um prazo já agendado, a caixa abre sozinha — senão a data
+      // sumiria da tela e quem salvasse de novo apagaria o agendamento.
+      setAgendarEntrada(Boolean(selectedDeadline.visible_from));
     } else {
       const base = { ...emptyForm, ...initialData };
       setFormData({
@@ -213,11 +224,34 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
       setDataPublicacao('');
       setDiasPrazo('');
       setTipoPrazoCalculadora('processual');
+      setAgendarEntrada(Boolean(base.visible_from));
     }
   }, [open, selectedDeadline, initialData, statusOptionsProp, priorityOptionsProp, typeOptionsProp]);
 
   const handleChange = (field: keyof DeadlineFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  /**
+   * Único caminho para mexer na data de publicação, porque ela não é só um campo
+   * do formulário: é o termo inicial, e o agendamento pendura nela.
+   *
+   * - trocar a publicação arrasta a entrada na fila junto, enquanto ninguém a
+   *   tiver editado à mão;
+   * - APAGAR a publicação desliga o agendamento. Sem termo inicial não há de
+   *   onde contar, e um agendamento órfão é pior do que agendamento nenhum —
+   *   ele esconde o prazo apoiado numa data que ninguém mais consegue explicar.
+   */
+  const aplicarDataPublicacao = (nova: string) => {
+    if (agendarEntrada) {
+      if (!nova) {
+        setAgendarEntrada(false);
+        handleChange('visible_from', '');
+      } else if (!formData.visible_from || formData.visible_from === dataPublicacao) {
+        handleChange('visible_from', nova);
+      }
+    }
+    setDataPublicacao(nova);
   };
 
   // Filtered processes/requirements by client
@@ -233,10 +267,24 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
     if (!formData.title.trim()) { setError('Informe o título do prazo.'); return; }
     if (!formData.due_date) { setError('Informe a data de vencimento.'); return; }
     if (!formData.responsible_id) { setError('Selecione o responsÃ¡vel pelo prazo.'); return; }
+    // O agendamento se apoia no termo inicial. A caixa já fica travada sem
+    // publicação, mas a regra é repetida aqui porque é ela que decide se o
+    // prazo some da fila — e isso não pode depender de um estado da tela.
+    if (agendarEntrada && !dataPublicacao) { setError('Informe a data de publicação para agendar a entrada na lista.'); return; }
+    if (agendarEntrada && !formData.visible_from) { setError('Informe a data em que o prazo deve entrar na lista.'); return; }
+    if (agendarEntrada && formData.visible_from < dataPublicacao) { setError('O prazo não pode entrar na lista antes da data de publicação.'); return; }
 
     setSaving(true);
     setError(null);
     try {
+      const agora = new Date().toISOString();
+      const visibleFromIso = formData.visible_from ? toOfficeTimestamp(`${formData.visible_from}T00:00`) : null;
+      // Prazo que ainda vai dormir: o aviso de atribuição fica suspenso. Avisar
+      // agora mandaria o responsável procurar na lista um prazo que ele não vê —
+      // e até lá o aviso já teria sido lido e esquecido. Quem entrega é o
+      // notification-scheduler, quando o prazo acorda.
+      const avisoSuspenso = !!visibleFromIso && new Date(visibleFromIso).getTime() > Date.now();
+
       const payload = {
         title: formData.title.trim(),
         description: formData.description?.trim() || null,
@@ -252,6 +300,10 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
         publication_date: dataPublicacao || null,
         deadline_days: diasPrazo ? parseInt(diasPrazo, 10) : null,
         counting_type: tipoPrazoCalculadora || null,
+        // Meia-noite do fuso do ESCRITÓRIO, e não UTC como o due_date: aqui a
+        // data não é um rótulo, é o instante em que o prazo acorda. Gravado em
+        // UTC, "aparecer dia 20" começaria às 20h do dia 19 em Cuiabá.
+        visible_from: visibleFromIso,
         // Vínculo intimação → prazo (guardião de prazos). Só na criação: em
         // edição, preserva o vínculo existente no banco.
         ...(!selectedDeadline && intimationId ? { intimation_id: intimationId, origin: 'intimation' } : {}),
@@ -259,8 +311,14 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
 
       if (selectedDeadline) {
         const responsibleChanged = payload.responsible_id && payload.responsible_id !== selectedDeadline.responsible_id;
-        await deadlineService.updateDeadline(selectedDeadline.id, payload);
-        if (responsibleChanged && user?.id) {
+        await deadlineService.updateDeadline(selectedDeadline.id, {
+          ...payload,
+          // Trocar o responsável reabre o aviso: se o prazo está dormindo, volta
+          // a ficar pendente para o novo responsável; se não, ele é dado abaixo
+          // e o carimbo encerra o assunto.
+          ...(responsibleChanged ? { assignment_notified_at: avisoSuspenso ? null : agora } : {}),
+        });
+        if (responsibleChanged && user?.id && !avisoSuspenso) {
           const newRespProfile = memberMap.get(payload.responsible_id!);
           const newRespAuthId = newRespProfile?.user_id;
           if (newRespAuthId && newRespAuthId !== user.id) {
@@ -286,8 +344,13 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
           }
         }
       } else {
-        const newDeadline = await deadlineService.createDeadline(payload as any);
-        if (user?.id && newDeadline && payload.responsible_id) {
+        const newDeadline = await deadlineService.createDeadline({
+          ...payload,
+          // Nasce avisado (ou dispensado do aviso) quando já entra na fila; nasce
+          // com o aviso pendente quando vai dormir.
+          assignment_notified_at: avisoSuspenso ? null : agora,
+        } as any);
+        if (user?.id && newDeadline && payload.responsible_id && !avisoSuspenso) {
           const respProfile = memberMap.get(payload.responsible_id);
           const respAuthId = respProfile?.user_id;
           if (respAuthId && respAuthId !== user.id) {
@@ -443,8 +506,9 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
               <input
                 type="date" value={dataPublicacao}
                 onChange={e => {
-                  setDataPublicacao(e.target.value);
-                  if (e.target.value && diasPrazo) handleChange('due_date', calcularDataVencimento(e.target.value, parseInt(diasPrazo), tipoPrazoCalculadora));
+                  const nova = e.target.value;
+                  aplicarDataPublicacao(nova);
+                  if (nova && diasPrazo) handleChange('due_date', calcularDataVencimento(nova, parseInt(diasPrazo), tipoPrazoCalculadora));
                 }}
                 className={inputStyle}
               />
@@ -479,13 +543,87 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
                 onChange={e => {
                   const d = new Date(e.target.value + 'T12:00:00');
                   if (d.getDay() === 0 || d.getDay() === 6) { alert('⚠️ Não é permitido cadastrar prazos em finais de semana.'); return; }
-                  setDataPublicacao(''); setDiasPrazo('');
+                  // Digitar o vencimento à mão descarta a calculadora — e, com
+                  // ela, o termo inicial em que o agendamento se apoiava.
+                  aplicarDataPublicacao(''); setDiasPrazo('');
                   handleChange('due_date', e.target.value);
                 }}
                 className={inputStyle}
               />
             </div>
           </div>
+
+          {/* Agendamento — o prazo existe desde já, mas fica fora da fila até a
+              data marcada. Serve para cadastrar agora o que só interessa daqui a
+              meses, sem carregar a tela de trabalho até lá. Fica atrás de uma
+              caixa: quem não marcar nada continua com o prazo entrando na hora.
+
+              Exige data de publicação. Ela é o termo inicial — o marco a partir
+              do qual o prazo passa a ser trabalho — e é dela que o módulo tira
+              o início da faixa de visualização. Agendar sem publicação seria
+              esconder um prazo por uma data escolhida no palpite. Se o campo de
+              publicação estiver oculto pelo layout do formulário, o agendamento
+              some junto, em vez de ficar aqui travado para sempre. */}
+          {!fl.isHidden('pub_date') && (
+          <div className="mt-3">
+            <label className={`inline-flex items-center gap-2 select-none ${dataPublicacao ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+              <input
+                type="checkbox"
+                checked={agendarEntrada}
+                // Trava só o caminho de LIGAR. Um prazo antigo que já esteja
+                // agendado sem publicação continua podendo ser desmarcado —
+                // travar a caixa marcada deixaria o prazo impossível de salvar.
+                disabled={!dataPublicacao && !agendarEntrada}
+                onChange={e => {
+                  setAgendarEntrada(e.target.checked);
+                  // Marcar já traz a data de publicação: ela é o termo inicial,
+                  // então é a data em que o prazo passa a ser trabalho de fato.
+                  // Continua editável para adiar a entrada além dela.
+                  if (e.target.checked) {
+                    if (!formData.visible_from) handleChange('visible_from', dataPublicacao);
+                  } else {
+                    // Desmarcar limpa a data: deixar o valor guardado faria o
+                    // prazo continuar agendado com a caixa fechada.
+                    handleChange('visible_from', '');
+                  }
+                }}
+                className="w-3.5 h-3.5 rounded border-slate-300 dark:border-zinc-600 text-orange-500 focus:ring-1 focus:ring-orange-400/40 disabled:opacity-40"
+              />
+              <span className={`text-[13px] font-medium ${dataPublicacao ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400'}`}>
+                Agendar entrada na lista
+              </span>
+            </label>
+            {!dataPublicacao && (
+              <p className={`mt-1 text-[11px] ${agendarEntrada ? 'text-amber-600' : 'text-slate-400'}`}>
+                {agendarEntrada
+                  ? 'Este prazo está agendado sem data de publicação. Informe a publicação ou desmarque o agendamento.'
+                  : 'Informe a data de publicação para poder agendar — é ela que define o termo inicial.'}
+              </p>
+            )}
+            {agendarEntrada && (
+              <div className="mt-2 max-w-xs">
+                <label className={labelStyle}>Aparecer na lista em</label>
+                <input
+                  type="date"
+                  value={formData.visible_from}
+                  // Nunca antes do termo inicial nem depois do vencimento: fora
+                  // dessa faixa o agendamento ou não adia nada, ou esconde o
+                  // prazo até depois da hora de cumpri-lo.
+                  min={dataPublicacao}
+                  max={formData.due_date || undefined}
+                  onChange={e => handleChange('visible_from', e.target.value)}
+                  className={inputStyle}
+                />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {formData.visible_from
+                    ? `${formData.visible_from === dataPublicacao ? 'Puxado da publicação (termo inicial). ' : ''}Fica guardado e só entra na fila em ${formatDateLong(formData.visible_from)}.`
+                    : 'Escolha a data, a partir da publicação.'}
+                </p>
+              </div>
+            )}
+          </div>
+          )}
+
           {source === 'intimation' && intimationContext?.analysis_due_date && (
             <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
               <p className="text-xs text-amber-900 font-semibold">

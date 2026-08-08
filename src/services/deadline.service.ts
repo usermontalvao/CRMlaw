@@ -68,6 +68,26 @@ class DeadlineService {
         .select('*')
         .order('due_date', { ascending: true });
 
+      // Prazo excluído é a exceção, nunca o padrão: quem chama sem pedir nada
+      // recebe só os vivos. O Histórico é o único que pede o recorte oposto.
+      query = serverFilters.deleted === 'excluidos'
+        ? query.not('deleted_at', 'is', null)
+        : query.is('deleted_at', null);
+
+      // Prazo agendado dorme até a data marcada. Como o corte é feito aqui, no
+      // ponto único por onde a fila inteira passa, o agendamento vale de graça
+      // para lista, kanban, contagens e alertas — nenhum chamador precisa saber
+      // que a coluna existe.
+      //
+      // A comparação é com o instante de AGORA, não com a data de hoje: o valor
+      // é gravado como meia-noite do fuso do escritório, então o prazo acorda no
+      // primeiro segundo do dia certo em Cuiabá.
+      if (serverFilters.scheduled === 'agendados') {
+        query = query.gt('visible_from', new Date().toISOString());
+      } else if (serverFilters.scheduled !== 'todos') {
+        query = query.or(`visible_from.is.null,visible_from.lte.${new Date().toISOString()}`);
+      }
+
       if (serverFilters.status) {
         query = query.eq('status', serverFilters.status as string);
       }
@@ -350,19 +370,102 @@ class DeadlineService {
     return resultados;
   }
 
+  /**
+   * Exclui o prazo — sem apagar a linha. Ele sai da fila de tarefas e passa a
+   * viver no Histórico de Prazos, ao lado dos cumpridos e cancelados, de onde
+   * dá para consultar e restaurar. Quem excluiu fica no audit_log pelo gatilho
+   * do banco, então a coluna "Baixado por" do histórico responde sozinha.
+   */
   async deleteDeadline(id: string): Promise<void> {
     const { error } = await supabase
       .from(this.tableName)
-      .delete()
+      .update({
+        status: 'excluido',
+        deleted_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', id);
 
     if (error) {
-      console.error('Erro ao deletar prazo:', error);
+      console.error('Erro ao excluir prazo:', error);
       throw new Error(error.message);
     }
 
     this.invalidateCache();
     syncBus.emit('deadlines');
+  }
+
+  /**
+   * Tira o prazo do histórico e o devolve à fila como pendente. O vencimento
+   * original volta com ele — se já passou, a própria lista o mostra vencido,
+   * que é a verdade, em vez de inventar uma data nova.
+   */
+  async restoreDeadline(id: string): Promise<Deadline> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({
+        status: 'pendente',
+        deleted_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao restaurar prazo:', error);
+      throw new Error(error.message);
+    }
+
+    this.invalidateCache();
+    syncBus.emit('deadlines');
+    return data;
+  }
+
+  /**
+   * Os prazos que ainda estão dormindo, do que acorda primeiro para o último.
+   *
+   * Não passa pelo cache de `listDeadlines` de propósito: é um recorte pequeno,
+   * consultado sob demanda numa tela só, e que precisa refletir na hora o que
+   * acabou de ser agendado ou antecipado.
+   */
+  async listScheduledDeadlines(): Promise<Deadline[]> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select('*')
+      .is('deleted_at', null)
+      .gt('visible_from', new Date().toISOString())
+      .order('visible_from', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao listar prazos agendados:', error);
+      throw new Error(error.message);
+    }
+
+    return (data ?? []) as Deadline[];
+  }
+
+  /**
+   * Muda a data em que o prazo entra na fila. `null` traz o prazo para agora —
+   * é o "trazer para a fila" da tela de Agendados, e o mesmo caminho serve para
+   * corrigir uma data digitada errada.
+   */
+  async rescheduleDeadline(id: string, visibleFrom: string | null): Promise<Deadline> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({ visible_from: visibleFrom, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao reagendar prazo:', error);
+      throw new Error(error.message);
+    }
+
+    this.invalidateCache();
+    syncBus.emit('deadlines');
+    return data;
   }
 
   async getUpcomingDeadlines(daysAhead: number = 7): Promise<Deadline[]> {
@@ -400,8 +503,10 @@ class DeadlineService {
     const encontrados = new Set<string>();
 
     const respostas = await Promise.all(
+      // `deleted_at is null`: prazo excluído não conta como prazo cadastrado —
+      // se o operador apagou o prazo da intimação, o Guardião volta a cobrar.
       dividirEmLotes(intimationIds).map((lote) =>
-        supabase.from(this.tableName).select('intimation_id').in('intimation_id', lote),
+        supabase.from(this.tableName).select('intimation_id').in('intimation_id', lote).is('deleted_at', null),
       ),
     );
 
@@ -439,10 +544,10 @@ class DeadlineService {
 
     const consultas = [
       ...dividirEmLotes(processIds).map((lote) =>
-        supabase.from(this.tableName).select('*').in('process_id', lote).neq('status', 'cancelado'),
+        supabase.from(this.tableName).select('*').in('process_id', lote).neq('status', 'cancelado').is('deleted_at', null),
       ),
       ...dividirEmLotes(clientIds).map((lote) =>
-        supabase.from(this.tableName).select('*').in('client_id', lote).neq('status', 'cancelado'),
+        supabase.from(this.tableName).select('*').in('client_id', lote).neq('status', 'cancelado').is('deleted_at', null),
       ),
     ];
 

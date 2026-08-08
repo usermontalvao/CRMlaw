@@ -1,4 +1,7 @@
-export type DeadlineStatus = 'pendente' | 'cumprido' | 'vencido' | 'cancelado';
+// 'excluido' é o prazo que o escritório apagou: ele sai da fila de tarefas e
+// passa a morar no Histórico, de onde dá para consultar e restaurar. Não é um
+// status que alguém escolhe no formulário — quem o coloca é o botão Excluir.
+export type DeadlineStatus = 'pendente' | 'cumprido' | 'vencido' | 'cancelado' | 'excluido';
 
 export type DeadlineType = 'processo' | 'requerimento' | 'geral';
 
@@ -38,6 +41,21 @@ export interface Deadline {
   updated_at: string;
   created_by?: string | null;
   completed_at?: string | null;
+  /** Carimbo da exclusão (soft delete). Nulo = prazo vivo. */
+  deleted_at?: string | null;
+  /**
+   * A partir de quando o prazo entra na fila de trabalho. Nulo = agora, que é o
+   * comportamento de sempre. Serve para cadastrar hoje um prazo que só interessa
+   * daqui a meses, sem carregá-lo na tela até lá.
+   */
+  visible_from?: string | null;
+  /**
+   * Quando o aviso de atribuição foi resolvido — enviado ao responsável, ou
+   * dispensado por ele mesmo ter cadastrado o prazo. Nulo em um prazo agendado
+   * significa aviso PENDENTE: o notification-scheduler o entrega quando o prazo
+   * acorda, para o responsável não ser avisado de algo que ainda não vê.
+   */
+  assignment_notified_at?: string | null;
 }
 
 export interface CreateDeadlineDTO {
@@ -57,6 +75,8 @@ export interface CreateDeadlineDTO {
   publication_date?: string | null;
   deadline_days?: number | null;
   counting_type?: string | null;
+  visible_from?: string | null;
+  assignment_notified_at?: string | null;
 }
 
 export interface UpdateDeadlineDTO extends Partial<Omit<CreateDeadlineDTO, 'responsible_id'>> {
@@ -107,6 +127,19 @@ export interface DeadlineClosure {
 }
 
 export interface DeadlineFilters {
+  /**
+   * Recorte de exclusão. Padrão 'ativos': quem não pede nada nunca recebe prazo
+   * excluído — é o que mantém agenda, kanban, busca global e portal limpos sem
+   * cada chamador ter de lembrar do filtro. Só o Histórico pede 'excluidos'.
+   */
+  deleted?: 'ativos' | 'excluidos';
+  /**
+   * Recorte de agendamento, no mesmo espírito de `deleted`. Padrão 'visiveis':
+   * quem não pede nada nunca recebe prazo que ainda está dormindo — é o que faz
+   * o agendamento valer para lista, kanban, contagens e alertas de uma vez só.
+   * Só a tela de Agendados pede 'agendados'.
+   */
+  scheduled?: 'visiveis' | 'agendados' | 'todos';
   status?: DeadlineStatus;
   priority?: DeadlinePriority;
   type?: DeadlineType;

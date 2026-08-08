@@ -647,6 +647,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
         .from('deadlines')
         .select('id, title, description, due_date, status, priority')
         .eq('process_id', processId)
+        .is('deleted_at', null)
         .order('due_date', { ascending: true });
 
       for (const d of dls || []) {

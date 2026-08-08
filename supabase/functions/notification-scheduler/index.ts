@@ -223,6 +223,10 @@ async function createNotification(payload: NotificationPayload) {
   return data;
 }
 
+// Prazo agendado que ainda não acordou não gera aviso nenhum: cobrar alguém por
+// um prazo que não está na lista dele é pedir para o aviso ser ignorado.
+const SOMENTE_VISIVEIS = (agora: string) => `visible_from.is.null,visible_from.lte.${agora}`;
+
 async function checkDeadlineReminders(sendPush: boolean, sendEmail: boolean, portalNotifConfig: PortalNotifConfig) {
   console.log("📅 Verificando prazos para lembrete...");
 
@@ -234,6 +238,7 @@ async function checkDeadlineReminders(sendPush: boolean, sendEmail: boolean, por
     .from("deadlines")
     .select("id, title, due_date, status, priority, notify_days_before, process_id, requirement_id, responsible_id, client_id, clients(full_name)")
     .eq("status", "pendente")
+    .or(SOMENTE_VISIVEIS(now.toISOString()))
     .gte("due_date", now.toISOString())
     .lte("due_date", windowEnd.toISOString());
 
@@ -376,6 +381,7 @@ async function checkOverdueDeadlines(sendPush: boolean, sendEmail: boolean) {
     .from("deadlines")
     .select("id, title, due_date, status, priority, process_id, requirement_id, responsible_id, clients(full_name)")
     .eq("status", "pendente")
+    .or(SOMENTE_VISIVEIS(now.toISOString()))
     .lt("due_date", now.toISOString());
 
   if (error) {
@@ -470,6 +476,128 @@ async function checkOverdueDeadlines(sendPush: boolean, sendEmail: boolean) {
         }
       }
     }
+  }
+}
+
+/**
+ * Entrega os avisos de atribuição que ficaram guardados enquanto o prazo dormia.
+ *
+ * Um prazo agendado é cadastrado hoje e só entra na fila meses depois. Avisar o
+ * responsável no cadastro não funciona: ele abre a lista, não acha o prazo, e o
+ * aviso morre ali. Então o cadastro grava assignment_notified_at = NULL e o
+ * aviso espera aqui.
+ *
+ * O critério é "pendente E já visível", não "acordou na última hora": se a
+ * função ficar fora do ar um dia inteiro, o aviso continua na fila esperando, em
+ * vez de ser perdido por ter passado a janela. O carimbo é o que garante que ele
+ * saia uma vez só — inclusive para o prazo trazido à força para a fila pela tela
+ * de Agendados, que fica com visible_from nulo e mesmo assim é encontrado aqui.
+ */
+async function checkPendingAssignmentNotices(sendPush: boolean, sendEmail: boolean) {
+  console.log("⏰ Verificando avisos de atribuição pendentes...");
+
+  const agora = new Date().toISOString();
+
+  const { data: deadlines, error } = await supabase
+    .from("deadlines")
+    .select("id, title, due_date, status, priority, type, process_id, requirement_id, responsible_id, visible_from, created_by, clients(full_name)")
+    .is("assignment_notified_at", null)
+    .is("deleted_at", null)
+    .not("responsible_id", "is", null)
+    .or(SOMENTE_VISIVEIS(agora));
+
+  if (error) {
+    console.error("Erro ao buscar avisos pendentes:", error);
+    return;
+  }
+
+  console.log(`📋 ${deadlines?.length || 0} aviso(s) de atribuição a entregar`);
+  if (!deadlines?.length) return;
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, user_id")
+    .eq("is_active", true);
+
+  const profileToUserId = new Map<string, string>();
+  for (const p of profiles || []) {
+    if (p.id && p.user_id) profileToUserId.set(p.id, p.user_id);
+  }
+
+  const typeLabels: Record<string, string> = { geral: "Geral", processo: "Processo", requerimento: "Requerimento" };
+  const priorityLabels: Record<string, string> = { urgente: "Urgente", alta: "Alta", media: "Média", baixa: "Baixa" };
+
+  // Não filtra status na consulta: o prazo encerrado enquanto dormia precisa
+  // entrar aqui para receber o carimbo. Sem ele, ficaria na fila de pendentes
+  // sendo reexaminado de hora em hora para sempre.
+  const ENCERRADOS = ["cumprido", "vencido", "cancelado", "excluido"];
+
+  const carimbar = async (id: string) => {
+    const { error: stampErr } = await supabase
+      .from("deadlines")
+      .update({ assignment_notified_at: new Date().toISOString() })
+      .eq("id", id);
+    if (stampErr) console.error(`❌ Erro ao carimbar aviso do prazo ${id}:`, stampErr);
+  };
+
+  for (const deadline of deadlines) {
+    if (ENCERRADOS.includes(deadline.status)) {
+      await carimbar(deadline.id);
+      continue;
+    }
+
+    const responsibleUserId = profileToUserId.get(deadline.responsible_id!);
+    // Sem responsável ativo não há a quem avisar. Deixa o carimbo em branco de
+    // propósito: se o perfil voltar a ser ativado, o aviso ainda sai.
+    if (!responsibleUserId) continue;
+
+    const dueDate = new Date(deadline.due_date);
+    const daysUntilDue = Math.ceil((dueDate.getTime() - Date.now()) / 86400000);
+    const isUrgent = daysUntilDue <= 3 || deadline.priority === "urgente" || deadline.priority === "alta";
+    const typeLabel = typeLabels[deadline.type] || "Prazo";
+    const priorityLabel = priorityLabels[deadline.priority] || "";
+    const daysLabel = daysUntilDue < 0 ? "Vencido!" : daysUntilDue === 0 ? "Vence hoje" : daysUntilDue === 1 ? "Vence amanhã" : `Vence em ${daysUntilDue} dia(s)`;
+    const clientName = (deadline as any).clients?.full_name || "";
+
+    if (sendPush) {
+      await createNotification({
+        user_id: responsibleUserId,
+        // O texto diz que o prazo ENTROU na fila, e não que foi atribuído agora:
+        // a atribuição é velha, o que mudou hoje é ele ter virado trabalho.
+        title: isUrgent ? `⚠️ Prazo ${typeLabel} na sua fila — ${priorityLabel}` : `📅 Prazo ${typeLabel} entrou na sua fila`,
+        message: `"${deadline.title}"${clientName ? ` • ${clientName}` : ""} • ${daysLabel}`,
+        type: "deadline_assigned",
+        deadline_id: deadline.id,
+        process_id: deadline.process_id ?? undefined,
+        requirement_id: deadline.requirement_id ?? undefined,
+        metadata: {
+          priority: deadline.priority,
+          type: deadline.type,
+          days_until_due: daysUntilDue,
+          scheduled: true,
+          dedupe_key: `deadline_scheduled_arrival_${deadline.id}`,
+        },
+      });
+    }
+
+    if (sendEmail) {
+      try {
+        const resp = await fetch(`${supabaseUrl}/functions/v1/notify-deadline-assigned`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${supabaseServiceKey}` },
+          body: JSON.stringify({ deadline_id: deadline.id, assigned_by_id: deadline.created_by ?? null }),
+        });
+        const result = await resp.json();
+        if (!result.success) console.error(`❌ Falha email de atribuição: ${result.error}`);
+      } catch (emailErr: any) {
+        console.error(`❌ Erro ao enviar email de atribuição: ${emailErr?.message}`);
+      }
+    }
+
+    // O carimbo fecha o assunto, tenha o aviso saído por push, por email ou por
+    // nenhum dos dois (canais desligados): o que ele registra é que a hora do
+    // aviso passou, e ela não volta.
+    await carimbar(deadline.id);
   }
 }
 
@@ -899,6 +1027,16 @@ Deno.serve(async (req: Request) => {
       const ch = getRuleChannels(rules, "deadline_due");
       if (ch.includes("push") || ch.includes("email"))
         checks.push(checkDeadlineReminders(ch.includes("push"), ch.includes("email"), portalNotifConfig));
+    }
+    // Usa a mesma regra "Prazo atribuído" do cadastro comum: é o mesmo aviso,
+    // entregue na hora certa. Ela respeita horário comercial, o que aqui ajuda:
+    // o prazo acorda à meia-noite, mas o aviso chega quando alguém vai lê-lo.
+    // Desligar a regra suspende o aviso sem carimbá-lo — ele volta a sair se a
+    // regra for religada, em vez de sumir em silêncio.
+    if (shouldSendTrigger(rules, "deadline_assigned")) {
+      const ch = getRuleChannels(rules, "deadline_assigned");
+      if (ch.includes("push") || ch.includes("email"))
+        checks.push(checkPendingAssignmentNotices(ch.includes("push"), ch.includes("email")));
     }
     if (shouldSendTrigger(rules, "deadline_overdue")) {
       const ch = getRuleChannels(rules, "deadline_overdue");

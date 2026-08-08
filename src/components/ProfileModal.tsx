@@ -368,7 +368,7 @@ export default function ProfileModal({
 
       const [{ data: requirements }, { data: deadlines }, { data: events }] = await Promise.all([
         canSeeRequirements ? supabase.from('requirements').select('*') : Promise.resolve({ data: [] as any[] }),
-        canSeeDeadlines ? supabase.from('deadlines').select('*') : Promise.resolve({ data: [] as any[] }),
+        canSeeDeadlines ? supabase.from('deadlines').select('*').is('deleted_at', null) : Promise.resolve({ data: [] as any[] }),
         canSeeAgenda ? supabase.from('calendar_events').select('*') : Promise.resolve({ data: [] as any[] }),
       ]);
       

@@ -43,6 +43,8 @@ import {
   ImageIcon,
   ChevronLeft,
   ChevronDown,
+  RotateCcw,
+  CalendarClock,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -57,6 +59,8 @@ import { clientService } from '../services/client.service';
 import { profileService } from '../services/profile.service';
 import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
+import { DeadlineScheduledPanel } from './DeadlineScheduledPanel';
+import { toOfficeTimestamp } from '../utils/officeTime';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
@@ -84,7 +88,25 @@ const STATUS_OPTIONS: {
 
 // Prazos que saíram da fila de tarefas: não exigem mais ação, só consulta.
 // Ficam no histórico embaixo da lista, nunca no meio dos pendentes.
-const ARCHIVED_STATUSES: DeadlineStatus[] = ['cumprido', 'vencido', 'cancelado'];
+// 'excluido' entra aqui porque excluir passou a ser arquivar: o prazo apagado
+// vai para o histórico, de onde dá para consultar e restaurar.
+const ARCHIVED_STATUSES: DeadlineStatus[] = ['cumprido', 'vencido', 'cancelado', 'excluido'];
+
+// Rótulo e cor da situação no histórico. Fica fora de STATUS_OPTIONS (que o
+// escritório configura e alimenta as abas da fila) porque 'excluido' nunca é
+// uma escolha do formulário — quem o aplica é o botão Excluir.
+const HISTORY_STATUS_LABEL: Record<string, string> = {
+  cumprido: 'Cumprido', vencido: 'Vencido', cancelado: 'Cancelado', excluido: 'Excluído',
+};
+
+const HISTORY_STATUS_STYLE: Record<string, string> = {
+  cumprido: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  vencido: 'bg-red-50 text-red-700 border-red-200',
+  cancelado: 'bg-red-50 text-red-600 border-red-200',
+  // Cinza, não vermelho: exclusão não é falha do escritório, é um prazo que não
+  // deveria existir. O vermelho fica reservado a quem perdeu ou cancelou.
+  excluido: 'bg-slate-100 text-slate-500 border-slate-200',
+};
 
 // Teto por anexo do cancelamento — o bucket anexos_chat aceita 50 MB, mas print
 // nenhum chega perto disso e o limite evita subir um vídeo por engano.
@@ -298,7 +320,10 @@ const CANCEL_REASON_SUGGESTIONS = [
 ];
 
 const isArchivedDeadline = (deadline: Deadline) => ARCHIVED_STATUSES.includes(deadline.status);
-const getArchivedAt = (deadline: Deadline) => deadline.completed_at || deadline.updated_at;
+// Data em que o prazo foi encerrado. A exclusão vem primeiro: um prazo cumprido
+// e depois excluído foi encerrado quando saiu, não quando foi cumprido.
+const getArchivedAt = (deadline: Deadline) =>
+  deadline.deleted_at || deadline.completed_at || deadline.updated_at;
 
 
 const PRIORITY_OPTIONS: {
@@ -385,6 +410,8 @@ type DeadlineFormData = {
   client_id: string;
   responsible_id: string;
   notify_days_before: string;
+  /** Data (YYYY-MM-DD) a partir da qual o prazo entra na fila. Vazio = agora. */
+  visible_from: string;
 };
 
 type SavedFilter = {
@@ -453,6 +480,7 @@ const emptyForm: DeadlineFormData = {
   client_id: '',
   responsible_id: '',
   notify_days_before: '2',
+  visible_from: '',
 };
 
 const formatDate = (value?: string | null) => {
@@ -473,6 +501,8 @@ const TIMELINE_ACTION_LABELS: Record<string, string> = {
   delete: 'Prazo excluído',
   deadline_completed: 'Prazo cumprido',
   deadline_cancelled: 'Prazo cancelado',
+  deadline_deleted: 'Prazo excluído',
+  deadline_restored: 'Prazo restaurado',
   deadline_reopened: 'Prazo reaberto',
   deadline_due_date_changed: 'Vencimento alterado',
   deadline_responsible_changed: 'Responsável alterado',
@@ -483,13 +513,15 @@ const TIMELINE_ACTION_TONE: Record<string, { dot: string; text: string }> = {
   deadline_completed: { dot: 'bg-emerald-500', text: 'text-emerald-700' },
   deadline_cancelled: { dot: 'bg-red-500', text: 'text-red-700' },
   deadline_reopened: { dot: 'bg-amber-500', text: 'text-amber-700' },
+  deadline_restored: { dot: 'bg-amber-500', text: 'text-amber-700' },
+  deadline_deleted: { dot: 'bg-slate-400', text: 'text-slate-600' },
   delete: { dot: 'bg-red-500', text: 'text-red-700' },
 };
 
 // O Postgres pode devolver "2026-08-07 19:00:53+00"; o formatador só lê ISO.
 const toIsoInstant = (value: string) => (value.includes('T') ? value : value.replace(' ', 'T'));
 
-const CLOSING_ACTIONS = ['deadline_completed', 'deadline_cancelled'];
+const CLOSING_ACTIONS = ['deadline_completed', 'deadline_cancelled', 'deadline_deleted'];
 
 // "Pedro Rodrigues Montalvao Neto" → "Pedro Neto": na coluna do histórico o nome
 // inteiro só cabe truncado. O completo fica no title de quem passa o mouse.
@@ -732,6 +764,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   }, []);
 
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
+  // Excluídos moram fora de `deadlines` de propósito: só o Histórico os enxerga.
+  const [deletedDeadlines, setDeletedDeadlines] = useState<Deadline[]>([]);
   const [loading, setLoading] = useState(true);
   const showSkeleton = useMinLoading(loading);
   const [error, setError] = useState<string | null>(null);
@@ -744,7 +778,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [filterPriority, setFilterPriority] = useState<DeadlinePriority | ''>('');
   const [filterResponsible, setFilterResponsible] = useState('');
   const [activeStatusTab, setActiveStatusTab] = useState<DeadlineStatus | 'todos'>('todos');
-  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'map' | 'details' | 'workload'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban' | 'map' | 'details' | 'workload' | 'scheduled'>('list');
   const [selectedDeadlineForView, setSelectedDeadlineForView] = useState<Deadline | null>(null);
   const [showViewDeadlineModal, setShowViewDeadlineModal] = useState(false);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
@@ -776,6 +810,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
   const [members, setMembers] = useState<Profile[]>([]);
+  /**
+   * Quantos prazos estão dormindo. Vira o contador do botão "Agendados" — sem
+   * ele, o que foi agendado sai de vista por completo e some da cabeça de quem
+   * agendou, que é justamente o risco de esconder prazo.
+   */
+  const [scheduledCount, setScheduledCount] = useState(0);
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [responsibilityConfig, setResponsibilityConfig] = useState<ModuleResponsibilityConfig | null>(null);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
@@ -922,7 +962,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     if (!selectedIds.size) return;
     const confirmed = await confirmDelete({
       title: `Excluir ${selectedIds.size} prazo(s)`,
-      message: `Deseja realmente excluir ${selectedIds.size} prazo(s) selecionado(s)? Essa ação é irreversível.`,
+      message: `Os ${selectedIds.size} prazo(s) selecionado(s) saem da fila e vão para o Histórico de Prazos, de onde podem ser restaurados.`,
       confirmLabel: 'Excluir todos',
     });
     if (!confirmed) return;
@@ -930,14 +970,19 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     try {
       await Promise.all([...selectedIds].map((id) => deadlineService.deleteDeadline(id)));
       notifyDeleted();
+      const carimbo = new Date().toISOString();
+      const excluidos = deadlines
+        .filter((d) => selectedIds.has(d.id))
+        .map((d) => ({ ...d, status: 'excluido' as DeadlineStatus, deleted_at: carimbo }));
       setDeadlines((prev) => prev.filter((d) => !selectedIds.has(d.id)));
+      setDeletedDeadlines((prev) => [...excluidos, ...prev.filter((d) => !selectedIds.has(d.id))]);
       setSelectedIds(new Set());
     } catch (err: any) {
       setError(err.message || 'Erro ao excluir prazos.');
     } finally {
       setBulkActionLoading(false);
     }
-  }, [selectedIds, confirmDelete, notifyDeleted]);
+  }, [selectedIds, confirmDelete, notifyDeleted, deadlines]);
 
   // ── Cancelamento com motivo ──────────────────────────────────────────────
   // Nenhum caminho da UI cancela direto: todos passam por este modal, para que
@@ -1292,6 +1337,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       cumprido: 0,
       vencido: 0,
       cancelado: 0,
+      // Sempre zero: `deadlines` não guarda excluído (ele vive em
+      // deletedDeadlines). A chave existe só para o contador cobrir o tipo.
+      excluido: 0,
     };
 
     deadlines.forEach((deadline) => {
@@ -1372,12 +1420,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     return alerts;
   }, [overdueDeadlines.length, criticalDeadlines.length, unassignedPending.length, applyFilterPreset]);
 
-  // Base do histórico: cumpridos, vencidos e cancelados, do mais recente para o mais antigo.
+  // Base do histórico: cumpridos, vencidos, cancelados e excluídos, do mais
+  // recente para o mais antigo. É o único lugar em que os excluídos reaparecem.
   const archivedDeadlines = useMemo(() => {
-    return deadlines
-      .filter(isArchivedDeadline)
+    return [...deadlines.filter(isArchivedDeadline), ...deletedDeadlines]
       .sort((a, b) => new Date(getArchivedAt(b)).getTime() - new Date(getArchivedAt(a)).getTime());
-  }, [deadlines]);
+  }, [deadlines, deletedDeadlines]);
 
   const dueTodayDeadlines = useMemo(() => {
     const today = new Date();
@@ -1504,16 +1552,10 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       );
     }
     if (historyMonth !== '') {
-      base = base.filter((d) => {
-        const dt = new Date(d.completed_at || d.updated_at);
-        return dt.getMonth() === historyMonth;
-      });
+      base = base.filter((d) => new Date(getArchivedAt(d)).getMonth() === historyMonth);
     }
     if (historyYear !== '') {
-      base = base.filter((d) => {
-        const dt = new Date(d.completed_at || d.updated_at);
-        return dt.getFullYear() === historyYear;
-      });
+      base = base.filter((d) => new Date(getArchivedAt(d)).getFullYear() === historyYear);
     }
     if (historyType) base = base.filter((d) => d.type === historyType);
     if (historyPriority) base = base.filter((d) => d.priority === historyPriority);
@@ -1692,8 +1734,20 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       try {
         setLoading(true);
         setError(null);
-        const data = await deadlineService.listDeadlines();
+        // Os excluídos vêm em uma lista à parte, e não misturados em `deadlines`:
+        // assim a fila, o kanban, o calendário, os contadores e o relatório
+        // continuam falando só dos prazos vivos, sem cada um ter de lembrar de
+        // descartar o excluído. Quem os junta é o Histórico, e só ele.
+        // Os agendados também vêm à parte, pela mesma razão: `deadlines` é a
+        // fila de trabalho, e prazo dormindo não é trabalho de hoje.
+        const [data, apagados, agendados] = await Promise.all([
+          deadlineService.listDeadlines(),
+          deadlineService.listDeadlines({ deleted: 'excluidos' }).catch(() => [] as Deadline[]),
+          deadlineService.listScheduledDeadlines().catch(() => [] as Deadline[]),
+        ]);
         setDeadlines(data);
+        setDeletedDeadlines(apagados);
+        setScheduledCount(agendados.length);
       } catch (err: any) {
         setError(err.message || 'Não foi possível carregar os prazos.');
       } finally {
@@ -1960,6 +2014,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         client_id: deadline.client_id || '',
         responsible_id: deadline.responsible_id || '',
         notify_days_before: String(deadline.notify_days_before ?? defaultNotifyDays),
+        visible_from: toDateInputValue(deadline.visible_from),
       });
 
       if (deadline.process_id) {
@@ -2072,6 +2127,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         publication_date: dataPublicacao || null,
         deadline_days: diasPrazo ? parseInt(diasPrazo, 10) : null,
         counting_type: tipoPrazoCalculadora || null,
+        // Meia-noite do fuso do escritório — ver o comentário em DeadlineFormModal.
+        visible_from: formData.visible_from ? toOfficeTimestamp(`${formData.visible_from}T00:00`) : null,
       };
 
       const editingDeadline = selectedDeadline;
@@ -2180,7 +2237,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     const confirmed = await confirmDelete({
       title: 'Excluir prazo',
       entityName: deadline?.title || undefined,
-      message: 'Deseja realmente remover este prazo? Essa ação é irreversível.',
+      message: 'O prazo sai da fila de tarefas e vai para o Histórico de Prazos, de onde pode ser consultado e restaurado.',
       confirmLabel: 'Excluir',
     });
     if (!confirmed) return;
@@ -2188,12 +2245,33 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     try {
       await deadlineService.deleteDeadline(id);
       notifyDeleted(deadline?.title || undefined);
+      // Troca de lista na hora: sai da fila e entra no histórico, sem esperar a
+      // releitura do servidor. O carimbo local espelha o que o banco gravou.
       setDeadlines((prev) => prev.filter((item) => item.id !== id));
+      if (deadline) {
+        const excluido = { ...deadline, status: 'excluido' as DeadlineStatus, deleted_at: new Date().toISOString() };
+        setDeletedDeadlines((prev) => [excluido, ...prev.filter((item) => item.id !== id)]);
+      }
       if (selectedDeadlineForView?.id === id) {
         handleBackToList();
       }
     } catch (err: any) {
       setError(err.message || 'Não foi possível remover o prazo.');
+    }
+  };
+
+  /**
+   * Devolve o prazo do histórico para a fila. Usa o mesmo botão que reabre um
+   * cumprido — para quem opera é a mesma ideia: "volta a valer".
+   */
+  const handleRestoreDeadline = async (id: string) => {
+    try {
+      const restaurado = await deadlineService.restoreDeadline(id);
+      setDeletedDeadlines((prev) => prev.filter((item) => item.id !== id));
+      setDeadlines((prev) => [...prev.filter((item) => item.id !== id), restaurado]);
+      if (selectedDeadlineForView?.id === id) setSelectedDeadlineForView(restaurado);
+    } catch (err: any) {
+      setError(err.message || 'Não foi possível restaurar o prazo.');
     }
   };
 
@@ -2350,14 +2428,17 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const getStatusConfig = (status: DeadlineStatus) => statusOptions.find((s) => s.key === status);
   const getPriorityConfig = (priority: DeadlinePriority) => priorityOptions.find((p) => p.key === priority);
   const getTypeConfig = (type: DeadlineType) => typeOptions.find((t) => t.key === type);
+  // 'excluido' não está em statusOptions (que o escritório configura e vira as
+  // abas da fila), então o rótulo e a cor dele vêm do mapa do histórico — sem
+  // isso a tela mostraria a chave crua, "excluido", sem acento.
   const getStatusBadge = (status: DeadlineStatus) => {
     const config = getStatusConfig(status);
-    return config ? config.badge : 'bg-slate-100 text-slate-600';
+    return config ? config.badge : HISTORY_STATUS_STYLE[status] || 'bg-slate-100 text-slate-600';
   };
 
   const getStatusLabel = (status: DeadlineStatus) => {
     const config = getStatusConfig(status);
-    return config ? config.label : status;
+    return config ? config.label : HISTORY_STATUS_LABEL[status] || status;
   };
 
   const getPriorityBadge = (priority: DeadlinePriority) => {
@@ -3383,9 +3464,17 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     <Copy className="w-3.5 h-3.5" /> Duplicar
                   </button>
                 )}
-                <button onClick={() => { handleDeleteDeadline(d.id); handleCloseViewDeadlineModal(); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-[#f8f7f5] border border-red-200 text-red-600 hover:bg-red-50 transition">
-                  <Trash2 className="w-3.5 h-3.5" /> Excluir
-                </button>
+                {/* Prazo já excluído não se exclui de novo: o que ele oferece é
+                    a volta para a fila. */}
+                {d.status === 'excluido' ? (
+                  <button onClick={() => { void handleRestoreDeadline(d.id); handleCloseViewDeadlineModal(); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-[#f8f7f5] border border-amber-200 text-amber-700 hover:bg-amber-50 transition">
+                    <RotateCcw className="w-3.5 h-3.5" /> Restaurar prazo
+                  </button>
+                ) : (
+                  <button onClick={() => { handleDeleteDeadline(d.id); handleCloseViewDeadlineModal(); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-[#f8f7f5] border border-red-200 text-red-600 hover:bg-red-50 transition">
+                    <Trash2 className="w-3.5 h-3.5" /> Excluir
+                  </button>
+                )}
               </div>
               <button onClick={handleCloseViewDeadlineModal} className="px-4 py-1.5 text-sm text-slate-500 hover:text-slate-700 transition">Fechar</button>
             </div>
@@ -4043,15 +4132,28 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         <div className="flex items-center gap-2 px-3 py-2">
           {/* Views */}
           <div className="flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
-            {([
-              { key: 'list', icon: List, label: 'Lista', action: () => setViewMode('list'), active: viewMode === 'list' },
-              { key: 'kanban', icon: LayoutGrid, label: 'Kanban', action: () => setViewMode('kanban'), active: viewMode === 'kanban' },
-              { key: 'calendar', icon: Calendar, label: 'Calendário', action: () => setCalendarExpanded(!calendarExpanded), active: calendarExpanded },
-              { key: 'workload', icon: Users, label: 'Carga', action: () => setViewMode(viewMode === 'workload' ? 'list' : 'workload'), active: viewMode === 'workload' },
-            ] as const).map(({ key, icon: Icon, label, action, active }) => (
+            {[
+              { key: 'list', icon: List, label: 'Lista', action: () => setViewMode('list'), active: viewMode === 'list', badge: 0 },
+              { key: 'kanban', icon: LayoutGrid, label: 'Kanban', action: () => setViewMode('kanban'), active: viewMode === 'kanban', badge: 0 },
+              { key: 'calendar', icon: Calendar, label: 'Calendário', action: () => setCalendarExpanded(!calendarExpanded), active: calendarExpanded, badge: 0 },
+              { key: 'workload', icon: Users, label: 'Carga', action: () => setViewMode(viewMode === 'workload' ? 'list' : 'workload'), active: viewMode === 'workload', badge: 0 },
+              // Agendados mora aqui com as outras visões, só de ícone. O número
+              // no canto é o que impede o prazo dormindo de sumir da cabeça de
+              // quem agendou. Só admin.
+              ...(isAdmin ? [{
+                key: 'scheduled', icon: CalendarClock, label: 'Agendados',
+                action: () => setViewMode(viewMode === 'scheduled' ? 'list' : 'scheduled'),
+                active: viewMode === 'scheduled', badge: scheduledCount,
+              }] : []),
+            ].map(({ key, icon: Icon, label, action, active, badge }) => (
               <button key={key} onClick={action} title={label} aria-label={label} aria-pressed={active}
-                className={`w-8 h-8 flex items-center justify-center rounded-md transition-colors ${active ? 'bg-[#f8f7f5] text-slate-900 shadow-sm ring-1 ring-black/[0.04]' : 'text-slate-400 hover:text-slate-700'}`}>
+                className={`relative w-8 h-8 flex items-center justify-center rounded-md transition-colors ${active ? 'bg-[#f8f7f5] text-slate-900 shadow-sm ring-1 ring-black/[0.04]' : 'text-slate-400 hover:text-slate-700'}`}>
                 <Icon className="w-4 h-4" />
+                {badge > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-slate-700 text-white text-[9px] font-semibold leading-[15px] text-center tabular-nums">
+                    {badge}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -4344,7 +4446,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       )}
 
       {/* Conteúdo Principal baseado no viewMode */}
-      {viewMode === 'kanban' ? (
+      {viewMode === 'scheduled' && isAdmin ? (
+        <DeadlineScheduledPanel isAdmin={isAdmin} members={members} onEdit={handleOpenModal} />
+      ) : viewMode === 'kanban' ? (
         <div className="grid grid-cols-1 @md:grid-cols-2 @xl:grid-cols-3 gap-4">
           {statusFilterOptions.map((statusOption) => {
             const StatusIcon = statusOption.icon;
@@ -5049,7 +5153,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
         </div>
       )}
 
-      {!isPastMonth && viewMode !== 'workload' && filteredDeadlines.length > pageSize && (
+      {!isPastMonth && viewMode !== 'workload' && !(viewMode === 'scheduled' && isAdmin) && filteredDeadlines.length > pageSize && (
         <div className="bg-[#f8f7f5] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-4 flex items-center justify-between">
           <button
             onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
@@ -5096,7 +5200,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             >
               <option value="">Todos</option>
               {ARCHIVED_STATUSES.map((key) => (
-                <option key={key} value={key}>{statusOptions.find((s) => s.key === key)?.label || key}</option>
+                <option key={key} value={key}>
+                  {HISTORY_STATUS_LABEL[key] || statusOptions.find((s) => s.key === key)?.label || key}
+                </option>
               ))}
             </select>
 
@@ -5219,15 +5325,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                 const priorityDot: Record<string, string> = {
                   urgente: 'bg-red-500', alta: 'bg-orange-400', media: 'bg-amber-400', baixa: 'bg-slate-300',
                 };
-                const historyStatusStyle: Record<string, string> = {
-                  cumprido: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                  vencido: 'bg-red-50 text-red-700 border-red-200',
-                  cancelado: 'bg-red-50 text-red-600 border-red-200',
-                };
-                const historyStatusLabel: Record<string, string> = {
-                  cumprido: 'Cumprido', vencido: 'Vencido', cancelado: 'Cancelado',
-                };
                 const closure = closuresByDeadline.get(deadline.id);
+                const foiExcluido = deadline.status === 'excluido';
                 return (
                   <div key={deadline.id} className="grid grid-cols-1 @sm:grid-cols-[1fr_auto_auto_auto_auto_auto_auto] gap-4 items-center px-5 py-3 hover:bg-slate-50/70 transition group">
                     {/* Prazo */}
@@ -5240,8 +5339,8 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     </div>
                     {/* Situação */}
                     <div className="w-24 flex justify-center">
-                      <span className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${historyStatusStyle[deadline.status] || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                        {historyStatusLabel[deadline.status] || deadline.status}
+                      <span className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${HISTORY_STATUS_STYLE[deadline.status] || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                        {HISTORY_STATUS_LABEL[deadline.status] || deadline.status}
                       </span>
                     </div>
                     {/* Vencimento */}
@@ -5273,7 +5372,13 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       <button onClick={() => handleViewDeadline(deadline)} className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="Ver">
                         <Eye className="w-3.5 h-3.5" />
                       </button>
-                      <button onClick={() => handleStatusChange(deadline.id, 'pendente')} className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition" title="Reabrir">
+                      {/* Mesmo botão, dois nomes: reabrir um cumprido e restaurar
+                          um excluído são a mesma ideia — o prazo volta a valer. */}
+                      <button
+                        onClick={() => (foiExcluido ? void handleRestoreDeadline(deadline.id) : handleStatusChange(deadline.id, 'pendente'))}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition"
+                        title={foiExcluido ? 'Restaurar' : 'Reabrir'}
+                      >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                       </button>
                     </div>
