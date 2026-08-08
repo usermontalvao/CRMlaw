@@ -4,6 +4,9 @@
  * action 'send' (padrão): { conversation_id?, phone?, channel_id?, type?, text?,
  *   storage_path?, mime_type?, file_name?, reply_to_id?, as_gif? }
  * action 'edit':  { action:'edit', message_id, text }
+ * action 'delete': { action:'delete', message_id, scope:'me'|'everyone' }
+ *   — 'me' apaga só do CRM (soft delete); 'everyone' revoga também no aparelho
+ *   do contato via /chat/deleteMessageForEveryone e só então marca aqui.
  * action 'block' | 'unblock': { action, conversation_id, reason }
  *   — bloqueia no WhatsApp via /chat/updateBlockStatus pelo remote_jid, marca a
  *   conversa, registra auditoria + resposta da Evolution (wa_response) e devolve
@@ -193,6 +196,10 @@ Deno.serve(async (req: Request) => {
     });
 
   if (body?.action === 'edit') return await handleEdit(admin, base, apikey, body);
+  if (body?.action === 'delete') {
+    if (!user) return json({ error: 'Não autenticado' }, 401);
+    return await handleDelete(admin, base, apikey, user, body);
+  }
   if (body?.action === 'block' || body?.action === 'unblock') {
     if (!user) return json({ error: 'Não autenticado' }, 401);
     return await handleBlock(admin, base, apikey, user, body);
@@ -388,6 +395,105 @@ Deno.serve(async (req: Request) => {
     reopened,
   });
 });
+
+/**
+ * Apaga uma mensagem — nos dois sentidos que o WhatsApp tem.
+ *
+ * scope 'me': soft delete só aqui. Vale para QUALQUER mensagem da thread,
+ * inclusive as recebidas, porque o que ela faz é tirar da tela do escritório —
+ * o aparelho do contato não é tocado. É o único caminho possível para mensagem
+ * recebida e para mensagem antiga fora da janela de revogação.
+ *
+ * scope 'everyone': pede a revogação à Evolution ANTES de marcar. Se a Evolution
+ * recusar (mensagem velha demais, chave perdida, instância fora do ar), nada é
+ * marcado e o erro sobe — o contrário seria mentir na tela, mostrando "apagada"
+ * numa mensagem que continua no celular do cliente. Só mensagem NOSSA: o
+ * WhatsApp não deixa ninguém revogar o que o outro escreveu.
+ */
+async function handleDelete(admin: any, base: string, apikey: string, user: any, body: any) {
+  const messageId: string | null = body?.message_id || null;
+  const scope: string = body?.scope === 'everyone' ? 'everyone' : 'me';
+  if (!messageId) return json({ error: 'message_id obrigatório' }, 400);
+
+  const { data: msg } = await admin.from('whatsapp_messages')
+    .select('id, raw, direction, conversation_id, deleted_at, evolution_message_id')
+    .eq('id', messageId).maybeSingle();
+  if (!msg) return json({ error: 'Mensagem não encontrada' }, 404);
+  // Já apagada: devolve ok em vez de erro. Dois cliques no menu, ou o mesmo
+  // clique repetido por conexão lenta, não é uma falha para mostrar ao usuário.
+  if (msg.deleted_at) return json({ ok: true, message_id: messageId, already: true });
+
+  if (scope === 'everyone') {
+    if (msg.direction !== 'out') {
+      return json({ error: 'Só é possível apagar para todos as mensagens enviadas por você.' }, 400);
+    }
+    const rkey = msg.raw?.key;
+    if (!rkey?.id) return json({ error: 'Mensagem sem chave da Evolution — só dá para apagar aqui no CRM.' }, 400);
+
+    const { data: conv } = await admin.from('whatsapp_conversations')
+      .select('remote_jid, instance_id').eq('id', msg.conversation_id).maybeSingle();
+    const { data: channel } = await admin.from('whatsapp_instances')
+      .select('instance_name').eq('id', conv?.instance_id).maybeSingle();
+    if (!channel?.instance_name) return json({ error: 'Canal não encontrado' }, 400);
+
+    try {
+      const res = await fetch(`${base}/chat/deleteMessageForEveryone/${encodeURIComponent(channel.instance_name)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', apikey },
+        // `participant` é só de grupo, e o módulo não atende grupos (o webhook
+        // descarta @g.us). Mandar o campo vazio quebra o endpoint — ver issue
+        // #787 do evolution-api.
+        body: JSON.stringify({
+          id: rkey.id,
+          remoteJid: rkey.remoteJid || conv?.remote_jid,
+          fromMe: rkey.fromMe !== false,
+        }),
+        signal: AbortSignal.timeout(EVO_TIMEOUT_MS),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return json({ error: evoError(out, `Evolution retornou ${res.status}`), can_delete_local: true }, 502);
+      }
+    } catch (err) {
+      return json({ error: evoNetworkError(err), can_delete_local: true }, 502);
+    }
+  }
+
+  await admin.from('whatsapp_messages').update({
+    deleted_at: new Date().toISOString(),
+    deleted_by: user.id,
+    deleted_scope: scope,
+  }).eq('id', messageId);
+
+  await refreshConversationPreview(admin, msg.conversation_id);
+
+  return json({ ok: true, message_id: messageId, scope });
+}
+
+/**
+ * Corrige a prévia da conversa na lista depois de uma exclusão.
+ *
+ * A lista mostra `last_message_preview`, um texto congelado na linha da conversa
+ * — apagar a mensagem não o toca. Sem isto, a mensagem sumia da thread e
+ * continuava, por extenso, na lista de conversas: o pior dos dois mundos, porque
+ * quem apagou acredita que resolveu e o texto segue à vista de todo mundo.
+ *
+ * Só age quando a apagada era a ÚLTIMA da conversa. Apagar uma mensagem do meio
+ * do histórico não muda a prévia, e recalcular seria trabalho para nada.
+ */
+async function refreshConversationPreview(admin: any, conversationId: string) {
+  const { data: ultima } = await admin.from('whatsapp_messages')
+    .select('id, content, type, deleted_at')
+    .eq('conversation_id', conversationId)
+    .order('wa_timestamp', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!ultima?.deleted_at) return;
+
+  await admin.from('whatsapp_conversations')
+    .update({ last_message_preview: 'Mensagem apagada' })
+    .eq('id', conversationId);
+}
 
 async function handleEdit(admin: any, base: string, apikey: string, body: any) {
   const messageId: string | null = body?.message_id || null;

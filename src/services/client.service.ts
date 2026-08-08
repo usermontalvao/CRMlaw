@@ -80,7 +80,7 @@ export class ClientService {
    */
   async listClients(filters?: ClientFilters): Promise<Client[]> {
     // Separar filtros: server-side vs client-side
-    const { search, sort_order, ...serverFilters } = filters ?? {};
+    const { search, sort_order, pre_cadastro, ...serverFilters } = filters ?? {};
     const cacheKey = this.getCacheKey(serverFilters);
 
     let rows: Client[];
@@ -123,6 +123,15 @@ export class ClientService {
 
     // ── Filtros client-side ───────────────────────────────────────────────────
     let result = rows;
+
+    // Pré-cadastros. O corte é feito aqui, e não no `select`, pelo mesmo motivo
+    // do `merged_into_client_id`: coluna nova fora do cache de schema do
+    // PostgREST derruba a listagem inteira, e ficar sem clientes é pior.
+    if (pre_cadastro === 'exclude') {
+      result = result.filter((client) => !client.is_pre_cadastro);
+    } else if (pre_cadastro === 'only') {
+      result = result.filter((client) => !!client.is_pre_cadastro);
+    }
 
     if (search) {
       const normalizedSearch = normalizeSearchText(search);
@@ -481,9 +490,17 @@ export class ClientService {
         }
       }
 
+      // Pré-cadastro que ganhou CPF/CNPJ deixou de ser pré-cadastro: alguém
+      // sentou e preencheu a ficha. Promover aqui evita o registro completo que
+      // continua escondido da lista de clientes sem ninguém entender por quê.
+      const promovendo = !!existing.is_pre_cadastro
+        && !!updates.cpf_cnpj
+        && updates.is_pre_cadastro === undefined;
+      const payload = promovendo ? { ...updates, is_pre_cadastro: false } : updates;
+
       const { data, error } = await supabase
         .from(this.tableName)
-        .update(updates)
+        .update(payload)
         .eq('id', id)
         .select()
         .single();
@@ -498,7 +515,7 @@ export class ClientService {
       await clientChangeHistoryService.record(
         id,
         source,
-        clientChangeHistoryService.diff(existing as any, data as any, Object.keys(updates)),
+        clientChangeHistoryService.diff(existing as any, data as any, Object.keys(payload)),
       );
 
       this.invalidateCache();
@@ -511,6 +528,40 @@ export class ClientService {
       console.error('Erro ao atualizar cliente:', error);
       throw error;
     }
+  }
+
+  /**
+   * Promove um pré-cadastro a cliente de verdade.
+   *
+   * É só apagar a marca — o registro é o MESMO, então compromissos, prazos,
+   * documentos pedidos e links de assinatura que já estavam pendurados nele
+   * continuam exatamente onde estavam. Nada é copiado, nada é movido.
+   */
+  async promoteFromPreCadastro(id: string): Promise<Client> {
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({ is_pre_cadastro: false, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Erro ao promover pré-cadastro: ${error.message}`);
+    }
+
+    await clientChangeHistoryService.record(id, 'edicao', [{
+      field: 'is_pre_cadastro',
+      oldValue: true,
+      newValue: false,
+      sourceLabel: 'Pré-cadastro promovido a cliente',
+    }]);
+
+    this.invalidateCache();
+    localStorage.removeItem('crm-dashboard-cache');
+    events.emit(SYSTEM_EVENTS.CLIENTS_CHANGED, { action: 'update', client: data });
+    syncBus.emit('clients');
+
+    return data as Client;
   }
 
   /**
@@ -647,6 +698,9 @@ export class ClientService {
         .from(this.tableName)
         .select('id, full_name, email, phone, mobile, status, client_type')
         .neq('status', 'inativo')
+        // Busca rápida do topo do sistema: quem digita aqui procura cliente.
+        // Pré-cadastro aparece no atendimento e na aba própria do módulo.
+        .eq('is_pre_cadastro', false)
         .order('full_name', { ascending: true });
 
       if (error) {

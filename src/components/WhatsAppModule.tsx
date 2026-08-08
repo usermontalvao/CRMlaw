@@ -50,6 +50,7 @@ import { MessageBubble, ImageAlbum } from './whatsapp/messageBubble';
 import { Avatar } from './whatsapp/avatar';
 import { WA_LABELS, resolveLabelMeta, inferFunnelStage, funnelLabelsFromChannelStages } from './whatsapp/funnel';
 import { ClientLinkPanel } from './whatsapp/clientLinkPanel';
+import { PreCadastroModal } from './whatsapp/preCadastroModal';
 import { ConversationSummaryBanner } from './whatsapp/conversationSummaryBanner';
 import { InternalNotesSection } from './whatsapp/internalNotes';
 import { AttachmentPreviewModal } from './whatsapp/attachmentPreviewModal';
@@ -124,7 +125,9 @@ import type { Requirement, RequirementStatus } from '../types/requirement.types'
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppChannel, WhatsAppDepartment,
   WhatsAppClientLite, WhatsAppPresence, WhatsAppDirection, WhatsAppChannelFunnelStage, WhatsAppBusinessHoursRow,
+  WhatsAppDeleteScope,
 } from '../types/whatsapp.types';
+import { playWaActionSound } from '../utils/waActionSounds';
 import type { Process, ProcessStatus, ProcessPracticeArea } from '../types/process.types';
 import { useAuth } from '../contexts/AuthContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
@@ -160,8 +163,16 @@ type FilterTab = 'all' | 'unread' | 'mine';
 // Header em teal (#008069), card arredondado, overlay com blur, ESC/clique-fora
 // fecham, trava o scroll do body e entra com micro-animação. Todos os modais do
 // módulo usam este shell para parecer uma aplicação profissional e consistente.
-// Alturas-base (scaleY) das barras do equalizador de gravação — perfil de onda
-// estático que a animação waEq faz "respirar"; dá o visual de áudio do WhatsApp.
+// Pesos das barras do equalizador de gravação. Multiplicam o volume MEDIDO no
+// microfone (`recLevel`), e é só isso que eles fazem: dão à onda um contorno
+// irregular, de forma que ela não suba e desça como um bloco só.
+//
+// Antes estas alturas eram a animação inteira — as barras dançavam sozinhas por
+// CSS, com o mesmo desenho em qualquer situação. Elas continuavam dançando com o
+// microfone mudo, com a mão em cima dele e com a permissão negada, o que fazia o
+// único indicador de "está me ouvindo?" mentir justamente quando a resposta era
+// não. Agora o CSS só interpola entre um quadro e o seguinte; quem manda na
+// altura é o som que está entrando.
 const WA_REC_BARS = [0.35, 0.6, 0.9, 0.5, 0.75, 1, 0.45, 0.7, 0.55, 0.85, 0.4, 0.65, 0.95, 0.5, 0.8, 0.6, 0.45, 0.9, 0.55, 0.7, 0.5, 0.85, 0.4, 0.6];
 
 
@@ -332,6 +343,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Fase H: ação jurídica a partir de mensagem
   const [deadlineSource, setDeadlineSource] = useState<WhatsAppMessage | null>(null);
   const [taskSource, setTaskSource] = useState<WhatsAppMessage | null>(null);
+  // Ação pedida numa conversa que ainda não tem cadastro: fica guardada aqui
+  // enquanto o pré-cadastro é criado, e roda em seguida. Ver `comCadastro`.
+  const [preCadastroAsk, setPreCadastroAsk] = useState<
+    { motivo: string; seguir: (clientId: string, clientName: string) => void } | null
+  >(null);
   // Encaminhar mensagem: origem escolhida no menu da bolha + envio em curso.
   const [forwardSource, setForwardSource] = useState<WhatsAppMessage | null>(null);
   const [forwarding, setForwarding] = useState(false);
@@ -650,7 +666,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     sending,
     pending, setPending,
     uploadProgress,
-    recording, recSeconds,
+    recording, recSeconds, recLevel,
     attachStaged, setAttachStaged,
     handleSend, beginEdit,
     retryPending, discardPending, cancelUpload, resendExisting,
@@ -1009,9 +1025,30 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         inSearch: alvo === searchRef.current,
         hasSearch: search.trim().length > 0,
         dialogOpen: !!document.querySelector('[role="dialog"]'),
+        recording,
+        overlayOpen: attachMenuOpen || gifOpen || slashActive,
+        composing: !!editing || !!replyTo,
+        hasDraft: draft.trim().length > 0,
       });
       if (!action) return;
       e.preventDefault();
+      // ── Esc: desfaz o topo da pilha (ver `escapeAction`) ──
+      if (action.kind === 'cancelRecording') { stopRecording(false); return; }
+      if (action.kind === 'closeOverlay') {
+        setAttachMenuOpen(false); setGifOpen(false);
+        // O menu de modelos não tem estado próprio: ele aparece enquanto o
+        // rascunho começa com "/", então fechá-lo é apagar a barra.
+        if (slashActive) setDraft('');
+        return;
+      }
+      if (action.kind === 'cancelCompose') { setEditing(null); setReplyTo(null); return; }
+      if (action.kind === 'closeConversation') {
+        setSelectedId(null);
+        // Devolve o foco à lista: sem isso o próximo Esc (ou a próxima seta)
+        // cairia num compositor que já não está na tela.
+        requestAnimationFrame(() => searchRef.current?.blur());
+        return;
+      }
       if (action.kind === 'select') {
         setSelectedId(action.conversationId);
         // A linha escolhida pode estar fora da janela visível — e, com
@@ -1188,6 +1225,30 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     onStageEntered: runFunnelStageActions,
   });
 
+  /**
+   * Roda uma ação que precisa de um cadastro por trás — prazo, compromisso,
+   * documento, lançamento.
+   *
+   * Metade das conversas do dia é com gente que ainda não é cliente, e era
+   * exatamente nessas que os botões ficavam apagados: para marcar uma reunião
+   * com alguém que ligou hoje era preciso sair do atendimento, abrir o módulo
+   * de Clientes e inventar um cadastro. Agora a ação segue em frente; o que ela
+   * pede antes é o mínimo que qualquer agenda pede — um nome e um telefone.
+   *
+   * Com cadastro (cliente ou pré-cadastro), executa direto.
+   */
+  const comCadastro = useCallback(
+    (motivo: string, seguir: (clientId: string, clientName: string) => void) => {
+      if (!selected) return;
+      if (selected.client_id) {
+        seguir(selected.client_id, selected.client_name || selected.contact_name || '');
+        return;
+      }
+      setPreCadastroAsk({ motivo, seguir });
+    },
+    [selected],
+  );
+
   // Drag and drop de arquivos na thread → useThreadDragDrop (estado do overlay +
   // handlers). O envio em si (sendFile, staging, retry/resend) vive em useWaComposer.
   const { dragOver, dragProps } = useThreadDragDrop(!!selected && !editing, handleDroppedFiles);
@@ -1299,6 +1360,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     resend: (m: WhatsAppMessage) => void; cancel: (m: WhatsAppMessage) => void;
     createDeadline: (m: WhatsAppMessage) => void; createTask: (m: WhatsAppMessage) => void;
     forward: (m: WhatsAppMessage) => void;
+    remove: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => void;
   }>(null!);
   bubbleImplRef.current = {
     reply: (m) => { setReplyTo(m); setEditing(null); },
@@ -1307,9 +1369,57 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     discard: discardPending,
     resend: (m) => { void resendExisting(m); },
     cancel: (m) => { if (m._tempId) cancelUpload(m._tempId); },
-    createDeadline: (m) => setDeadlineSource(m),
-    createTask: (m) => setTaskSource(m),
+    // "Criar prazo/tarefa" a partir da mensagem passa pela mesma porta das
+    // ações rápidas: sem cadastro, pede o pré-cadastro e segue.
+    createDeadline: (m) => comCadastro('cadastrar um prazo', () => setDeadlineSource(m)),
+    createTask: (m) => comCadastro('abrir uma tarefa', () => setTaskSource(m)),
     forward: (m) => setForwardSource(m),
+    remove: (m, scope) => { void deleteMessage(m, scope); },
+  };
+
+  /**
+   * Apaga a mensagem, nos dois alcances do WhatsApp.
+   *
+   * Confirma antes porque não há desfazer: 'everyone' vai ao aparelho do contato
+   * e não volta, e 'me' é a única exclusão que o histórico do escritório registra
+   * (a linha fica, mas o conteúdo sai da tela de todo mundo).
+   *
+   * A tela é atualizada de forma otimista e revertida se o servidor recusar. E a
+   * recusa mais provável é uma só: o WhatsApp não deixa revogar mensagem antiga.
+   * Nesse caso não basta dizer "não deu" — o toast oferece o caminho que ainda
+   * existe, que é apagar só aqui, sem obrigar a pessoa a reabrir o menu e
+   * descobrir sozinha qual das duas opções ainda funciona.
+   */
+  const deleteMessage = async (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => {
+    const paraTodos = scope === 'everyone';
+    const ok = await confirm({
+      title: paraTodos ? 'Apagar para todos?' : 'Apagar só aqui?',
+      message: paraTodos
+        ? 'A mensagem some da conversa também no aparelho do contato. O WhatsApp só permite isso por um tempo limitado após o envio.'
+        : 'A mensagem some da conversa aqui no CRM para toda a equipe. No aparelho do contato ela continua.',
+      confirmLabel: 'Apagar',
+      tone: 'danger',
+    });
+    if (!ok) return;
+
+    const antes = { deleted_at: m.deleted_at, deleted_scope: m.deleted_scope, deleted_by: m.deleted_by };
+    const agora = new Date().toISOString();
+    setMessages(prev => prev.map(x => x.id === m.id
+      ? { ...x, deleted_at: agora, deleted_scope: scope, deleted_by: user?.id ?? null } : x));
+    try {
+      await whatsappService.deleteMessage(m.id, scope);
+      playWaActionSound('delete');
+      void refreshMessages(selectedId!);
+    } catch (err: any) {
+      setMessages(prev => prev.map(x => x.id === m.id ? { ...x, ...antes } : x));
+      playWaActionSound('error');
+      if (paraTodos) {
+        toast.error('Não foi possível apagar para todos',
+          `${err?.message || 'O WhatsApp recusou a exclusão.'} Você ainda pode apagar só aqui, pelo menu da mensagem.`);
+      } else {
+        toast.error('Não foi possível apagar a mensagem', err?.message);
+      }
+    }
   };
   /**
    * Encaminha a mensagem para outras conversas. Mídia vai pelo CAMINHO DO
@@ -1360,6 +1470,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     onCancel: (m: WhatsAppMessage) => bubbleImplRef.current.cancel(m),
     onCreateDeadline: (m: WhatsAppMessage) => bubbleImplRef.current.createDeadline(m),
     onCreateTask: (m: WhatsAppMessage) => bubbleImplRef.current.createTask(m),
+    onDelete: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => bubbleImplRef.current.remove(m, scope),
   }), []);
 
   // Cluster de ações do cabeçalho da lista (status online + sino de notificações
@@ -2117,7 +2228,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                               groupStart={groupStart}
                               groupEnd={groupEnd}
                               privateMode={privateMode}
-                              canCreateFollowups={!!selected?.client_id}
+                              canCreateFollowups
                               onOpenImage={setLightbox}
                               uploadProgress={u.m._tempId ? uploadProgress.get(u.m._tempId) : undefined}
                               {...bubbleHandlers}
@@ -2246,20 +2357,28 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             <div className="relative px-2.5 sm:px-3 py-2 border-t border-black/[0.06] bg-[#f0f2f5]">
               {recording ? (
                 <div className="flex items-center gap-2.5">
-                  {/* Keyframes do equalizador (escopo local, estilo WhatsApp) */}
-                  <style>{`@keyframes waEq{0%,100%{transform:scaleY(0.25)}50%{transform:scaleY(1)}}`}</style>
-                  {/* Lixeira = cancelar e descartar a gravação */}
-                  <button onClick={() => stopRecording(false)} title="Cancelar gravação"
+                  {/* Lixeira = cancelar e descartar a gravação (ou Esc) */}
+                  <button onClick={() => stopRecording(false)} title="Cancelar gravação (Esc)"
                     className="flex-shrink-0 w-9 h-9 rounded-full text-red-500 hover:bg-red-50 flex items-center justify-center transition">
                     <Trash2 size={18} />
                   </button>
-                  {/* Pílula com ponto pulsante + onda animada + cronômetro */}
+                  {/* Pílula com ponto pulsante + onda do microfone + cronômetro */}
                   <div className="flex-1 min-w-0 flex items-center gap-2.5 px-3.5 h-10 rounded-full bg-white">
                     <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
                     <div className="flex-1 min-w-0 flex items-center justify-center gap-[3px] h-5 overflow-hidden">
-                      {WA_REC_BARS.map((h, i) => (
+                      {WA_REC_BARS.map((peso, i) => (
+                        // 0.12 é o piso: a barra nunca some de todo, senão o
+                        // silêncio pareceria "gravação travada" em vez de
+                        // "gravando, sem som". O peso só torce o contorno.
                         <span key={i} className="w-[3px] flex-shrink-0 rounded-full bg-red-400/80"
-                          style={{ height: '100%', transformOrigin: 'center', transform: `scaleY(${h})`, animation: 'waEq 0.9s ease-in-out infinite', animationDelay: `${i * 70}ms` }} />
+                          style={{
+                            height: '100%',
+                            transformOrigin: 'center',
+                            transform: `scaleY(${Math.max(0.12, recLevel * peso)})`,
+                            // Curto o bastante para acompanhar a fala, longo o
+                            // bastante para o quadro a quadro não tremer.
+                            transition: 'transform 90ms linear',
+                          }} />
                       ))}
                     </div>
                     <span className="flex-shrink-0 text-[13px] font-semibold text-red-600 tabular-nums">
@@ -2267,7 +2386,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     </span>
                   </div>
                   {/* Enviar o áudio */}
-                  <button onClick={() => stopRecording(true)} title="Enviar áudio"
+                  <button onClick={() => stopRecording(true)} title="Enviar áudio (Enter)"
                     className="flex-shrink-0 w-10 h-10 rounded-full bg-[#00a884] text-white flex items-center justify-center hover:bg-[#008f72] transition">
                     <Send size={16} />
                   </button>
@@ -2565,24 +2684,26 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
           <ScheduledMessagesPanel conversationId={selected.id} canSchedule={perms.canSchedule} confirm={confirm} />
 
-          {/* 360: Ações do cliente — tudo vinculado ao cliente desta conversa.
-              Sem cadastro elas aparecem DESABILITADAS, e não sumidas: some a
-              ação e some junto a explicação de por que ela não está ali. O
-              atendente ficava procurando "Documento" sem descobrir que o que
-              faltava era vincular o cliente. */}
+          {/* 360: Ações do cliente — o trabalho que sai desta conversa.
+              Elas ficavam DESABILITADAS sem cadastro, e essa era a reclamação:
+              justamente com quem ainda não é cliente é que se marca a primeira
+              reunião. Agora todas clicam. Sem cadastro, a ação pede antes o
+              pré-cadastro (nome de exibição + telefone) e continua de onde
+              parou — ninguém precisa sair do atendimento para abrir o módulo de
+              Clientes e inventar uma ficha. */}
           <div className="space-y-1.5">
             <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ações rápidas</p>
             <div className="grid grid-cols-2 gap-1.5">
               {[
-                { label: 'Lançamento', icon: <HandCoins size={15} />, on: () => openWa({ type: 'financial_create', clientId: selected.client_id!, clientName: selected.client_name || selected.contact_name || undefined }) },
-                { label: 'Prazo', icon: <Clock size={15} />, on: () => openWa({ type: 'deadline_create', clientId: selected.client_id! }) },
-                { label: 'Agenda', icon: <Calendar size={15} />, on: () => openWa({ type: 'calendar_create', clientId: selected.client_id! }) },
-                { label: 'Documento', icon: <FileText size={15} />, on: () => openWa({ type: 'document_generate', clientId: selected.client_id!, clientName: selected.client_name || selected.contact_name || undefined, processCode: (overview?.processes ?? [])[0]?.process_code }) },
-                { label: 'Pedir doc.', icon: <FilePlus size={15} />, on: () => setDocRequestOpen(true) },
+                { label: 'Lançamento', icon: <HandCoins size={15} />, motivo: 'fazer um lançamento', on: (clientId: string, clientName: string) => openWa({ type: 'financial_create', clientId, clientName: clientName || undefined }) },
+                { label: 'Prazo', icon: <Clock size={15} />, motivo: 'cadastrar um prazo', on: (clientId: string) => openWa({ type: 'deadline_create', clientId }) },
+                { label: 'Agenda', icon: <Calendar size={15} />, motivo: 'marcar um compromisso', on: (clientId: string) => openWa({ type: 'calendar_create', clientId }) },
+                { label: 'Documento', icon: <FileText size={15} />, motivo: 'gerar um documento', on: (clientId: string, clientName: string) => openWa({ type: 'document_generate', clientId, clientName: clientName || undefined, processCode: (overview?.processes ?? [])[0]?.process_code }) },
+                { label: 'Pedir doc.', icon: <FilePlus size={15} />, motivo: 'pedir documentos', on: () => setDocRequestOpen(true) },
               ].map(a => (
-                <button key={a.label} onClick={a.on} disabled={!selected.client_id}
-                  title={selected.client_id ? a.label : `Vincule um cliente a esta conversa para usar "${a.label}"`}
-                  className="flex flex-col items-center gap-1 px-1 py-1.5 rounded-lg border border-[#e7e5df] text-slate-600 transition enabled:hover:bg-amber-50 enabled:hover:border-amber-200 enabled:hover:text-amber-700 disabled:cursor-not-allowed disabled:opacity-45">
+                <button key={a.label} onClick={() => comCadastro(a.motivo, a.on)}
+                  title={selected.client_id ? a.label : `${a.label} — pede um pré-cadastro rápido antes`}
+                  className="flex flex-col items-center gap-1 px-1 py-1.5 rounded-lg border border-[#e7e5df] text-slate-600 transition hover:bg-amber-50 hover:border-amber-200 hover:text-amber-700">
                   <span className="text-amber-600">{a.icon}</span>
                   <span className="text-[10px] font-semibold leading-none">{a.label}</span>
                 </button>
@@ -2590,7 +2711,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             </div>
             {!selected.client_id && (
               <p className="text-[10px] leading-snug text-slate-400">
-                Vincule um cliente no painel acima para liberar estas ações. O acompanhamento de assinaturas já funciona pelo telefone do contato.
+                Sem cadastro ainda: a primeira ação pede um pré-cadastro (nome e telefone). Ele não entra na lista de clientes.
               </p>
             )}
           </div>
@@ -2839,6 +2960,28 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           conversation={selected}
           staffByUser={staffByUser}
           onClose={() => setSummaryOpen(false)}
+        />
+      )}
+
+      {/* Pré-cadastro pedido por uma ação rápida. Ao criar, a conversa já sai
+          vinculada e a ação continua — o clique não se perde no caminho. */}
+      {preCadastroAsk && selected && (
+        <PreCadastroModal
+          conversationId={selected.id}
+          phone={selected.contact_phone}
+          suggestedName={selected.contact_name}
+          reason={`Para ${preCadastroAsk.motivo}, precisamos saber de quem é.`}
+          onClose={() => setPreCadastroAsk(null)}
+          onCreated={(clientId, clientName) => {
+            const pendente = preCadastroAsk;
+            setPreCadastroAsk(null);
+            // O vínculo já está no banco; refletir aqui na hora evita que a
+            // ação abra sem dono enquanto a lista não recarrega.
+            setConversations(prev => prev.map(c =>
+              c.id === selected.id ? { ...c, client_id: clientId, client_name: clientName } : c));
+            void loadConversations();
+            pendente?.seguir(clientId, clientName);
+          }}
         />
       )}
 

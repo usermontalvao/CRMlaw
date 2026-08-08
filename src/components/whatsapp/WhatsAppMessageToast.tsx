@@ -18,7 +18,7 @@
 //    Montalvão Neto") sem cortar, com reticências só nos casos extremos;
 //  • entra e sai em fade — some sozinho aos 8s, sem cronômetro à vista.
 import React, { useEffect, useState } from 'react';
-import { FileText, Image as ImageIcon, Mic, Sticker, Video, X } from 'lucide-react';
+import { FileText, Image as ImageIcon, Mic, Play, Sticker, Video, X } from 'lucide-react';
 
 export const WHATSAPP_TOAST_DURATION_MS = 8000;
 /** Duração do fade de saída (o cartão só é removido depois dele). */
@@ -41,6 +41,20 @@ export interface WhatsAppMessageToastData {
   at?: number;
   /** Quantas mensagens desta conversa este cartão está representando. */
   count?: number;
+  /**
+   * URL assinada da foto/vídeo — vira a miniatura no lugar do ícone. Chega
+   * DEPOIS do cartão (o host assina fora do caminho crítico), então a ausência
+   * é o estado normal do primeiro instante, não um erro.
+   */
+  thumbUrl?: string | null;
+  /** Duração do áudio/vídeo em segundos, quando conhecida. */
+  durationSeconds?: number | null;
+}
+
+/** Segundos → "0:07" / "4:12". O formato do próprio WhatsApp. */
+function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
 
 interface WhatsAppMessageToastProps {
@@ -94,11 +108,21 @@ const PreviewLine: React.FC<{ toast: WhatsAppMessageToastData }> = ({ toast }) =
   const line = 'flex min-w-0 flex-1 items-center gap-[7px] text-[13.5px] leading-tight text-slate-600 dark:text-slate-300';
 
   if (kind === 'audio') {
+    // A duração é a informação que decide se a pessoa para o que está fazendo:
+    // um "ok" de 3 segundos e um relato de 4 minutos pedem reações diferentes, e
+    // sem o número os dois cartões eram idênticos. Ela entra logo depois da onda,
+    // como no aplicativo — e some quando o WhatsApp não informa, em vez de
+    // aparecer um "0:00" que seria pior do que nada.
     return (
       <span className={line}>
         <Mic className="wa-toast-ico-voice h-[15px] w-[15px] shrink-0" />
         <VoiceWave />
         <span className="truncate">Mensagem de voz</span>
+        {!!toast.durationSeconds && (
+          <span className="shrink-0 tabular-nums text-slate-400 dark:text-slate-500">
+            {formatDuration(toast.durationSeconds)}
+          </span>
+        )}
       </span>
     );
   }
@@ -140,13 +164,58 @@ const PreviewLine: React.FC<{ toast: WhatsAppMessageToastData }> = ({ toast }) =
   );
 };
 
-/** Quadradinho à direita que anuncia foto/vídeo sem baixar a mídia. */
-const MediaChip: React.FC<{ kind: WhatsAppToastKind }> = ({ kind }) => {
+/**
+ * Quadradinho à direita: a MINIATURA da foto/vídeo, ou o ícone enquanto ela não
+ * chega (e para sempre, se não chegar).
+ *
+ * Mostrar a imagem é o que faz o aviso ser resolvido sem abrir a conversa — dá
+ * para reconhecer de relance um documento fotografado, um comprovante, um
+ * print. O ícone genérico dizia apenas "veio uma foto", que é quase o mesmo que
+ * não dizer nada.
+ *
+ * O vídeo usa um `<video>` com `preload="metadata"`: o navegador desenha o
+ * primeiro quadro sem baixar o arquivo inteiro. `muted` e sem controles, porque
+ * isto é uma miniatura de 42px, não um player.
+ */
+const MediaChip: React.FC<{ kind: WhatsAppToastKind; thumbUrl?: string | null; durationSeconds?: number | null }> = ({ kind, thumbUrl, durationSeconds }) => {
+  const [thumbOk, setThumbOk] = useState(false);
+  useEffect(() => { setThumbOk(false); }, [thumbUrl]);
+
   if (kind !== 'image' && kind !== 'video') return null;
   const Icon = kind === 'image' ? ImageIcon : Video;
+
   return (
-    <span className="wa-toast-chip flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[9px]">
-      <Icon className="h-[18px] w-[18px]" />
+    <span className="wa-toast-chip relative flex h-[42px] w-[42px] shrink-0 items-center justify-center overflow-hidden rounded-[9px]">
+      {!thumbOk && <Icon className="h-[18px] w-[18px]" />}
+      {thumbUrl && (kind === 'image' ? (
+        <img
+          src={thumbUrl}
+          alt=""
+          onLoad={() => setThumbOk(true)}
+          onError={() => setThumbOk(false)}
+          className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
+          style={{ opacity: thumbOk ? 1 : 0 }}
+        />
+      ) : (
+        <video
+          src={thumbUrl}
+          muted
+          playsInline
+          preload="metadata"
+          onLoadedData={() => setThumbOk(true)}
+          onError={() => setThumbOk(false)}
+          className="absolute inset-0 h-full w-full object-cover transition-opacity duration-300"
+          style={{ opacity: thumbOk ? 1 : 0 }}
+        />
+      ))}
+      {/* Sobre a miniatura do vídeo: o play e a duração, como na galeria do
+          WhatsApp. Sem a miniatura seria ruído em cima de um ícone. */}
+      {kind === 'video' && thumbOk && (
+        <span className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-0.5 bg-black/55 py-[1px] text-[9px] font-medium leading-none text-white">
+          <Play className="h-[7px] w-[7px] fill-current" />
+          {!!durationSeconds && <span className="tabular-nums">{formatDuration(durationSeconds)}</span>}
+        </span>
+      )}
     </span>
   );
 };
@@ -234,7 +303,7 @@ export const WhatsAppMessageToast: React.FC<WhatsAppMessageToastProps> = ({ toas
             </span>
           </span>
 
-          <MediaChip kind={kind} />
+          <MediaChip kind={kind} thumbUrl={toast.thumbUrl} durationSeconds={toast.durationSeconds} />
         </button>
       </div>
     </div>

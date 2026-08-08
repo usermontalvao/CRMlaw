@@ -13,6 +13,7 @@ import { ContactIdentity, AttendanceSummary } from '../components/whatsapp/detai
 import { ConversationLabelsPanel } from '../components/whatsapp/conversationLabels';
 import { QuickActions } from '../components/whatsapp/quickActions';
 import { ForwardMessageModal } from '../components/whatsapp/forwardMessageModal';
+import { PreCadastroModal } from '../components/whatsapp/preCadastroModal';
 import { ToastProvider } from '../contexts/ToastContext';
 import type { FunnelLabel } from '../services/settings.service';
 import type { WhatsAppConversation, WhatsAppMessage } from '../types/whatsapp.types';
@@ -321,6 +322,7 @@ export default function WhatsAppConversationPreview() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   // Encaminhar: a bancada abre o modal de verdade, com conversas de mentira.
   const [forwardSource, setForwardSource] = useState<WhatsAppMessage | null>(null);
+  const [preCadastroOpen, setPreCadastroOpen] = useState(false);
   useEffect(() => {
     let url: string | null = null;
     buildPreviewPdf().then(out => { url = out; setPdfUrl(out); });
@@ -433,9 +435,27 @@ export default function WhatsAppConversationPreview() {
               <p className="mt-2 text-[12px] font-bold text-slate-800">PEDRO RODRIGUES MONTALVAO NETO</p>
               <p className="mt-1 text-[11px] text-slate-400">045.448.031-93 · Ativo</p>
             </div>
+            {/* Conversa sem cadastro: o formulário de pré-cadastro é o que
+                destrava prazo, agenda e documento. Aqui só para olhar o
+                componente de verdade — gravar exige banco. */}
+            <button onClick={() => setPreCadastroOpen(true)}
+              className="w-full rounded-lg bg-sky-50 px-3 py-1.5 text-[12px] font-semibold text-sky-700 hover:bg-sky-100">
+              Abrir pré-cadastro (bancada)
+            </button>
           </div>
         </aside>
       </div>
+
+      {preCadastroOpen && (
+        <PreCadastroModal
+          conversationId={PREVIEW_CONVERSATION.id}
+          phone={PREVIEW_CONVERSATION.contact_phone}
+          suggestedName={PREVIEW_CONVERSATION.contact_name}
+          reason="Para marcar um compromisso, precisamos saber de quem é."
+          onClose={() => setPreCadastroOpen(false)}
+          onCreated={() => setPreCadastroOpen(false)}
+        />
+      )}
 
       {forwardSource && (
         <ForwardMessageModal

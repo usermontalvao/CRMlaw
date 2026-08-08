@@ -425,6 +425,19 @@ async function resolveSignedUrls(paths: string[]): Promise<Map<string, string>> 
  * crítico do aviso.
  */
 export async function resolveAvatarUrl(path: string | null | undefined): Promise<string | null> {
+  return resolveOneSignedUrl(path);
+}
+
+/**
+ * Assina UM caminho qualquer do bucket de mídia — a mesma coisa que
+ * `resolveAvatarUrl` faz, com o nome que descreve o uso quando o arquivo não é
+ * um avatar (a miniatura da foto no aviso de mensagem nova, por exemplo).
+ */
+export async function resolveMediaUrl(path: string | null | undefined): Promise<string | null> {
+  return resolveOneSignedUrl(path);
+}
+
+async function resolveOneSignedUrl(path: string | null | undefined): Promise<string | null> {
   if (!path) return null;
   const byPath = await resolveSignedUrls([path]);
   return byPath.get(path) ?? null;
@@ -460,10 +473,13 @@ export async function attachClientNames(convs: WhatsAppConversation[]): Promise<
 
 /** Resolve URLs assinadas (em lote, com cache) para mensagens com mídia no storage. */
 export async function attachSignedUrls(msgs: WhatsAppMessage[]): Promise<void> {
-  const paths = msgs.map(m => m.storage_path).filter((p): p is string => !!p);
+  // Mensagem apagada não recebe URL: a bolha dela é um aviso de texto, e assinar
+  // a mídia seria pagar uma ida à rede para produzir um link que ninguém abre —
+  // além de deixar o arquivo alcançável por quem inspecionasse a resposta.
+  const paths = msgs.filter(m => !m.deleted_at).map(m => m.storage_path).filter((p): p is string => !!p);
   if (paths.length === 0) return;
   const byPath = await resolveSignedUrls(paths);
   for (const m of msgs) {
-    if (m.storage_path) m.media_url = byPath.get(m.storage_path) || null;
+    if (m.storage_path && !m.deleted_at) m.media_url = byPath.get(m.storage_path) || null;
   }
 }

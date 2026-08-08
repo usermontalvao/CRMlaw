@@ -65,7 +65,9 @@ async function getSearchData(force = false): Promise<SearchData> {
 
   _inflight = Promise.all([
     processService.listProcesses().catch(() => [] as Awaited<ReturnType<typeof processService.listProcesses>>),
-    clientService.listClients().catch(() => [] as Client[]),
+    // Quem busca aqui procura cliente. Pré-cadastro se acha no atendimento e
+    // na aba própria do módulo Clientes.
+    clientService.listClients({ pre_cadastro: 'exclude' }).catch(() => [] as Client[]),
     djenLocalService.listComunicacoes({}).catch(() => [] as Awaited<ReturnType<typeof djenLocalService.listComunicacoes>>),
     requirementService.listRequirements().catch(() => []),
     calendarService.listEvents().catch(() => [] as Awaited<ReturnType<typeof calendarService.listEvents>>),

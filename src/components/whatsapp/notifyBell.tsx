@@ -1,11 +1,12 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, BellOff, BellRing, Loader2, MessageSquare, MessageSquareOff } from 'lucide-react';
+import { Bell, BellOff, BellRing, Loader2, MessageSquare, MessageSquareOff, Volume2, VolumeX } from 'lucide-react';
 import {
   isNotifySoundMuted, setNotifySoundMuted,
   isInChatSoundMuted, setInChatSoundMuted,
   playNotificationSound,
 } from '../../utils/notificationSound';
+import { isWaActionSoundMuted, setWaActionSoundMuted, playWaActionSound } from '../../utils/waActionSounds';
 import { useToastContext } from '../../contexts/ToastContext';
 import type { StaffPushState } from './hooks/useStaffPush';
 
@@ -26,12 +27,14 @@ export const WaNotifyBell: React.FC<{
   const [menuOpen, setMenuOpen] = useState(false);
   const [soundMuted, setSoundMuted] = useState(() => isNotifySoundMuted());
   const [inChatMuted, setInChatMuted] = useState(() => isInChatSoundMuted());
+  const [actionMuted, setActionMuted] = useState(() => isWaActionSoundMuted());
   const btnRef = useRef<HTMLButtonElement>(null);
 
   const pushSupported = pushState !== 'unsupported' && pushState !== 'unknown';
   const pushOn = pushState === 'on';
   const soundOn = !soundMuted;
   const inChatOn = !inChatMuted;
+  const actionOn = !actionMuted;
   const active = soundOn || pushOn;
   const Icon = pushOn ? BellRing : soundOn ? Bell : BellOff;
 
@@ -51,6 +54,19 @@ export const WaNotifyBell: React.FC<{
     // toque geral só faz sentido ouvindo os dois.
     if (!next) { playNotificationSound('in-chat'); toast.success('Toque da conversa aberta ativado'); }
     else toast.info('Toque da conversa aberta silenciado');
+  };
+
+  // O som de AÇÃO é independente do de notificação: um confirma o que VOCÊ fez,
+  // o outro avisa o que CHEGOU. Quem atende com fone quase sempre quer os dois,
+  // mas quem divide sala costuma querer só o segundo — daí as chaves separadas.
+  const toggleAction = () => {
+    const next = !actionMuted;
+    setActionMuted(next);
+    setWaActionSoundMuted(next);
+    // Toca depois de gravar a preferência: `playWaActionSound` lê o localStorage
+    // e ficaria mudo se a ordem fosse a inversa.
+    if (!next) { playWaActionSound('send'); toast.success('Sons de ação ativados'); }
+    else toast.info('Sons de ação silenciados');
   };
 
   const row = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] text-slate-700 hover:bg-amber-50 transition text-left';
@@ -93,6 +109,14 @@ export const WaNotifyBell: React.FC<{
                 <span className={pill(inChatOn)}>{inChatOn ? 'ON' : 'OFF'}</span>
               </button>
             )}
+            <button className={row} onClick={toggleAction}>
+              {actionOn ? <Volume2 size={16} className="text-amber-500 shrink-0" /> : <VolumeX size={16} className="text-slate-400 shrink-0" />}
+              <span className="min-w-0">
+                <span className="block leading-tight">Sons de ação</span>
+                <span className="block text-[11px] text-slate-400">Retorno curto ao enviar, gravar e apagar</span>
+              </span>
+              <span className={pill(actionOn)}>{actionOn ? 'ON' : 'OFF'}</span>
+            </button>
             {pushSupported && (
               <button className={row} onClick={onTogglePush} disabled={pushState === 'busy'}>
                 {pushState === 'busy' ? <Loader2 size={16} className="animate-spin text-slate-400 shrink-0" /> : pushOn ? <BellRing size={16} className="text-amber-500 shrink-0" /> : <BellOff size={16} className="text-slate-400 shrink-0" />}

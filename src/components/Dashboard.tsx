@@ -373,7 +373,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         allInstallmentsData,
         djenIntimacoesData,
       ] = await Promise.all([
-        safeFetch(() => clientService.listClients().then(cs => cs.filter(c => c.status === 'ativo')), [], 'Clientes'),
+        // Pré-cadastro não é cliente ativo — não entra no número do painel.
+        safeFetch(() => clientService.listClients({ pre_cadastro: 'exclude' }).then(cs => cs.filter(c => c.status === 'ativo')), [], 'Clientes'),
         safeFetch(() => processService.listProcesses().then(ps => ps.filter(p => p.status !== 'arquivado').slice(0, 100)), [], 'Processos'),
         safeFetch(() => deadlineService.listDeadlines().then(ds => ds.filter(d => d.status === 'pendente').slice(0, 50)), [], 'Prazos'),
         safeFetch(() => taskService.listTasks().then(ts => ts.filter(t => t.status === 'pending').slice(0, 50)), [], 'Tarefas'),

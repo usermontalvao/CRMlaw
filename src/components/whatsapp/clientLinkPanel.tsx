@@ -9,6 +9,7 @@ import { whatsappService, normalizePhone, samePhone } from '../../services/whats
 import { useToastContext } from '../../contexts/ToastContext';
 import { prettyDoc, prettyPhone, formatTime, initials } from './format';
 import { ClientPickerModal } from './clientPickerModals';
+import { PreCadastroModal } from './preCadastroModal';
 import type { WhatsAppConversation, WhatsAppClientLite } from '../../types/whatsapp.types';
 import type { WaModal } from '../WaWorkspace';
 
@@ -25,10 +26,9 @@ export const ClientLinkPanel: React.FC<{
   const [candidates, setCandidates] = useState<WhatsAppClientLite[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Fase E: criação inline de contato
+  // Pré-cadastro criado ali mesmo (nome de exibição + telefone da conversa).
   const [createMode, setCreateMode] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [creating, setCreating] = useState(false);
+  const [promoting, setPromoting] = useState(false);
   // Fase E: oferta de atualização de telefone após vincular
   const [phonePrompt, setPhonePrompt] = useState<{
     clientId: string; name: string; mobile: string | null; phone: string | null;
@@ -90,20 +90,19 @@ export const ClientLinkPanel: React.FC<{
     finally { setBusy(false); setPickerOpen(false); }
   };
 
-  // Cria contato básico inline e vincula imediatamente à conversa.
-  const handleCreateContact = async () => {
-    setCreating(true);
+  // Promove o pré-cadastro: mesma linha, sem a marca. Tudo que já estava
+  // pendurado nele (compromissos, prazos, documentos) fica onde está.
+  const handlePromote = async () => {
+    if (!client) return;
+    setPromoting(true);
     try {
-      const newClient = await whatsappService.createQuickContact({
-        fullName: newName,
-        phone: conversation.contact_phone,
-      });
-      await whatsappService.linkClient(conversation.id, newClient.id);
-      setCreateMode(false);
+      await whatsappService.promoteClient(client.id);
+      setClient({ ...client, is_pre_cadastro: false });
       onChanged();
-      toast.success('Contato criado e vinculado.');
-    } catch (e: any) { toast.error('Falha ao criar contato', e.message); }
-    finally { setCreating(false); }
+      toast.success('Agora é cliente.', 'Complete o cadastro para liberar processos e financeiro.');
+      onOpenWorkspace({ type: 'client_edit', clientId: client.id });
+    } catch (e: any) { toast.error('Falha ao promover', e.message); }
+    finally { setPromoting(false); }
   };
 
   // Adiciona o telefone da conversa ao campo correto do cadastro do cliente.
@@ -137,25 +136,48 @@ export const ClientLinkPanel: React.FC<{
       const parts = [c.client_type ? typeMap[c.client_type] ?? c.client_type : null, c.status ? statusMap[c.status] ?? c.status : null].filter(Boolean);
       return parts.join(' · ');
     };
+    const preCadastro = !!client?.is_pre_cadastro;
     return (
       <div className="mt-2 space-y-2">
-        {!embedded && <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cliente</p>}
-        <div className="rounded-xl border border-[#e7e5df] p-3">
+        {!embedded && (
+          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+            {preCadastro ? 'Pré-cadastro' : 'Cliente'}
+          </p>
+        )}
+        <div className={`rounded-xl border p-3 ${preCadastro ? 'border-sky-200 bg-sky-50/40' : 'border-[#e7e5df]'}`}>
           {loading ? (
             <div className="flex items-center gap-2 text-slate-400 text-[12.5px]"><Loader2 size={14} className="animate-spin" /> Carregando…</div>
           ) : client ? (
             <>
               <div className="flex items-center gap-2">
-                <span className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0"><UserCheck size={16} /></span>
+                <span className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${preCadastro ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {preCadastro ? <UserPlus size={16} /> : <UserCheck size={16} />}
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-bold text-slate-800 truncate">{client.full_name}</p>
-                  {client.cpf_cnpj && <p className="text-[11.5px] text-slate-400 flex items-center gap-1"><IdCard size={12} /> {prettyDoc(client.cpf_cnpj)}</p>}
+                  {preCadastro ? (
+                    <p className="text-[11px] text-sky-700 font-semibold">Pré-cadastro · ainda não é cliente</p>
+                  ) : client.cpf_cnpj ? (
+                    <p className="text-[11.5px] text-slate-400 flex items-center gap-1"><IdCard size={12} /> {prettyDoc(client.cpf_cnpj)}</p>
+                  ) : null}
                 </div>
               </div>
 
+              {/* O pré-cadastro só existe para pendurar trabalho do atendimento.
+                  Virar cliente é apagar a marca — nada muda de lugar —, então o
+                  convite fica aqui, curto, sem virar bloqueio de nada. */}
+              {preCadastro && (
+                <button onClick={handlePromote} disabled={promoting}
+                  className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-sky-600 text-white text-[11.5px] font-semibold hover:bg-sky-700 disabled:opacity-50 transition">
+                  {promoting ? <Loader2 size={12} className="animate-spin" /> : <UserCheck size={12} />} Transformar em cliente
+                </button>
+              )}
+
               {/* Fase P: informações de contato e localização expandidas */}
               <div className="mt-2.5 space-y-1">
-                {(clientStatusLabel(client)) && (
+                {/* "Pessoa física · Ativo" é rótulo de ficha de cliente; num
+                    pré-cadastro seria descrever um cadastro que não existe. */}
+                {!preCadastro && clientStatusLabel(client) && (
                   <p className="text-[11px] text-slate-400 font-medium">{clientStatusLabel(client)}</p>
                 )}
                 {client.email && (
@@ -292,39 +314,34 @@ export const ClientLinkPanel: React.FC<{
             Buscar outro cliente
           </button>
         </div>
-      ) : createMode ? (
-        // Fase E: mini-formulário de criação inline
-        <div className="rounded-xl border border-[#e7e5df] p-4 space-y-3">
-          <p className="text-[12px] font-semibold text-slate-700">Novo contato</p>
-          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nome completo" autoFocus
-            className="w-full px-3 py-2 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none" />
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#f3f2ef] text-[12.5px] text-slate-500">
-            <Phone size={13} className="flex-shrink-0" /> {prettyPhone(conversation.contact_phone)}
-          </div>
-          <div className="flex justify-end gap-2">
-            <button onClick={() => setCreateMode(false)} className="px-3 py-1.5 text-[12px] font-semibold text-slate-500 hover:text-slate-700">Cancelar</button>
-            <button onClick={handleCreateContact} disabled={creating || !newName.trim()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-[12px] font-semibold hover:bg-amber-700 disabled:opacity-50">
-              {creating ? <Loader2 size={13} className="animate-spin" /> : <UserPlus size={13} />} Criar e vincular
-            </button>
-          </div>
-        </div>
       ) : (
         <div className="rounded-xl border border-dashed border-[#e0ded8] p-4 text-center">
           <UserIcon size={22} className="mx-auto text-slate-300 mb-2" />
-          <p className="text-[12.5px] font-semibold text-slate-600">Sem cliente associado</p>
-          <p className="text-[11.5px] text-slate-400 mt-1">Nenhum cadastro com este telefone. Vincule manualmente para ver processos, prazos e documentos aqui.</p>
+          <p className="text-[12.5px] font-semibold text-slate-600">Sem cadastro associado</p>
+          <p className="text-[11.5px] text-slate-400 mt-1">
+            Nenhum cliente com este telefone. Vincule ao cadastro certo — ou, se ainda não é cliente,
+            faça um pré-cadastro para poder marcar compromisso, prazo e documento por aqui.
+          </p>
           <div className="flex items-center justify-center gap-2 mt-3">
             <button onClick={() => setPickerOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 text-[12px] font-semibold transition">
               <Link2 size={13} /> Buscar cliente
             </button>
-            <button onClick={() => { setNewName(conversation.contact_name || ''); setCreateMode(true); }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f3f2ef] hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-[12px] font-semibold transition">
-              <UserPlus size={13} /> Criar contato
+            <button onClick={() => setCreateMode(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[12px] font-semibold transition">
+              <UserPlus size={13} /> Pré-cadastro
             </button>
           </div>
         </div>
+      )}
+      {createMode && (
+        <PreCadastroModal
+          conversationId={conversation.id}
+          phone={conversation.contact_phone}
+          suggestedName={conversation.contact_name}
+          onClose={() => setCreateMode(false)}
+          onCreated={() => { setCreateMode(false); onChanged(); }}
+        />
       )}
       {pickerOpen && <ClientPickerModal phone={conversation.contact_phone} onClose={() => setPickerOpen(false)} onPick={c => link(c.id, c)} />}
     </div>

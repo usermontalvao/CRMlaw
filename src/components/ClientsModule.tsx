@@ -202,7 +202,13 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
   const [formPrefill, setFormPrefill] = useState<Partial<CreateClientDTO> | null>(null);
   const [formContext, setFormContext] = useState<'internal' | 'prefill' | 'param' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState<ClientFilters>({ sort_order: 'newest' });
+  // `pre_cadastro: 'exclude'` é o estado normal desta tela: pré-cadastro é nome
+  // e telefone anotados num atendimento, não cliente. Ele fica atrás do chip
+  // próprio (abaixo) e some da contagem — do contrário "285 clientes" passaria a
+  // contar gente que nunca fechou nada.
+  const [filters, setFilters] = useState<ClientFilters>({ sort_order: 'newest', pre_cadastro: 'exclude' });
+  const [preCadastroCount, setPreCadastroCount] = useState(0);
+  const showingPreCadastros = filters.pre_cadastro === 'only';
   const [exporting, setExporting] = useState(false);
   const [clientProcesses, setClientProcesses] = useState<Process[]>([]);
   const [clientRequirements, setClientRequirements] = useState<Requirement[]>([]);
@@ -282,10 +288,12 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       });
       // Atualizar estatísticas — usa listClients({}) em cache (1 request, sem round-trips extras)
       const allData = await clientService.listClients({});
-      const total = allData.length;
-      const active = allData.filter((c) => c.status === 'ativo').length;
-      const pessoaFisica = allData.filter((c) => c.client_type === 'pessoa_fisica').length;
-      const pessoaJuridica = allData.filter((c) => c.client_type === 'pessoa_juridica').length;
+      const clientesDeVerdade = allData.filter((c) => !c.is_pre_cadastro);
+      const total = clientesDeVerdade.length;
+      const active = clientesDeVerdade.filter((c) => c.status === 'ativo').length;
+      const pessoaFisica = clientesDeVerdade.filter((c) => c.client_type === 'pessoa_fisica').length;
+      const pessoaJuridica = clientesDeVerdade.filter((c) => c.client_type === 'pessoa_juridica').length;
+      setPreCadastroCount(allData.length - clientesDeVerdade.length);
 
       let visibleClients = data;
       if (showIncompleteOnly) visibleClients = visibleClients.filter((client) => missing.has(client.id));
@@ -772,7 +780,21 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
     }
   };
 
-  const hasActiveFilters = Boolean(filters.status || filters.client_type || filters.search) || filters.sort_order === 'oldest' || showIncompleteOnly || showOutdatedOnly;
+  // Pré-cadastro vira cliente: só apaga a marca. Nada é copiado nem movido —
+  // compromissos, prazos e documentos já estavam pendurados neste mesmo id.
+  // Em seguida abre a ficha, que é onde falta CPF, endereço e o resto.
+  const handlePromotePreCadastro = async (client: Client) => {
+    try {
+      const promovido = await clientService.promoteFromPreCadastro(client.id);
+      await loadClients();
+      setModalState({ type: 'edit', client: promovido });
+    } catch (error) {
+      console.error('Erro ao promover pré-cadastro:', error);
+      alert('Erro ao transformar o pré-cadastro em cliente');
+    }
+  };
+
+  const hasActiveFilters = Boolean(filters.status || filters.client_type || filters.search) || filters.sort_order === 'oldest' || showIncompleteOnly || showOutdatedOnly || showingPreCadastros;
 
   const isFormModalOpen = modalState.type === 'create' || modalState.type === 'edit';
   const isDetailsModalOpen = modalState.type === 'details' && Boolean(selectedClient);
@@ -999,7 +1021,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                 </div>
               </div>
             )}
-            {((missingFieldsMap.size > 0 && showMissingBanner) || outdatedSet.size > 0 || hasActiveFilters) && (
+            {((missingFieldsMap.size > 0 && showMissingBanner) || outdatedSet.size > 0 || preCadastroCount > 0 || hasActiveFilters) && (
               <div className="flex items-center gap-2 flex-wrap px-3 py-2 rounded-lg bg-slate-50 border border-[#e7e5df] text-xs">
                 {/* Chip: Incompletos (toggle) */}
                 {missingFieldsMap.size > 0 && showMissingBanner && (
@@ -1038,6 +1060,30 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                   </button>
                 )}
 
+                {/* Chip: Pré-cadastros (toggle). Nome e telefone anotados no
+                    atendimento de quem ainda não é cliente. Ficam aqui, fora da
+                    lista, porque é assim que eles NÃO se confundem com cadastro
+                    — mas a um clique, porque alguém precisa completá-los. */}
+                {preCadastroCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFilters((prev) => ({
+                      ...prev,
+                      pre_cadastro: prev.pre_cadastro === 'only' ? 'exclude' : 'only',
+                    }))}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition ${
+                      showingPreCadastros
+                        ? 'bg-sky-100 text-sky-800 ring-1 ring-sky-300'
+                        : 'bg-[#f8f7f5] text-slate-600 ring-1 ring-slate-200 hover:ring-sky-300 hover:text-sky-700'
+                    }`}
+                    title={showingPreCadastros ? 'Voltar para a lista de clientes' : 'Ver os pré-cadastros do atendimento'}
+                  >
+                    <UserPlus className="w-3 h-3 text-sky-500 flex-shrink-0" />
+                    <strong className="font-semibold">{preCadastroCount}</strong> pré-cadastros
+                    {showingPreCadastros && <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse ml-0.5" />}
+                  </button>
+                )}
+
                 {/* Limpar filtros */}
                 {hasActiveFilters && (
                   <button
@@ -1046,7 +1092,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
                       setShowIncompleteOnly(false);
                       setShowOutdatedOnly(false);
                       setSearchTerm('');
-                      setFilters({ sort_order: 'newest' });
+                      setFilters({ sort_order: 'newest', pre_cadastro: 'exclude' });
                     }}
                     className="inline-flex items-center gap-1 ml-auto text-slate-500 hover:text-slate-800 font-medium hover:underline decoration-dotted underline-offset-2"
                   >
@@ -1308,6 +1354,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
           onView={handleViewClient}
           onEdit={handleEditClient}
           onDelete={handleDeleteClient}
+          onPromote={handlePromotePreCadastro}
           photoUrls={clientPhotoUrls}
         />
       </div>

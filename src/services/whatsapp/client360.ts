@@ -35,6 +35,10 @@ const STALE_DEADLINE_DAYS = 30;
  */
 const consultasEmVoo = criarCompartilhadorDeConsultas({ marca: '[Jurius Fetch][WhatsApp]' });
 
+/** Colunas do cadastro que o painel da conversa mostra (`WhatsAppClientLite`). */
+const CLIENT_LITE_COLS =
+  'id, full_name, cpf_cnpj, phone, mobile, photo_path, email, status, client_type, address_city, address_state, is_pre_cadastro';
+
 /** Dias de atraso de um vencimento (0 quando ainda não venceu). */
 function daysOverdue(due: string, startOfToday: Date): number {
   const d = new Date(due.length <= 10 ? `${due}T00:00:00` : due);
@@ -64,25 +68,58 @@ export const client360Api = {
   async getClient(clientId: string): Promise<WhatsAppClientLite | null> {
     const { data } = await supabase
       .from('clients')
-      .select('id, full_name, cpf_cnpj, phone, mobile, photo_path, email, status, client_type, address_city, address_state')
+      .select(CLIENT_LITE_COLS)
       .eq('id', clientId)
       .maybeSingle();
     return (data as WhatsAppClientLite) || null;
   },
 
-  /** Cria um contato básico (nome + telefone) diretamente da conversa e devolve o registro. */
-  async createQuickContact(params: { fullName: string; phone: string }): Promise<WhatsAppClientLite> {
+  /**
+   * Cria um contato a partir da conversa e devolve o registro.
+   *
+   * `preCadastro` (o padrão) grava a linha marcada como pré-cadastro: nome de
+   * exibição e telefone de alguém que ligou, mas ainda não é cliente. É o que
+   * permite marcar um compromisso ou um prazo ali mesmo sem inventar um cliente
+   * — e o registro fica fora da lista, da busca e das estatísticas do módulo
+   * Clientes até alguém promovê-lo.
+   */
+  async createQuickContact(params: {
+    fullName: string;
+    phone: string;
+    preCadastro?: boolean;
+  }): Promise<WhatsAppClientLite> {
     const name = params.fullName.trim();
     if (!name) throw new Error('Informe o nome do contato.');
     const norm = normalizePhone(params.phone);
     if (!norm) throw new Error('Telefone inválido.');
     const { data, error } = await supabase
       .from('clients')
-      .insert({ full_name: name, mobile: norm, client_type: 'pessoa_fisica', status: 'ativo' })
-      .select('id, full_name, cpf_cnpj, phone, mobile, photo_path, email, status, client_type, address_city, address_state')
+      .insert({
+        full_name: name,
+        mobile: norm,
+        client_type: 'pessoa_fisica',
+        status: 'ativo',
+        is_pre_cadastro: params.preCadastro !== false,
+      })
+      .select(CLIENT_LITE_COLS)
       .single();
     if (error) throw new Error(error.message);
     return data as WhatsAppClientLite;
+  },
+
+  /** Tira a marca de pré-cadastro: o MESMO registro passa a valer como cliente. */
+  async promoteClient(clientId: string): Promise<void> {
+    const { error } = await supabase
+      .from('clients')
+      .update({ is_pre_cadastro: false, updated_at: new Date().toISOString() })
+      .eq('id', clientId);
+    if (error) throw new Error(error.message);
+    await clientChangeHistoryService.record(clientId, 'whatsapp', [{
+      field: 'is_pre_cadastro',
+      oldValue: true,
+      newValue: false,
+      sourceLabel: 'Pré-cadastro promovido a cliente no atendimento',
+    }]);
   },
 
   /**

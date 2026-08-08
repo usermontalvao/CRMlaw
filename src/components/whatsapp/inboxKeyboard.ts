@@ -16,7 +16,11 @@ export type InboxKeyAction =
   | { kind: 'select'; conversationId: string }
   | { kind: 'focusSearch' }
   | { kind: 'clearSearch' }
-  | { kind: 'blurSearch' };
+  | { kind: 'blurSearch' }
+  | { kind: 'cancelRecording' }
+  | { kind: 'closeOverlay' }
+  | { kind: 'cancelCompose' }
+  | { kind: 'closeConversation' };
 
 export interface InboxKeyContext {
   /** Ids das conversas na ordem em que estão na tela (já filtradas). */
@@ -31,6 +35,14 @@ export interface InboxKeyContext {
   hasSearch: boolean;
   /** Há um modal/diálogo aberto — o teclado é dele, não nosso. */
   dialogOpen: boolean;
+  /** Gravando áudio agora. */
+  recording?: boolean;
+  /** Menu flutuante aberto no compositor (anexos, emoji, GIF, modelos). */
+  overlayOpen?: boolean;
+  /** Compondo em cima de outra mensagem: editando ou respondendo. */
+  composing?: boolean;
+  /** Há rascunho escrito no compositor. */
+  hasDraft?: boolean;
 }
 
 export interface InboxKeyEvent {
@@ -59,6 +71,40 @@ export function neighbourId(visibleIds: string[], selectedId: string | null, ste
 }
 
 /**
+ * O Esc de aplicativo: DESFAZ UMA COISA POR VEZ, da mais recente para a mais
+ * antiga, e nunca duas de uma vez.
+ *
+ * É assim que todo programa de mesa se comporta, e a ordem não é arbitrária —
+ * ela é a pilha do que o usuário abriu. Cada Esc tira o item do topo; apertar
+ * várias vezes desfaz a pilha inteira, um passo de cada vez, e cada passo é
+ * previsível porque desfaz exatamente o que foi feito por último.
+ *
+ *   1. Gravando        → descarta a gravação. Fica no topo por ser o único
+ *                        estado que continua CONSUMINDO algo (o microfone
+ *                        aberto) e o único cujo acidente sai do CRM e chega ao
+ *                        cliente. Quem aperta Esc gravando quer parar agora.
+ *   2. Menu aberto     → fecha o menu (anexos, emoji, GIF, modelos).
+ *   3. Editando/       → sai do modo, devolvendo o compositor ao normal.
+ *      respondendo
+ *   4. Busca           → limpa o texto; já vazia, devolve o foco à lista.
+ *   5. Rascunho escrito→ NADA. É a exceção deliberada da cadeia: apagar
+ *                        parágrafos digitados com uma tecla, sem desfazer, é
+ *                        perder trabalho — o oposto do que o Esc promete. Quem
+ *                        quer limpar seleciona e apaga.
+ *   6. Conversa aberta → fecha a conversa e volta à lista. Só no fim, quando não
+ *                        há mais nada por cima; é o "voltar" da tela.
+ */
+function escapeAction(ctx: InboxKeyContext): InboxKeyAction | null {
+  if (ctx.recording) return { kind: 'cancelRecording' };
+  if (ctx.overlayOpen) return { kind: 'closeOverlay' };
+  if (ctx.composing) return { kind: 'cancelCompose' };
+  if (ctx.inSearch) return ctx.hasSearch ? { kind: 'clearSearch' } : { kind: 'blurSearch' };
+  if (ctx.hasDraft) return null;
+  if (ctx.selectedId) return { kind: 'closeConversation' };
+  return null;
+}
+
+/**
  * Traduz uma tecla na ação da inbox. `null` quando a tecla não é nossa — e a
  * regra mais importante deste módulo é justamente devolver `null` com folga:
  * roubar uma tecla de dentro do compositor (ou de um modal) estraga o que o
@@ -72,10 +118,7 @@ export function resolveInboxKey(event: InboxKeyEvent, ctx: InboxKeyContext): Inb
 
   if (comando && (event.key === 'k' || event.key === 'K')) return { kind: 'focusSearch' };
 
-  if (event.key === 'Escape') {
-    if (ctx.inSearch) return ctx.hasSearch ? { kind: 'clearSearch' } : { kind: 'blurSearch' };
-    return null; // fora da busca, o Esc é do compositor/modal
-  }
+  if (event.key === 'Escape') return escapeAction(ctx);
 
   if (comando && !event.altKey) return null;
 

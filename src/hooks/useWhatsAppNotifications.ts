@@ -22,7 +22,7 @@ import { supabase } from '../config/supabase';
 import { whatsappService } from '../services/whatsapp.service';
 import { muteStore } from '../services/whatsapp/muteStore';
 import { notifyScope } from '../services/whatsapp/notifyScope';
-import { resolveAvatarUrl } from '../services/whatsapp/shared';
+import { resolveAvatarUrl, resolveMediaUrl } from '../services/whatsapp/shared';
 import { signatureService } from '../services/signature.service';
 import { playNotificationSound, isNotifySoundMuted, isInChatSoundMuted } from '../utils/notificationSound';
 import { events, SYSTEM_EVENTS } from '../utils/events';
@@ -105,13 +105,26 @@ function previewOf(msg: { content?: string | null; type?: string | null }): stri
   return kindOf(msg.type) === 'text' ? 'Nova mensagem' : '';
 }
 
-/** Texto para a notificação do sistema, que só aceita uma linha de corpo. */
-function systemBodyOf(preview: string, kind: NotifyKind, fileName?: string | null): string {
+/** Segundos → "0:07" / "4:12", o formato do próprio WhatsApp. */
+function durationLabel(seconds?: number | null): string {
+  if (!seconds || seconds <= 0) return '';
+  const total = Math.round(seconds);
+  return ` (${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')})`;
+}
+
+/**
+ * Texto para a notificação do sistema, que só aceita uma linha de corpo.
+ *
+ * A duração entra no áudio e no vídeo porque é ela que diz se vale interromper o
+ * que se está fazendo — sem o número, um "ok" de 3 segundos e um relato de 4
+ * minutos produziam exatamente o mesmo aviso.
+ */
+function systemBodyOf(preview: string, kind: NotifyKind, fileName?: string | null, durationSeconds?: number | null): string {
   if (preview) return preview;
   switch (kind) {
-    case 'audio': return '🎤 Mensagem de voz';
+    case 'audio': return `🎤 Mensagem de voz${durationLabel(durationSeconds)}`;
     case 'image': return '📷 Foto';
-    case 'video': return '🎬 Vídeo';
+    case 'video': return `🎬 Vídeo${durationLabel(durationSeconds)}`;
     case 'document': return `📄 ${fileName || 'Documento'}`;
     case 'sticker': return 'Figurinha';
     default: return 'Nova mensagem';
@@ -242,6 +255,11 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
             at: Date.now(),
             clientPhotoPath: client?.photo_path ?? null,
             avatarPath: meta.contact_avatar_path,
+            // O id vai junto para quem exibe poder buscar a miniatura e a
+            // duração da mídia. Vai como ID, e não com os dados já resolvidos,
+            // porque resolvê-los aqui atrasaria o cartão em uma ida à rede — e o
+            // cartão precisa aparecer junto com a mensagem, não depois dela.
+            messageId: msg.id,
           });
         }
 
@@ -270,10 +288,25 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
               ? await signatureService.getSignedImageUrl(client.photo_path, 3600).catch(() => null)
               : null;
             const icon = fromClient ?? await resolveAvatarUrl(meta.contact_avatar_path).catch(() => null);
+
+            // Mídia: a mesma consulta que alimenta o cartão. Aqui ela pode ser
+            // esperada porque a aba está escondida — não há tela para atrasar.
+            // É o que dá à notificação do sistema a duração do áudio, o nome do
+            // arquivo e, no Chrome, a foto ampliada abaixo do texto.
+            const media = kind === 'text' || kind === 'sticker'
+              ? null
+              : await whatsappService.getMessageNotifyMeta(msg.id).catch(() => null);
+            const bigPicture = kind === 'image' && media?.storage_path
+              ? await resolveMediaUrl(media.storage_path).catch(() => null)
+              : null;
+
             const n = new Notification(name, {
-              body: systemBodyOf(preview, kind),
+              body: systemBodyOf(preview, kind, media?.file_name, media?.media_duration_seconds),
               tag: `wa:${convId}`,
               ...(icon ? { icon } : {}),
+              // `image` só existe no Chrome/Edge; onde não existe é ignorado sem
+              // erro, e a notificação continua a mesma de antes.
+              ...(bigPicture ? { image: bigPicture } as NotificationOptions : {}),
             });
             n.onclick = () => { window.focus(); onOpenRef.current(convId); n.close(); };
           } catch { /* alguns ambientes exigem ServiceWorker; o aviso visual já cobre */ }

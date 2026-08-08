@@ -173,6 +173,45 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   const pushName: string | null = m?.pushName || null;
 
   const msg = m?.message || {};
+
+  // ── Revogação ("apagar para todos" feito no aparelho) ──
+  // Chega como uma mensagem normal cujo conteúdo é um protocolMessage REVOKE
+  // apontando para a chave da mensagem original. Não é conteúdo: é uma ORDEM
+  // sobre uma mensagem que já está na thread. Tratada antes de tudo, senão
+  // viraria uma bolha vazia na conversa.
+  //
+  // deleted_by fica NULO de propósito — quem apagou foi o contato, não alguém do
+  // escritório. É o que a tela usa para escrever "Esta mensagem foi apagada" em
+  // vez de "Você apagou esta mensagem".
+  const revoked = msg?.protocolMessage;
+  if (revoked?.type === 'REVOKE' || revoked?.type === 0) {
+    const targetId = revoked?.key?.id;
+    if (targetId) {
+      const { data: apagada } = await admin.from('whatsapp_messages')
+        .update({ deleted_at: new Date().toISOString(), deleted_scope: 'everyone' })
+        .eq('evolution_message_id', targetId)
+        .is('deleted_at', null)
+        .select('id, conversation_id')
+        .maybeSingle();
+      // A prévia da lista é um texto congelado na conversa: sem corrigi-la, a
+      // mensagem sumiria da thread e continuaria por extenso na lista.
+      if (apagada?.conversation_id) {
+        const { data: ultima } = await admin.from('whatsapp_messages')
+          .select('id, deleted_at')
+          .eq('conversation_id', apagada.conversation_id)
+          .order('wa_timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (ultima?.id === apagada.id) {
+          await admin.from('whatsapp_conversations')
+            .update({ last_message_preview: 'Mensagem apagada' })
+            .eq('id', apagada.conversation_id);
+        }
+      }
+    }
+    return;
+  }
+
   let type = 'text';
   let content: string | null = null;
   let mediaNode: any = null;       // nó *Message com metadados de mídia
@@ -195,6 +234,12 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   }
   else if (msg.stickerMessage) { type = 'sticker'; mediaNode = msg.stickerMessage; mediaMime = msg.stickerMessage.mimetype || 'image/webp'; }
   else { content = null; }
+
+  // Duração de áudio/vídeo, quando a Evolution informa. Vem de graça no payload
+  // e é o que permite o aviso dizer "Mensagem de voz · 0:12" em vez de deixar a
+  // pessoa abrir a conversa só para descobrir se vale parar o que está fazendo.
+  const rawSeconds = Number(mediaNode?.seconds);
+  const mediaDuration = Number.isFinite(rawSeconds) && rawSeconds > 0 ? Math.round(rawSeconds) : null;
 
   const tsRaw = m?.messageTimestamp;
   const waTimestamp = tsRaw ? new Date(Number(tsRaw) * 1000).toISOString() : new Date().toISOString();
@@ -348,6 +393,7 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
     media_mime: mediaMime,
     storage_path: storagePath,
     media_size: mediaSize,
+    media_duration_seconds: mediaDuration,
     file_name: fileName,
     is_animated: isAnimated,
     transcription_status: transcriptionStatus,
@@ -492,7 +538,12 @@ async function classifyReopen(admin: any, convId: string, text: string | null, t
   if (!raw) return type !== 'text' ? 'reopen' : 'keep';
 
   const norm = raw.toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')   // remove acentos
+    // Remove acentos. O range vai escapado (̀–ͯ = bloco dos acentos
+    // combinantes) porque os caracteres crus são INVISÍVEIS no editor: a classe
+    // aparecia como dois colchetes com um traço no meio, indistinguível de um
+    // erro de digitação, e qualquer cópia/colagem pelo caminho podia comê-la sem
+    // deixar rastro.
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
   // Palavras de cortesia/agradecimento/confirmação (mensagem curta só com elas = fim).

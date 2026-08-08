@@ -1,6 +1,15 @@
 export type WhatsAppDirection = 'in' | 'out';
 export type WhatsAppMsgType = 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker';
 export type WhatsAppMsgStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+
+/**
+ * Alcance da exclusão, na mesma divisão do WhatsApp:
+ *  - 'me'       — some só do CRM; o contato continua com a mensagem no aparelho.
+ *                 Vale para qualquer mensagem, inclusive as recebidas.
+ *  - 'everyone' — revogada também no aparelho do contato. Só para mensagem nossa
+ *                 e dentro da janela que o WhatsApp aceita.
+ */
+export type WhatsAppDeleteScope = 'me' | 'everyone';
 export type WhatsAppTranscriptionStatus = 'pending' | 'done' | 'failed' | 'unsupported' | null;
 /** Estados puramente de UI (mensagens otimistas, ainda não confirmadas). */
 export type WhatsAppLocalState = 'uploading' | 'sending' | 'transcribing' | 'failed' | null;
@@ -80,12 +89,24 @@ export interface WhatsAppMessage {
    * um play parado no lugar da animação.
    */
   is_animated?: boolean | null;
+  /** Duração do áudio/vídeo em segundos, quando a Evolution informa. */
+  media_duration_seconds?: number | null;
   reply_to_id: string | null;
   edited_at: string | null;
   status: WhatsAppMsgStatus;
   sender_user_id: string | null;
   wa_timestamp: string;
   created_at: string;
+  /**
+   * Mensagem apagada (soft delete). A linha continua no banco: a bolha vira o
+   * aviso cinza "Mensagem apagada" e o conteúdo some da tela, mas quem apagou e
+   * quando permanecem auditáveis.
+   */
+  deleted_at?: string | null;
+  /** Quem apagou. Nulo COM `deleted_at` = quem apagou foi o próprio contato. */
+  deleted_by?: string | null;
+  /** 'me' = sumiu só no CRM; 'everyone' = revogada também no aparelho do contato. */
+  deleted_scope?: WhatsAppDeleteScope | null;
   /** Apenas UI — não vem do banco. */
   _local?: WhatsAppLocalState;
   _tempId?: string;
@@ -131,6 +152,8 @@ export interface WhatsAppClientLite {
   client_type: string | null;
   address_city: string | null;
   address_state: string | null;
+  /** Pré-cadastro (nome + telefone), ainda não é cliente. Ver `clients.is_pre_cadastro`. */
+  is_pre_cadastro?: boolean | null;
 }
 
 /** Canal = uma conexão/número na Evolution (whatsapp_instances). */

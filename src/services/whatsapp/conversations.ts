@@ -668,6 +668,31 @@ export const conversationsApi = {
     return subscribeWaMessageEvents(e => { if (e.op === 'INSERT') onInsert(e); });
   },
 
+  /**
+   * O mínimo sobre a MÍDIA de uma mensagem, para o aviso de mensagem nova poder
+   * mostrar a miniatura da foto e a duração do áudio.
+   *
+   * Por que uma consulta em vez de mandar isso no broadcast: o broadcast chega a
+   * TODA aba aberta de TODA a equipe, em toda mensagem. Engordá-lo com quatro
+   * campos que só interessam à minoria das mensagens (as de mídia), e dentro
+   * dessas só às que passam pelo filtro "é minha e devo avisar", seria pagar em
+   * tráfego por mensagem para servir um punhado de avisos — e este projeto já
+   * levou um susto de custo de realtime exatamente assim. Aqui a ida ao banco é
+   * uma por AVISO, não uma por mensagem, e acontece fora do caminho crítico: o
+   * cartão já está na tela quando ela volta.
+   */
+  async getMessageNotifyMeta(messageId: string): Promise<{
+    storage_path: string | null; file_name: string | null;
+    media_mime: string | null; media_duration_seconds: number | null;
+  } | null> {
+    const { data } = await supabase
+      .from(MSG_TABLE)
+      .select('storage_path, file_name, media_mime, media_duration_seconds')
+      .eq('id', messageId)
+      .maybeSingle();
+    return (data as any) ?? null;
+  },
+
   /** Metadados enxutos da conversa para o notificador (fallback de cache-miss). */
   async getConversationMeta(id: string): Promise<{
     id: string; assigned_user_id: string | null; contact_name: string | null;

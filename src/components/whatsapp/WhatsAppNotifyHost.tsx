@@ -15,7 +15,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SYSTEM_EVENTS } from '../../utils/events';
 import type { NotifyTier } from '../../services/whatsapp/notifyScope';
-import { resolveAvatarUrl } from '../../services/whatsapp/shared';
+import { resolveAvatarUrl, resolveMediaUrl } from '../../services/whatsapp/shared';
+import { whatsappService } from '../../services/whatsapp.service';
 import { signatureService } from '../../services/signature.service';
 import WhatsAppMessageToast, {
   WHATSAPP_TOAST_DURATION_MS,
@@ -38,6 +39,31 @@ interface Incoming {
   kind?: WhatsAppToastKind;
   fileName?: string | null;
   at?: number;
+  /** Id da mensagem — usado para buscar miniatura/duração da mídia. */
+  messageId?: string | null;
+}
+
+/**
+ * Busca a mídia e devolve o que o cartão sabe mostrar: a miniatura da foto/vídeo
+ * e a duração do áudio.
+ *
+ * Roda FORA do caminho crítico, como a foto do contato: o cartão já está na tela
+ * dizendo quem falou quando isto volta, e a miniatura entra por cima. Se falhar
+ * (link expirado, arquivo ainda subindo, rede ruim), o cartão continua o que já
+ * era antes — o quadradinho com o ícone. Nada aqui pode impedir o aviso.
+ */
+async function resolveMediaMeta(messageId: string, kind: WhatsAppToastKind): Promise<{
+  thumbUrl?: string | null; durationSeconds?: number | null; fileName?: string | null;
+} | null> {
+  const meta = await whatsappService.getMessageNotifyMeta(messageId).catch(() => null);
+  if (!meta) return null;
+  const durationSeconds = meta.media_duration_seconds ?? null;
+  if (kind === 'document') return { fileName: meta.file_name, durationSeconds: null };
+  // Só foto e vídeo viram imagem no cartão; áudio e documento levam só o número
+  // e o nome, que não custam rede nenhuma.
+  if ((kind !== 'image' && kind !== 'video') || !meta.storage_path) return { durationSeconds };
+  const thumbUrl = await resolveMediaUrl(meta.storage_path).catch(() => null);
+  return { thumbUrl, durationSeconds };
 }
 
 /**
@@ -114,6 +140,22 @@ export const WhatsAppNotifyHost: React.FC<{
         void resolvePhotoUrl(data.clientPhotoPath, data.avatarPath).then(url => {
           if (!url) return;
           setStack(prev => prev.map(t => (t.id === id ? { ...t, avatarUrl: url } : t)));
+        });
+      }
+
+      // Miniatura e duração, pelo mesmo caminho: o cartão nasce com o ícone e
+      // ganha a imagem (ou o "0:12") quando a consulta volta. Texto e figurinha
+      // não têm o que buscar.
+      const kind = data?.kind ?? 'text';
+      if (data?.messageId && kind !== 'text' && kind !== 'sticker') {
+        void resolveMediaMeta(data.messageId, kind).then(meta => {
+          if (!meta) return;
+          setStack(prev => prev.map(t => (t.id === id ? {
+            ...t,
+            thumbUrl: meta.thumbUrl ?? t.thumbUrl,
+            durationSeconds: meta.durationSeconds ?? t.durationSeconds,
+            fileName: meta.fileName ?? t.fileName,
+          } : t)));
         });
       }
     };

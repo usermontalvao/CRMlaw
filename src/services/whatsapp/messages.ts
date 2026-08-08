@@ -1,6 +1,6 @@
 // Camada de mensagens: leitura da thread, envio de texto/mídia, upload e edição.
 import { supabase } from '../../config/supabase';
-import type { WhatsAppMessage, SendMediaInput, UploadedMedia } from '../../types/whatsapp.types';
+import type { WhatsAppMessage, SendMediaInput, UploadedMedia, WhatsAppDeleteScope } from '../../types/whatsapp.types';
 import { MSG_TABLE, MEDIA_BUCKET, attachSignedUrls, invokeFn, extOf } from './shared';
 
 /**
@@ -25,7 +25,7 @@ export type SendResult = {
  * Literal numa linha só de propósito: o supabase-js tipa o retorno a partir do
  * texto da consulta, e uma string montada em tempo de execução vira `unknown`.
  */
-const MSG_COLUMNS = 'id, conversation_id, evolution_message_id, direction, type, content, media_url, media_mime, storage_path, media_size, media_sha256, file_name, transcription_text, transcription_status, is_animated, reply_to_id, edited_at, status, sender_user_id, wa_timestamp, created_at';
+const MSG_COLUMNS = 'id, conversation_id, evolution_message_id, direction, type, content, media_url, media_mime, storage_path, media_size, media_sha256, file_name, media_duration_seconds, transcription_text, transcription_status, is_animated, reply_to_id, edited_at, status, sender_user_id, wa_timestamp, created_at, deleted_at, deleted_by, deleted_scope';
 
 export const messagesApi = {
   /**
@@ -121,5 +121,17 @@ export const messagesApi = {
 
   async editMessage(messageId: string, text: string): Promise<void> {
     await invokeFn('evolution-send', { action: 'edit', message_id: messageId, text });
+  },
+
+  /**
+   * Apaga a mensagem. `scope` decide o alcance:
+   *  - 'me'       — some só aqui (soft delete). Serve para qualquer mensagem.
+   *  - 'everyone' — revoga também no aparelho do contato. Se a Evolution recusar
+   *                 (mensagem velha demais, instância fora do ar), a função NÃO
+   *                 marca nada e o erro chega aqui — a tela nunca mostra
+   *                 "apagada" numa mensagem que continua no celular do cliente.
+   */
+  async deleteMessage(messageId: string, scope: WhatsAppDeleteScope): Promise<void> {
+    await invokeFn('evolution-send', { action: 'delete', message_id: messageId, scope });
   },
 };

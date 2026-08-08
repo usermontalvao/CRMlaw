@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, Edit, Trash2, User, Building2, MessageCircle, AlertTriangle, Clock, Search } from 'lucide-react';
+import { Eye, Edit, Trash2, User, Building2, MessageCircle, AlertTriangle, Clock, Search, UserPlus, UserCheck } from 'lucide-react';
 import type { Client } from '../types/client.types';
 import { formatCPF, formatCNPJ } from '../utils/formatters';
 import { ClientsSkeleton } from './ui';
@@ -82,9 +82,11 @@ interface ClientListProps {
   selectedIds?: Set<string>;
   onToggleSelected?: (clientId: string) => void;
   photoUrls?: Map<string, string>;
+  /** Tira a marca de pré-cadastro do registro. Só aparece nas linhas que a têm. */
+  onPromote?: (client: Client) => void;
 }
 
-const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete, duplicateSummaryMap, missingFieldsMap, outdatedSet, isFiltered, selectionMode = false, selectedIds, onToggleSelected, photoUrls }) => {
+const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdit, onDelete, duplicateSummaryMap, missingFieldsMap, outdatedSet, isFiltered, selectionMode = false, selectedIds, onToggleSelected, photoUrls, onPromote }) => {
   const showSkeleton = useMinLoading(loading);
   const formatCpfCnpj = (client: Client) => {
     const raw = client.cpf_cnpj || '';
@@ -234,6 +236,15 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                {client.is_pre_cadastro && onPromote && (
+                  <button
+                    onClick={() => onPromote(client)}
+                    className="p-1.5 text-sky-600 hover:bg-sky-50 rounded transition"
+                    title="Transformar em cliente"
+                  >
+                    <UserCheck className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   onClick={() => onView(client)}
                   className="p-1.5 text-primary-600 hover:bg-primary-50 rounded transition"
@@ -318,6 +329,12 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                       <div className="text-sm font-semibold text-slate-900">{client.full_name}</div>
                       <div className="text-xs text-slate-500">{client.profession || (client.client_type === 'pessoa_fisica' ? 'Pessoa Física' : 'Pessoa Jurídica')}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
+                        {client.is_pre_cadastro && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                            <UserPlus className="w-3 h-3" />
+                            Pré-cadastro
+                          </span>
+                        )}
                         {duplicateInfo && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
                             <AlertTriangle className="w-3 h-3" />
@@ -394,6 +411,15 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="inline-flex min-w-[108px] items-center justify-end gap-0.5">
+                    {client.is_pre_cadastro && onPromote && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onPromote(client); }}
+                        className="p-2 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-md transition"
+                        title="Transformar em cliente"
+                      >
+                        <UserCheck className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => { e.stopPropagation(); onView(client); }}
                       className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition"

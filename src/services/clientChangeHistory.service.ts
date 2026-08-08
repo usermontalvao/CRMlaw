@@ -59,6 +59,7 @@ export const CLIENT_FIELD_LABELS: Record<string, string> = {
   address_zip_code: 'CEP',
   notes: 'Observações',
   status: 'Status',
+  is_pre_cadastro: 'Pré-cadastro',
 };
 
 export const CLIENT_CHANGE_SOURCE_LABELS: Record<ClientChangeSource, string> = {

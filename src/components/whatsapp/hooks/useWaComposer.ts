@@ -12,6 +12,7 @@ import {
 } from '../../../services/whatsapp.service';
 import { agentLabel, conversationPreviewLabel } from '../format';
 import { isReconnectPendingError, enqueueReconnectHold } from '../../../services/whatsapp/resilientSend';
+import { playWaActionSound } from '../../../utils/waActionSounds';
 import { useToastContext } from '../../../contexts/ToastContext';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppAiSession,
@@ -50,6 +51,8 @@ export interface WaComposerApi {
   uploadProgress: Map<string, number>;
   recording: boolean;
   recSeconds: number;
+  /** Volume do microfone agora (0–1) — as barras da gravação leem daqui. */
+  recLevel: number;
   attachStaged: File[] | null;
   setAttachStaged: React.Dispatch<React.SetStateAction<File[] | null>>;
   // Ações.
@@ -126,6 +129,17 @@ export function useWaComposer({
   const [editing, setEditing] = useState<WhatsAppMessage | null>(null);
   const [recording, setRecording] = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
+  /**
+   * Volume do microfone AGORA, de 0 a 1 — o que faz as barras da gravação
+   * subirem e descerem com a voz.
+   *
+   * Antes o equalizador era uma animação de CSS em laço: as barras dançavam
+   * igual com o microfone mudo, com a mão em cima dele ou com a permissão
+   * negada. Bonito e mentiroso — o único elemento da tela que poderia responder
+   * "o microfone está te ouvindo?" respondia "sim" sempre, inclusive quando a
+   * resposta era não. Agora é medição real: silêncio deixa as barras deitadas.
+   */
+  const [recLevel, setRecLevel] = useState(0);
 
   // Rascunho POR CONVERSA: o texto digitado pertence à conversa, não ao módulo.
   // Sem isto, ao trocar de conversa o rascunho permanece e pode ser enviado para
@@ -188,6 +202,21 @@ export function useWaComposer({
   const mediaRecRef = useRef<MediaRecorder | null>(null);
   const recChunksRef = useRef<Blob[]>([]);
   const recTimerRef = useRef<number | null>(null);
+  // Marca o descarte da gravação em curso.
+  //
+  // Existe porque `stop()` NÃO para no ato: ele ainda dispara um último
+  // `ondataavailable` com o que estava no buffer, e só depois o `onstop`. Zerar
+  // a lista de pedaços na hora do clique — que era o que se fazia — não adiantava
+  // nada: o pedaço final chegava logo em seguida, entrava na lista recém-limpa, e
+  // o `onstop` montava um blob com ele. Resultado: a lixeira enviava um áudio
+  // curto em vez de descartar. Uma flag lida nos DOIS retornos é o que fecha a
+  // janela entre o clique e o fim real da gravação.
+  const recCancelledRef = useRef(false);
+  // Medição de volume: contexto próprio + laço de animação, desmontados no fim
+  // da gravação. Ficam em refs porque o `onstop` do MediaRecorder precisa
+  // alcançá-los, e ele não vê o estado do React.
+  const recAudioCtxRef = useRef<AudioContext | null>(null);
+  const recRafRef = useRef<number | null>(null);
 
   // Reset do compositor ao trocar de conversa. Resposta e edição são do momento
   // e morrem aqui; a fila otimista, NÃO — ela é a mensagem em si.
@@ -363,6 +392,10 @@ export function useWaComposer({
     setPending(prev => [...prev, optimistic]);
     bumpConversationPreview(conversation.id, rawText, sentAt);
     setDraft(''); setReplyTo(null); setSending(true);
+    // Toca junto com a bolha aparecendo, não quando o servidor confirma: o som é
+    // o par do gesto (o Enter), e atrasá-lo até a rede responder o transformaria
+    // num aviso solto, chegando quando a pessoa já está escrevendo a próxima.
+    playWaActionSound('send');
     try {
       // Auto-assumir: responder uma conversa SEM dono (na fila) assume o atendimento
       // automaticamente para você — antes da 1ª mensagem sair. Conversa já minha
@@ -657,6 +690,68 @@ export function useWaComposer({
   const handleDroppedFiles = (files: File[]) => stageAttachments(files);
 
   // ── Gravação de áudio ──
+
+  /**
+   * Liga o medidor de volume ao mesmo stream que está sendo gravado.
+   *
+   * Mede em RMS (a média quadrática das amostras), não pelo pico: pico salta com
+   * qualquer estalo e faz a barra piscar sozinha; RMS é a energia percebida, que
+   * é o que o olho espera ver acompanhando a voz.
+   *
+   * A escala é a de sempre em áudio — logarítmica. Voz de fala normal fica perto
+   * de 0,05 em amplitude linear, e num gráfico linear isso vira uma barra
+   * praticamente parada no chão. A curva abaixo espalha justamente a faixa entre
+   * o silêncio e a fala, que é a única que importa aqui.
+   *
+   * Falhar aqui não cancela a gravação: sem medidor as barras ficam paradas, e
+   * gravar sem animação é muito melhor do que não gravar.
+   */
+  const startLevelMeter = (stream: MediaStream) => {
+    try {
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AC) return;
+      const ac = new AC();
+      recAudioCtxRef.current = ac;
+      const source = ac.createMediaStreamSource(stream);
+      const analyser = ac.createAnalyser();
+      // 1024 amostras ≈ 21ms a 48kHz: janela curta o bastante para a barra
+      // acompanhar a sílaba, longa o bastante para não tremer no ruído de fundo.
+      analyser.fftSize = 1024;
+      source.connect(analyser);
+      // Nada é conectado ao destination de propósito: ligar o microfone na saída
+      // devolveria a própria voz pelo alto-falante, com microfonia.
+
+      const buffer = new Float32Array(analyser.fftSize);
+      const medir = () => {
+        analyser.getFloatTimeDomainData(buffer);
+        let soma = 0;
+        for (let i = 0; i < buffer.length; i++) soma += buffer[i] * buffer[i];
+        const rms = Math.sqrt(soma / buffer.length);
+        // -60 dB (praticamente silêncio) → 0; 0 dB → 1.
+        const db = 20 * Math.log10(Math.max(rms, 1e-7));
+        const alvo = Math.min(1, Math.max(0, (db + 60) / 60));
+        // Sobe rápido e desce devagar, como todo medidor de áudio: a barra pega o
+        // ataque da voz e não desaba no meio da palavra, entre uma sílaba e outra.
+        setRecLevel(anterior => (alvo > anterior ? alvo : anterior * 0.82 + alvo * 0.18));
+        recRafRef.current = requestAnimationFrame(medir);
+      };
+      recRafRef.current = requestAnimationFrame(medir);
+    } catch {
+      /* sem medidor: as barras ficam paradas e a gravação segue normal */
+    }
+  };
+
+  /** Desliga o medidor. Idempotente — chamado do stop e do desmonte. */
+  const stopLevelMeter = () => {
+    if (recRafRef.current !== null) { cancelAnimationFrame(recRafRef.current); recRafRef.current = null; }
+    const ac = recAudioCtxRef.current;
+    recAudioCtxRef.current = null;
+    // `close()` é o que solta o processamento de áudio; sem ele, cada gravação
+    // deixa um AudioContext vivo e o navegador corta no limite por aba.
+    if (ac) void ac.close().catch(() => {});
+    setRecLevel(0);
+  };
+
   const startRecording = async () => {
     if (!selected || recording) return;
     try {
@@ -665,11 +760,21 @@ export function useWaComposer({
         : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       recChunksRef.current = [];
-      rec.ondataavailable = e => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
+      recCancelledRef.current = false;
+      // O pedaço final chega DEPOIS do clique na lixeira: descartado aqui, ele
+      // nem entra na lista.
+      rec.ondataavailable = e => {
+        if (recCancelledRef.current) return;
+        if (e.data.size > 0) recChunksRef.current.push(e.data);
+      };
       rec.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
+        stopLevelMeter();
         if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
+        // Descartada: solta o microfone e vai embora sem montar blob nenhum.
+        if (recCancelledRef.current) { recChunksRef.current = []; return; }
         const blob = new Blob(recChunksRef.current, { type: rec.mimeType || 'audio/webm' });
+        recChunksRef.current = [];
         // Blob minúsculo = só o cabeçalho do container, sem áudio real (captura
         // falhou). Avisa em vez de enviar um áudio mudo.
         if (blob.size < 1024) { toast.error('Gravação vazia', 'Nenhum áudio foi capturado. Tente novamente.'); return; }
@@ -680,6 +785,8 @@ export function useWaComposer({
       // às vezes entrega blob vazio/minúsculo no Chromium (áudio "não capturado").
       rec.start(250);
       setRecording(true); setRecSeconds(0);
+      startLevelMeter(stream);
+      playWaActionSound('rec-start');
       recTimerRef.current = window.setInterval(() => setRecSeconds(s => s + 1), 1000);
     } catch {
       toast.error('Não foi possível acessar o microfone');
@@ -689,11 +796,14 @@ export function useWaComposer({
   const stopRecording = (send: boolean) => {
     const rec = mediaRecRef.current;
     if (!rec) return;
-    if (!send) { recChunksRef.current = []; }
+    // A flag é levantada ANTES do stop(): é ela, e não o esvaziamento da lista,
+    // que impede o último pedaço de virar um áudio enviado sem querer.
+    recCancelledRef.current = !send;
     setRecording(false);
     if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
     if (rec.state !== 'inactive') rec.stop();
     mediaRecRef.current = null;
+    playWaActionSound(send ? 'rec-stop' : 'rec-cancel');
   };
 
   const sendAudioBlob = async (blob: Blob) => {
@@ -750,7 +860,7 @@ export function useWaComposer({
     sending,
     pending, setPending,
     uploadProgress,
-    recording, recSeconds,
+    recording, recSeconds, recLevel,
     attachStaged, setAttachStaged,
     handleSend, beginEdit,
     retryPending, discardPending, cancelUpload, resendExisting,

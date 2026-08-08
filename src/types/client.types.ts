@@ -53,6 +53,12 @@ export interface Client {
   /** Preenchido quando este cadastro foi absorvido por outro na mesclagem de
    *  duplicados. Registros assim ficam fora das listagens e da busca. */
   merged_into_client_id?: string | null;
+
+  /** Pré-cadastro: nome de exibição + telefone anotados no atendimento, de
+   *  alguém que ainda não é cliente. Serve para pendurar compromisso, prazo e
+   *  documento sem inventar um cliente que não existe — e por isso fica fora da
+   *  lista, da busca e das estatísticas do módulo Clientes até ser promovido. */
+  is_pre_cadastro?: boolean;
 }
 
 export interface CreateClientDTO {
@@ -77,6 +83,7 @@ export interface CreateClientDTO {
   notes?: string;
   status?: ClientStatus;
   photo_path?: string | null;
+  is_pre_cadastro?: boolean;
 }
 
 export interface UpdateClientDTO extends Partial<CreateClientDTO> {
@@ -88,4 +95,14 @@ export interface ClientFilters {
   client_type?: ClientType;
   search?: string; // Busca por nome, CPF/CNPJ, email
   sort_order?: 'newest' | 'oldest';
+  /**
+   * O que fazer com os pré-cadastros (`is_pre_cadastro`).
+   *
+   * O padrão é `include` de propósito: quem chama `listClients` quase sempre
+   * quer resolver um `client_id` num nome ou oferecer um seletor, e sumir com a
+   * linha ali significaria compromisso sem dono na tela e campo em branco na
+   * hora de editar. Quem mostra a POPULAÇÃO de clientes — a lista do módulo, as
+   * estatísticas, a busca global — pede `exclude` explicitamente.
+   */
+  pre_cadastro?: 'include' | 'exclude' | 'only';
 }

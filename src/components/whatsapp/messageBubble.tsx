@@ -7,14 +7,14 @@ import { createPortal } from 'react-dom';
 import {
   Pencil, RotateCcw, Calendar, ListTodo, CornerUpLeft, Loader2, AlertCircle,
   CheckCheck, Check, X, Pause, Play, FileText, Download, ChevronDown, Forward,
-  Image as ImageIcon, Video as VideoIcon,
+  Image as ImageIcon, Video as VideoIcon, Trash2, Ban,
 } from 'lucide-react';
 import { formatTime, typeLabel, maskSensitive, fmtAudioTime, formatBytes } from './format';
 import { WaRichText } from './WaRichTextView';
 import { waPlainText, stripAgentSignature } from './waRichText';
 import { WaPdfCard, isPdfMessage } from './pdfPreview';
 import { WaVideoLightbox } from './lightbox';
-import type { WhatsAppMessage } from '../../types/whatsapp.types';
+import type { WhatsAppMessage, WhatsAppDeleteScope } from '../../types/whatsapp.types';
 
 const WA_MESSAGE_MENU_EVENT = 'wa-message-menu-open';
 const WA_MESSAGE_MENU_WIDTH = 192;
@@ -40,7 +40,9 @@ export const MessageBubble: React.FC<{
   onCancel: (m: WhatsAppMessage) => void;
   onCreateDeadline: (m: WhatsAppMessage) => void;
   onCreateTask: (m: WhatsAppMessage) => void;
-}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask }) => {
+  /** Apagar a mensagem. Ausente = recurso indisponível no host. */
+  onDelete?: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => void;
+}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete }) => {
   const out = m.direction === 'out';
   const failed = m._local === 'failed' || m.status === 'failed';
   const busy = m._local === 'uploading' || m._local === 'sending';
@@ -55,6 +57,20 @@ export const MessageBubble: React.FC<{
   // novo). Mensagem ainda em envio ou falhada não é encaminhável.
   const canForward = !!onForward && !busy && !failed
     && (m.type === 'text' ? !!m.content : !!m.storage_path);
+
+  // ── Apagar ──
+  const deleted = !!m.deleted_at;
+  // "Apagar só aqui" vale para tudo que já existe no banco, inclusive mensagem
+  // recebida: o que ela faz é tirar da tela do escritório, e isso não depende do
+  // aparelho do contato. Fora: a mensagem ainda em voo (sem id no servidor, não
+  // há o que apagar) e a que já está apagada.
+  const canDeleteLocal = !!onDelete && !deleted && !busy && !m._tempId;
+  // "Apagar para todos" pede uma revogação à Evolution, e o WhatsApp só aceita
+  // revogar mensagem NOSSA que ainda tenha chave. A janela de tempo do WhatsApp
+  // não é conferida aqui de propósito: ela muda sem aviso e não é observável do
+  // client — quem responde por ela é a Evolution, e a recusa dela vira o toast
+  // que oferece apagar só aqui.
+  const canDeleteEveryone = canDeleteLocal && out && !failed && !!m.evolution_message_id;
   // Imagem/vídeo sem legenda/reply/nome → bolha sem moldura (igual WhatsApp):
   // a mídia "sangra" até a borda e a hora fica sobreposta num canto.
   // Reserva a bolha de mídia mesmo enquanto a URL assinada ainda não chegou.
@@ -100,7 +116,9 @@ export const MessageBubble: React.FC<{
       + (canForward ? 1 : 0)
       + (out && m.type === 'text' && m.evolution_message_id ? 1 : 0)
       + (canResend ? 1 : 0)
-      + (canCreateFollowups && !m._tempId ? 2 : 0);
+      + (canCreateFollowups && !m._tempId ? 2 : 0)
+      + (canDeleteLocal ? 1 : 0)
+      + (canDeleteEveryone ? 1 : 0);
     const estimatedHeight = actionCount * 42 + (actionCount > 1 ? 14 : 8);
     const below = rect.bottom + 6;
     const top = below + estimatedHeight <= window.innerHeight - 8
@@ -120,6 +138,31 @@ export const MessageBubble: React.FC<{
     setMenuOpen(false);
     action();
   };
+
+  // ── Mensagem apagada ──
+  // Sai antes de tudo: a bolha apagada não tem conteúdo, menu, mídia, resposta
+  // citada nem legenda — ela é só o aviso, e qualquer pedaço do corpo normal que
+  // vazasse para cá seria exatamente o que a exclusão deveria ter tirado da tela.
+  // A linha continua ocupando o lugar dela no tempo, como no WhatsApp: some o
+  // conteúdo, não o fato de ter havido uma mensagem ali.
+  if (deleted) {
+    return (
+      <div className={`wa-message-row group flex items-end ${groupStart ? 'mt-2' : 'mt-[2px]'} ${out ? 'justify-end' : 'justify-start'}`}>
+        <div className={`wa-bubble-in wa-bubble ${out ? 'wa-bubble-out origin-bottom-right' : 'wa-bubble-incoming origin-bottom-left'} ${groupStart ? (out ? 'wa-bubble-tail-out' : 'wa-bubble-tail-in') : ''} ${groupEnd ? '' : 'wa-bubble-continued'} wa-bubble-content relative px-[9px] pt-[6px] pb-[5px] text-[14px] leading-[1.36]`}>
+          <span className="flex items-center gap-1.5 italic text-[13.5px] text-[#8696a0]">
+            <Ban size={14} className="shrink-0" />
+            {/* Quem apagou muda a frase, como no aplicativo: a mensagem que o
+                CONTATO revogou não pode dizer "Você apagou". `deleted_by` nulo
+                com data preenchida é exatamente a marca do revoke dele. */}
+            {out || m.deleted_by ? 'Você apagou esta mensagem' : 'Esta mensagem foi apagada'}
+          </span>
+          <span className="mt-0.5 flex items-center justify-end gap-1 text-[10.5px] leading-4 text-[#667781]">
+            {formatTime(m.wa_timestamp)}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   // Figurinha não tem moldura nem fundo: encostada na mídia de cima (um vídeo,
   // por exemplo) ela parece grudada no player. Por isso pede um respiro próprio,
@@ -150,6 +193,19 @@ export const MessageBubble: React.FC<{
                   <div className="my-1 border-t border-slate-100" />
                   <MessageAction icon={<Calendar size={15} />} label="Criar prazo" onClick={() => runAction(() => onCreateDeadline(m))} />
                   <MessageAction icon={<ListTodo size={15} />} label="Criar tarefa" onClick={() => runAction(() => onCreateTask(m))} />
+                </>
+              )}
+              {/* Apagar por último e separado: é a única ação irreversível do
+                  menu, e no WhatsApp ela também mora no fim, em vermelho. */}
+              {canDeleteLocal && (
+                <>
+                  <div className="my-1 border-t border-slate-100" />
+                  {canDeleteEveryone && (
+                    <MessageAction danger icon={<Ban size={15} />} label="Apagar para todos"
+                      onClick={() => runAction(() => onDelete?.(m, 'everyone'))} />
+                  )}
+                  <MessageAction danger icon={<Trash2 size={15} />} label="Apagar só aqui"
+                    onClick={() => runAction(() => onDelete?.(m, 'me'))} />
                 </>
               )}
             </div>
@@ -231,10 +287,10 @@ export const MessageBubble: React.FC<{
 });
 MessageBubble.displayName = 'MessageBubble';
 
-const MessageAction: React.FC<{ icon: React.ReactNode; label: string; onClick: () => void }> = ({ icon, label, onClick }) => (
+const MessageAction: React.FC<{ icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean }> = ({ icon, label, onClick, danger }) => (
   <button type="button" onClick={onClick}
-    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-slate-700 transition hover:bg-[#f0f2f5]">
-    <span className="text-slate-500">{icon}</span>
+    className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition ${danger ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-[#f0f2f5]'}`}>
+    <span className={danger ? 'text-red-500' : 'text-slate-500'}>{icon}</span>
     <span>{label}</span>
   </button>
 );

@@ -72,9 +72,44 @@ test('Esc na busca limpa; com a busca já vazia, devolve o foco', () => {
   assert.deepEqual(resolveInboxKey({ key: 'Escape' }, ctx({ inSearch: true, hasSearch: false })), { kind: 'blurSearch' });
 });
 
-test('Esc fora da busca não é nosso (é do compositor: cancela resposta/edição)', () => {
-  assert.equal(resolveInboxKey({ key: 'Escape' }, ctx({ typing: true })), null);
-  assert.equal(resolveInboxKey({ key: 'Escape' }, ctx()), null);
+// ── Esc: a pilha do que está aberto ──────────────────────────────────
+// A ordem é o contrato: cada Esc desfaz UM item, do mais recente para o mais
+// antigo. Os testes abaixo empilham tudo de uma vez justamente para provar a
+// precedência — é o que impede um Esc de fechar a conversa quando o que a
+// pessoa queria era só parar a gravação.
+test('Esc gravando descarta a gravação, antes de qualquer outra coisa', () => {
+  assert.deepEqual(
+    resolveInboxKey({ key: 'Escape' }, ctx({ recording: true, overlayOpen: true, composing: true, inSearch: true, hasSearch: true })),
+    { kind: 'cancelRecording' },
+  );
+});
+
+test('Esc fecha o menu aberto antes de cancelar a composição', () => {
+  assert.deepEqual(
+    resolveInboxKey({ key: 'Escape' }, ctx({ overlayOpen: true, composing: true })),
+    { kind: 'closeOverlay' },
+  );
+});
+
+test('Esc sai da edição/resposta antes de mexer na busca', () => {
+  assert.deepEqual(
+    resolveInboxKey({ key: 'Escape' }, ctx({ composing: true, inSearch: true, hasSearch: true })),
+    { kind: 'cancelCompose' },
+  );
+});
+
+test('Esc com rascunho escrito não faz nada — texto digitado não se perde por tecla', () => {
+  assert.equal(resolveInboxKey({ key: 'Escape' }, ctx({ hasDraft: true, typing: true })), null);
+});
+
+test('Esc sem nada por cima fecha a conversa aberta', () => {
+  assert.deepEqual(resolveInboxKey({ key: 'Escape' }, ctx()), { kind: 'closeConversation' });
+  // Sem conversa aberta não sobra nada para desfazer.
+  assert.equal(resolveInboxKey({ key: 'Escape' }, ctx({ selectedId: null })), null);
+});
+
+test('Esc continua sendo do modal quando há um aberto', () => {
+  assert.equal(resolveInboxKey({ key: 'Escape' }, ctx({ dialogOpen: true, recording: true })), null);
 });
 
 // ── Não atrapalhar ───────────────────────────────────────────────────
