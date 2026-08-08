@@ -14,7 +14,8 @@ import { WA_AGENT_TOOLS_DISPLAY } from '../../../shared/waAgentTools';
 import {
   agentsApi, type WaAgent, type WaAgentMode, type WaRunEnriched, type WaRunVerdict,
 } from '../../../services/whatsapp/agents';
-import { waBtnGhost, waBtnPrimary, waInput, waLabel, waSelect, waTextarea } from '../ui';
+import { waBtnGhost, waBtnPrimary, waInput, waLabel, waSelect } from '../ui';
+import PromptEditor, { problemasDoPrompt } from './PromptEditor';
 
 const CARD = 'bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]';
 const LINE = 'border-[#e7e5df]';
@@ -274,6 +275,10 @@ const EditorAgente: React.FC<{
     debounce !== agente.debounce_seconds ||
     tools.join(',') !== (agente.allowed_tools || []).join(',');
 
+  // Menção que não existe no catálogo trava o salvamento. A IA ignoraria a
+  // instrução em silêncio, e ninguém entenderia por que ela não fez o passo.
+  const quebradas = problemasDoPrompt(prompt, tools).filter(p => p.nivel === 'inexistente');
+
   const alternar = (nome: string) =>
     setTools(t => (t.includes(nome) ? t.filter(x => x !== nome) : [...t, nome]));
 
@@ -344,14 +349,8 @@ const EditorAgente: React.FC<{
       </div>
 
       <div className={`${CARD} p-4`}>
-        <label className={waLabel}>Instruções</label>
-        <textarea
-          className={`${waTextarea} min-h-[280px] font-mono text-[12.5px] leading-relaxed`}
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          spellCheck={false}
-        />
-        <p className="mt-1.5 text-[11.5px] text-slate-500">
+        <PromptEditor value={prompt} onChange={setPrompt} liberados={tools} />
+        <p className="mt-2 text-[11.5px] text-slate-500">
           Escreva em português, com exemplos do que dizer. Ao salvar, a versão anterior é guardada.
         </p>
       </div>
@@ -389,10 +388,22 @@ const EditorAgente: React.FC<{
       </div>
 
       <div className="flex items-center gap-2.5 flex-wrap">
-        <button type="button" className={waBtnPrimary} onClick={() => void salvar()} disabled={!mudou || salvando}>
+        <button
+          type="button" className={waBtnPrimary} onClick={() => void salvar()}
+          disabled={!mudou || salvando || quebradas.length > 0}
+          title={quebradas.length ? 'Corrija as menções quebradas antes de salvar' : undefined}
+        >
           {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
           Salvar
         </button>
+        {quebradas.length > 0 && (
+          <span className="text-[12.5px] text-red-700 flex items-center gap-1.5">
+            <XCircle className="w-3.5 h-3.5" />
+            {quebradas.length === 1
+              ? `@${quebradas[0].texto} não existe`
+              : `${quebradas.length} menções não existem`}
+          </span>
+        )}
         {aviso && (
           <span className={`text-[12.5px] flex items-center gap-1.5 ${
             aviso === 'Salvo.' ? 'text-emerald-700' : 'text-red-700'}`}>

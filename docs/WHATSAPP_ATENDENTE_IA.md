@@ -126,9 +126,21 @@ decide apenas o momento. A IA nunca redige proposta nem cláusula.
 - [x] **Edge function `whatsapp-agent` publicada** — verify_jwt=false, auth própria (WA_AI_TOKEN ou service key)
 - [x] **Plug feito sem tocar no webhook** — `whatsapp-ai-flow` virou encaminhador para `whatsapp-agent`. Reapontar o webhook exigiria redeployar a função de ingestão de TODA mensagem; não compensa o risco
 - [x] Primeiro agente cadastrado — `triagem-pedro`, canal Pedro, modo sombra
-- [x] Tela: log de decisões + configuração dos agentes — `whatsapp/agent/AgentWorkbench.tsx`,
-      montada em Configurações → Integrações → WhatsApp
 - [x] Encaminhador com porta própria (v16) — verificado: 401 sem credencial, 405 no GET
+
+### Telas — `src/components/whatsapp/agent/`
+
+Todas fora do `WhatsAppModule.tsx`, exceto uma linha de montagem.
+
+- [x] **Decisões** (`AgentWorkbench`, aba 1) — o log do modo sombra, com os números no topo.
+      `Mensagens enviadas` fica verde em zero: é a prova de que ele não falou com ninguém
+- [x] **Agentes** (`AgentWorkbench`, aba 2) — modo, agrupamento, gatilhos com selo de risco,
+      interruptor de ativo. Em Configurações → Módulos → WhatsApp → painel "Atendente de IA"
+- [x] **Editor de prompt** (`PromptEditor`) — menções validadas em três níveis: vermelho não
+      existe no catálogo e **trava o salvamento**; âmbar existe mas não está liberado para o
+      agente; normal é válida. Paleta insere no cursor, e há prévia com as menções pintadas
+- [x] **Faixa na conversa** (`AgentConversationBanner`) — dentro do inbox, mostra o que o agente
+      faria agora, os gatilhos e o que já coletou. Some sozinha se ele nunca atuou ali
 
 ### Para ligar (o agente está cadastrado e DESATIVADO)
 

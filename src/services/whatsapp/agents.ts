@@ -165,6 +165,49 @@ export const agentsApi = {
     }));
   },
 
+  /**
+   * A última decisão desta conversa, com o estado atual. É o que o painel da
+   * conversa mostra: "o que ele faria agora". Devolve null quando o agente
+   * ainda não passou por aqui — a conversa segue como qualquer outra.
+   */
+  async latestForConversation(conversationId: string): Promise<{
+    run: WaAgentRun | null;
+    agentName: string | null;
+    collected: Record<string, string>;
+    qualification: string | null;
+    status: string | null;
+  } | null> {
+    const [runRes, stateRes] = await Promise.all([
+      supabase.from(AGENT_RUNS_TABLE).select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      supabase.from(AGENT_STATE_TABLE)
+        .select('collected_data, qualification, status, current_agent_id')
+        .eq('conversation_id', conversationId).maybeSingle(),
+    ]);
+
+    if (!runRes.data && !stateRes.data) return null;
+
+    const run = runRes.data
+      ? { ...(runRes.data as WaAgentRun), tool_calls: Array.isArray(runRes.data.tool_calls) ? runRes.data.tool_calls : [] }
+      : null;
+
+    const agentId = run?.agent_id ?? stateRes.data?.current_agent_id ?? null;
+    let agentName: string | null = null;
+    if (agentId) {
+      const { data } = await supabase.from(AGENTS_TABLE).select('name').eq('id', agentId).maybeSingle();
+      agentName = data?.name ?? null;
+    }
+
+    return {
+      run,
+      agentName,
+      collected: (stateRes.data?.collected_data as Record<string, string>) || {},
+      qualification: stateRes.data?.qualification ?? null,
+      status: stateRes.data?.status ?? null,
+    };
+  },
+
   /** Números do topo da tela. Em sombra, `sent` precisa ser 0 — é a prova. */
   summarize(runs: WaRunEnriched[]): WaShadowSummary {
     const resumo: WaShadowSummary = {

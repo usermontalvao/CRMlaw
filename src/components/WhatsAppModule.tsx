@@ -93,6 +93,7 @@ import ChannelAccessManager from './whatsapp/ChannelAccessManager';
 import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
 import { ThreadScheduledGhosts, ScheduledMessagesPanel } from './whatsapp/scheduledMessages';
 import { AiApprovalBanner } from './whatsapp/aiApprovalBanner';
+import AgentConversationBanner from './whatsapp/agent/AgentConversationBanner';
 import { AttendanceDashboard } from './whatsapp/attendanceDashboard';
 import { ClientFillLinksPanel } from './whatsapp/clientFillLinksPanel';
 import { PresenceText, DateDivider } from './whatsapp/conversationListItem';
@@ -2153,6 +2154,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 </button>
               </div>
             )}
+            {/* Atendente de IA: o que ele decidiu nesta conversa (some se nunca atuou) */}
+            {selectedId && <AgentConversationBanner conversationId={selectedId} />}
+
             {/* Fase O: banner de aprovação de resposta IA pendente */}
             {aiSession?.status === 'pending_approval' && aiSession.pending_ai_reply && (
               <AiApprovalBanner
