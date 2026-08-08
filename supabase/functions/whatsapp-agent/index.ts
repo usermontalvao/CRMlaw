@@ -157,6 +157,7 @@ Deno.serve(async (req: Request) => {
         conversationId: convId,
         channelId: conv.instance_id,
         clientId: conv.client_id,
+        agentId: agent.id,
         supabaseUrl: SUPABASE_URL,
         serviceKey: SERVICE_KEY,
       };

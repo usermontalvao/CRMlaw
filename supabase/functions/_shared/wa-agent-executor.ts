@@ -297,7 +297,152 @@ export async function executeTool(
       return ok('desliguei; não responda mais nesta conversa');
     }
 
+    // ── Risco alto ───────────────────────────────────────────────────────
+    // Só chegam aqui depois de aprovação humana: `needsApproval` obriga, mesmo
+    // com o canal em automático.
+
+    /**
+     * O escritório NÃO redige nada aqui. Gera-se o link do modelo e o cliente
+     * abre, preenche os próprios dados e assina. Por isso não há preenchimento
+     * de campo nem geração de PDF neste caminho.
+     */
+    case 'enviar_contrato': {
+      const nome = asText(args.modelo);
+      if (!nome) return fail('modelo de contrato não informado');
+
+      const { data: modelos } = await ctx.admin.from('document_templates')
+        .select('id, name').ilike('name', `%${nome}%`).limit(5);
+
+      const modelo = (modelos || []).find((t: any) => t.name?.toLowerCase() === nome.toLowerCase())
+        ?? (modelos || [])[0];
+      if (!modelo) return fail(`modelo "${nome}" não existe`);
+
+      const expira = new Date(Date.now() + 7 * 24 * 3600_000).toISOString();
+      const { data: link, error } = await ctx.admin.from('template_fill_links')
+        .insert({ template_id: modelo.id, expires_at: expira, status: 'pending' })
+        .select('public_token').single();
+
+      if (error) return fail(`não consegui gerar o link: ${error.message}`);
+      if (!link?.public_token) return fail('o link saiu sem token');
+
+      const base = (Deno.env.get('PUBLIC_APP_URL') || 'https://jurius.com.br').replace(/\/+$/, '');
+      const url = `${base}/#/preencher/${link.public_token}`;
+      const texto = [asText(args.observacao), url].filter(Boolean).join('\n\n');
+
+      const erro = await sendText(ctx, texto);
+      if (erro) return fail(`o envio falhou: ${erro}`);
+
+      await note(ctx, `🤖 Contrato "${modelo.name}" enviado para o cliente preencher e assinar.`);
+      return ok('link enviado; o cliente preenche e assina por lá');
+    }
+
+    /**
+     * Entra na agenda JÁ, para segurar o horário e ficar visível, mas como
+     * pendente — quem confirma é o responsável. O cliente só é avisado da
+     * confirmação (ou da remarcação) depois da decisão humana; por isso o
+     * resultado devolvido manda a IA não prometer horário.
+     */
+    case 'marcar_reuniao': {
+      const quando = doFusoDoEscritorio(asText(args.data_hora));
+      const assunto = asText(args.assunto);
+      if (!quando) return fail('data e hora inválidas — use o formato AAAA-MM-DD HH:MM');
+      if (quando.getTime() < Date.now()) return fail('essa data já passou');
+      if (!assunto) return fail('assunto da reunião vazio');
+
+      const { data: conv } = await ctx.admin.from('whatsapp_conversations')
+        .select('contact_name').eq('id', ctx.conversationId).maybeSingle();
+      const quem = conv?.contact_name || 'cliente do WhatsApp';
+
+      const { data: evento, error: ee } = await ctx.admin.from('calendar_events').insert({
+        title: `[A confirmar] ${assunto} — ${quem}`,
+        description: 'Proposta pelo atendente de IA no WhatsApp. Aguardando autorização.',
+        event_type: 'reuniao',
+        status: 'pendente',
+        start_at: quando.toISOString(),
+        end_at: new Date(quando.getTime() + 3600_000).toISOString(),
+        client_id: ctx.clientId,
+        client_name: quem,
+      }).select('id').single();
+
+      if (ee) return fail(`não consegui lançar na agenda: ${ee.message}`);
+
+      const { error: me } = await ctx.admin.from('whatsapp_ai_meeting_requests').insert({
+        conversation_id: ctx.conversationId,
+        agent_id: ctx.agentId,
+        client_id: ctx.clientId,
+        calendar_event_id: evento.id,
+        proposed_at: quando.toISOString(),
+        subject: assunto,
+        status: 'pendente',
+      });
+      if (me) return fail(`agenda ok, mas o pedido de autorização falhou: ${me.message}`);
+
+      const legivel = formatarNoEscritorio(quando);
+      await note(ctx, `🤖 Reunião proposta para ${legivel} — ${assunto}. **Aguardando autorização** antes de confirmar ao cliente.`);
+      return ok(
+        `proposto para ${legivel}, pendente de autorização. ` +
+        'Diga ao cliente que vai confirmar e avisar — NÃO dê o horário como confirmado.',
+      );
+    }
+
+    case 'consultar_processo': {
+      if (!ctx.clientId) return fail('esta conversa ainda não está vinculada a um cadastro');
+
+      const { data: procs } = await ctx.admin.from('processes')
+        .select('process_code, status, updated_at')
+        .eq('client_id', ctx.clientId)
+        .order('updated_at', { ascending: false })
+        .limit(5);
+
+      if (!procs?.length) return ok('nenhum processo cadastrado para este cliente');
+
+      const linhas = procs.map((p: any) =>
+        `${p.process_code || 'sem número'}: ${p.status || 'sem status'}`).join(' | ');
+      return ok(`processos: ${linhas}`);
+    }
+
     default:
       return fail(`gatilho "${name}" não tem execução escrita`);
   }
+}
+
+// ── Fuso do escritório ──────────────────────────────────────────────────────
+// Horário de compromisso é âncora em America/Cuiaba, nunca em UTC nem no fuso
+// de quem roda o código. Marcar no fuso errado erra a hora e erra em silêncio.
+
+const FUSO = 'America/Cuiaba';
+
+/** Quantos minutos o fuso do escritório está à frente do UTC naquele instante. */
+function deslocamentoMin(d: Date): number {
+  const partes = new Intl.DateTimeFormat('en-US', {
+    timeZone: FUSO, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(d).filter(p => p.type !== 'literal');
+
+  const v: Record<string, number> = {};
+  for (const p of partes) v[p.type] = Number(p.value);
+  const comoSeUtc = Date.UTC(v.year, v.month - 1, v.day, v.hour % 24, v.minute, v.second);
+  return Math.round((comoSeUtc - d.getTime()) / 60_000);
+}
+
+/** "AAAA-MM-DD HH:MM" no relógio do escritório → instante real (UTC). */
+export function doFusoDoEscritorio(texto: string): Date | null {
+  const m = texto.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const [Y, Mo, D, H, Mi] = m.slice(1).map(Number);
+  if (H > 23 || Mi > 59) return null;
+
+  const parede = Date.UTC(Y, Mo - 1, D, H, Mi);
+  // Duas passadas bastam: a primeira usa um deslocamento aproximado, a segunda
+  // já usa o deslocamento do instante certo (importa em virada de horário).
+  let ms = parede;
+  for (let i = 0; i < 2; i++) ms = parede - deslocamentoMin(new Date(ms)) * 60_000;
+  return new Date(ms);
+}
+
+export function formatarNoEscritorio(d: Date): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: FUSO, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).format(d);
 }

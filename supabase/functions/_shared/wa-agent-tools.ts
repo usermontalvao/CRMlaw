@@ -296,80 +296,68 @@ export const WA_AGENT_TOOLS: WaToolDef[] = [
     landsOn: 'whatsapp_ai_sessions.status = aborted',
   },
 
-  // ── Ainda não executados pelo runtime ──────────────────────────────
-  // Estão aqui para você cortar ou aprovar antes de eu implementar. Todos são
-  // de risco alto: mexem em dinheiro, vínculo jurídico ou agenda real.
+  // ── Risco alto ─────────────────────────────────────────────────────
+  // Mexem em vínculo jurídico ou agenda real. `needsApproval` obriga passar por
+  // gente mesmo com o canal em automático.
 
   {
-    name: 'gerar_contrato',
-    mention: '@GerarContrato',
+    name: 'enviar_contrato',
+    mention: '@EnviarContrato',
     description:
-      'Preenche o contrato do escritório com os dados já coletados e o deixa pronto para envio.',
+      'Gera o link do contrato e envia ao cliente. É ELE quem abre o link, preenche os próprios ' +
+      'dados e assina — você não redige cláusula, não preenche nada e não fala de valor. ' +
+      'Use somente depois de qualificar e de ter os documentos. Se o cliente perguntar sobre ' +
+      'valores ou condições, chame um advogado em vez de mandar o contrato.',
     parameters: {
       type: 'object',
       properties: {
-        modelo: { type: 'string', description: 'Nome do modelo de contrato.' },
+        modelo: { type: 'string', description: 'Nome exato do modelo de contrato cadastrado.' },
+        observacao: { type: 'string', description: 'Mensagem curta que acompanha o link.' },
       },
       required: ['modelo'],
     },
-    effect: 'interno',
-    risk: 'alto',
-    implemented: false,
-    landsOn: 'document_templates + template-fill',
-  },
-  {
-    name: 'enviar_link_assinatura',
-    mention: '@EnviarAssinatura',
-    description:
-      'Envia ao cliente o link para assinar digitalmente o contrato já gerado.',
-    parameters: {
-      type: 'object',
-      properties: {
-        observacao: { type: 'string', description: 'Mensagem que acompanha o link.' },
-      },
-    },
     effect: 'cliente',
     risk: 'alto',
-    implemented: false,
-    landsOn: 'signature_requests + send-signature-link',
+    implemented: true,
+    landsOn: 'template_fill_links → /#/preencher/<token> (cliente preenche e assina)',
   },
   {
     name: 'marcar_reuniao',
     mention: '@MarcarReuniao',
     description:
-      'Agenda uma reunião do cliente com o escritório na agenda interna.',
+      'Propõe uma reunião do cliente com o escritório. O horário entra na agenda como PENDENTE e ' +
+      'o responsável precisa autorizar. Por isso, ao usar, diga ao cliente que vai confirmar o ' +
+      'horário e avisar — nunca dê como confirmado.',
     parameters: {
       type: 'object',
       properties: {
-        data_hora: { type: 'string', description: 'Data e hora no fuso do escritório (America/Cuiaba).' },
+        data_hora: {
+          type: 'string',
+          description: 'Data e hora no formato AAAA-MM-DD HH:MM, no horário do escritório.',
+        },
         assunto: { type: 'string', description: 'Assunto da reunião.' },
       },
       required: ['data_hora', 'assunto'],
     },
     effect: 'interno',
     risk: 'alto',
-    implemented: false,
+    implemented: true,
     // ARMADILHA: horário de compromisso é âncora no fuso do escritório
-    // (America/Cuiaba, ver src/utils/officeTime.ts), nunca do navegador nem UTC.
-    // Marcar com o fuso errado erra a hora e erra em silêncio.
-    landsOn: 'calendar_events (fuso-âncora America/Cuiaba)',
+    // (America/Cuiaba). Marcar em UTC erra a hora e erra em silêncio.
+    landsOn: 'calendar_events (pendente) + whatsapp_ai_meeting_requests',
   },
   {
     name: 'consultar_processo',
     mention: '@ConsultarProcesso',
     description:
-      'Consulta o andamento dos processos do cliente já cadastrado.',
-    parameters: {
-      type: 'object',
-      properties: {
-        cpf: { type: 'string', description: 'CPF do cliente.' },
-      },
-      required: ['cpf'],
-    },
+      'Consulta os processos do cliente já cadastrado nesta conversa. Use quando ele perguntar ' +
+      '"como está meu processo". Só devolve o que está no sistema; se não houver nada, diga que ' +
+      'vai verificar com a equipe em vez de inventar.',
+    parameters: { type: 'object', properties: {} },
     effect: 'leitura',
     risk: 'baixo',
-    implemented: false,
-    landsOn: 'processes',
+    implemented: true,
+    landsOn: 'processes (somente leitura)',
   },
 ];
 

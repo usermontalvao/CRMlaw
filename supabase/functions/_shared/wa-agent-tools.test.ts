@@ -42,8 +42,9 @@ test('porteiro barra gatilho inexistente, não implementado e não liberado', ()
 });
 
 test('risco alto exige aprovação mesmo com o canal em automático', () => {
-  const assinatura = findTool('enviar_link_assinatura')!;
-  assert.equal(needsApproval(assinatura, false), true);
+  const contrato = findTool('enviar_contrato')!;
+  assert.equal(contrato.risk, 'alto');
+  assert.equal(needsApproval(contrato, false), true);
 });
 
 test('leitura nunca exige aprovação, nem com o canal em modo aprovação', () => {
