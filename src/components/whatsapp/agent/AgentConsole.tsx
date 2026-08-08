@@ -8,6 +8,7 @@
  * achava.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Bot, X, Users, Radio, ScrollText, Search, Loader2, RefreshCw, ChevronLeft,
   CheckCircle2, XCircle, EyeOff, Circle, AlertTriangle,
@@ -90,9 +91,20 @@ export const AgentConsole: React.FC<{
     { k: 'decisoes', label: 'Decisões', Icon: ScrollText, contagem: runs.length },
   ];
 
-  return (
-    <div className="fixed inset-0 z-[9000] bg-[#f5f5f3] flex flex-col">
-      <header className="flex items-center gap-3 px-4 h-14 bg-white border-b border-[#e7e5df] shrink-0">
+  // Portal no body por dois motivos: qualquer ancestral com `transform` faria o
+  // `fixed` se prender ao container em vez da viewport, e a árvore do módulo tem
+  // sua própria pilha de empilhamento. O fundo vai inline porque uma classe que
+  // não pinte deixa o CRM aparecendo por baixo — foi o que aconteceu.
+  // z-index acima dos modais do módulo (10000) e abaixo do lightbox (100000).
+  return createPortal(
+    <div
+      className="fixed inset-0 flex flex-col"
+      style={{ background: '#f5f5f3', zIndex: 10050 }}
+    >
+      <header
+        className="flex items-center gap-3 px-4 h-14 border-b border-[#e7e5df] shrink-0"
+        style={{ background: '#ffffff' }}
+      >
         <Bot className="w-5 h-5 text-amber-600 shrink-0" />
         <div className="min-w-0">
           <h1 className="text-[14.5px] font-semibold text-slate-800 leading-tight">Atendente de IA</h1>
@@ -116,7 +128,10 @@ export const AgentConsole: React.FC<{
       </header>
 
       <div className="flex-1 flex min-h-0">
-        <nav className="w-[188px] shrink-0 bg-white border-r border-[#e7e5df] p-2.5 hidden sm:block">
+        <nav
+          className="w-[188px] shrink-0 border-r border-[#e7e5df] p-2.5 hidden sm:block"
+          style={{ background: '#ffffff' }}
+        >
           {nav.map(({ k, label, Icon, contagem }) => (
             <button
               key={k} type="button" onClick={() => setSecao(k)}
@@ -157,7 +172,8 @@ export const AgentConsole: React.FC<{
           {secao === 'decisoes' && <SecaoDecisoes runs={runs} carregando={carregando} />}
         </main>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
