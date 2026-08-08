@@ -93,8 +93,6 @@ import ChannelAccessManager from './whatsapp/ChannelAccessManager';
 import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
 import { ThreadScheduledGhosts, ScheduledMessagesPanel } from './whatsapp/scheduledMessages';
 import { AiApprovalBanner } from './whatsapp/aiApprovalBanner';
-import AgentConversationBanner from './whatsapp/agent/AgentConversationBanner';
-import AgentConsole from './whatsapp/agent/AgentConsole';
 import { AttendanceDashboard } from './whatsapp/attendanceDashboard';
 import { ClientFillLinksPanel } from './whatsapp/clientFillLinksPanel';
 import { PresenceText, DateDivider } from './whatsapp/conversationListItem';
@@ -417,8 +415,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const myRole = user ? (staffById.get(user.id)?.role ?? null) : null;
   const perms = useMemo(() => agentPermissions(myRole), [myRole]);
   const canManageChannelAccess = (myRole || '').trim().toLocaleLowerCase('pt-BR') === 'administrador';
-  // Console do atendente de IA: janela cheia, aberta pelo ícone da barra.
-  const [agentConsoleOpen, setAgentConsoleOpen] = useState(false);
 
   const selected = useMemo(
     () => conversations.find(c => c.id === selectedId) || null,
@@ -1670,13 +1666,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           )}
         </div>
       )}
-      {/* Atendente de IA — administração. Só administrador vê. */}
-      {canManageChannelAccess && (
-        <button onClick={() => setAgentConsoleOpen(true)} title="Atendente de IA"
-          className="flex items-center justify-center w-7 h-7 rounded-full text-amber-700 hover:bg-amber-100 transition">
-          <Bot size={16} />
-        </button>
-      )}
       <button onClick={() => setNewConvOpen(true)} title="Nova conversa"
         className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition active:scale-90 hover:rotate-90 duration-200">
         <Plus size={16} />
@@ -1686,9 +1675,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
   return (
     <div className="relative flex flex-col h-full min-h-0 bg-[#faf9f7]">
-      {agentConsoleOpen && canManageChannelAccess && (
-        <AgentConsole onClose={() => setAgentConsoleOpen(false)} currentUserId={user?.id ?? null} />
-      )}
       <ReconnectHoldSiren
         items={reconnectAlerts}
         conversationsById={conversationsById}
@@ -2167,9 +2153,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 </button>
               </div>
             )}
-            {/* Atendente de IA: o que ele decidiu nesta conversa (some se nunca atuou) */}
-            {selectedId && <AgentConversationBanner conversationId={selectedId} />}
-
             {/* Fase O: banner de aprovação de resposta IA pendente */}
             {aiSession?.status === 'pending_approval' && aiSession.pending_ai_reply && (
               <AiApprovalBanner

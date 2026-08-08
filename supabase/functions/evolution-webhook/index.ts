@@ -422,13 +422,6 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
     else await job.catch(() => {});
   }
 
-  // ── Atendimento assistido por IA (Fase J; inbound; só sem agente humano) ──
-  if (!fromMe && !conv.is_blocked && !keptClosed) {
-    const msgText = content || '';
-    const job = maybeRunAiFlow(admin, instanceId, conv.id, msgText);
-    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(job);
-    else await job.catch(() => {});
-  }
 }
 
 // ── Telefone (espelha src/services/whatsapp/shared.ts) ──
@@ -773,51 +766,6 @@ async function maybeAutoSendAbsence(admin: any, instanceId: string, convId: stri
     console.info(`absence auto-send claimed for ${ABSENCE_COOLDOWN_HOURS}h`, convId);
   } catch (err) {
     console.error('maybeAutoSendAbsence error', err);
-  }
-}
-
-/**
- * Fase J — Atendimento assistido por IA.
- * Verifica se o canal tem IA habilitada (e se a conversa ainda não tem agente
- * humano) e invoca a edge function whatsapp-ai-flow via HTTP interno.
- * Feito como waitUntil para não atrasar a resposta do webhook.
- */
-async function maybeRunAiFlow(
-  admin: any, instanceId: string, convId: string, messageText: string,
-) {
-  try {
-    // Canal com IA habilitada?
-    const { data: aiCfg } = await admin.from('whatsapp_ai_channel_config')
-      .select('ai_enabled').eq('channel_id', instanceId).maybeSingle();
-    if (!aiCfg?.ai_enabled) return;
-
-    // Verificar se sessão existente já foi concluída (não reprocessar).
-    // pending_approval é permitido: whatsapp-ai-flow reverte para active quando
-    // o cliente responde antes da aprovação do agente (descarta o pendente).
-    const { data: sess } = await admin.from('whatsapp_ai_sessions')
-      .select('status').eq('conversation_id', convId).maybeSingle();
-    if (sess && sess.status !== 'active' && sess.status !== 'pending_approval') return;
-
-    // Verificar se a conversa já tem agente humano (IA não interfere)
-    const { data: conv } = await admin.from('whatsapp_conversations')
-      .select('assigned_user_id').eq('id', convId).maybeSingle();
-    if (conv?.assigned_user_id) return;
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const aiToken = Deno.env.get('WA_AI_TOKEN');
-    const fnUrl = `${supabaseUrl}/functions/v1/whatsapp-ai-flow`;
-
-    await fetch(fnUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(aiToken ? { Authorization: `Bearer ${aiToken}` } : {}),
-      },
-      body: JSON.stringify({ conversation_id: convId, message_text: messageText }),
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch (err) {
-    console.error('maybeRunAiFlow error', err);
   }
 }
 
