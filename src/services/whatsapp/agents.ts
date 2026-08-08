@@ -82,7 +82,54 @@ export interface WaShadowSummary {
   errors: number;
 }
 
+export interface WaChannelAgentInfo {
+  id: string;
+  name: string;
+  ai_enabled: boolean;
+  primary_agent_id: string | null;
+  primary_agent_name: string | null;
+  agent_count: number;
+  stages: string[];
+}
+
 export const agentsApi = {
+  /** Canais com o estado da IA: ligado, quem é o agente primário, etapas do funil. */
+  async channels(): Promise<WaChannelAgentInfo[]> {
+    const [insts, cfgs, agentes, stages] = await Promise.all([
+      supabase.from('whatsapp_instances').select('id, name').order('name'),
+      supabase.from('whatsapp_ai_channel_config').select('channel_id, ai_enabled'),
+      supabase.from(AGENTS_TABLE).select('id, name, channel_id, is_primary, is_active'),
+      supabase.from('whatsapp_channel_funnel_stages')
+        .select('channel_id, label, position, is_active').order('position'),
+    ]);
+
+    const ligado = new Map((cfgs.data || []).map((c: any) => [c.channel_id, !!c.ai_enabled]));
+
+    return (insts.data || []).map((i: any) => {
+      const doCanal = (agentes.data || []).filter((a: any) => a.channel_id === i.id);
+      const primario = doCanal.find((a: any) => a.is_primary && a.is_active) ?? null;
+      return {
+        id: i.id,
+        name: i.name,
+        ai_enabled: ligado.get(i.id) ?? false,
+        primary_agent_id: primario?.id ?? null,
+        primary_agent_name: primario?.name ?? null,
+        agent_count: doCanal.length,
+        stages: (stages.data || [])
+          .filter((s: any) => s.channel_id === i.id && s.is_active)
+          .map((s: any) => s.label),
+      };
+    });
+  },
+
+  /** Liga ou desliga a IA de um canal. É o interruptor mestre do webhook. */
+  async setChannelEnabled(channelId: string, enabled: boolean): Promise<void> {
+    const { error } = await supabase
+      .from('whatsapp_ai_channel_config')
+      .upsert({ channel_id: channelId, ai_enabled: enabled }, { onConflict: 'channel_id' });
+    if (error) throw error;
+  },
+
   async list(): Promise<WaAgent[]> {
     const { data, error } = await supabase
       .from(AGENTS_TABLE)
