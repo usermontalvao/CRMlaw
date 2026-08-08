@@ -15,7 +15,7 @@
  * Ver docs/WHATSAPP_ATENDENTE_IA.md.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { checkToolCall, needsApproval, toolsForAgent } from '../_shared/wa-agent-tools.ts';
+import { checkToolCall, toolGate, toolsForAgent } from '../_shared/wa-agent-tools.ts';
 import { executeTool, sendText, type ExecCtx } from '../_shared/wa-agent-executor.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -26,7 +26,12 @@ const AI_TOKEN = Deno.env.get('WA_AI_TOKEN') ?? '';
 const LOCK_SECONDS = 90;
 const HISTORY_LIMIT = 24;
 
-type Verdict = 'executado' | 'barrado' | 'simulado' | 'aprovacao';
+type Verdict =
+  | 'executado'  // rodou e teve efeito
+  | 'reservado'  // rodou, mas só criou pendência esperando autorização humana
+  | 'barrado'    // a cerca recusou, ou a execução falhou
+  | 'simulado'   // modo sombra: teria feito, não fez
+  | 'aprovacao'; // segurado na fila, esperando alguém decidir
 
 interface ToolLog {
   name: string;
@@ -165,6 +170,11 @@ Deno.serve(async (req: Request) => {
       (state as any).__handoff_user_id = agent.handoff_user_id;
       (state as any).__handoff_department_id = agent.handoff_department_id;
 
+      // Ações que a barreira segurou. Viram linha em whatsapp_ai_tool_approvals
+      // logo abaixo, já com a resposta que as acompanharia — mas só depois que
+      // `resposta` existir, para que quem decide leia a ação junto da frase.
+      const aSegurar: Array<{ name: string; args: Record<string, unknown>; risk: string }> = [];
+
       for (const call of saida.toolCalls) {
         const check = checkToolCall(call.name, agent.allowed_tools || []);
         if (!check.ok) {
@@ -175,14 +185,27 @@ Deno.serve(async (req: Request) => {
           logs.push({ name: call.name, args: call.args, verdict: 'simulado' });
           continue;
         }
-        if (needsApproval(check.tool, exigeAprovacaoNoCanal)) {
-          logs.push({ name: call.name, args: call.args, verdict: 'aprovacao' });
+
+        const porta = toolGate(check.tool, exigeAprovacaoNoCanal);
+
+        // `bloqueia`: não executa e ENFILEIRA. Antes daqui o veredito 'aprovacao'
+        // era só uma palavra no log — a ação sumia sem que ninguém fosse chamado
+        // para decidir. Enfileirar é o que transforma a barreira em aprovação.
+        if (porta === 'bloqueia') {
+          aSegurar.push({ name: call.name, args: call.args, risk: check.tool.risk });
+          logs.push({
+            name: call.name, args: call.args, verdict: 'aprovacao',
+            detail: 'na fila de aprovação; nada foi feito ainda',
+          });
           continue;
         }
+
+        // `executa` e `reserva` rodam. A diferença é o que o gatilho consegue
+        // produzir: o de reserva só sabe criar estado pendente e reversível.
         const r = await executeTool(ctx, call.name, call.args, state);
         logs.push({
           name: call.name, args: call.args,
-          verdict: r.ok ? 'executado' : 'barrado',
+          verdict: r.ok ? (porta === 'reserva' ? 'reservado' : 'executado') : 'barrado',
           detail: r.detail,
         });
       }
@@ -191,6 +214,27 @@ Deno.serve(async (req: Request) => {
       const resposta = (saida.reply || '').trim();
       let enviou = false;
       let erroEnvio: string | null = null;
+
+      if (aSegurar.length) {
+        const { error: ae } = await admin.from('whatsapp_ai_tool_approvals').insert(
+          aSegurar.map(p => ({
+            conversation_id: convId,
+            agent_id: agent.id,
+            tool_name: p.name,
+            args: p.args,
+            risk: p.risk,
+            reply_text: resposta || null,
+          })),
+        );
+        // Falhar aqui é grave: significa ação de risco alto sem ninguém para
+        // aprovar. Some no log em vez de passar batido.
+        if (ae) {
+          for (const l of logs) {
+            if (l.verdict === 'aprovacao') l.detail = `NÃO ENFILEIRADO: ${ae.message}`;
+          }
+          console.error('whatsapp-agent: fila de aprovação falhou', ae.message);
+        }
+      }
 
       if (resposta) {
         if (modo === 'automatico' && state.status === 'ativo') {
@@ -220,7 +264,9 @@ Deno.serve(async (req: Request) => {
         inbound_text: inbound,
         reply_text: resposta || null,
         tool_calls: logs,
-        executed: enviou || logs.some(l => l.verdict === 'executado'),
+        // 'reservado' conta como executado: gravou compromisso na agenda. Só
+        // 'aprovacao' e 'simulado' são de fato "não aconteceu nada".
+        executed: enviou || logs.some(l => l.verdict === 'executado' || l.verdict === 'reservado'),
         model: agent.model,
         tokens_in: saida.tokensIn,
         tokens_out: saida.tokensOut,
@@ -301,6 +347,19 @@ async function buildSystemPrompt(admin: any, agent: any, conv: any, state: any):
       .order('position');
     const ativas = (stages || []).filter((s: any) => s.is_active).map((s: any) => s.label);
     if (ativas.length) partes.push(`Etapas do funil deste canal, em ordem: ${ativas.join(' → ')}.`);
+  }
+
+  // Sem esta lista o @PassarPara é inútil: o modelo não teria como saber para
+  // quem passar, e o executor barraria todo nome que ele inventasse. Os destinos
+  // válidos vêm do banco, não do prompt escrito à mão — assim ligar ou desligar
+  // um agente reconfigura o roteamento sozinho.
+  if (conv.instance_id) {
+    const { data: agentes } = await admin.from('whatsapp_ai_agents')
+      .select('name, description, role')
+      .eq('channel_id', conv.instance_id).eq('is_active', true).neq('id', agent.id);
+    const lista = (agentes || [])
+      .map((a: any) => `${a.name} (${a.description || a.role})`).join('; ');
+    if (lista) partes.push(`Outros agentes deste canal, para quem você pode passar a conversa: ${lista}.`);
   }
 
   const { data: tpls } = await admin.from('whatsapp_templates')

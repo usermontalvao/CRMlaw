@@ -17,11 +17,16 @@
 
 export type WaToolRisk = 'baixo' | 'medio' | 'alto';
 
+/** Ver o tipo homônimo no catálogo do motor: `bloqueia` segura a ação até o sim; `reserva` cria pendência reversível na hora. */
+export type WaToolApproval = 'bloqueia' | 'reserva';
+
 export interface WaToolDisplay {
   name: string;
   mention: string;
   risk: WaToolRisk;
   implemented: boolean;
+  /** Presente só nos gatilhos que passam pela fila de aprovação. */
+  approval?: WaToolApproval;
   description: string;
 }
 
@@ -48,9 +53,9 @@ export const WA_AGENT_TOOLS_DISPLAY: WaToolDisplay[] = [
     description: 'Escreve o resumo do caso como nota interna.' },
   { name: 'parar_ia', mention: '@PararIA', risk: 'baixo', implemented: true,
     description: 'Desliga o atendimento automático nesta conversa.' },
-  { name: 'enviar_contrato', mention: '@EnviarContrato', risk: 'alto', implemented: true,
+  { name: 'enviar_contrato', mention: '@EnviarContrato', risk: 'alto', implemented: true, approval: 'bloqueia',
     description: 'Envia o link do contrato. O cliente preenche os próprios dados e assina pelo link.' },
-  { name: 'marcar_reuniao', mention: '@MarcarReuniao', risk: 'alto', implemented: true,
+  { name: 'marcar_reuniao', mention: '@MarcarReuniao', risk: 'alto', implemented: true, approval: 'reserva',
     description: 'Propõe reunião. Entra na agenda como pendente até o responsável autorizar.' },
   { name: 'consultar_processo', mention: '@ConsultarProcesso', risk: 'baixo', implemented: true,
     description: 'Consulta os processos do cliente vinculado à conversa.' },

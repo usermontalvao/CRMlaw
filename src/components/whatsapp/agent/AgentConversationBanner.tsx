@@ -16,6 +16,7 @@ import { agentsApi, type WaAgentRun, type WaRunVerdict } from '../../../services
 const CHIP: Record<WaRunVerdict, string> = {
   simulado: 'background:#f1f5f9;color:#475569',
   executado: 'background:#ecfdf5;color:#047857',
+  reservado: 'background:#f0f9ff;color:#0369a1',
   barrado: 'background:#fef2f2;color:#b91c1c',
   aprovacao: 'background:#fffbeb;color:#b45309',
 };
@@ -23,6 +24,9 @@ const CHIP: Record<WaRunVerdict, string> = {
 const ROTULO: Record<WaRunVerdict, string> = {
   simulado: 'teria feito',
   executado: 'executado',
+  // Aconteceu, mas só como pendência: o horário foi segurado na agenda e
+  // ninguém avisou o cliente ainda.
+  reservado: 'reservado',
   barrado: 'barrado',
   aprovacao: 'aguarda ok',
 };

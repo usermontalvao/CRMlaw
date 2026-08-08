@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  WA_AGENT_TOOLS, checkToolCall, findTool, implementedTools, needsApproval, toolsForAgent,
+  WA_AGENT_TOOLS, checkToolCall, findTool, implementedTools, needsApproval, toolGate, toolsForAgent,
 } from './wa-agent-tools.ts';
 
 test('nomes de gatilho são únicos', () => {
@@ -56,6 +56,42 @@ test('gatilho comum segue o modo do canal', () => {
   const registrar = findTool('registrar_dados')!;
   assert.equal(needsApproval(registrar, true), true);
   assert.equal(needsApproval(registrar, false), false);
+});
+
+// ── A porta: o que o motor FAZ com a chamada ────────────────────────────────
+// Estes testes existem porque a versão anterior tratava "precisa de aprovação"
+// como "não executa" e seguia adiante: a ação sumia, ninguém era chamado para
+// decidir, e o log dizia 'aprovacao' sem que houvesse aprovação para dar.
+
+test('contrato é segurado até o sim, em qualquer modo de canal', () => {
+  const contrato = findTool('enviar_contrato')!;
+  assert.equal(toolGate(contrato, false), 'bloqueia');
+  assert.equal(toolGate(contrato, true), 'bloqueia');
+});
+
+test('reunião reserva na hora em vez de sumir esperando aprovação', () => {
+  const reuniao = findTool('marcar_reuniao')!;
+  assert.equal(toolGate(reuniao, false), 'reserva');
+  assert.equal(toolGate(reuniao, true), 'reserva');
+});
+
+test('nenhum gatilho de risco alto chega a "executa" — nem com o canal solto', () => {
+  for (const tool of WA_AGENT_TOOLS) {
+    if (tool.risk !== 'alto') continue;
+    assert.notEqual(
+      toolGate(tool, false), 'executa',
+      `${tool.name} passaria direto no modo automático`,
+    );
+  }
+});
+
+test('gatilho comum executa direto quando o canal não pede aprovação', () => {
+  assert.equal(toolGate(findTool('registrar_dados')!, false), 'executa');
+  assert.equal(toolGate(findTool('registrar_dados')!, true), 'bloqueia');
+});
+
+test('leitura executa mesmo com o canal em modo aprovação', () => {
+  assert.equal(toolGate(findTool('consultar_processo')!, true), 'executa');
 });
 
 test('todo gatilho implementado diz onde o efeito acontece', () => {

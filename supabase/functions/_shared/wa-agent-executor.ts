@@ -16,6 +16,7 @@ export interface ExecCtx {
   conversationId: string;
   channelId: string | null;
   clientId: string | null;       // cadastro vinculado; null = lead solto
+  agentId: string | null;        // quem pediu a ação; vai para o pedido de reunião
   supabaseUrl: string;
   serviceKey: string;
 }
@@ -356,7 +357,11 @@ export async function executeTool(
       const { data: evento, error: ee } = await ctx.admin.from('calendar_events').insert({
         title: `[A confirmar] ${assunto} — ${quem}`,
         description: 'Proposta pelo atendente de IA no WhatsApp. Aguardando autorização.',
-        event_type: 'reuniao',
+        // 'meeting', não 'reuniao': calendar_events_event_type_check só aceita
+        // deadline|hearing|requirement|payment|meeting|pericia|personal. Com o
+        // valor em português o INSERT falhava sempre, e a falha só aparecia no
+        // log do gatilho — o horário nunca chegava na agenda.
+        event_type: 'meeting',
         status: 'pendente',
         start_at: quando.toISOString(),
         end_at: new Date(quando.getTime() + 3600_000).toISOString(),

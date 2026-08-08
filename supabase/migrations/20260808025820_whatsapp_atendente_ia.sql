@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_ai_runs (
   inbound_text     text,   -- o que o cliente disse (já agrupado)
   reply_text       text,   -- o que o agente respondeu, ou responderia
 
-  -- [{name, args, verdict: 'executado'|'barrado'|'simulado'|'aprovacao', error}]
+  -- [{name, args, verdict: 'executado'|'reservado'|'barrado'|'simulado'|'aprovacao', detail}]
   tool_calls       jsonb NOT NULL DEFAULT '[]'::jsonb,
 
   executed         boolean NOT NULL DEFAULT false,

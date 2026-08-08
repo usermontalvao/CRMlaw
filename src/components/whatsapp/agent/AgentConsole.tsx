@@ -11,16 +11,16 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Bot, X, Users, Radio, ScrollText, Search, Loader2, RefreshCw, ChevronLeft,
-  CheckCircle2, XCircle, EyeOff, Circle, AlertTriangle,
+  CheckCircle2, XCircle, EyeOff, Circle, AlertTriangle, ShieldCheck, CalendarClock,
 } from 'lucide-react';
 import {
   agentsApi, type WaAgent, type WaAgentMode, type WaChannelAgentInfo,
-  type WaRunEnriched, type WaRunVerdict,
+  type WaMeetingRequest, type WaRunEnriched, type WaRunVerdict, type WaToolApprovalRow,
 } from '../../../services/whatsapp/agents';
 import { WA_AGENT_TOOLS_DISPLAY } from '../../../shared/waAgentTools';
 import PromptEditor, { problemasDoPrompt } from './PromptEditor';
 
-type Secao = 'agentes' | 'canais' | 'decisoes';
+type Secao = 'agentes' | 'canais' | 'aprovacoes' | 'decisoes';
 
 const CARD = 'bg-white rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04]';
 
@@ -38,6 +38,7 @@ const PAPEIS: Record<string, string> = {
 const VERDITO: Record<WaRunVerdict, { rotulo: string; classe: string }> = {
   simulado:  { rotulo: 'teria feito', classe: 'bg-slate-100 text-slate-600' },
   executado: { rotulo: 'executado',   classe: 'bg-emerald-50 text-emerald-700' },
+  reservado: { rotulo: 'reservado',   classe: 'bg-sky-50 text-sky-700' },
   barrado:   { rotulo: 'barrado',     classe: 'bg-red-50 text-red-700' },
   aprovacao: { rotulo: 'aguarda ok',  classe: 'bg-amber-50 text-amber-700' },
 };
@@ -61,6 +62,8 @@ export const AgentConsole: React.FC<{
   const [agentes, setAgentes] = useState<WaAgent[]>([]);
   const [canais, setCanais] = useState<WaChannelAgentInfo[]>([]);
   const [runs, setRuns] = useState<WaRunEnriched[]>([]);
+  const [reunioes, setReunioes] = useState<WaMeetingRequest[]>([]);
+  const [acoes, setAcoes] = useState<WaToolApprovalRow[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -68,8 +71,11 @@ export const AgentConsole: React.FC<{
     setCarregando(true);
     setErro(null);
     try {
-      const [a, c, r] = await Promise.all([agentsApi.list(), agentsApi.channels(), agentsApi.runs(80)]);
-      setAgentes(a); setCanais(c); setRuns(r);
+      const [a, c, r, m, p] = await Promise.all([
+        agentsApi.list(), agentsApi.channels(), agentsApi.runs(80),
+        agentsApi.pendingMeetings(), agentsApi.pendingApprovals(),
+      ]);
+      setAgentes(a); setCanais(c); setRuns(r); setReunioes(m); setAcoes(p);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não consegui carregar.');
     } finally {
@@ -88,6 +94,7 @@ export const AgentConsole: React.FC<{
   const nav: Array<{ k: Secao; label: string; Icon: typeof Users; contagem?: number }> = [
     { k: 'agentes', label: 'Agentes', Icon: Users, contagem: agentes.length },
     { k: 'canais', label: 'Canais', Icon: Radio, contagem: canais.length },
+    { k: 'aprovacoes', label: 'Aprovações', Icon: ShieldCheck, contagem: reunioes.length + acoes.length },
     { k: 'decisoes', label: 'Decisões', Icon: ScrollText, contagem: runs.length },
   ];
 
@@ -169,6 +176,9 @@ export const AgentConsole: React.FC<{
             <SecaoAgentes agentes={agentes} currentUserId={currentUserId} onSalvo={carregar} />
           )}
           {secao === 'canais' && <SecaoCanais canais={canais} onMudou={carregar} />}
+          {secao === 'aprovacoes' && (
+            <SecaoAprovacoes reunioes={reunioes} acoes={acoes} carregando={carregando} onDecidiu={carregar} />
+          )}
           {secao === 'decisoes' && <SecaoDecisoes runs={runs} carregando={carregando} />}
         </main>
       </div>
@@ -502,6 +512,213 @@ const SecaoCanais: React.FC<{
         </div>
       ))}
     </div>
+  );
+};
+
+// ── Aprovações ──────────────────────────────────────────────────────────────
+// A contraparte da barreira. Sem esta tela o motor enfileirava ação de risco
+// alto e ninguém tinha onde dizer sim — a ação simplesmente não acontecia.
+
+const SecaoAprovacoes: React.FC<{
+  reunioes: WaMeetingRequest[];
+  acoes: WaToolApprovalRow[];
+  carregando: boolean;
+  onDecidiu: () => void;
+}> = ({ reunioes, acoes, carregando, onDecidiu }) => {
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const [falha, setFalha] = useState<string | null>(null);
+  const [remarcando, setRemarcando] = useState<string | null>(null);
+  const [novoHorario, setNovoHorario] = useState('');
+
+  const decidir = async (p: Parameters<typeof agentsApi.decide>[0]) => {
+    setOcupado(p.id);
+    setFalha(null);
+    try {
+      const r = await agentsApi.decide(p);
+      // Avisar o cliente é parte da decisão, não um detalhe: se a mensagem não
+      // saiu, quem aprovou precisa saber agora — senão fica achando que o
+      // cliente foi informado.
+      if (r?.cliente_avisado === false) {
+        setFalha(`Decisão registrada, mas o aviso ao cliente NÃO saiu: ${r.erro_envio ?? 'motivo desconhecido'}`);
+      }
+      setRemarcando(null);
+      setNovoHorario('');
+      onDecidiu();
+    } catch (e) {
+      setFalha(e instanceof Error ? e.message : 'Não consegui registrar a decisão.');
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  const vazio = !reunioes.length && !acoes.length;
+
+  return (
+    <div className="space-y-4">
+      {falha && (
+        <div className={`${CARD} p-3.5 flex items-start gap-2.5 text-[13px] text-red-700`}>
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{falha}</span>
+        </div>
+      )}
+
+      {carregando && vazio && (
+        <div className={`${CARD} p-12 text-center text-slate-400 text-[13px]`}>
+          <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+          Carregando…
+        </div>
+      )}
+
+      {!carregando && vazio && (
+        <div className={`${CARD} p-12 text-center`}>
+          <ShieldCheck className="w-8 h-8 mx-auto mb-3 text-slate-300" />
+          <p className="text-[13px] text-slate-500">Nada esperando decisão.</p>
+          <p className="text-[12px] text-slate-400 mt-1">
+            Reuniões propostas e ações de risco alto aparecem aqui antes de acontecer.
+          </p>
+        </div>
+      )}
+
+      {reunioes.length > 0 && (
+        <div className={CARD}>
+          <div className="px-4 py-3 border-b border-[#e7e5df] flex items-center gap-2">
+            <CalendarClock className="w-4 h-4 text-amber-600" />
+            <h2 className="text-[13.5px] font-semibold text-slate-800">Reuniões a confirmar</h2>
+            <span className="text-[11.5px] text-slate-400 tabular-nums">{reunioes.length}</span>
+          </div>
+          <div className="divide-y divide-[#f0efea]">
+            {reunioes.map(r => (
+              <div key={r.id} className="p-4">
+                <div className="flex items-start gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13.5px] text-slate-800 font-medium">{r.subject}</p>
+                    <p className="text-[12.5px] text-slate-500 mt-0.5">
+                      {r.contact_name || 'contato sem nome'} · proposto para{' '}
+                      <strong className="text-slate-700">
+                        {dia(r.proposed_at)} às {hora(r.proposed_at)}
+                      </strong>
+                    </p>
+                    <p className="text-[11.5px] text-slate-400 mt-0.5">
+                      Já está na agenda como “[A confirmar]”. O cliente ainda não foi avisado.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <BotaoDecisao
+                      tom="ok" ocupado={ocupado === r.id}
+                      onClick={() => decidir({ kind: 'reuniao', id: r.id, action: 'autorizar' })}
+                    >Autorizar</BotaoDecisao>
+                    <BotaoDecisao
+                      tom="neutro" ocupado={false}
+                      onClick={() => setRemarcando(remarcando === r.id ? null : r.id)}
+                    >Outro horário</BotaoDecisao>
+                    <BotaoDecisao
+                      tom="nao" ocupado={ocupado === r.id}
+                      onClick={() => decidir({ kind: 'reuniao', id: r.id, action: 'recusar' })}
+                    >Recusar</BotaoDecisao>
+                  </div>
+                </div>
+
+                {remarcando === r.id && (
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    <input
+                      type="datetime-local"
+                      value={novoHorario}
+                      onChange={e => setNovoHorario(e.target.value)}
+                      className="px-2.5 py-1.5 rounded-lg border border-[#e7e5df] text-[13px] text-slate-700"
+                    />
+                    <span className="text-[11.5px] text-slate-400">horário do escritório</span>
+                    <BotaoDecisao
+                      tom="ok" ocupado={ocupado === r.id}
+                      onClick={() => decidir({
+                        kind: 'reuniao', id: r.id, action: 'remarcar',
+                        // O input entrega "AAAA-MM-DDTHH:MM"; o backend ancora em Cuiabá.
+                        novo_horario: novoHorario.replace('T', ' '),
+                      })}
+                    >Remarcar e avisar</BotaoDecisao>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {acoes.length > 0 && (
+        <div className={CARD}>
+          <div className="px-4 py-3 border-b border-[#e7e5df] flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-red-600" />
+            <h2 className="text-[13.5px] font-semibold text-slate-800">Ações seguradas</h2>
+            <span className="text-[11.5px] text-slate-400 tabular-nums">{acoes.length}</span>
+          </div>
+          <div className="divide-y divide-[#f0efea]">
+            {acoes.map(a => {
+              const tool = WA_AGENT_TOOLS_DISPLAY.find(t => t.name === a.tool_name);
+              return (
+                <div key={a.id} className="p-4">
+                  <div className="flex items-start gap-3 flex-wrap">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[13px] font-medium text-slate-800">
+                          {tool?.mention ?? a.tool_name}
+                        </span>
+                        <span className={`text-[11px] px-1.5 py-0.5 rounded-md ${RISCO[a.risk] ?? ''}`}>
+                          risco {a.risk}
+                        </span>
+                        <span className="text-[11.5px] text-slate-400">
+                          {a.contact_name || 'contato sem nome'} · {dia(a.created_at)} {hora(a.created_at)}
+                        </span>
+                      </div>
+                      {tool && <p className="text-[12.5px] text-slate-500 mt-1">{tool.description}</p>}
+                      {Object.keys(a.args || {}).length > 0 && (
+                        <pre className="mt-2 text-[11.5px] text-slate-600 bg-[#faf9f7] rounded-lg p-2 overflow-x-auto">
+                          {JSON.stringify(a.args, null, 2)}
+                        </pre>
+                      )}
+                      {a.reply_text && (
+                        <p className="mt-2 text-[12.5px] text-slate-600 italic">
+                          Iria junto: “{a.reply_text}”
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <BotaoDecisao
+                        tom="ok" ocupado={ocupado === a.id}
+                        onClick={() => decidir({ kind: 'ferramenta', id: a.id, action: 'aprovar' })}
+                      >Aprovar e executar</BotaoDecisao>
+                      <BotaoDecisao
+                        tom="nao" ocupado={ocupado === a.id}
+                        onClick={() => decidir({ kind: 'ferramenta', id: a.id, action: 'recusar' })}
+                      >Recusar</BotaoDecisao>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const BotaoDecisao: React.FC<{
+  tom: 'ok' | 'nao' | 'neutro';
+  ocupado: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}> = ({ tom, ocupado, onClick, children }) => {
+  const cor = tom === 'ok'
+    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+    : tom === 'nao'
+      ? 'bg-white text-red-700 ring-1 ring-red-200 hover:bg-red-50'
+      : 'bg-white text-slate-600 ring-1 ring-[#e7e5df] hover:bg-[#faf9f7]';
+  return (
+    <button
+      type="button" onClick={onClick} disabled={ocupado}
+      className={`px-2.5 py-1.5 rounded-lg text-[12.5px] font-medium transition disabled:opacity-40 ${cor}`}
+    >
+      {ocupado ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : children}
+    </button>
   );
 };
 

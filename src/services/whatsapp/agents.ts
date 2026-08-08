@@ -38,7 +38,41 @@ export interface WaAgent {
   updated_at: string;
 }
 
-export type WaRunVerdict = 'executado' | 'barrado' | 'simulado' | 'aprovacao';
+export type WaRunVerdict = 'executado' | 'reservado' | 'barrado' | 'simulado' | 'aprovacao';
+
+export const MEETINGS_TABLE = 'whatsapp_ai_meeting_requests';
+export const APPROVALS_TABLE = 'whatsapp_ai_tool_approvals';
+
+/** Reunião que a IA propôs e que espera alguém do escritório autorizar. */
+export interface WaMeetingRequest {
+  id: string;
+  conversation_id: string;
+  agent_id: string | null;
+  subject: string;
+  proposed_at: string;
+  status: 'pendente' | 'autorizada' | 'remarcada' | 'recusada';
+  rescheduled_at: string | null;
+  reason: string | null;
+  client_notified_at: string | null;
+  created_at: string;
+  contact_name: string | null;
+}
+
+/** Ação de risco alto que a barreira segurou antes de executar. */
+export interface WaToolApprovalRow {
+  id: string;
+  conversation_id: string;
+  agent_id: string | null;
+  tool_name: string;
+  args: Record<string, unknown>;
+  risk: 'baixo' | 'medio' | 'alto';
+  reply_text: string | null;
+  status: 'pendente' | 'aprovada' | 'recusada' | 'expirada';
+  execution_ok: boolean | null;
+  execution_detail: string | null;
+  created_at: string;
+  contact_name: string | null;
+}
 
 export interface WaRunToolCall {
   name: string;
@@ -179,6 +213,53 @@ export const agentsApi = {
     return data || [];
   },
 
+  // ── Aprovações ───────────────────────────────────────────────────────────
+  // Leitura vem do banco; a DECISÃO vai obrigatoriamente pela Edge Function.
+  // Não existe update daqui de propósito: as duas tabelas são só-leitura por
+  // RLS para que ninguém consiga marcar "autorizada" sem que o efeito aconteça
+  // e sem que o cliente seja avisado. Aprovar e cumprir saem do mesmo lugar.
+
+  /** Reuniões propostas pela IA aguardando autorização. */
+  async pendingMeetings(limit = 50): Promise<WaMeetingRequest[]> {
+    const { data, error } = await supabase
+      .from(MEETINGS_TABLE)
+      .select('*')
+      .eq('status', 'pendente')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return comNomeDoContato(data || []) as Promise<WaMeetingRequest[]>;
+  },
+
+  /** Ações de risco alto seguradas na fila. */
+  async pendingApprovals(limit = 50): Promise<WaToolApprovalRow[]> {
+    const { data, error } = await supabase
+      .from(APPROVALS_TABLE)
+      .select('*')
+      .eq('status', 'pendente')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return comNomeDoContato(data || []) as Promise<WaToolApprovalRow[]>;
+  },
+
+  /**
+   * Decide. `kind` escolhe a fila; a função valida que quem chama é do
+   * escritório, executa o efeito e avisa o cliente quando for o caso.
+   */
+  async decide(payload: {
+    kind: 'reuniao' | 'ferramenta';
+    id: string;
+    action: 'autorizar' | 'remarcar' | 'recusar' | 'aprovar';
+    novo_horario?: string;
+    motivo?: string;
+  }): Promise<{ ok: boolean; cliente_avisado?: boolean; erro_envio?: string | null; detalhe?: string }> {
+    const { data, error } = await supabase.functions.invoke('whatsapp-ai-decide', { body: payload });
+    if (error) throw error;
+    if (data?.error) throw new Error(String(data.error));
+    return data;
+  },
+
   /** Log de decisões, do mais recente para o mais antigo. */
   async runs(limit = 60): Promise<WaRunEnriched[]> {
     const { data, error } = await supabase
@@ -273,3 +354,18 @@ export const agentsApi = {
     return resumo;
   },
 };
+
+/**
+ * Junta o nome do contato às linhas das filas. Quem aprova precisa saber DE QUEM
+ * é a conversa; um id de conversa não diz nada a ninguém.
+ */
+async function comNomeDoContato<T extends { conversation_id: string }>(
+  linhas: T[],
+): Promise<Array<T & { contact_name: string | null }>> {
+  if (!linhas.length) return [];
+  const ids = [...new Set(linhas.map(l => l.conversation_id))];
+  const { data } = await supabase
+    .from('whatsapp_conversations').select('id, contact_name').in('id', ids);
+  const nome = new Map((data || []).map((c: any) => [c.id, c.contact_name]));
+  return linhas.map(l => ({ ...l, contact_name: nome.get(l.conversation_id) ?? null }));
+}

@@ -32,6 +32,26 @@ export type WaToolEffect =
  */
 export type WaToolRisk = 'baixo' | 'medio' | 'alto';
 
+/**
+ * COMO a aprovação humana é cobrada. Risco alto sempre exige gente (ver
+ * `needsApproval`), mas "exigir gente" tem duas formas honestas e elas não são
+ * intercambiáveis:
+ *
+ * - `bloqueia`: nada acontece até alguém dizer sim. O pedido fica na fila
+ *   (whatsapp_ai_tool_approvals) e só então é executado. É o caso do contrato:
+ *   link enviado é irreversível, o cliente já viu.
+ *
+ * - `reserva`: o gatilho roda na hora, mas SÓ consegue produzir um estado
+ *   pendente e reversível — e é esse estado que alguém confirma depois. É o caso
+ *   da reunião: o horário precisa ser segurado na agenda no momento em que se
+ *   fala dele, senão some; mas entra como "[A confirmar]" e o cliente não é
+ *   avisado enquanto ninguém autorizar.
+ *
+ * A diferença importa porque tratar reunião como `bloqueia` faria o horário não
+ * ser reservado, e tratar contrato como `reserva` mandaria o link antes do sim.
+ */
+export type WaToolApproval = 'bloqueia' | 'reserva';
+
 export interface WaToolParamSchema {
   type: 'object';
   properties: Record<string, {
@@ -59,6 +79,11 @@ export interface WaToolDef {
    * segue a conversa sem ele — nunca finge que fez.
    */
   implemented: boolean;
+  /**
+   * Só faz sentido em gatilho que precisa de aprovação. Ausente = `bloqueia`,
+   * que é o default seguro: na dúvida, segura a ação em vez de executá-la.
+   */
+  approval?: WaToolApproval;
   /** Onde o efeito acontece de verdade. Serve de mapa para manutenção. */
   landsOn: string;
 }
@@ -319,6 +344,9 @@ export const WA_AGENT_TOOLS: WaToolDef[] = [
     effect: 'cliente',
     risk: 'alto',
     implemented: true,
+    // Segura até o sim: um link de contrato que chega no WhatsApp do cliente
+    // não tem como ser "desenviado".
+    approval: 'bloqueia',
     landsOn: 'template_fill_links → /#/preencher/<token> (cliente preenche e assina)',
   },
   {
@@ -342,6 +370,10 @@ export const WA_AGENT_TOOLS: WaToolDef[] = [
     effect: 'interno',
     risk: 'alto',
     implemented: true,
+    // Reserva na hora: o horário precisa ser segurado enquanto se fala dele. O
+    // que entra é sempre "[A confirmar]" e o cliente só é avisado depois que
+    // alguém autoriza em whatsapp_ai_meeting_requests.
+    approval: 'reserva',
     // ARMADILHA: horário de compromisso é âncora no fuso do escritório
     // (America/Cuiaba). Marcar em UTC erra a hora e erra em silêncio.
     landsOn: 'calendar_events (pendente) + whatsapp_ai_meeting_requests',
@@ -417,4 +449,20 @@ export function needsApproval(tool: WaToolDef, channelRequiresApproval: boolean)
   if (tool.risk === 'alto') return true;
   if (tool.effect === 'leitura') return false;
   return channelRequiresApproval;
+}
+
+/** O que o runtime deve FAZER com a chamada, já resolvida a questão da aprovação. */
+export type WaToolGate = 'executa' | 'bloqueia' | 'reserva';
+
+/**
+ * Traduz "precisa de aprovação?" em "e daí, o que eu faço agora?".
+ *
+ * O motor chama esta função em vez de `needsApproval` direto porque a resposta
+ * booleana não bastava: ela levava o runtime a tratar todo gatilho barrado como
+ * "não executa", e era isso que fazia @MarcarReuniao nunca reservar horário
+ * nenhum. Aqui a barreira e o mecanismo saem juntos, do mesmo lugar.
+ */
+export function toolGate(tool: WaToolDef, channelRequiresApproval: boolean): WaToolGate {
+  if (!needsApproval(tool, channelRequiresApproval)) return 'executa';
+  return tool.approval === 'reserva' ? 'reserva' : 'bloqueia';
 }
