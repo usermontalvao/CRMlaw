@@ -1,1 +1,9 @@
+# Apps instaláveis SEPARADOS (PWA com página própria — ver docs/PWA_APPS.md).
+# TÊM de vir antes do catch-all: a regra genérica entregaria o index.html do CRM
+# e o app instalável deixaria de existir.
+/atendimento      /atendimento.html   200
+/atendimento/*    /atendimento.html   200
+/editor           /editor.html        200
+/editor/*         /editor.html        200
+
 /*    /index.html   200

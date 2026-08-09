@@ -16,6 +16,7 @@ import {
   LockKeyhole,
   GitBranch,
   Activity,
+  AppWindow,
 } from 'lucide-react';
 import { useStaffPush } from './whatsapp/hooks/useStaffPush';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
@@ -132,7 +133,9 @@ import type { Process, ProcessStatus, ProcessPracticeArea } from '../types/proce
 import { useAuth } from '../contexts/AuthContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { useToastContext } from '../contexts/ToastContext';
-import { useNavigation } from '../contexts/NavigationContext';
+import { AtendimentoAppInvite } from './whatsapp/atendimentoAppInvite';
+import { openAtendimentoApp } from '../utils/atendimentoApp';
+import { isWhatsAppAppLocation } from '../utils/whatsappAppRoute';
 import { signatureService } from '../services/signature.service';
 import { WaWorkspaceRenderer } from './WaWorkspace';
 import { ClientCloudDocsLink } from './CloudFolderModal';
@@ -202,7 +205,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const { user } = useAuth();
   const { requirePin } = useSecurityPin();
   const toast = useToastContext();
-  const { navigateTo } = useNavigation();
+  // Sem `useNavigation` de propósito: nada aqui dentro navega para outro módulo,
+  // e a dependência do NavigationProvider impediria este módulo de montar no app
+  // dedicado /atendimento, que não tem sistema de módulos.
+
+  // Já estamos DENTRO do app dedicado? Então nada de convidar a abri-lo.
+  const dentroDoApp = isWhatsAppAppLocation();
   const { confirm, pending: confirmPending, resolve: resolveConfirm } = useConfirm();
   // Gaveta de Leads embutida: funil comercial/jurídico revelado a partir do topo
   // do módulo, empurrando o atendimento para ~70% da altura quando aberta.
@@ -1650,6 +1658,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-[#faf9f7] transition">
                   <BarChart2 size={15} className="text-slate-400" /> Dashboard
                 </button>
+                {/* Caminho PERMANENTE para o app dedicado: a régua de convite
+                    some depois de dispensada ou instalada, e sem isto não
+                    sobraria nenhum lugar para reabrir o app. */}
+                {!dentroDoApp && (
+                  <button onClick={() => { setMoreMenuOpen(false); openAtendimentoApp(); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-[#faf9f7] transition">
+                    <AppWindow size={15} className="text-slate-400" /> Abrir como aplicativo
+                  </button>
+                )}
                 {canManageChannelAccess && <>
                   <div className="my-1 border-t border-[#f1f0ec]" />
                   <button onClick={() => { setMoreMenuOpen(false); setChannelAccessOpen(true); }}
@@ -1682,6 +1699,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         privateMode={privateMode}
         onOpen={openReconnectAlert}
       />
+      {/* Convite ao app dedicado — só no CRM (dentro do próprio app não faz
+          sentido) e só na página cheia (no widget não há largura para isto). */}
+      {!embedded && !dentroDoApp && <AtendimentoAppInvite />}
       {/* ── Painel de Leads embutido (funil comercial/jurídico) ──
           A altura segue o CONTEÚDO (sem espaço em branco). A revelação anima por
           max-height (clip, sem reflow do funil); o atendimento é empurrado para

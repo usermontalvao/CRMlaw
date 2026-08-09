@@ -101,7 +101,7 @@ export const MODULE_META: Record<FloatingModuleKey, { title: string; icon: React
   clientes:      { title: 'Clientes',     icon: <Users className="h-3.5 w-3.5" />,         iconBg: '#14b8a6' },
   processos:     { title: 'Processos',    icon: <Scale className="h-3.5 w-3.5" />,         iconBg: '#6366f1' },
   requerimentos: { title: 'Requerimentos',icon: <Briefcase className="h-3.5 w-3.5" />,     iconBg: '#7c3aed' },
-  peticoes:      { title: 'Petições',     icon: <FileText className="h-3.5 w-3.5" />,      iconBg: '#64748b' },
+  peticoes:      { title: 'Editor',       icon: <FileText className="h-3.5 w-3.5" />,      iconBg: '#64748b' },
   financeiro:    { title: 'Financeiro',   icon: <PiggyBank className="h-3.5 w-3.5" />,     iconBg: '#22c55e' },
   prazos:        { title: 'Prazos',       icon: <Clock className="h-3.5 w-3.5" />,         iconBg: '#f97316' },
   intimacoes:    { title: 'Intimações',   icon: <Bell className="h-3.5 w-3.5" />,          iconBg: '#ef4444' },

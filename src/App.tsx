@@ -2,6 +2,7 @@
 import { createPortal } from 'react-dom';
 import { useNavigation } from './contexts/NavigationContext';
 import type { ModuleName } from './contexts/NavigationContext';
+import { moduleToPath } from './utils/moduleRoutes';
 import {
   Users,
   Cloud,
@@ -234,7 +235,7 @@ const MODULE_META: Record<string, { label: string; desc: string; Icon: ModuleIco
   tarefas:       { label: 'Tarefas',              desc: 'atividades e pendências',                Icon: CheckSquare },
   chat:          { label: 'Mensagens',            desc: 'comunicação interna',                    Icon: MessageCircle },
   whatsapp:      { label: 'WhatsApp',             desc: 'atendimento via WhatsApp',               Icon: WhatsAppIcon },
-  peticoes:      { label: 'Editor de Petições',   desc: 'redação e formatação de petições',       Icon: Newspaper },
+  peticoes:      { label: 'Editor',              desc: 'redação e formatação de petições',       Icon: Newspaper },
   configuracoes: { label: 'Configurações',        desc: 'ajustes do sistema',                     Icon: Settings },
 };
 
@@ -992,6 +993,28 @@ const SidebarModuleBtn: React.FC<{
   );
 };
 
+/**
+ * Marca que a tela de abertura da marca já rodou nesta conta/navegador.
+ *
+ * O boot cinematográfico (2,6s no mínimo) é a boas-vindas do LOGIN. Depois que
+ * cada módulo ganhou URL própria, recarregar `/agenda` ou abrir um módulo em
+ * nova guia passou a ser rotina — e repetir a abertura inteira a cada vez só
+ * atrasa quem já está trabalhando. Fica em `localStorage` (e não em
+ * `sessionStorage`) justamente para valer também na guia nova, que nasce sem
+ * sessionStorage. Some no logout, então o próximo login tem a abertura de novo.
+ */
+const BOOT_SEEN_KEY = 'jurius:boot-seen';
+
+function hasSeenSessionBoot(): boolean {
+  try { return localStorage.getItem(BOOT_SEEN_KEY) === '1'; } catch { return false; }
+}
+function markSessionBootSeen(): void {
+  try { localStorage.setItem(BOOT_SEEN_KEY, '1'); } catch { /* ignore */ }
+}
+function clearSessionBootSeen(): void {
+  try { localStorage.removeItem(BOOT_SEEN_KEY); } catch { /* ignore */ }
+}
+
 const MainApp: React.FC = () => {
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
   const { theme, toggleTheme } = useTheme();
@@ -1176,10 +1199,13 @@ const MainApp: React.FC = () => {
   // No app dedicado "Editor" pulamos o mínimo cinematográfico de 2,6s do boot do
   // CRM — o usuário quer o editor o mais rápido possível (o loader dedicado já
   // cobre até o editor ficar pronto).
-  const [minLoadingElapsed, setMinLoadingElapsed] = useState(() => isEditorAppLocation());
+  // Quem já viu a abertura da marca (F5, link direto de módulo, nova guia) não
+  // espera os 2,6s de novo: entra direto, com um carregamento discreto.
+  const [skipCinematicBoot] = useState(() => isEditorAppLocation() || hasSeenSessionBoot());
+  const [minLoadingElapsed, setMinLoadingElapsed] = useState(() => skipCinematicBoot);
   const [fontsReady, setFontsReady] = useState(false);
   useEffect(() => {
-    const t = isEditorAppLocation() ? undefined : setTimeout(() => setMinLoadingElapsed(true), 2600);
+    const t = skipCinematicBoot ? undefined : setTimeout(() => setMinLoadingElapsed(true), 2600);
     // Espera fontes carregarem para evitar FOUT/reflow na wordmark
     const anyDoc = document as unknown as { fonts?: { ready?: Promise<unknown> } };
     if (anyDoc.fonts?.ready) {
@@ -1660,6 +1686,7 @@ const MainApp: React.FC = () => {
         console.log('ðŸ”’ Logout detectado');
         sessionStorage.removeItem(PROFILE_CACHE_KEY);
         sessionStorage.removeItem(LAST_LOGIN_CPF_KEY);
+        clearSessionBootSeen();
         clearBirthdayCelebrationSession();
 
         setProfile({
@@ -1696,6 +1723,7 @@ useEffect(() => {
 
       // Limpar cache ao fazer logout/expiração de sessão
       sessionStorage.removeItem(PROFILE_CACHE_KEY);
+      clearSessionBootSeen();
       clearBirthdayCelebrationSession();
       // Reset estado
       setProfile({
@@ -1728,6 +1756,12 @@ useEffect(() => {
     navigateTo('dashboard');
   }
 }, [user, activeModule, navigateTo]);
+
+// Sessão de pé: a abertura da marca já cumpriu o papel. Os próximos F5, links
+// diretos de módulo e guias novas entram sem ela (volta no próximo login).
+useEffect(() => {
+  if (user) markSessionBootSeen();
+}, [user]);
 
 useEffect(() => {
   if (!user) {
@@ -2048,6 +2082,16 @@ useEffect(() => {
 
   if (loading) {
     if (editorDocBoot.active) return editorDocLoader;
+    // Abertura da marca só no login. Nas cargas seguintes (F5, link direto de
+    // módulo, guia nova) fica um carregamento discreto, que sai assim que a
+    // sessão responde — sem espera cinematográfica.
+    if (skipCinematicBoot) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-[#f5f5f3] dark:bg-zinc-950">
+          <Loader2 className="w-7 h-7 animate-spin text-orange-500" />
+        </div>
+      );
+    }
     return <SessionBootScreen fontsReady={fontsReady} />;
   }
 
@@ -2301,12 +2345,12 @@ useEffect(() => {
           <SidebarModuleBtn moduleKey="dashboard" label="Dashboard" Icon={Layers}
             isActive={activeModule === 'dashboard'}
             onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('dashboard'); }}
-            onOpenWindow={floatingWindowModules.has('dashboard') ? (x,y) => setSidebarCtx({x,y,module:'dashboard',label:'Dashboard'}) : undefined}
+            onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'dashboard',label:'Dashboard'})}
             onOpenWindowDirect={floatingWindowModules.has('dashboard') ? () => handleOpenWindow('dashboard','Dashboard') : undefined} />
           <SidebarModuleBtn moduleKey="feed" label="Feed" Icon={Newspaper}
             isActive={activeModule === 'feed'}
             onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); navigateTo('feed'); }}
-            onOpenWindow={floatingWindowModules.has('feed') ? (x,y) => setSidebarCtx({x,y,module:'feed',label:'Feed'}) : undefined}
+            onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'feed',label:'Feed'})}
             onOpenWindowDirect={floatingWindowModules.has('feed') ? () => handleOpenWindow('feed','Feed') : undefined} />
 
           {/* Skeleton enquanto as permissões carregam */}
@@ -2322,7 +2366,7 @@ useEffect(() => {
               isActive={activeModule === 'agenda'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('agenda'); }}
               expiresAt={getOverrideExpiry('agenda')}
-              onOpenWindow={floatingWindowModules.has('agenda') ? (x,y) => setSidebarCtx({x,y,module:'agenda',label:'Agenda'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'agenda',label:'Agenda'})}
               onOpenWindowDirect={floatingWindowModules.has('agenda') ? () => handleOpenWindow('agenda','Agenda') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('chat') && (
@@ -2330,7 +2374,7 @@ useEffect(() => {
               isActive={activeModule === 'chat'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('chat'); }}
               expiresAt={getOverrideExpiry('chat')}
-              onOpenWindow={floatingWindowModules.has('chat') ? (x,y) => setSidebarCtx({x,y,module:'chat',label:'Chat'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'chat',label:'Chat'})}
               onOpenWindowDirect={floatingWindowModules.has('chat') ? () => handleOpenWindow('chat','Chat') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('whatsapp') && (
@@ -2338,7 +2382,7 @@ useEffect(() => {
               isActive={activeModule === 'whatsapp'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('whatsapp'); }}
               expiresAt={getOverrideExpiry('whatsapp')}
-              onOpenWindow={floatingWindowModules.has('whatsapp') ? (x,y) => setSidebarCtx({x,y,module:'whatsapp',label:'WhatsApp'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'whatsapp',label:'WhatsApp'})}
               onOpenWindowDirect={floatingWindowModules.has('whatsapp') ? () => handleOpenWindow('whatsapp','WhatsApp') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('email') && (
@@ -2346,7 +2390,7 @@ useEffect(() => {
               isActive={activeModule === 'email'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('email'); }}
               expiresAt={getOverrideExpiry('email')}
-              onOpenWindow={floatingWindowModules.has('email') ? (x,y) => setSidebarCtx({x,y,module:'email',label:'Email'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'email',label:'Email'})}
               onOpenWindowDirect={floatingWindowModules.has('email') ? () => handleOpenWindow('email','Email') : undefined} />
           )}
 
@@ -2356,7 +2400,7 @@ useEffect(() => {
               interna 'leads' permanece válida para deep-links/compatibilidade,
               mas não é mais exposta no sidebar. */}
 
-          {/* â”€â”€ GESTÃO â”€â”€ Clientes, Processos, Req., Petições, Fin. */}
+          {/* â”€â”€ GESTÃO â”€â”€ Clientes, Processos, Req., Editor, Fin. */}
           {sidebarMode === 'normal' && !permissionsLoading && (
             (canAccessModule('clientes') && !hiddenMenuModules.has('clientes')) ||
             (canAccessModule('processos') && !hiddenMenuModules.has('processos')) ||
@@ -2374,7 +2418,7 @@ useEffect(() => {
               isActive={activeModule === 'clientes'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('clientes'); }}
               expiresAt={getOverrideExpiry('clientes')}
-              onOpenWindow={floatingWindowModules.has('clientes') ? (x,y) => setSidebarCtx({x,y,module:'clientes',label:'Clientes'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'clientes',label:'Clientes'})}
               onOpenWindowDirect={floatingWindowModules.has('clientes') ? () => handleOpenWindow('clientes','Clientes') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('processos') && (
@@ -2382,7 +2426,7 @@ useEffect(() => {
               isActive={activeModule === 'processos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('processos'); }}
               expiresAt={getOverrideExpiry('processos')}
-              onOpenWindow={floatingWindowModules.has('processos') ? (x,y) => setSidebarCtx({x,y,module:'processos',label:'Processos'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'processos',label:'Processos'})}
               onOpenWindowDirect={floatingWindowModules.has('processos') ? () => handleOpenWindow('processos','Processos') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('requerimentos') && isModuleEnabled('requerimentos') && (
@@ -2390,11 +2434,11 @@ useEffect(() => {
               isActive={activeModule === 'requerimentos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('requerimentos'); }}
               expiresAt={getOverrideExpiry('requerimentos')}
-              onOpenWindow={floatingWindowModules.has('requerimentos') ? (x,y) => setSidebarCtx({x,y,module:'requerimentos',label:'Requerimentos'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'requerimentos',label:'Requerimentos'})}
               onOpenWindowDirect={floatingWindowModules.has('requerimentos') ? () => handleOpenWindow('requerimentos','Requerimentos') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('peticoes') && (
-            <SidebarModuleBtn moduleKey="peticoes" label="Petições" Icon={FileText}
+            <SidebarModuleBtn moduleKey="peticoes" label="Editor" Icon={FileText}
               isActive={false}
               onClick={() => {
                 setIsMobileNavOpen(false);
@@ -2410,7 +2454,7 @@ useEffect(() => {
               isActive={activeModule === 'financeiro'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('financeiro'); }}
               expiresAt={getOverrideExpiry('financeiro')}
-              onOpenWindow={floatingWindowModules.has('financeiro') ? (x,y) => setSidebarCtx({x,y,module:'financeiro',label:'Financeiro'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'financeiro',label:'Financeiro'})}
               onOpenWindowDirect={floatingWindowModules.has('financeiro') ? () => handleOpenWindow('financeiro','Financeiro') : undefined} />
           )}
 
@@ -2429,7 +2473,7 @@ useEffect(() => {
               isActive={activeModule === 'prazos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('prazos'); }}
               expiresAt={getOverrideExpiry('prazos')}
-              onOpenWindow={floatingWindowModules.has('prazos') ? (x,y) => setSidebarCtx({x,y,module:'prazos',label:'Prazos'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'prazos',label:'Prazos'})}
               onOpenWindowDirect={floatingWindowModules.has('prazos') ? () => handleOpenWindow('prazos','Prazos') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('intimacoes') && (
@@ -2437,7 +2481,7 @@ useEffect(() => {
               isActive={activeModule === 'intimacoes'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('intimacoes'); }}
               expiresAt={getOverrideExpiry('intimacoes')}
-              onOpenWindow={floatingWindowModules.has('intimacoes') ? (x,y) => setSidebarCtx({x,y,module:'intimacoes',label:'Intimações'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'intimacoes',label:'Intimações'})}
               onOpenWindowDirect={floatingWindowModules.has('intimacoes') ? () => handleOpenWindow('intimacoes','Intimações') : undefined} />
           )}
 
@@ -2457,7 +2501,7 @@ useEffect(() => {
               isActive={activeModule === 'documentos'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('documentos'); }}
               expiresAt={getOverrideExpiry('documentos')}
-              onOpenWindow={floatingWindowModules.has('documentos') ? (x,y) => setSidebarCtx({x,y,module:'documentos',label:'Documentos'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'documentos',label:'Documentos'})}
               onOpenWindowDirect={floatingWindowModules.has('documentos') ? () => handleOpenWindow('documentos','Documentos') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('assinaturas') && (
@@ -2465,7 +2509,7 @@ useEffect(() => {
               isActive={activeModule === 'assinaturas'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('assinaturas'); }}
               expiresAt={getOverrideExpiry('assinaturas')}
-              onOpenWindow={floatingWindowModules.has('assinaturas') ? (x,y) => setSidebarCtx({x,y,module:'assinaturas',label:'Assinaturas'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'assinaturas',label:'Assinaturas'})}
               onOpenWindowDirect={floatingWindowModules.has('assinaturas') ? () => handleOpenWindow('assinaturas','Assinaturas') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('cloud') && (
@@ -2473,7 +2517,7 @@ useEffect(() => {
               isActive={activeModule === 'cloud'}
               onClick={() => { setClientPrefill(null); setIsMobileNavOpen(false); safeNavigateTo('cloud'); }}
               expiresAt={getOverrideExpiry('cloud')}
-              onOpenWindow={floatingWindowModules.has('cloud') ? (x,y) => setSidebarCtx({x,y,module:'cloud',label:'Cloud'}) : undefined}
+              onOpenWindow={(x,y) => setSidebarCtx({x,y,module:'cloud',label:'Cloud'})}
               onOpenWindowDirect={floatingWindowModules.has('cloud') ? () => handleOpenWindow('cloud','Cloud') : undefined} />
           )}
           {!permissionsLoading && canAccessModule('nextcloud') && (
@@ -2589,7 +2633,7 @@ useEffect(() => {
                     clientes: { label: 'Clientes', Icon: Users },
                     processos: { label: 'Processos', Icon: Scale },
                     requerimentos: { label: 'Requerimentos', Icon: Briefcase },
-                    peticoes: { label: 'Petições', Icon: FileText },
+                    peticoes: { label: 'Editor', Icon: FileText },
                     financeiro: { label: 'Financeiro', Icon: PiggyBank },
                     prazos: { label: 'Prazos', Icon: AlarmClock },
                     intimacoes: { label: 'Intimações', Icon: Bell },
@@ -3051,7 +3095,7 @@ useEffect(() => {
         onNavigate={(module, params) => safeNavigateTo(module as any, params as any)}
       />
 
-      {/* Context menu — Abrir como janela */}
+      {/* Context menu — abrir o módulo como janela ou em nova guia */}
       {sidebarCtx && (
         <div
           style={{ position: 'fixed', top: sidebarCtx.y, left: sidebarCtx.x, zIndex: 99999 }}
@@ -3059,12 +3103,27 @@ useEffect(() => {
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-widest text-zinc-400 select-none">{sidebarCtx.label}</div>
+          {floatingWindowModules.has(sidebarCtx.module) && (
+            <button
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              onClick={() => { handleOpenWindow(sidebarCtx.module, sidebarCtx.label); setSidebarCtx(null); }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="4" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M5.5 1H13v7.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M8 6L13 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              Abrir como janela
+            </button>
+          )}
+          {/* Guia de verdade do navegador — possível agora que cada módulo tem
+              URL própria (/agenda, /prazos, ...). */}
           <button
             className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            onClick={() => { handleOpenWindow(sidebarCtx.module, sidebarCtx.label); setSidebarCtx(null); }}
+            onClick={() => {
+              const path = moduleToPath(sidebarCtx.module);
+              if (path) window.open(path, '_blank', 'noopener');
+              setSidebarCtx(null);
+            }}
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="4" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M5.5 1H13v7.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M8 6L13 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
-            Abrir como janela
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2.5" width="12" height="9.5" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><path d="M1 5.5h12" stroke="currentColor" strokeWidth="1.2"/><path d="M7 7.5v3M5.5 9h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+            Abrir em nova guia
           </button>
         </div>
       )}

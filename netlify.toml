@@ -10,6 +10,33 @@
 [build.environment]
   VITE_SYNCFUSION_COLLAB_URL = "https://collab.jurius-api.com"
 
+# App "Atendimento" (módulo WhatsApp como PWA separado): /atendimento é uma
+# PÁGINA PRÓPRIA, com manifest próprio no HTML — é o que faz o navegador
+# instalar OUTRO app em vez do CRM. Precisa vir ANTES do catch-all abaixo,
+# senão a regra genérica entrega o index.html do CRM e o app some.
+[[redirects]]
+  from = "/atendimento"
+  to = "/atendimento.html"
+  status = 200
+
+[[redirects]]
+  from = "/atendimento/*"
+  to = "/atendimento.html"
+  status = 200
+
+# App "Editor" (editor de petições como PWA separado). A query e o hash dos
+# links existentes (/editor#editor-doc=TOKEN, /editor?initialNextcloudPath=...)
+# sobrevivem à reescrita.
+[[redirects]]
+  from = "/editor"
+  to = "/editor.html"
+  status = 200
+
+[[redirects]]
+  from = "/editor/*"
+  to = "/editor.html"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

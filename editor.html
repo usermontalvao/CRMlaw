@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      PÁGINA PRÓPRIA do app "Editor" (editor de petições como PWA separado).
+
+      Ver docs/PWA_APPS.md: o navegador escolhe qual app instalar pela tag
+      rel="manifest" que encontra ao analisar o HTML servido. Enquanto o /editor
+      era atendido pelo index.html do CRM com o manifest trocado por script,
+      "Instalar" oferecia o CRM inteiro — e a aba mostrava o "J" do Jurius.
+
+      O caminho /editor chega aqui por reescrita (netlify.toml em produção,
+      fallback do Vite em desenvolvimento), então os links existentes continuam
+      valendo: /editor, /editor#editor-doc=TOKEN e /editor?initialNextcloudPath=...
+      (a query e o hash sobrevivem à reescrita).
+    -->
+    <link rel="manifest" href="/editor.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/editor-icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/editor-icon-192.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Editor" />
+    <meta name="theme-color" content="#f97316" />
+    <title>Editor</title>
+    <meta name="description" content="Editor de petições — redação e formatação de petições jurídicas." />
+    <!-- Página interna: não deve ser indexada nem compartilhada. -->
+    <meta name="robots" content="noindex, nofollow" />
+
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/editor.tsx"></script>
+  </body>
+</html>

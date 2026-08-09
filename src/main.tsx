@@ -2,34 +2,14 @@ import './utils/consoleGuard'; // 1º: silencia console em prod (só erro) + avi
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { registerVersionedServiceWorker } from './utils/serviceWorker';
+import { installStaleChunkReload } from './utils/staleChunkReload';
 import { isEditorAppLocation } from './utils/editorAppRoute';
+import { isWhatsAppAppLocation } from './utils/whatsappAppRoute';
+import { isModulePath, rememberPendingModule } from './utils/moduleRoutes';
 
 // -- Stale-chunk auto-reload ------------------------------------------------
-window.addEventListener('unhandledrejection', (event) => {
-  const msg = String((event.reason as any)?.message || event.reason || '');
-  if (
-    msg.includes('Failed to fetch dynamically imported module') ||
-    msg.includes('Importing a module script failed') ||
-    msg.includes('dynamically imported module') ||
-    msg.includes('Unable to preload CSS')
-  ) {
-    console.warn('[App] Chunk desatualizado � recarregando...');
-    const lastReload = Number(sessionStorage.getItem('_chunk_reload_at') || 0);
-    if (Date.now() - lastReload > 60_000) {
-      sessionStorage.setItem('_chunk_reload_at', String(Date.now()));
-      window.location.reload();
-    }
-  }
-});
-
-window.addEventListener('message', (event) => {
-  if (event.data?.type !== 'app-update-available') return;
-  const lastReload = Number(sessionStorage.getItem('_sw_reload_at') || 0);
-  if (Date.now() - lastReload > 10_000) {
-    sessionStorage.setItem('_sw_reload_at', String(Date.now()));
-    window.location.reload();
-  }
-});
+// Compartilhado com a entrada do app "Atendimento" (src/atendimento.tsx).
+installStaleChunkReload();
 
 import './index.css';
 
@@ -99,11 +79,34 @@ const currentPath = window.location.pathname;
 // ESTE app instalado (e não o CRM) ao seguir um link /editor. Trocamos o
 // <link rel="manifest"> para o manifest próprio (ícone/nome próprios) e tratamos
 // a rota como staff (abre o login se não houver sessão, em vez do Portal).
+// Igual ao bloco do Atendimento logo abaixo: o caminho /editor tem PÁGINA
+// PRÓPRIA (editor.html → src/editor.tsx) e normalmente não chega aqui. Este
+// bloco cobre o hash legado `#/editor` — de quem instalou o app antes da
+// migração para caminho — e o caso de a reescrita do servidor falhar.
 const isEditorAppRoute = isEditorAppLocation(currentPath, currentHash);
 if (isEditorAppRoute) {
   try {
     const link = document.querySelector('link[rel="manifest"]');
     if (link) link.setAttribute('href', '/editor.webmanifest');
+  } catch {
+    // ignore
+  }
+}
+
+// App "Atendimento" (módulo WhatsApp como PWA separado): em condições normais
+// o caminho /atendimento NEM CHEGA AQUI — ele é servido por uma página própria
+// (atendimento.html, entrada src/atendimento.tsx), que é o que faz o navegador
+// instalar OUTRO app em vez do CRM. Este bloco é a rede de segurança: cobre o
+// atalho por hash (#/atendimento) e o caso de a reescrita do servidor falhar,
+// quando o index.html do CRM acaba atendendo o caminho. Ajustamos manifest e
+// título pelo script — funciona para navegar, mas NÃO substitui a página
+// própria para efeito de instalação.
+const isWhatsAppAppRoute = isWhatsAppAppLocation(currentPath, currentHash);
+if (isWhatsAppAppRoute) {
+  try {
+    const link = document.querySelector('link[rel="manifest"]');
+    if (link) link.setAttribute('href', '/atendimento.webmanifest');
+    document.title = 'Atendimento';
   } catch {
     // ignore
   }
@@ -124,10 +127,13 @@ if (isPublicSignature) {
   disablePwaForPublicSignatureRoute();
 }
 
-// Normaliza qualquer path estranho para "/" — exceto /editor, que é o caminho
-// próprio do app do Editor (precisa ser preservado para o escopo do PWA).
-if (currentPath !== '/' && !isEditorAppRoute) {
-  window.history.replaceState({}, '', `/${currentHash}`);
+// Caminho de módulo do CRM (`/agenda`, `/prazos`, ...): roteamento de primeiro
+// nível. Guardamos o destino AGORA, antes de qualquer normalização — se faltar
+// sessão o visitante vai ao login e volta para "/", e é este registro que o
+// traz de volta à tela que ele pediu.
+const isModuleRoute = isModulePath(currentPath);
+if (isModuleRoute) {
+  rememberPendingModule(currentPath);
 }
 
 const isDocRoute  = currentHash.startsWith('#/documento/');
@@ -156,7 +162,19 @@ const isPublicCrmRoute =
   currentHash.includes('/docs') ||
   currentPath.includes('/docs');
 
-const isStaff = hasSupabaseSession() || isStaffSessionExpired || isDocRoute || isCronRoute || isPublicCrmRoute || isEditorAppRoute;
+const isStaff = hasSupabaseSession() || isStaffSessionExpired || isDocRoute || isCronRoute || isPublicCrmRoute || isEditorAppRoute || isWhatsAppAppRoute;
+
+// Normaliza qualquer path estranho para "/". Ficam de fora:
+//  - /editor, caminho próprio do app do Editor (escopo do PWA);
+//  - /atendimento, caminho próprio do app do WhatsApp (escopo do PWA);
+//  - os caminhos de módulo QUANDO o CRM é quem vai renderizar — é o que faz
+//    `/agenda` sobreviver ao F5. Sem sessão o caminho cai para "/" como sempre,
+//    porque quem atende é o PortalApp (que tem o seu próprio roteamento); o
+//    destino pretendido já foi guardado acima e volta depois do login.
+const keepPath = isEditorAppRoute || isWhatsAppAppRoute || (isModuleRoute && isStaff);
+if (currentPath !== '/' && !keepPath) {
+  window.history.replaceState({}, '', `/${currentHash}`);
+}
 
 async function renderRoot() {
   let rootElement: React.ReactNode;
@@ -314,6 +332,17 @@ async function renderRoot() {
   if (isEditorAppRoute) {
     const { default: EditorApp } = await import('./EditorApp');
     rootElement = <EditorApp />;
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <React.StrictMode>{rootElement}</React.StrictMode>,
+    );
+    return;
+  }
+
+  // App dedicado "Atendimento" (/atendimento): casca MÍNIMA — só o módulo
+  // WhatsApp, sem o CRM completo. Providers próprios dentro de WhatsAppApp.
+  if (isWhatsAppAppRoute) {
+    const { default: WhatsAppApp } = await import('./WhatsAppApp');
+    rootElement = <WhatsAppApp />;
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>{rootElement}</React.StrictMode>,
     );

@@ -12,6 +12,10 @@ const PRECACHE_URLS = [
   '/editor.webmanifest',
   '/editor-icon-192.png',
   '/editor-icon-512.png',
+  // App dedicado "Atendimento" — módulo WhatsApp (PWA instalável separado)
+  '/atendimento.webmanifest',
+  '/atendimento-icon-192.png',
+  '/atendimento-icon-512.png',
 ];
 
 // Install event — não pré-cacheia index.html para evitar stale chunks

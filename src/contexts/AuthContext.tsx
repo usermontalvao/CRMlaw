@@ -115,6 +115,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(session?.user ?? null);
       setSessionWarning(false);
       setLoading(false);
+    }).catch((err) => {
+      // Sem isto o loading ficaria preso para sempre: este promise é o ÚNICO
+      // que encerra a verificação quando não há sessão.
+      console.error('Auth: falha ao ler a sessão', err);
+      setLoading(false);
     });
 
     let lastEvent = '';
@@ -134,6 +139,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lastEvent = event;
       lastEventTime = now;
       lastUserId = currentUserId;
+
+      // INITIAL_SESSION chega ANTES de o getSession() acima resolver (ele ainda
+      // consulta `profiles`). Aproveitamos a sessão quando ela vem, mas NÃO
+      // encerramos o loading aqui: sem sessão, este evento não distingue
+      // "deslogado" de "ainda verificando" — e o App, ao ver loading=false com
+      // user=null, apaga os tokens do localStorage e manda o usuário ao login.
+      // Quem encerra a verificação inicial é sempre o getSession().
+      if (event === 'INITIAL_SESSION') {
+        if (session?.user) {
+          setSession(session);
+          setUser(session.user);
+          setSessionWarning(false);
+        }
+        return;
+      }
 
       if (event === 'SIGNED_OUT') {
         console.log('Auth:', event);

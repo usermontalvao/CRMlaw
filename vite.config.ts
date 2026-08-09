@@ -6,6 +6,18 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/**
+ * Apps instaláveis SEPARADOS (PWAs com identidade própria: id, escopo, nome e
+ * ícone), além do CRM. Cada nome aqui é o de um `<slug>.html` na raiz.
+ *
+ * É a ÚNICA lista do build — não use glob de `*.html`: a raiz também tem as
+ * bancadas de desenvolvimento (docx-pdf-lab, dev-ribbon-*, nextcloud-preview),
+ * que não podem ir para produção.
+ *
+ * Receita completa para criar o próximo: docs/PWA_APPS.md
+ */
+const PWA_APPS = ['atendimento', 'editor'] as const;
+
 export default defineConfig({
   plugins: [react()],
   define: {
@@ -21,7 +33,15 @@ export default defineConfig({
     reportCompressedSize: false,
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
-      input: path.resolve(__dirname, 'index.html'),
+      // Uma página por app instalável: o CRM (index.html) e cada um dos
+      // PWA_APPS, com o seu próprio manifest já no HTML servido — é isso que
+      // faz o navegador instalar apps DIFERENTES, e não o CRM de novo.
+      input: {
+        index: path.resolve(__dirname, 'index.html'),
+        ...Object.fromEntries(
+          PWA_APPS.map((app) => [app, path.resolve(__dirname, `${app}.html`)]),
+        ),
+      },
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
