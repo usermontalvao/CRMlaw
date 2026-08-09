@@ -57,6 +57,7 @@ export interface Profile {
   petition_editor_theme_preference?: PetitionEditorThemePreference | null;
   sidebar_mode?: SidebarMode;
   petition_ribbon_custom_styles?: PetitionRibbonCustomStyle[] | null;
+  petition_ai_assistant_enabled?: boolean;
   last_seen_at?: string | null;
   updated_at: string;
   created_at: string;
@@ -93,6 +94,8 @@ class ProfileService {
   private ribbonStylesColumn = 'petition_ribbon_custom_styles';
   private petitionEditorThemeColumn = 'petition_editor_theme_preference';
   private petitionEditorThemeUnavailable = false;
+  private petitionAiAssistantColumn = 'petition_ai_assistant_enabled';
+  private petitionAiAssistantUnavailable = false;
 
   private isMissingRibbonStylesColumn(error: any): boolean {
     const msg = String(error?.message || '').toLowerCase();
@@ -100,6 +103,16 @@ class ProfileService {
     return (
       msg.includes(this.ribbonStylesColumn) ||
       details.includes(this.ribbonStylesColumn) ||
+      (String(error?.code || '').toUpperCase() === 'PGRST204' && (msg.includes('column') || details.includes('column')))
+    );
+  }
+
+  private isMissingPetitionAiAssistantColumn(error: any): boolean {
+    const msg = String(error?.message || '').toLowerCase();
+    const details = String(error?.details || '').toLowerCase();
+    return (
+      msg.includes(this.petitionAiAssistantColumn) ||
+      details.includes(this.petitionAiAssistantColumn) ||
       (String(error?.code || '').toUpperCase() === 'PGRST204' && (msg.includes('column') || details.includes('column')))
     );
   }
@@ -281,6 +294,56 @@ class ProfileService {
         return false;
       }
 
+      throw new Error(error.message);
+    }
+
+    return true;
+  }
+
+  /**
+   * Assistente de IA do editor — preferência de CADA usuário, não do escritório.
+   * Sem coluna no banco (ambiente antigo) a resposta é `true`: o editor segue
+   * como sempre foi, em vez de sumir com o assistente por causa de um erro.
+   */
+  async getMyPetitionAiAssistantEnabled(): Promise<boolean> {
+    if (this.petitionAiAssistantUnavailable) return true;
+
+    const userId = await this.requireUserId();
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select(this.petitionAiAssistantColumn)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      if (this.isMissingPetitionAiAssistantColumn(error)) {
+        this.petitionAiAssistantUnavailable = true;
+        return true;
+      }
+      throw new Error(error.message);
+    }
+
+    const value = (data as any)?.[this.petitionAiAssistantColumn];
+    return value === false ? false : true;
+  }
+
+  async updateMyPetitionAiAssistantEnabled(enabled: boolean): Promise<boolean> {
+    if (this.petitionAiAssistantUnavailable) return false;
+
+    const userId = await this.requireUserId();
+    const { error } = await supabase
+      .from(this.tableName)
+      .update({
+        [this.petitionAiAssistantColumn]: enabled,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+
+    if (error) {
+      if (this.isMissingPetitionAiAssistantColumn(error)) {
+        this.petitionAiAssistantUnavailable = true;
+        return false;
+      }
       throw new Error(error.message);
     }
 

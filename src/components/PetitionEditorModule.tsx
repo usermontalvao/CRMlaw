@@ -1021,6 +1021,31 @@ const EDITOR_STYLES = `
   /* Splitter da lateral (fica fora do .petition-sidebar) */
   body.petition-dark .petition-editor-root [class~="bg-slate-200"] { background-color: #3a3a3a !important; }
 
+  /* Alça que traz a biblioteca de volta. Encostada na borda esquerda da área
+     da página, centrada na altura visível — não rola com o documento. */
+  .petition-library-handle {
+    position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    z-index: 21; width: 26px; padding: 14px 0; display: flex; flex-direction: column;
+    align-items: center; gap: 7px; border: 1px solid #d8dde6; border-left: 0;
+    border-radius: 0 8px 8px 0; background: #fff; color: #2563eb; cursor: pointer;
+    box-shadow: 2px 0 10px rgba(16,24,40,.07);
+    transition: width .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .petition-library-handle:hover { width: 30px; background: #f0f5ff; border-color: #b8cdf5; }
+  .petition-library-handle:focus-visible {
+    outline: none; border-color: #84adff; box-shadow: 0 0 0 3px rgba(47,101,234,.18);
+  }
+  .petition-library-handle-label {
+    writing-mode: vertical-rl; font-size: 10px; font-weight: 600; letter-spacing: .06em;
+  }
+  /* Recolher é a MESMA alça, agora pendurada na borda de fora do painel. */
+  .petition-library-handle.is-collapse { left: 100%; }
+  body.petition-dark .petition-library-handle {
+    border-color: #3a3d44; background: #25262a; color: #75a7ff;
+    box-shadow: 2px 0 10px rgba(0,0,0,.28);
+  }
+  body.petition-dark .petition-library-handle:hover { background: #1e3655; border-color: #365f8d; }
+
   /* Biblioteca lateral integrada ao editor. */
   .petition-sidebar {
     color: #334155;
@@ -1825,6 +1850,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   const [activeWorkspace, setActiveWorkspace] = useState<'editor' | 'blocks'>('editor');
   const [blocksReturnTarget, setBlocksReturnTarget] = useState<'start' | 'editor'>('editor');
   const [blocksEnabled, setBlocksEnabled] = useState(true);
+  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(true);
   const [bmExpandedBlocks, setBmExpandedBlocks] = useState<Set<string>>(new Set());
   const [bmDocxPreviews, setBmDocxPreviews] = useState<Map<string, 'loading' | 'done' | 'error'>>(new Map());
   const bmPreviewContainersRef = useRef<Map<string, HTMLDivElement | null>>(new Map());
@@ -2211,7 +2237,25 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
       setBlocksEnabled(cfg.blocks_enabled);
       if (!cfg.blocks_enabled) setActiveWorkspace('editor');
     }).catch(() => {});
+    // Assistente de IA é escolha de cada usuário (coluna no perfil), não do escritório.
+    profileService.getMyPetitionAiAssistantEnabled()
+      .then(setAiAssistantEnabled)
+      .catch(() => {});
   }, []);
+
+  /* Liga/desliga o assistente na hora e grava no perfil. Se o banco recusar,
+     o botão volta ao estado anterior — ele não pode dizer "desligado" e o
+     assistente reaparecer na próxima sessão. */
+  const toggleAiAssistant = useCallback(async () => {
+    const next = !aiAssistantEnabled;
+    setAiAssistantEnabled(next);
+    try {
+      const ok = await profileService.updateMyPetitionAiAssistantEnabled(next);
+      if (!ok) setAiAssistantEnabled(!next);
+    } catch {
+      setAiAssistantEnabled(!next);
+    }
+  }, [aiAssistantEnabled]);
 
   useEffect(() => {
     const id = window.setInterval(() => setRelativeTimeTick((t) => t + 1), 15000);
@@ -9536,13 +9580,30 @@ Regras:
           setActiveWorkspace('blocks');
         }}
         onGoHome={requestGoHome}
-        onToggleLibrary={() => setSidebarOpen((current) => !current)}
-        libraryOpen={sidebarOpen}
+        aiAssistantEnabled={aiAssistantEnabled}
+        onToggleAiAssistant={() => { void toggleAiAssistant(); }}
         onOpenFindReplace={(mode) => setFindReplaceMode(mode)}
         onOpenProofreader={() => setShowProofreader((current) => !current)}
       />
 
       <div className="flex-1 flex min-h-0 min-w-0 max-w-full overflow-hidden relative">
+        {/* Alça da biblioteca — vive na área da página (não na faixa), então
+           continua à mão com a faixa recolhida. Fechada ela encosta na borda
+           esquerda; aberta, a MESMA alça gruda na borda de fora do painel e só
+           inverte a seta. Abrir e recolher têm o mesmo alvo e o mesmo desenho. */}
+        {!sidebarOpen && (
+          <button
+            type="button"
+            className="petition-library-handle"
+            onClick={() => setSidebarOpen(true)}
+            title="Abrir biblioteca"
+            aria-label="Abrir biblioteca"
+          >
+            <Layers className="h-3.5 w-3.5" />
+            <span className="petition-library-handle-label">Biblioteca</span>
+            <ChevronRight className="h-3 w-3" />
+          </button>
+        )}
         {/* Sidebar — overlay no mobile, inline no desktop */}
         {sidebarOpen && (
           <div
@@ -9552,6 +9613,17 @@ Regras:
         )}
         {sidebarOpen && (
           <div className="petition-sidebar fixed sm:relative inset-y-0 left-0 z-[31] sm:z-[20] flex flex-col flex-shrink-0" style={{ width: Math.min(sidebarWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : sidebarWidth) }}>
+            <button
+              type="button"
+              className="petition-library-handle is-collapse"
+              onClick={() => setSidebarOpen(false)}
+              title="Recolher biblioteca"
+              aria-label="Recolher biblioteca"
+            >
+              <Layers className="h-3.5 w-3.5" />
+              <span className="petition-library-handle-label">Biblioteca</span>
+              <ChevronLeft className="h-3 w-3" />
+            </button>
             <div className="petition-sidebar-header">
               <div className="petition-sidebar-heading">
                 <span className="petition-sidebar-heading-icon"><Layers className="h-4 w-4" /></span>
@@ -9560,15 +9632,6 @@ Regras:
                   <span>Conteúdo do documento</span>
                 </div>
               </div>
-              <button
-                type="button"
-                className="petition-sidebar-close"
-                onClick={() => setSidebarOpen(false)}
-                title="Ocultar biblioteca"
-                aria-label="Ocultar biblioteca"
-              >
-                <PanelLeftClose className="h-4 w-4" />
-              </button>
             </div>
             <div className="petition-sidebar-tabs" role="tablist" aria-label="Conteúdo do documento">
               <button
@@ -10135,7 +10198,11 @@ Regras:
             onRequestFormatQualification={handleFormatQualification}
           />
 
-          {/* Widget de chat IA — assistente da petição (revisa, corrige, insere) */}
+          {/* Widget de chat IA — assistente da petição (revisa, corrige, insere).
+             Preferência de CADA usuário (profiles.petition_ai_assistant_enabled),
+             alternada na aba Configurações da faixa ou no card do CRM. Desligado
+             nem monta: sem botão flutuante e sem chamada de IA saindo daqui. */}
+          {aiAssistantEnabled && (
           <PetitionAiChat
             editorRef={editorRef}
             onDocumentChanged={() => setHasUnsavedChanges(true)}
@@ -10151,6 +10218,7 @@ Regras:
             suggestedArea={selectedLegalArea?.name}
             suggestedDocumentType={DOCUMENT_TYPE_BRIEFING_LABELS[selectedDocumentType]}
           />
+          )}
 
         </div>
 

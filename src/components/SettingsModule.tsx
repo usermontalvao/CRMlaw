@@ -63,6 +63,7 @@ import {
   Cloud,
   CheckSquare,
   GitBranch,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
@@ -552,6 +553,9 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   // Editor de Petições
   const [petitionEditorConfig, setPetitionEditorConfig] = useState<PetitionEditorModuleConfig>({ ...PETITION_EDITOR_MODULE_DEFAULTS });
   const [petitionEditorSaving, setPetitionEditorSaving] = useState(false);
+  // Assistente de IA: preferência do usuário logado, não do escritório.
+  const [aiAssistantEnabled, setAiAssistantEnabled] = useState(true);
+  const [aiAssistantSaving, setAiAssistantSaving] = useState(false);
 
   // Módulo Prazos
   const [deadlineConfig, setDeadlineConfig] = useState<DeadlineModuleConfig>({ ...DEADLINE_MODULE_DEFAULTS });
@@ -592,6 +596,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     })));
   }, []);
   useEffect(() => { if (activeSection === 'modules_leads' || activeSection === 'modules_whatsapp') loadWaFunnelChannels(); }, [activeSection, loadWaFunnelChannels]);
+  // Preferência pessoal do assistente: lida do perfil, fora do carregamento das
+  // configurações do escritório porque vive em outra tabela.
+  useEffect(() => {
+    if (activeSection !== 'modules_petition_editor') return;
+    let alive = true;
+    profileService.getMyPetitionAiAssistantEnabled()
+      .then((enabled) => { if (alive) setAiAssistantEnabled(enabled); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [activeSection]);
   // Módulos restantes
   const [signatureConfig, setSignatureConfig]  = useState<SignatureModuleConfig>({ ...SIGNATURE_MODULE_DEFAULTS, signer_roles: [...SIGNATURE_MODULE_DEFAULTS.signer_roles], auth_methods: [...SIGNATURE_MODULE_DEFAULTS.auth_methods] });
   const [publicAuthSignConfig, setPublicAuthSignConfig] = useState<{ google: boolean; email: boolean; phone: boolean }>({ google: true, email: true, phone: true });
@@ -5495,6 +5509,52 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         </div>
                         <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${petitionEditorConfig.blocks_enabled ? 'bg-orange-500' : 'bg-slate-200'}`}>
                           <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-[#f8f7f5] shadow-sm transition-transform ${petitionEditorConfig.blocks_enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        </div>
+                      </button>
+
+                      {/* Toggle Assistente de IA — preferência DESTE usuário, guardada
+                         no perfil. Salva sozinho no clique: não entra no botão de
+                         salvar abaixo, que grava a config do escritório. */}
+                      <button
+                        type="button"
+                        disabled={aiAssistantSaving}
+                        onClick={async () => {
+                          const next = !aiAssistantEnabled;
+                          setAiAssistantEnabled(next);
+                          setAiAssistantSaving(true);
+                          try {
+                            const ok = await profileService.updateMyPetitionAiAssistantEnabled(next);
+                            if (!ok) throw new Error('Preferência indisponível neste ambiente.');
+                            setFeedback('success', next ? 'Assistente de IA ativado no seu editor.' : 'Assistente de IA desativado no seu editor.');
+                          } catch (err: any) {
+                            setAiAssistantEnabled(!next);
+                            setFeedback('error', err?.message || 'Não foi possível salvar a preferência.');
+                          } finally {
+                            setAiAssistantSaving(false);
+                          }
+                        }}
+                        className={`mt-3 flex w-full items-center gap-4 rounded-xl border p-4 text-left transition hover:shadow-sm disabled:opacity-60 ${
+                          aiAssistantEnabled
+                            ? 'border-orange-200 bg-orange-50/50'
+                            : 'border-[#e7e5df] bg-[#f8f7f5]'
+                        }`}
+                      >
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${aiAssistantEnabled ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>
+                          <Sparkles className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold text-slate-900">Assistente de IA</p>
+                            <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 6px', borderRadius: '8px', background: '#e0e7ff', color: '#3730a3' }}>Só para você</span>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            {aiAssistantEnabled
+                              ? 'Chat da IA disponível no seu editor para revisar, corrigir e inserir texto.'
+                              : 'Assistente desativado — o widget de chat não aparece no seu editor.'}
+                          </p>
+                        </div>
+                        <div className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${aiAssistantEnabled ? 'bg-orange-500' : 'bg-slate-200'}`}>
+                          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-[#f8f7f5] shadow-sm transition-transform ${aiAssistantEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
                         </div>
                       </button>
                     </div>

@@ -53,8 +53,7 @@ import {
   Moon,
   Sun,
   ArrowLeft,
-  PanelLeftOpen,
-  PanelLeftClose,
+  Sparkles,
 } from 'lucide-react';
 import type { SyncfusionEditorRef } from './SyncfusionEditor';
 import { profileService, type PetitionRibbonCustomStyle } from '../services/profile.service';
@@ -188,8 +187,9 @@ interface PetitionRibbonProps {
   onManageModels?: () => void;
   onManageBlocks?: () => void;
   onGoHome?: () => void;
-  onToggleLibrary?: () => void;
-  libraryOpen?: boolean;
+  /** Assistente de IA: preferência de cada usuário, refletida também no CRM. */
+  aiAssistantEnabled?: boolean;
+  onToggleAiAssistant?: () => void;
   onOpenFindReplace?: (mode: 'find' | 'replace') => void;
   /** Abre o painel de revisão de texto (ortografia + gramática + IA). */
   onOpenProofreader?: () => void;
@@ -221,8 +221,8 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
   onManageModels,
   onManageBlocks,
   onGoHome,
-  onToggleLibrary,
-  libraryOpen = false,
+  aiAssistantEnabled = true,
+  onToggleAiAssistant,
   onOpenFindReplace,
   onOpenProofreader,
 }) => {
@@ -1088,16 +1088,10 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
               <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); printDoc(); }}>
                 <Printer size={15} /> Imprimir / PDF
               </button>
-              {(onGoHome || onToggleLibrary) && <div className="pet-file-sep" />}
+              {onGoHome && <div className="pet-file-sep" />}
               {onGoHome && (
                 <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onGoHome(); }}>
                   <ArrowLeft size={15} /> Voltar ao início
-                </button>
-              )}
-              {onToggleLibrary && (
-                <button type="button" className="pet-file-item" onClick={() => { setFileMenuOpen(false); onToggleLibrary(); }}>
-                  {libraryOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-                  {libraryOpen ? 'Ocultar biblioteca' : 'Abrir biblioteca'}
                 </button>
               )}
             </div>
@@ -1983,6 +1977,24 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                 </Btn>
               </div>
             </RibbonGroup>
+            {onToggleAiAssistant && (
+              <RibbonGroup label="Assistente">
+                <div className="pet-flow-row">
+                  <Btn
+                    small
+                    title={aiAssistantEnabled
+                      ? 'Desativar o assistente de IA — o chat some do editor'
+                      : 'Ativar o assistente de IA no editor'}
+                    onClick={onToggleAiAssistant}
+                  >
+                    <Sparkles size={15} />
+                    <span style={aiAssistantEnabled ? { color: '#2563eb', fontWeight: 700 } : undefined}>
+                      {aiAssistantEnabled ? 'IA ligada' : 'IA desligada'}
+                    </span>
+                  </Btn>
+                </div>
+              </RibbonGroup>
+            )}
             {onLoadDefaultTemplate && (
               <RibbonGroup label="Documento padrão">
                 <div className="pet-flow-row">
