@@ -54,6 +54,9 @@ export const MODULE_PATHS = {
 
 export type ModuleName = keyof typeof MODULE_PATHS;
 
+/** Query usada apenas pela apresentação: mantém o CRM completo montado, sem o shell visual. */
+export const MODULE_STANDALONE_QUERY_PARAM = 'standalone';
+
 /**
  * Módulos que NÃO escrevem na URL.
  *
@@ -80,6 +83,21 @@ function normalizePath(pathname: string): string {
 /** Caminho do módulo, ou `null` para os que não vão à URL (ver acima). */
 export function moduleToPath(module: ModuleName): string | null {
   return MODULES_WITHOUT_URL.has(module) ? null : MODULE_PATHS[module];
+}
+
+/**
+ * Caminho usado por "Abrir em nova guia". Não cria uma aplicação ou rota
+ * paralela: o mesmo módulo autenticado abre com o shell global oculto.
+ */
+export function moduleToStandalonePath(module: ModuleName): string | null {
+  const path = moduleToPath(module);
+  if (!path) return null;
+  return `${path}?${MODULE_STANDALONE_QUERY_PARAM}=1`;
+}
+
+/** Ativa o modo isolado somente para o valor explícito `standalone=1`. */
+export function isStandaloneModuleSearch(search: string): boolean {
+  return new URLSearchParams(search).get(MODULE_STANDALONE_QUERY_PARAM) === '1';
 }
 
 /** Módulo correspondente ao caminho, ou `null` se não for caminho de módulo. */

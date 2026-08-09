@@ -2,7 +2,7 @@
 import { createPortal } from 'react-dom';
 import { useNavigation } from './contexts/NavigationContext';
 import type { ModuleName } from './contexts/NavigationContext';
-import { moduleToPath } from './utils/moduleRoutes';
+import { isStandaloneModuleSearch, moduleToStandalonePath } from './utils/moduleRoutes';
 import {
   Users,
   Cloud,
@@ -1019,6 +1019,9 @@ const MainApp: React.FC = () => {
   const { currentModule: activeModule, moduleParams, navigateTo, setModuleParams, clearModuleParams } = useNavigation();
   const { theme, toggleTheme } = useTheme();
   const { sidebarMode, setSidebarMode } = useSidebarMode();
+  // A guia isolada continua usando este mesmo MainApp (auth, permissões, cache,
+  // realtime e serviços). A query muda somente a apresentação do shell.
+  const isStandaloneModule = isStandaloneModuleSearch(window.location.search);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // Floating windows
@@ -1027,11 +1030,12 @@ const MainApp: React.FC = () => {
   const toast = useToastContext();
 
   const handleOpenWindow = useCallback((module: FloatingModuleKey, label: string) => {
+    if (isStandaloneModule) return;
     const ok = openWindow(module, label);
     if (!ok) {
       toast.warning(`Limite de ${MAX_WINDOWS} janelas atingido. Feche uma para abrir outra.`);
     }
-  }, [openWindow, toast]);
+  }, [isStandaloneModule, openWindow, toast]);
   useEffect(() => {
     if (!sidebarCtx) return;
     const close = () => setSidebarCtx(null);
@@ -1053,6 +1057,9 @@ const MainApp: React.FC = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [cloudHeaderState, setCloudHeaderState] = useState<CloudHeaderStateDetail>({ viewMode: 'list', cardSize: 'medium', showFilters: false });
   const { canView, canCreate, canEdit, canDelete, loading: permissionsLoading, isAdmin, overrides } = usePermissions();
+  // Janelas persistidas pertencem ao shell principal. A guia isolada não as
+  // mostra nem reserva o espaço da taskbar, mas também não apaga o estado salvo.
+  const hasVisibleFloatingWindows = !isStandaloneModule && floatWins.length > 0;
 
   // Retorna expires_at caso o módulo tenha acesso temporário via override
   const getOverrideExpiry = useCallback((moduleKey: string): string | null => {
@@ -2289,7 +2296,7 @@ useEffect(() => {
         {/* Aviso de sessão */}
         <SessionWarning />
       {/* Sidebar Minimalista */}
-      {isMobileNavOpen && (
+      {!isStandaloneModule && isMobileNavOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-40 md:hidden"
           onClick={() => setIsMobileNavOpen(false)}
@@ -2302,6 +2309,7 @@ useEffect(() => {
         className={`hidden md:block flex-none transition-all duration-300 ${
           sidebarMode === 'normal' ? 'w-[256px]' : 'w-[84px]'
         }`}
+        style={isStandaloneModule ? { display: 'none' } : undefined}
         aria-hidden="true"
       />
 
@@ -2312,6 +2320,8 @@ useEffect(() => {
         } border-r border-white/[0.07] bg-[#1e2028] text-white shadow-[2px_0_16px_rgba(0,0,0,0.18)] ${
           isMobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         } transition-all duration-300`}
+        style={isStandaloneModule ? { display: 'none' } : undefined}
+        aria-hidden={isStandaloneModule || undefined}
       >
         {/* Logo */}
         {sidebarMode === 'normal' ? (
@@ -2561,12 +2571,15 @@ useEffect(() => {
       <div
         className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950 ${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' || activeModule === 'nextcloud' ? 'overflow-hidden' : ''}`}
         style={activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' || activeModule === 'nextcloud'
-          ? { height: `calc(100dvh - ${floatWins.length > 0 ? TASKBAR_H : 0}px)` }
+          ? { height: `calc(100dvh - ${hasVisibleFloatingWindows ? TASKBAR_H : 0}px)` }
           : undefined}
       >
         {/* Cloud Mobile Header - Pill-shaped navigation shell */}
         {activeModule === 'cloud' ? (
-          <header className="sticky top-0 z-30 px-3 py-3 md:hidden">
+          <header
+            className="sticky top-0 z-30 px-3 py-3 md:hidden"
+            style={isStandaloneModule ? { display: 'none' } : undefined}
+          >
             <div className="flex items-center justify-between gap-3 rounded-full border border-white/70 bg-[#f8f7f5]/95 backdrop-blur-xl px-3 py-2.5 shadow-[0px_12px_32px_rgba(44,47,48,0.08)]">
               {/* Menu button */}
               <button
@@ -2607,11 +2620,15 @@ useEffect(() => {
         ) : null}
         
         {/* Regular header for non-Cloud modules or desktop */}
-        <header className={`sticky top-0 z-30 ${
+        <header
+          className={`sticky top-0 z-30 ${
           activeModule === 'cloud'
             ? `hidden md:block border-b ${theme === 'dark' ? 'border-white/[0.08] bg-[#18181a]' : 'border-[#e7e5df] bg-[#f8f7f5] shadow-[0_1px_0_rgba(15,23,42,0.04)]'}`
             : `border-b ${theme === 'dark' ? 'border-white/[0.08] bg-[#18181a]' : 'border-[#e7e5df] bg-[#f8f7f5] shadow-[0_1px_0_rgba(15,23,42,0.04)]'}`
-        }`}>
+          }`}
+          style={isStandaloneModule ? { display: 'none' } : undefined}
+          aria-hidden={isStandaloneModule || undefined}
+        >
           <div className="px-4 lg:px-6">
             <div className="flex h-[62px] items-center gap-4">
 
@@ -3044,7 +3061,7 @@ useEffect(() => {
           onBadgeCountChange={setDocRequestsBadge}
         />
 
-        {activeModule !== 'chat' && activeModule !== 'whatsapp' && activeModule !== 'email' && activeModule !== 'nextcloud' && (
+        {!isStandaloneModule && activeModule !== 'chat' && activeModule !== 'whatsapp' && activeModule !== 'email' && activeModule !== 'nextcloud' && (
           <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-[#e7e5df] pt-4 text-xs text-slate-500">
               <div className="flex items-center gap-2">
@@ -3071,9 +3088,11 @@ useEffect(() => {
 
       {/* Widget flutuante do Editor de Petições - renderizado fora do fluxo de módulos */}
       </div>
-      <Suspense fallback={null}>
-        <PetitionEditorWidget />
-      </Suspense>
+      {!isStandaloneModule && (
+        <Suspense fallback={null}>
+          <PetitionEditorWidget />
+        </Suspense>
+      )}
 
       {/* Overlay do carregamento próprio da abertura em nova aba — cobre o
           dashboard E o loader interno do editor até o documento carregar.
@@ -3081,7 +3100,7 @@ useEffect(() => {
       {editorDocBoot.active && !editorBootHandled && createPortal(editorDocLoader, document.body)}
 
       <Suspense fallback={null}>
-        <ChatFloatingWidget />
+        <ChatFloatingWidget hidden={isStandaloneModule} />
       </Suspense>
 
       {/* Avisos de mensagem nova do WhatsApp: pilha própria, visível em
@@ -3117,7 +3136,7 @@ useEffect(() => {
           <button
             className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
             onClick={() => {
-              const path = moduleToPath(sidebarCtx.module);
+              const path = moduleToStandalonePath(sidebarCtx.module);
               if (path) window.open(path, '_blank', 'noopener');
               setSidebarCtx(null);
             }}
@@ -3129,7 +3148,7 @@ useEffect(() => {
       )}
 
       {/* Floating Windows */}
-      {floatWins.length > 0 && (
+      {hasVisibleFloatingWindows && (
         <FloatingWindowSystem
           windows={floatWins}
           onUpdate={updateWindow}

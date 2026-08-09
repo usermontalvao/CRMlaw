@@ -4,7 +4,9 @@ import {
   MODULE_PATHS,
   isCleanCrmLocation,
   isModulePath,
+  isStandaloneModuleSearch,
   moduleToPath,
+  moduleToStandalonePath,
   parsePendingModule,
   pathToModule,
 } from './moduleRoutes.ts';
@@ -62,6 +64,20 @@ test('ida e volta módulo ↔ caminho', () => {
 
 test('login não vai para a URL — o destino pretendido tem de sobreviver', () => {
   assert.equal(moduleToPath('login'), null);
+});
+
+test('nova guia gera caminho isolado sem criar uma rota paralela', () => {
+  assert.equal(moduleToStandalonePath('prazos'), '/prazos?standalone=1');
+  assert.equal(moduleToStandalonePath('agenda'), '/agenda?standalone=1');
+  assert.equal(moduleToStandalonePath('login'), null);
+});
+
+test('modo isolado exige o valor explícito standalone=1', () => {
+  assert.equal(isStandaloneModuleSearch('?standalone=1'), true);
+  assert.equal(isStandaloneModuleSearch('?foo=bar&standalone=1'), true);
+  assert.equal(isStandaloneModuleSearch('?standalone=0'), false);
+  assert.equal(isStandaloneModuleSearch('?standalone=true'), false);
+  assert.equal(isStandaloneModuleSearch(''), false);
 });
 
 test('destino pretendido: só módulo conhecido e dentro do prazo', () => {
