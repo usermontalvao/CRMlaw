@@ -585,6 +585,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
     // Eventos do calendário
     calendarEventsData.forEach((e) => {
+      if (e.status === 'cancelado') return;
       if (!e.start_at) return;
       const eventDate = new Date(e.start_at);
       totalCount++;
@@ -1163,6 +1164,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   // Eventos personalizados vindos da tabela calendar_events
   const customEvents = useMemo(() => {
     const visibleEvents = calendarEventsData.filter(item => {
+      // Suspender/cancelar um lançamento financeiro mantém o compromisso salvo
+      // para que ele possa ser restaurado ao retomar o lançamento, mas não deve
+      // deixá-lo visível enquanto estiver fora do fluxo operacional.
+      if (item.status === 'cancelado') return false;
       if (!item.is_private) return true;
       if (!user?.id) return false;
       if (item.user_id === user.id) return true;
@@ -2300,6 +2305,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       });
 
     calendarEventsData.forEach((event) => {
+      if (event.status === 'cancelado') return;
       if (!viewFilters[event.event_type]) return;
       
       // Filtrar por período se especificado
