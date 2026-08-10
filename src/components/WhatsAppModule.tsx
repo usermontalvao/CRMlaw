@@ -92,7 +92,7 @@ import { QueuePanel } from './whatsapp/queuePanel';
 import { isOptOutMessage, DO_NOT_DISTURB_LABEL } from './whatsapp/campaign';
 import ChannelAccessManager from './whatsapp/ChannelAccessManager';
 import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
-import { ThreadScheduledGhosts, ScheduledMessagesPanel } from './whatsapp/scheduledMessages';
+import { ThreadScheduledGhosts, ScheduledMessagesPanel, MyScheduledList, useMyScheduled } from './whatsapp/scheduledMessages';
 import { AiApprovalBanner } from './whatsapp/aiApprovalBanner';
 import { AttendanceDashboard } from './whatsapp/attendanceDashboard';
 import { ClientFillLinksPanel } from './whatsapp/clientFillLinksPanel';
@@ -153,7 +153,7 @@ import {
  * módulo para um painel por vez em celulares.
  */
 
-type FilterTab = 'all' | 'unread' | 'mine';
+type FilterTab = 'all' | 'unread' | 'mine' | 'scheduled';
 
 
 // ── Confirmação leve (sem PIN) para ações reversíveis do módulo ──
@@ -1143,6 +1143,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     [conversations],
   );
 
+  // Agendadas do próprio atendente, em qualquer conversa. Fica FORA do memo das
+  // abas abaixo de propósito: não é um recorte da lista de conversas, é outra
+  // consulta — e os filtros de fila (canal/setor/etiqueta/busca) não se aplicam.
+  const { items: myScheduled, failed: scheduledFailed, reload: reloadMyScheduled } = useMyScheduled(user?.id);
+
   // Contadores das abas (Fase A): refletem exatamente o que a lista mostraria em
   // cada escopo, aplicando os MESMOS filtros de fila (status/canal/depto/etiqueta/
   // busca) e variando só a dimensão da aba. Antes só excluíam rascunhos, então uma
@@ -1845,8 +1850,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           </div>
           )}
 
-          {/* Abas de situação (restauradas): Todas / Não lidas / Minhas */}
-          <div className={`flex items-center gap-1 ${embedded ? 'mt-2' : 'mt-2.5'}`}>
+          {/* Abas de situação (restauradas): Todas / Não lidas / Minhas / Agendadas */}
+          <div className={`flex items-center gap-1 flex-wrap ${embedded ? 'mt-2' : 'mt-2.5'}`}>
             {([
               ['all', `Todas (${tabCounts.all})`],
               ['unread', `Não lidas (${tabCounts.unread})`],
@@ -1858,10 +1863,32 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   {label}
                 </button>
               ))}
+            {/* Uma agendada que falhou some de vista: ninguém volta na conversa
+                para conferir. Por isso a aba grita em vermelho enquanto houver
+                falha, mesmo que o atendente esteja em outra aba. */}
+            <button onClick={() => setFilter('scheduled')}
+              title={scheduledFailed > 0 ? `${scheduledFailed} não foram entregues` : undefined}
+              className={`px-3 py-1 rounded-full text-[12px] font-semibold transition inline-flex items-center gap-1.5 ${
+                filter === 'scheduled'
+                  ? (scheduledFailed > 0 ? 'bg-red-600 text-white' : 'bg-amber-600 text-white')
+                  : (scheduledFailed > 0 ? 'text-red-600 hover:bg-red-50' : 'text-slate-500 hover:bg-[#f3f2ef]')
+              }`}>
+              {scheduledFailed > 0 && <AlertTriangle size={12} />}
+              Agendadas{myScheduled?.length ? ` (${myScheduled.length})` : ''}
+            </button>
           </div>
         </div>
 
         <div ref={setListEl} onScroll={onListScroll} className="flex-1 overflow-y-auto min-h-0">
+          {filter === 'scheduled' ? (
+          <MyScheduledList
+            items={myScheduled}
+            privateMode={privateMode}
+            confirm={confirm}
+            onReload={reloadMyScheduled}
+            onOpenConversation={id => { setFilter('all'); setSelectedId(id); }}
+          />
+          ) : (
           <ConversationList
             conversations={filtered}
             selectedId={selectedId}
@@ -1885,6 +1912,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             onStopSignatureTracking={stopSignatureTracking}
             onStopTemplateFillTracking={stopTemplateFillTracking}
           />
+          )}
         </div>
       </aside>
 

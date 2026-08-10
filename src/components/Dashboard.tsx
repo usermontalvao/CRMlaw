@@ -56,6 +56,10 @@ import type { CalendarEvent } from '../types/calendar.types';
 import type { Requirement } from '../types/requirement.types';
 import type { FinancialStats, Installment, Agreement } from '../types/financial.types';
 import type { DjenComunicacaoLocal } from '../types/djen.types';
+import { useMyScheduled } from './whatsapp/scheduledMessages';
+import { Avatar } from './whatsapp/avatar';
+import { conversationName } from './whatsapp/format';
+import { useAuth } from '../contexts/AuthContext';
 import { FinancialCard } from './dashboard/FinancialCard';
 import { DashboardHeader } from './dashboard/DashboardHeader';
 import { profileService } from '../services/profile.service';
@@ -531,6 +535,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
   const { canView, canCreate, loading: permissionsLoading } = usePermissions();
   const { revealFinancialValues, getFinancialModuleExpiry } = useSecurityPin();
+  const { user } = useAuth();
+
+  // Agendadas do WhatsApp: fora do cache de 5 minutos do painel, de propósito.
+  // Uma mensagem que sai às 08:00 sumiria do cartão só às 08:05, e uma falha
+  // ficaria escondida pelo mesmo tempo. O gancho tem realtime próprio.
+  const { items: myScheduled, failed: scheduledFailed } = useMyScheduled(user?.id);
 
   const activeClients = clients.filter(c => c.status === 'ativo').length;
   const activeProcesses = processes.length;
@@ -778,8 +788,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   const showIntimacoes = canView('intimacoes');
   const showProcessos  = canView('processos');
   const showRequer     = canView('requerimentos');
+  const showAgendadas  = canView('whatsapp');
   const rightColVisible = showFinanceiro || showPrazos;
-  const bottomWidgets   = [showTarefas, showIntimacoes, showProcessos, showRequer].filter(Boolean).length;
+  const bottomWidgets   = [showTarefas, showIntimacoes, showProcessos, showRequer, showAgendadas].filter(Boolean).length;
 
   if (loading || permissionsLoading) {
     return (
@@ -1760,6 +1771,80 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                             <p className="text-xs font-semibold text-slate-800 truncate group-hover:text-slate-900">{req.beneficiary || 'Beneficiário'}</p>
                             {sinceDays !== null && <p className="text-[10px] text-slate-400">Entrada há {sinceDays}d</p>}
                           </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Mensagens agendadas do WhatsApp */}
+            {showAgendadas && (
+              <div className="min-w-0 overflow-hidden bg-white rounded-lg border border-slate-200 flex flex-col">
+                <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between flex-shrink-0 gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div className="flex items-center justify-center flex-shrink-0">
+                      <Clock className={`w-4 h-4 ${scheduledFailed > 0 ? 'text-red-500' : 'text-slate-400'}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-[13px] font-semibold text-slate-900 leading-tight">Mensagens agendadas</h3>
+                      <p className={`text-[11px] leading-tight ${scheduledFailed > 0 ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>
+                        {scheduledFailed > 0
+                          ? `${scheduledFailed} não ${scheduledFailed === 1 ? 'foi entregue' : 'foram entregues'}`
+                          : `${myScheduled?.length ?? 0} pendente${(myScheduled?.length ?? 0) !== 1 ? 's' : ''}`}
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={() => handleNavigate('whatsapp')} className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-0.5 transition flex-shrink-0">
+                    Ver todas <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+                {(myScheduled?.length ?? 0) === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-7 gap-1.5 flex-1">
+                    <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center">
+                      <Clock className="w-5 h-5 text-slate-300" />
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-medium">Nada agendado</p>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto scroll-hidden divide-y divide-slate-50">
+                    {(myScheduled || []).slice(0, 6).map(msg => {
+                      const when = new Date(msg.scheduled_at);
+                      const failed = msg.status === 'failed';
+                      const hold = msg.status === 'pending' && msg.hold_reason === 'reconnect';
+                      // A foto tomou o lugar do quadradinho de data, então a
+                      // etiqueta carrega o dia — só a hora faria "08:00" parecer
+                      // hoje quando na verdade é semana que vem.
+                      const hhmm = when.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                      const isToday = when.toDateString() === new Date().toDateString();
+                      const whenLabel = isToday ? hhmm : `${when.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${hhmm}`;
+                      return (
+                        <div key={msg.id} onClick={() => handleNavigate('whatsapp')}
+                          className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors group ${failed ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50/80'}`}>
+                          <div className="relative flex-shrink-0">
+                            <Avatar url={msg.contact_avatar_url} name={conversationName(msg)} phone={msg.contact_phone} size={36} />
+                            {failed && (
+                              <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-600 flex items-center justify-center ring-2 ring-white">
+                                <AlertTriangle className="w-2.5 h-2.5 text-white" />
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 truncate group-hover:text-slate-900">{conversationName(msg)}</p>
+                            <p className={`text-[10px] truncate ${failed ? 'text-red-600' : hold ? 'text-sky-600' : 'text-slate-400'}`}>
+                              {failed
+                                ? (msg.error || 'O envio falhou')
+                                : hold
+                                  ? 'Retida — canal fora do ar'
+                                  : (msg.body || 'Anexo')}
+                            </p>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg flex-shrink-0 ${
+                            failed ? 'bg-red-100 text-red-700' : hold ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {failed ? 'Falhou' : hold ? 'Retida' : whenLabel}
+                          </span>
                         </div>
                       );
                     })}

@@ -434,7 +434,14 @@ async function resolveOneSignedUrl(path: string | null | undefined): Promise<str
   return byPath.get(path) ?? null;
 }
 
-export async function attachAvatarUrls(convs: WhatsAppConversation[]): Promise<void> {
+/**
+ * Assina as fotos de contato em lote. Aceita qualquer linha que carregue o par
+ * `contact_avatar_path`/`contact_avatar_url` — conversas da inbox e também a
+ * lista de agendadas, que mostra a mesma foto fora da conversa.
+ */
+export async function attachAvatarUrls(
+  convs: { contact_avatar_path?: string | null; contact_avatar_url?: string | null }[],
+): Promise<void> {
   const paths = convs.map(c => c.contact_avatar_path).filter((p): p is string => !!p);
   if (paths.length === 0) return;
   const byPath = await resolveSignedUrls(paths);

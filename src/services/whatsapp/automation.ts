@@ -1,7 +1,11 @@
 // Camada de automação: mensagens agendadas (Fase 8.1) e sessões de IA (Fase J).
 import { supabase } from '../../config/supabase';
-import type { WhatsAppScheduledMessage, WhatsAppAiSession } from '../../types/whatsapp.types';
-import { SCHEDULED_TABLE, openResilientChannel } from './shared';
+import type {
+  WhatsAppScheduledMessage,
+  WhatsAppScheduledWithContact,
+  WhatsAppAiSession,
+} from '../../types/whatsapp.types';
+import { SCHEDULED_TABLE, openResilientChannel, attachAvatarUrls } from './shared';
 import { criarRegistroCompartilhado } from '../realtime/sharedResource';
 
 const AI_SESSIONS_TABLE = 'whatsapp_ai_sessions';
@@ -40,6 +44,44 @@ const agendadasPorConversa = criarRegistroCompartilhado<WhatsAppScheduledMessage
     return () => {
       vivo = false;
       recarregadores.delete(conversationId);
+      fecharCanal();
+    };
+  },
+});
+
+/** Recarrega a lista pessoal de um atendente. Preenchido no `abrir` abaixo. */
+const recarregadoresPessoais = new Map<string, () => void>();
+
+/**
+ * Lista pessoal de agendadas: um canal e uma consulta por atendente.
+ *
+ * O filtro é por `created_by`, mas o Postgres Changes não o aplica (DELETE não
+ * aceita filtro), então ouvimos a tabela inteira — volume baixo — e deixamos o
+ * recorte pessoal para a consulta, sob RLS.
+ */
+const minhasAgendadas = criarRegistroCompartilhado<WhatsAppScheduledWithContact[]>({
+  marca: '[Jurius Realtime][MyScheduled]',
+  abrir: (userId, publicar) => {
+    let vivo = true;
+    const carregar = () => {
+      automationApi
+        .listMyScheduled()
+        .then((items) => { if (vivo) publicar(items); })
+        .catch(() => { if (vivo) publicar([]); });
+    };
+    recarregadoresPessoais.set(userId, carregar);
+    carregar();
+
+    const fecharCanal = openResilientChannel({
+      name: `wa-my-scheduled-${userId}`,
+      bind: ch => ch.on('postgres_changes',
+        { event: '*', schema: 'public', table: SCHEDULED_TABLE },
+        () => carregar()),
+    });
+
+    return () => {
+      vivo = false;
+      recarregadoresPessoais.delete(userId);
       fecharCanal();
     };
   },
@@ -252,6 +294,73 @@ export const automationApi = {
   /** Força a releitura da lista compartilhada (após cancelar/editar aqui mesmo). */
   refreshScheduled(conversationId: string): void {
     recarregarAgendadas(conversationId);
+  },
+
+  /**
+   * Tudo que o atendente logado tem agendado, em qualquer conversa.
+   *
+   * Existe porque `listScheduled` exige um `conversation_id`: até aqui não havia
+   * como responder "o que EU tenho agendado?" sem abrir conversa por conversa.
+   * O recorte por `created_by` é o mesmo de `listMyReconnectAlerts` — quem
+   * agendou é quem precisa acompanhar.
+   *
+   * Traz `pending` e `failed`. As falhas vêm primeiro de propósito: são as que
+   * exigem ação e as que ficavam invisíveis antes desta lista existir.
+   *
+   * O nome do cadastro vem junto (`clients(full_name)`) porque `contact_name` é
+   * o apelido que o próprio contato escolheu no WhatsApp — a inbox já prefere o
+   * cadastro, e esta lista tem de mostrar a MESMA pessoa com o MESMO nome.
+   */
+  async listMyScheduled(): Promise<WhatsAppScheduledWithContact[]> {
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth?.user?.id) return [];
+    const { data, error } = await supabase
+      .from(SCHEDULED_TABLE)
+      .select('*, whatsapp_conversations(contact_name, contact_phone, contact_avatar_path, clients(full_name))')
+      .eq('created_by', auth.user.id)
+      .in('status', ['pending', 'failed'])
+      .order('scheduled_at', { ascending: true })
+      .limit(100);
+    if (error) throw new Error(error.message);
+    const items = (data || [])
+      .map((row: any) => {
+        const { whatsapp_conversations: conv, ...rest } = row;
+        return {
+          ...rest,
+          contact_name: conv?.contact_name ?? null,
+          contact_phone: conv?.contact_phone ?? '',
+          client_name: conv?.clients?.full_name ?? null,
+          contact_avatar_path: conv?.contact_avatar_path ?? null,
+          contact_avatar_url: null,
+        } as WhatsAppScheduledWithContact;
+      })
+      .sort((a, b) => {
+        if (a.status !== b.status) return a.status === 'failed' ? -1 : 1;
+        return a.scheduled_at.localeCompare(b.scheduled_at);
+      });
+    // Mesmas URLs assinadas (e mesmo cache) que a inbox usa para as fotos.
+    await attachAvatarUrls(items);
+    return items;
+  },
+
+  /**
+   * Lista pessoal de agendadas, ao vivo — pronta, sem o ouvinte buscar nada.
+   *
+   * Compartilhada porque os dois consumidores aparecem JUNTOS na tela: o cartão
+   * do painel e a aba do módulo (que abre em janela flutuante sobre ele). Sem
+   * isto seriam dois canais e duas consultas para o mesmo dado — o mesmo
+   * desperdício que `subscribeScheduled` já evita por conversa.
+   */
+  subscribeMyScheduled(
+    userId: string,
+    onList: (items: WhatsAppScheduledWithContact[]) => void,
+  ): () => void {
+    return minhasAgendadas.assinar(userId, onList);
+  },
+
+  /** Força a releitura da lista pessoal (após cancelar/reenviar aqui mesmo). */
+  refreshMyScheduled(userId: string): void {
+    recarregadoresPessoais.get(userId)?.();
   },
 
   /** Reage às retenções do próprio atendente em todas as conversas. */

@@ -275,6 +275,23 @@ export interface WhatsAppScheduledMessage {
   sent_at: string | null;
 }
 
+/**
+ * Agendada do próprio atendente com o contato já resolvido.
+ *
+ * A tabela só guarda `conversation_id`. Quem lista FORA de uma conversa (a aba
+ * "Agendadas" do módulo e o cartão do painel) não tem a conversa carregada em
+ * memória para traduzir o id em contato, então ele vem junto da consulta —
+ * inclusive `client_name` e a foto, para a lista exibir a mesma identidade que
+ * a inbox exibe (nome do cadastro na frente do apelido do WhatsApp).
+ */
+export interface WhatsAppScheduledWithContact extends WhatsAppScheduledMessage {
+  contact_name: string | null;
+  contact_phone: string;
+  client_name: string | null;
+  contact_avatar_path: string | null;
+  contact_avatar_url: string | null;
+}
+
 /** Evento unificado da timeline da conversa (Fase 7). */
 export type TimelineKind = 'transfer' | 'note' | 'closed' | 'reopened' | 'blocked' | 'process';
 export interface TimelineEvent {

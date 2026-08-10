@@ -1,12 +1,13 @@
 // Mensagens agendadas: bolhas-fantasma na thread + painel de gestão no aside.
 import React, { useState, useEffect, useCallback } from 'react';
-import { CalendarClock, Pencil, X, Loader2, Check, RotateCcw, Trash2, Wifi } from 'lucide-react';
+import { CalendarClock, Pencil, X, Loader2, Check, RotateCcw, Trash2, Wifi, AlertTriangle } from 'lucide-react';
 import { whatsappService } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
-import { maskSensitive } from './format';
+import { conversationName, maskName, maskSensitive } from './format';
+import { Avatar } from './avatar';
 import { WaRichText } from './WaRichTextView';
 import type { ConfirmFn } from './types';
-import type { WhatsAppScheduledMessage } from '../../types/whatsapp.types';
+import type { WhatsAppScheduledMessage, WhatsAppScheduledWithContact } from '../../types/whatsapp.types';
 
 // ── Bolhas-fantasma das mensagens agendadas dentro da thread ──
 export const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMode: boolean; confirm: ConfirmFn }> = ({ conversationId, privateMode, confirm }) => {
@@ -262,6 +263,160 @@ export const ScheduledMessagesPanel: React.FC<{ conversationId: string; canSched
                   {s.status === 'failed' && s.error && <p className="mt-0.5 text-[10.5px] text-red-500">{s.error}</p>}
                 </>
               )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ── Aba "Agendadas": tudo que EU agendei, em qualquer conversa ──
+// O painel acima é por conversa. Esta lista responde a outra pergunta — "o que
+// eu tenho na fila?" — e é o único lugar onde uma falha aparece sem que alguém
+// precise adivinhar em qual conversa ela aconteceu.
+
+/** Conta as agendadas do atendente e quantas falharam. Alimenta o rótulo da aba. */
+export function useMyScheduled(userId: string | undefined): {
+  items: WhatsAppScheduledWithContact[] | null;
+  failed: number;
+  reload: () => void;
+} {
+  const [items, setItems] = useState<WhatsAppScheduledWithContact[] | null>(null);
+
+  // A lista vem PRONTA da fonte compartilhada: o cartão do painel e a aba do
+  // módulo aparecem juntos na tela e dividem um canal e uma consulta.
+  const reload = useCallback(() => {
+    if (userId) whatsappService.refreshMyScheduled(userId);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) { setItems([]); return; }
+    setItems(null);
+    return whatsappService.subscribeMyScheduled(userId, setItems);
+  }, [userId]);
+
+  const failed = (items || []).filter(s => s.status === 'failed').length;
+  return { items, failed, reload };
+}
+
+export const MyScheduledList: React.FC<{
+  items: WhatsAppScheduledWithContact[] | null;
+  privateMode: boolean;
+  confirm: ConfirmFn;
+  onReload: () => void;
+  onOpenConversation: (conversationId: string) => void;
+}> = ({ items, privateMode, confirm, onReload, onOpenConversation }) => {
+  const toast = useToastContext();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const retryNow = async (id: string) => {
+    setBusy(id);
+    try { await whatsappService.retryScheduled(id); onReload(); toast.success('Reenviando agora.'); }
+    catch (e: any) { toast.error('Falha ao reenviar', e.message); }
+    finally { setBusy(null); }
+  };
+
+  const cancel = async (id: string) => {
+    if (!await confirm({ title: 'Cancelar agendamento', message: 'A mensagem agendada não será enviada.', confirmLabel: 'Cancelar envio', tone: 'danger' })) return;
+    try { await whatsappService.cancelScheduled(id); onReload(); }
+    catch (e: any) { toast.error('Falha ao cancelar', e.message); }
+  };
+
+  const del = async (id: string) => {
+    if (!await confirm({ title: 'Excluir agendamento', message: 'Remove a mensagem agendada do histórico. Não pode ser desfeito.', confirmLabel: 'Excluir', tone: 'danger' })) return;
+    try { await whatsappService.deleteScheduled(id); onReload(); }
+    catch (e: any) { toast.error('Falha ao excluir', e.message); }
+  };
+
+  if (items === null) {
+    return <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>;
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-2 px-6 text-center">
+        <CalendarClock size={30} className="text-slate-200" />
+        <p className="text-[13px] text-slate-400">Nada agendado por você.</p>
+        <p className="text-[11.5px] text-slate-300">Agende um follow-up pelo relógio ao lado do campo de mensagem.</p>
+      </div>
+    );
+  }
+
+  const failedCount = items.filter(s => s.status === 'failed').length;
+  const iconBtn = 'p-1 rounded text-slate-300 transition';
+
+  return (
+    <div>
+      {failedCount > 0 && (
+        <div className="flex items-start gap-2 px-4 py-2.5 bg-red-50 border-b border-red-100">
+          <AlertTriangle size={15} className="text-red-600 flex-shrink-0 mt-px" />
+          <p className="text-[12px] text-red-700 leading-snug">
+            {failedCount === 1
+              ? '1 mensagem não foi entregue. O cliente não recebeu.'
+              : `${failedCount} mensagens não foram entregues. Os clientes não receberam.`}
+          </p>
+        </div>
+      )}
+
+      <div className="divide-y divide-[#f0efea]">
+        {items.map(s => {
+          const st = schedBadge(s);
+          const failed = s.status === 'failed';
+          // Mesmo nome que a inbox mostra: cadastro na frente do apelido do WhatsApp.
+          const fullName = conversationName(s);
+          const name = privateMode ? maskName(fullName) : fullName;
+          return (
+            <div key={s.id} className={`flex gap-3 px-4 py-3 ${failed ? 'bg-red-50/40' : ''}`}>
+              <button
+                onClick={() => onOpenConversation(s.conversation_id)}
+                title="Abrir a conversa"
+                className="flex-shrink-0 rounded-full transition hover:ring-2 hover:ring-amber-300">
+                <Avatar url={privateMode ? null : s.contact_avatar_url} name={name} phone={s.contact_phone} size={36} />
+              </button>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button onClick={() => onOpenConversation(s.conversation_id)}
+                    className="text-[13px] font-semibold text-slate-800 hover:text-amber-700 truncate transition">
+                    {name}
+                  </button>
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.cls}`}>
+                    {isReconnectHold(s) && <Wifi size={10} className="opacity-70" />}{st.label}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {new Date(s.scheduled_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+
+                {s.body && (
+                  <WaRichText text={privateMode ? maskSensitive(s.body) : s.body} stripSignature
+                    className="block mt-1 text-[12px] text-slate-600 whitespace-pre-wrap break-words line-clamp-2" />
+                )}
+                {isReconnectHold(s) && (
+                  <p className="mt-0.5 text-[11px] text-sky-600">Retida porque o canal está fora. Sai sozinha quando reconectar.</p>
+                )}
+                {failed && (
+                  <p className="mt-0.5 text-[11px] text-red-600">{s.error || 'O envio falhou. Nenhuma nova tentativa automática.'}</p>
+                )}
+              </div>
+
+              <div className="flex items-start gap-0.5 flex-shrink-0">
+                {failed && (
+                  <button onClick={() => retryNow(s.id)} disabled={busy === s.id} title="Tentar enviar agora"
+                    className={`${iconBtn} text-red-400 hover:text-emerald-600`}>
+                    {busy === s.id ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                  </button>
+                )}
+                {s.status === 'pending' && (
+                  <button onClick={() => cancel(s.id)} title="Cancelar agendamento" className={`${iconBtn} hover:text-amber-600`}>
+                    <X size={14} />
+                  </button>
+                )}
+                <button onClick={() => del(s.id)} title="Excluir" className={`${iconBtn} hover:text-rose-500`}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
             </div>
           );
         })}
