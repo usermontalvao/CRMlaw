@@ -10,7 +10,17 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
  *      (nomes proprios, termos juridicos, inicio de frase).
  */
 
-const SYNCFUSION_BASE = 'https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/';
+// Servidor de documentos PRÓPRIO — o mesmo que o editor usa (VITE_SYNC_FUSION).
+// O que passa por aqui é documento do escritório, e o endpoint público da
+// Syncfusion é ambiente de demonstração (403 intermitente). O secret
+// `SYNCFUSION_SERVICE_URL` sobrepõe sem exigir novo deploy.
+// Só as rotas repassadas usam esta base: SpellCheck e SpellCheckByPage são
+// respondidas aqui mesmo, pelo LanguageTool.
+const SYNCFUSION_BASE = (() => {
+  const configured = String((globalThis as any).Deno.env.get('SYNCFUSION_SERVICE_URL') || '').trim();
+  const base = (configured || 'https://docs.jurius-api.com/api/documenteditor/').replace(/\/+$/, '');
+  return `${base}/`;
+})();
 const LANGUAGETOOL_API = 'https://api.languagetool.org/v2/check';
 
 const FORCE_ERRORS_DIAGNOSTIC = false;
