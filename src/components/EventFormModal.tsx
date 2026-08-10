@@ -26,9 +26,9 @@ import { addMinutesToWallTime } from '../utils/officeTime';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type EventType = 'deadline' | 'hearing' | 'requirement' | 'payment' | 'meeting' | 'pericia' | 'personal';
+type EventType = string;
 
-const DEFAULT_LABELS: Record<EventType, string> = {
+const DEFAULT_LABELS: Record<string, string> = {
   deadline: 'Prazo', hearing: 'Audiência', requirement: 'Requerimento',
   payment: 'Pagamento', meeting: 'Reunião', pericia: 'Perícia', personal: 'Pessoal',
 };
@@ -37,7 +37,7 @@ const DEFAULT_DURATIONS: Record<string, number> = {
   deadline: 60, hearing: 120, requirement: 60, payment: 30, meeting: 60, pericia: 180, personal: 60,
 };
 
-const TYPE_STYLES: Record<EventType, { active: string; idle: string }> = {
+const TYPE_STYLES: Partial<Record<string, { active: string; idle: string }>> = {
   meeting:     { active: 'bg-teal-500    text-white border-teal-500',    idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-teal-400 hover:text-teal-600' },
   deadline:    { active: 'bg-blue-500    text-white border-blue-500',    idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-blue-400 hover:text-blue-600' },
   hearing:     { active: 'bg-red-500     text-white border-red-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-red-400 hover:text-red-600' },
@@ -47,7 +47,7 @@ const TYPE_STYLES: Record<EventType, { active: string; idle: string }> = {
   personal:    { active: 'bg-slate-500   text-white border-slate-500',   idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-slate-400 hover:text-slate-600' },
 };
 
-const ALL_TYPES: EventType[] = ['meeting', 'deadline', 'hearing', 'pericia', 'payment', 'requirement', 'personal'];
+const DEFAULT_TYPE_KEYS = ['meeting', 'deadline', 'hearing', 'pericia', 'payment', 'requirement', 'personal'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -93,6 +93,8 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   // ── Config do settings ────────────────────────────────────────────────────
   const [eventTypeLabels, setEventTypeLabels] = useState<Record<string, string>>(DEFAULT_LABELS);
   const [eventTypeDurations, setEventTypeDurations] = useState<Record<string, number>>(DEFAULT_DURATIONS);
+  const [eventTypeColors, setEventTypeColors] = useState<Record<string, string>>({});
+  const [eventTypeKeys, setEventTypeKeys] = useState<string[]>(DEFAULT_TYPE_KEYS);
   const [bufferMin, setBufferMin] = useState(0);
   const [inactiveKeys, setInactiveKeys] = useState<Set<string>>(new Set());
 
@@ -149,14 +151,20 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       if (cfg) {
         const labels = { ...DEFAULT_LABELS } as Record<string, string>;
         const durs   = { ...DEFAULT_DURATIONS };
+        const colors: Record<string, string> = {};
+        const keys: string[] = [];
         cfg.event_types?.forEach((et: any) => {
           if (et.key) {
             if (et.label)    labels[et.key] = et.label;
-            if (et.duration) durs[et.key]   = et.duration;
+            if (et.duration_min > 0) durs[et.key] = et.duration_min;
+            if (et.color) colors[et.key] = et.color;
+            if (et.active !== false) keys.push(et.key);
           }
         });
         setEventTypeLabels(labels);
         setEventTypeDurations(durs);
+        setEventTypeColors(colors);
+        setEventTypeKeys(keys);
         if (cfg.buffer_min) setBufferMin(cfg.buffer_min);
         const inactive = new Set(
           (cfg.event_types as any[] ?? []).filter((et: any) => et.active === false).map((et: any) => et.key as string)
@@ -244,7 +252,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
     ? allClients.filter(c => c.full_name.toLowerCase().includes(clientSearch.toLowerCase())).slice(0, 8)
     : [];
 
-  const visibleTypes = ALL_TYPES.filter(t => !inactiveKeys.has(t));
+  const visibleTypes = eventTypeKeys.filter(t => !inactiveKeys.has(t));
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const submit = useCallback(async () => {
@@ -427,9 +435,12 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               {/* Tipo de evento */}
               <div className="col-span-1 sm:col-span-6 lg:col-span-12">
                 <label className={labelCls}>Tipo</label>
-                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   {visibleTypes.map(t => {
                     const s = TYPE_STYLES[t];
+                    const configuredColor = eventTypeColors[t] ?? '#64748b';
+                    const customColor = /^#[0-9a-f]{6}$/i.test(configuredColor) ? configuredColor : '#64748b';
+                    const selected = form.type === t;
                     return (
                       <button key={t} type="button"
                         onClick={() => setForm(prev => ({
@@ -437,7 +448,14 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                           ...(t === 'personal' ? { process_id: '', requirement_id: '' } : {}),
                           ...(t !== 'pericia'  ? { requirement_id: '', pericia_link_type: 'process' as const } : {}),
                         }))}
-                        className={`py-1.5 rounded-lg text-xs font-semibold border transition-all text-center ${form.type === t ? s.active : s.idle}`}>
+                        className={`min-h-10 px-3 py-2 rounded-lg text-xs font-semibold leading-snug border transition-all text-center whitespace-normal ${
+                          s ? (selected ? s.active : s.idle) : 'bg-[#f8f7f5] hover:brightness-95'
+                        }`}
+                        style={!s ? {
+                          backgroundColor: selected ? customColor : `${customColor}12`,
+                          borderColor: customColor,
+                          color: selected ? '#ffffff' : customColor,
+                        } : undefined}>
                         {eventTypeLabels[t] ?? t}
                       </button>
                     );

@@ -61,9 +61,9 @@ declare global {
   }
 }
 
-type EventType = 'deadline' | 'hearing' | 'requirement' | 'payment' | 'meeting' | 'pericia' | 'personal';
+type EventType = string;
 
-const EVENT_TYPE_LABELS: Record<EventType, string> = {
+const EVENT_TYPE_LABELS: Record<string, string> = {
   deadline: 'Prazo',
   hearing: 'Audiência',
   requirement: 'Requerimento',
@@ -76,7 +76,7 @@ const EVENT_TYPE_LABELS: Record<EventType, string> = {
 // Cores canônicas por tipo — usadas na legenda de filtros e nos chips do formulário
 // Semântica fixa: audiência=vermelho, prazo=azul, financeiro=verde, requerimento=laranja,
 // perícia=roxo, reunião=teal, pessoal=cinza (neutro). Prioridade é tratada à parte (ver .calendar-event--priority-*).
-const EVENT_TYPE_COLORS: Record<EventType, { badge: string; checkbox: string }> = {
+const EVENT_TYPE_COLORS: Partial<Record<string, { badge: string; checkbox: string }>> = {
   deadline:    { badge: 'text-blue-700 bg-blue-50 border-blue-500',        checkbox: 'text-blue-600 focus:ring-blue-500' },
   hearing:     { badge: 'text-red-700 bg-red-50 border-red-500',          checkbox: 'text-red-600 focus:ring-red-500' },
   requirement: { badge: 'text-orange-800 bg-orange-50 border-orange-700', checkbox: 'text-orange-700 focus:ring-orange-600' },
@@ -84,6 +84,18 @@ const EVENT_TYPE_COLORS: Record<EventType, { badge: string; checkbox: string }> 
   pericia:     { badge: 'text-purple-700 bg-purple-50 border-purple-500', checkbox: 'text-purple-600 focus:ring-purple-500' },
   meeting:     { badge: 'text-teal-700 bg-teal-50 border-teal-500',       checkbox: 'text-teal-600 focus:ring-teal-500' },
   personal:    { badge: 'text-slate-700 bg-slate-200 border-slate-500',   checkbox: 'text-slate-600 focus:ring-slate-500' },
+};
+
+const DEFAULT_EVENT_TYPE_KEYS = ['meeting', 'deadline', 'hearing', 'pericia', 'payment', 'requirement', 'personal'];
+
+const EVENT_TYPE_BUTTON_STYLES: Partial<Record<string, { active: string; idle: string }>> = {
+  meeting:     { active: 'bg-teal-500 text-white border-teal-500',       idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-teal-400 hover:text-teal-600' },
+  deadline:    { active: 'bg-blue-500 text-white border-blue-500',       idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-blue-400 hover:text-blue-600' },
+  hearing:     { active: 'bg-red-500 text-white border-red-500',         idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-red-400 hover:text-red-600' },
+  pericia:     { active: 'bg-purple-500 text-white border-purple-500',   idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-purple-400 hover:text-purple-600' },
+  payment:     { active: 'bg-emerald-500 text-white border-emerald-500', idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-emerald-400 hover:text-emerald-600' },
+  requirement: { active: 'bg-orange-500 text-white border-orange-500',   idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-orange-400 hover:text-orange-600' },
+  personal:    { active: 'bg-slate-500 text-white border-slate-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-slate-400 hover:text-slate-600' },
 };
 
 type DeletionLogEntry = {
@@ -248,6 +260,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
   const [responsibilityConfig, setResponsibilityConfig] = useState<ModuleResponsibilityConfig | null>(null);
   const [eventTypeLabels, setEventTypeLabels] = useState<Record<string, string>>(EVENT_TYPE_LABELS);
   const [eventTypeHexColors, setEventTypeHexColors] = useState<Record<string, string>>({});
+  const [eventTypeKeys, setEventTypeKeys] = useState<string[]>(DEFAULT_EVENT_TYPE_KEYS);
   const [inactiveEventTypeKeys, setInactiveEventTypeKeys] = useState<Set<string>>(new Set());
   const [timeZoneInfoOpen, setTimeZoneInfoOpen] = useState(false);
   const [bufferMin, setBufferMin] = useState(0);
@@ -280,15 +293,19 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         const hexColors: Record<string, string> = {};
         const inactive = new Set<string>();
         const newFilters: Record<string, boolean> = {};
+        const activeKeys: string[] = [];
         cfg.event_types.forEach(et => {
-          if (et.active === false) { inactive.add(et.key); return; }
+          if (!et.key) return;
           labels[et.key] = et.label;
           if (et.duration_min > 0) durations[et.key] = et.duration_min;
           if (et.color) hexColors[et.key] = et.color;
+          if (et.active === false) { inactive.add(et.key); return; }
+          activeKeys.push(et.key);
           newFilters[et.key] = true;
         });
         setEventTypeLabels(labels);
         setEventTypeHexColors(hexColors);
+        setEventTypeKeys(activeKeys);
         setEventTypeDurations(durations);
         setInactiveEventTypeKeys(inactive);
         // Sincronizar viewFilters: adicionar tipos novos da config, manter os canônicos
@@ -585,7 +602,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         title: '',
         date: '',
         time: '',
-        type: 'meeting',
+        type: eventTypeKeys.includes('meeting') ? 'meeting' : (eventTypeKeys[0] ?? 'meeting'),
         description: '',
         client_id: '',
         client_name: '',
@@ -610,7 +627,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       setEditingEventId(editingId);
       setIsCreateModalOpen(true);
     },
-    [responsibilityConfig, user],
+    [eventTypeKeys, responsibilityConfig, user],
   );
 
   // Cadastro e edição usam a hora oficial do foro/escritório. A conversão para
@@ -1184,6 +1201,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     return dedupedEvents.map((item) => {
       const relatedClient = item.client_id ? clientMap.get(item.client_id) : null;
       const classNames = ['calendar-event', `calendar-chip--${item.event_type}`];
+      const rawConfiguredColor = eventTypeHexColors[item.event_type];
+      const configuredColor = /^#[0-9a-f]{6}$/i.test(rawConfiguredColor ?? '')
+        ? rawConfiguredColor
+        : undefined;
       let hasTime: boolean;
       if (!item.start_at.includes('T')) {
         hasTime = false; // string apenas com data, sem hora
@@ -1203,8 +1224,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         start: item.start_at,
         allDay: !hasTime,
         classNames,
+        // Evita o azul padrão do FullCalendar por trás do chip. A cor real do
+        // tipo é aplicada no conteúdo a partir da configuração da Agenda.
+        backgroundColor: 'transparent',
+        borderColor: 'transparent',
+        textColor: 'inherit',
         extendedProps: {
           type: item.event_type,
+          eventTypeColor: configuredColor,
           description: item.description,
           status: item.status,
           data: item,
@@ -1233,7 +1260,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         },
       } as EventInput;
     });
-  }, [calendarEventsData, clientMap, representativeAppointmentsMap, user]);
+  }, [calendarEventsData, clientMap, eventTypeHexColors, representativeAppointmentsMap, user]);
 
   // memberMap: user_id → name (usado em filtros e cronograma)
   const memberMap = useMemo(() => {
@@ -2636,6 +2663,13 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     const extendedProps = event.extendedProps as Record<string, any>;
     const rawType = extendedProps?.type;
     const type = (rawType ? (rawType as EventType) : 'meeting');
+    const rawEventTypeColor = extendedProps?.eventTypeColor;
+    const eventTypeColor = typeof rawEventTypeColor === 'string' && /^#[0-9a-f]{6}$/i.test(rawEventTypeColor)
+      ? rawEventTypeColor
+      : undefined;
+    const configuredColorStyle = eventTypeColor
+      ? ({ '--calendar-chip-type-color': eventTypeColor } as React.CSSProperties)
+      : undefined;
     const linkedRepresentativeAppointments = (extendedProps?.representativeAppointments as RepresentativeAppointment[] | undefined) || [];
     const showDjenDot = ['hearing', 'pericia'].includes(type);
     const djenStatus = (extendedProps?.djenStatus as string | undefined) || 'unconfirmed';
@@ -2680,7 +2714,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                                           'Não confirmado no DJEN';
 
     return (
-      <div className={`calendar-chip calendar-chip--${type}`}>
+      <div
+        className={`calendar-chip calendar-chip--${type}${eventTypeColor ? ' calendar-chip--configured' : ''}`}
+        style={configuredColorStyle}
+      >
         {showDjenDot && (
           <span
             title={djenTitle}
@@ -4076,34 +4113,39 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
                     Tipo
                   </label>
-                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
-                    {([
-                      { value: 'meeting',     active: 'bg-teal-500 text-white border-teal-500',         idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-teal-400 hover:text-teal-600' },
-                      { value: 'deadline',    active: 'bg-blue-500 text-white border-blue-500',         idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-blue-400 hover:text-blue-600' },
-                      { value: 'hearing',     active: 'bg-red-500 text-white border-red-500',           idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-red-400 hover:text-red-600' },
-                      { value: 'pericia',     active: 'bg-purple-500 text-white border-purple-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-purple-400 hover:text-purple-600' },
-                      { value: 'payment',     active: 'bg-emerald-500 text-white border-emerald-500',   idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-emerald-400 hover:text-emerald-600' },
-                      { value: 'requirement', active: 'bg-orange-500 text-white border-orange-500',     idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-orange-400 hover:text-orange-600' },
-                      { value: 'personal',    active: 'bg-slate-500 text-white border-slate-500',       idle: 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-slate-400 hover:text-slate-600' },
-                    ] as const).filter(({ value }) => !inactiveEventTypeKeys.has(value)).map(({ value, active, idle }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setNewEventForm(prev => ({
-                          ...prev,
-                          type: value,
-                          // Pessoal não tem vínculo; troca de tipo limpa seleção
-                          ...(value === 'personal' ? { process_id: '', requirement_id: '' } : {}),
-                          // Ao sair de perícia, limpa o requerimento
-                          ...(value !== 'pericia' ? { requirement_id: '', pericia_link_type: 'process' as const } : {}),
-                        }))}
-                        className={`py-1.5 rounded-lg text-xs font-semibold border transition-all text-center ${
-                          newEventForm.type === value ? active : idle
-                        }`}
-                      >
-                        {eventTypeLabels[value] ?? value}
-                      </button>
-                    ))}
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {eventTypeKeys.filter(value => !inactiveEventTypeKeys.has(value)).map(value => {
+                      const preset = EVENT_TYPE_BUTTON_STYLES[value];
+                      const configuredColor = eventTypeHexColors[value] ?? '#64748b';
+                      const customColor = /^#[0-9a-f]{6}$/i.test(configuredColor) ? configuredColor : '#64748b';
+                      const selected = newEventForm.type === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setNewEventForm(prev => ({
+                            ...prev,
+                            type: value,
+                            // Pessoal não tem vínculo; troca de tipo limpa seleção
+                            ...(value === 'personal' ? { process_id: '', requirement_id: '' } : {}),
+                            // Ao sair de perícia, limpa o requerimento
+                            ...(value !== 'pericia' ? { requirement_id: '', pericia_link_type: 'process' as const } : {}),
+                          }))}
+                          className={`min-h-10 px-3 py-2 rounded-lg text-xs font-semibold leading-snug border transition-all text-center whitespace-normal ${
+                            preset
+                              ? (selected ? preset.active : preset.idle)
+                              : 'bg-[#f8f7f5] hover:brightness-95'
+                          }`}
+                          style={!preset ? {
+                            backgroundColor: selected ? customColor : `${customColor}12`,
+                            borderColor: customColor,
+                            color: selected ? '#ffffff' : customColor,
+                          } : undefined}
+                        >
+                          {eventTypeLabels[value] ?? value}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -4851,8 +4893,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           text-overflow: ellipsis;
           font-weight: 600;
         }
-        /* Tipo = cor (fixo). Prioridade = acento visual complementar, nunca uma cor concorrente
-           (ver .calendar-event--priority-* mais abaixo, aplicado ao wrapper do FullCalendar). */
+        /* Fallbacks dos tipos canônicos. Quando há cor em Configurações, o
+           bloco calendar-chip--configured mais abaixo prevalece. */
         .calendar-chip--deadline {
           background: #eff6ff;
           color: #1d4ed8;
@@ -4887,6 +4929,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           background: #e2e8f0;
           color: #334155;
           border-color: #64748b;
+        }
+
+        /* A cor escolhida em Configurações é a fonte de verdade. Mantém o
+           padrão visual da agenda (fundo suave + texto e borda na cor real). */
+        .calendar-chip--configured {
+          background: color-mix(in srgb, var(--calendar-chip-type-color) 12%, white);
+          color: var(--calendar-chip-type-color);
+          border-color: var(--calendar-chip-type-color);
         }
 
         /* Dark mode styles for calendar chips */
@@ -4924,6 +4974,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           background: #1e293b;
           color: #e2e8f0;
           border-color: #94a3b8;
+        }
+        .dark .calendar-chip--configured {
+          background: color-mix(in srgb, var(--calendar-chip-type-color) 28%, #0f172a);
+          color: color-mix(in srgb, var(--calendar-chip-type-color) 45%, white);
+          border-color: var(--calendar-chip-type-color);
         }
 
         /* Prioridade — nunca troca a cor do tipo. Apenas acentua: espessura da borda,

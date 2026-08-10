@@ -1,4 +1,4 @@
-export type CalendarEventType =
+export type BuiltInCalendarEventType =
   | 'deadline'
   | 'hearing'
   | 'requirement'
@@ -6,6 +6,10 @@ export type CalendarEventType =
   | 'meeting'
   | 'pericia'
   | 'personal';
+
+// A Agenda permite cadastrar tipos adicionais em Configurações. A interseção
+// preserva o autocomplete dos tipos estruturais sem restringir os personalizados.
+export type CalendarEventType = BuiltInCalendarEventType | (string & {});
 
 export type CalendarEventStatus = 'pendente' | 'concluido' | 'cancelado';
 

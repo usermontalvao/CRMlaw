@@ -57,29 +57,43 @@ export const conversationsApi = {
   },
 
   // ── Silenciar conversa (notificações), por usuário ───────────
-  /** Silencia a conversa para o usuário atual. `mutedUntil` null = para sempre. */
-  async muteConversation(conversationId: string, mutedUntil: string | null): Promise<void> {
+  /** Silencia uma ou mais linhas do mesmo contato. `mutedUntil` null = sem prazo. */
+  async muteConversations(conversationIds: readonly string[], mutedUntil: string | null): Promise<void> {
+    const ids = [...new Set(conversationIds.filter(Boolean))];
+    if (ids.length === 0) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Não autenticado');
     const { error } = await supabase
       .from('whatsapp_conversation_mutes')
       .upsert(
-        { conversation_id: conversationId, user_id: user.id, muted_until: mutedUntil },
+        ids.map(conversationId => ({ conversation_id: conversationId, user_id: user.id, muted_until: mutedUntil })),
         { onConflict: 'conversation_id,user_id' },
       );
     if (error) throw new Error(error.message);
   },
 
-  /** Reativa o som da conversa para o usuário atual. */
-  async unmuteConversation(conversationId: string): Promise<void> {
+  /** Compatibilidade para consumidores que operam sobre uma conversa isolada. */
+  async muteConversation(conversationId: string, mutedUntil: string | null): Promise<void> {
+    return conversationsApi.muteConversations([conversationId], mutedUntil);
+  },
+
+  /** Reativa as notificações de todas as linhas informadas. */
+  async unmuteConversations(conversationIds: readonly string[]): Promise<void> {
+    const ids = [...new Set(conversationIds.filter(Boolean))];
+    if (ids.length === 0) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Não autenticado');
     const { error } = await supabase
       .from('whatsapp_conversation_mutes')
       .delete()
-      .eq('conversation_id', conversationId)
+      .in('conversation_id', ids)
       .eq('user_id', user.id);
     if (error) throw new Error(error.message);
+  },
+
+  /** Compatibilidade para consumidores que operam sobre uma conversa isolada. */
+  async unmuteConversation(conversationId: string): Promise<void> {
+    return conversationsApi.unmuteConversations([conversationId]);
   },
 
   // ── Rascunhos de mensagem, por usuário+conversa (persistidos) ─

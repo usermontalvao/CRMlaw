@@ -32,8 +32,10 @@ interface WaConversationActionsArgs {
   confirm: ConfirmFn;
   setConversations: React.Dispatch<React.SetStateAction<WhatsAppConversation[]>>;
   refreshMessages: (convId: string) => Promise<void>;
-  /** Fecha o menu de silenciar (estado de UI que permanece no módulo). */
-  closeMuteMenu: () => void;
+  /** Todas as linhas que representam o contato aberto, em qualquer canal. */
+  muteConversationIds: readonly string[];
+  /** Fecha o modal de silenciar (estado de UI que permanece no módulo). */
+  closeMuteModal: () => void;
   // Resets da thread/compositor usados ao limpar a conversa.
   setMessages: React.Dispatch<React.SetStateAction<WhatsAppMessage[]>>;
   setPending: React.Dispatch<React.SetStateAction<WhatsAppMessage[]>>;
@@ -74,7 +76,7 @@ export interface WaConversationActionsApi {
  */
 export function useWaConversationActions({
   selected, user, agentPrefs, moduleConfig, staffById, aiSession, confirm,
-  setConversations, refreshMessages, closeMuteMenu,
+  setConversations, refreshMessages, muteConversationIds, closeMuteModal,
   setMessages, setPending, setReplyTo, setEditing, setHasMoreMsgs, oldestTsRef,
 }: WaConversationActionsArgs): WaConversationActionsApi {
   const toast = useToastContext();
@@ -152,33 +154,36 @@ export function useWaConversationActions({
     } catch (e: any) { toast.error('Falha ao devolver à fila', e.message); }
   }, [selected, confirm, toast, setConversations]);
 
-  // ── Silenciar / reativar conversa (notificações), por usuário ──
+  // ── Silenciar / reativar contato (notificações), por usuário ──
   const muteSelected = useCallback(async (durationMs: number | null, label: string) => {
     if (!selected) return;
-    closeMuteMenu();
+    closeMuteModal();
+    const ids = muteConversationIds.length > 0 ? [...new Set(muteConversationIds)] : [selected.id];
     const until = durationMs === null ? null : new Date(Date.now() + durationMs).toISOString();
-    muteStore.setLocal(selected.id, until); // otimista
+    const previous = new Map(ids.map(id => [id, muteStore.mutedUntil(id)] as const));
+    ids.forEach(id => muteStore.setLocal(id, until)); // otimista
     try {
-      await whatsappService.muteConversation(selected.id, until);
-      toast.success(durationMs === null ? 'Conversa silenciada' : `Silenciada por ${label}`);
+      await whatsappService.muteConversations(ids, until);
+      toast.success(durationMs === null ? 'Contato silenciado até você reativar' : `Contato silenciado por ${label}`);
     } catch (e: any) {
-      muteStore.setLocal(selected.id, undefined); // reverte
+      previous.forEach((value, id) => muteStore.setLocal(id, value));
       toast.error('Não foi possível silenciar', e.message);
     }
-  }, [selected, toast, closeMuteMenu]);
+  }, [selected, muteConversationIds, toast, closeMuteModal]);
 
   const unmuteSelected = useCallback(async () => {
     if (!selected) return;
-    const prev = muteStore.mutedUntil(selected.id);
-    muteStore.setLocal(selected.id, undefined); // otimista
+    const ids = muteConversationIds.length > 0 ? [...new Set(muteConversationIds)] : [selected.id];
+    const previous = new Map(ids.map(id => [id, muteStore.mutedUntil(id)] as const));
+    ids.forEach(id => muteStore.setLocal(id, undefined)); // otimista
     try {
-      await whatsappService.unmuteConversation(selected.id);
-      toast.success('Som reativado');
+      await whatsappService.unmuteConversations(ids);
+      toast.success('Notificações do contato reativadas');
     } catch (e: any) {
-      muteStore.setLocal(selected.id, prev); // reverte
-      toast.error('Falha ao reativar o som', e.message);
+      previous.forEach((value, id) => muteStore.setLocal(id, value));
+      toast.error('Falha ao reativar as notificações', e.message);
     }
-  }, [selected, toast]);
+  }, [selected, muteConversationIds, toast]);
 
   // Limpa a conversa (apaga as mensagens da thread; a conversa fica na lista).
   // Destrutivo e vale para toda a equipe → confirmação de perigo. Bloqueado sob

@@ -53,6 +53,7 @@ import { WA_LABELS, resolveLabelMeta, inferFunnelStage, funnelLabelsFromChannelS
 import { ClientLinkPanel } from './whatsapp/clientLinkPanel';
 import { PreCadastroModal } from './whatsapp/preCadastroModal';
 import { ConversationSummaryBanner } from './whatsapp/conversationSummaryBanner';
+import { ConversationMuteModal } from './whatsapp/conversationMuteModal';
 import { InternalNotesSection } from './whatsapp/internalNotes';
 import { AttachmentPreviewModal } from './whatsapp/attachmentPreviewModal';
 import { ConversationLabelsPanel } from './whatsapp/conversationLabels';
@@ -341,12 +342,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     () => (embedded ? 'all' : readFilter(INBOX_FILTER_KEYS.dept) || 'all'),
   );
   // O som das notificações vive agora dentro de <WaNotifyBell/> (estado de UI local).
-  // Silenciamento por conversa (no banco, por usuário). Re-renderiza ao mudar o store.
+  // Silenciamento por contato (no banco, por usuário). Re-renderiza ao mudar o store.
   // O snapshot alimenta o memo de `mutedIds` (silenciar/reativar precisa
   // repintar as linhas afetadas mesmo com a lista memoizada).
   const muteSnapshot = useSyncExternalStore(muteStore.subscribe, muteStore.getSnapshot);
   useEffect(() => { void muteStore.init(); }, []);
-  const [muteMenuOpen, setMuteMenuOpen] = useState(false);
+  const [muteModalOpen, setMuteModalOpen] = useState(false);
+  useEffect(() => { setMuteModalOpen(false); }, [selectedId]);
   const [loadingConvs, setLoadingConvs] = useState(true);
   // Fase H: ação jurídica a partir de mensagem
   const [deadlineSource, setDeadlineSource] = useState<WhatsAppMessage | null>(null);
@@ -436,6 +438,17 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     () => siblingThreadIds(selected, conversations),
     [selected, conversations],
   );
+  const selectedContactMuted = useMemo(
+    () => threadIds.length > 0 && threadIds.every(id => muteStore.isMuted(id)),
+    [threadIds, muteSnapshot],
+  );
+  const selectedContactMutedUntil = useMemo<string | null | undefined>(() => {
+    if (!selectedContactMuted) return undefined;
+    const values = threadIds.map(id => muteStore.mutedUntil(id));
+    if (values.every(value => value === null)) return null;
+    const finite = values.filter((value): value is string => typeof value === 'string');
+    return finite.sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0];
+  }, [selectedContactMuted, threadIds, muteSnapshot]);
   // Conta ao notificador global (que vive no App) o que está à vista aqui. É o
   // que permite três avisos diferentes para a mesma mensagem: conversa aberta,
   // outra conversa da lista, ou outra tela do CRM. Sem isso, o notificador só
@@ -1203,8 +1216,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     legalHoldModalOpen, confirmLegalHold, closeLegalHoldModal,
   } = useWaConversationActions({
     selected, user, agentPrefs, moduleConfig, staffById, aiSession, confirm,
-    setConversations, refreshMessages,
-    closeMuteMenu: () => setMuteMenuOpen(false),
+    setConversations, refreshMessages, muteConversationIds: threadIds,
+    closeMuteModal: () => setMuteModalOpen(false),
     setMessages, setPending, setReplyTo, setEditing, setHasMoreMsgs, oldestTsRef,
   });
 
@@ -2020,36 +2033,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     <UserMinus size={16} />
                   </button>
                 )}
-                {/* Silenciar conversa (notificações), estilo WhatsApp */}
+                {/* Silenciar contato (notificações), estilo WhatsApp */}
                 {(() => {
-                  const muted = muteStore.isMuted(selected.id);
-                  const until = muteStore.mutedUntil(selected.id);
-                  const untilLabel = muted
-                    ? (until == null ? 'silenciada' : `silenciada até ${new Date(until).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`)
+                  const untilLabel = selectedContactMuted
+                    ? (selectedContactMutedUntil == null ? 'silenciado sem prazo' : `silenciado até ${new Date(selectedContactMutedUntil).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`)
                     : '';
                   return (
                     <div className="relative flex-shrink-0">
                       <button
-                        onClick={() => muted ? unmuteSelected() : setMuteMenuOpen(o => !o)}
-                        title={muted ? `${untilLabel} — clique para reativar o som` : 'Silenciar conversa'}
-                        aria-pressed={muted}
-                        className={`w-9 h-9 rounded-lg flex items-center justify-center transition ${muted ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-600 hover:bg-amber-50 hover:text-amber-700'}`}>
-                        {muted ? <BellOff size={16} /> : <Bell size={16} />}
+                        onClick={() => selectedContactMuted ? unmuteSelected() : setMuteModalOpen(true)}
+                        title={selectedContactMuted ? `${untilLabel} — clique para reativar as notificações` : 'Silenciar notificações deste contato'}
+                        aria-pressed={selectedContactMuted}
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center transition ${selectedContactMuted ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-600 hover:bg-amber-50 hover:text-amber-700'}`}>
+                        {selectedContactMuted ? <BellOff size={16} /> : <Bell size={16} />}
                       </button>
-                      {muteMenuOpen && !muted && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setMuteMenuOpen(false)} />
-                          <div className="absolute right-0 top-11 z-50 w-48 rounded-xl bg-white shadow-lg border border-[#e7e5df] py-1.5">
-                            <div className="px-3 py-1 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Silenciar notificações</div>
-                            <button onClick={() => muteSelected(8 * 60 * 60 * 1000, '8 horas')}
-                              className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-amber-50 transition">8 horas</button>
-                            <button onClick={() => muteSelected(7 * 24 * 60 * 60 * 1000, '1 semana')}
-                              className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-amber-50 transition">1 semana</button>
-                            <button onClick={() => muteSelected(null, 'sempre')}
-                              className="w-full text-left px-3 py-2 text-[13px] text-slate-700 hover:bg-amber-50 transition">Sempre</button>
-                          </div>
-                        </>
-                      )}
                     </div>
                   );
                 })()}
@@ -2121,7 +2118,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     <MoreVertical size={18} />
                   </button>
                   {headerMenuOpen && (() => {
-                    const muted = muteStore.isMuted(selected.id);
                     const item = 'w-full flex items-center gap-2.5 px-3 py-2.5 text-[13.5px] text-slate-700 hover:bg-amber-50 transition text-left';
                     const run = (fn: () => void) => () => { setHeaderMenuOpen(false); fn(); };
                     return (
@@ -2137,8 +2133,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                           {!selected.is_blocked && selected.status !== 'closed' && selected.assigned_user_id === user?.id && (
                             <button className={item} onClick={run(handleRelease)}><UserMinus size={16} className="text-amber-500" /> Devolver à fila</button>
                           )}
-                          <button className={item} onClick={run(() => muted ? unmuteSelected() : muteSelected(null, 'sempre'))}>
-                            {muted ? <Bell size={16} className="text-amber-500" /> : <BellOff size={16} className="text-slate-400" />} {muted ? 'Reativar som' : 'Silenciar conversa'}
+                          <button className={item} onClick={run(() => selectedContactMuted ? unmuteSelected() : setMuteModalOpen(true))}>
+                            {selectedContactMuted ? <Bell size={16} className="text-amber-500" /> : <BellOff size={16} className="text-slate-400" />} {selectedContactMuted ? 'Reativar notificações' : 'Silenciar contato…'}
                           </button>
                           {perms.canTransfer && (
                             <button className={item} onClick={run(() => setTransferOpen(true))}><ArrowRightLeft size={16} className="text-slate-400" /> Transferir conversa</button>
@@ -2862,6 +2858,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               : toast.error('Erro ao salvar acessos', message)}
           />
         </Modal>
+      )}
+
+      {muteModalOpen && selected && !selectedContactMuted && (
+        <ConversationMuteModal
+          contactName={conversationName(selected)}
+          onClose={() => setMuteModalOpen(false)}
+          onMute={(durationMs, label) => { void muteSelected(durationMs, label); }}
+        />
       )}
 
       {channelFunnelsOpen && (
