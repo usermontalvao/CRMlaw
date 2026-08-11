@@ -52,6 +52,44 @@ const WA_DIALOG_WIDTH: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 /**
+ * Campos de digitação — o que um diálogo de formulário quer sob o cursor assim
+ * que abre. Deliberadamente SEM botões: o primeiro focável do diálogo em ordem
+ * de DOM é o X do cabeçalho, e começar ali é o pior lugar possível (Enter
+ * fecharia o diálogo que o usuário acabou de abrir). Caixas de marcar e o input
+ * escondido do anexo também ficam de fora: a primeira não é onde se começa a
+ * preencher, o segundo nem existe na tela.
+ */
+const FIELDS = 'input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),textarea:not([disabled]),select:not([disabled]),[contenteditable="true"]';
+
+/** Está de fato na tela? `focus()` num elemento escondido não faz nada. */
+const visivel = (el: HTMLElement) => el.offsetParent !== null || el.getClientRects().length > 0;
+
+/**
+ * Onde o foco deve cair quando o diálogo abre, em ordem de preferência:
+ *
+ *   1. Nada — se o foco JÁ está dentro do painel. Os efeitos do React sobem de
+ *      baixo para cima, então o `autoFocus` de um campo filho já rodou quando
+ *      chegamos aqui; ele sabe melhor que nós qual campo importa. Era
+ *      exatamente isto que estava quebrado: o diálogo focava o primeiro focável
+ *      do DOM (o X de fechar) e desfazia o `autoFocus` de todo formulário —
+ *      abrir "Nova conversa" e ter de clicar na busca com o mouse era este bug.
+ *   2. `[data-autofocus]`, para quem quer escolher o campo explicitamente.
+ *   3. O primeiro campo de digitação, só no ponteiro fino. No celular o foco
+ *      automático sobe o teclado por cima do diálogo antes de dar para ler o
+ *      que ele pergunta.
+ *   4. O próprio painel: o diálogo fica operável por teclado (Esc, Tab preso
+ *      dentro dele) sem armar nenhum botão no Enter.
+ */
+function initialFocus(panel: HTMLElement): HTMLElement | null {
+  if (panel.contains(document.activeElement)) return null;
+  const marcado = panel.querySelector<HTMLElement>('[data-autofocus]');
+  if (marcado) return marcado;
+  const fino = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: fine)').matches;
+  const campo = fino ? [...panel.querySelectorAll<HTMLElement>(FIELDS)].find(visivel) : null;
+  return campo ?? panel;
+}
+
+/**
  * Pilha de diálogos abertos. Só o do topo responde ao Esc — antes cada diálogo
  * escutava a tecla no window e um Esc fechava também o que estava por baixo.
  */
@@ -83,11 +121,10 @@ export const WaDialog: React.FC<{
     const id = idRef.current;
     dialogStack.push(id);
     const restoreFocus = document.activeElement as HTMLElement | null;
-    // Foco inicial no primeiro campo útil (ou no próprio painel), para o diálogo
-    // já começar operável pelo teclado.
+    // Foco inicial: ver `initialFocus`. O diálogo já abre operável pelo teclado,
+    // e sem passar por cima do campo que o formulário escolheu.
     const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panel)?.focus({ preventScroll: true });
+    if (panel) initialFocus(panel)?.focus({ preventScroll: true });
 
     const onKey = (e: KeyboardEvent) => {
       if (dialogStack[dialogStack.length - 1] !== id) return; // só o diálogo do topo

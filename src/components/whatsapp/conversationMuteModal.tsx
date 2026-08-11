@@ -2,9 +2,16 @@ import React from 'react';
 import { BellOff, CalendarDays, Clock3, Infinity as InfinityIcon } from 'lucide-react';
 import { Modal, ModalBody } from '../ui/Modal';
 
+const HORA = 60 * 60 * 1000;
+
+// Prazos curtos primeiro: o silenciamento do dia a dia é o de uma audiência, uma
+// reunião, um despacho — hora e meia, não uma semana. Só com 8h/1 semana no
+// cardápio, calar um contato por uma tarde custava lembrar de reativar depois.
 export const WHATSAPP_MUTE_OPTIONS = [
-  { label: '8 horas', description: 'Reativa automaticamente depois de 8 horas.', durationMs: 8 * 60 * 60 * 1000, icon: Clock3 },
-  { label: '1 semana', description: 'Reativa automaticamente depois de 7 dias.', durationMs: 7 * 24 * 60 * 60 * 1000, icon: CalendarDays },
+  { label: '2 horas', description: 'Reativa automaticamente depois de 2 horas.', durationMs: 2 * HORA, icon: Clock3 },
+  { label: '4 horas', description: 'Reativa automaticamente depois de 4 horas.', durationMs: 4 * HORA, icon: Clock3 },
+  { label: '8 horas', description: 'Reativa automaticamente depois de 8 horas.', durationMs: 8 * HORA, icon: Clock3 },
+  { label: '1 semana', description: 'Reativa automaticamente depois de 7 dias.', durationMs: 7 * 24 * HORA, icon: CalendarDays },
   { label: 'Até eu reativar', description: 'Fica sem prazo e você reativa quando quiser.', durationMs: null, icon: InfinityIcon },
 ] as const;
 

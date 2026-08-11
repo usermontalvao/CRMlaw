@@ -189,6 +189,18 @@ export const NewConversationModal: React.FC<{
     setPicked(c); // escolher qual número
   };
 
+  // Enter fecha o fluxo sem tirar as mãos do teclado — digitar o número e
+  // apertar Enter é como se abre uma conversa em qualquer aplicativo. Só age
+  // quando o alvo é ÓBVIO (um telefone digitado, ou um único cliente na lista);
+  // com vários resultados, escolher por conta própria abriria conversa com a
+  // pessoa errada, então a tecla não faz nada e a escolha continua sendo do
+  // atendente.
+  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter' || busy) return;
+    if (typedPhone) { e.preventDefault(); void open(typedPhone, null); return; }
+    if (!loading && results.length === 1) { e.preventDefault(); onPickClient(results[0]); }
+  };
+
   return (
     <WaDialog title="Nova conversa" icon={<Plus size={18} />} onClose={onClose} size="sm">
       <WaDialogBody>
@@ -224,8 +236,8 @@ export const NewConversationModal: React.FC<{
 
             <div className="relative mb-3">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Nome, CPF/CNPJ ou telefone…"
-                className={`${waInput} pl-9`} />
+              <input autoFocus value={query} onChange={e => setQuery(e.target.value)} onKeyDown={onSearchKeyDown}
+                placeholder="Nome, CPF/CNPJ ou telefone…" className={`${waInput} pl-9`} />
             </div>
 
             <div className="max-h-[320px] overflow-y-auto -mx-1">
