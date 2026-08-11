@@ -87,6 +87,77 @@ const OK = message({
   content: 'Ok, doutor. Obrigada!',
 });
 
+// ── Tipos nativos do WhatsApp que o painel só recebe ──
+// Todos apareciam como bolha BRANCA antes de o webhook aprender a lê-los. O
+// conteúdo chega daqui já no formato que `wa-native-content.ts` produz.
+const CONTATO_MSG = message({
+  id: 'contato',
+  direction: 'in',
+  type: 'contact',
+  wa_timestamp: '2026-08-04T15:20:00.000Z',
+  content: 'Dra. Helena Prado\n+5565999887766\n\nCartório 2º Ofício\n+556533334444',
+});
+
+const LOCALIZACAO_MSG = message({
+  id: 'local',
+  direction: 'in',
+  type: 'location',
+  wa_timestamp: '2026-08-04T15:21:00.000Z',
+  content: 'Fórum de Cuiabá — Av. Historiador Rubens de Mendonça, 1894\n-15.601411, -56.097892\nhttps://www.google.com/maps/search/?api=1&query=-15.601411,-56.097892',
+});
+
+const ENQUETE_MSG = message({
+  id: 'enquete',
+  direction: 'in',
+  type: 'poll',
+  wa_timestamp: '2026-08-04T15:22:00.000Z',
+  content: 'Qual horário fica melhor para a perícia?\n• Terça, 9h\n• Quinta, 14h\n• Sexta, 16h',
+});
+
+const NAO_SUPORTADA_MSG = message({
+  id: 'nao-suportada',
+  direction: 'in',
+  type: 'unsupported',
+  wa_timestamp: '2026-08-04T15:23:00.000Z',
+  content: 'Mensagem não suportada',
+});
+
+// Bolha vazia herdada: gravada como texto sem conteúdo antes do reconhecimento
+// existir. Não há como consertá-la no banco — a tela é que precisa explicá-la.
+const TEXTO_VAZIO_LEGADO = message({
+  id: 'legado-branco',
+  direction: 'in',
+  type: 'text',
+  wa_timestamp: '2026-08-04T15:24:00.000Z',
+  content: null,
+});
+
+const LINKS_MSG = message({
+  id: 'links',
+  direction: 'in',
+  type: 'text',
+  wa_timestamp: '2026-08-04T15:25:00.000Z',
+  content: 'Consultei em https://www.tjmt.jus.br/processo?num=123 e também em jurius.com.br.\nQualquer coisa me chama no pedro@jurius.com.br — o contrato.pdf eu envio depois.',
+});
+
+// Dois áudios seguidos: ao terminar o primeiro, o segundo emenda sozinho.
+const AUDIO_EMENDA_A = message({
+  id: 'audio-emenda-a',
+  direction: 'in',
+  type: 'audio',
+  wa_timestamp: '2026-08-04T15:26:00.000Z',
+  media_url: SILENT_WAV,
+  media_mime: 'audio/wav',
+});
+const AUDIO_EMENDA_B = message({
+  id: 'audio-emenda-b',
+  direction: 'in',
+  type: 'audio',
+  wa_timestamp: '2026-08-04T15:26:30.000Z',
+  media_url: SILENT_WAV,
+  media_mime: 'audio/wav',
+});
+
 const LAST_OUT = message({
   id: 'out-3',
   direction: 'out',
@@ -354,8 +425,17 @@ export default function WhatsAppConversationPreview() {
           </div>
         </header>
 
-        <main className="wa-thread-bg flex-1 overflow-y-auto">
+        <main className="wa-thread-bg flex-1 overflow-y-auto overscroll-contain">
           <div className="mx-auto w-full max-w-[1050px] px-5 py-4">
+            {/* UMA SEÇÃO POR DIA, como na thread de verdade. O <div> em volta é
+                o que impede os divisores grudentos de pararem um em cima do
+                outro; sem ele, "ONTEM" e "HOJE" se sobrepõem ao rolar. */}
+            <div>
+            <DateDivider label="Ontem" />
+            <MessageBubble m={{ ...OK, id: 'ontem-1', content: 'Doutor, mandei os documentos ontem à noite.' }} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={{ ...OK, id: 'ontem-2', direction: 'out', sender_user_id: 'pedro', content: 'Recebido. Vou conferir e retorno amanhã.' }} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...bubbleActions} />
+            </div>
+            <div>
             <DateDivider label="Hoje" />
             <MessageBubble m={AUDIO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} onForward={setForwardSource} />
             <MessageBubble m={FIRST_OUT} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd={false} {...bubbleActions} />
@@ -372,7 +452,23 @@ export default function WhatsAppConversationPreview() {
             {/* O mesmo PDF saindo do escritório: o cartão tem que vestir bem a bolha verde também. */}
             <MessageBubble m={{ ...PDF_MSG, id: 'pdf-out', direction: 'out', sender_user_id: 'pedro', media_url: pdfUrl, storage_path: pdfUrl ? 'preview/contrato.pdf' : null, content: 'Segue o contrato para conferência.' }} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...bubbleActions} />
             <MessageBubble m={AUDIO_TRANSCRITO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+
+            {/* Os tipos nativos que viravam bolha branca. */}
+            <MessageBubble m={CONTATO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={LOCALIZACAO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={ENQUETE_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={NAO_SUPORTADA_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={TEXTO_VAZIO_LEGADO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+
+            {/* Links clicáveis + nome de arquivo que NÃO pode virar link. */}
+            <MessageBubble m={LINKS_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+
+            {/* Dois áudios seguidos: o segundo emenda no fim do primeiro. */}
+            <MessageBubble m={AUDIO_EMENDA_A} repliedTo={null} senderName={null} groupStart groupEnd={false} nextAudioId={AUDIO_EMENDA_B.id} {...bubbleActions} />
+            <MessageBubble m={AUDIO_EMENDA_B} repliedTo={null} senderName={null} groupStart={false} groupEnd {...bubbleActions} />
+
             <MessageBubble m={LAST_OUT} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...bubbleActions} />
+            </div>
           </div>
         </main>
 
@@ -421,6 +517,9 @@ export default function WhatsAppConversationPreview() {
               onSummary={noop}
               onExport={noop}
               onBlock={noop}
+              muted={false}
+              onMute={noop}
+              onUnmute={noop}
             />
             <div className="space-y-1.5">
               <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Etiquetas</p>

@@ -19,6 +19,7 @@
 import React from 'react';
 import {
   History, MessageSquare, Sparkles, Download, Ban, ShieldOff, ArrowRightLeft, Mail,
+  Bell, BellOff,
 } from 'lucide-react';
 
 interface AcaoProps {
@@ -59,11 +60,19 @@ export interface QuickActionsProps {
   onBlock?: () => void;
   onUnblock?: () => void;
   blocked: boolean;
+  /** Abre a escolha de prazo do silenciamento. */
+  onMute: () => void;
+  /** Devolve as notificações deste contato. */
+  onUnmute: () => void;
+  muted: boolean;
+  /** Instante em que o silêncio acaba; `null` = sem prazo. */
+  mutedUntil?: string | null;
 }
 
 export const QuickActions: React.FC<QuickActionsProps> = ({
   onMarkUnread, onTransfer, onTemplates, onTimeline,
   onSummary, onExport, onBlock, onUnblock, blocked,
+  onMute, onUnmute, muted, mutedUntil,
 }) => {
   const consultar = [
     { key: 'hist', icon: <History size={13} />, label: 'Histórico', title: 'Histórico da conversa', onClick: onTimeline },
@@ -95,6 +104,27 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
             <Acao key={a.key} icon={a.icon} label={a.label} title={a.title} onClick={a.onClick} />
           ))}
         </div>
+      )}
+
+      {/* Silenciar mora AQUI também, e não só no cabeçalho da conversa: quando
+          o painel está aberto, o olho já está nesta coluna, e o sino lá em cima
+          é um ícone sem rótulo no meio de outros. Aqui a linha diz até quando o
+          contato fica calado — que é a informação que some da memória primeiro. */}
+      {muted ? (
+        <button onClick={onUnmute}
+          title="Reativar as notificações deste contato"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-amber-50 py-1.5 text-[10.5px] font-semibold text-amber-700 transition hover:bg-amber-100">
+          <Bell size={13} />
+          {mutedUntil == null
+            ? 'Silenciado — reativar'
+            : `Silenciado até ${new Date(mutedUntil).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} — reativar`}
+        </button>
+      ) : (
+        <button onClick={onMute}
+          title="Silenciar as notificações deste contato por um período"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#f3f2ef] py-1.5 text-[10.5px] font-semibold text-slate-500 transition hover:bg-amber-50 hover:text-amber-700">
+          <BellOff size={13} /> Silenciar contato…
+        </button>
       )}
 
       {/* 3. A irreversível, longe das outras. */}

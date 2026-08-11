@@ -103,9 +103,22 @@ export const presenceInfo = (c: { presence: WhatsAppPresence; presence_updated_a
   return null;
 };
 
-export const typeLabel = (t: string) =>
-  t === 'image' ? '📷 Imagem' : t === 'audio' ? '🎤 Áudio' : t === 'video' ? '🎬 Vídeo'
-    : t === 'document' ? '📎 Documento' : '📎 Anexo';
+const ROTULO_POR_TIPO: Record<string, string> = {
+  image: '📷 Imagem',
+  audio: '🎤 Áudio',
+  video: '🎬 Vídeo',
+  document: '📎 Documento',
+  sticker: '🩹 Figurinha',
+  contact: '👤 Contato',
+  location: '📍 Localização',
+  poll: '📊 Enquete',
+  reaction: '💬 Reação',
+  interactive: '🔘 Mensagem com opções',
+  album: '🖼️ Álbum',
+  unsupported: '❔ Mensagem não suportada',
+};
+
+export const typeLabel = (t: string) => ROTULO_POR_TIPO[t] || '📎 Anexo';
 
 export const conversationPreviewLabel = (type: WhatsAppMessage['type'], text?: string | null, fileName?: string | null) => {
   const trimmed = text?.trim();
@@ -114,6 +127,14 @@ export const conversationPreviewLabel = (type: WhatsAppMessage['type'], text?: s
   if (type === 'audio') return 'Audio';
   if (type === 'video') return 'Video';
   if (type === 'document') return fileName || 'Documento';
+  if (type === 'sticker') return 'Figurinha';
+  if (type === 'contact') return 'Contato';
+  if (type === 'location') return 'Localização';
+  if (type === 'poll') return 'Enquete';
+  if (type === 'reaction') return 'Reação';
+  if (type === 'interactive') return 'Mensagem com opções';
+  if (type === 'album') return 'Álbum';
+  if (type === 'unsupported') return 'Mensagem não suportada';
   return 'Mensagem';
 };
 

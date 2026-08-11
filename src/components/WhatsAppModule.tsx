@@ -58,6 +58,7 @@ import { InternalNotesSection } from './whatsapp/internalNotes';
 import { AttachmentPreviewModal } from './whatsapp/attachmentPreviewModal';
 import { ConversationLabelsPanel } from './whatsapp/conversationLabels';
 import { ContactIdentity, AttendanceSummary } from './whatsapp/detailsPanelHeader';
+import { ConversationArchiveButton } from './whatsapp/conversationArchive';
 import { QuickActions } from './whatsapp/quickActions';
 import { useWaViewers } from './whatsapp/hooks/useWaViewers';
 import { viewersLabel } from '../services/whatsapp/inboxPresenceState';
@@ -111,7 +112,7 @@ import { useClientOverview } from './whatsapp/hooks/useClientOverview';
 import { useWaRealtime } from './whatsapp/hooks/useWaRealtime';
 import { useWaComposer } from './whatsapp/hooks/useWaComposer';
 import { useWaMessages } from './whatsapp/hooks/useWaMessages';
-import { useWaThread } from './whatsapp/hooks/useWaThread';
+import { useWaThread, type MessageUnit } from './whatsapp/hooks/useWaThread';
 import { useWaConversationActions } from './whatsapp/hooks/useWaConversationActions';
 import { useWaTemplates } from './whatsapp/hooks/useWaTemplates';
 import { useWaOperationalModals } from './whatsapp/hooks/useWaOperationalModals';
@@ -702,7 +703,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // imagens em álbuns, galeria/lightbox e todo o auto-scroll. Consome `pending` do
   // compositor, por isso vive depois dele.
   const {
-    allMessages, msgById, messageUnits,
+    allMessages, msgById, nextAudioId, messageUnits, diasDaThread,
     lightbox, setLightbox, lightboxImages,
     threadContentRef, setThreadEl, onThreadScroll,
     scrolledUp, newBelow, scrollToBottom,
@@ -1025,6 +1026,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     return next;
   }, [filtered, search, statusFilter]);
 
+  // Abrir a conversa encerra a busca. Procurar é o caminho até a pessoa, não um
+  // modo em que se fica: com o texto no campo, a lista continuava mostrando só
+  // aquele nome, e a fila (o que chegou, o que espera resposta) sumia da vista
+  // até alguém lembrar de limpar o campo à mão. Quem quiser procurar outra
+  // pessoa começa uma busca nova — Ctrl+K já está a uma tecla de distância.
+  //
+  // Só na lista: `setSelectedId` continua cru nos outros caminhos (deep-link de
+  // notificação, aba de agendadas), onde não há busca em jogo.
+  const selectFromList = useCallback((id: string) => {
+    setSelectedId(id);
+    setSearch('');
+  }, []);
+
   // ── Teclado da inbox ─────────────────────────────────────────────────
   // Andar pela fila sem tirar as mãos do teclado: ↑/↓ trocam de conversa,
   // Alt+↑/↓ fazem o mesmo sem sair do compositor e Ctrl/Cmd+K vai para a busca.
@@ -1159,7 +1173,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Agendadas do próprio atendente, em qualquer conversa. Fica FORA do memo das
   // abas abaixo de propósito: não é um recorte da lista de conversas, é outra
   // consulta — e os filtros de fila (canal/setor/etiqueta/busca) não se aplicam.
-  const { items: myScheduled, failed: scheduledFailed, reload: reloadMyScheduled } = useMyScheduled(user?.id);
+  const { items: myScheduled, pending: myScheduledPending, failed: scheduledFailed, reload: reloadMyScheduled } = useMyScheduled(user?.id);
 
   // Contadores das abas (Fase A): refletem exatamente o que a lista mostraria em
   // cada escopo, aplicando os MESMOS filtros de fila (status/canal/depto/etiqueta/
@@ -1887,12 +1901,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   : (scheduledFailed > 0 ? 'text-red-600 hover:bg-red-50' : 'text-slate-500 hover:bg-[#f3f2ef]')
               }`}>
               {scheduledFailed > 0 && <AlertTriangle size={12} />}
-              Agendadas{myScheduled?.length ? ` (${myScheduled.length})` : ''}
+              {/* O distintivo conta só a FILA: o histórico de enviadas mora na
+                  mesma aba, mas não é pendência de ninguém. */}
+              Agendadas{myScheduledPending.length ? ` (${myScheduledPending.length})` : ''}
             </button>
           </div>
         </div>
 
-        <div ref={setListEl} onScroll={onListScroll} className="flex-1 overflow-y-auto min-h-0">
+        <div ref={setListEl} onScroll={onListScroll} className="flex-1 overflow-y-auto overscroll-contain min-h-0">
           {filter === 'scheduled' ? (
           <MyScheduledList
             items={myScheduled}
@@ -1921,7 +1937,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             conversationStatus={effectiveConversationStatus}
             docStatusFor={effectiveDocStatus}
             trackedSignatureFor={trackedSignatureStatus}
-            onSelect={setSelectedId}
+            onSelect={selectFromList}
             onStopSignatureTracking={stopSignatureTracking}
             onStopTemplateFillTracking={stopTemplateFillTracking}
           />
@@ -2217,12 +2233,58 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             {/* O invólucro existe para ancorar o botão de voltar ao fim: ele
                 precisa flutuar sobre a conversa sem rolar junto com ela. */}
             <div className="relative flex flex-1 min-h-0 flex-col">
-            <div ref={setThreadEl} onScroll={onThreadScroll} className="wa-thread-bg flex-1 overflow-y-auto min-h-0">
+            {/* `overscroll-contain`: chegar ao fim da conversa não pode empurrar
+                a rolagem para o que estiver atrás (a página do CRM, o painel).
+                Era o pulo seco no fim de cada thread. */}
+            <div ref={setThreadEl} onScroll={onThreadScroll} className="wa-thread-bg flex-1 overflow-y-auto overscroll-contain min-h-0">
               <div ref={threadContentRef} className="mx-auto w-full max-w-[1180px] px-3 sm:px-6 py-4">
               {loadingMsgs ? (
                 <ThreadSkeleton />
               ) : (() => {
-                let prevDay = '';
+                // Desenha UMA unidade (bolha ou álbum). O índice é o global em
+                // `messageUnits`: o agrupamento visual olha a unidade anterior e a
+                // seguinte, e essas vizinhas atravessam a fronteira das seções.
+                const renderUnit = (u: MessageUnit, unitIndex: number) => {
+                  const head = u.kind === 'album' ? u.items[0] : u.m;
+                  const tail = u.kind === 'album' ? u.items[u.items.length - 1] : u.m;
+                  const previousUnit = unitIndex > 0 ? messageUnits[unitIndex - 1] : null;
+                  const nextUnit = unitIndex < messageUnits.length - 1 ? messageUnits[unitIndex + 1] : null;
+                  const previousTail = previousUnit
+                    ? (previousUnit.kind === 'album' ? previousUnit.items[previousUnit.items.length - 1] : previousUnit.m)
+                    : null;
+                  const nextHead = nextUnit ? (nextUnit.kind === 'album' ? nextUnit.items[0] : nextUnit.m) : null;
+                  const belongsToSameGroup = (left: WhatsAppMessage | null, right: WhatsAppMessage | null) => {
+                    if (!left || !right) return false;
+                    if (left.direction !== right.direction || (left.sender_user_id || null) !== (right.sender_user_id || null)) return false;
+                    if (new Date(left.wa_timestamp).toDateString() !== new Date(right.wa_timestamp).toDateString()) return false;
+                    return Math.abs(new Date(right.wa_timestamp).getTime() - new Date(left.wa_timestamp).getTime()) <= 5 * 60_000;
+                  };
+                  const groupStart = !belongsToSameGroup(previousTail, head);
+                  const groupEnd = !belongsToSameGroup(tail, nextHead);
+                  const senderName = groupStart && head.direction === 'out' && head.sender_user_id
+                    ? (agentLabel(staffById.get(head.sender_user_id)) || staffByUser.get(head.sender_user_id) || null)
+                    : null;
+                  const key = u.kind === 'album' ? `album-${head._tempId || head.id}` : (head._tempId || head.id);
+                  return u.kind === 'album' ? (
+                    <ImageAlbum key={key} items={u.items} out={head.direction === 'out'} senderName={senderName} groupStart={groupStart} onOpenImage={setLightbox} />
+                  ) : (
+                    <MessageBubble
+                      key={key}
+                      m={u.m}
+                      repliedTo={u.m.reply_to_id ? msgById.get(u.m.reply_to_id) || null : null}
+                      senderName={senderName}
+                      senderRole={u.m.direction === 'out' && u.m.sender_user_id ? agentRoleLabel(staffById.get(u.m.sender_user_id)) : null}
+                      groupStart={groupStart}
+                      groupEnd={groupEnd}
+                      privateMode={privateMode}
+                      canCreateFollowups
+                      onOpenImage={setLightbox}
+                      nextAudioId={u.m.type === 'audio' ? nextAudioId.get(u.m.id) ?? null : null}
+                      uploadProgress={u.m._tempId ? uploadProgress.get(u.m._tempId) : undefined}
+                      {...bubbleHandlers}
+                    />
+                  );
+                };
                 return (<>
                   {/* Botão de paginação: carrega bloco anterior de mensagens (Fase D) */}
                   {hasMoreMsgs && (
@@ -2234,53 +2296,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                       </button>
                     </div>
                   )}
-                  {/* Álbuns/bolhas a partir do agrupamento memoizado (messageUnits) */}
-                  {messageUnits.map((u, unitIndex) => {
-                      const head = u.kind === 'album' ? u.items[0] : u.m;
-                      const tail = u.kind === 'album' ? u.items[u.items.length - 1] : u.m;
-                      const previousUnit = unitIndex > 0 ? messageUnits[unitIndex - 1] : null;
-                      const nextUnit = unitIndex < messageUnits.length - 1 ? messageUnits[unitIndex + 1] : null;
-                      const previousTail = previousUnit
-                        ? (previousUnit.kind === 'album' ? previousUnit.items[previousUnit.items.length - 1] : previousUnit.m)
-                        : null;
-                      const nextHead = nextUnit ? (nextUnit.kind === 'album' ? nextUnit.items[0] : nextUnit.m) : null;
-                      const belongsToSameGroup = (left: WhatsAppMessage | null, right: WhatsAppMessage | null) => {
-                        if (!left || !right) return false;
-                        if (left.direction !== right.direction || (left.sender_user_id || null) !== (right.sender_user_id || null)) return false;
-                        if (new Date(left.wa_timestamp).toDateString() !== new Date(right.wa_timestamp).toDateString()) return false;
-                        return Math.abs(new Date(right.wa_timestamp).getTime() - new Date(left.wa_timestamp).getTime()) <= 5 * 60_000;
-                      };
-                      const groupStart = !belongsToSameGroup(previousTail, head);
-                      const groupEnd = !belongsToSameGroup(tail, nextHead);
-                      const day = new Date(head.wa_timestamp).toDateString();
-                      const showDivider = day !== prevDay;
-                      prevDay = day;
-                      const senderName = groupStart && head.direction === 'out' && head.sender_user_id
-                        ? (agentLabel(staffById.get(head.sender_user_id)) || staffByUser.get(head.sender_user_id) || null)
-                        : null;
-                      return (
-                        <React.Fragment key={u.kind === 'album' ? `album-${head._tempId || head.id}` : (head._tempId || head.id)}>
-                          {showDivider && <DateDivider label={dayLabel(head.wa_timestamp)} />}
-                          {u.kind === 'album' ? (
-                            <ImageAlbum items={u.items} out={head.direction === 'out'} senderName={senderName} groupStart={groupStart} onOpenImage={setLightbox} />
-                          ) : (
-                            <MessageBubble
-                              m={u.m}
-                              repliedTo={u.m.reply_to_id ? msgById.get(u.m.reply_to_id) || null : null}
-                              senderName={senderName}
-                              senderRole={u.m.direction === 'out' && u.m.sender_user_id ? agentRoleLabel(staffById.get(u.m.sender_user_id)) : null}
-                              groupStart={groupStart}
-                              groupEnd={groupEnd}
-                              privateMode={privateMode}
-                              canCreateFollowups
-                              onOpenImage={setLightbox}
-                              uploadProgress={u.m._tempId ? uploadProgress.get(u.m._tempId) : undefined}
-                              {...bubbleHandlers}
-                            />
-                          )}
-                        </React.Fragment>
-                      );
-                  })}
+                  {/* UMA SEÇÃO POR DIA. O <div> não é enfeite: é o que dá ao
+                      divisor grudento um fim para ser empurrado. Sem ele, todos os
+                      divisores paravam na mesma altura e se sobrepunham. */}
+                  {diasDaThread.map(dia => (
+                    <div key={dia.chave}>
+                      <DateDivider label={dayLabel(dia.tsInicial)} />
+                      {messageUnits.slice(dia.inicio, dia.fim).map((u, i) => renderUnit(u, dia.inicio + i))}
+                    </div>
+                  ))}
                   <ThreadScheduledGhosts conversationId={selected.id} privateMode={privateMode} confirm={confirm} />
                 </>);
               })()}
@@ -2642,6 +2666,18 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             onExport={messages.length > 0 ? handleExportConversation : undefined}
             onBlock={perms.canBlock ? () => setBlockOpen(true) : undefined}
             onUnblock={perms.canBlock ? handleUnblock : undefined}
+            muted={selectedContactMuted}
+            mutedUntil={selectedContactMutedUntil}
+            onMute={() => setMuteModalOpen(true)}
+            onUnmute={() => { void unmuteSelected(); }}
+          />
+
+          {/* Levar a conversa inteira embora: o .txt de "Exportar" acima só tem
+              o texto, e a maior parte do que chega por WhatsApp num escritório é
+              anexo — áudio do cliente, foto do documento, PDF da decisão. */}
+          <ConversationArchiveButton
+            conversationIds={threadIds.length > 0 ? threadIds : [selected.id]}
+            contactName={conversationName(selected)}
           />
 
           {/* Etiquetas: classificação, no fim do bloco. */}

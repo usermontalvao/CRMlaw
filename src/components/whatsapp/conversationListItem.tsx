@@ -46,9 +46,22 @@ export const PresenceText: React.FC<{
 });
 PresenceText.displayName = 'PresenceText';
 
+/**
+ * Etiqueta do dia, grudada no topo enquanto aquele dia passa.
+ *
+ * Precisa estar dentro de UMA SEÇÃO POR DIA (ver `diasDaThread` em useWaThread):
+ * `position: sticky` só é empurrado pelo fim do próprio pai, então vários
+ * divisores soltos no mesmo contêiner param todos na mesma altura e se
+ * sobrepõem, com um rótulo tapando o outro pela metade.
+ *
+ * Sem `backdrop-blur`: desfoque de fundo em elemento grudento obriga o navegador
+ * a recompor a área a cada quadro da rolagem, e numa conversa longa são vários
+ * deles ao mesmo tempo. Fundo sólido dá o mesmo resultado a olho nu e devolve a
+ * rolagem para o compositor da GPU.
+ */
 export const DateDivider: React.FC<{ label: string }> = ({ label }) => (
   <div className="sticky top-2 z-[2] flex justify-center my-3 pointer-events-none">
-    <span className="px-3 py-1.5 rounded-lg bg-[#f7f9fa]/95 text-[#54656f] text-[10.5px] font-medium uppercase tracking-[0.03em] shadow-sm ring-1 ring-black/[0.03] backdrop-blur-sm">{label}</span>
+    <span className="px-3 py-1.5 rounded-lg bg-[#f2f5f6] text-[#54656f] text-[10.5px] font-medium uppercase tracking-[0.03em] shadow-sm ring-1 ring-black/[0.03]">{label}</span>
   </div>
 );
 

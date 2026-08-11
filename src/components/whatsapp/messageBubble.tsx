@@ -8,6 +8,7 @@ import {
   Pencil, RotateCcw, Calendar, ListTodo, CornerUpLeft, Loader2, AlertCircle,
   CheckCheck, Check, X, Pause, Play, FileText, Download, ChevronDown, Forward,
   Image as ImageIcon, Video as VideoIcon, Trash2, Ban,
+  UserRound, MapPin, BarChart3, Smile, HelpCircle, MousePointerClick, Images,
 } from 'lucide-react';
 import { formatTime, typeLabel, maskSensitive, fmtAudioTime, formatBytes } from './format';
 import { WaRichText } from './WaRichTextView';
@@ -42,7 +43,9 @@ export const MessageBubble: React.FC<{
   onCreateTask: (m: WhatsAppMessage) => void;
   /** Apagar a mensagem. Ausente = recurso indisponível no host. */
   onDelete?: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => void;
-}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete }) => {
+  /** Só para áudio: o áudio logo abaixo, que emenda quando este termina. */
+  nextAudioId?: string | null;
+}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete, nextAudioId }) => {
   const out = m.direction === 'out';
   const failed = m._local === 'failed' || m.status === 'failed';
   const busy = m._local === 'uploading' || m._local === 'sending';
@@ -230,9 +233,11 @@ export const MessageBubble: React.FC<{
           </div>
         )}
 
-        <MediaContent m={m} out={out} onOpenImage={onOpenImage} />
+        <MediaContent m={m} out={out} onOpenImage={onOpenImage} nextAudioId={nextAudioId} />
 
-        {m.content && m.type !== 'text' && (
+        {/* `unsupported` já se explica na própria moldura — repetir o texto
+            embaixo dela seria dizer a mesma coisa duas vezes. */}
+        {m.content && m.type !== 'text' && m.type !== 'unsupported' && (
           <WaRichText text={privateMode ? maskSensitive(m.content) : m.content}
             className="block mt-1 whitespace-pre-wrap break-words" />
         )}
@@ -240,6 +245,12 @@ export const MessageBubble: React.FC<{
           <WaRichText text={privateMode ? maskSensitive(m.content) : m.content} stripSignature={out}
             className="whitespace-pre-wrap break-words" />
         )}
+        {/* TEXTO SEM TEXTO. São as mensagens que o webhook antigo já gravou em
+            branco (contato, localização, enquete, "ver uma vez") antes de saber
+            lê-las: ficaram no banco como `text` com conteúdo nulo e nada as
+            conserta retroativamente. Aqui elas param de ser bolha vazia — o
+            reconhecimento novo cuida das que chegarem daqui para frente. */}
+        {!m.content && m.type === 'text' && !busy && <MensagemNaoSuportada />}
 
         <span className={mediaOnly
           ? 'absolute bottom-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/45 text-white text-[10px]'
@@ -296,15 +307,54 @@ const MessageAction: React.FC<{ icon: React.ReactNode; label: string; onClick: (
 );
 
 // ── Player de áudio estilo WhatsApp (play/pause + onda clicável + tempo/velocidade) ──
+//
+// SALA DE CONTROLE DOS ÁUDIOS DA THREAD. Cada bolha é um componente isolado e não
+// enxerga as vizinhas; sem um ponto comum, dois áudios tocavam ao mesmo tempo
+// (bastava clicar no segundo sem pausar o primeiro) e nada emendava um no outro.
+// Este registro é esse ponto: cada player se anuncia pelo id da mensagem e
+// oferece "toque" e "pause". Módulo-nível de propósito — é o único escopo que
+// todas as bolhas compartilham, e ele se esvazia sozinho conforme elas desmontam.
+interface ControleDeAudio { tocar: () => void; pausar: () => void }
+const audiosDaThread = new Map<string, ControleDeAudio>();
+
+/** Silencia todos os outros áudios. Um por vez, como no WhatsApp. */
+function pausarOsOutrosAudios(idQueVaiTocar: string): void {
+  audiosDaThread.forEach((controle, id) => { if (id !== idQueVaiTocar) controle.pausar(); });
+}
+
 const WA_AUDIO_BARS = Array.from({ length: 30 }, (_, i) => 25 + ((i * 41 + i * i * 7) % 75));
-const WaAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
+const WaAudioPlayer: React.FC<{
+  src: string;
+  /** Identidade no registro da thread (id do servidor, ou o temporário). */
+  messageId: string;
+  /** Áudio imediatamente abaixo; ausente = a sequência foi cortada. */
+  nextAudioId?: string | null;
+}> = ({ src, messageId, nextAudioId }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   const [rate, setRate] = useState(1);
 
-  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) void a.play(); else a.pause(); };
+  // O id de quem emenda muda conforme a conversa recebe mensagens novas; guardado
+  // em ref para o `onEnded` ler o valor do momento sem recriar o listener.
+  const proximoRef = useRef<string | null | undefined>(nextAudioId);
+  proximoRef.current = nextAudioId;
+
+  useEffect(() => {
+    const controle: ControleDeAudio = {
+      tocar: () => { const a = audioRef.current; if (a) void a.play().catch(() => {}); },
+      pausar: () => { audioRef.current?.pause(); },
+    };
+    audiosDaThread.set(messageId, controle);
+    return () => {
+      // Só apaga a própria entrada: em re-render com o mesmo id, o registro novo
+      // já tomou o lugar e apagá-lo cegamente deixaria a corrente partida.
+      if (audiosDaThread.get(messageId) === controle) audiosDaThread.delete(messageId);
+    };
+  }, [messageId]);
+
+  const toggle = () => { const a = audioRef.current; if (!a) return; if (a.paused) void a.play().catch(() => {}); else a.pause(); };
   const cycleRate = () => { const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1; setRate(next); if (audioRef.current) audioRef.current.playbackRate = next; };
   const seek = (e: React.MouseEvent<HTMLDivElement>) => {
     const a = audioRef.current; if (!a || !duration) return;
@@ -319,8 +369,18 @@ const WaAudioPlayer: React.FC<{ src: string }> = ({ src }) => {
       <audio ref={audioRef} src={src} preload="metadata"
         onLoadedMetadata={e => setDuration(e.currentTarget.duration || 0)}
         onTimeUpdate={e => setCurrent(e.currentTarget.currentTime)}
-        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
-        onEnded={() => { setPlaying(false); setCurrent(0); }} className="hidden" />
+        onPlay={() => { setPlaying(true); pausarOsOutrosAudios(messageId); }}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false); setCurrent(0);
+          // A emenda só existe quando a mensagem logo abaixo TAMBÉM é áudio (ver
+          // `nextAudioId` em useWaThread). O navegador libera este `play()` sem
+          // clique porque a página já tem interação do usuário — foi ele quem
+          // iniciou o primeiro áudio da corrente.
+          const proximo = proximoRef.current;
+          if (proximo) audiosDaThread.get(proximo)?.tocar();
+        }}
+        className="hidden" />
       <button type="button" onClick={toggle} title={playing ? 'Pausar' : 'Reproduzir'}
         className="shrink-0 w-10 h-10 rounded-full bg-[#00a884] hover:bg-[#008f72] text-white flex items-center justify-center active:scale-95 transition">
         {playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
@@ -365,7 +425,9 @@ function isAnimatedVideo(m: WhatsAppMessage): boolean {
 }
 
 // ── Conteúdo de mídia por tipo ──
-const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (url: string) => void }> = ({ m, out, onOpenImage }) => {
+const MediaContent: React.FC<{
+  m: WhatsAppMessage; out: boolean; onOpenImage: (url: string) => void; nextAudioId?: string | null;
+}> = ({ m, out, onOpenImage, nextAudioId }) => {
   if (m.type === 'text') return null;
   const url = m.media_url;
   const mediaKey = m.storage_path || url || m.id;
@@ -396,7 +458,7 @@ const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (u
   if (m.type === 'audio') {
     return (
       <div className="min-w-[220px]">
-        {url ? <WaAudioPlayer src={url} />
+        {url ? <WaAudioPlayer src={url} messageId={m.id} nextAudioId={nextAudioId} />
           : <MediaPlaceholder label={typeLabel('audio')} />}
         {m.transcription_status === 'pending' && (
           <span className="flex items-center gap-1 mt-1 text-[11px] italic text-slate-400"><Loader2 size={11} className="animate-spin" /> Transcrevendo…</span>
@@ -417,6 +479,24 @@ const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (u
       </div>
     );
   }
+
+  // ── Tipos nativos sem arquivo ──
+  // Contato, localização e enquete chegam do WhatsApp já convertidos em texto
+  // legível pelo webhook (ver `wa-native-content.ts`); o que falta aqui é a
+  // moldura que diz O QUE aquilo é. Sem ela, um cartão de contato aparecia como
+  // um parágrafo solto de nome e telefone, indistinguível de alguém digitando.
+  // O texto em si continua saindo pelo caminho normal, logo abaixo da moldura —
+  // é por isso que a coordenada da localização já vira link clicável de graça.
+  if (m.type === 'contact') return <FaixaDeTipo icon={<UserRound size={13} />} label="Contato" out={out} />;
+  if (m.type === 'location') return <FaixaDeTipo icon={<MapPin size={13} />} label="Localização" out={out} />;
+  if (m.type === 'poll') return <FaixaDeTipo icon={<BarChart3 size={13} />} label="Enquete" out={out} />;
+  if (m.type === 'reaction') return <FaixaDeTipo icon={<Smile size={13} />} label="Reação" out={out} />;
+  // Botões/lista/template/fluxo: o WhatsApp Business do outro lado. O corpo e as
+  // opções já vêm no texto — inclusive as URLs dos botões, que a bolha
+  // transforma em link clicável (rastreio, 2ª via, acompanhar pedido).
+  if (m.type === 'interactive') return <FaixaDeTipo icon={<MousePointerClick size={13} />} label="Mensagem com opções" out={out} />;
+  if (m.type === 'album') return <FaixaDeTipo icon={<Images size={13} />} label="Álbum" out={out} />;
+  if (m.type === 'unsupported') return <MensagemNaoSuportada />;
 
   // PDF: miniatura da 1ª página + visualizador ao clicar. É o anexo mais comum
   // do escritório (contrato, comprovante, decisão) e o cartão mudo obrigava a
@@ -439,6 +519,27 @@ const MediaContent: React.FC<{ m: WhatsAppMessage; out: boolean; onOpenImage: (u
 
 const MediaPlaceholder: React.FC<{ label: string }> = ({ label }) => (
   <span className="flex items-center gap-1.5 text-[12px] opacity-80"><Loader2 size={12} className="animate-spin" /> {label}</span>
+);
+
+/** Cabeçalho de uma linha que nomeia o tipo da mensagem antes do conteúdo. */
+const FaixaDeTipo: React.FC<{ icon: React.ReactNode; label: string; out: boolean }> = ({ icon, label, out }) => (
+  <span className={`mb-0.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide ${
+    out ? 'text-emerald-800/70' : 'text-[#008069]'
+  }`}>
+    {icon}{label}
+  </span>
+);
+
+/**
+ * O que o painel não sabe desenhar. Aparece no lugar da bolha branca de antes:
+ * dizer "chegou algo que não sei mostrar, abra no celular" é informação; uma
+ * bolha vazia é um defeito com cara de mensagem perdida.
+ */
+const MensagemNaoSuportada: React.FC = () => (
+  <span className="flex items-center gap-1.5 text-[12px] italic text-slate-500">
+    <HelpCircle size={13} className="flex-shrink-0 text-slate-400" />
+    Mensagem não suportada aqui — abra no WhatsApp para ver.
+  </span>
 );
 
 type MediaLoadState = 'loading' | 'loaded' | 'error';

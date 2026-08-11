@@ -1,5 +1,14 @@
 export type WhatsAppDirection = 'in' | 'out';
-export type WhatsAppMsgType = 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker';
+/**
+ * Os seis primeiros são os que o escritório envia e recebe o dia inteiro. Os
+ * quatro últimos são tipos NATIVOS do WhatsApp que o painel não produz, só
+ * recebe — e que até então caíam como texto vazio, virando bolha branca na
+ * conversa (ver `wa-native-content.ts` no webhook). Cada um carrega o conteúdo
+ * já legível em `content`; o tipo serve para a bolha escolher ícone e moldura.
+ */
+export type WhatsAppMsgType =
+  | 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker'
+  | 'contact' | 'location' | 'poll' | 'reaction' | 'interactive' | 'album' | 'unsupported';
 export type WhatsAppMsgStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 /**

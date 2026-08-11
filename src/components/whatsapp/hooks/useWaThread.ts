@@ -12,12 +12,25 @@ export type MessageUnit =
   | { kind: 'album'; items: WhatsAppMessage[] }
   | { kind: 'single'; m: WhatsAppMessage };
 
+/** Uma faixa de `messageUnits` que pertence ao mesmo dia. `fim` é exclusivo. */
+export interface DiaDaThread {
+  chave: string;
+  /** Timestamp da primeira mensagem do dia — é dele que sai o rótulo. */
+  tsInicial: string;
+  inicio: number;
+  fim: number;
+}
+
 export interface WaThreadApi {
   /** Mensagens reais + otimistas mescladas e ordenadas (asc por timestamp). */
   allMessages: WhatsAppMessage[];
   msgById: Map<string, WhatsAppMessage>;
+  /** Áudio → áudio logo abaixo dele. Alimenta a reprodução em sequência. */
+  nextAudioId: Map<string, string>;
   /** Unidades de render: álbuns de imagens consecutivas ou bolha única. */
   messageUnits: MessageUnit[];
+  /** Faixas de `messageUnits` por dia — uma seção de render para cada. */
+  diasDaThread: DiaDaThread[];
   lightbox: string | null;
   setLightbox: React.Dispatch<React.SetStateAction<string | null>>;
   lightboxImages: string[];
@@ -85,10 +98,40 @@ export function useWaThread(
       (!!p._serverId && b.id === p._serverId)
       || (!!p.evolution_message_id && !!b.evolution_message_id && b.evolution_message_id === p.evolution_message_id),
     ));
-    return [...messages, ...extra].sort((a, b) => a.wa_timestamp.localeCompare(b.wa_timestamp));
+    // O que está EM VOO fica sempre no fim, sem passar pela ordenação por tempo.
+    //
+    // A bolha otimista nasce com o relógio DESTE computador; a confirmada volta
+    // com o horário do servidor. Um relógio local atrasado (minutos, às vezes
+    // segundos, e ninguém acerta relógio de máquina de escritório) punha a
+    // mensagem recém-escrita ACIMA das anteriores — e, quando a confirmação
+    // chegava com o horário certo, ela pulava para o fim sozinha. Ordem por
+    // posição na fila em vez de por relógio: a mensagem nasce embaixo e fica
+    // onde nasceu.
+    const reais = [...messages].sort((a, b) => a.wa_timestamp.localeCompare(b.wa_timestamp));
+    return [...reais, ...extra];
   }, [messages, pending, selectedId]);
 
   const msgById = useMemo(() => new Map(allMessages.map(m => [m.id, m])), [allMessages]);
+
+  // Encadeamento dos áudios: para cada áudio, o id do que vem LOGO ABAIXO dele,
+  // e só quando esse vizinho imediato também é áudio. É o que separa "mandou
+  // três áudios seguidos" (ouve os três de enfiada, sem tocar na tela) de "mandou
+  // um áudio, depois escreveu, depois mandou outro" — aí a sequência foi cortada
+  // pelo texto, e emendar o áudio de baixo seria pular a mensagem do meio.
+  //
+  // Vive aqui, e não na bolha, porque a bolha só conhece a si mesma: quem sabe o
+  // que está imediatamente antes e depois é a thread montada.
+  const nextAudioId = useMemo(() => {
+    const mapa = new Map<string, string>();
+    for (let i = 0; i < allMessages.length - 1; i += 1) {
+      const atual = allMessages[i];
+      const seguinte = allMessages[i + 1];
+      if (atual.type !== 'audio' || seguinte.type !== 'audio') continue;
+      if (atual.deleted_at || seguinte.deleted_at) continue;
+      mapa.set(atual.id, seguinte.id);
+    }
+    return mapa;
+  }, [allMessages]);
 
   // Agrupa imagens consecutivas do mesmo remetente em álbuns (estilo WhatsApp).
   // Memoizado em allMessages para (a) não reprocessar a cada render e (b) manter
@@ -114,6 +157,27 @@ export function useWaThread(
     }
     return units;
   }, [allMessages]);
+
+  // Fatias por dia. Existem por causa de um detalhe de CSS com consequência
+  // visível: `position: sticky` só é empurrado pelo fim do PRÓPRIO pai. Com todos
+  // os divisores de data soltos no mesmo contêiner, cada um grudava em `top` e o
+  // seguinte parava exatamente em cima do anterior — na tela saía "07 DE" à
+  // esquerda, "2026" à direita e um "HOJE" plantado no meio, tapando o miolo.
+  //
+  // Com uma seção por dia, o divisor gruda enquanto o dia dele está passando e é
+  // empurrado para fora quando o dia acaba, que é o comportamento do WhatsApp.
+  const diasDaThread = useMemo<DiaDaThread[]>(() => {
+    const dias: DiaDaThread[] = [];
+    for (let i = 0; i < messageUnits.length; i += 1) {
+      const u = messageUnits[i];
+      const cabeca = u.kind === 'album' ? u.items[0] : u.m;
+      const chave = new Date(cabeca.wa_timestamp).toDateString();
+      const ultimo = dias[dias.length - 1];
+      if (ultimo && ultimo.chave === chave) ultimo.fim = i + 1;
+      else dias.push({ chave, tsInicial: cabeca.wa_timestamp, inicio: i, fim: i + 1 });
+    }
+    return dias;
+  }, [messageUnits]);
 
   // Galeria do lightbox: URLs das imagens da conversa, em ordem — permite navegar
   // (slider ‹ ›) entre todas as imagens ao ampliar uma. Sem repetição: a galeria
@@ -267,7 +331,7 @@ export function useWaThread(
   }, []);
 
   return {
-    allMessages, msgById, messageUnits,
+    allMessages, msgById, nextAudioId, messageUnits, diasDaThread,
     lightbox, setLightbox, lightboxImages,
     threadContentRef, setThreadEl, onThreadScroll,
     scrolledUp, newBelow, scrollToBottom,
