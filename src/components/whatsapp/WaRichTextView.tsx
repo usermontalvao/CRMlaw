@@ -24,6 +24,28 @@ export const WaRichText: React.FC<{
     <span className={className}>
       {nodes.map((n, i) => {
         const cls = classeDo(n);
+        if (n.link) {
+          // Sempre em aba/janela externa: a conversa não pode ser substituída
+          // pelo site — o atendente perderia o atendimento no meio. `noopener`
+          // impede que a página aberta alcance esta pela `window.opener`.
+          //
+          // `stopPropagation` porque a bolha inteira é clicável (responder,
+          // menu, seleção): sem isto, abrir o link disparava a ação da bolha junto.
+          return (
+            <a
+              key={i}
+              href={n.link}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              onClick={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
+              title={n.link}
+              className={`${cls} text-[#027eb5] underline underline-offset-2 break-all hover:text-[#01608a]`}
+            >
+              {n.text}
+            </a>
+          );
+        }
         return cls
           ? <span key={i} className={cls}>{n.text}</span>
           : <React.Fragment key={i}>{n.text}</React.Fragment>;

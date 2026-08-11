@@ -17,9 +17,11 @@ export interface WaTextNode {
   italic?: boolean;
   strike?: boolean;
   mono?: boolean;
+  /** Endereço pronto para abrir (com esquema). Presente = o trecho é um link. */
+  link?: string;
 }
 
-type Estilo = Omit<WaTextNode, 'text'>;
+type Estilo = Omit<WaTextNode, 'text' | 'link'>;
 
 // Ordem importa: ``` antes de ` (a mais longa ganha), e mono antes das demais —
 // dentro de monoespaçado o WhatsApp não interpreta mais nada.
@@ -84,11 +86,92 @@ function percorrer(text: string, estilo: Estilo, out: WaTextNode[]): void {
   despejar();
 }
 
-/** Quebra o texto em trechos com o estilo que o WhatsApp aplicaria. */
+// ── Endereços ────────────────────────────────────────────────────────────────
+//
+// Por que o reconhecimento vem ANTES da leitura das marcas: dentro de um link há
+// caracteres que também são marcação. `https://sistema.tj.br/consulta_de_autos_`
+// tem dois `_` em fronteira de palavra — o leitor de estilo abriria itálico no
+// meio do endereço e o link sairia partido em pedaços, sem forma de remontar.
+// Achando o endereço primeiro, ele sai inteiro e só o texto ao redor é estilizado.
+
+// Sem esquema e sem `www.`, só vira link com um domínio de topo conhecido. Sem
+// essa lista, `contrato.pdf` e `parecer.docx` — que o escritório escreve o dia
+// inteiro — virariam links quebrados.
+const DOMINIOS_DE_TOPO = 'br|com|net|org|gov|edu|io|app|dev|me|info|co|tv|online|site|pt|us|uk';
+
+// `*` e crase ficam de fora do corpo do endereço: são as marcas com que se
+// envolve um link (`*https://…*`) e quase nunca aparecem dentro de um de
+// verdade. `_` e `~` continuam valendo — esses SÃO comuns em URLs de sistemas.
+const CORPO = '[^\\s*`<>"]';
+
+const PADRAO_LINK = new RegExp([
+  `https?:\\/\\/${CORPO}+`,                                          // com esquema
+  `www\\.${CORPO}+`,                                                 // começando por www.
+  '[\\p{L}\\p{N}._%+-]+@[\\p{L}\\p{N}.-]+\\.\\p{L}{2,}',             // e-mail
+  `[\\p{L}\\p{N}][\\p{L}\\p{N}-]*(?:\\.[\\p{L}\\p{N}-]+)*\\.(?:${DOMINIOS_DE_TOPO})(?![\\p{L}\\p{N}])(?:[\\/?#]${CORPO}*)?`,
+].join('|'), 'giu');
+
+const PARES = new Map([[')', '('], [']', '['], ['}', '{']]);
+const PONTUACAO_FINAL = '.,;:!?…"\'';
+
+/**
+ * Tira do fim do endereço a pontuação da FRASE, que o casamento ganancioso
+ * arrastou junto: em "veja em jurius.com.br." o ponto encerra a frase, não o
+ * endereço. Fecha-parênteses só sai se não houver o abre correspondente dentro
+ * do próprio endereço — senão um link de Wikipédia perderia o final.
+ */
+function apararFim(bruto: string): string {
+  let s = bruto;
+  while (s.length > 1) {
+    const ultimo = s[s.length - 1];
+    if (PONTUACAO_FINAL.includes(ultimo)) { s = s.slice(0, -1); continue; }
+    const abre = PARES.get(ultimo);
+    if (abre && s.split(ultimo).length > s.split(abre).length) { s = s.slice(0, -1); continue; }
+    break;
+  }
+  return s;
+}
+
+/** Endereço para navegação: o que está escrito nem sempre tem esquema. */
+function hrefDe(texto: string): string {
+  if (/^https?:\/\//i.test(texto)) return texto;
+  if (texto.includes('@') && !texto.includes('/')) return `mailto:${texto}`;
+  return `https://${texto}`;
+}
+
+interface TrechoLink { inicio: number; fim: number; texto: string; href: string }
+
+/** Endereços do texto, em ordem e sem sobreposição. */
+function acharLinks(text: string): TrechoLink[] {
+  const achados: TrechoLink[] = [];
+  PADRAO_LINK.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = PADRAO_LINK.exec(text)) !== null) {
+    const texto = apararFim(m[0]);
+    if (!texto) continue;
+    achados.push({ inicio: m.index, fim: m.index + texto.length, texto, href: hrefDe(texto) });
+    // O recuo do `lastIndex` devolve ao texto comum a pontuação aparada — sem
+    // isto, o ponto final da frase sumiria da bolha.
+    PADRAO_LINK.lastIndex = m.index + texto.length;
+  }
+  return achados;
+}
+
+/**
+ * Quebra o texto em trechos com o estilo que o WhatsApp aplicaria, com os
+ * endereços isolados em nós próprios (`link`) para a interface desenhar como
+ * âncora clicável.
+ */
 export function parseWaRich(text: string): WaTextNode[] {
   if (!text) return [];
   const out: WaTextNode[] = [];
-  percorrer(text, {}, out);
+  let cursor = 0;
+  for (const l of acharLinks(text)) {
+    if (l.inicio > cursor) percorrer(text.slice(cursor, l.inicio), {}, out);
+    out.push({ text: l.texto, link: l.href });
+    cursor = l.fim;
+  }
+  if (cursor < text.length) percorrer(text.slice(cursor), {}, out);
   return out;
 }
 
