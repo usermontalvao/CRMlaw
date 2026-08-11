@@ -540,7 +540,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   // Agendadas do WhatsApp: fora do cache de 5 minutos do painel, de propósito.
   // Uma mensagem que sai às 08:00 sumiria do cartão só às 08:05, e uma falha
   // ficaria escondida pelo mesmo tempo. O gancho tem realtime próprio.
-  const { items: myScheduled, failed: scheduledFailed } = useMyScheduled(user?.id);
+  // Só a FILA no painel: desde que a aba do WhatsApp passou a guardar histórico,
+  // `items` traz também o que já foi enviado — e "Mensagens agendadas" aqui é a
+  // pergunta "o que ainda vai sair?", não um extrato do que saiu.
+  const { pending: myScheduled, failed: scheduledFailed } = useMyScheduled(user?.id);
 
   const activeClients = clients.filter(c => c.status === 'ativo').length;
   const activeProcesses = processes.length;

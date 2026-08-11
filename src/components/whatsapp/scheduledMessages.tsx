@@ -276,9 +276,19 @@ export const ScheduledMessagesPanel: React.FC<{ conversationId: string; canSched
 // eu tenho na fila?" — e é o único lugar onde uma falha aparece sem que alguém
 // precise adivinhar em qual conversa ela aconteceu.
 
+/**
+ * Ainda tem futuro: espera a hora de sair, espera o canal voltar, ou falhou e
+ * precisa de alguém. O resto (enviada, cancelada) é história — não muda mais.
+ */
+export const isScheduledOpen = (s: WhatsAppScheduledMessage): boolean =>
+  s.status === 'pending' || s.status === 'failed';
+
 /** Conta as agendadas do atendente e quantas falharam. Alimenta o rótulo da aba. */
 export function useMyScheduled(userId: string | undefined): {
+  /** Tudo que voltou da consulta: fila + histórico. */
   items: WhatsAppScheduledWithContact[] | null;
+  /** Só o que ainda vai acontecer — é este número que vale como "pendentes". */
+  pending: WhatsAppScheduledWithContact[];
   failed: number;
   reload: () => void;
 } {
@@ -296,8 +306,11 @@ export function useMyScheduled(userId: string | undefined): {
     return whatsappService.subscribeMyScheduled(userId, setItems);
   }, [userId]);
 
-  const failed = (items || []).filter(s => s.status === 'failed').length;
-  return { items, failed, reload };
+  // Contadores olham só a fila: desde que o histórico passou a vir junto, somar
+  // `items` faria o distintivo da aba crescer para sempre com o que já saiu.
+  const pending = (items || []).filter(isScheduledOpen);
+  const failed = pending.filter(s => s.status === 'failed').length;
+  return { items, pending, failed, reload };
 }
 
 export const MyScheduledList: React.FC<{
@@ -309,6 +322,7 @@ export const MyScheduledList: React.FC<{
 }> = ({ items, privateMode, confirm, onReload, onOpenConversation }) => {
   const toast = useToastContext();
   const [busy, setBusy] = useState<string | null>(null);
+  const [aba, setAba] = useState<'pendentes' | 'concluidas'>('pendentes');
 
   const retryNow = async (id: string) => {
     setBusy(id);
@@ -333,6 +347,17 @@ export const MyScheduledList: React.FC<{
     return <div className="flex items-center justify-center py-10 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>;
   }
 
+  // As duas metades da pergunta: "o que ainda vai sair?" e "o que já saiu?".
+  // Juntas numa lista só, a segunda enterrava a primeira — e é a primeira que
+  // ainda dá para mudar.
+  const pendentes = items.filter(isScheduledOpen);
+  const concluidas = items.filter(s => !isScheduledOpen(s));
+  const failedCount = pendentes.filter(s => s.status === 'failed').length;
+  // Abrir direto no histórico quando não há mais nada na fila poupa um clique de
+  // quem veio justamente conferir se a mensagem de ontem saiu.
+  const abaEfetiva = aba === 'pendentes' && pendentes.length === 0 && concluidas.length > 0 ? 'concluidas' : aba;
+  const visiveis = abaEfetiva === 'pendentes' ? pendentes : concluidas;
+
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 gap-2 px-6 text-center">
@@ -343,12 +368,23 @@ export const MyScheduledList: React.FC<{
     );
   }
 
-  const failedCount = items.filter(s => s.status === 'failed').length;
   const iconBtn = 'p-1 rounded text-slate-300 transition';
+  const abaCls = (ativa: boolean) => `flex-1 rounded-lg px-2 py-1.5 text-[12px] font-semibold transition ${
+    ativa ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+  }`;
 
   return (
     <div>
-      {failedCount > 0 && (
+      <div className="flex items-center gap-1 border-b border-[#f0efea] bg-[#f7f6f3] px-3 py-2">
+        <button onClick={() => setAba('pendentes')} className={abaCls(abaEfetiva === 'pendentes')}>
+          Pendentes{pendentes.length > 0 ? ` (${pendentes.length})` : ''}
+        </button>
+        <button onClick={() => setAba('concluidas')} className={abaCls(abaEfetiva === 'concluidas')}>
+          Concluídas{concluidas.length > 0 ? ` (${concluidas.length})` : ''}
+        </button>
+      </div>
+
+      {failedCount > 0 && abaEfetiva === 'pendentes' && (
         <div className="flex items-start gap-2 px-4 py-2.5 bg-red-50 border-b border-red-100">
           <AlertTriangle size={15} className="text-red-600 flex-shrink-0 mt-px" />
           <p className="text-[12px] text-red-700 leading-snug">
@@ -359,8 +395,22 @@ export const MyScheduledList: React.FC<{
         </div>
       )}
 
+      {visiveis.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+          <CalendarClock size={30} className="text-slate-200" />
+          <p className="text-[13px] text-slate-400">
+            {abaEfetiva === 'pendentes' ? 'Nada na fila agora.' : 'Nada concluído ainda.'}
+          </p>
+          <p className="text-[11.5px] text-slate-300">
+            {abaEfetiva === 'pendentes'
+              ? 'Tudo que você agendou já saiu ou foi cancelado.'
+              : 'Aqui fica o histórico do que já foi enviado ou cancelado.'}
+          </p>
+        </div>
+      )}
+
       <div className="divide-y divide-[#f0efea]">
-        {items.map(s => {
+        {visiveis.map(s => {
           const st = schedBadge(s);
           const failed = s.status === 'failed';
           // Mesmo nome que a inbox mostra: cadastro na frente do apelido do WhatsApp.

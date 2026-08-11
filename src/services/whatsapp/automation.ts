@@ -304,8 +304,21 @@ export const automationApi = {
    * O recorte por `created_by` é o mesmo de `listMyReconnectAlerts` — quem
    * agendou é quem precisa acompanhar.
    *
-   * Traz `pending` e `failed`. As falhas vêm primeiro de propósito: são as que
-   * exigem ação e as que ficavam invisíveis antes desta lista existir.
+   * Traz TODOS os estados, porque a aba tem duas metades: o que ainda vai
+   * acontecer (`pending`/`failed`) e o histórico do que já aconteceu
+   * (`sent`/`canceled`). Antes só vinham as duas primeiras, e quem perguntava
+   * "aquela mensagem de ontem chegou a sair?" não tinha onde olhar — a agendada
+   * enviada simplesmente sumia da lista no instante em que saía.
+   *
+   * SÃO DUAS CONSULTAS, e não uma com teto. A fila e o histórico competem pelo
+   * mesmo limite, mas só o histórico pode ser cortado: uma falha de três meses
+   * atrás continua sendo uma falha, e num teto único ela seria empurrada para
+   * fora pelas enviadas mais recentes — a sirene da aba emudeceria justamente no
+   * caso em que ela existe para gritar. Fila sem teto (é pequena por natureza),
+   * histórico com teto.
+   *
+   * As falhas vêm primeiro de propósito: são as que exigem ação e as que ficavam
+   * invisíveis antes desta lista existir.
    *
    * O nome do cadastro vem junto (`clients(full_name)`) porque `contact_name` é
    * o apelido que o próprio contato escolheu no WhatsApp — a inbox já prefere o
@@ -314,15 +327,19 @@ export const automationApi = {
   async listMyScheduled(): Promise<WhatsAppScheduledWithContact[]> {
     const { data: auth } = await supabase.auth.getUser();
     if (!auth?.user?.id) return [];
-    const { data, error } = await supabase
+    const daPessoa = () => supabase
       .from(SCHEDULED_TABLE)
       .select('*, whatsapp_conversations(contact_name, contact_phone, contact_avatar_path, clients(full_name))')
-      .eq('created_by', auth.user.id)
-      .in('status', ['pending', 'failed'])
-      .order('scheduled_at', { ascending: true })
-      .limit(100);
-    if (error) throw new Error(error.message);
-    const items = (data || [])
+      .eq('created_by', auth.user!.id);
+
+    const [fila, historico] = await Promise.all([
+      daPessoa().in('status', ['pending', 'failed']).order('scheduled_at', { ascending: true }).limit(200),
+      daPessoa().in('status', ['sent', 'canceled']).order('scheduled_at', { ascending: false }).limit(100),
+    ]);
+    if (fila.error) throw new Error(fila.error.message);
+    if (historico.error) throw new Error(historico.error.message);
+
+    const items = ([...(fila.data || []), ...(historico.data || [])])
       .map((row: any) => {
         const { whatsapp_conversations: conv, ...rest } = row;
         return {
@@ -334,9 +351,18 @@ export const automationApi = {
           contact_avatar_url: null,
         } as WhatsAppScheduledWithContact;
       })
+      // Em aberto primeiro (falha na frente de tudo, do mais próximo ao mais
+      // distante), histórico depois, do mais recente para o mais antigo — cada
+      // metade na leitura que a sua pergunta pede.
       .sort((a, b) => {
-        if (a.status !== b.status) return a.status === 'failed' ? -1 : 1;
-        return a.scheduled_at.localeCompare(b.scheduled_at);
+        const abertaA = a.status === 'pending' || a.status === 'failed';
+        const abertaB = b.status === 'pending' || b.status === 'failed';
+        if (abertaA !== abertaB) return abertaA ? -1 : 1;
+        if (abertaA) {
+          if ((a.status === 'failed') !== (b.status === 'failed')) return a.status === 'failed' ? -1 : 1;
+          return a.scheduled_at.localeCompare(b.scheduled_at);
+        }
+        return b.scheduled_at.localeCompare(a.scheduled_at);
       });
     // Mesmas URLs assinadas (e mesmo cache) que a inbox usa para as fotos.
     await attachAvatarUrls(items);
