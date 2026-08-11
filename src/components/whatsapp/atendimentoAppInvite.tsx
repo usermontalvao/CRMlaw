@@ -1,26 +1,29 @@
 /**
  * Convite para instalar o Atendimento como APLICATIVO separado (/atendimento),
- * direto de dentro do CRM — sem abrir outra página.
+ * mostrado no topo do módulo WhatsApp dentro do CRM.
  *
- * COMO ISSO É POSSÍVEL. O `beforeinstallprompt` vale sempre para o manifest da
- * PÁGINA ATUAL: em /whatsapp ele instalaria o CRM. A saída é apontar o
- * <link rel="manifest"> desta página para o manifest do Atendimento enquanto a
- * régua está à vista — o Chrome reavalia e passa a oferecer AQUELE app. Foi
- * verificado no Chrome 151: com o manifest do CRM não veio evento nenhum (o CRM
- * já está instalado); trocando o manifest, o evento chegou.
+ * POR QUE O BOTÃO NÃO INSTALA AQUI MESMO. Já instalou: a régua trocava o
+ * `<link rel="manifest">` desta página para o do Atendimento e chamava o
+ * `beforeinstallprompt` capturado. O problema é que esse evento não diz a que
+ * manifest pertence — e o Chrome dispara UM no carregamento da página, que é o
+ * do CRM. Quem ainda não tinha o CRM instalado capturava esse, e o botão
+ * "Instalar" instalava o CRM. Descobria-se pelo pior caminho: o convite sumia,
+ * o app do Atendimento não existia, e no fim a pessoa tinha os DOIS instalados
+ * para calar uma régua que pedia um.
  *
- * A TROCA É TEMPORÁRIA e vale só enquanto esta régua está visível. O módulo
- * WhatsApp fica MONTADO mesmo quando o usuário vai para outra tela (keep-alive
- * com display:none no App), então "desmontar" não serve de gatilho — quem manda
- * é o tamanho da própria régua: altura zero = escondida = manifest do CRM de
- * volta. Sem isso, o CRM inteiro passaria a sessão toda se anunciando como
- * Atendimento na barra de endereços.
+ * Não há como distinguir os dois eventos (o objeto é o mesmo, e a ordem em que
+ * chegam não é observável), então o caminho passou a ser o único sem ambiguidade:
+ * abrir /atendimento. Lá o manifest da página É o do Atendimento, o instalador
+ * do navegador oferece o app certo, e a própria página tem a régua verde de
+ * instalar (ver `WhatsAppApp`). De quebra, o CRM deixa de se anunciar como
+ * "Atendimento" na barra de endereços enquanto esta régua está à vista.
  *
- * Fora do Chrome/Edge o evento não existe; aí o botão cai no caminho reserva
- * (`instalarAtendimentoApp`), que abre o /atendimento — lá a instalação é
- * oferecida pelo próprio navegador.
+ * INSTALOU LÁ, SOME AQUI. A instalação acontece em OUTRA janela, e o estado
+ * desta régua era decidido uma vez, na montagem — o convite ficava na tela até
+ * alguém recarregar o CRM. O evento `storage` (mesma origem, outra janela) é o
+ * aviso de que a marca foi gravada; com ele, a régua some sozinha.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import {
   dismissInstallInvite,
@@ -29,84 +32,38 @@ import {
   shouldInviteToInstall,
 } from '../../utils/atendimentoApp';
 
-/** O evento do Chrome/Edge que abre o instalador da página. */
-interface InstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
-
-const MANIFEST_CRM = '/manifest.webmanifest';
-const MANIFEST_ATENDIMENTO = '/atendimento.webmanifest';
-
-function apontarManifest(href: string): void {
-  const link = document.querySelector('link[rel="manifest"]');
-  if (link && link.getAttribute('href') !== href) link.setAttribute('href', href);
-}
-
 export const AtendimentoAppInvite: React.FC = () => {
-  // Decidido uma vez, na montagem: a régua não pode piscar no meio do
-  // atendimento por causa de um re-render.
+  // Decidido na montagem: a régua não pode piscar no meio do atendimento por
+  // causa de um re-render. O que a derruba são fatos (instalou, dispensou).
   const [visivel, setVisivel] = useState(() => shouldInviteToInstall());
-  const conviteRef = useRef<InstallPromptEvent | null>(null);
-  const reguaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!visivel) return;
 
-    const aoPoderInstalar = (event: Event) => {
-      event.preventDefault(); // sem isto o Chrome mostra a barra dele por cima
-      conviteRef.current = event as InstallPromptEvent;
-    };
+    const reconferir = () => { if (!shouldInviteToInstall()) setVisivel(false); };
+
+    // `appinstalled` cobre a instalação feita a partir DESTA página (a oferta do
+    // próprio navegador); `storage` cobre a que acontece na janela do
+    // /atendimento; `focus` cobre o navegador que não emitiu nem um nem outro.
     const aoInstalar = () => { markAtendimentoAppInstalled(); setVisivel(false); };
-    window.addEventListener('beforeinstallprompt', aoPoderInstalar);
     window.addEventListener('appinstalled', aoInstalar);
-
-    // A régua escondida (outra tela aberta) devolve o manifest do CRM.
-    //
-    // Verificação POR TEMPO, não por observador. `ResizeObserver` e
-    // `IntersectionObserver` só entregam callback quando o navegador está
-    // produzindo quadros — com a janela em segundo plano (ou minimizada) eles
-    // simplesmente não disparam, e o manifest ficaria congelado no estado
-    // errado. `offsetParent === null` é a leitura direta de "está com
-    // display:none", que é como o App esconde o módulo, e custa quase nada a
-    // cada 800 ms.
-    const sincronizar = () => {
-      const aparecendo = reguaRef.current?.offsetParent != null;
-      apontarManifest(aparecendo ? MANIFEST_ATENDIMENTO : MANIFEST_CRM);
-    };
-    sincronizar();
-    const relogio = window.setInterval(sincronizar, 800);
-
+    window.addEventListener('storage', reconferir);
+    window.addEventListener('focus', reconferir);
     return () => {
-      window.removeEventListener('beforeinstallprompt', aoPoderInstalar);
       window.removeEventListener('appinstalled', aoInstalar);
-      window.clearInterval(relogio);
-      apontarManifest(MANIFEST_CRM);
+      window.removeEventListener('storage', reconferir);
+      window.removeEventListener('focus', reconferir);
     };
   }, [visivel]);
 
-  const instalar = useCallback(async () => {
-    const convite = conviteRef.current;
-    if (!convite) {
-      // Navegador sem `beforeinstallprompt` (Safari, Firefox) ou app já
-      // instalado: sobra o caminho reserva.
-      void instalarAtendimentoApp();
-      return;
-    }
-    conviteRef.current = null; // o evento é de uso único
-    try {
-      await convite.prompt();
-      const { outcome } = await convite.userChoice;
-      if (outcome === 'accepted') { markAtendimentoAppInstalled(); setVisivel(false); }
-    } catch {
-      void instalarAtendimentoApp();
-    }
+  const instalar = useCallback(() => {
+    void instalarAtendimentoApp();
   }, []);
 
   if (!visivel) return null;
 
   return (
-    <div ref={reguaRef} data-atendimento-invite
+    <div data-atendimento-invite
       className="flex-shrink-0 flex items-center gap-2.5 border-b border-emerald-100 bg-emerald-50/70 px-3 sm:px-5 py-2">
       <Download size={15} className="flex-shrink-0 text-emerald-700" />
       <p className="min-w-0 flex-1 text-[12.5px] leading-snug text-emerald-900">
@@ -116,7 +73,8 @@ export const AtendimentoAppInvite: React.FC = () => {
         </span>
       </p>
       <button
-        onClick={() => void instalar()}
+        onClick={instalar}
+        title="Abre o Atendimento em janela própria, onde o navegador oferece a instalação"
         className="flex-shrink-0 rounded-lg bg-emerald-600 px-3 py-1 text-[12px] font-semibold text-white transition hover:bg-emerald-700 active:scale-95"
       >
         Instalar
