@@ -16,7 +16,10 @@
  * Dedup: contatos @lid escondem o número real (vem em remoteJidAlt). Como o
  * agente pode ter aberto a conversa via <telefone>@s.whatsapp.net, casamos
  * também pelo telefone real (variantes do 9º dígito) para não duplicar a mesma
- * pessoa em duas threads.
+ * pessoa em duas threads. Quando NEM o telefone vem (a Evolution reentrega a
+ * mesma mensagem, primeiro só com o LID e um segundo depois já resolvida), a
+ * defesa é a idempotência por CANAL — ver `jaProcessada` — mais a citação da
+ * mensagem respondida, que aponta a thread certa sem depender de telefone.
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
@@ -25,6 +28,9 @@ import {
   isAbsenceCooldownActive,
 } from '../_shared/absence-cooldown.ts';
 import { slimWaRaw } from '../_shared/wa-raw.ts';
+import { desembrulharMensagem, lerConteudoNativo } from '../_shared/wa-native-content.ts';
+import { classificarReabertura } from '../_shared/wa-reopen.ts';
+import { ehTelefoneReal, patchIdentidade, stanzaIdCitado } from '../_shared/wa-identity.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
@@ -172,7 +178,7 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   // conta conectada — nunca deve virar `contact_name` (ver guarda mais abaixo).
   const pushName: string | null = m?.pushName || null;
 
-  const msg = m?.message || {};
+  const msg = desembrulharMensagem(m?.message || {});
 
   // ── Revogação ("apagar para todos" feito no aparelho) ──
   // Chega como uma mensagem normal cujo conteúdo é um protocolMessage REVOKE
@@ -233,7 +239,29 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
     type = 'document'; content = dm.caption || null; mediaNode = dm; mediaMime = dm.mimetype || 'application/octet-stream'; fileName = dm.fileName || null;
   }
   else if (msg.stickerMessage) { type = 'sticker'; mediaNode = msg.stickerMessage; mediaMime = msg.stickerMessage.mimetype || 'image/webp'; }
-  else { content = null; }
+
+  // ── Tipos NATIVOS sem arquivo ────────────────────────────────────────────
+  // Tudo daqui para baixo caía no `else` final e virava `type='text'` com
+  // `content=null` — a bolha branca. Contato, localização, enquete, reação e,
+  // sobretudo, as mensagens de EMPRESA (botões, listas, templates, fluxos), que
+  // são a maioria: loja, banco e transportadora falam por menu, não por texto
+  // solto. A leitura mora em `wa-native-content.ts`, compartilhada com o
+  // backfill das que já ficaram em branco no banco.
+  //
+  // Não há coluna nova: cada uma vira texto legível em `content`, e o `type` só
+  // diz à bolha que moldura desenhar.
+  else {
+    const nativa = lerConteudoNativo(msg);
+    if (nativa) { type = nativa.type; content = nativa.content; }
+    // Nada reconhecido. Marcar como `unsupported` é melhor do que fingir que é
+    // texto: a bolha diz "abra no WhatsApp" em vez de aparecer vazia, e no banco
+    // fica registrado que chegou ALGUMA coisa naquele instante.
+    //
+    // O texto vai em `content` (e não fica nulo) porque a prévia da conversa é
+    // montada por gatilho no banco a partir dessa coluna: com nulo, a linha da
+    // inbox ficaria em branco do mesmo jeito que a bolha ficava.
+    else { type = 'unsupported'; content = 'Mensagem não suportada'; }
+  }
 
   // Duração de áudio/vídeo, quando a Evolution informa. Vem de graça no payload
   // e é o que permite o aviso dizer "Mensagem de voz · 0:12" em vez de deixar a
@@ -294,19 +322,20 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
 
   // P1.2 — Reabertura INTELIGENTE de conversas encerradas.
   // Reabrir em TODA mensagem criava loop: encerro → cliente responde "obrigado"/"tá
-  // bom" (cortesia de despedida) → reabre → encerro de novo. Agora classificamos a
-  // intenção: só reabre se for uma NOVA demanda; cortesia mantém encerrada (sem voltar
-  // à fila). Ao reabrir, LIBERA o atendente anterior (volta à triagem) e mantém o setor.
-  let keptClosed = false;
+  // bom" (cortesia de despedida) → reabre → encerro de novo. Por isso classificamos
+  // a intenção (ver _shared/wa-reopen.ts): cortesia clara mantém encerrada, mas
+  // passadas as horas de silêncio da regra de SESSÃO qualquer mensagem — inclusive
+  // um "oi" sozinho — é contato NOVO e reabre, sem IA e sem perguntar nada.
+  // Ao reabrir, LIBERA o atendente anterior (volta à triagem) e mantém o setor.
   if (!fromMe && conv.status === 'closed') {
     const decision = await classifyReopen(admin, conv.id, content, type, waTimestamp);
     if (decision === 'reopen') {
       await reopenToQueue(admin, conv.id);
       conv = { ...conv, status: 'open' };
     } else if (decision === 'ask') {
-      // Em dúvida (nem cortesia clara, nem demanda clara): em vez de adivinhar,
-      // PERGUNTA ao cliente e mantém encerrada. Se já perguntamos há pouco e ele
-      // continua ambíguo, escala para humano (reabre na fila).
+      // Em dúvida (nem cortesia clara, nem demanda clara, ainda DENTRO da mesma
+      // sessão): em vez de adivinhar, PERGUNTA ao cliente e mantém encerrada. Se
+      // já perguntamos há pouco e ele continua ambíguo, escala para humano.
       const { data: cc } = await admin.from('whatsapp_conversations')
         .select('reopen_prompt_sent_at').eq('id', conv.id).maybeSingle();
       const askedAt = cc?.reopen_prompt_sent_at ? new Date(cc.reopen_prompt_sent_at).getTime() : 0;
@@ -326,11 +355,9 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
           await admin.from('whatsapp_conversations')
             .update({ reopen_prompt_sent_at: new Date().toISOString() }).eq('id', conv.id);
         }
-        keptClosed = true;
       }
-    } else {
-      keptClosed = true; // cortesia clara → mantém encerrada
     }
+    // 'keep' (cortesia clara) → continua encerrada, sem voltar à fila.
   }
 
   // Foto de perfil: só busca quando ainda não temos (evita chamadas excessivas).
@@ -523,118 +550,54 @@ async function waSendText(convId: string, text: string): Promise<string | null> 
  *   'keep'   = só cortesia/despedida → mantém encerrada.
  *   'reopen' = nova demanda clara    → reabre na fila.
  *   'ask'    = ambíguo               → pergunta ao cliente (na dúvida, pergunta).
- * Heurística barata resolve o óbvio; a IA (com histórico) decide o resto.
+ *
+ * A regra pura (texto + tempo de silêncio) vive em `_shared/wa-reopen.ts` e tem
+ * teste; aqui ficam só as idas ao banco e o desempate por IA.
  */
 async function classifyReopen(admin: any, convId: string, text: string | null, type: string, messageTsIso?: string): Promise<ReopenDecision> {
-  const raw = (text || '').trim();
-  // Mídia sem legenda (foto/áudio/documento) tende a ser nova demanda → reabre.
-  if (!raw) return type !== 'text' ? 'reopen' : 'keep';
+  const silencio = await minutosDeSilencio(admin, convId, messageTsIso);
+  const decisao = classificarReabertura({ texto: text, tipo: type, minutosDeSilencio: silencio });
+  if (decisao !== 'ia') return decisao;
 
-  const norm = raw.toLowerCase()
-    // Remove acentos. O range vai escapado (̀–ͯ = bloco dos acentos
-    // combinantes) porque os caracteres crus são INVISÍVEIS no editor: a classe
-    // aparecia como dois colchetes com um traço no meio, indistinguível de um
-    // erro de digitação, e qualquer cópia/colagem pelo caminho podia comê-la sem
-    // deixar rastro.
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-
-  // Palavras de cortesia/agradecimento/confirmação (mensagem curta só com elas = fim).
-  const COURTESY = new Set([
-    'obrigado', 'obrigada', 'obg', 'obgd', 'vlw', 'valeu', 'ok', 'okay', 'blz',
-    'beleza', 'isso', 'entendi', 'entendido', 'certo', 'combinado', 'perfeito',
-    'otimo', 'otima', 'show', 'joia', 'grato', 'grata', 'tchau', 'agradecido',
-    'agradecida', 'disponha', 'sim', 'uhum', 'aham', 'top', 'maravilha', 'gratidao',
-  ]);
-  // Frases curtas de despedida/confirmação (match exato do texto normalizado).
-  const PHRASES = new Set([
-    'ta bom', 'ta otimo', 'ta certo', 'tudo bem', 'tudo certo', 'tudo otimo',
-    'de nada', 'muito obrigado', 'muito obrigada', 'isso mesmo', 'era so isso',
-    'so isso', 'nada nao', 'por nada', 'ate mais', 'ate logo', 'ate breve',
-    'muito obrigado mesmo', 'obrigado mesmo', 'ok obrigado', 'ta bom obrigado',
-  ]);
-  const GREETINGS = new Set([
-    'oi', 'oii', 'oiii', 'oiiii', 'ola', 'olaa', 'olaaa', 'opa', 'eai',
-    'bom dia', 'boa tarde', 'boa noite',
-  ]);
-
-  if (PHRASES.has(norm)) return 'keep';
-  const words = norm.split(' ').filter(Boolean);
-  if (words.length > 0 && words.length <= 4 && words.every((w) => COURTESY.has(w))) return 'keep';
-
-  // Nova demanda explícita — não vale a pena mandar para IA.
-  if (
-    /^eu tenho (outra )?duvida$/.test(norm) ||
-    /^tenho (outra )?duvida$/.test(norm) ||
-    /^estou com (uma )?duvida$/.test(norm) ||
-    /^preciso de ajuda$/.test(norm) ||
-    /^quero tirar (uma )?duvida$/.test(norm) ||
-    /^posso tirar (uma )?duvida$/.test(norm) ||
-    /^tenho uma pergunta$/.test(norm) ||
-    /^preciso falar com voces$/.test(norm)
-  ) return 'reopen';
-
-  // Pergunta explícita → quase sempre nova demanda.
-  if (raw.includes('?')) return 'reopen';
-
-  // Cumprimento enviado muito depois do encerramento (ou depois de silêncio real
-  // após o encerramento) tende a ser uma nova retomada de contato.
-  if (GREETINGS.has(norm)) {
-    const timingDecision = await classifyGreetingByTiming(admin, convId, messageTsIso);
-    if (timingDecision) return timingDecision;
-  }
-
-  // Ambíguo → IA classifica COM contexto (resolve fragmentação: "obrigado" + "meu"
-  // + "amigo" em mensagens separadas é uma despedida, não 3 novas demandas).
-  return await classifyReopenWithAI(admin, convId, raw);
+  // Ambíguo DENTRO da mesma sessão → IA classifica COM contexto (resolve
+  // fragmentação: "obrigado" + "meu" + "amigo" em mensagens separadas é uma
+  // despedida, não 3 novas demandas).
+  return await classifyReopenWithAI(admin, convId, (text || '').trim());
 }
 
 /**
- * Reavalia cumprimentos simples ("oi", "olá", etc.) usando tempo:
- * - se chegaram um bom tempo após o fechamento, reabrem;
- * - se chegaram após um silêncio real depois de interações pós-fechamento, reabrem.
- * Retorna null quando o tempo não é suficiente para decidir sozinho.
+ * Há quanto tempo o CLIENTE está calado nesta conversa encerrada: conta do
+ * encerramento ou da última mensagem que ele mandou depois dele, o que for mais
+ * recente. Mensagens automáticas nossas (ausência, pergunta de reabertura) não
+ * entram — senão elas reiniciariam o relógio e a conversa nunca envelheceria.
+ *
+ * Devolve null quando não dá para saber (conversa encerrada sem `closed_at`);
+ * aí a decisão volta a depender só do texto e da IA.
  */
-async function classifyGreetingByTiming(
-  admin: any,
-  convId: string,
-  messageTsIso?: string,
-): Promise<ReopenDecision | null> {
-  const currentMs = messageTsIso ? new Date(messageTsIso).getTime() : Date.now();
-  if (!Number.isFinite(currentMs)) return null;
+async function minutosDeSilencio(admin: any, convId: string, messageTsIso?: string): Promise<number | null> {
+  const agoraMs = messageTsIso ? new Date(messageTsIso).getTime() : Date.now();
+  if (!Number.isFinite(agoraMs)) return null;
 
   const { data: conv } = await admin.from('whatsapp_conversations')
     .select('closed_at')
     .eq('id', convId)
     .maybeSingle();
-  const closedMs = conv?.closed_at ? new Date(conv.closed_at).getTime() : 0;
-  if (!closedMs) return null;
+  const fechadaMs = conv?.closed_at ? new Date(conv.closed_at).getTime() : 0;
+  if (!fechadaMs) return null;
 
-  // Se o cliente volta a mandar um simples "oi" vários minutos depois do
-  // encerramento, isso é retomada de contato, não cortesia.
-  const minutesSinceClosed = (currentMs - closedMs) / 60_000;
-  if (minutesSinceClosed >= 10) return 'reopen';
-
-  const { data: inboundAfterClose } = await admin.from('whatsapp_messages')
+  const { data: entradasApos } = await admin.from('whatsapp_messages')
     .select('wa_timestamp')
     .eq('conversation_id', convId)
     .eq('direction', 'in')
     .gt('wa_timestamp', conv.closed_at)
     .order('wa_timestamp', { ascending: false })
     .limit(1);
-
-  const previousInboundMs = inboundAfterClose?.[0]?.wa_timestamp
-    ? new Date(inboundAfterClose[0].wa_timestamp).getTime()
+  const ultimaEntradaMs = entradasApos?.[0]?.wa_timestamp
+    ? new Date(entradasApos[0].wa_timestamp).getTime()
     : 0;
 
-  // Se já houve mensagens pós-fechamento e agora houve nova retomada depois de
-  // alguns minutos de silêncio, reabre para humano/fila.
-  if (previousInboundMs && currentMs > previousInboundMs) {
-    const minutesSincePreviousInbound = (currentMs - previousInboundMs) / 60_000;
-    if (minutesSincePreviousInbound >= 10) return 'reopen';
-  }
-
-  return null;
+  const referenciaMs = Math.max(fechadaMs, Number.isFinite(ultimaEntradaMs) ? ultimaEntradaMs : 0);
+  return Math.max(0, (agoraMs - referenciaMs) / 60_000);
 }
 
 /**
