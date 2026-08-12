@@ -13,8 +13,8 @@
  * então o aviso do que foi descartado aparece enquanto se digita, e não depois
  * de um atendimento estranho.
  */
-import React, { useMemo } from 'react';
-import { AlertTriangle, ArrowDown, ArrowUp, Plus, Sparkles, X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ArrowDown, ArrowUp, Braces, Plus, Sparkles, SlidersHorizontal, X } from 'lucide-react';
 import {
   WA_AI_PLAYBOOK_SEM_REGISTRO,
   normalizeWaAiPlaybook,
@@ -83,6 +83,36 @@ export const AiPlaybookEditor: React.FC<Props> = ({ value, onChange }) => {
     () => (value && typeof value === 'object' && !Array.isArray(value) ? value as DraftPlaybook : {}),
     [value]);
 
+  // O roteiro É um JSON, e é assim que ele fica gravado. A tela mostra campos
+  // porque uma vírgula fora do lugar num JSON digitado à mão vira uma triagem
+  // quebrada — mas esconder o formato tira de você a forma mais rápida de
+  // conferir, copiar e colar um roteiro inteiro. As duas visões editam o MESMO
+  // dado, e a de JSON só entrega o que for JSON válido.
+  const [modoJson, setModoJson] = useState(false);
+  const [textoJson, setTextoJson] = useState('');
+  const [erroJson, setErroJson] = useState<string | null>(null);
+
+  // Enquanto o texto não é editado, ele acompanha o que os campos mudam.
+  useEffect(() => {
+    if (!modoJson) setTextoJson(JSON.stringify(draft, null, 2));
+  }, [draft, modoJson]);
+
+  const aplicarJson = (texto: string) => {
+    setTextoJson(texto);
+    if (!texto.trim()) { setErroJson(null); onChange({}); return; }
+    try {
+      const lido = JSON.parse(texto);
+      if (!lido || typeof lido !== 'object' || Array.isArray(lido)) {
+        setErroJson('O roteiro precisa ser um objeto — começa com { e termina com }.');
+        return;
+      }
+      setErroJson(null);
+      onChange(lido as Record<string, unknown>);
+    } catch (err) {
+      setErroJson(err instanceof Error ? err.message : 'JSON inválido.');
+    }
+  };
+
   const fields = draft.fields || [];
   const stages = draft.stages || [];
   const cuts = draft.cuts || [];
@@ -130,14 +160,48 @@ export const AiPlaybookEditor: React.FC<Props> = ({ value, onChange }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      <p style={{ fontSize: '11.5px', color: '#6b7280', margin: 0 }}>
-        O roteiro é o que o sistema confere sozinho: quais informações a conversa precisa reunir,
-        em que ordem perguntar e quando o caso sai. O texto do agente continua dizendo <em>como</em>{' '}
-        conversar — aqui fica só o que precisa ser contado, e por isso não pode depender de o
-        modelo lembrar.
-      </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+        <p style={{ fontSize: '11.5px', color: '#6b7280', margin: 0, flex: 1 }}>
+          O roteiro é o que o sistema confere sozinho: quais informações a conversa precisa reunir,
+          em que ordem perguntar e quando o caso sai. O texto do agente continua dizendo <em>como</em>{' '}
+          conversar — aqui fica só o que precisa ser contado, e por isso não pode depender de o
+          modelo lembrar.
+        </p>
+        <button type="button" style={{ ...miniButton, flexShrink: 0 }}
+          onClick={() => { setErroJson(null); setModoJson(v => !v); }}>
+          {modoJson ? <><SlidersHorizontal size={12} /> Ver em campos</> : <><Braces size={12} /> Ver em JSON</>}
+        </button>
+      </div>
 
-      {vazio && (
+      {modoJson && (
+        <div>
+          <textarea
+            spellCheck={false}
+            style={{
+              ...fieldStyle, minHeight: '340px', resize: 'vertical',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '11.5px',
+              lineHeight: 1.5, borderColor: erroJson ? '#fca5a5' : '#d1d5db',
+            }}
+            value={textoJson}
+            onChange={e => aplicarJson(e.target.value)}
+          />
+          {erroJson ? (
+            <p style={{
+              display: 'flex', gap: '6px', alignItems: 'center',
+              fontSize: '11.5px', color: '#991b1b', marginTop: '6px',
+            }}>
+              <AlertTriangle size={12} /> {erroJson} — nada foi alterado enquanto isto não fechar.
+            </p>
+          ) : (
+            <p style={{ fontSize: '10.5px', color: '#9ca3af', marginTop: '6px' }}>
+              É exatamente o que fica gravado em <code>whatsapp_ai_assistants.playbook</code> e o que
+              vira o formato de resposta obrigatório do modelo. Dá para colar um roteiro inteiro aqui.
+            </p>
+          )}
+        </div>
+      )}
+
+      {!modoJson && vazio && (
         <div style={{
           ...cardStyle, background: '#fffbf5', border: '1px solid #fed7aa',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
@@ -152,7 +216,7 @@ export const AiPlaybookEditor: React.FC<Props> = ({ value, onChange }) => {
         </div>
       )}
 
-      {avisos.length > 0 && (
+      {!modoJson && avisos.length > 0 && (
         <div style={{ ...cardStyle, background: '#fef2f2', border: '1px solid #fecaca' }}>
           {avisos.map(a => (
             <div key={a} style={{
@@ -165,6 +229,7 @@ export const AiPlaybookEditor: React.FC<Props> = ({ value, onChange }) => {
         </div>
       )}
 
+      {!modoJson && (<>
       {/* ── Campos ── */}
       <section>
         <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -492,6 +557,8 @@ export const AiPlaybookEditor: React.FC<Props> = ({ value, onChange }) => {
           })}
         </div>
       </section>
+
+      </>)}
 
       {lido && (
         <p style={{ fontSize: '11px', color: '#6b7280', margin: 0 }}>
