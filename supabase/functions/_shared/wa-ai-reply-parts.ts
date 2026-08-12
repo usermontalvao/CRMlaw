@@ -180,3 +180,60 @@ export function waAiPartPauseMs(part: string): number {
   const ms = WA_AI_PART_PAUSE_MIN_MS + Math.round(chars * 45);
   return Math.max(WA_AI_PART_PAUSE_MIN_MS, Math.min(WA_AI_PART_PAUSE_MAX_MS, ms));
 }
+
+/**
+ * Uma pergunta curta é fórmula de cortesia — "Tudo bem?", "Certo?" —, não a
+ * pergunta da rodada. Sem este piso, a saudação padrão perderia o "qual é o seu
+ * nome?", porque o "Tudo bem?" teria gasto a cota.
+ */
+const MIN_PALAVRAS_PERGUNTA = 4;
+
+function ehPerguntaDeVerdade(frase: string): boolean {
+  const limpa = frase.trim();
+  if (!/[?][)\]"'”’»]*$/.test(limpa)) return false;
+  return (limpa.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length >= MIN_PALAVRAS_PERGUNTA;
+}
+
+/**
+ * Deixa passar UMA pergunta por rodada, cortando as seguintes.
+ *
+ * Existe porque a regra escrita no prompt não segurou. Três vezes o modelo
+ * emendou duas perguntas antes de esperar qualquer resposta — inclusive dentro
+ * do mesmo parágrafo, onde nem a quebra em blocos ajuda. Uma pergunta por vez é
+ * a diferença entre uma conversa e um formulário, então vira garantia do
+ * backend, não pedido.
+ *
+ * Corta só a PERGUNTA. O que vem depois dela sem ser pergunta continua — é o que
+ * preserva "Você tem alguma prova? Pode ser Pix, conversa de WhatsApp ou foto",
+ * onde a segunda frase são os exemplos, não outra pergunta. Itens de lista
+ * passam inteiros pelo mesmo motivo.
+ *
+ * O que é cortado não se perde: continua nas pendências da memória, e sai na
+ * rodada seguinte — que é exatamente onde deveria ter saído.
+ */
+export function waAiKeepOneQuestion(text: string): string {
+  const linhas = String(text ?? '').replace(/\r\n?/g, '\n').split('\n');
+  let jaPerguntou = false;
+  const saida: string[] = [];
+
+  for (const linha of linhas) {
+    const original = linha.trim();
+    if (!original || LIST_ITEM.test(original)) {
+      saida.push(linha);
+      continue;
+    }
+    const mantidas: string[] = [];
+    for (const frase of linha.split(/(?<=[.!?…])\s+/)) {
+      if (!ehPerguntaDeVerdade(frase)) { mantidas.push(frase); continue; }
+      if (jaPerguntou) continue;
+      jaPerguntou = true;
+      mantidas.push(frase);
+    }
+    const resultado = mantidas.join(' ').trim();
+    // Linha que existia e virou vazia sai de vez: deixá-la em branco criaria um
+    // separador de bloco e a resposta sairia com uma bolha fantasma.
+    if (resultado) saida.push(resultado);
+  }
+
+  return saida.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}

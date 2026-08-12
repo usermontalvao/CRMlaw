@@ -6,6 +6,7 @@ import {
   WA_AI_PART_PAUSE_MAX_MS,
   WA_AI_PART_PAUSE_MIN_MS,
   splitWaAiReply,
+  waAiKeepOneQuestion,
   waAiPartPauseMs,
 } from './waAiReplyParts.ts';
 
@@ -156,4 +157,49 @@ test('a pausa entre as partes é de alguns segundos, não de milissegundos', () 
   // Mensagem curta chega perto do piso, nunca abaixo dele.
   const curta = waAiPartPauseMs('Oi');
   assert.ok(curta >= WA_AI_PART_PAUSE_MIN_MS && curta < WA_AI_PART_PAUSE_MIN_MS + 500, `piso furado: ${curta}`);
+});
+
+// ── Uma pergunta por rodada ─────────────────────────────────────────────────
+
+test('a segunda pergunta da rodada é cortada, mesmo no mesmo parágrafo', () => {
+  // Caso real de 12/08/2026: o modelo emendou as duas no mesmo bloco, e o
+  // cliente recebeu as duas antes de responder qualquer coisa.
+  const bruto = 'Obrigado, Carlos.\n\nPara qual empresa ou pessoa você trabalhou sem registro? '
+    + 'Foi uma empresa particular ou um órgão público?';
+  const limpo = waAiKeepOneQuestion(bruto);
+  assert.match(limpo, /Para qual empresa ou pessoa você trabalhou sem registro\?/);
+  assert.doesNotMatch(limpo, /órgão público/);
+  assert.match(limpo, /^Obrigado, Carlos\./);
+});
+
+test('"Tudo bem?" não gasta a cota da rodada', () => {
+  const saudacao = 'Olá! Tudo bem? Vou fazer algumas perguntas rápidas.\n\nPara começar, qual é o seu nome?';
+  const limpo = waAiKeepOneQuestion(saudacao);
+  assert.match(limpo, /Tudo bem\?/);
+  assert.match(limpo, /qual é o seu nome\?/);
+});
+
+test('o que vem depois da pergunta sem ser pergunta continua', () => {
+  const comExemplos = 'Você tem alguma prova desse trabalho? Pode ser Pix, conversa de WhatsApp ou foto.';
+  assert.equal(waAiKeepOneQuestion(comExemplos), comExemplos);
+});
+
+test('itens de lista passam inteiros', () => {
+  const lista = 'Vou precisar destes documentos:\n- Documento com foto\n- CTPS Digital\n\nPode mandar por aqui?';
+  const limpo = waAiKeepOneQuestion(lista);
+  assert.match(limpo, /- Documento com foto/);
+  assert.match(limpo, /- CTPS Digital/);
+  assert.match(limpo, /Pode mandar por aqui\?/);
+});
+
+test('resposta sem pergunta nenhuma sai intacta', () => {
+  const aviso = 'Certo. Vou passar seu caso para a equipe agora.';
+  assert.equal(waAiKeepOneQuestion(aviso), aviso);
+});
+
+test('linha que vira vazia não deixa bolha fantasma', () => {
+  const bruto = 'Qual é o seu nome?\nVocê trabalhou quanto tempo nessa empresa?';
+  const limpo = waAiKeepOneQuestion(bruto);
+  assert.equal(limpo, 'Qual é o seu nome?');
+  assert.equal(splitWaAiReply(limpo).length, 1);
 });

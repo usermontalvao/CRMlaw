@@ -71,7 +71,7 @@ import {
 } from '../_shared/wa-ai-gate.ts';
 import { WA_AI_DIALOGUE_QUALITY_RULES } from '../_shared/wa-ai-dialogue.ts';
 import { waAiAnnotateDates, waAiDateBlock } from '../_shared/wa-ai-now.ts';
-import { splitWaAiReply, waAiPartPauseMs } from '../_shared/wa-ai-reply-parts.ts';
+import { splitWaAiReply, waAiKeepOneQuestion, waAiPartPauseMs } from '../_shared/wa-ai-reply-parts.ts';
 import {
   WA_AI_RESET_COMMANDS,
   resetWaAiConversationState,
@@ -387,7 +387,7 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     }
   }
 
-  let reply = (completion.text || '').trim();
+  let reply = waAiKeepOneQuestion((completion.text || '').trim());
   if (reply.length > WA_AI_MAX_REPLY_CHARS) reply = `${reply.slice(0, WA_AI_MAX_REPLY_CHARS - 1)}…`;
   const replyParts = splitWaAiReply(reply);
 
@@ -1205,7 +1205,11 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // ── Resposta ──
   // `enviar_documento` já entrega uma mensagem determinística com o token
   // correto. Não mande também a prosa livre da segunda volta do modelo.
-  let reply = customerMessageSent ? '' : (completion.text || '').trim();
+  // A pergunta única é cortada aqui, e não pedida no prompt: o modelo já emendou
+  // duas perguntas três vezes, inclusive no mesmo parágrafo. A regra continua
+  // escrita para ele acertar sozinho; o corte garante que, quando não acertar,
+  // o cliente não receba um interrogatório.
+  let reply = customerMessageSent ? '' : waAiKeepOneQuestion((completion.text || '').trim());
   if (reply.length > WA_AI_MAX_REPLY_CHARS) reply = `${reply.slice(0, WA_AI_MAX_REPLY_CHARS - 1)}…`;
 
   // Uma resposta com saudação e pergunta sai como DUAS mensagens, do jeito que
