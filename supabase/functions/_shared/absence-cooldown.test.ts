@@ -3,7 +3,6 @@ import test from 'node:test';
 import {
   ABSENCE_COOLDOWN_HOURS,
   ABSENCE_COOLDOWN_MS,
-  absenceCooldownCutoff,
   isAbsenceCooldownActive,
   absenceSuppressedByAi,
   type WaAbsenceAiState,
@@ -26,13 +25,6 @@ test('libera novo aviso ao completar a janela', () => {
   );
   assert.equal(isAbsenceCooldownActive(null, NOW), false);
   assert.equal(isAbsenceCooldownActive('data-invalida', NOW), false);
-});
-
-test('calcula o corte usado na reserva atômica', () => {
-  assert.equal(
-    absenceCooldownCutoff(NOW),
-    new Date(NOW - ABSENCE_COOLDOWN_MS).toISOString(),
-  );
 });
 
 // ── Aviso fora do horário × agente de IA ────────────────────────────────────

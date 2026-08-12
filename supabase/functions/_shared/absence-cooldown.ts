@@ -18,9 +18,10 @@ export function isAbsenceCooldownActive(
   return nowMs - sentAtMs < ABSENCE_COOLDOWN_MS;
 }
 
-export function absenceCooldownCutoff(nowMs = Date.now()): string {
-  return new Date(nowMs - ABSENCE_COOLDOWN_MS).toISOString();
-}
+// O CORTE da reserva não mora mais aqui: quem decide se a janela venceu é a
+// função `wa_absence_claim` no banco, com o relógio do Postgres. Montar o
+// mesmo filtro no cliente exigia `.update().or(...)`, que o PostgREST recusa
+// com 42703 e deixava o aviso sem sair (12/08/2026).
 
 // ── Quando a IA está atendendo ──────────────────────────────────────────────
 

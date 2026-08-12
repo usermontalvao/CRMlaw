@@ -24,7 +24,6 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
   ABSENCE_COOLDOWN_HOURS,
-  absenceCooldownCutoff,
   absenceSuppressedByAi,
   isAbsenceCooldownActive,
 } from '../_shared/absence-cooldown.ts';
@@ -754,36 +753,38 @@ async function maybeAutoSendAbsence(admin: any, instanceId: string, convId: stri
       return;
     }
 
-    // Reserva o disparo ANTES de chamar a Evolution. O UPDATE condicional é a
-    // trava atômica: se dois webhooks da mesma conversa chegarem juntos, somente
-    // um consegue atualizar a linha e o outro encerra sem enviar duplicado.
-    const claimedAt = new Date().toISOString();
-    const cutoff = absenceCooldownCutoff(Date.parse(claimedAt));
-    const { data: claim, error: claimError } = await admin
-      .from('whatsapp_conversations')
-      .update({ absence_sent_at: claimedAt })
-      .eq('id', convId)
-      .eq('is_blocked', false)
-      .eq('absence_suppressed', false)
-      .or(`absence_sent_at.is.null,absence_sent_at.lt.${cutoff}`)
-      .select('id')
-      .maybeSingle();
+    // Reserva o disparo ANTES de chamar a Evolution: se dois webhooks da mesma
+    // conversa chegarem juntos, somente um recebe a marca e o outro encerra sem
+    // enviar duplicado.
+    //
+    // A condição inteira mora no banco (`wa_absence_claim`) de propósito. A
+    // versão anterior montava o mesmo filtro aqui com `.update().or(...)`, e o
+    // PostgREST responde 42703 — "column absence_sent_at does not exist" — a
+    // esse par, embora o mesmo filtro funcione num `.select()`. Resultado: o
+    // aviso parava de sair sem que nada além do log acusasse. Nunca voltar a
+    // usar `.or()` junto de `.update()`.
+    const { data: claimedAt, error: claimError } = await admin.rpc('wa_absence_claim', {
+      p_conversation_id: convId,
+      p_cooldown_hours: ABSENCE_COOLDOWN_HOURS,
+    });
     if (claimError) {
-      console.error('absence cooldown claim failed', claimError);
+      console.error('absence cooldown claim failed', convId, claimError);
       return;
     }
-    if (!claim) return;
+    // NULL = a conversa foi bloqueada/suprimida ou outro webhook chegou primeiro.
+    if (!claimedAt) return;
 
     const failure = await waSendText(convId, ch.absence_message);
     if (failure) {
       console.error('absence auto-send failed', convId, failure);
       // Falha confirmada: devolve a reserva sem apagar uma marca posterior. Como
-      // agora o envio passa pelo `evolution-send`, uma falha de verdade também
-      // deixa rastro — a mensagem não é gravada e o motivo vai para o log.
-      await admin.from('whatsapp_conversations')
-        .update({ absence_sent_at: conv.absence_sent_at || null })
-        .eq('id', convId)
-        .eq('absence_sent_at', claimedAt);
+      // o envio passa pelo `evolution-send`, uma falha de verdade também deixa
+      // rastro — a mensagem não é gravada e o motivo vai para o log.
+      await admin.rpc('wa_absence_release', {
+        p_conversation_id: convId,
+        p_claimed_at: claimedAt,
+        p_previous: conv.absence_sent_at || null,
+      });
       return;
     }
     console.info(`absence auto-send claimed for ${ABSENCE_COOLDOWN_HOURS}h`, convId);
