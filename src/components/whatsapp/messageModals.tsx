@@ -1,6 +1,6 @@
 // Modais ligados à composição de mensagens: seletor de modelos/macros e
 // agendamento de mensagem. Extraídos de WhatsAppModule.tsx — autocontidos.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageSquare, CalendarClock, Plus, Loader2, Trash2, Pencil, Save, X } from 'lucide-react';
 import {
   WaDialog, WaDialogBody, WaDialogActions, WaField, WaFieldStack,
@@ -187,6 +187,17 @@ export const ScheduleMessageModal: React.FC<{
   const [text, setText] = useState(initialText);
   const [when, setWhen] = useState('');
   const [saving, setSaving] = useState(false);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+
+  // Quem abre "Agendar mensagem" vem para escrever: o cursor já nasce no campo
+  // da mensagem, e depois do rascunho que veio do compositor — não antes dele.
+  // Roda depois do foco inicial do WaDialog (efeito do filho vem primeiro).
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
 
   // datetime-local mínimo: agora + 90s (buffer de envio). Recomputa a cada 30s para
   // que o input não aceite datas que já ficaram no passado enquanto o modal estava aberto.
@@ -238,7 +249,7 @@ export const ScheduleMessageModal: React.FC<{
       <WaDialogBody>
         <WaFieldStack>
           <WaField label="Mensagem" htmlFor="wa-sched-text">
-            <textarea id="wa-sched-text" value={text} onChange={e => setText(e.target.value)} rows={3}
+            <textarea ref={textRef} id="wa-sched-text" value={text} onChange={e => setText(e.target.value)} rows={3}
               placeholder="Texto a enviar…" className={waTextarea} />
           </WaField>
           <WaField label="Data e hora" htmlFor="wa-sched-when" hint="Precisa ser pelo menos 1 minuto no futuro.">

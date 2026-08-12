@@ -439,10 +439,6 @@ export const MyScheduledList: React.FC<{
                   </span>
                 </div>
 
-                {s.body && (
-                  <WaRichText text={privateMode ? maskSensitive(s.body) : s.body} stripSignature
-                    className="block mt-1 text-[12px] text-slate-600 whitespace-pre-wrap break-words line-clamp-2" />
-                )}
                 {isReconnectHold(s) && (
                   <p className="mt-0.5 text-[11px] text-sky-600">Retida porque o canal está fora. Sai sozinha quando reconectar.</p>
                 )}

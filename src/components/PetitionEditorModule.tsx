@@ -7002,11 +7002,17 @@ Regras:
     }
   };
 
-  const recentDocuments = useMemo<RecentDocumentItem[]>(() => {
+  const recentDocumentsAll = useMemo<RecentDocumentItem[]>(() => {
     const byKey = new Map<string, RecentDocumentItem>();
     const savedById = new Map(savedPetitions.map((petition) => [petition.id, petition]));
 
+    // O histórico da home é de QUEM ESTÁ LOGADO. A biblioteca de petições é do
+    // escritório inteiro, então semear a lista com ela enchia os "recentes" de
+    // cada um com o documento que o colega salvou. Aqui entram só as minhas —
+    // o que eu abri de outra pessoa continua entrando pelo `documentHistory`,
+    // que já é por usuário.
     for (const petition of savedPetitions) {
+      if (!user?.id || petition.created_by !== user.id) continue;
       byKey.set(`petition:${petition.id}`, {
         key: `petition:${petition.id}`,
         source: 'petition',
@@ -7059,8 +7065,17 @@ Regras:
       });
     }
 
+    return Array.from(byKey.values());
+  }, [
+    documentHistory,
+    recentNextcloudAvailability,
+    savedPetitions,
+    user?.id,
+  ]);
+
+  const recentDocuments = useMemo<RecentDocumentItem[]>(() => {
     const normalizedSearch = recentDocumentSearch.trim().toLocaleLowerCase('pt-BR');
-    return Array.from(byKey.values())
+    return recentDocumentsAll
       .filter((item) => recentDocumentSource === 'all' || item.source === recentDocumentSource)
       .filter((item) => {
         if (!normalizedSearch) return true;
@@ -7070,13 +7085,7 @@ Regras:
       })
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 40);
-  }, [
-    documentHistory,
-    recentDocumentSearch,
-    recentDocumentSource,
-    recentNextcloudAvailability,
-    savedPetitions,
-  ]);
+  }, [recentDocumentsAll, recentDocumentSearch, recentDocumentSource]);
 
   useEffect(() => {
     const paths = Array.from(new Set(
@@ -7128,19 +7137,17 @@ Regras:
     };
   }, [documentHistory]);
 
+  // Os contadores das abas contam a MESMA lista que aparece embaixo. Contando
+  // `savedPetitions` cru, "Jurius (37)" convivia com três linhas na tela.
   const recentDocumentTotals = useMemo(() => {
-    const petitionKeys = new Set(savedPetitions.map((petition) => petition.id));
-    const nextcloudKeys = new Set(
-      documentHistory
-        .filter((entry) => entry.source === 'nextcloud')
-        .map((entry) => entry.source_key),
-    );
-    return {
-      all: petitionKeys.size + nextcloudKeys.size,
-      petition: petitionKeys.size,
-      nextcloud: nextcloudKeys.size,
-    };
-  }, [documentHistory, savedPetitions]);
+    let petition = 0;
+    let nextcloud = 0;
+    for (const item of recentDocumentsAll) {
+      if (item.source === 'petition') petition += 1;
+      else nextcloud += 1;
+    }
+    return { all: petition + nextcloud, petition, nextcloud };
+  }, [recentDocumentsAll]);
 
   /**
    * Ponte única de proteção contra perda de trabalho. Qualquer ação que troque

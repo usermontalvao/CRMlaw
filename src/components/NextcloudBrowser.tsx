@@ -122,6 +122,28 @@ function nextcloudBrowserSessionKey(userId?: string): string {
   return `${NEXTCLOUD_BROWSER_SESSION_KEY}:${userId || 'local'}`;
 }
 
+/**
+ * Preferências de tela do explorador (modo de exibição, ordenação, painel de
+ * detalhes, largura da barra lateral) também são POR USUÁRIO — como o "salve
+ * onde parou" acima. Numa máquina compartilhada do escritório, a chave única
+ * fazia cada um herdar a tela como o colega anterior tinha deixado.
+ */
+function nextcloudPrefKey(name: string, userId?: string): string {
+  return `${name}:${userId || 'local'}`;
+}
+
+/**
+ * Lê a preferência do usuário e, na falta dela, a chave antiga (sem usuário) —
+ * assim ninguém perde o que já tinha configurado na primeira vez que abrir.
+ */
+function readNextcloudPref(name: string, userId?: string): string | null {
+  try {
+    return localStorage.getItem(nextcloudPrefKey(name, userId)) ?? localStorage.getItem(name);
+  } catch {
+    return null;
+  }
+}
+
 function readNextcloudBrowserSession(userId?: string): Partial<NextcloudBrowserSession> {
   if (typeof window === 'undefined') return {};
   try {
@@ -441,7 +463,7 @@ const NextcloudBrowser: React.FC = () => {
   );
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     try {
-      const saved = Number(localStorage.getItem('nextcloud-sidebar-width'));
+      const saved = Number(readNextcloudPref('nextcloud-sidebar-width', myId));
       return Number.isFinite(saved) && saved >= 210 && saved <= 420 ? saved : 260;
     } catch {
       return 260;
@@ -486,20 +508,20 @@ const NextcloudBrowser: React.FC = () => {
 
   // Modo de exibição (lista / blocos), persistido.
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
-    try { return localStorage.getItem('nextcloud-view-mode') === 'grid' ? 'grid' : 'list'; } catch { return 'list'; }
+    try { return readNextcloudPref('nextcloud-view-mode', myId) === 'grid' ? 'grid' : 'list'; } catch { return 'list'; }
   });
   const [sortBy, setSortBy] = useState<NextcloudSortBy>(() => {
     try {
-      const saved = localStorage.getItem('nextcloud-sort-by');
+      const saved = readNextcloudPref('nextcloud-sort-by', myId);
       return saved === 'date' || saved === 'size' || saved === 'type' ? saved : 'name';
     } catch { return 'name'; }
   });
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => {
-    try { return localStorage.getItem('nextcloud-sort-dir') === 'desc' ? 'desc' : 'asc'; } catch { return 'asc'; }
+    try { return readNextcloudPref('nextcloud-sort-dir', myId) === 'desc' ? 'desc' : 'asc'; } catch { return 'asc'; }
   });
   // Painel de detalhes: preferência persistida, como o modo de exibição.
   const [detailsOpen, setDetailsOpen] = useState(() => {
-    try { return localStorage.getItem('nextcloud-details-open') === '1'; } catch { return false; }
+    try { return readNextcloudPref('nextcloud-details-open', myId) === '1'; } catch { return false; }
   });
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [changeFeedRevision, setChangeFeedRevision] = useState(0);
@@ -508,21 +530,21 @@ const NextcloudBrowser: React.FC = () => {
   // arquivo sumido.
   const [typeFilter, setTypeFilter] = useState<NextcloudTypeFilter>('all');
   useEffect(() => {
-    try { localStorage.setItem('nextcloud-details-open', detailsOpen ? '1' : '0'); } catch { /* ignore */ }
-  }, [detailsOpen]);
+    try { localStorage.setItem(nextcloudPrefKey('nextcloud-details-open', myId), detailsOpen ? '1' : '0'); } catch { /* ignore */ }
+  }, [detailsOpen, myId]);
   useEffect(() => {
-    try { localStorage.setItem('nextcloud-view-mode', viewMode); } catch { /* ignore */ }
-  }, [viewMode]);
+    try { localStorage.setItem(nextcloudPrefKey('nextcloud-view-mode', myId), viewMode); } catch { /* ignore */ }
+  }, [viewMode, myId]);
   useEffect(() => {
     try {
-      localStorage.setItem('nextcloud-sort-by', sortBy);
-      localStorage.setItem('nextcloud-sort-dir', sortDir);
+      localStorage.setItem(nextcloudPrefKey('nextcloud-sort-by', myId), sortBy);
+      localStorage.setItem(nextcloudPrefKey('nextcloud-sort-dir', myId), sortDir);
     } catch { /* ignore */ }
-  }, [sortBy, sortDir]);
+  }, [sortBy, sortDir, myId]);
 
   useEffect(() => {
-    try { localStorage.setItem('nextcloud-sidebar-width', String(sidebarWidth)); } catch { /* ignore */ }
-  }, [sidebarWidth]);
+    try { localStorage.setItem(nextcloudPrefKey('nextcloud-sidebar-width', myId), String(sidebarWidth)); } catch { /* ignore */ }
+  }, [sidebarWidth, myId]);
 
   useEffect(() => {
     if (!resizingSidebar) return;

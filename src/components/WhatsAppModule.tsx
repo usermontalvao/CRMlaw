@@ -1915,7 +1915,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             privateMode={privateMode}
             confirm={confirm}
             onReload={reloadMyScheduled}
-            onOpenConversation={id => { setFilter('all'); setSelectedId(id); }}
+            /* Abrir a conversa NÃO troca de aba: voltar para "Todas" trocava a fila
+               de agendadas pela lista inteira e quem estava conferindo os
+               agendamentos perdia o lugar a cada clique. `selected` sai de
+               `conversations` (sem filtro), então a thread abre do mesmo jeito
+               com a aba de agendadas de pé. */
+            onOpenConversation={setSelectedId}
           />
           ) : (
           <ConversationList

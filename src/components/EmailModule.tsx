@@ -3464,6 +3464,7 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
   const [spellIssues, setSpellIssues] = useState<SpellIssue[]>([]);
   const [spellLoading, setSpellLoading] = useState(false);
   const [signaturePresent, setSignaturePresent] = useState(false);
+  const [fileDropActive, setFileDropActive] = useState(false);
   const [spellDecorationsEnabled, setSpellDecorationsEnabled] = useState(true);
   const [spellMenu, setSpellMenu] = useState<{
     x: number;
@@ -3741,10 +3742,49 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
     </button>
   );
   const Sep = () => <span className="mx-1 h-5 w-px flex-none bg-[#e7e5df]" />;
+  // Arrastar arquivo para dentro do corpo (inclusive na resposta) anexa, em vez
+  // de o navegador tentar abrir/soltar o arquivo dentro do contentEditable.
+  const dragHasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types || []).includes('Files');
+
+  const onEditorDragOver = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setFileDropActive(true);
+  };
+
+  const onEditorDragLeave = (e: React.DragEvent) => {
+    // Só desliga ao sair do editor inteiro — trocar de filho dispara dragleave.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setFileDropActive(false);
+  };
+
+  const onEditorDrop = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setFileDropActive(false);
+    onAttach(e.dataTransfer.files);
+  };
+
   const selCls = 'h-7 rounded-md border border-[#e7e5df] bg-white px-1.5 text-[12px] text-zinc-600 outline-none hover:bg-zinc-50 focus:border-amber-400';
 
   return (
-    <div className={`relative flex flex-col rounded-lg border border-[#e7e5df] focus-within:border-amber-400 ${fill ? 'min-h-0 flex-1' : ''}`}>
+    <div
+      onDragOver={onEditorDragOver}
+      onDragEnter={onEditorDragOver}
+      onDragLeave={onEditorDragLeave}
+      onDrop={onEditorDrop}
+      className={`relative flex flex-col rounded-lg border focus-within:border-amber-400 ${fileDropActive ? 'border-amber-400' : 'border-[#e7e5df]'} ${fill ? 'min-h-0 flex-1' : ''}`}
+    >
+      {fileDropActive && (
+        <div className="pointer-events-none absolute inset-0 z-[110] flex items-center justify-center rounded-lg border-2 border-dashed border-amber-400 bg-amber-50/80">
+          <span className="flex items-center gap-2 text-[13px] font-medium text-amber-800">
+            <Paperclip className="h-4 w-4" />
+            Solte para anexar
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-0.5 border-b border-[#f0efe9] px-1.5 py-1.5">
         <div ref={aiPanelRef} className="relative">
           <button type="button" onClick={() => setAiOpen((v) => !v)} title="Escrever com IA"
