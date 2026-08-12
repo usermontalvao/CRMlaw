@@ -25,9 +25,11 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
   ABSENCE_COOLDOWN_HOURS,
   absenceCooldownCutoff,
+  absenceSuppressedByAi,
   isAbsenceCooldownActive,
 } from '../_shared/absence-cooldown.ts';
 import { slimWaRaw } from '../_shared/wa-raw.ts';
+import { triggerWaAiAfterTranscription } from '../_shared/wa-ai-transcription.ts';
 import { desembrulharMensagem, lerConteudoNativo } from '../_shared/wa-native-content.ts';
 import { classificarReabertura } from '../_shared/wa-reopen.ts';
 import { ehTelefoneReal, patchIdentidade, stanzaIdCitado } from '../_shared/wa-identity.ts';
@@ -433,11 +435,12 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
     .select('id').maybeSingle();
 
   // ── Transcrição assíncrona (não bloqueia a resposta do webhook) ──
-  if (inserted?.id && transcriptionStatus === 'pending') {
-    const job = transcribeAudio(admin, inserted.id, storagePath!, mediaMime || 'audio/ogg');
-    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(job);
-    else await job.catch(() => {});
-  }
+  // Para mensagem recebida, a mesma promessa será encadeada ao disparo da IA
+  // mais abaixo. Isso evita o agente ler `[áudio]` enquanto a transcrição já
+  // está sendo produzida em paralelo.
+  const transcriptionJob = inserted?.id && transcriptionStatus === 'pending'
+    ? transcribeAudio(admin, inserted.id, storagePath!, mediaMime || 'audio/ogg')
+    : null;
 
   // ── Mensagem automática de ausência (Fase N; inbound; cooldown 12h) ──
   // Regra de negócio: se o cliente mandou mensagem fora do expediente, ele deve
@@ -449,6 +452,54 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
     else await job.catch(() => {});
   }
 
+  // ── Assistente de IA ──
+  // Só para mensagem RECEBIDA e só quando ela é NOVA (`inserted` vem nulo na
+  // reentrega, que o upsert ignora): é a primeira barreira contra responder duas
+  // vezes à mesma mensagem. A segunda é a chave de idempotência do próprio
+  // agente, e a terceira, o `last_processed_message_id` da sessão.
+  //
+  // Disparo assíncrono e tolerante: quem decide se existe agente, se a IA está
+  // ligada e se a conversa é dela é o `whatsapp-ai-agent`. Qualquer falha aqui é
+  // registrada e ignorada — o WhatsApp precisa continuar funcionando com ou sem
+  // IA, e a conversa já está na fila para um humano.
+  if (!fromMe && inserted?.id) {
+    const job = triggerWaAiAfterTranscription(
+      transcriptionJob,
+      () => dispararAgenteIA(conv.id, inserted.id),
+    );
+    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(job);
+    else await job.catch(() => {});
+  } else if (transcriptionJob) {
+    // Áudio enviado pelo próprio escritório também precisa ser transcrito para
+    // a interface, mas não dispara o agente.
+    if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(transcriptionJob);
+    else await transcriptionJob.catch(() => {});
+  }
+
+}
+
+/**
+ * Acorda o assistente de IA para esta mensagem.
+ *
+ * O agente responde na hora (202) e faz o turno em segundo plano — o debounce
+ * dele chega a um minuto, e segurar o webhook por isso atrasaria a gravação das
+ * mensagens seguintes.
+ */
+async function dispararAgenteIA(conversationId: string, messageId: string) {
+  try {
+    const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/whatsapp-ai-agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+      },
+      body: JSON.stringify({ conversation_id: conversationId, trigger_message_id: messageId }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) console.error('whatsapp-ai-agent respondeu', res.status, conversationId);
+  } catch (err) {
+    console.error('falha ao acionar whatsapp-ai-agent', conversationId, err);
+  }
 }
 
 // ── Telefone (espelha src/services/whatsapp/shared.ts) ──
@@ -694,6 +745,15 @@ async function maybeAutoSendAbsence(admin: any, instanceId: string, convId: stri
       if (curMins >= startMins && curMins < endMins) return; // dentro do horário
     }
 
+    // ── A IA está atendendo? Então o aviso comercial está errado. ──
+    // Última checagem antes de reservar o disparo, de propósito: é a mais cara
+    // (três consultas) e a que menos vezes precisa acontecer — só chega aqui
+    // quem já passou pelo cooldown e está mesmo fora do expediente.
+    if (await aiRespondeAgora(admin, instanceId, convId)) {
+      console.info('aviso de ausência suprimido: agente de IA ativo', convId);
+      return;
+    }
+
     // Reserva o disparo ANTES de chamar a Evolution. O UPDATE condicional é a
     // trava atômica: se dois webhooks da mesma conversa chegarem juntos, somente
     // um consegue atualizar a linha e o outro encerra sem enviar duplicado.
@@ -729,6 +789,44 @@ async function maybeAutoSendAbsence(admin: any, instanceId: string, convId: stri
     console.info(`absence auto-send claimed for ${ABSENCE_COOLDOWN_HOURS}h`, convId);
   } catch (err) {
     console.error('maybeAutoSendAbsence error', err);
+  }
+}
+
+/**
+ * O agente de IA vai responder esta mensagem?
+ *
+ * Consulta separada e tolerante a falha: se qualquer uma das leituras cair, a
+ * resposta é "não sei" e o aviso segue o caminho de sempre. Errar para o lado
+ * de mandar o comunicado é muito melhor do que errar para o lado do silêncio.
+ */
+async function aiRespondeAgora(admin: any, instanceId: string, convId: string): Promise<boolean> {
+  try {
+    const { data: config } = await admin.from('whatsapp_ai_channel_config')
+      .select('ai_enabled, assistant_id').eq('channel_id', instanceId).maybeSingle();
+    if (!config?.ai_enabled || !config?.assistant_id) return false;
+
+    const [{ data: assistant }, { data: session }, { data: conv }] = await Promise.all([
+      admin.from('whatsapp_ai_assistants')
+        .select('is_active, mode').eq('id', config.assistant_id).maybeSingle(),
+      admin.from('whatsapp_ai_sessions')
+        .select('ai_active').eq('conversation_id', convId).maybeSingle(),
+      admin.from('whatsapp_conversations')
+        .select('assigned_user_id, awaiting_accept').eq('id', convId).maybeSingle(),
+    ]);
+
+    return absenceSuppressedByAi({
+      channelAiEnabled: true,
+      assistantId: String(config.assistant_id),
+      assistantActive: assistant?.is_active === true,
+      assistantMode: String(assistant?.mode || 'test'),
+      // Conversa nova ainda não tem sessão — e é justamente a que a IA atende.
+      sessionAiActive: session ? session.ai_active !== false : true,
+      conversationAssignedUserId: conv?.assigned_user_id ?? null,
+      awaitingAccept: conv?.awaiting_accept === true,
+    });
+  } catch (err) {
+    console.error('aiRespondeAgora falhou', convId, err);
+    return false;
   }
 }
 

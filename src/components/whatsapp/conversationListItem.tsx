@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Clock, Pencil, Ban, BellOff, FileText, UserPlus, ArrowRightLeft, Tag, X, AlertTriangle, Users,
+  Bot, Clock, Pencil, Ban, BellOff, FileText, UserPlus, ArrowRightLeft, Tag, X, AlertTriangle, Users,
 } from 'lucide-react';
 import type {
   WhatsAppConversation, WhatsAppChannel, WhatsAppDepartment, WhatsAppPresence,
@@ -85,6 +85,15 @@ export const ConversationListItem: React.FC<{
   draftPreview: string;
   funnelLabels: FunnelLabel[];
   /**
+   * A IA está com esta conversa, e quando ela volta a falar.
+   *
+   * Quando existe, TROCA os sinais humanos da linha (status operacional, SLA,
+   * "na fila", abandono) por uma etiqueta só. Não é economia de espaço: com o
+   * agente respondendo, "Aguardando setor" e "na fila há 2h07" são informação
+   * errada, e mandam o atendente procurar um problema que não existe.
+   */
+  aiChip?: { label: string; title: string } | null;
+  /**
    * Medição de tempo dos badges de SLA. Ausente = relógio de parede; com a
    * medição em horário útil do módulo, a espera fora do expediente não conta.
    * Precisa ter identidade estável para o React.memo continuar valendo.
@@ -111,11 +120,13 @@ export const ConversationListItem: React.FC<{
   busy?: boolean;
   onSelect: (id: string) => void;
   onDismissTracking?: () => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, elapsedMinutes, failedSends = 0, archived = false, showChannelName = false, busy = false, onSelect, onDismissTracking }) => {
-  const sla = slaSignal(c, elapsedMinutes);
-  const slaInt = slaInternalSignal(c, elapsedMinutes);
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, aiChip = null, elapsedMinutes, failedSends = 0, archived = false, showChannelName = false, busy = false, onSelect, onDismissTracking }) => {
+  // Com a IA conduzindo, os sinais de espera humana saem de cena — inclusive o
+  // relógio vermelho do canto, que contava uma demora que não está havendo.
+  const sla = aiChip ? null : slaSignal(c, elapsedMinutes);
+  const slaInt = aiChip ? null : slaInternalSignal(c, elapsedMinutes);
   const ta = transferAlert(c, elapsedMinutes);
-  const ab = abandonedSignal(c, elapsedMinutes);
+  const ab = aiChip ? null : abandonedSignal(c, elapsedMinutes);
   const urgentBorder = sla?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
     : sla?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
     : slaInt?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
@@ -183,6 +194,16 @@ export const ConversationListItem: React.FC<{
               {failedSends === 1 ? 'Não enviada' : `${failedSends} não enviadas`}
             </span>
           )}
+          {aiChip && (
+            <span title={aiChip.title}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-violet-100 text-violet-700">
+              <Bot size={9} /> {aiChip.label}
+            </span>
+          )}
+          {/* Bloqueada e encerrada continuam aparecendo mesmo com a IA: são
+              estados da CONVERSA, não da espera, e mudam o que o atendente
+              pode fazer ali. */}
+          {(!aiChip || statusKey === 'blocked' || statusKey === 'closed') && (
           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${statusCls}`}>
             {statusKey === 'blocked' && <Ban size={9} />}{statusLabel}
             {/* A linha inteira já é um <button>, e botão dentro de botão é HTML
@@ -210,6 +231,7 @@ export const ConversationListItem: React.FC<{
               </span>
             )}
           </span>
+          )}
           {ds && (
             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${ds === 'awaiting' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
               <FileText size={9} /> {ds === 'awaiting' ? 'Aguardando docs' : 'Docs prontos'}
@@ -239,7 +261,7 @@ export const ConversationListItem: React.FC<{
               <Clock size={9} /> {slaInt.label}
             </span>
           )}
-          {!c.is_blocked && c.status !== 'closed' && !c.assigned_user_id && !c.awaiting_accept && !c.department_id && (
+          {!aiChip && !c.is_blocked && c.status !== 'closed' && !c.assigned_user_id && !c.awaiting_accept && !c.department_id && (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-500">
               <UserPlus size={9} /> Na fila
             </span>
@@ -256,7 +278,7 @@ export const ConversationListItem: React.FC<{
               <Clock size={9} /> {ab.label}
             </span>
           )}
-          {(c.labels ?? []).slice(0, 2).map(lbl => {
+          {(c.labels ?? []).slice(0, aiChip ? 1 : 2).map(lbl => {
             const meta = resolveLabelMeta(lbl, funnelLabels);
             return (
               <span key={lbl} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold"

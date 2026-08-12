@@ -98,6 +98,10 @@ import { ThreadScheduledGhosts, ScheduledMessagesPanel, MyScheduledList, useMySc
 import { AiApprovalBanner } from './whatsapp/aiApprovalBanner';
 import { AttendanceDashboard } from './whatsapp/attendanceDashboard';
 import { ClientFillLinksPanel } from './whatsapp/clientFillLinksPanel';
+import { AiMemoryPanel } from './whatsapp/aiMemoryPanel';
+import { AiAgentBanner } from './whatsapp/aiAgentBanner';
+import { waAiListChip } from '../utils/waAiFollowupDisplay';
+import { AiHandoffSummaryBanner } from './whatsapp/aiHandoffSummaryBanner';
 import { PresenceText, DateDivider } from './whatsapp/conversationListItem';
 import { DockedDetailsToggle } from './whatsapp/DockedDetailsToggle';
 import { ConversationList } from './whatsapp/conversationList';
@@ -1139,6 +1143,38 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     return next;
   }, [conversations, muteSnapshot]);
 
+  // ── Estado da IA por conversa (etiqueta da lista) ──
+  // Uma consulta para a inbox inteira, refeita quando o conjunto de conversas
+  // muda e a cada minuto — o que anda sozinho aqui é a conta regressiva da
+  // retomada, e ela é medida em minutos.
+  const [aiStates, setAiStates] = useState<Map<string, { aiActive: boolean; nextFollowupAt: string | null; attemptsDone: number; maxAttempts: number; kind: string | null }>>(new Map());
+  const conversationIdsKey = useMemo(() => conversations.map(c => c.id).sort().join(','), [conversations]);
+  useEffect(() => {
+    const ids = conversationIdsKey ? conversationIdsKey.split(',') : [];
+    if (ids.length === 0) { setAiStates(new Map()); return; }
+    let active = true;
+    const carregar = () => {
+      whatsappService.listAiConversationStates(ids)
+        .then(map => { if (active) setAiStates(map); })
+        .catch(() => { /* a lista funciona sem o chip da IA */ });
+    };
+    carregar();
+    const id = window.setInterval(carregar, 60_000);
+    return () => { active = false; window.clearInterval(id); };
+  }, [conversationIdsKey]);
+
+  const aiChipFor = useCallback((conversationId: string) => {
+    const st = aiStates.get(conversationId);
+    if (!st) return null;
+    return waAiListChip({
+      aiActive: st.aiActive,
+      kind: st.kind,
+      nextFollowupAt: st.nextFollowupAt,
+      attemptsDone: st.attemptsDone,
+      maxAttempts: st.maxAttempts,
+    });
+  }, [aiStates]);
+
   // Envios que falharam, contados por conversa. A fila otimista atravessa a troca
   // de conversa (ver useWaComposer), então uma mensagem que não saiu enquanto o
   // atendente já estava em outro contato continua existindo — este mapa é o que
@@ -1941,6 +1977,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             elapsedMinutes={elapsedMinutes}
             conversationStatus={effectiveConversationStatus}
             docStatusFor={effectiveDocStatus}
+            aiChipFor={aiChipFor}
             trackedSignatureFor={trackedSignatureStatus}
             onSelect={selectFromList}
             onStopSignatureTracking={stopSignatureTracking}
@@ -2200,24 +2237,17 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 assinou". O próprio banner some quando não há nada a dizer. */}
             <ConversationSummaryBanner embedded={embedded} overview={overview} docStatus={selected.client_id ? effectiveDocStatus(selected.client_id) : null} clientId={selected.client_id} onOpenWorkspace={openWa} onDismissDocReady={() => selected.client_id && dismissDocReady(selected.client_id)} onDismissTemplateFill={stopTemplateFillTracking} onStopSignatureTracking={stopSignatureTracking} />
 
-            {/* Fase J: banner de sessão de IA ativa */}
-            {aiSession?.status === 'active' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px', background: '#ede9fe', borderBottom: '1px solid #ddd6fe' }}>
-                <Bot size={15} style={{ color: '#7c3aed', flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#5b21b6' }}>Assistente IA em atendimento</span>
-                  <span style={{ fontSize: '11.5px', color: '#6d28d9', marginLeft: '8px' }}>
-                    {aiSession.turn_count} turno{aiSession.turn_count !== 1 ? 's' : ''} · passo {aiSession.current_step}
-                    {Object.keys(aiSession.collected_data || {}).length > 0 && ` · ${Object.keys(aiSession.collected_data).length} dado${Object.keys(aiSession.collected_data).length !== 1 ? 's' : ''} coletado${Object.keys(aiSession.collected_data).length !== 1 ? 's' : ''}`}
-                  </span>
-                </div>
-                <button
-                  onClick={handleAssume}
-                  style={{ flexShrink: 0, padding: '4px 10px', borderRadius: '7px', background: '#7c3aed', color: '#fff', border: 'none', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer' }}>
-                  Assumir atendimento
-                </button>
-              </div>
-            )}
+            <AiHandoffSummaryBanner
+              conversationId={selected.id}
+              currentUserId={user?.id ?? null}
+              assignedUserId={selected.assigned_user_id}
+            />
+
+            {/* A faixa do agente. O contador antigo ("N turnos · passo N") saiu:
+                era do playbook da tentativa anterior e ficava em zero para
+                sempre, servindo de prova falsa de que o agente estava parado.
+                O estado de verdade vem de getAiConversationState. */}
+            <AiAgentBanner conversationId={selected.id} onAssume={handleAssume} />
             {/* Fase O: banner de aprovação de resposta IA pendente */}
             {aiSession?.status === 'pending_approval' && aiSession.pending_ai_reply && (
               <AiApprovalBanner
@@ -2227,12 +2257,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   setAiSession(s);
                 }}
               />
-            )}
-            {aiSession && aiSession.status === 'handed_off' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 16px', background: '#f0fdf4', borderBottom: '1px solid #bbf7d0' }}>
-                <Bot size={13} style={{ color: '#16a34a', flexShrink: 0 }} />
-                <span style={{ fontSize: '11.5px', color: '#15803d', fontWeight: 600 }}>IA concluída — dados coletados disponíveis nas notas internas.</span>
-              </div>
             )}
 
             {/* O invólucro existe para ancorar o botão de voltar ao fim: ele
@@ -2768,6 +2792,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           <InternalNotesSection conversationId={selected.id} staffByUser={staffByUser} currentUserId={user?.id ?? null} confirm={confirm} />
 
           <ScheduledMessagesPanel conversationId={selected.id} canSchedule={perms.canSchedule} confirm={confirm} />
+
+          {/* Memória da IA: só aparece quando o canal tem agente. Ver aiMemoryPanel.tsx. */}
+          <AiMemoryPanel
+            conversationId={selected.id}
+            currentUserId={user?.id ?? null}
+            assignedUserId={selected.assigned_user_id}
+            confirm={confirm}
+          />
 
           {/* 360: Ações do cliente — o trabalho que sai desta conversa.
               Elas ficavam DESABILITADAS sem cadastro, e essa era a reclamação:

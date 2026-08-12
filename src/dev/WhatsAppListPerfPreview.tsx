@@ -5,10 +5,11 @@
 //                (o React.memo de cada linha deveria abortar cedo).
 //   · "rascunho" — o `draftMap` troca de identidade (a cada ~600ms de digitação),
 //                  o que invalida a prop de TODA linha.
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Gauge } from 'lucide-react';
 import { ConversationListItem } from '../components/whatsapp/conversationListItem';
 import { ConversationList } from '../components/whatsapp/conversationList';
+import { waAiListChip } from '../utils/waAiFollowupDisplay';
 import type { WhatsAppChannel, WhatsAppConversation, WhatsAppDepartment } from '../types/whatsapp.types';
 
 const DEPT_BY_ID = new Map<string, WhatsAppDepartment>();
@@ -71,6 +72,21 @@ const WhatsAppListPerfPreview: React.FC = () => {
   const [total, setTotal] = useState(300);
   const [memoizada, setMemoizada] = useState(true);
   const [tick, setTick] = useState(0);          // re-render com props estáveis
+  // Canal com agente de IA: a linha troca status/SLA/fila por uma etiqueta só.
+  const [comIa, setComIa] = useState(true);
+  const chipDeIa = useCallback((id: string) => {
+    if (!comIa) return null;
+    // Uma retomada a cada conversa, escalonada, para ver o chip em vários pontos
+    // da escada: 9 minutos, 2 horas, 2 dias…
+    const n = Math.abs(id.split('').reduce((a, ch) => a + ch.charCodeAt(0), 0)) % 4;
+    const emMs = [9 * 60_000, 2 * 3_600_000, 26 * 3_600_000, 0][n];
+    return waAiListChip({
+      aiActive: true,
+      nextFollowupAt: emMs ? new Date(Date.now() + emMs).toISOString() : null,
+      attemptsDone: n,
+      maxAttempts: 9,
+    });
+  }, [comIa]);
   const [draftEpoch, setDraftEpoch] = useState(0); // troca a identidade do draftMap
   const [resultado, setResultado] = useState<string[]>([]);
   const t0 = useRef(0);
@@ -157,6 +173,11 @@ const WhatsAppListPerfPreview: React.FC = () => {
 {resultado.join('\n') || 'Clique num botão para medir.'}
         </pre>
 
+        <label className="mb-3 flex items-center gap-2 text-[12px] text-slate-600">
+          <input type="checkbox" checked={comIa} onChange={e => setComIa(e.target.checked)} />
+          Simular canal com agente de IA ativo (troca os sinais humanos pela etiqueta da IA)
+        </label>
+
         <div className="h-[420px] overflow-y-auto rounded-2xl border border-[#e7e5df] bg-white" data-tick={tick}>
           {memoizada ? (
             <ConversationList
@@ -174,6 +195,7 @@ const WhatsAppListPerfPreview: React.FC = () => {
               showChannelName
               busyConversationIds={OCUPADAS}
               funnelLabelsForChannel={funnelPorCanal}
+              aiChipFor={chipDeIa}
               conversationStatus={statusDaConversa}
               docStatusFor={semDoc}
               trackedSignatureFor={semAssinatura}

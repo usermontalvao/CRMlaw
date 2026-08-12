@@ -262,6 +262,33 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: bancada do editor de prompt do agente de IA (?waaipromptpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('waaipromptpreview')) {
+    const { default: WhatsAppAiPromptPreview } = await import('./dev/WhatsAppAiPromptPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppAiPromptPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: bancada do acompanhamento do agente de IA (?waaifollowuppreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('waaifollowuppreview')) {
+    const { default: WhatsAppAiFollowupPanelPreview } = await import('./dev/WhatsAppAiFollowupPanelPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppAiFollowupPanelPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: bancada do formulário do agente de IA (?waaiagentpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('waaiagentpreview')) {
+    const { default: WhatsAppAiAgentFormPreview } = await import('./dev/WhatsAppAiAgentFormPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppAiAgentFormPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: vitrine dos modais do atendimento WhatsApp (?wamodalspreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('wamodalspreview')) {
     const { default: WhatsAppModalsPreview } = await import('./dev/WhatsAppModalsPreview');

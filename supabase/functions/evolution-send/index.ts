@@ -205,6 +205,7 @@ Deno.serve(async (req: Request) => {
     return await handleBlock(admin, base, apikey, user, body);
   }
   if (body?.action === 'subscribe_presence') return await handleSubscribePresence(admin, base, apikey, body);
+  if (body?.action === 'typing') return await handleTyping(admin, base, apikey, body);
 
   const type: string = (body?.type || 'text').toString();
   const text = (body?.text ?? '').toString();
@@ -622,6 +623,52 @@ async function handleSubscribePresence(admin: any, base: string, apikey: string,
     });
   } catch { /* best-effort */ }
   return json({ ok: true });
+}
+
+/**
+ * Acende o "digitando..." no WhatsApp do contato.
+ *
+ * Só a presença: não envia mensagem e não espera. Quem chama é que decide por
+ * quanto tempo o balão fica de pé e quando manda o texto — deixar a espera aqui
+ * prenderia a invocação do `evolution-send`, que é o caminho de TODO o envio do
+ * sistema, inclusive o dos atendentes humanos.
+ *
+ * `duration_ms` é repassado como `delay`: é o tempo que a Evolution mantém a
+ * presença antes de deixá-la cair sozinha. Se a mensagem não chegar nesse
+ * intervalo, o balão apaga — melhor do que "digitando..." eterno numa falha.
+ *
+ * Falhar aqui não é erro de envio: a resposta continua devolvendo ok, porque
+ * nenhuma mensagem se perde por causa de um balão que não acendeu.
+ */
+async function handleTyping(admin: any, base: string, apikey: string, body: any) {
+  const conversationId: string | null = body?.conversation_id || null;
+  if (!conversationId) return json({ error: 'conversation_id obrigatório' }, 400);
+
+  // Teto de 20s: acima disso o WhatsApp derruba a presença sozinho, e um valor
+  // grande só serviria para mentir sobre quanto tempo o balão vai durar.
+  const duracao = Math.max(1000, Math.min(20_000, Number(body?.duration_ms) || 3000));
+
+  const { data: conv } = await admin.from('whatsapp_conversations')
+    .select('remote_jid, contact_phone, instance_id').eq('id', conversationId).maybeSingle();
+  if (!conv) return json({ error: 'Conversa não encontrada' }, 404);
+  if ((conv.remote_jid || '').endsWith('@g.us')) return json({ ok: true, skipped: 'group' });
+
+  const { data: channel } = await admin.from('whatsapp_instances')
+    .select('instance_name').eq('id', conv.instance_id).maybeSingle();
+  if (!channel?.instance_name) return json({ error: 'Canal não encontrado' }, 400);
+
+  const target = /^\d+$/.test(conv.contact_phone || '') ? conv.contact_phone : conv.remote_jid;
+  let acendeu = false;
+  try {
+    const res = await fetch(`${base}/chat/sendPresence/${encodeURIComponent(channel.instance_name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey },
+      body: JSON.stringify({ number: target, presence: 'composing', delay: duracao }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    acendeu = res.ok;
+  } catch { /* best-effort: ver o comentário acima */ }
+  return json({ ok: true, typing: acendeu, duration_ms: duracao });
 }
 
 function bytesToB64(bytes: Uint8Array): string {

@@ -44,6 +44,8 @@ export interface ConversationListProps {
   /** Conversas com outro atendente dentro agora (presença da equipe). */
   busyConversationIds: ReadonlySet<string>;
   funnelLabelsForChannel: (channelId: string | null | undefined) => FunnelLabel[];
+  /** Etiqueta da IA da linha: substitui os sinais humanos enquanto o agente atende. */
+  aiChipFor?: (conversationId: string) => { label: string; title: string } | null;
   /** Medição de tempo dos badges de SLA (horário útil do canal de cada conversa). */
   elapsedMinutes?: ElapsedMinutes;
   conversationStatus: (c: WhatsAppConversation) => { key: string; label: string; cls: string };
@@ -57,7 +59,7 @@ export interface ConversationListProps {
 const ConversationListInner: React.FC<ConversationListProps> = ({
   conversations, selectedId, loading, privateMode, emptyMessage,
   channelById, deptById, drafts, mutedIds, failedSends, archivedIds, showChannelName, busyConversationIds,
-  funnelLabelsForChannel, elapsedMinutes,
+  funnelLabelsForChannel, aiChipFor, elapsedMinutes,
   conversationStatus, docStatusFor, trackedSignatureFor,
   onSelect, onStopSignatureTracking, onStopTemplateFillTracking,
 }) => {
@@ -115,6 +117,7 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
             draftPreview={drafts[c.id] ?? ''}
             failedSends={failedSends.get(c.id) ?? 0}
             funnelLabels={funnelLabelsForChannel(c.instance_id)}
+            aiChip={aiChipFor?.(c.id) ?? null}
             elapsedMinutes={elapsedMinutes}
             onSelect={onSelect}
             onDismissTracking={tracked

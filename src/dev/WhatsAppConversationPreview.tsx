@@ -14,9 +14,10 @@ import { ConversationLabelsPanel } from '../components/whatsapp/conversationLabe
 import { QuickActions } from '../components/whatsapp/quickActions';
 import { ForwardMessageModal } from '../components/whatsapp/forwardMessageModal';
 import { PreCadastroModal } from '../components/whatsapp/preCadastroModal';
+import { AiHandoffSummaryBanner } from '../components/whatsapp/aiHandoffSummaryBanner';
 import { ToastProvider } from '../contexts/ToastContext';
 import type { FunnelLabel } from '../services/settings.service';
-import type { WhatsAppConversation, WhatsAppMessage } from '../types/whatsapp.types';
+import type { WhatsAppAiConversationState, WhatsAppConversation, WhatsAppMessage } from '../types/whatsapp.types';
 import { ArrowRightLeft, Download, History, MessageSquare, Mic, MoreVertical, Phone, Plus, Search, Sparkles, Video } from 'lucide-react';
 
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
@@ -369,6 +370,39 @@ const PREVIEW_FUNNEL: FunnelLabel[] = [
 ];
 
 const noop = () => {};
+const HANDOFF_STATE: WhatsAppAiConversationState = {
+  aiActive: false,
+  assistantId: 'preview-assistant',
+  assistantName: 'Triagem trabalhista',
+  mode: 'auto',
+  followupPolicy: {
+    enabled: true,
+    strategy: 'custom',
+    intervalHours: 24,
+    customHours: [2, 4, 8, 24, 48, 168, 240, 336],
+    maxAttempts: 8,
+    days: [1, 2, 3, 4, 5],
+    startMinute: 480,
+    endMinute: 1080,
+    timezone: 'America/Cuiaba',
+    inactivityMinutes: 10,
+  },
+  channelAiEnabled: true,
+  status: 'handed_off',
+  summary: 'Pedro trabalhou sem registro na Todimo, de janeiro a agosto (anos ainda não informados), como auxiliar. Recebia R$ 1.800 por Pix e trabalhava de segunda a sexta, das 8h às 18h, sob supervisão. Possui provas e testemunha.',
+  knownFacts: {},
+  pendingItems: ['confirmar o ano de início e de saída'],
+  lastAction: 'transferir_atendimento',
+  handoffReason: 'Triagem concluída',
+  handoffSummary: 'Pedro trabalhou sem registro na Todimo, de janeiro a agosto (anos ainda não informados), como auxiliar. Recebia R$ 1.800 por Pix e trabalhava de segunda a sexta, das 8h às 18h, sob supervisão. Possui provas e testemunha. Próximo passo: confirmar os anos e analisar os comprovantes.',
+  nextFollowupAt: null,
+  followupAttempts: 0,
+  lastExecution: null,
+  pendingFollowup: null,
+};
+const loadPreviewHandoff = async () => HANDOFF_STATE;
+/** Na bancada nada é devolvido de verdade — só o estado visual do botão. */
+const resumePreviewAi = async () => { await new Promise(r => setTimeout(r, 400)); };
 const bubbleActions = {
   onReply: noop,
   onEdit: noop,
@@ -424,6 +458,14 @@ export default function WhatsAppConversationPreview() {
             ))}
           </div>
         </header>
+
+        <AiHandoffSummaryBanner
+          conversationId="preview-conversation"
+          currentUserId="pedro"
+          assignedUserId="pedro"
+          loadState={loadPreviewHandoff}
+          resumeAi={resumePreviewAi}
+        />
 
         <main className="wa-thread-bg flex-1 overflow-y-auto overscroll-contain">
           <div className="mx-auto w-full max-w-[1050px] px-5 py-4">

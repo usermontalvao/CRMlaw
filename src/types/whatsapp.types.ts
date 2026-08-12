@@ -365,6 +365,172 @@ export interface WhatsAppAiSession {
   pending_ai_next_step: number | null;
 }
 
+// ── Assistente de IA (MVP de 08/2026) ───────────────────────────────────────
+// Substitui a experiência de "Playbooks IA" na tela de configurações. Os tipos
+// de playbook acima continuam declarados porque a tabela segue de pé no banco,
+// mas nenhuma tela nova os usa.
+
+/** Modo de operação do agente. */
+export type WhatsAppAiAssistantMode = 'test' | 'auto';
+
+/** Referência compilada de uma expressão `ação=...` do editor de prompt. */
+export interface WhatsAppAiActionRef {
+  action: string;
+  target_type: 'user' | 'department' | 'document_template' | 'none';
+  target_id: string | null;
+  target_label: string;
+  raw: string;
+}
+
+/** Agente de IA do WhatsApp (whatsapp_ai_assistants). */
+export interface WhatsAppAiAssistant {
+  id: string;
+  name: string;
+  description: string | null;
+  provider: string;
+  model: string;
+  is_active: boolean;
+  mode: WhatsAppAiAssistantMode;
+  instructions_do: string;
+  instructions_dont: string;
+  allowed_actions: string[];
+  action_refs: WhatsAppAiActionRef[];
+  followup_enabled: boolean;
+  followup_instructions: string;
+  followup_max_attempts: number;
+  followup_strategy: 'fixed' | 'progressive' | 'custom';
+  followup_interval_hours: number;
+  followup_custom_hours: number[];
+  followup_days: number[];
+  followup_start_minute: number;
+  followup_end_minute: number;
+  timezone: string;
+  debounce_seconds: number;
+  history_limit: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Campos que a tela envia ao criar ou editar um agente. */
+export type WhatsAppAiAssistantInput = Partial<Omit<WhatsAppAiAssistant,
+  'id' | 'created_by' | 'created_at' | 'updated_at'>> & { name: string };
+
+/** Uma ação que o agente PEDIRIA, do jeito que a prévia devolve. */
+export interface WhatsAppAiSimulatedAction {
+  action: string;
+  ok: boolean;
+  simulated?: boolean;
+  args?: Record<string, unknown>;
+  target?: string | null;
+  error?: string;
+}
+
+/**
+ * Resultado de um turno de prévia (`whatsapp-ai-agent` em modo `simulate`).
+ * Nada disso foi gravado nem executado: é o que o agente FARIA.
+ */
+export interface WhatsAppAiSimulationResult {
+  ok: boolean;
+  error?: string;
+  reply: string;
+  /** A resposta já dividida nas mensagens que o WhatsApp receberia, na ordem. */
+  reply_parts?: string[];
+  requested: { action: string; args?: unknown }[];
+  executed: WhatsAppAiSimulatedAction[];
+  /** Devolver na chamada seguinte — é a continuidade da conversa. */
+  memory: {
+    summary: string;
+    knownFacts: Record<string, string>;
+    pendingItems: string[];
+    lastAction: string;
+  };
+  handed_off: boolean;
+  followup: { attempt: number; scheduled_at: string } | null;
+  duration_ms: number;
+}
+
+/** Registro de uma execução do agente (whatsapp_ai_executions). */
+export interface WhatsAppAiExecution {
+  id: string;
+  conversation_id: string;
+  assistant_id: string | null;
+  channel_id: string | null;
+  provider: string | null;
+  model: string | null;
+  mode: string;
+  trigger_message_id: string | null;
+  idempotency_key: string;
+  reply_text: string | null;
+  requested_actions: unknown[];
+  executed_actions: unknown[];
+  error: string | null;
+  duration_ms: number | null;
+  status: 'ok' | 'skipped' | 'error' | 'test';
+  created_at: string;
+}
+
+/** Acompanhamento agendado pelo agente (whatsapp_ai_followups). */
+export interface WhatsAppAiFollowup {
+  id: string;
+  conversation_id: string;
+  assistant_id: string | null;
+  attempt: number;
+  scheduled_at: string;
+  message: string;
+  reason: string | null;
+  status: 'pending' | 'sent' | 'cancelled' | 'failed';
+  cancel_reason: string | null;
+  sent_at: string | null;
+  error: string | null;
+  created_at: string;
+  /** 'followup' = degrau da escada; 'appointment' = hora marcada pelo cliente. */
+  kind: 'followup' | 'appointment';
+}
+
+/** O que o painel "Memória da IA" mostra ao operador dentro da conversa. */
+export interface WhatsAppAiConversationState {
+  aiActive: boolean;
+  assistantId: string | null;
+  assistantName: string | null;
+  mode: WhatsAppAiAssistantMode | null;
+  /** Política que governa as retomadas automáticas deste agente. */
+  followupPolicy: {
+    enabled: boolean;
+    strategy: 'fixed' | 'progressive' | 'custom';
+    intervalHours: number;
+    customHours: number[];
+    maxAttempts: number;
+    days: number[];
+    startMinute: number;
+    endMinute: number;
+    timezone: string;
+    /** Silêncio que define a inatividade — marco zero da escada, não um degrau. */
+    inactivityMinutes: number;
+  } | null;
+  channelAiEnabled: boolean;
+  status: WhatsAppAiSessionStatus | null;
+  summary: string | null;
+  knownFacts: Record<string, string>;
+  pendingItems: string[];
+  lastAction: string | null;
+  handoffReason: string | null;
+  handoffSummary: string | null;
+  nextFollowupAt: string | null;
+  followupAttempts: number;
+  lastExecution: WhatsAppAiExecution | null;
+  pendingFollowup: WhatsAppAiFollowup | null;
+}
+
+/** Registro real que o autocomplete `ação=` oferece como destino. */
+export interface WhatsAppAiTargetOption {
+  type: 'user' | 'department' | 'document_template';
+  id: string;
+  label: string;
+  /** Cargo/e-mail, setor ou permalink — identifica a opção na lista. */
+  hint: string | null;
+}
+
 export interface WhatsAppTransfer {
   id: string;
   conversation_id: string;

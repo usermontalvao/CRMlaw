@@ -8,6 +8,7 @@ import { messagesApi } from './whatsapp/messages';
 import { adminApi } from './whatsapp/admin';
 import { client360Api } from './whatsapp/client360';
 import { automationApi } from './whatsapp/automation';
+import { aiAssistantsApi } from './whatsapp/aiAssistants';
 
 // Helpers e tipos de domínio (telefone, template, permissões, overview, etc.).
 export {
@@ -20,6 +21,11 @@ export type {
   WhatsAppInternalNote, ClientTrackedSignatureStatus,
 } from './whatsapp/shared';
 export type { WhatsAppAiSession, WhatsAppAiPlaybook, WhatsAppAiChannelConfig, AiPlaybookQuestion } from '../types/whatsapp.types';
+export type {
+  WhatsAppAiAssistant, WhatsAppAiAssistantInput, WhatsAppAiAssistantMode, WhatsAppAiActionRef,
+  WhatsAppAiExecution, WhatsAppAiFollowup, WhatsAppAiConversationState, WhatsAppAiTargetOption,
+} from '../types/whatsapp.types';
+export { WaAiValidationError } from './whatsapp/aiAssistants';
 
 /**
  * API única consumida pela UI. Mantida como objeto composto para preservar os
@@ -32,4 +38,5 @@ export const whatsappService = {
   ...adminApi,
   ...client360Api,
   ...automationApi,
+  ...aiAssistantsApi,
 };

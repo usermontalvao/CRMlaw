@@ -16,10 +16,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { agentLabel, agentRoleLabel } from './whatsapp/format';
 import type {
   WhatsAppChannel, WhatsAppDepartment, WhatsAppTemplate, WhatsAppBusinessHoursRow,
-  WhatsAppAiChannelConfig, WhatsAppAiPlaybook, AiPlaybookQuestion,
 } from '../types/whatsapp.types';
 import ChannelAccessManager from './whatsapp/ChannelAccessManager';
 import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
+import AiAssistantsPanel from './whatsapp/aiAssistantsPanel';
 
 const DAY_NAMES = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
 
@@ -64,20 +64,13 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   // Identidade de atendimento do usuário logado (assinatura das mensagens).
   const [agentPrefs, setAgentPrefs] = useState<AgentPrefs>(DEFAULT_AGENT_PREFS);
   const [savingIdentity, setSavingIdentity] = useState(false);
-  const [activeSection, setActiveSection] = useState<'connection' | 'identity' | 'channels' | 'access' | 'funnels' | 'departments' | 'routing' | 'copies' | 'templates' | 'playbooks'>('connection');
+  const [activeSection, setActiveSection] = useState<'connection' | 'identity' | 'channels' | 'access' | 'funnels' | 'departments' | 'routing' | 'copies' | 'templates' | 'agents'>('connection');
   const [activeChannelSection, setActiveChannelSection] = useState<'list' | 'new'>('list');
   const [loading, setLoading] = useState(true);
 
   // formulário de canal
   const [newCh, setNewCh] = useState({ name: '', instance_name: '', phone_number: '', color: PALETTE[0] });
   const [addingCh, setAddingCh] = useState(false);
-  // Fase J: config de IA por canal e playbooks
-  const [playbooks, setPlaybooks] = useState<WhatsAppAiPlaybook[]>([]);
-  const [aiConfigs, setAiConfigs] = useState<Record<string, WhatsAppAiChannelConfig>>({});
-  const [aiOpenFor, setAiOpenFor] = useState<string | null>(null);
-  const [savingAi, setSavingAi] = useState(false);
-  const [addingPb, setAddingPb] = useState(false);
-  const [newPb, setNewPb] = useState({ name: '', description: '', category: 'intake', welcome_message: '', handoff_message: '', questions: '' });
 
   // Fase N: horários, ausência e timezone por canal
   const [hoursOpenFor, setHoursOpenFor] = useState<string | null>(null);
@@ -99,7 +92,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
 
   const reload = async () => {
     try {
-      const [cfg, copyCfg, routingCfg, chs, depts, st, tpls, pbs, prefs] = await Promise.all([
+      const [cfg, copyCfg, routingCfg, chs, depts, st, tpls, prefs] = await Promise.all([
         settingsService.getWhatsAppEvolutionConfig(),
         settingsService.getWhatsAppModuleConfig(),
         settingsService.getWhatsAppChannelDepartmentRouting(),
@@ -107,7 +100,6 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
         whatsappService.listDepartments(),
         whatsappService.listStaff(),
         whatsappService.listTemplates(),
-        whatsappService.listPlaybooks().catch(() => [] as WhatsAppAiPlaybook[]),
         whatsappService.getMyAgentPrefs().catch(() => DEFAULT_AGENT_PREFS),
       ]);
       setServer(cfg);
@@ -117,7 +109,6 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       setDepartments(depts);
       setStaff(st);
       setTemplates(tpls);
-      setPlaybooks(pbs);
       setAgentPrefs(prefs);
     } catch (e: any) {
       onFeedback('error', e.message || 'Erro ao carregar dados do WhatsApp.');
@@ -323,77 +314,6 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     } finally {
       setSavingMembers(false);
     }
-  };
-
-  // ── IA de atendimento (Fase J) ────────────────────────────────
-  const openAiPanel = useCallback(async (ch: WhatsAppChannel) => {
-    if (aiOpenFor === ch.id) { setAiOpenFor(null); return; }
-    setAiOpenFor(ch.id);
-    if (!aiConfigs[ch.id]) {
-      const cfg = await whatsappService.getAiChannelConfig(ch.id).catch(() => null);
-      setAiConfigs(prev => ({
-        ...prev,
-        [ch.id]: cfg ?? { channel_id: ch.id, ai_enabled: false, max_ai_turns: 5, playbook_id: null, require_human_approval: false },
-      }));
-    }
-  }, [aiOpenFor, aiConfigs]);
-
-  const saveAiConfig = async (channelId: string) => {
-    const cfg = aiConfigs[channelId];
-    if (!cfg) return;
-    setSavingAi(true);
-    try {
-      await whatsappService.upsertAiChannelConfig(channelId, {
-        ai_enabled: cfg.ai_enabled,
-        max_ai_turns: cfg.max_ai_turns,
-        playbook_id: cfg.playbook_id || null,
-        require_human_approval: cfg.require_human_approval ?? false,
-      });
-      onFeedback('success', 'Configuração de IA salva!');
-    } catch (e: any) { onFeedback('error', e.message); }
-    finally { setSavingAi(false); }
-  };
-
-  const addPlaybook = async () => {
-    if (!newPb.name.trim() || !newPb.welcome_message.trim() || !newPb.handoff_message.trim()) {
-      onFeedback('error', 'Preencha nome, mensagem de boas-vindas e mensagem de handoff.');
-      return;
-    }
-    let questions: AiPlaybookQuestion[] = [];
-    if (newPb.questions.trim()) {
-      try {
-        questions = JSON.parse(newPb.questions);
-        if (!Array.isArray(questions)) throw new Error('deve ser array');
-      } catch {
-        onFeedback('error', 'Perguntas deve ser um JSON válido (array de objetos).');
-        return;
-      }
-    }
-    setAddingPb(true);
-    try {
-      await whatsappService.createPlaybook({
-        name: newPb.name.trim(),
-        description: newPb.description.trim() || undefined,
-        category: newPb.category,
-        welcome_message: newPb.welcome_message.trim(),
-        questions,
-        handoff_message: newPb.handoff_message.trim(),
-      });
-      setNewPb({ name: '', description: '', category: 'intake', welcome_message: '', handoff_message: '', questions: '' });
-      const pbs = await whatsappService.listPlaybooks().catch(() => [] as WhatsAppAiPlaybook[]);
-      setPlaybooks(pbs);
-      onFeedback('success', 'Playbook criado.');
-    } catch (e: any) { onFeedback('error', e.message); }
-    finally { setAddingPb(false); }
-  };
-
-  const removePlaybook = async (pb: WhatsAppAiPlaybook) => {
-    if (!confirm(`Excluir o playbook "${pb.name}"?`)) return;
-    try {
-      await whatsappService.deletePlaybook(pb.id);
-      setPlaybooks(prev => prev.filter(p => p.id !== pb.id));
-      onFeedback('success', 'Playbook excluído.');
-    } catch (e: any) { onFeedback('error', e.message); }
   };
 
   const addTemplate = async () => {
@@ -603,7 +523,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     { key: 'routing' as const, label: 'Roteamento', summary: 'Canais × departamentos', icon: Share2 },
     { key: 'copies' as const, label: 'Textos padrão', summary: 'Copys operacionais', icon: Pencil },
     { key: 'templates' as const, label: 'Modelos', summary: 'Mensagens prontas', icon: MessageSquare },
-    { key: 'playbooks' as const, label: 'Playbooks IA', summary: 'Fluxos automatizados', icon: Bot },
+    { key: 'agents' as const, label: 'Agentes de IA', summary: 'Assistente que atende sozinho', icon: Bot },
   ];
 
   const renderSection = (key: typeof sectionItems[number]['key'], title: string, summary: string, content: React.ReactNode) => {
@@ -891,10 +811,6 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                   className="settings-btn-ghost" style={{ padding: '6px 10px', color: hoursOpenFor === ch.id ? '#d97706' : undefined }}>
                   <Clock size={13} /> Horário comercial
                 </button>
-                <button onClick={() => openAiPanel(ch)} title="Configurar IA de atendimento"
-                  className="settings-btn-ghost" style={{ padding: '6px 10px', color: aiOpenFor === ch.id ? '#7c3aed' : (aiConfigs[ch.id]?.ai_enabled ? '#059669' : undefined) }}>
-                  <Bot size={13} /> IA
-                </button>
                 <button onClick={() => removeChannel(ch)} title="Excluir canal"
                   style={{ padding: '6px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
                   <Trash2 size={14} />
@@ -1027,67 +943,9 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                 </div>
               )}
 
-              {/* Painel de IA por canal (Fase J) */}
-              {aiOpenFor === ch.id && (() => {
-                const cfg = aiConfigs[ch.id] ?? { channel_id: ch.id, ai_enabled: false, max_ai_turns: 5, playbook_id: null, require_human_approval: false };
-                const setCfg = (patch: Partial<WhatsAppAiChannelConfig>) =>
-                  setAiConfigs(prev => ({ ...prev, [ch.id]: { ...cfg, ...patch } }));
-                return (
-                  <div style={{ marginTop: '12px', border: '1px solid #e7e5df', borderRadius: '10px', padding: '14px', background: '#faf9f7' }}>
-                    <p style={{ fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Bot size={13} /> IA de atendimento automático
-                    </p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={cfg.ai_enabled} onChange={e => setCfg({ ai_enabled: e.target.checked })} />
-                        <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#1f2937' }}>Habilitar assistente IA neste canal</span>
-                      </label>
-                      {cfg.ai_enabled && (
-                        <>
-                          <div>
-                            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#6b7280', marginBottom: '4px' }}>Playbook</label>
-                            <select value={cfg.playbook_id || ''}
-                              onChange={e => setCfg({ playbook_id: e.target.value || null })}
-                              style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '7px', border: '1px solid #d1d5db', background: '#fff', color: '#111827', width: '100%' }}>
-                              <option value="">— Sem playbook (resposta genérica) —</option>
-                              {playbooks.filter(p => p.is_active).map(p => (
-                                <option key={p.id} value={p.id}>{p.name} ({p.category})</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#6b7280', marginBottom: '4px' }}>Máximo de turnos da IA</label>
-                            <input type="number" min={1} max={20} value={cfg.max_ai_turns}
-                              onChange={e => setCfg({ max_ai_turns: Math.max(1, +e.target.value) })}
-                              style={{ width: '80px', fontSize: '12px', padding: '4px 8px', borderRadius: '7px', border: '1px solid #d1d5db', background: '#fff' }} />
-                            <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '8px' }}>mensagens antes de transferir para humano</span>
-                          </div>
-                          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer' }}>
-                            <input type="checkbox" checked={cfg.require_human_approval ?? false}
-                              onChange={e => setCfg({ require_human_approval: e.target.checked })}
-                              style={{ marginTop: '2px', flexShrink: 0 }} />
-                            <span style={{ fontSize: '12.5px', color: '#1f2937' }}>
-                              <span style={{ fontWeight: 600 }}>Exigir aprovação humana</span>
-                              <span style={{ display: 'block', fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
-                                A IA não envia automaticamente — o agente revisa e aprova cada resposta antes do envio.
-                              </span>
-                            </span>
-                          </label>
-                        </>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px', gap: '8px' }}>
-                      <button className="settings-btn-ghost" onClick={() => setAiOpenFor(null)}><X size={13} /> Fechar</button>
-                      <button className="settings-btn-primary" onClick={() => saveAiConfig(ch.id)} disabled={savingAi}>
-                        {savingAi ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Salvar IA
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-
               <p style={{ marginTop: '12px', borderTop: '1px dashed #ece7df', paddingTop: '12px', fontSize: '11.5px', color: '#9ca3af' }}>
-                Os departamentos que atendem este número são definidos na aba <strong>Roteamento</strong>.
+                Os departamentos que atendem este número são definidos na aba <strong>Roteamento</strong>;
+                o assistente de IA deste canal, na aba <strong>Agentes de IA</strong>.
               </p>
             </div>
           ))}
@@ -1446,91 +1304,9 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
         </div>
       </>)}
 
-      {/* ── Playbooks de IA (Fase J) ── */}
-      {renderSection('playbooks', 'Playbooks de IA', `${playbooks.length} playbook${playbooks.length !== 1 ? 's' : ''} disponível${playbooks.length !== 1 ? 'eis' : ''}`, <>
-        <p className="settings-card-title">Playbooks de atendimento IA</p>
-        <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '12px' }}>
-          Roteiros de coleta estruturada. O assistente segue a sequência de perguntas e transfere para um humano ao concluir.
-          Configure quais canais usam IA na seção Canais acima.
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
-          {playbooks.length === 0 && <p style={{ fontSize: '12.5px', color: '#9ca3af' }}>Nenhum playbook ainda.</p>}
-          {playbooks.map(pb => (
-            <div key={pb.id} style={{ border: '1px solid #e7e5df', borderRadius: '10px', padding: '10px 12px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                <Bot size={14} style={{ color: '#7c3aed', marginTop: '2px', flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#1f2937' }}>{pb.name}</span>
-                    <span style={{ fontSize: '10.5px', fontWeight: 600, color: '#7c3aed', background: '#ede9fe', padding: '1px 6px', borderRadius: '6px' }}>{pb.category}</span>
-                    {!pb.is_active && <span style={{ fontSize: '10.5px', color: '#9ca3af', background: '#f3f4f6', padding: '1px 6px', borderRadius: '6px' }}>inativo</span>}
-                  </div>
-                  {pb.description && <p style={{ fontSize: '11.5px', color: '#6b7280', marginTop: '2px' }}>{pb.description}</p>}
-                  <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '3px' }}>
-                    {pb.questions.length} pergunta{pb.questions.length !== 1 ? 's' : ''} · Handoff: "{pb.handoff_message.slice(0, 60)}{pb.handoff_message.length > 60 ? '…' : ''}"
-                  </p>
-                </div>
-                <button onClick={() => removePlaybook(pb)} title="Excluir playbook"
-                  style={{ padding: '4px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', flexShrink: 0 }}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ borderTop: '1px dashed #e0ded8', paddingTop: '14px' }}>
-          <p style={{ fontSize: '12px', fontWeight: 700, color: '#6b7280', marginBottom: '10px' }}>Novo playbook</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', marginBottom: '10px' }}>
-            <div>
-              <label className="settings-label">Nome</label>
-              <input className="settings-input" value={newPb.name}
-                onChange={e => setNewPb(p => ({ ...p, name: e.target.value }))} placeholder="Ex: Triagem trabalhista" />
-            </div>
-            <div>
-              <label className="settings-label">Categoria</label>
-              <select className="settings-input" value={newPb.category} onChange={e => setNewPb(p => ({ ...p, category: e.target.value }))}>
-                <option value="intake">intake — triagem inicial</option>
-                <option value="followup">followup — acompanhamento</option>
-                <option value="documents">documents — documentos</option>
-                <option value="custom">custom — personalizado</option>
-              </select>
-            </div>
-          </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label className="settings-label">Descrição (opcional)</label>
-            <input className="settings-input" value={newPb.description}
-              onChange={e => setNewPb(p => ({ ...p, description: e.target.value }))} placeholder="Para que serve este playbook..." />
-          </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label className="settings-label">Mensagem de boas-vindas</label>
-            <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={newPb.welcome_message}
-              onChange={e => setNewPb(p => ({ ...p, welcome_message: e.target.value }))}
-              placeholder="Olá! Sou o assistente do escritório. Preciso de algumas informações..." />
-          </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label className="settings-label">
-              Perguntas (JSON)
-              <span style={{ fontWeight: 400, color: '#9ca3af', marginLeft: '6px' }}>
-                array de {'{'}"key","label","required":true,"type":"text"{'}'}</span>
-            </label>
-            <textarea className="settings-input" rows={4} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '11px' }} value={newPb.questions}
-              onChange={e => setNewPb(p => ({ ...p, questions: e.target.value }))}
-              placeholder={'[\n  {"key":"nome","label":"Qual é o seu nome?","required":true,"type":"text"},\n  {"key":"assunto","label":"Qual o assunto?","required":true,"type":"text"}\n]'} />
-          </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label className="settings-label">Mensagem de handoff (enviada ao cliente ao finalizar)</label>
-            <textarea className="settings-input" rows={2} style={{ resize: 'vertical' }} value={newPb.handoff_message}
-              onChange={e => setNewPb(p => ({ ...p, handoff_message: e.target.value }))}
-              placeholder="Obrigado! Vou transferir seu atendimento para um de nossos advogados." />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="settings-btn-primary" onClick={addPlaybook} disabled={addingPb}>
-              {addingPb ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Criar playbook
-            </button>
-          </div>
-        </div>
-      </>)}
+      {/* ── Agentes de IA ── */}
+      {renderSection('agents', 'Agentes de IA', 'Assistente que atende sozinho no WhatsApp',
+        <AiAssistantsPanel channels={channels} onFeedback={onFeedback} />)}
         </div>
       </div>
     </div>
