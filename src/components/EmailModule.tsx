@@ -6,7 +6,7 @@ import {
   Settings, Type, Printer, PenLine, SlidersHorizontal, ShieldCheck, Plus, X,
   Bold, Italic, Underline, List, ListOrdered, Link2,
   Strikethrough, AlignLeft, AlignCenter, AlignRight, Quote, RemoveFormatting, Palette, ChevronDown,
-  AlertCircle, ChevronLeft, Keyboard, ImageOff, Star, Ban, Sparkles, User, MailX,
+  AlertCircle, ChevronLeft, Keyboard, Star, Ban, Sparkles, User, MailX,
 } from 'lucide-react';
 import { emailService } from '../services/email.service';
 import { aiService } from '../services/ai.service';
@@ -45,30 +45,7 @@ const MATCH_LABEL: Record<SpamRuleMatch, string> = {
 const LS_FOLDERS_W = 'email:foldersW';
 const LS_LIST_W = 'email:listW';
 const LS_PREFS = 'email:prefs';
-const LS_ALLOWED_IMAGE_SENDERS = 'email:allowedImageSenders';
 const LS_COMPOSE_UI = 'email:composeUi';
-
-// Memória de "imagens liberadas" por mensagem. Uma vez que o usuário clica em
-// "Exibir imagens" num e-mail, não faz sentido bloquear de novo toda vez que ele
-// reabre — guardamos o id da mensagem (persistido entre sessões, com teto p/ não
-// crescer sem limite).
-const allowedImageSenders: Set<string> = (() => {
-  try {
-    const raw = localStorage.getItem(LS_ALLOWED_IMAGE_SENDERS);
-    return new Set<string>(raw ? JSON.parse(raw) : []);
-  } catch { return new Set<string>(); }
-})();
-function senderImageKey(sender?: string | null): string | null {
-  if (!sender) return null;
-  const email = addressOf(sender).trim().toLowerCase();
-  return email || null;
-}
-function rememberAllowedImageSender(sender?: string | null) {
-  const key = senderImageKey(sender);
-  if (!key || allowedImageSenders.has(key)) return;
-  allowedImageSenders.add(key);
-  try { localStorage.setItem(LS_ALLOWED_IMAGE_SENDERS, JSON.stringify([...allowedImageSenders].slice(-800))); } catch { /* noop */ }
-}
 
 // MAILBOX_ADDRESS removido — endereço do usuário vem do AuthContext (user.email)
 
@@ -3243,7 +3220,7 @@ function MessageView({ m, single, defaultOpen, featured = false }: { m: EmailMes
   const isOut = m.direction === 'outbound';
   const personLabel = isOut ? 'Você' : 'Cliente';
   const body = m.body_html
-    ? <EmailHtmlFrame html={m.body_html} msgId={m.id} sender={m.from_address ?? m.from_text} />
+    ? <EmailHtmlFrame html={m.body_html} />
     : <pre className="whitespace-pre-wrap break-words font-sans text-[14px] leading-relaxed text-zinc-800 dark:text-zinc-200">{m.body_text || '(sem conteúdo)'}</pre>;
 
   if (single) {
@@ -3300,48 +3277,26 @@ function MessageView({ m, single, defaultOpen, featured = false }: { m: EmailMes
 }
 
 /**
- * Remove o carregamento automático de imagens REMOTAS (http/https) do HTML —
- * pixels de rastreio só "disparam" quando o navegador busca a imagem. Mantém
- * imagens embutidas (cid:/data:). Guarda o src original em data-blk para o
- * "Exibir imagens" reconstituir. Cobre <img src/srcset>, style inline e <style>.
+ * Prepara o HTML do e-mail para o iframe de leitura: todo link abre em aba nova
+ * e sem passar a referência da janela do CRM.
+ *
+ * Imagens remotas NÃO são mais bloqueadas. Havia aqui um anti-rastreio que
+ * segurava `http(s)` de `<img>`, `style` e `<style>` até o usuário clicar em
+ * "Exibir imagens"; na prática quase todo e-mail de verdade chegava quebrado e
+ * o clique virou automático. O preço de tirar é conhecido: pixel de rastreio
+ * dispara ao abrir, e o remetente (inclusive spam) fica sabendo que o e-mail
+ * foi lido.
  */
-function prepareEmailHtml(html: string, allowRemoteImages = false): { html: string; blocked: number } {
+function prepareEmailHtml(html: string): string {
   try {
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    const isRemote = (u: string) => /^\s*https?:\/\//i.test(u);
-    let blocked = 0;
     doc.querySelectorAll('a[href]').forEach((anchor) => {
       anchor.setAttribute('target', '_blank');
       anchor.setAttribute('rel', 'noopener noreferrer');
     });
-    doc.querySelectorAll('img').forEach((img) => {
-      const src = img.getAttribute('src') || '';
-      if (!allowRemoteImages && isRemote(src)) {
-        img.setAttribute('data-blk', src);
-        img.removeAttribute('src');
-        img.removeAttribute('srcset');
-        blocked++;
-      }
-    });
-    if (!allowRemoteImages) {
-      doc.querySelectorAll<HTMLElement>('[style*="url("]').forEach((el) => {
-        const st = el.getAttribute('style') || '';
-        if (/url\(\s*['"]?\s*https?:/i.test(st)) {
-          el.setAttribute('style', st.replace(/url\(\s*['"]?\s*https?:[^)]*\)/gi, 'none'));
-          blocked++;
-        }
-      });
-      doc.querySelectorAll('style').forEach((s) => {
-        const css = s.textContent || '';
-        if (/url\(\s*['"]?\s*https?:/i.test(css)) {
-          s.textContent = css.replace(/url\(\s*['"]?\s*https?:[^)]*\)/gi, 'none');
-          blocked++;
-        }
-      });
-    }
-    return { html: '<!doctype html>' + doc.documentElement.outerHTML, blocked };
+    return '<!doctype html>' + doc.documentElement.outerHTML;
   } catch {
-    return { html, blocked: 0 };
+    return html;
   }
 }
 
@@ -3350,25 +3305,12 @@ function prepareEmailHtml(html: string, allowRemoteImages = false): { html: stri
  * conteudo — sem barra de rolagem interna. O scroll fica na coluna de leitura
  * (na pagina), nunca dentro do preview.
  * `sandbox="allow-same-origin"` (sem allow-scripts) permite medir a altura do
- * documento sem deixar o email executar JS. Imagens remotas começam bloqueadas
- * (anti-rastreio) e só carregam ao clicar em "Exibir imagens".
+ * documento sem deixar o email executar JS. As imagens carregam direto.
  */
-function EmailHtmlFrame({ html, msgId, sender }: { html: string; msgId?: string; sender?: string | null }) {
+function EmailHtmlFrame({ html }: { html: string }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(400);
-  // Começa já liberado se o usuário já exibiu as imagens deste e-mail antes.
-  const senderKey = useMemo(() => senderImageKey(sender), [sender]);
-  const [showImages, setShowImages] = useState(() => !!senderKey && allowedImageSenders.has(senderKey));
-  useEffect(() => {
-    setShowImages(!!senderKey && allowedImageSenders.has(senderKey));
-  }, [senderKey, msgId]);
-  const revealImages = useCallback(() => {
-    rememberAllowedImageSender(sender);
-    setShowImages(true);
-  }, [sender]);
-  const processedBlocked = useMemo(() => prepareEmailHtml(html, false), [html]);
-  const processedFull = useMemo(() => prepareEmailHtml(html, true), [html]);
-  const effectiveHtml = showImages ? processedFull.html : processedBlocked.html;
+  const effectiveHtml = useMemo(() => prepareEmailHtml(html), [html]);
 
   const measure = useCallback(() => {
     const doc = ref.current?.contentDocument;
@@ -3418,15 +3360,6 @@ function EmailHtmlFrame({ html, msgId, sender }: { html: string; msgId?: string;
 
   return (
     <>
-      {!showImages && processedBlocked.blocked > 0 && (
-        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
-          <ImageOff className="h-4 w-4 flex-none" />
-          <span>Imagens remotas bloqueadas para proteger sua privacidade.</span>
-          <button onClick={revealImages} className="ml-auto rounded-md border border-amber-300 bg-white px-2 py-0.5 font-medium text-amber-800 hover:bg-amber-100">
-            Exibir imagens
-          </button>
-        </div>
-      )}
       <iframe
         ref={ref}
         title="email"
