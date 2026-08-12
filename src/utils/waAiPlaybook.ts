@@ -77,6 +77,16 @@ export interface WaAiPlaybookField {
   required: boolean;
   /** O texto da pendência, na voz de quem espera: "mês e ano de início". */
   ask: string;
+  /**
+   * A PERGUNTA, com as palavras que vão ao cliente.
+   *
+   * Mora aqui, e não numa seção de prosa, porque é aqui que ela serve: o
+   * backend já sabe qual é o próximo campo, então entrega a frase pronta em vez
+   * de esperar que o modelo ache a certa numa lista de exemplos. Sem ela, o
+   * modelo escreve a pergunta com as próprias palavras — o que continua
+   * valendo, só não é mais o padrão.
+   */
+  question?: string;
   /** Quando existir, o campo só é perguntado se a condição valer. */
   onlyWhen?: WaAiFieldCondition;
 }
@@ -116,6 +126,20 @@ export interface WaAiPlaybookCut {
 export interface WaAiPlaybook {
   id: string;
   label: string;
+  /**
+   * A primeira mensagem da conversa, quando não há histórico nenhum.
+   *
+   * Estas três — abertura, estilo e fechamento — existem para que o "o que este
+   * agente deve fazer" não precise repetir, em prosa, o que o roteiro já
+   * organiza. O prompt do agente é MONTADO a partir daqui
+   * (`waAiPlaybookInstructions`); o texto livre continua existindo para o que
+   * não couber em campo nenhum.
+   */
+  opening?: string;
+  /** Como conversar: uma regra por linha, na voz de quem instrui. */
+  style?: string[];
+  /** O que fazer quando o roteiro fecha sem corte: documentos, resumo, entrega. */
+  closing?: string;
   fields: WaAiPlaybookField[];
   stages: WaAiPlaybookStage[];
   cuts: WaAiPlaybookCut[];
@@ -136,37 +160,114 @@ export interface WaAiPlaybook {
 export const WA_AI_PLAYBOOK_SEM_REGISTRO: WaAiPlaybook = {
   id: 'sem_registro_carteira',
   label: 'Trabalhou sem registro na carteira',
+  opening: 'Olá! Tudo bem? Vou fazer algumas perguntas rápidas para entender melhor o seu caso.\n\n'
+    + 'Para começar, qual é o seu nome?',
+  style: [
+    'Uma pergunta por vez. Sempre. Espere a resposta antes da próxima.',
+    'Mensagens curtas, como gente digitando no WhatsApp. Nada de parágrafo longo nem lista numerada para o cliente.',
+    'Depois que souber o nome, use o nome naturalmente.',
+    'Reaja ao que a pessoa contou antes de perguntar outra coisa — "entendi", "certo", "puxa, situação chata mesmo". Curto, sem drama e sem exagero.',
+    'Nunca pergunte o que ela já respondeu. Se vierem duas ou mais informações de uma vez, aproveite todas e registre cada uma no campo correspondente.',
+    'Se a resposta vier vaga, incompleta, confusa ou contraditória, pergunte de outro jeito antes de registrar qualquer coisa.',
+    'Fale como o cliente fala. Nada de "vínculo empregatício", "pessoalidade", "habitualidade" ou "subordinação" na conversa com ele.',
+    'Se perguntarem quanto vão receber, quanto demora, qual o valor da ação ou se vão ganhar, diga que isso precisa ser avaliado pelo advogado depois de analisar o caso, e siga a triagem.',
+    'Não diga que a pessoa "tem direito", "vai ganhar" ou que o caso está ganho.',
+    'Analise um empregador por vez. Não misture datas, pagamentos, rotina, provas ou testemunhas de empresas diferentes.',
+  ],
+  closing: 'Peça os documentos: diga em uma frase que o caso pode ser encaminhado para análise e que '
+    + 'você vai precisar de alguns documentos, que podem ser enviados por ali mesmo. Depois registre '
+    + 'ação=solicitar_documentos(), listando documento de identificação com foto, CTPS Digital e '
+    + 'as provas que a própria pessoa disse possuir. Não invente documentos ou provas que ela não '
+    + 'mencionou.\n'
+    + 'Ela pode mandar os documentos um por vez ou todos juntos. Antes de afirmar que um documento '
+    + 'chegou, está faltando ou já foi enviado, sempre confira por ação=consultar_documentos() — '
+    + 'nunca diga que recebeu algo porque lembra da conversa. Se faltar documento, peça só o que '
+    + 'falta, um item por vez.\n'
+    + 'Quando os documentos possíveis tiverem sido recebidos ou registrados como pendentes, avise em '
+    + 'uma frase curta que vai passar o caso para a equipe e faça ação=transferir(Atendimento).\n'
+    + 'No resumo escreva, em até 800 caracteres, nesta ordem e sem enfeite:\n'
+    + 'Nome | Empresa | Período | Ainda trabalha | Função | Salário aprox. | Dias e horário | '
+    + 'CTPS não assinada | Pessoalidade, pagamento, habitualidade e subordinação | Testemunha | '
+    + 'Provas que tem | Provas recebidas | Documentos pendentes | Observações | STATUS: LEAD QUALIFICADO\n'
+    + 'Só escreva LEAD QUALIFICADO com todos estes pontos confirmados ao mesmo tempo: era a própria '
+    + 'pessoa que precisava trabalhar; recebia pelo serviço; trabalhava com regularidade, e não de vez '
+    + 'em quando; alguém determinava tarefas, horários ou cobrava o serviço; a carteira não foi '
+    + 'assinada; existe pelo menos uma prova ou uma testemunha. Se algum ponto ficar duvidoso, faça '
+    + 'uma pergunta curta para esclarecer antes de decidir — "trabalhei sem carteira" não qualifica o '
+    + 'caso sozinho.',
   fields: [
-    { key: 'nome', label: 'Nome', type: 'texto', required: true, ask: 'o nome do cliente' },
-    { key: 'empregador', label: 'Empregador', type: 'texto', required: true, ask: 'para quem trabalhou (empresa ou pessoa)' },
+    {
+      key: 'nome', label: 'Nome', type: 'texto', required: true, ask: 'o nome do cliente',
+      question: 'Para começar, qual é o seu nome?',
+    },
+    {
+      key: 'empregador', label: 'Empregador', type: 'texto', required: true,
+      ask: 'para quem trabalhou (empresa ou pessoa)',
+      question: 'Para qual empresa ou pessoa você trabalhou sem registro?',
+    },
     {
       key: 'tipo_empregador', label: 'Tipo de empregador', type: 'enum',
       options: ['particular', 'publico'], required: true,
       ask: 'se o empregador é particular ou órgão público',
+      question: 'Esse trabalho era para uma empresa particular ou para prefeitura, estado, órgão público ou empresa pública?',
     },
-    { key: 'inicio', label: 'Início', type: 'data_mes_ano', required: true, ask: 'mês e ano em que começou' },
-    { key: 'ainda_trabalha', label: 'Ainda trabalha lá', type: 'bool', required: true, ask: 'se ainda trabalha lá' },
+    {
+      key: 'inicio', label: 'Início', type: 'data_mes_ano', required: true,
+      ask: 'mês e ano em que começou',
+      question: 'Em que mês e ano você começou a trabalhar lá?',
+    },
+    {
+      key: 'ainda_trabalha', label: 'Ainda trabalha lá', type: 'bool', required: true,
+      ask: 'se ainda trabalha lá',
+      question: 'Você ainda trabalha lá ou já saiu?',
+    },
     {
       key: 'saida', label: 'Saída', type: 'data_mes_ano', required: true,
-      ask: 'mês e ano da saída', onlyWhen: { field: 'ainda_trabalha', value: 'não' },
+      ask: 'mês e ano da saída',
+      question: 'Em que mês e ano você saiu?',
+      onlyWhen: { field: 'ainda_trabalha', value: 'não' },
     },
     {
       key: 'pessoalidade', label: 'Tinha de ser ela', type: 'bool', required: true,
       ask: 'se era ela mesma que precisava trabalhar ou podia mandar outra pessoa',
+      question: 'Era você mesmo que tinha que ir trabalhar ou, se quisesse, podia mandar outra pessoa no seu lugar?',
     },
-    { key: 'pagamento', label: 'Pagamento', type: 'texto', required: true, ask: 'se recebia pelo serviço, quanto e como era pago' },
-    { key: 'habitualidade', label: 'Rotina', type: 'texto', required: true, ask: 'quantos dias por semana, quais dias e quais horários' },
+    {
+      key: 'pagamento', label: 'Pagamento', type: 'texto', required: true,
+      ask: 'se recebia pelo serviço, quanto e como era pago',
+      question: 'Você recebia por esse trabalho? Se sim, mais ou menos quanto, e como eles te pagavam?',
+    },
+    {
+      key: 'habitualidade', label: 'Rotina', type: 'texto', required: true,
+      ask: 'quantos dias por semana, quais dias e quais horários',
+      question: 'Você trabalhava quantos dias por semana, e mais ou menos em que horário?',
+    },
     {
       key: 'subordinacao', label: 'Quem mandava', type: 'bool', required: true,
       ask: 'se alguém passava as tarefas, cobrava o serviço ou definia o horário',
+      question: 'Tinha alguém que passava o que você precisava fazer ou cobrava o serviço?',
     },
-    { key: 'tem_prova', label: 'Tem prova', type: 'bool', required: true, ask: 'se tem alguma prova desse trabalho' },
+    {
+      key: 'tem_prova', label: 'Tem prova', type: 'bool', required: true,
+      ask: 'se tem alguma prova desse trabalho',
+      question: 'Você tem alguma prova desse trabalho? Pode ser Pix ou comprovante de pagamento, conversa de WhatsApp, foto ou vídeo trabalhando, crachá, uniforme ou algum papel da empresa.',
+    },
     {
       key: 'provas', label: 'Quais provas', type: 'texto', required: true,
-      ask: 'quais provas ela tem', onlyWhen: { field: 'tem_prova', value: 'sim' },
+      ask: 'quais provas ela tem',
+      question: 'Quais dessas você tem guardadas?',
+      onlyWhen: { field: 'tem_prova', value: 'sim' },
     },
-    { key: 'tem_testemunha', label: 'Tem testemunha', type: 'bool', required: true, ask: 'se tem alguém que possa testemunhar' },
-    { key: 'outros_trabalhos', label: 'Outro sem carteira', type: 'bool', required: false, ask: 'se teve outro trabalho sem carteira' },
+    {
+      key: 'tem_testemunha', label: 'Tem testemunha', type: 'bool', required: true,
+      ask: 'se tem alguém que possa testemunhar',
+      question: 'E tem alguém que trabalhou com você ou via sua rotina, que poderia servir de testemunha?',
+    },
+    {
+      key: 'outros_trabalhos', label: 'Outro sem carteira', type: 'bool', required: false,
+      ask: 'se teve outro trabalho sem carteira',
+      question: 'Você teve algum outro trabalho sem carteira assinada além desse?',
+    },
   ],
   stages: [
     { id: 'identificacao', label: 'Quem é e para quem trabalhou', fields: ['nome', 'empregador', 'tipo_empregador'] },
@@ -230,6 +331,25 @@ function chaveNormalizada(key: unknown): string {
 
 function textoAparado(value: unknown, max = WA_AI_PLAYBOOK_TEXT_MAX_CHARS): string {
   const t = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+}
+
+/**
+ * Igual ao anterior, mas PRESERVANDO as quebras de linha.
+ *
+ * A abertura da campanha são duas mensagens — saudação, linha em branco,
+ * pergunta —, e é a linha em branco que `splitWaAiReply` lê para mandar as duas
+ * separadas. Colapsar espaço em branco aqui transformaria a abertura numa bolha
+ * só, calada, sem ninguém notar até ver a conversa do cliente.
+ */
+function textoLongo(value: unknown, max: number): string {
+  const t = String(value ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(linha => linha.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
@@ -643,7 +763,65 @@ export function waAiPlaybookPromptBlock(
   linhas.push('Pergunte apenas o primeiro item da lista. Os demais ficam para as próximas mensagens, '
     + 'e o que o cliente já respondeu não aparece aqui — não torne a perguntar.');
 
+  // A frase exata, quando o roteiro traz uma. Entregar a pergunta pronta é
+  // diferente de listar exemplos e torcer para o modelo achar o certo: ele erra
+  // menos quando não precisa escolher.
+  const proximo = progress.nextField ? waAiPlaybookField(playbook, progress.nextField) : null;
+  if (proximo?.question) {
+    linhas.push('', 'A pergunta desta vez é esta, e ela já está escrita do jeito que o cliente entende. '
+      + 'Use estas palavras, mudando só o necessário para encaixar no que ele acabou de dizer:',
+      `"${proximo.question}"`);
+  }
+
   return linhas.join('\n');
+}
+
+/**
+ * O "o que este agente deve fazer", MONTADO a partir do roteiro.
+ *
+ * Antes disto, a mesma coisa estava escrita nos dois lugares: o roteiro sabia
+ * que o próximo campo era `tipo_empregador`, e a frase para perguntá-lo vivia
+ * numa lista de exemplos, em prosa, longe do campo. Duas fontes para o mesmo
+ * dado é o mesmo problema de `empresa` e `empregador` — só que na configuração
+ * em vez de na memória.
+ *
+ * O que continua no texto livre do agente: tudo o que não é do roteiro —
+ * transferência para humano, acompanhamento, continuidade da conversa. E as
+ * expressões `ação=`, que o backend compila a partir dos textos.
+ */
+export function waAiPlaybookInstructions(playbook: WaAiPlaybook): string {
+  const partes: string[] = [];
+
+  const estilo = (playbook.style || []).map(s => String(s || '').trim()).filter(Boolean);
+  if (estilo.length > 0) {
+    partes.push(`# Como você conversa\n${estilo.map(s => `- ${s}`).join('\n')}`);
+  }
+
+  const abertura = String(playbook.opening || '').trim();
+  if (abertura) {
+    partes.push(
+      '# Abertura\n'
+      + 'Se esta conversa ainda não tem nenhuma mensagem sua, comece assim, aproximadamente do '
+      + `mesmo tamanho:\n\n"${abertura}"\n\n`
+      + 'Se você já falou alguma vez nesta conversa, a abertura já aconteceu: não a repita.');
+  }
+
+  // As perguntas de todos os campos, na ordem — o modelo vê a que precisa no
+  // bloco do roteiro, mas ler a conversa inteira de antemão é o que faz uma
+  // pergunta encaixar na anterior em vez de soar avulsa.
+  const comPergunta = playbook.fields.filter(f => String(f.question || '').trim());
+  if (comPergunta.length > 0) {
+    partes.push(
+      '# Como perguntar cada coisa\n'
+      + 'Estas são as perguntas do roteiro, na voz do escritório. Pergunte UMA por vez, e só a que '
+      + 'o roteiro indicar:\n'
+      + comPergunta.map(f => `- ${f.label}: "${String(f.question).trim()}"`).join('\n'));
+  }
+
+  const fechamento = String(playbook.closing || '').trim();
+  if (fechamento) partes.push(`# Quando o roteiro estiver completo\n${fechamento}`);
+
+  return partes.join('\n\n');
 }
 
 // ── Leitura de um roteiro vindo de fora ─────────────────────────────────────
@@ -692,9 +870,14 @@ export function normalizeWaAiPlaybook(raw: unknown): WaAiPlaybook | null {
       ? { field: chaveNormalizada(cond.field), value: textoAparado(cond.value, 60) }
       : undefined;
 
+    // A pergunta é a única coisa daqui que vai INTEIRA para o cliente, então
+    // ela tem um teto próprio, bem maior que o dos rótulos.
+    const question = textoAparado(f.question, 400);
+
     vistos[key] = true;
     fields.push({
       key, label, type, required: f.required !== false, ask,
+      ...(question ? { question } : {}),
       ...(options ? { options } : {}),
       ...(onlyWhen ? { onlyWhen } : {}),
     });
@@ -743,9 +926,22 @@ export function normalizeWaAiPlaybook(raw: unknown): WaAiPlaybook | null {
     });
   }
 
+  const style = (Array.isArray(src.style) ? src.style : [])
+    .map(s => textoAparado(s, 300))
+    .filter(s => s.length > 0)
+    .slice(0, 30);
+
+  // Abertura e fechamento vão inteiros para o prompt: aparar no meio cortaria a
+  // instrução justamente onde ela diz o que fazer.
+  const opening = textoLongo(src.opening, 800);
+  const closing = textoLongo(src.closing, 3000);
+
   return {
     id: chaveNormalizada(src.id) || 'roteiro',
     label: textoAparado(src.label, 80) || 'Triagem',
+    ...(opening ? { opening } : {}),
+    ...(style.length > 0 ? { style } : {}),
+    ...(closing ? { closing } : {}),
     fields, stages, cuts,
   };
 }

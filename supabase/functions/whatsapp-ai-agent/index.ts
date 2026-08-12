@@ -77,6 +77,7 @@ import {
   normalizeWaAiPlaybookValue,
   waAiPlaybookField,
   waAiPlaybookFieldKeys,
+  waAiPlaybookInstructions,
   waAiPlaybookPromptBlock,
   type WaAiPlaybook,
   type WaAiTriageProgress,
@@ -1684,7 +1685,15 @@ function buildSystemPrompt(
   // sabe que dia é hoje, e o modelo não sabe.
   parts.push(waAiDateBlock());
 
-  const doText = String(assistant.instructions_do || '').trim();
+  // O "o que fazer" tem duas fontes, nesta ordem: o ROTEIRO, que traz abertura,
+  // estilo, as perguntas de cada campo e o fechamento; e o texto livre do
+  // agente, para o que não cabe em campo nenhum (transferência para humano,
+  // acompanhamento, continuidade). Antes, tudo isso era prosa, e a frase de
+  // cada pergunta vivia longe do campo que ela busca.
+  const doText = [
+    playbook ? waAiPlaybookInstructions(playbook) : '',
+    String(assistant.instructions_do || '').trim(),
+  ].filter(Boolean).join('\n\n');
   if (doText) parts.push(`# O que você deve fazer\n${doText}`);
 
   const dontText = String(assistant.instructions_dont || '').trim();

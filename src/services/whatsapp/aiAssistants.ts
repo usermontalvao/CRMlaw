@@ -16,12 +16,13 @@ import type {
   WhatsAppAiActionRef,
 } from '../../types/whatsapp.types';
 import {
+  actionsUsedInPrompt,
   isWaAiModelAllowed,
   normalizeWaAiAllowedActions,
   pruneWaAiActionRefs,
   validateWaAiPrompt,
 } from '../../utils/waAiActionCatalog';
-import { normalizeWaAiPlaybook } from '../../utils/waAiPlaybook';
+import { normalizeWaAiPlaybook, waAiPlaybookInstructions } from '../../utils/waAiPlaybook';
 
 const ASSISTANTS_TABLE = 'whatsapp_ai_assistants';
 const EXECUTIONS_TABLE = 'whatsapp_ai_executions';
@@ -101,13 +102,27 @@ export const aiAssistantsApi = {
     const instructionsDo = String(input.instructions_do ?? '');
     const instructionsDont = String(input.instructions_dont ?? '');
 
+    // O roteiro também é prompt: desde que ele passou a trazer abertura, estilo
+    // e fechamento, uma expressão `ação=` pode estar escrita LÁ. Sem contá-la
+    // aqui, a referência de destino seria podada por não aparecer em nenhum dos
+    // dois textos — e o agente perderia, em silêncio, para quem transferir.
+    const playbook = normalizeWaAiPlaybook(input.playbook);
+    const playbookText = playbook ? waAiPlaybookInstructions(playbook) : '';
+
     const refs = pruneWaAiActionRefs(
-      (input.action_refs || []) as WhatsAppAiActionRef[], instructionsDo, instructionsDont);
-    const allowed = normalizeWaAiAllowedActions(input.allowed_actions);
+      (input.action_refs || []) as WhatsAppAiActionRef[],
+      instructionsDo, instructionsDont, playbookText);
+    // Mesma regra do editor — citar uma ação é habilitá-la —, agora valendo
+    // também para o que foi escrito no roteiro.
+    const allowed = normalizeWaAiAllowedActions([
+      ...normalizeWaAiAllowedActions(input.allowed_actions),
+      ...actionsUsedInPrompt(playbookText),
+    ]);
 
     const issues = [
       ...validateWaAiPrompt(instructionsDo, refs, allowed).map(i => ({ ...i, field: 'do' as const })),
       ...validateWaAiPrompt(instructionsDont, refs, allowed).map(i => ({ ...i, field: 'dont' as const })),
+      ...validateWaAiPrompt(playbookText, refs, allowed).map(i => ({ ...i, field: 'do' as const })),
     ];
     const erros = issues.filter(i => i.level === 'erro');
     if (erros.length > 0) {
@@ -142,7 +157,7 @@ export const aiAssistantsApi = {
       // presta sai aqui, na hora de salvar, e não no meio de um atendimento —
       // e o que fica é exatamente o que vai virar o formato de resposta
       // obrigatório do modelo.
-      playbook: normalizeWaAiPlaybook(input.playbook) || {},
+      playbook: playbook || {},
     };
   },
 

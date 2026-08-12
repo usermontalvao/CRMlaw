@@ -60,6 +60,9 @@ const REGRAS: { value: WaAiCutRule['kind']; label: string }[] = [
 type DraftPlaybook = {
   id?: string;
   label?: string;
+  opening?: string;
+  style?: string[];
+  closing?: string;
   fields?: Partial<WaAiPlaybookField>[];
   stages?: Partial<WaAiPlaybookStage>[];
   cuts?: Partial<WaAiPlaybookCut>[];
@@ -230,6 +233,49 @@ export const AiPlaybookEditor: React.FC<Props> = ({ value, onChange }) => {
       )}
 
       {!modoJson && (<>
+      {/* ── Conversa ── */}
+      <section style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <h4 style={{ fontSize: '12.5px', fontWeight: 700, color: '#111827', margin: 0 }}>
+          Como este agente conversa
+        </h4>
+        <p style={{ fontSize: '11.5px', color: '#6b7280', margin: 0 }}>
+          Isto era prosa em “o que este agente deve fazer”. Aqui vira dado: o sistema monta o prompt a
+          partir destes campos, e a pergunta de cada informação fica ao lado dela, logo abaixo.
+        </p>
+
+        <div>
+          <label style={labelStyle}>Primeira mensagem da conversa</label>
+          <textarea style={{ ...fieldStyle, minHeight: '70px', resize: 'vertical' }}
+            value={draft.opening || ''}
+            placeholder={'Olá! Tudo bem? Vou fazer algumas perguntas rápidas para entender melhor o seu caso.\n\nPara começar, qual é o seu nome?'}
+            onChange={e => patch({ opening: e.target.value })} />
+          <p style={{ fontSize: '10.5px', color: '#9ca3af', marginTop: '4px' }}>
+            Uma linha em branco vira duas mensagens no WhatsApp, do jeito que uma pessoa escreve. Só
+            é usada quando a conversa ainda não tem nenhuma mensagem do agente.
+          </p>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Regras de conversa, uma por linha</label>
+          <textarea style={{ ...fieldStyle, minHeight: '120px', resize: 'vertical' }}
+            value={(draft.style || []).join('\n')}
+            placeholder={'Uma pergunta por vez. Sempre.\nMensagens curtas, como gente digitando no WhatsApp.\nNão diga que a pessoa tem direito ou vai ganhar.'}
+            onChange={e => patch({ style: e.target.value.split('\n').map(l => l.trim()).filter(Boolean) })} />
+        </div>
+
+        <div>
+          <label style={labelStyle}>O que fazer quando o roteiro estiver completo</label>
+          <textarea style={{ ...fieldStyle, minHeight: '100px', resize: 'vertical' }}
+            value={draft.closing || ''}
+            placeholder="Peça os documentos, avise que vai passar para a equipe e transfira, com o resumo no formato combinado."
+            onChange={e => patch({ closing: e.target.value })} />
+          <p style={{ fontSize: '10.5px', color: '#9ca3af', marginTop: '4px' }}>
+            Só entra em cena quando nada foi cortado e não falta mais nenhuma informação. Pode citar
+            ações com <code>ação=</code>, como no texto do agente.
+          </p>
+        </div>
+      </section>
+
       {/* ── Campos ── */}
       <section>
         <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -263,6 +309,18 @@ export const AiPlaybookEditor: React.FC<Props> = ({ value, onChange }) => {
                     {TIPOS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </div>
+              </div>
+
+              <div style={{ marginTop: '8px' }}>
+                <label style={labelStyle}>A pergunta, com as palavras que vão ao cliente</label>
+                <textarea style={{ ...fieldStyle, minHeight: '52px', resize: 'vertical' }}
+                  value={f.question || ''}
+                  placeholder="Esse trabalho era para uma empresa particular ou para prefeitura, estado, órgão público ou empresa pública?"
+                  onChange={e => patchField(i, { question: e.target.value })} />
+                <p style={{ fontSize: '10.5px', color: '#9ca3af', marginTop: '4px' }}>
+                  O sistema entrega esta frase pronta quando chegar a vez deste campo. Em branco, o
+                  agente escreve a pergunta com as próprias palavras.
+                </p>
               </div>
 
               <div style={{ marginTop: '8px' }}>

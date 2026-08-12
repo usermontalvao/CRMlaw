@@ -10,6 +10,7 @@ import {
   normalizeWaAiPlaybookValue,
   waAiPlaybookField,
   waAiPlaybookFieldKeys,
+  waAiPlaybookInstructions,
   waAiPlaybookPromptBlock,
   type WaAiPlaybook,
 } from './waAiPlaybook.ts';
@@ -224,6 +225,51 @@ test('o bloco lista só o que falta, na ordem', () => {
   assert.match(bloco, /Etapa atual: Quem é e para quem trabalhou/);
   assert.match(bloco, /- para quem trabalhou/);
   assert.doesNotMatch(bloco, /o nome do cliente/);
+});
+
+// ── O prompt montado a partir do roteiro ────────────────────────────────────
+
+test('a pergunta mora ao lado do campo que ela busca', () => {
+  const bloco = waAiPlaybookPromptBlock(ROTEIRO, progresso({ nome: 'Ana' }));
+  assert.match(bloco, /Para qual empresa ou pessoa você trabalhou sem registro\?/);
+  // Só a da vez: listar as outras aqui seria devolver ao modelo a escolha que
+  // o roteiro acabou de fazer por ele.
+  assert.doesNotMatch(bloco, /Em que mês e ano você começou/);
+});
+
+test('campo sem pergunta escrita não inventa aspas no prompt', () => {
+  const semPergunta: WaAiPlaybook = {
+    ...ROTEIRO,
+    fields: ROTEIRO.fields.map(f => ({ ...f, question: undefined })),
+  };
+  const p = computeWaAiTriageProgress({ playbook: semPergunta, facts: {}, now: HOJE, timeZone: TZ });
+  const bloco = waAiPlaybookPromptBlock(semPergunta, p);
+  assert.match(bloco, /o nome do cliente/);
+  assert.doesNotMatch(bloco, /A pergunta desta vez/);
+});
+
+test('o "o que fazer" sai do roteiro, com abertura, estilo e fechamento', () => {
+  const texto = waAiPlaybookInstructions(ROTEIRO);
+  assert.match(texto, /# Como você conversa/);
+  assert.match(texto, /- Uma pergunta por vez/);
+  assert.match(texto, /# Abertura/);
+  assert.match(texto, /Vou fazer algumas perguntas rápidas/);
+  assert.match(texto, /# Como perguntar cada coisa/);
+  assert.match(texto, /# Quando o roteiro estiver completo/);
+  assert.match(texto, /STATUS: LEAD QUALIFICADO/);
+});
+
+test('a linha em branco da abertura sobrevive — é ela que vira duas mensagens', () => {
+  const lido = normalizeWaAiPlaybook({
+    fields: [{ key: 'nome', type: 'texto' }],
+    opening: 'Olá! Tudo bem?\n\nQual é o seu nome?',
+  }) as WaAiPlaybook;
+  assert.equal(lido.opening, 'Olá! Tudo bem?\n\nQual é o seu nome?');
+});
+
+test('roteiro sem abertura nem estilo não gera cabeçalho vazio', () => {
+  const magro = normalizeWaAiPlaybook({ fields: [{ key: 'nome', type: 'texto', ask: 'o nome' }] }) as WaAiPlaybook;
+  assert.equal(waAiPlaybookInstructions(magro), '');
 });
 
 // ── Roteiro vindo de fora ───────────────────────────────────────────────────
