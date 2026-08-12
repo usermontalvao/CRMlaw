@@ -70,6 +70,11 @@ import {
   type WaAiMemory,
 } from '../_shared/wa-ai-gate.ts';
 import { WA_AI_DIALOGUE_QUALITY_RULES } from '../_shared/wa-ai-dialogue.ts';
+import {
+  reconcileWaAiTriageState,
+  waAiAlreadyAnswered,
+  type WaAiTriageTurn,
+} from '../_shared/wa-ai-triage-facts.ts';
 import { waAiAnnotateDates, waAiDateBlock } from '../_shared/wa-ai-now.ts';
 import { splitWaAiReply, waAiKeepOneQuestion, waAiPartPauseMs } from '../_shared/wa-ai-reply-parts.ts';
 import {
@@ -399,6 +404,16 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   if (executadas.length > 0) {
     nextMemory.lastAction = `${executadas.join(', ')} (simulado)`.slice(0, 120);
   }
+
+  // Mesma leitura do atendimento real — é para isso que a prévia serve: o
+  // administrador precisa ver na simulação o estado que a conversa gravaria.
+  const estadoPrevia = reconcileWaAiTriageState({
+    knownFacts: nextMemory.knownFacts,
+    pendingItems: nextMemory.pendingItems,
+    turns: triageTurns(history),
+  });
+  nextMemory.knownFacts = estadoPrevia.knownFacts;
+  nextMemory.pendingItems = estadoPrevia.pendingItems;
 
   // Quando cairia a retomada, se o cliente parasse de responder agora. A conta
   // é a política de verdade — mesma função que o agendador usa.
@@ -731,6 +746,7 @@ async function runFollowupTurn(admin: any, conversationId: string, followupId: s
       pending_items: ctx.session.pending_items,
       last_action: ctx.session.last_action,
     });
+    const pergunta = await lastAiQuestion(admin, conversationId, String(enviado?.message || ''));
     const resultado = await ensureWaAiFollowupScheduled(admin, {
       conversationId,
       assistantId: ctx.assistant.id,
@@ -739,7 +755,9 @@ async function runFollowupTurn(admin: any, conversationId: string, followupId: s
       fromIso: new Date().toISOString(),
       message: buildWaAiFollowupMessage({
         firstName: waAiFirstName(ctx.conversation.contact_name),
-        lastQuestion: await lastAiQuestion(admin, conversationId, String(enviado?.message || '')),
+        // Mesma conferência do turno normal: a escada continua, mas não recobra
+        // o que já está gravado.
+        lastQuestion: pergunta && !waAiAlreadyAnswered(pergunta, memory.knownFacts) ? pergunta : null,
         pendingItems: memory.pendingItems,
         attempt: decision.attempt,
       }),
@@ -920,6 +938,8 @@ async function ensureAutoFollowup(
   extra: {
     replySent: boolean; handedOff: boolean; followupCancelled: boolean;
     lastReply: string | null; pendingItems: string[];
+    /** O estado JÁ gravado — é contra ele que a cobrança é conferida. */
+    knownFacts: Record<string, string>;
     optedOut?: boolean; scheduledAtOverride?: string | null;
   },
 ): Promise<Record<string, unknown> | null> {
@@ -949,6 +969,7 @@ async function ensureAutoFollowup(
     return { action: 'followup_automatico', ok: false, motivo: decision.reason };
   }
   const tentativa = decision.schedule ? decision.attempt : attemptsDone + 1;
+  const pergunta = waAiLastQuestion(extra.lastReply);
 
   const resultado = await ensureWaAiFollowupScheduled(admin, {
     conversationId: ctx.conversation.id,
@@ -960,7 +981,11 @@ async function ensureAutoFollowup(
     kind: compromisso ? 'appointment' : 'followup',
     message: buildWaAiFollowupMessage({
       firstName: waAiFirstName(ctx.conversation.contact_name),
-      lastQuestion: waAiLastQuestion(extra.lastReply),
+      // A última pergunta vira o texto da retomada quando não há pendência
+      // anotada — mas só se ela ainda estiver de pé. Quando o agente torna a
+      // perguntar algo que já está gravado, repetir a pergunta na retomada é
+      // cobrar duas vezes o mesmo dado, e por escrito.
+      lastQuestion: pergunta && !waAiAlreadyAnswered(pergunta, extra.knownFacts) ? pergunta : null,
       pendingItems: extra.pendingItems,
       attempt: tentativa,
     }),
@@ -1255,6 +1280,22 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     nextMemory.lastAction = `${executadas.join(', ')}${marca}`.slice(0, 120);
   }
 
+  // ── Estado estruturado ──
+  // O período (início, ainda trabalha, saída) é lido AQUI, da conversa, e não
+  // esperado do modelo. Em 12/08/2026 o cliente disse as três coisas e as três
+  // sumiram: nos turnos em que ele respondeu, `requested_actions` veio vazio.
+  // Junto vem a poda: campo respondido não volta para a lista de espera, nem
+  // quando o próprio modelo torna a pedi-lo. É esta lista que o follow-up lê
+  // três linhas abaixo — sem a poda, a retomada das 8h cobrava por escrito o mês
+  // que o cliente já tinha dito.
+  const estado = reconcileWaAiTriageState({
+    knownFacts: nextMemory.knownFacts,
+    pendingItems: nextMemory.pendingItems,
+    turns: triageTurns(history),
+  });
+  nextMemory.knownFacts = estado.knownFacts;
+  nextMemory.pendingItems = estado.pendingItems;
+
   // A memória também não pode depender de o modelo lembrar de anotá-la. Na
   // conversa que motivou este ajuste foram seis execuções seguidas sem uma
   // única chamada de `registrar_memoria` — o painel ficou vazio a conversa
@@ -1291,6 +1332,7 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     followupCancelled,
     lastReply: reply || null,
     pendingItems: pendenciasDoModelo,
+    knownFacts: nextMemory.knownFacts,
     optedOut: sinais.optedOut,
     scheduledAtOverride: sinais.scheduledAt,
   });
@@ -1376,6 +1418,21 @@ const MEMORY_TOOL: WaAiToolSchema = {
     },
   },
 };
+
+/**
+ * O histórico na forma que a leitura do estado estruturado espera.
+ *
+ * O áudio entra pela transcrição: "janeiro de 2020" falado vale tanto quanto
+ * escrito, e a triagem inteira desta campanha acontece por áudio metade das
+ * vezes.
+ */
+function triageTurns(history: WaAiHistoryMessage[]): WaAiTriageTurn[] {
+  return history.map(m => ({
+    direction: m.direction,
+    text: String(m.transcriptionText || m.content || ''),
+    at: m.waTimestamp,
+  }));
+}
 
 /**
  * As seis partes do prompt, nesta ordem: regras da plataforma, o que deve
