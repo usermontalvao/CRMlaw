@@ -71,6 +71,22 @@ import {
 } from '../_shared/wa-ai-gate.ts';
 import { WA_AI_DIALOGUE_QUALITY_RULES } from '../_shared/wa-ai-dialogue.ts';
 import {
+  buildWaAiTriageSchema,
+  computeWaAiTriageProgress,
+  normalizeWaAiPlaybook,
+  normalizeWaAiPlaybookValue,
+  waAiPlaybookField,
+  waAiPlaybookFieldKeys,
+  waAiPlaybookPromptBlock,
+  type WaAiPlaybook,
+  type WaAiTriageProgress,
+  type WaAiTriageSchema,
+} from '../_shared/wa-ai-playbook.ts';
+import {
+  parseWaAiTriageReply,
+  type WaAiTriageReply,
+} from '../_shared/wa-ai-triage-reply.ts';
+import {
   reconcileWaAiTriageState,
   waAiAlreadyAnswered,
   type WaAiTriageTurn,
@@ -255,6 +271,10 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     timezone: String(raw.timezone || 'America/Cuiaba'),
     debounce_seconds: 0,
     history_limit: Number(raw.history_limit) || 12,
+    // O roteiro vem do RASCUNHO quando a tela manda um: é assim que o
+    // administrador experimenta uma etapa nova antes de salvar o agente.
+    playbook: (raw.playbook && typeof raw.playbook === 'object' && !Array.isArray(raw.playbook))
+      ? raw.playbook as Record<string, unknown> : {},
   };
 
   if (!isWaAiModelAllowed(assistant.provider, assistant.model)) {
@@ -299,8 +319,12 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     session: {},
   };
 
+  const playbook = normalizeWaAiPlaybook(assistant.playbook);
+  const schema = playbook ? buildWaAiTriageSchema(playbook) : null;
+  const fieldKeys = playbook ? waAiPlaybookFieldKeys(playbook) : [];
+
   const tools = buildWaAiTools(assistant.allowed_actions, assistant.action_refs);
-  tools.push(MEMORY_TOOL);
+  tools.push(playbook ? SUMMARY_TOOL : MEMORY_TOOL);
 
   // O relógio das mensagens é fictício e crescente: `buildWaAiPromptMessages`
   // ordena por ele, e é isso que preserva a ordem que o administrador digitou.
@@ -313,8 +337,12 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     waTimestamp: new Date(base + i * 60_000).toISOString(),
   }));
 
+  const progressoAntes = playbook
+    ? computeWaAiTriageProgress({ playbook, facts: memory.knownFacts, timeZone: assistant.timezone })
+    : null;
+
   const messages: any[] = [
-    { role: 'system', content: buildSystemPrompt(ctx, memory, tools) },
+    { role: 'system', content: buildSystemPrompt(ctx, memory, tools, playbook, progressoAntes) },
     ...buildWaAiPromptMessages(history, assistant.history_limit),
   ];
   if (body.trigger === 'followup') {
@@ -326,11 +354,19 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
 
   let completion: ModelCompletion;
   try {
-    completion = await callModel(assistant.provider, assistant.model, messages, tools);
+    completion = await callModel(assistant.provider, assistant.model, messages, tools, schema);
   } catch (err) {
     const message = String(err instanceof Error ? err.message : err).slice(0, 400);
     return json({ ok: false, error: message, duration_ms: Date.now() - started });
   }
+
+  const leituras: WaAiTriageReply[] = [];
+  const lerResposta = () => {
+    if (!playbook) return;
+    const texto = String(completion.text || '').trim();
+    if (texto) leituras.push(parseWaAiTriageReply(texto, fieldKeys));
+  };
+  lerResposta();
 
   const requested: unknown[] = [];
   const executed: unknown[] = [];
@@ -347,7 +383,9 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
       requested.push({ action: call.name, args });
 
       if (call.name === MEMORY_TOOL.function.name) {
-        memoryPatch = args;
+        memoryPatch = playbook
+          ? { summary: (args as Record<string, unknown> | null)?.summary ?? '' }
+          : args;
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: true }) });
         continue;
       }
@@ -385,14 +423,18 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     }
 
     try {
-      completion = await callModel(assistant.provider, assistant.model, messages, []);
+      completion = await callModel(assistant.provider, assistant.model, messages, [], schema);
+      lerResposta();
     } catch (err) {
       console.error('segunda volta da prévia falhou', err);
       completion = { ...completion, text: completion.text || '' };
     }
   }
 
-  let reply = waAiKeepOneQuestion((completion.text || '').trim());
+  const ultimaLeitura = leituras.length > 0 ? leituras[leituras.length - 1] : null;
+  const degradado = !!playbook && (leituras.length === 0 || leituras.some(l => l.degraded));
+  let reply = waAiKeepOneQuestion(
+    (playbook ? String(ultimaLeitura?.message || '') : String(completion.text || '')).trim());
   if (reply.length > WA_AI_MAX_REPLY_CHARS) reply = `${reply.slice(0, WA_AI_MAX_REPLY_CHARS - 1)}…`;
   const replyParts = splitWaAiReply(reply);
 
@@ -407,18 +449,36 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
 
   // Mesma leitura do atendimento real — é para isso que a prévia serve: o
   // administrador precisa ver na simulação o estado que a conversa gravaria.
+  if (playbook) {
+    for (const leitura of leituras) {
+      for (const [chave, valor] of Object.entries(leitura.updates)) {
+        const field = waAiPlaybookField(playbook, chave);
+        if (!field) continue;
+        nextMemory.knownFacts[field.key] = normalizeWaAiPlaybookValue(field, valor) || String(valor);
+      }
+    }
+  }
+
   const estadoPrevia = reconcileWaAiTriageState({
     knownFacts: nextMemory.knownFacts,
     pendingItems: nextMemory.pendingItems,
     turns: triageTurns(history),
+    playbookKeys: playbook ? fieldKeys : null,
   });
   nextMemory.knownFacts = estadoPrevia.knownFacts;
   nextMemory.pendingItems = estadoPrevia.pendingItems;
 
+  const progressoPrevia = playbook
+    ? computeWaAiTriageProgress({ playbook, facts: nextMemory.knownFacts, timeZone: assistant.timezone })
+    : null;
+  if (progressoPrevia) nextMemory.pendingItems = progressoPrevia.pending;
+
   // Quando cairia a retomada, se o cliente parasse de responder agora. A conta
   // é a política de verdade — mesma função que o agendador usa.
   const attempt = Number(body.followup_attempt) > 0 ? Number(body.followup_attempt) : 1;
-  const proximo = terminal ? null : nextFollowupAt(followupPolicyOf(assistant), attempt, new Date());
+  const proximo = (terminal || progressoPrevia?.cut)
+    ? null
+    : nextFollowupAt(followupPolicyOf(assistant), attempt, new Date());
 
   return json({
     ok: true,
@@ -434,6 +494,17 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     },
     handed_off: terminal,
     followup: proximo ? { attempt, scheduled_at: proximo.toISOString() } : null,
+    ...(progressoPrevia ? {
+      triage: {
+        stage: progressoPrevia.stage,
+        stage_label: progressoPrevia.stageLabel,
+        pending: progressoPrevia.pending,
+        next_field: progressoPrevia.nextField,
+        cut: progressoPrevia.cut,
+        complete: progressoPrevia.complete,
+      },
+    } : {}),
+    ...(degradado ? { degraded: String(ultimaLeitura?.reason || 'resposta fora do formato combinado') } : {}),
     duration_ms: Date.now() - started,
   });
 }
@@ -464,6 +535,8 @@ interface Assistant {
   timezone: string;
   debounce_seconds: number;
   history_limit: number;
+  /** O roteiro da triagem, cru como veio do banco. Vazio = agente sem roteiro. */
+  playbook: Record<string, unknown>;
 }
 
 interface TurnContext {
@@ -533,6 +606,8 @@ async function loadContext(admin: any, conversationId: string): Promise<TurnCont
       ...assistant,
       allowed_actions: normalizeWaAiAllowedActions(assistant.allowed_actions),
       action_refs: Array.isArray(assistant.action_refs) ? assistant.action_refs : [],
+      playbook: (assistant.playbook && typeof assistant.playbook === 'object' && !Array.isArray(assistant.playbook))
+        ? assistant.playbook : {},
     } as Assistant,
     session,
   };
@@ -941,10 +1016,22 @@ async function ensureAutoFollowup(
     /** O estado JÁ gravado — é contra ele que a cobrança é conferida. */
     knownFacts: Record<string, string>;
     optedOut?: boolean; scheduledAtOverride?: string | null;
+    /** O corte do roteiro, quando disparou neste turno ou num anterior. */
+    triageCut?: { id: string; reason: string } | null;
   },
 ): Promise<Record<string, unknown> | null> {
   const policy = followupPolicyOf(ctx.assistant);
   if (!policy.enabled) return null;
+
+  // Triagem encerrada não tem retomada. Vale para os dois efeitos: quem foi
+  // dispensado pelo prazo não é procurado de novo, e quem está indo para uma
+  // pessoa não pode receber a IA cobrando o que ela mesma parou de perguntar.
+  if (extra.triageCut) {
+    return {
+      action: 'followup_automatico', ok: false,
+      motivo: `Triagem encerrada: ${extra.triageCut.reason}.`,
+    };
+  }
 
   const attemptsDone = Number(ctx.session.followup_attempts || 0);
   const decision = decideAutoFollowup({
@@ -1117,8 +1204,15 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     waTimestamp: m.wa_timestamp,
   }));
 
+  // ── O roteiro ──
+  // Agente SEM roteiro segue exatamente como antes: texto livre e memória por
+  // ferramenta. O roteiro é o que liga o motor novo, um agente de cada vez.
+  const playbook = normalizeWaAiPlaybook(assistant.playbook);
+  const schema = playbook ? buildWaAiTriageSchema(playbook) : null;
+  const fieldKeys = playbook ? waAiPlaybookFieldKeys(playbook) : [];
+
   const tools = buildWaAiTools(assistant.allowed_actions, assistant.action_refs);
-  tools.push(MEMORY_TOOL);
+  tools.push(playbook ? SUMMARY_TOOL : MEMORY_TOOL);
 
   // ── Leitura do que o cliente quis dizer ──
   // Feita pelo BACKEND, antes do modelo, e sobre a mensagem crua. O modelo
@@ -1126,7 +1220,14 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // a conversa acabou nem se ficou um compromisso marcado.
   const sinais = await readCustomerSignals(admin, ctx, history);
 
-  const systemPrompt = buildSystemPrompt(ctx, memory, tools);
+  // Onde a triagem está ANTES deste turno — é o que o modelo lê para saber o
+  // que perguntar. O veredito depois da resposta é calculado de novo, lá
+  // embaixo, sobre o que o cliente acabou de informar.
+  const progressoAntes = playbook
+    ? computeWaAiTriageProgress({ playbook, facts: memory.knownFacts, timeZone: assistant.timezone })
+    : null;
+
+  const systemPrompt = buildSystemPrompt(ctx, memory, tools, playbook, progressoAntes);
   const messages: any[] = [
     { role: 'system', content: systemPrompt },
     ...buildWaAiPromptMessages(history, Number(assistant.history_limit) || 12),
@@ -1139,7 +1240,7 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // ── Modelo, primeira volta ──
   let completion: ModelCompletion;
   try {
-    completion = await callModel(assistant.provider, assistant.model, messages, tools);
+    completion = await callModel(assistant.provider, assistant.model, messages, tools, schema);
   } catch (err) {
     const message = String(err instanceof Error ? err.message : err).slice(0, 800);
     await finishExecution(admin, executionId, {
@@ -1149,6 +1250,17 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     // exatamente o estado em que um humano assume. Nada trava.
     return { ok: false, error: message };
   }
+
+  // A leitura acontece nas DUAS voltas. Quando o modelo pede uma ferramenta, a
+  // primeira volta costuma vir sem texto — mas quando vem com texto, o que o
+  // cliente informou está lá, e perder isso seria repetir o defeito de origem.
+  const leituras: WaAiTriageReply[] = [];
+  const lerResposta = () => {
+    if (!playbook) return;
+    const texto = String(completion.text || '').trim();
+    if (texto) leituras.push(parseWaAiTriageReply(texto, fieldKeys));
+  };
+  lerResposta();
 
   const requested: unknown[] = [];
   const executed: unknown[] = [];
@@ -1173,7 +1285,11 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
       // A memória é o bloco de notas do próprio agente: não escreve em nada do
       // CRM e por isso não consome o orçamento de ações.
       if (call.name === MEMORY_TOOL.function.name) {
-        memoryPatch = args;
+        // Com roteiro, só o resumo é aproveitado: chave e pendência vêm do
+        // roteiro, e aceitá-las daqui reabriria a deriva de nomes no painel.
+        memoryPatch = playbook
+          ? { summary: (args as Record<string, unknown> | null)?.summary ?? '' }
+          : args;
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: true }) });
         continue;
       }
@@ -1219,7 +1335,8 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     // apenas com ferramentas; com mais de uma, um laço de ações.
     if (!customerMessageSent) {
       try {
-        completion = await callModel(assistant.provider, assistant.model, messages, []);
+        completion = await callModel(assistant.provider, assistant.model, messages, [], schema);
+        lerResposta();
       } catch (err) {
         console.error('segunda volta do modelo falhou', err);
         completion = { ...completion, text: completion.text || '' };
@@ -1234,7 +1351,18 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // duas perguntas três vezes, inclusive no mesmo parágrafo. A regra continua
   // escrita para ele acertar sozinho; o corte garante que, quando não acertar,
   // o cliente não receba um interrogatório.
-  let reply = customerMessageSent ? '' : waAiKeepOneQuestion((completion.text || '').trim());
+  // Com roteiro, o cliente lê `mensagem_cliente` — nunca o objeto inteiro. E o
+  // turno em que a leitura caiu de degrau fica MARCADO: antes disto, uma
+  // resposta torta virava, calada, mensagem enviada.
+  const ultimaLeitura = leituras.length > 0 ? leituras[leituras.length - 1] : null;
+  const textoDoModelo = playbook ? String(ultimaLeitura?.message || '') : String(completion.text || '');
+  const degradado = !!playbook && !customerMessageSent
+    && (leituras.length === 0 || leituras.some(l => l.degraded));
+  const motivoDaQueda = degradado
+    ? String(ultimaLeitura?.reason || 'o modelo não respondeu no formato combinado')
+    : null;
+
+  let reply = customerMessageSent ? '' : waAiKeepOneQuestion(textoDoModelo.trim());
   if (reply.length > WA_AI_MAX_REPLY_CHARS) reply = `${reply.slice(0, WA_AI_MAX_REPLY_CHARS - 1)}…`;
 
   // Uma resposta com saudação e pergunta sai como DUAS mensagens, do jeito que
@@ -1280,6 +1408,24 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     nextMemory.lastAction = `${executadas.join(', ')}${marca}`.slice(0, 120);
   }
 
+  // ── O que o cliente informou neste turno ──
+  // Vem do JSON, com a lista de chaves já FECHADA pelo schema: não há apelido a
+  // traduzir nem campo inventado a descartar. Vazio nunca entra — `atualizacoes`
+  // traz todos os campos do roteiro em toda resposta, e quase todos vazios é o
+  // normal, não perda de dado.
+  if (playbook) {
+    for (const leitura of leituras) {
+      for (const [chave, valor] of Object.entries(leitura.updates)) {
+        const field = waAiPlaybookField(playbook, chave);
+        if (!field) continue;
+        // O valor que não casa com o tipo é guardado como veio: o painel mostra
+        // o que o cliente disse, e o progresso trata o campo como ainda não
+        // respondido — a pergunta é refeita em vez de o dado sumir.
+        nextMemory.knownFacts[field.key] = normalizeWaAiPlaybookValue(field, valor) || String(valor);
+      }
+    }
+  }
+
   // ── Estado estruturado ──
   // O período (início, ainda trabalha, saída) é lido AQUI, da conversa, e não
   // esperado do modelo. Em 12/08/2026 o cliente disse as três coisas e as três
@@ -1292,9 +1438,20 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     knownFacts: nextMemory.knownFacts,
     pendingItems: nextMemory.pendingItems,
     turns: triageTurns(history),
+    playbookKeys: playbook ? fieldKeys : null,
   });
   nextMemory.knownFacts = estado.knownFacts;
   nextMemory.pendingItems = estado.pendingItems;
+
+  // ── O veredito ──
+  // Pendências, etapa e corte são CONTA do backend, feita sobre o estado já
+  // gravado. O corte é o que descarta um cliente: pedir essa conta a um modelo
+  // que não sabe que dia é hoje foi o que fez nascer `waAiDateBlock`, e ainda
+  // assim ele tocou a triagem de quem tinha saído havia mais de dois anos.
+  const progresso = playbook
+    ? computeWaAiTriageProgress({ playbook, facts: nextMemory.knownFacts, timeZone: assistant.timezone })
+    : null;
+  if (progresso) nextMemory.pendingItems = progresso.pending;
 
   // A memória também não pode depender de o modelo lembrar de anotá-la. Na
   // conversa que motivou este ajuste foram seis execuções seguidas sem uma
@@ -1306,21 +1463,31 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // conversa. A derivação abaixo serve ao painel, não à mensagem.
   const pendenciasDoModelo = nextMemory.pendingItems.slice();
 
-  if (!nextMemory.summary || nextMemory.pendingItems.length === 0) {
+  if (!nextMemory.summary || (nextMemory.pendingItems.length === 0 && !playbook)) {
     const ultimaEntrada = history.find(h => h.direction === 'in');
     const auto = buildWaAiAutoMemory({
       lastCustomerText: String(ultimaEntrada?.transcriptionText || ultimaEntrada?.content || '') || null,
       lastQuestion: waAiLastQuestion(reply),
     });
     if (!nextMemory.summary) nextMemory.summary = auto.summary;
-    if (nextMemory.pendingItems.length === 0) nextMemory.pendingItems = auto.pendingItems;
+    // Com roteiro, a lista de espera é do backend e lista vazia quer dizer
+    // alguma coisa: ou a triagem acabou, ou ela foi cortada. Derivar uma
+    // pendência aqui inventaria pergunta em cima de um caso encerrado.
+    if (nextMemory.pendingItems.length === 0 && !playbook) nextMemory.pendingItems = auto.pendingItems;
   }
 
   await persistMemory(admin, conversation.id, nextMemory, {
     lastProcessedMessageId: opts.triggerMessageId,
     lastCustomerMessageAt: conversation.last_customer_message_at ?? null,
     handedOff: terminal,
+    triage: progresso,
   });
+
+  // O corte é NOVO: o acompanhamento que estava marcado para amanhã ia cobrar,
+  // por escrito, uma pergunta de uma triagem que acabou de ser encerrada.
+  if (progresso?.cut && String(session.triage_cut || '') !== progresso.cut.id) {
+    await cancelPendingFollowups(admin, conversation.id, `Triagem encerrada: ${progresso.cut.reason}.`);
+  }
 
   // ── Acompanhamento ──
   // O ponto do conserto de 12/08/2026: o agendamento acontece AQUI, no backend,
@@ -1335,21 +1502,26 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     knownFacts: nextMemory.knownFacts,
     optedOut: sinais.optedOut,
     scheduledAtOverride: sinais.scheduledAt,
+    triageCut: progresso?.cut ?? null,
   });
   if (autoFollowup) executed.push(autoFollowup);
 
   await finishExecution(admin, executionId, {
-    status: assistant.mode === 'test' ? 'test' : (sendError ? 'error' : 'ok'),
+    status: assistant.mode === 'test'
+      ? 'test'
+      : (sendError ? 'error' : (degradado ? 'degraded' : 'ok')),
     replyText: reply || null,
     requested,
     executed,
-    error: sendError,
+    error: sendError || motivoDaQueda,
     durationMs: Date.now() - opts.started,
   });
 
   return {
     ok: true, sent, mode: assistant.mode, actions: executed.length, handed_off: terminal,
     followup: autoFollowup,
+    ...(progresso ? { etapa: progresso.stage, corte: progresso.cut?.id ?? null } : {}),
+    ...(degradado ? { degradado: motivoDaQueda } : {}),
   };
 }
 
@@ -1373,7 +1545,11 @@ async function finishExecution(admin: any, executionId: string, patch: {
 
 async function persistMemory(
   admin: any, conversationId: string, memory: WaAiMemory,
-  extra: { lastProcessedMessageId: string | null; lastCustomerMessageAt: string | null; handedOff: boolean },
+  extra: {
+    lastProcessedMessageId: string | null; lastCustomerMessageAt: string | null; handedOff: boolean;
+    /** O progresso do roteiro, quando o agente tem um. */
+    triage?: WaAiTriageProgress | null;
+  },
 ) {
   const patch: Record<string, unknown> = {
     summary: memory.summary || null,
@@ -1381,6 +1557,14 @@ async function persistMemory(
     pending_items: memory.pendingItems,
     last_action: memory.lastAction,
   };
+  // Onde a conversa parou e por que saiu. É daqui que o painel lê o veredito
+  // sem precisar refazer a conta, e é por isto que ele fica no banco em vez de
+  // viver só dentro do turno.
+  if (extra.triage) {
+    patch.triage_stage = extra.triage.stage;
+    patch.triage_cut = extra.triage.cut?.id ?? null;
+    patch.triage_cut_reason = extra.triage.cut?.reason ?? null;
+  }
   if (extra.lastProcessedMessageId) patch.last_processed_message_id = extra.lastProcessedMessageId;
   if (extra.lastCustomerMessageAt) patch.last_customer_message_at = extra.lastCustomerMessageAt;
   if (extra.handedOff) { patch.ai_active = false; patch.status = 'handed_off'; patch.ended_at = new Date().toISOString(); }
@@ -1389,6 +1573,33 @@ async function persistMemory(
 }
 
 // ── Prompt ──────────────────────────────────────────────────────────────────
+
+/**
+ * A ferramenta de memória do agente COM roteiro: só o resumo.
+ *
+ * Os dados coletados e a lista de espera saem do roteiro, calculados pelo
+ * backend — deixá-los aqui reabriria a porta que o schema fechou, com o modelo
+ * inventando `empresa` num turno e `empregador` no outro dentro do painel. O
+ * resumo continua sendo dele: é texto livre sobre o caso, e ninguém escreve
+ * isso melhor do que quem acabou de ler a conversa.
+ */
+const SUMMARY_TOOL: WaAiToolSchema = {
+  type: 'function',
+  function: {
+    name: 'registrar_memoria',
+    description:
+      'Atualiza o resumo desta conversa. Não envia nada ao cliente e não altera nada no sistema. '
+      + 'Os dados da triagem NÃO vão aqui: eles vão no JSON da sua resposta.',
+    parameters: {
+      type: 'object',
+      properties: {
+        summary: { type: 'string', description: 'Resumo breve e atualizado do caso, em até 3 frases.' },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+  },
+};
 
 /** Ferramenta interna: a memória do próprio agente. Não é ação do CRM. */
 const MEMORY_TOOL: WaAiToolSchema = {
@@ -1435,11 +1646,18 @@ function triageTurns(history: WaAiHistoryMessage[]): WaAiTriageTurn[] {
 }
 
 /**
- * As seis partes do prompt, nesta ordem: regras da plataforma, o que deve
- * fazer, o que não pode fazer, memória, histórico (vai como mensagens) e as
- * ações permitidas (vão como ferramentas).
+ * As partes do prompt, nesta ordem: regras da plataforma, data de hoje, o que
+ * deve fazer, o que não pode fazer, memória, ROTEIRO, ações permitidas (vão
+ * como ferramentas) e o formato da resposta. O histórico vai como mensagens.
+ *
+ * O roteiro entra DEPOIS da memória de propósito: a memória diz o que já se
+ * sabe, o roteiro diz o que falta e — quando é o caso — que a triagem acabou.
+ * Nas duas o modelo lê um estado pronto; em nenhuma ele calcula coisa alguma.
  */
-function buildSystemPrompt(ctx: TurnContext, memory: WaAiMemory, tools: WaAiToolSchema[]): string {
+function buildSystemPrompt(
+  ctx: TurnContext, memory: WaAiMemory, tools: WaAiToolSchema[],
+  playbook: WaAiPlaybook | null = null, progress: WaAiTriageProgress | null = null,
+): string {
   const { assistant, conversation } = ctx;
   const nome = conversation.contact_name || 'o cliente';
   const parts: string[] = [];
@@ -1497,8 +1715,25 @@ function buildSystemPrompt(ctx: TurnContext, memory: WaAiMemory, tools: WaAiTool
     parts.push(`# Como retomar o contato\n${String(assistant.followup_instructions).trim()}`);
   }
 
+  if (playbook && progress) parts.push(waAiPlaybookPromptBlock(playbook, progress));
+
   const nomes = tools.map(t => t.function.name).join(', ');
   parts.push(`# Ações disponíveis\n${nomes || 'nenhuma'}`);
+
+  // Vem por último, colado na resposta que ele vai escrever.
+  if (playbook) {
+    parts.push(
+      '# Formato da resposta\n'
+      + 'Sua resposta é um objeto JSON com três campos, e o sistema não aceita outro formato:\n'
+      + '- `mensagem_cliente`: o texto que vai para o cliente. É o ÚNICO que ele lê;\n'
+      + '- `atualizacoes`: o que ele acabou de informar, campo a campo. Preencha SÓ o que ele '
+      + 'disse, com as palavras dele, e deixe vazio todo o resto. Nunca deduza e nunca preencha '
+      + 'com o que você supôs;\n'
+      + '- `campo_alvo`: a informação que a sua pergunta está buscando agora.\n'
+      + 'Não escreva JSON dentro de `mensagem_cliente` e não repita ali os dados coletados. '
+      + 'As ações continuam sendo pedidas por ferramenta — o JSON não executa nada.',
+    );
+  }
 
   return parts.join('\n\n');
 }
@@ -1516,6 +1751,7 @@ interface ModelCompletion { text: string; toolCalls: ModelToolCall[]; rawMessage
  */
 async function callModel(
   provider: string, model: string, messages: any[], tools: WaAiToolSchema[],
+  schema: WaAiTriageSchema | null = null,
 ): Promise<ModelCompletion> {
   const endpoints: Record<string, { url: string; key: string | undefined }> = {
     openai: { url: 'https://api.openai.com/v1/chat/completions', key: Deno.env.get('OPENAI_API_KEY') },
@@ -1527,6 +1763,11 @@ async function callModel(
 
   const body: Record<string, unknown> = { model, messages, temperature: 0.3, max_tokens: 700 };
   if (tools.length > 0) { body.tools = tools; body.tool_choice = 'auto'; }
+  // A diferença que motivou a migração inteira: ferramenta é OPCIONAL para o
+  // modelo, formato de resposta não é. O agente com roteiro devolve o objeto do
+  // schema ou não devolve nada — não existe mais o meio-termo em que ele
+  // conversa e "esquece" de registrar o que o cliente disse.
+  if (schema) body.response_format = { type: 'json_schema', json_schema: schema };
 
   const res = await fetch(endpoint.url, {
     method: 'POST',

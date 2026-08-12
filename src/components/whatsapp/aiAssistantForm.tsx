@@ -34,6 +34,8 @@ import type {
 } from '../../types/whatsapp.types';
 import { AiPromptEditor } from './aiPromptEditor';
 import { AiAgentSimulator } from './aiAgentSimulator';
+import { AiPlaybookEditor } from './aiPlaybookEditor';
+import { normalizeWaAiPlaybook } from '../../utils/waAiPlaybook';
 
 const DAY_NAMES = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -122,7 +124,7 @@ const FORM_CSS = `
   }
 `;
 
-type SectionKey = 'identity' | 'do' | 'dont' | 'actions' | 'tuning';
+type SectionKey = 'identity' | 'do' | 'dont' | 'actions' | 'playbook' | 'tuning';
 
 interface Props {
   draft: WhatsAppAiAssistantInput;
@@ -139,7 +141,7 @@ export const AiAssistantForm: React.FC<Props> = ({
 }) => {
   // Estado de abertura: só identificação e "o que deve fazer" começam abertas.
   const [open, setOpen] = useState<Record<SectionKey, boolean>>({
-    identity: true, do: true, dont: false, actions: false, tuning: false,
+    identity: true, do: true, dont: false, actions: false, playbook: false, tuning: false,
   });
   const [testando, setTestando] = useState(false);
   const toggle = (key: SectionKey) => setOpen(prev => ({ ...prev, [key]: !prev[key] }));
@@ -213,6 +215,14 @@ export const AiAssistantForm: React.FC<Props> = ({
   const dontSummary = dontText
     ? `${dontText.replace(/\s+/g, ' ').slice(0, 90)}${dontText.length > 90 ? '…' : ''}`
     : 'Defina o que a IA não pode prometer, informar ou executar.';
+
+  // O resumo da seção fechada conta o que o BACKEND vai ler, não o que está
+  // digitado: campo sem chave não existe para ele.
+  const playbookLido = useMemo(() => normalizeWaAiPlaybook(draft.playbook), [draft.playbook]);
+  const playbookSummary = playbookLido
+    ? `${playbookLido.fields.length} informação(ões) · ${playbookLido.stages.length} etapa(s)`
+      + ` · ${playbookLido.cuts.length} regra(s) de corte`
+    : 'Sem roteiro — o agente responde em texto livre, sem conferência do sistema.';
 
   const tuningSummary = `Debounce: ${draft.debounce_seconds ?? 8} segundos`
     + ` · Histórico: ${draft.history_limit ?? 12} mensagens`;
@@ -404,9 +414,20 @@ export const AiAssistantForm: React.FC<Props> = ({
         </div>
       </Section>
 
-      {/* ── 5. Acompanhamentos ── */}
+      {/* ── 5. Roteiro da triagem ── */}
       <Section
-        id="followup" num={5} title="Acompanhamentos" summary={followupSummary} collapsible={false}
+        id="playbook" num={5} title="Roteiro da triagem" summary={playbookSummary}
+        open={open.playbook} onToggle={() => toggle('playbook')}
+      >
+        <AiPlaybookEditor
+          value={draft.playbook}
+          onChange={playbook => onPatch({ playbook })}
+        />
+      </Section>
+
+      {/* ── 6. Acompanhamentos ── */}
+      <Section
+        id="followup" num={6} title="Acompanhamentos" summary={followupSummary} collapsible={false}
       >
         <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer' }}>
           <input type="checkbox" checked={draft.followup_enabled === true}
@@ -550,7 +571,7 @@ export const AiAssistantForm: React.FC<Props> = ({
 
       {/* ── 6. Ajustes finos ── */}
       <Section
-        id="tuning" num={6} title="Ajustes finos" summary={tuningSummary}
+        id="tuning" num={7} title="Ajustes finos" summary={tuningSummary}
         open={open.tuning} onToggle={() => toggle('tuning')}
       >
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>

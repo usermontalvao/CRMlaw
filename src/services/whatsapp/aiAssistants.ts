@@ -21,6 +21,7 @@ import {
   pruneWaAiActionRefs,
   validateWaAiPrompt,
 } from '../../utils/waAiActionCatalog';
+import { normalizeWaAiPlaybook } from '../../utils/waAiPlaybook';
 
 const ASSISTANTS_TABLE = 'whatsapp_ai_assistants';
 const EXECUTIONS_TABLE = 'whatsapp_ai_executions';
@@ -137,6 +138,11 @@ export const aiAssistantsApi = {
       timezone: input.timezone || 'America/Cuiaba',
       debounce_seconds: Math.min(60, Math.max(0, Number(input.debounce_seconds ?? 8))),
       history_limit: Math.min(40, Math.max(2, Number(input.history_limit ?? 12))),
+      // O roteiro é gravado já pela MESMA leitura que o backend faz. O que não
+      // presta sai aqui, na hora de salvar, e não no meio de um atendimento —
+      // e o que fica é exatamente o que vai virar o formato de resposta
+      // obrigatório do modelo.
+      playbook: normalizeWaAiPlaybook(input.playbook) || {},
     };
   },
 
@@ -330,6 +336,9 @@ export const aiAssistantsApi = {
       knownFacts: (session?.known_facts && typeof session.known_facts === 'object') ? session.known_facts : {},
       pendingItems: Array.isArray(session?.pending_items) ? session.pending_items : [],
       lastAction: session?.last_action ?? null,
+      triageStage: session?.triage_stage ?? null,
+      triageCut: session?.triage_cut ?? null,
+      triageCutReason: session?.triage_cut_reason ?? null,
       handoffReason: session?.handoff_reason ?? null,
       handoffSummary: session?.handoff_summary ?? null,
       nextFollowupAt: session?.next_followup_at ?? null,
@@ -408,6 +417,11 @@ export const aiAssistantsApi = {
       known_facts: {},
       pending_items: [],
       last_action: null,
+      // O veredito do roteiro é leitura da conversa, não configuração: deixar
+      // um corte antigo de pé faria a triagem recomeçar já encerrada.
+      triage_stage: null,
+      triage_cut: null,
+      triage_cut_reason: null,
       last_processed_message_id: null,
       followup_attempts: 0,
       next_followup_at: null,

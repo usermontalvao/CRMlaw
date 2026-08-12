@@ -150,13 +150,17 @@ test('lista continua grudada na frase que a introduz', () => {
   assert.deepEqual(splitWaAiReply(t), [t]);
 });
 
-test('a pausa entre as partes é de alguns segundos, não de milissegundos', () => {
-  // "envia uma, segura, envia a outra" — ritmo de gente digitando.
+test('a pausa é sentida, mas não faz o cliente esperar', () => {
+  // "envia uma, segura, envia a outra" — ritmo de gente digitando, sem que a
+  // soma das três partes vire meio minuto de espera.
   const pausa = waAiPartPauseMs('Você teve algum outro trabalho sem carteira além desse na Todinho?');
-  assert.ok(pausa >= 4000 && pausa <= WA_AI_PART_PAUSE_MAX_MS, `pausa fora do esperado: ${pausa}`);
+  assert.ok(pausa >= 1000 && pausa <= WA_AI_PART_PAUSE_MAX_MS, `pausa fora do esperado: ${pausa}`);
   // Mensagem curta chega perto do piso, nunca abaixo dele.
   const curta = waAiPartPauseMs('Oi');
-  assert.ok(curta >= WA_AI_PART_PAUSE_MIN_MS && curta < WA_AI_PART_PAUSE_MIN_MS + 500, `piso furado: ${curta}`);
+  assert.ok(curta >= WA_AI_PART_PAUSE_MIN_MS && curta < WA_AI_PART_PAUSE_MIN_MS + 200, `piso furado: ${curta}`);
+
+  // O teto do turno inteiro: três blocos longos, o pior caso possível.
+  assert.ok(WA_AI_PART_PAUSE_MAX_MS * 3 <= 7000, 'a resposta inteira não pode passar de alguns segundos');
 });
 
 // ── Uma pergunta por rodada ─────────────────────────────────────────────────

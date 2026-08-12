@@ -234,17 +234,32 @@ export function normalizeWaAiFactValue(field: string, value: unknown): string {
  * O PRIMEIRO a gravar vence: quando `empresa` e `empregador` chegam juntos, o
  * que já estava na memória continua valendo. Sobrescrever o que foi coletado
  * antes por causa de um apelido novo é justamente o que não pode acontecer.
+ *
+ * `declaradas` são as chaves que o ROTEIRO do agente define (ver
+ * `waAiPlaybook.ts`), e elas não passam pelo mapa de apelidos. O mapa nasceu
+ * para uma campanha só: um roteiro futuro que chame seu campo de `empresa`
+ * teria o dado renomeado para `empregador` e a pendência de `empresa` nunca
+ * fecharia — o mesmo defeito, do outro lado.
  */
-export function canonicalizeWaAiFacts(facts: Record<string, unknown> | null | undefined): Record<string, string> {
+export function canonicalizeWaAiFacts(
+  facts: Record<string, unknown> | null | undefined,
+  declaradas?: string[] | null,
+): Record<string, string> {
   const out: Record<string, string> = {};
   const vistos: Record<string, true> = {};
+
+  const doRoteiro: Record<string, true> = {};
+  for (const chave of (Array.isArray(declaradas) ? declaradas : [])) {
+    const norm = chaveNormalizada(chave);
+    if (norm) doRoteiro[norm] = true;
+  }
 
   for (const [chaveBruta, valorBruto] of Object.entries(facts || {})) {
     if (Object.keys(out).length >= WA_AI_TRIAGE_MAX_FACTS) break;
     const norm = chaveNormalizada(chaveBruta);
     if (!norm) continue;
 
-    const canonica = WA_AI_FACT_ALIASES[norm] || norm;
+    const canonica = doRoteiro[norm] ? norm : (WA_AI_FACT_ALIASES[norm] || norm);
     if (vistos[canonica]) continue;
 
     // Só o que dá para escrever: objeto, array, null e vazio ficam de fora — e
@@ -461,12 +476,20 @@ export function reconcileWaAiTriageState(input: {
   knownFacts: Record<string, unknown> | null | undefined;
   pendingItems: string[] | null | undefined;
   turns: WaAiTriageTurn[];
+  /** As chaves do roteiro do agente, quando ele tem um. */
+  playbookKeys?: string[] | null;
 }): WaAiTriageState {
-  const facts = canonicalizeWaAiFacts(input.knownFacts);
+  const declaradas = Array.isArray(input.playbookKeys) ? input.playbookKeys : null;
+  const facts = canonicalizeWaAiFacts(input.knownFacts, declaradas);
 
   for (const [campo, valor] of Object.entries(extractWaAiPeriodFacts(input.turns))) {
     const limpo = String(valor ?? '').trim();
     if (!limpo) continue;
+    // Com roteiro, a extração só escreve em campo que o roteiro declara. Ela lê
+    // início, saída e "ainda trabalha" da conversa: numa triagem que não
+    // pergunta período, esses três seriam linhas soltas no painel de um caso
+    // que nunca falou de emprego nenhum.
+    if (declaradas && declaradas.indexOf(campo) === -1) continue;
     if (!(campo in facts) && Object.keys(facts).length >= WA_AI_TRIAGE_MAX_FACTS) continue;
     facts[campo] = limpo;
   }

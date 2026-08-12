@@ -114,6 +114,10 @@ export const AiAgentSimulator: React.FC<Props> = ({ draft, onClose, runTurn }) =
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [memory, setMemory] = useState<WhatsAppAiSimulationResult['memory'] | null>(null);
+  // O veredito do roteiro do último turno: etapa, o que falta e o corte. É o
+  // que o administrador precisa ver para saber se o roteiro que ele escreveu
+  // corta onde deveria — a conversa sozinha não mostra isso.
+  const [triage, setTriage] = useState<WhatsAppAiSimulationResult['triage'] | null>(null);
   const [showMemory, setShowMemory] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -160,6 +164,13 @@ export const AiAgentSimulator: React.FC<Props> = ({ draft, onClose, runTurn }) =
         return;
       }
       setMemory(out.memory);
+      setTriage(out.triage ?? null);
+      if (out.degraded) {
+        setTurns(prev => [...prev, {
+          who: 'aviso' as const,
+          text: `A resposta veio fora do formato combinado (${out.degraded}). No atendimento real este turno ficaria marcado como degradado.`,
+        }]);
+      }
       const texto = (out.reply || '').trim();
       // Uma bolha por mensagem que o cliente receberia — a divisão vem do
       // servidor, a mesma que o envio real usa. As anotações do turno (ações,
@@ -251,6 +262,18 @@ export const AiAgentSimulator: React.FC<Props> = ({ draft, onClose, runTurn }) =
               )}
               {(memory.pendingItems || []).length > 0 && (
                 <span style={{ color: '#92400e' }}>Aguardando: {memory.pendingItems.join(', ')}</span>
+              )}
+              {triage?.cut && (
+                <span style={{ color: '#991b1b', fontWeight: 600 }}>
+                  Triagem encerrada pelo sistema: {triage.cut.reason}
+                  {triage.cut.effect === 'handoff' ? ' — vai para uma pessoa.' : '.'}
+                </span>
+              )}
+              {triage && !triage.cut && triage.stage_label && (
+                <span style={{ color: '#6b7280' }}>Etapa: {triage.stage_label}</span>
+              )}
+              {triage?.complete && (
+                <span style={{ color: '#166534' }}>Roteiro cumprido — nada mais a perguntar.</span>
               )}
             </div>
           )}

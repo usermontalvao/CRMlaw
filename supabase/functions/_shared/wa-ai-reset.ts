@@ -24,6 +24,11 @@ export function buildWaAiResetSessionPatch(historyFrom: string) {
     known_facts: {},
     pending_items: [],
     last_action: null,
+    // O veredito do roteiro sai junto: um corte guardado faria a conversa
+    // recomeçar já encerrada, com o agente proibido de perguntar qualquer coisa.
+    triage_stage: null,
+    triage_cut: null,
+    triage_cut_reason: null,
     last_processed_message_id: null,
     last_customer_message_at: null,
     followup_attempts: 0,

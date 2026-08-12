@@ -192,6 +192,15 @@ export const AiMemoryPanel: React.FC<{
             <p className="text-[11.5px] text-slate-400">A IA ainda não registrou um resumo desta conversa.</p>
           ))}
 
+          {/* O corte vem antes de tudo: enquanto ele estiver de pé, não há
+              pendência nem próxima pergunta — a triagem acabou, e é isso que o
+              atendente precisa ler primeiro para não recomeçá-la à mão. */}
+          {podeVerResumo && state.triageCut && (
+            <p className="text-[11.5px] text-rose-800 bg-rose-50 border border-rose-100 rounded px-2 py-1.5 break-words">
+              Triagem encerrada pelo sistema: {state.triageCutReason || state.triageCut}
+            </p>
+          )}
+
           {/* Aguardando vem ANTES dos dados coletados: é a única linha que diz
               o que acontece a seguir. Dado já coletado é consulta; pendência é
               o motivo de a conversa estar parada. */}

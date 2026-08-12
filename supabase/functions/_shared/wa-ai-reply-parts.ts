@@ -23,11 +23,17 @@ export const WA_AI_MAX_REPLY_PARTS = 3;
  *
  * Não é anti-colisão: é ritmo de gente. Duas bolhas no mesmo segundo são
  * lidas como uma só — a pessoa responde a primeira coisa que leu e a pergunta
- * se perde. Alguns segundos entre elas fazem a segunda chegar quando a primeira
- * já foi lida, que é o que acontece numa conversa de verdade.
+ * se perde. Um instante entre elas faz a segunda chegar quando a primeira já
+ * foi lida, que é o que acontece numa conversa de verdade.
+ *
+ * OS NÚMEROS FORAM CORTADOS EM 12/08/2026, e o motivo é do outro lado: somando
+ * o agrupamento das mensagens do cliente, a chamada ao modelo e três blocos de
+ * até cinco segundos cada, a resposta demorava perto de meio minuto para
+ * aparecer. Quem espera não vê "ritmo de gente", vê atendimento lento. O balão
+ * de "digitando..." continua inteiro — o que encolheu foi o relógio.
  */
-export const WA_AI_PART_PAUSE_MIN_MS = 2000;
-export const WA_AI_PART_PAUSE_MAX_MS = 5000;
+export const WA_AI_PART_PAUSE_MIN_MS = 600;
+export const WA_AI_PART_PAUSE_MAX_MS = 2200;
 
 /** Item de lista: `- item`, `1. item`, `2) item`, `• item`. */
 const LIST_ITEM = /^(?:[-*•·–—]|\d{1,2}[.)]|[a-z][.)])\s+/i;
@@ -167,9 +173,10 @@ function separarPerguntaFinal(bloco: string): string[] {
  * Quanto esperar ANTES de mandar esta parte — e, agora, por quanto tempo mostrar
  * "digitando..." no aparelho do contato durante essa espera.
  *
- * Proporcional ao tamanho, porque é literalmente o tempo de digitar: 45 ms por
- * caractere, algo como 22 caracteres por segundo. Limitada nos dois extremos:
- * rápido demais chega tudo junto, devagar demais segura a Edge Function à toa.
+ * Proporcional ao tamanho, porque é literalmente o tempo de digitar: 15 ms por
+ * caractere, algo como 65 caracteres por segundo — rápido, mas ainda humano.
+ * Limitada nos dois extremos: rápido demais chega tudo junto, devagar demais
+ * faz o cliente olhar para a tela esperando.
  *
  * Vale para TODAS as partes, inclusive a primeira. Enquanto a pausa era só
  * anti-atropelo, pular a primeira fazia sentido; virando balão de digitação,
@@ -177,7 +184,7 @@ function separarPerguntaFinal(bloco: string): string[] {
  */
 export function waAiPartPauseMs(part: string): number {
   const chars = String(part ?? '').trim().length;
-  const ms = WA_AI_PART_PAUSE_MIN_MS + Math.round(chars * 45);
+  const ms = WA_AI_PART_PAUSE_MIN_MS + Math.round(chars * 15);
   return Math.max(WA_AI_PART_PAUSE_MIN_MS, Math.min(WA_AI_PART_PAUSE_MAX_MS, ms));
 }
 

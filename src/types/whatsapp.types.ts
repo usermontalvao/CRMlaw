@@ -407,6 +407,8 @@ export interface WhatsAppAiAssistant {
   timezone: string;
   debounce_seconds: number;
   history_limit: number;
+  /** Roteiro da triagem. Objeto vazio = agente sem roteiro, em texto livre. */
+  playbook: Record<string, unknown>;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -447,6 +449,17 @@ export interface WhatsAppAiSimulationResult {
   };
   handed_off: boolean;
   followup: { attempt: number; scheduled_at: string } | null;
+  /** Onde a triagem parou, calculada pelo backend. Ausente em agente sem roteiro. */
+  triage?: {
+    stage: string | null;
+    stage_label: string | null;
+    pending: string[];
+    next_field: string | null;
+    cut: { id: string; effect: 'disqualify' | 'handoff'; reason: string; guidance: string } | null;
+    complete: boolean;
+  };
+  /** Preenchido quando a resposta do modelo veio fora do formato combinado. */
+  degraded?: string;
   duration_ms: number;
 }
 
@@ -466,7 +479,8 @@ export interface WhatsAppAiExecution {
   executed_actions: unknown[];
   error: string | null;
   duration_ms: number | null;
-  status: 'ok' | 'skipped' | 'error' | 'test';
+  /** 'degraded' = respondeu, mas fora do formato combinado; a leitura caiu de degrau. */
+  status: 'ok' | 'skipped' | 'error' | 'test' | 'degraded';
   created_at: string;
 }
 
@@ -514,6 +528,11 @@ export interface WhatsAppAiConversationState {
   knownFacts: Record<string, string>;
   pendingItems: string[];
   lastAction: string | null;
+  /** Etapa do roteiro, calculada pelo backend a cada turno. */
+  triageStage: string | null;
+  /** Id da regra de corte que encerrou a triagem, e o motivo em texto. */
+  triageCut: string | null;
+  triageCutReason: string | null;
   handoffReason: string | null;
   handoffSummary: string | null;
   nextFollowupAt: string | null;
