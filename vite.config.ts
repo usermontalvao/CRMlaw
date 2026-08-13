@@ -43,6 +43,16 @@ export default defineConfig({
         ),
       },
       output: {
+        // O worker do PDF.js vem do pacote como `.mjs`, e servidor de
+        // hospedagem comum (Apache/LiteSpeed) não conhece essa extensão: entrega
+        // `text/plain` e o navegador RECUSA o módulo. Emitir como `.js` faz o
+        // app parar de depender da configuração de MIME do servidor —
+        // `.htaccess` também corrige, mas só onde o `.htaccess` é lido.
+        assetFileNames(assetInfo) {
+          const source = assetInfo.names?.[0] ?? '';
+          if (source.endsWith('.mjs')) return 'assets/[name]-[hash].js';
+          return 'assets/[name]-[hash][extname]';
+        },
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
 

@@ -1,6 +1,26 @@
+# Tipos que o Apache/LiteSpeed da hospedagem NÃO conhece por padrão e entrega
+# como `text/plain` — o que faz o navegador RECUSAR o arquivo, mesmo baixando-o
+# inteiro. O caso concreto: `assets/pdf.worker.min-<hash>.mjs` (worker do PDF.js)
+# é carregado como módulo, e módulo com MIME errado é bloqueado por regra do
+# HTML ("Strict MIME type checking"). Some no localhost, onde o Vite serve o
+# tipo certo. Sem estas linhas, nenhum PDF renderiza em produção.
+<IfModule mod_mime.c>
+  AddType text/javascript .mjs
+  AddType application/manifest+json .webmanifest
+  AddType application/wasm .wasm
+</IfModule>
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
+
+  # Apps instaláveis SEPARADOS (PWA com página própria — ver docs/PWA_APPS.md).
+  # TÊM de vir antes do catch-all: a regra genérica entregaria o index.html do
+  # CRM e o app instalável deixaria de existir (era o que acontecia aqui, apesar
+  # de `netlify.toml` e `_redirects` já terem estas rotas). A query dos links
+  # existentes sobrevive à reescrita, e o hash nem chega ao servidor.
+  RewriteRule ^atendimento(/.*)?$ atendimento.html [L]
+  RewriteRule ^editor(/.*)?$ editor.html [L]
 
   # Mantém arquivos reais (JS, CSS, imagens e manifests) acessíveis normalmente.
   RewriteCond %{REQUEST_FILENAME} !-f
