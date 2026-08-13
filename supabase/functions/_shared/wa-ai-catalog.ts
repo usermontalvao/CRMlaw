@@ -106,8 +106,9 @@ export interface WaAiActionRef {
  * (document_requests), preenchimento/assinatura rastreável
  * (template_fill_links, signature_requests) e o agendador de mensagens.
  *
- * Ficaram DE FORA, por decisão de escopo: cadastro automático de cliente,
- * criação de contrato, alteração processual e movimentação financeira.
+ * Ficaram DE FORA, por decisão de escopo: criação de contrato, alteração
+ * processual e movimentação financeira. A solicitação documental pode criar um
+ * pré-cadastro mínimo e rastreável quando o telefone ainda não está no CRM.
  */
 export const WA_AI_ACTIONS: WaAiActionDef[] = [
   {
@@ -142,11 +143,11 @@ export const WA_AI_ACTIONS: WaAiActionDef[] = [
     name: 'solicitar_documentos',
     alias: 'solicitar_documentos',
     title: 'Solicitar documentos',
-    description: 'Cria uma solicitação de documentos rastreável para o cliente vinculado à conversa.',
+    description: 'Cria uma solicitação rastreável e, se necessário, um pré-cadastro pelo telefone da conversa.',
     modelDescription:
       'Cria uma solicitação de documentos para o cliente desta conversa. Use uma vez por conjunto de documentos: '
       + 'se já existe uma solicitação aberta com os mesmos itens, a ação é recusada. '
-      + 'Só funciona quando a conversa está vinculada a um cliente.',
+      + 'Se a conversa ainda não estiver vinculada, o sistema tenta um vínculo único pelo telefone e, sem resultado, cria um pré-cadastro.',
     risk: 'medio',
     targetSource: 'none',
     terminal: false,

@@ -14,6 +14,7 @@
 // ============================================================================
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { dispatchWaAiLifecycle } from '../_shared/wa-ai-lifecycle-hook.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -226,6 +227,19 @@ Deno.serve(async (req: Request) => {
               body: JSON.stringify({ event: 'signature.completed', sent_at: nowIso, document: { id: requestId, name: flipped.document_name, client_name: flipped.client_name, process_number: flipped.process_number } }),
             });
           } catch (e) { console.error('webhook error', e); }
+        }
+
+        const { data: fillLink } = await supabase.from('template_fill_links')
+          .select('conversation_id').eq('signature_request_id', requestId)
+          .not('conversation_id', 'is', null).limit(1).maybeSingle();
+        if (fillLink?.conversation_id) {
+          await dispatchWaAiLifecycle({
+            supabaseUrl,
+            serviceRole: serviceRoleKey,
+            conversationId: fillLink.conversation_id,
+            trigger: 'signature_completed',
+            resourceId: requestId,
+          }).catch(error => console.error('wa-ai signature lifecycle:', error));
         }
       }
 

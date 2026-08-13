@@ -99,7 +99,7 @@ export const aiAssistantsApi = {
       throw new WaAiValidationError(`O modelo ${provider}/${model} não está disponível.`);
     }
 
-    const instructionsDo = String(input.instructions_do ?? '');
+    const legacyInstructionsDo = String(input.instructions_do ?? '');
     const instructionsDont = String(input.instructions_dont ?? '');
 
     // O roteiro também é prompt: desde que ele passou a trazer abertura, estilo
@@ -108,6 +108,10 @@ export const aiAssistantsApi = {
     // dois textos — e o agente perderia, em silêncio, para quem transferir.
     const playbook = normalizeWaAiPlaybook(input.playbook);
     const playbookText = playbook ? waAiPlaybookInstructions(playbook) : '';
+    // O contexto estruturado substitui a prosa antiga. Manter as duas fontes
+    // ativas recriaria exatamente a ambiguidade que o editor novo elimina.
+    // Ao salvar, o campo legado é limpo; agentes sem contexto continuam iguais.
+    const instructionsDo = playbook?.context ? '' : legacyInstructionsDo;
 
     const refs = pruneWaAiActionRefs(
       (input.action_refs || []) as WhatsAppAiActionRef[],
@@ -426,6 +430,12 @@ export const aiAssistantsApi = {
    * comando `/clear` digitado na conversa.
    */
   async clearAiMemory(conversationId: string): Promise<void> {
+    const { error: followupError } = await supabase.from(FOLLOWUPS_TABLE)
+      .update({ status: 'cancelled', cancel_reason: 'Memória da IA reiniciada pelo atendente.' })
+      .eq('conversation_id', conversationId)
+      .eq('status', 'pending');
+    if (followupError) throw new Error(followupError.message);
+
     const { error } = await supabase.from(SESSIONS_TABLE).upsert({
       conversation_id: conversationId,
       summary: null,

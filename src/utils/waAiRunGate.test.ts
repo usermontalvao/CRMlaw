@@ -154,6 +154,11 @@ test('fato com valor não escalar é descartado', () => {
   assert.deepEqual(m.knownFacts, { ok: 'sim' });
 });
 
+test('false e zero são fatos, não ausência', () => {
+  const m = normalizeWaAiMemory({ knownFacts: { tem_testemunha: false, dias_por_semana: 0 } });
+  assert.deepEqual(m.knownFacts, { tem_testemunha: false, dias_por_semana: 0 });
+});
+
 test('pendências deduplicam e têm teto', () => {
   const items = ['RG', 'RG', ...Array.from({ length: 40 }, (_, i) => `item ${i}`)];
   const m = normalizeWaAiMemory({ pendingItems: items });
@@ -196,7 +201,7 @@ test('a memória renderizada é legível e cobre as quatro partes', () => {
     lastAction: 'solicitar_documentos',
   }));
   assert.match(texto, /Rescisão sem justa causa/);
-  assert.match(texto, /- nome: Ana/);
+  assert.match(texto, /"nome": "Ana"/);
   assert.match(texto, /- Carteira de trabalho/);
   assert.match(texto, /solicitar_documentos/);
 });

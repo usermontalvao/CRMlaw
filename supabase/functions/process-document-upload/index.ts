@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { PDFDocument } from 'https://esm.sh/pdf-lib@1.17.1';
+import { dispatchWaAiLifecycle } from '../_shared/wa-ai-lifecycle-hook.ts';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -7,10 +8,9 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-);
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
 
 const OPENAI_KEY = Deno.env.get('OPENAI_API_KEY') ?? '';
 const SRC_BUCKET  = 'client-documents';
@@ -288,6 +288,20 @@ Deno.serve(async (req) => {
         const anyProgress = (items as any[]).some(i => i.status === 'approved' || i.status === 'uploaded');
         const status = allApproved ? 'complete' : anyProgress ? 'partial' : 'pending';
         await supabase.from('document_requests').update({ status }).eq('id', requestId);
+        if (allApproved) {
+          const { data: conversation } = await supabase.from('whatsapp_conversations')
+            .select('id').eq('client_id', clientId).in('status', ['open', 'pending'])
+            .order('last_message_at', { ascending: false }).limit(1).maybeSingle();
+          if (conversation?.id) {
+            await dispatchWaAiLifecycle({
+              supabaseUrl: SUPABASE_URL,
+              serviceRole: SERVICE_ROLE,
+              conversationId: conversation.id,
+              trigger: 'documents_completed',
+              resourceId: requestId,
+            }).catch(error => console.error('wa-ai documents lifecycle:', error));
+          }
+        }
       }
     }
 

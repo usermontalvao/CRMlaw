@@ -2,12 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  WA_AI_CONTEXT_CONTA_BLOQUEADA,
+  WA_AI_CONTEXT_SEM_REGISTRO,
+  WA_AI_PLAYBOOK_CONTA_BLOQUEADA,
   WA_AI_PLAYBOOK_SEM_REGISTRO,
+  buildWaAiTriageConversationSchema,
+  buildWaAiTriageExtractionSchema,
   buildWaAiTriageSchema,
+  computeWaAiTriageNextAction,
   computeWaAiTriageProgress,
   evaluateWaAiCuts,
   normalizeWaAiPlaybook,
   normalizeWaAiPlaybookValue,
+  resolveWaAiPlaybookBindings,
   waAiPlaybookField,
   waAiPlaybookFieldKeys,
   waAiPlaybookInstructions,
@@ -28,8 +35,57 @@ const ROTEIRO = WA_AI_PLAYBOOK_SEM_REGISTRO;
 const HOJE = new Date('2026-08-12T15:00:00Z');
 const TZ = 'America/Cuiaba';
 
-const progresso = (facts: Record<string, string>, now: Date = HOJE) =>
+const progresso = (facts: Record<string, unknown>, now: Date = HOJE) =>
   computeWaAiTriageProgress({ playbook: ROTEIRO, facts, now, timeZone: TZ });
+
+test('campanha de conta nasce completa a partir do contexto colado no editor', () => {
+  const normalized = normalizeWaAiPlaybook(WA_AI_CONTEXT_CONTA_BLOQUEADA);
+  assert.equal(normalized?.id, 'bloqueio_encerramento_conta');
+  assert.equal(normalized?.fields.length, 14);
+  assert.equal(normalized?.cuts.length, 5);
+  assert.equal(normalized?.bindings?.length, 3);
+  assert.deepEqual(normalized?.fields.map(field => field.key),
+    WA_AI_PLAYBOOK_CONTA_BLOQUEADA.fields.map(field => field.key));
+});
+
+test('prazo da conta é calculado em tempo real e não pelo conhecimento do modelo', () => {
+  const old = computeWaAiTriageProgress({
+    playbook: WA_AI_PLAYBOOK_CONTA_BLOQUEADA,
+    facts: { data_ocorrencia: '07/2024' }, now: HOJE, timeZone: TZ,
+  });
+  assert.equal(old.cut?.id, 'prazo_2_anos_conta');
+  const recent = computeWaAiTriageProgress({
+    playbook: WA_AI_PLAYBOOK_CONTA_BLOQUEADA,
+    facts: { data_ocorrencia: '09/2024' }, now: HOJE, timeZone: TZ,
+  });
+  assert.equal(recent.cut, null);
+});
+
+test('instruções da conta preservam 40%, Réu, KIT e transferência só após assinatura', () => {
+  const text = waAiPlaybookInstructions(WA_AI_PLAYBOOK_CONTA_BLOQUEADA);
+  assert.match(text, /40% do valor obtido ao final/);
+  assert.match(text, /campo Réu/);
+  assert.match(text, /KIT CONSUMIDOR/);
+  assert.match(text, /Somente quando o sistema retornar assinado/);
+  assert.match(text, /escrita numa folha, assinada e enviada por foto/);
+});
+
+test('condicionais da residência mostram somente a rota escolhida', () => {
+  const own = computeWaAiTriageProgress({
+    playbook: WA_AI_PLAYBOOK_CONTA_BLOQUEADA,
+    facts: { residencia_tipo: 'proprio' }, now: HOJE, timeZone: TZ,
+  });
+  assert.ok(!own.missing.includes('titular_comprovante'));
+  assert.ok(!own.missing.includes('declarante_nome'));
+
+  const third = computeWaAiTriageProgress({
+    playbook: WA_AI_PLAYBOOK_CONTA_BLOQUEADA,
+    facts: { residencia_tipo: 'terceiro_sem_contrato' }, now: HOJE, timeZone: TZ,
+  });
+  assert.ok(third.missing.includes('declarante_nome'));
+  assert.ok(third.missing.includes('endereco_residencia'));
+  assert.ok(third.missing.includes('declarante_tem_documento'));
+});
 
 // ── Valores ─────────────────────────────────────────────────────────────────
 
@@ -98,8 +154,9 @@ test('a saída só é perguntada de quem já saiu', () => {
 test('quais provas só é cobrado de quem disse ter prova', () => {
   const base = {
     nome: 'Ana', empregador: 'Todimo', tipo_empregador: 'particular',
-    inicio: '01/2025', ainda_trabalha: 'sim', pessoalidade: 'sim',
-    pagamento: 'Pix, 2000', habitualidade: 'seg a sex, 8h às 17h', subordinacao: 'sim',
+    inicio: '01/2025', ainda_trabalha: 'sim', funcao: 'vendedora', pessoalidade: 'sim',
+    recebia_pagamento: 'sim', pagamento: 'Pix, 2000', trabalho_regular: 'regular',
+    habitualidade: 'seg a sex, 8h às 17h', subordinacao: 'sim',
   };
   const semProva = progresso({ ...base, tem_prova: 'não' });
   assert.equal(semProva.missing.indexOf('provas'), -1);
@@ -112,9 +169,11 @@ test('quais provas só é cobrado de quem disse ter prova', () => {
 test('roteiro cumprido não deixa pendência nenhuma', () => {
   const p = progresso({
     nome: 'Ana', empregador: 'Todimo', tipo_empregador: 'particular',
-    inicio: '01/2025', ainda_trabalha: 'sim', pessoalidade: 'sim',
-    pagamento: 'Pix, 2000', habitualidade: 'seg a sex, 8h às 17h', subordinacao: 'sim',
+    inicio: '01/2025', ainda_trabalha: 'sim', funcao: 'vendedora', pessoalidade: 'sim',
+    recebia_pagamento: 'sim', pagamento: 'Pix, 2000', trabalho_regular: 'regular',
+    habitualidade: 'seg a sex, 8h às 17h', subordinacao: 'sim',
     tem_prova: 'sim', provas: 'conversas de WhatsApp', tem_testemunha: 'sim',
+    outros_trabalhos: 'não',
   });
   assert.equal(p.complete, true);
   assert.deepEqual(p.pending, []);
@@ -123,10 +182,11 @@ test('roteiro cumprido não deixa pendência nenhuma', () => {
 
 // ── Cortes ──────────────────────────────────────────────────────────────────
 
-test('órgão público sai para gente, e sai antes das outras perguntas', () => {
+test('órgão público encerra como não qualificado, sem transferência', () => {
   const p = progresso({ nome: 'Ana', empregador: 'Prefeitura', tipo_empregador: 'publico' });
   assert.equal(p.cut?.id, 'orgao_publico');
-  assert.equal(p.cut?.effect, 'handoff');
+  assert.equal(p.cut?.effect, 'disqualify');
+  assert.match(p.cut?.guidance || '', /NÃO QUALIFICADO — ÓRGÃO PÚBLICO/);
   assert.deepEqual(p.pending, []);
   assert.equal(p.nextField, null);
 });
@@ -171,9 +231,17 @@ test('uma prova OU uma testemunha segura o caso; faltar as duas é que corta', (
     'sem_prova_nem_testemunha');
 });
 
-test('órgão público vem antes do prazo: o caso vai para gente mesmo tendo saído há anos', () => {
+test('órgão público vem antes do prazo e mantém o encerramento comercial correto', () => {
   const p = progresso({ tipo_empregador: 'publico', ainda_trabalha: 'não', saida: '01/2019' });
   assert.equal(p.cut?.id, 'orgao_publico');
+});
+
+test('os quatro elementos mínimos geram cortes objetivos e independentes do modelo', () => {
+  const base = { tipo_empregador: 'particular', ainda_trabalha: 'sim' };
+  assert.equal(evaluateWaAiCuts(ROTEIRO, { ...base, pessoalidade: 'não' }, HOJE, TZ)?.id, 'sem_pessoalidade');
+  assert.equal(evaluateWaAiCuts(ROTEIRO, { ...base, pessoalidade: 'sim', recebia_pagamento: 'não' }, HOJE, TZ)?.id, 'sem_pagamento');
+  assert.equal(evaluateWaAiCuts(ROTEIRO, { ...base, pessoalidade: 'sim', recebia_pagamento: 'sim', trabalho_regular: 'esporadico' }, HOJE, TZ)?.id, 'trabalho_esporadico');
+  assert.equal(evaluateWaAiCuts(ROTEIRO, { ...base, pessoalidade: 'sim', recebia_pagamento: 'sim', trabalho_regular: 'regular', subordinacao: 'não' }, HOJE, TZ)?.id, 'sem_subordinacao');
 });
 
 // ── Schema ──────────────────────────────────────────────────────────────────
@@ -312,4 +380,142 @@ test('roteiro sem etapa ganha uma, na ordem em que os campos foram escritos', ()
     fields: [{ key: 'a', type: 'texto' }, { key: 'b', type: 'texto' }],
   }) as WaAiPlaybook;
   assert.deepEqual(lido.stages, [{ id: 'triagem', label: 'Triagem', fields: ['a', 'b'] }]);
+});
+
+test('contexto estruturado sozinho reconhece a campanha e herda os campos declarativos', () => {
+  const raw = {
+    agent_context: {
+      schema_version: '1.0',
+      campaign: { id: 'trabalhou_sem_registro', name: 'Trabalhou sem registro na carteira' },
+    },
+    authority: { playbook: { role: 'fonte_de_verdade_do_fluxo' } },
+    information_registration: { updates: { field_name: 'atualizacoes' } },
+  };
+  const lido = normalizeWaAiPlaybook(raw) as WaAiPlaybook;
+  assert.ok(lido.fields.some(f => f.key === 'nome'));
+  assert.ok(lido.fields.some(f => f.key === 'inicio'));
+  assert.deepEqual(lido.context, raw);
+  assert.match(waAiPlaybookInstructions(lido), /fonte_de_verdade_do_fluxo/);
+});
+
+test('contexto oficial da campanha já nasce ligado aos campos automáticos', () => {
+  const lido = normalizeWaAiPlaybook(WA_AI_CONTEXT_SEM_REGISTRO) as WaAiPlaybook;
+  assert.equal(lido.id, 'sem_registro_carteira');
+  assert.deepEqual(lido.context, WA_AI_CONTEXT_SEM_REGISTRO);
+  assert.equal(lido.fields.length, 17);
+  assert.equal(lido.stages.length, 5);
+  assert.equal(lido.cuts.length, 7);
+});
+
+test('roteiro materializado antigo recebe os novos campos e cortes ao ser lido', () => {
+  const antigo = JSON.parse(JSON.stringify(WA_AI_PLAYBOOK_SEM_REGISTRO)) as WaAiPlaybook;
+  antigo.fields = antigo.fields.filter(field =>
+    !['funcao', 'recebia_pagamento', 'trabalho_regular'].includes(field.key));
+  antigo.cuts = antigo.cuts.filter(cut =>
+    !['sem_pessoalidade', 'sem_pagamento', 'trabalho_esporadico', 'sem_subordinacao'].includes(cut.id));
+  const lido = normalizeWaAiPlaybook(antigo) as WaAiPlaybook;
+  assert.ok(lido.fields.some(field => field.key === 'funcao'));
+  assert.ok(lido.fields.some(field => field.key === 'recebia_pagamento'));
+  assert.ok(lido.fields.some(field => field.key === 'trabalho_regular'));
+  assert.ok(lido.cuts.some(cut => cut.id === 'sem_subordinacao'));
+});
+
+test('agente antigo da campanha herda contexto sem migração de banco', () => {
+  const { context: _oldContext, ...oldStoredPlaybook } = WA_AI_PLAYBOOK_SEM_REGISTRO;
+  const lido = normalizeWaAiPlaybook(oldStoredPlaybook) as WaAiPlaybook;
+  assert.deepEqual(lido.context, WA_AI_CONTEXT_SEM_REGISTRO);
+});
+
+test('nomes operacionais ficam nos vínculos, não no JSON visível', () => {
+  const contextText = JSON.stringify(WA_AI_CONTEXT_SEM_REGISTRO);
+  assert.doesNotMatch(contextText, /Pedro Rodrigues Montalvao Neto/);
+  assert.match(contextText, /\{\{destino_revisao_prazo\}\}/);
+  assert.equal(
+    resolveWaAiPlaybookBindings(ROTEIRO, 'ação=transferir({{destino_revisao_prazo}})'),
+    'ação=transferir(Pedro Rodrigues Montalvao Neto)',
+  );
+});
+
+test('JSON antigo com pessoa fixa é elevado automaticamente para configuração da tela', () => {
+  const oldContext = JSON.parse(JSON.stringify(WA_AI_CONTEXT_SEM_REGISTRO)) as any;
+  oldContext.triage_closure.post_closure_insistence.required_action = {
+    type: 'transferir', target: 'Pedro Rodrigues Montalvao Neto',
+    exact_action: 'ação=transferir(Pedro Rodrigues Montalvao Neto)',
+  };
+  oldContext.action_catalog.transferir_especifico = {
+    syntax: 'ação=transferir(Pedro Rodrigues Montalvao Neto)',
+    target: 'Pedro Rodrigues Montalvao Neto',
+  };
+  const lido = normalizeWaAiPlaybook(oldContext) as WaAiPlaybook;
+  const text = JSON.stringify(lido.context);
+  assert.doesNotMatch(text, /Pedro Rodrigues Montalvao Neto/);
+  assert.match(text, /destino_revisao_prazo/);
+  assert.equal(lido.bindings?.length, 2);
+});
+
+test('agente antigo não mantém transferência configurável para órgão público', () => {
+  const old = JSON.parse(JSON.stringify(WA_AI_PLAYBOOK_SEM_REGISTRO)) as any;
+  old.bindings.unshift({
+    key: 'destino_orgao_publico', label: 'Órgão público',
+    action: 'transferir_atendimento', required: true,
+  });
+  const cut = old.cuts.find((item: any) => item.id === 'orgao_publico');
+  cut.effect = 'handoff';
+  cut.guidance = 'Transfira para alguém.';
+  const lido = normalizeWaAiPlaybook(old) as WaAiPlaybook;
+  assert.equal(lido.bindings?.some(binding => binding.key === 'destino_orgao_publico'), false);
+  assert.equal(lido.cuts.find(item => item.id === 'orgao_publico')?.effect, 'disqualify');
+});
+
+test('fechamento antigo também passa a usar a escolha configurável', () => {
+  const lido = normalizeWaAiPlaybook({
+    ...WA_AI_PLAYBOOK_SEM_REGISTRO,
+    closing: 'Ao terminar faça ação=transferir(Atendimento).',
+  }) as WaAiPlaybook;
+  assert.equal(lido.closing, 'Ao terminar faça ação=transferir({{destino_triagem_concluida}}).');
+  assert.match(waAiPlaybookInstructions(lido), /ação=transferir\(Atendimento\)/);
+});
+
+test('placeholder de template cria seletor sem precisar alterar a tela', () => {
+  const lido = normalizeWaAiPlaybook({
+    id: 'contrato',
+    fields: [{ key: 'nome', type: 'texto' }],
+    closing: 'Envie ação=enviar_documento({{modelo_contrato}}).',
+  }) as WaAiPlaybook;
+  assert.deepEqual(lido.bindings, [{
+    key: 'modelo_contrato',
+    label: 'Modelo contrato',
+    description: 'Escolha usada quando o roteiro executar ação=enviar_documento.',
+    action: 'enviar_documento',
+    required: true,
+  }]);
+});
+
+test('schema de extração nasce dos campos e diferencia false de null', () => {
+  const schema = buildWaAiTriageExtractionSchema(ROTEIRO).schema as any;
+  const updates = schema.properties.atualizacoes;
+  assert.deepEqual(updates.properties.ainda_trabalha.type, ['boolean', 'null']);
+  assert.ok(updates.required.includes('nome'));
+  assert.equal(updates.additionalProperties, false);
+
+  const conversation = buildWaAiTriageConversationSchema(ROTEIRO).schema as any;
+  assert.deepEqual(conversation.required, ['mensagem_cliente', 'campo_alvo']);
+  assert.equal('atualizacoes' in conversation.properties, false);
+});
+
+test('ação seguinte é derivada do primeiro campo pendente', () => {
+  const p = progresso({ nome: 'Ana' });
+  const action = computeWaAiTriageNextAction(ROTEIRO, p);
+  assert.equal(action.type, 'ask_field');
+  if (action.type === 'ask_field') assert.equal(action.field, 'empregador');
+});
+
+test('fato condicional antigo não dispara corte quando deixou de se aplicar', () => {
+  const cut = evaluateWaAiCuts(
+    ROTEIRO,
+    { ainda_trabalha: true, saida: '01/2020' },
+    HOJE,
+    TZ,
+  );
+  assert.equal(cut, null);
 });

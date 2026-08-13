@@ -253,10 +253,15 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
 
-  const handleApprove = async (uploadId: string, itemId: string) => {
+  const handleApprove = async (uploadId: string, itemId: string, requestId: string) => {
     setReviewLoading(uploadId);
     await supabase.from('document_uploads').update({ review_status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', uploadId);
     await supabase.from('document_request_items').update({ status: 'approved' }).eq('id', itemId);
+    // Recalcula o pedido no servidor e, ao completar a campanha de conta,
+    // avança automaticamente para o KIT CONSUMIDOR.
+    await supabase.functions.invoke('whatsapp-ai-lifecycle', {
+      body: { document_request_id: requestId },
+    }).then(() => null, () => null);
     // Notifica cliente
     await supabase.from('portal_client_notifications').insert({
       client_id: client.id, type: 'document_upload_approved',
@@ -429,7 +434,7 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
                                     Rejeitar
                                   </button>
                                   <button disabled={!!reviewLoading}
-                                    onClick={() => handleApprove(item.upload!.id, item.id)}
+                                    onClick={() => handleApprove(item.upload!.id, item.id, req.id)}
                                     className="rounded-lg bg-emerald-500 px-2 py-1.5 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-60">
                                     {reviewLoading === item.upload.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                                   </button>
@@ -467,4 +472,3 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
 };
 
 export default DocumentRequestsAdmin;
-

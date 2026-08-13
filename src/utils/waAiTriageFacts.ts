@@ -40,6 +40,7 @@
 
 /** Teto de chaves, o mesmo de `WA_AI_KNOWN_FACTS_MAX_KEYS` (waAiRunGate.ts). */
 export const WA_AI_TRIAGE_MAX_FACTS = 30;
+export type WaAiStoredFactValue = string | number | boolean;
 
 /** Uma fala da conversa, na forma mínima de que a leitura precisa. */
 export interface WaAiTriageTurn {
@@ -52,7 +53,11 @@ export interface WaAiTriageTurn {
 }
 
 /** Os três campos de período que o modelo esquece. */
-export type WaAiPeriodField = 'inicio' | 'ainda_trabalha' | 'saida';
+export type WaAiPeriodField = 'inicio' | 'ainda_trabalha' | 'saida' | 'data_ocorrencia';
+export type WaAiDecisionField = 'tipo_empregador' | 'pessoalidade' | 'recebia_pagamento'
+  | 'trabalho_regular' | 'subordinacao' | 'tem_prova' | 'tem_testemunha' | 'outros_trabalhos'
+  | 'tipo_ocorrencia' | 'aviso_previo' | 'tem_print' | 'saldo_retido'
+  | 'residencia_tipo' | 'declarante_tem_documento' | 'aceita_honorarios';
 
 // ── Texto ───────────────────────────────────────────────────────────────────
 
@@ -156,6 +161,53 @@ const MESES: Record<string, number> = {
 // com o "eiro" sobrando, e o `\b` do fim reprova a data inteira.
 const NOMES_DE_MES = Object.keys(MESES).sort((a, b) => b.length - a.length).join('|');
 
+// O cliente escreve no WhatsApp, não num campo de calendário. Um erro de uma
+// letra no nome do mês ("marcço", "feverero", "desembro") não pode impedir
+// um corte de prazo. Só comparamos nomes completos de mês e aceitamos no
+// máximo uma inserção, remoção, troca ou inversão adjacente; assim "trabalho de
+// 2023" continua sem ser confundido com data.
+const MESES_COMPLETOS = Object.entries(MESES)
+  .filter(([nome]) => nome.length >= 4)
+  .filter(([nome], index, all) => all.findIndex(([, mes]) => mes === MESES[nome]) === index);
+
+function diferePorNoMaximoUmaEdicao(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+
+  if (a.length === b.length) {
+    const diferentes: number[] = [];
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) diferentes.push(i);
+      if (diferentes.length > 2) return false;
+    }
+    if (diferentes.length === 1) return true;
+    return diferentes.length === 2
+      && diferentes[1] === diferentes[0] + 1
+      && a[diferentes[0]] === b[diferentes[1]]
+      && a[diferentes[1]] === b[diferentes[0]];
+  }
+
+  const menor = a.length < b.length ? a : b;
+  const maior = a.length < b.length ? b : a;
+  let i = 0;
+  let j = 0;
+  let pulou = false;
+  while (i < menor.length && j < maior.length) {
+    if (menor[i] === maior[j]) { i++; j++; continue; }
+    if (pulou) return false;
+    pulou = true;
+    j++;
+  }
+  return true;
+}
+
+function mesAproximado(nome: string): number | null {
+  for (const [mes, numero] of MESES_COMPLETOS) {
+    if (diferePorNoMaximoUmaEdicao(nome, mes)) return numero;
+  }
+  return null;
+}
+
 const RE_DATA = new RegExp(
   '\\b(?:'
   + '(\\d{1,2})[\\/.-](\\d{1,2})[\\/.-](\\d{4})'   // 05/01/2020
@@ -163,6 +215,8 @@ const RE_DATA = new RegExp(
   + `|(${NOMES_DE_MES})(?:\\s+de)?[\\s\\/.-]+(\\d{4})` // janeiro de 2020, jan/2020
   + ')\\b',
   'g');
+
+const RE_DATA_COM_MES_DIGITADO = /\b([a-z]{4,12})(?:\s+de)?[\s\/.-]+(\d{4})\b/g;
 
 function mesAno(mes: number, ano: number): string | null {
   if (!Number.isInteger(mes) || mes < 1 || mes > 12) return null;
@@ -190,7 +244,18 @@ export function findWaAiMonthYears(text: string): DataAchada[] {
     else if (m[6]) valor = mesAno(MESES[m[6]], Number(m[7]));
     if (valor) achadas.push({ valor, index: m.index });
   }
-  return achadas;
+
+  // Segunda passagem só para nomes com erro de digitação. As datas exatas já
+  // encontradas acima vencem e não são duplicadas.
+  RE_DATA_COM_MES_DIGITADO.lastIndex = 0;
+  while ((m = RE_DATA_COM_MES_DIGITADO.exec(alvo)) !== null) {
+    if (achadas.some(data => data.index === m!.index)) continue;
+    const mes = mesAproximado(m[1]);
+    const valor = mes === null ? null : mesAno(mes, Number(m[2]));
+    if (valor) achadas.push({ valor, index: m.index });
+  }
+
+  return achadas.sort((a, b) => a.index - b.index);
 }
 
 /** A primeira data de mês+ano do texto, em `MM/AAAA`. */
@@ -210,9 +275,11 @@ const NAO = /^(nao|n|negativo|false|ja sai|sai|saiu|encerrado|inativo|nunca)\b/;
  * reconhecido fica exatamente como veio: aparar é uma coisa, descartar o que o
  * cliente disse é outra.
  */
-export function normalizeWaAiFactValue(field: string, value: unknown): string {
+export function normalizeWaAiFactValue(field: string, value: unknown): WaAiStoredFactValue | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   const bruto = String(value ?? '').replace(/\s+/g, ' ').trim();
-  if (!bruto) return '';
+  if (!bruto) return null;
 
   if (field === 'inicio' || field === 'saida') {
     return parseWaAiMonthYear(bruto) || bruto;
@@ -244,8 +311,8 @@ export function normalizeWaAiFactValue(field: string, value: unknown): string {
 export function canonicalizeWaAiFacts(
   facts: Record<string, unknown> | null | undefined,
   declaradas?: string[] | null,
-): Record<string, string> {
-  const out: Record<string, string> = {};
+): Record<string, WaAiStoredFactValue> {
+  const out: Record<string, WaAiStoredFactValue> = {};
   const vistos: Record<string, true> = {};
 
   const doRoteiro: Record<string, true> = {};
@@ -269,7 +336,7 @@ export function canonicalizeWaAiFacts(
     if (!escrevivel) continue;
 
     const valor = normalizeWaAiFactValue(canonica, valorBruto);
-    if (!valor) continue;
+    if (valor === null || valor === '') continue;
 
     vistos[canonica] = true;
     out[canonica] = valor;
@@ -283,6 +350,7 @@ export function canonicalizeWaAiFacts(
 const TOPICO_INICIO = /\b(comec\w*|inicio|inici\w*|admiss\w*|admitid\w*|entrou|entrei|entrada)\b/;
 const TOPICO_SAIDA = /\b(saiu|sair|sai|saida|deixou|deixei|termin\w*|encerr\w*|desligad\w*|demiss\w*|demitid\w*|parou|ultimo dia)\b/;
 const TOPICO_AINDA = /\b(ainda trabalha\w*|ainda esta\w*|ainda e|continua trabalhando|continua na|trabalha atualmente|trabalha ate hoje)\b/;
+const TOPICO_CONTA = /\b(quando isso aconteceu|mes e ano.{0,35}(?:aconteceu|bloqueio|encerramento)|isso aconteceu|data do problema|bloqueio da conta|conta bloqueada|encerramento da conta|conta encerrada)\b/;
 
 const MARCA_INICIO = /\b(comec\w*|inicio|inici\w*|admiss\w*|admitid\w*|entrei|entrou|entrada|desde)\b/g;
 const MARCA_SAIDA = /\b(sai|saiu|saida|sair|deixei|deixou|termin\w*|encerr\w*|parei|demiss\w*|demitid\w*|desligad\w*|ate)\b/g;
@@ -298,9 +366,11 @@ function topicosDaPergunta(pergunta: string): WaAiPeriodField[] {
   const inicio = texto.search(TOPICO_INICIO);
   const saida = texto.search(TOPICO_SAIDA);
   const ainda = texto.search(TOPICO_AINDA);
+  const conta = texto.search(TOPICO_CONTA);
   if (inicio >= 0) posicoes.push({ campo: 'inicio', at: inicio });
-  if (saida >= 0) posicoes.push({ campo: 'saida', at: saida });
+  if (saida >= 0 && conta < 0) posicoes.push({ campo: 'saida', at: saida });
   if (ainda >= 0) posicoes.push({ campo: 'ainda_trabalha', at: ainda });
+  if (conta >= 0) posicoes.push({ campo: 'data_ocorrencia', at: conta });
   posicoes.sort((a, b) => a.at - b.at);
   return posicoes.map(p => p.campo);
 }
@@ -366,6 +436,11 @@ export function extractWaAiPeriodFacts(turns: WaAiTriageTurn[]): Partial<Record<
     const datas = findWaAiMonthYears(texto);
     const semRota: DataAchada[] = [];
 
+    if (topicos.includes('data_ocorrencia') && datas.length > 0) {
+      out.data_ocorrencia = datas[datas.length - 1].valor;
+      continue;
+    }
+
     for (const data of datas) {
       const antes = resposta.slice(Math.max(0, data.index - 45), data.index);
       const marcaInicio = ultimaMarca(MARCA_INICIO, antes);
@@ -396,6 +471,174 @@ export function extractWaAiPeriodFacts(turns: WaAiTriageTurn[]): Partial<Record<
   return out;
 }
 
+// ── Respostas simples que decidem o fluxo ──────────────────────────────────
+
+/** Qual decisão a última pergunta abriu. Só casa perguntas desta campanha. */
+function campoDeDecisao(pergunta: string): WaAiDecisionField | null {
+  const q = simples(pergunta);
+  if (/conta foi bloqueada|foi bloqueio|foi encerrada|encerrada de vez/.test(q)) return 'tipo_ocorrencia';
+  if (/banco avisou|avisou antes|recebeu algum aviso|teve aviso previo/.test(q)) return 'aviso_previo';
+  if (/tem algum print|tem print|email ou tela|prova do bloqueio|prova do encerramento/.test(q)) return 'tem_print';
+  if (/saldo preso|dinheiro preso|saldo retido|ficou algum dinheiro/.test(q)) return 'saldo_retido';
+  if (/comprovante de residencia|contrato de aluguel|nome de esposa|nome do pai|nome da mae|nenhum desses/.test(q)) return 'residencia_tipo';
+  if (/pessoa consegue mandar|declarante.*documento|foto do documento de identificacao dela/.test(q)) return 'declarante_tem_documento';
+  if (/honorarios.*40|40%.*valor|esta de acordo.*honorarios/.test(q)) return 'aceita_honorarios';
+  if (/empresa particular|empresa privada|iniciativa privada|prefeitura|governo|orgao publico|empresa publica/.test(q)) return 'tipo_empregador';
+  if (/era voce mesm|tinha que ser voce|mandar outra pessoa|colocar alguem|alguem no seu lugar|outra pessoa no seu lugar|substituir voce/.test(q)) return 'pessoalidade';
+  if (/recebia algum pagamento|recebia dinheiro|pagavam pelo trabalho|ganhava alguma coisa|era pago|tinha salario/.test(q)) return 'recebia_pagamento';
+  if (/toda semana|so de vez em quando|trabalho regular|com que frequencia|quantas vezes por semana|era toda hora|era um bico/.test(q)) return 'trabalho_regular';
+  if (/passava o que voce precisava|cobrava o servico|quem mandava|tinha chefe|dava ordens|dizia o que fazer|controlava seu horario/.test(q)) return 'subordinacao';
+  if (/alguma prova desse trabalho|tem alguma prova|ficou alguma prova|guardou alguma coisa|tem comprovante|tem conversa ou foto/.test(q)) return 'tem_prova';
+  if (/servir de testemunha|tem testemunha|alguem que trabalhou com voce|alguem viu voce trabalhando|alguem pode confirmar/.test(q)) return 'tem_testemunha';
+  if (/outro trabalho sem carteira|alem desse|mais algum trabalho assim|outro emprego desse jeito/.test(q)) return 'outros_trabalhos';
+  return null;
+}
+
+const SIM_CURTO = /^(sim|s|isso|isso mesmo|tenho|tinha|acho que sim|com certeza)\b/;
+const NAO_CURTO = /^(nao|n|nao tenho|nao tinha|acho que nao|nenhum|nenhuma|ninguem)\b/;
+
+/**
+ * Traduz a linguagem de WhatsApp para os valores fechados usados nos cortes.
+ * Ambiguidade devolve null: "não entendi", "talvez" e "não sei" nunca viram
+ * reprovação. Nesse caso o mesmo campo continua pendente e o agente reformula.
+ */
+function lerDecisao(campo: WaAiDecisionField, respostaBruta: string): string | null {
+  const r = simples(respostaBruta);
+  if (!r || /\b(nao entendi|nao sei|nao lembro|talvez|mais ou menos|depende|acho que)\b/.test(r)
+    && !/^(acho que sim|acho que nao)\b/.test(r)) return null;
+
+  if (campo === 'tipo_empregador') {
+    if (/\b(prefeitura|municipio|estado|governo|orgao publico|empresa publica|autarquia)\b/.test(r)) return 'publico';
+    if (/\b(particular|privad\w*|empresa normal|loja|comercio|fazenda|pessoa fisica)\b/.test(r)) return 'particular';
+    return null;
+  }
+
+  if (campo === 'tipo_ocorrencia') {
+    if (/\b(bloque\w*|travou|congelou|nao consigo mexer|nao consigo usar)\b/.test(r)) return 'bloqueio';
+    if (/\b(encerr\w*|fechou (?:a|minha|sua)?\s*conta|cancelou (?:a|minha|sua)?\s*conta|conta fechada)\b/.test(r)) return 'encerramento';
+    return null;
+  }
+
+  if (campo === 'aviso_previo') {
+    if (/\b(sem avisar|nao avisou|do nada|nenhum aviso|nao recebi aviso|so descobri depois)\b/.test(r)) return 'não';
+    if (/\b(avisou|mandou aviso|recebi aviso|chegou email antes|notificou antes)\b/.test(r)
+      || SIM_CURTO.test(r)) return 'sim';
+    if (NAO_CURTO.test(r)) return 'não';
+    return null;
+  }
+
+  if (campo === 'tem_print') {
+    if (/\b(nao tenho|nao tirei|sem print|apaguei|nao consigo printar)\b/.test(r)) return 'não';
+    if (/\b(print|screenshot|captura|foto da tela|email|mensagem do banco|tela do aplicativo|tela do app)\b/.test(r)
+      || SIM_CURTO.test(r)) return 'sim';
+    if (NAO_CURTO.test(r)) return 'não';
+    return null;
+  }
+
+  if (campo === 'saldo_retido') {
+    if (/\b(nao ficou|sem saldo|saldo zerado|nao tinha dinheiro|nada preso)\b/.test(r)) return 'não';
+    if (/\b(ficou|esta preso|ta preso|retido|bloqueou meu dinheiro|saldo de|reais|r\$)\b/.test(r)
+      || SIM_CURTO.test(r)) return 'sim';
+    if (NAO_CURTO.test(r)) return 'não';
+    return null;
+  }
+
+  if (campo === 'residencia_tipo') {
+    if (/\b(meu nome|meu proprio nome|no meu nome|proprio)\b/.test(r)) return 'proprio';
+    if (/\b(esposa|esposo|marido|mulher|meu pai|minha mae|nome do pai|nome da mae)\b/.test(r)) return 'familiar';
+    if (/\b(sem contrato|nao tenho contrato|nome de terceiro|favor|emprestada|nenhum desses|casa de outra pessoa)\b/.test(r)) return 'terceiro_sem_contrato';
+    if (/\b(contrato de aluguel|tenho contrato|casa alugada com contrato|alugo com contrato)\b/.test(r)) return 'aluguel_com_contrato';
+    return null;
+  }
+
+  if (campo === 'declarante_tem_documento' || campo === 'aceita_honorarios') {
+    if (SIM_CURTO.test(r) || /\b(concordo|de acordo|consigo mandar|pode mandar)\b/.test(r)) return 'sim';
+    if (NAO_CURTO.test(r) || /\b(nao concordo|nao aceito|nao consigo mandar)\b/.test(r)) return 'não';
+    return null;
+  }
+
+  if (campo === 'pessoalidade') {
+    if (/\b(podia|poderia|dava para)\b.{0,35}\b(mandar|colocar|chamar|substituir)\b/.test(r)
+      || /\b(outra|qualquer) pessoa\b.{0,20}\b(podia|poderia|ia)\b/.test(r)
+      || /\b(irmao|irma|primo|prima|amigo|colega|alguem)\b.{0,25}\b(ia|podia ir|ficava|trabalhava)\b.{0,20}\b(no meu lugar|por mim|la)\b/.test(r)) return 'não';
+    if (/\b(eu mesm[oa]|so eu|tinha que ser eu|era sempre eu)\b/.test(r)
+      || /\b(nao podia|nao dava para)\b.{0,35}\b(mandar|trocar|colocar|chamar|substituir)\b/.test(r)
+      || /\bninguem\b.{0,25}\b(podia|poderia)\b.{0,20}\b(ir|trabalhar|me substituir)\b/.test(r)) return 'sim';
+    // "sim" e "não" sozinhos são perigosos numa pergunta com duas opções.
+    return null;
+  }
+
+  if (campo === 'recebia_pagamento') {
+    if (/\b(nao recebia|nunca recebi|sem pagamento|de graca|voluntari\w*)\b/.test(r)) return 'não';
+    if (/\b(recebia|recebi|pagavam|pagava|ganhava|salario|pix|dinheiro|reais|r\$)\b/.test(r)
+      || /\b\d{2,6}\b.{0,15}\b(por mes|por semana|por dia|mensal|semanal|diaria)\b/.test(r)
+      || /\b\d+[.,]?\d*\s*mil\b/.test(r)
+      || SIM_CURTO.test(r)) return 'sim';
+    if (NAO_CURTO.test(r)) return 'não';
+    return null;
+  }
+
+  if (campo === 'trabalho_regular') {
+    if (/\b(de vez em quando|vez ou outra|quando chamava|raramente|esporadic\w*|um bico|so uma vez)\b/.test(r)) return 'esporadico';
+    if (/\b(todo dia|todos os dias|toda semana|de segunda|de terca|de quarta|de quinta|de sexta|sabado|domingo|sempre|fixo|regular\w*|[1-7] dias|[1-7] vezes)\b/.test(r)
+      || /\b(uma|duas|tres|quatro|cinco|seis|sete) vezes por semana\b/.test(r)) return 'regular';
+    return null;
+  }
+
+  if (campo === 'subordinacao') {
+    if (/\b(ninguem mandava|nao tinha chefe|sem chefe|fazia do meu jeito|eu decidia|meu proprio horario|ninguem cobrava)\b/.test(r)) return 'não';
+    if (/\b(gerente|patrao|patroa|chefe|supervisor|encarregado|recebia ordens|dava ordens|mandava|cobrava|passava tarefa|dizia o que fazer|definia o horario|marcava o horario)\b/.test(r)
+      || SIM_CURTO.test(r)) return 'sim';
+    if (NAO_CURTO.test(r)) return 'não';
+    return null;
+  }
+
+  if (campo === 'tem_prova') {
+    if (/\b(nao tenho nada|nenhuma prova|nada guardado|nao tenho prova|nao tenho comprovante)\b/.test(r)) return 'não';
+    if (/\b(pix|comprovante|recibo|extrato|conversa|whatsapp|foto|video|cracha|uniforme|papel|documento|audio|mensagem)\b/.test(r)
+      || SIM_CURTO.test(r)) return 'sim';
+    if (NAO_CURTO.test(r)) return 'não';
+    return null;
+  }
+
+  if (campo === 'tem_testemunha') {
+    if (/\b(ninguem|nenhuma pessoa|nao tem quem|nao tenho testemunha)\b/.test(r)) return 'não';
+    if (/\b(colega|amigo|vizinho|cliente|alguem|uma pessoa|esposa|marido|irmao|irma|primo|prima|testemunha|viu eu|me viu)\b/.test(r)
+      || SIM_CURTO.test(r)) return 'sim';
+    if (NAO_CURTO.test(r)) return 'não';
+    return null;
+  }
+
+  if (SIM_CURTO.test(r) || /\b(teve|tive|outro emprego|outro trabalho|outro bico)\b/.test(r)) return 'sim';
+  if (NAO_CURTO.test(r) || /\b(foi so esse|somente esse|apenas esse)\b/.test(r)) return 'não';
+  return null;
+}
+
+/**
+ * Rede determinística para as respostas que podem encerrar ou aprovar o caso.
+ * Ela não tenta extrair nome, função ou narrativa: esses continuam com o
+ * extrator estruturado. Aqui entram somente enums/booleanos de alto impacto.
+ */
+export function extractWaAiDecisionFacts(
+  turns: WaAiTriageTurn[],
+): Partial<Record<WaAiDecisionField, string>> {
+  const ordenados = (Array.isArray(turns) ? turns : [])
+    .map((t, i) => ({ t, i, ms: Date.parse(String(t?.at || '')) }))
+    .sort((a, b) => Number.isFinite(a.ms) && Number.isFinite(b.ms) && a.ms !== b.ms ? a.ms - b.ms : a.i - b.i)
+    .map(item => item.t);
+  const out: Partial<Record<WaAiDecisionField, string>> = {};
+  let campo: WaAiDecisionField | null = null;
+  for (const turn of ordenados) {
+    const texto = String(turn?.text || '').trim();
+    if (!texto) continue;
+    if (turn.direction === 'out') { campo = campoDeDecisao(texto); continue; }
+    if (!campo) continue;
+    const valor = lerDecisao(campo, texto);
+    if (valor !== null) out[campo] = valor;
+  }
+  return out;
+}
+
 // ── Pendências ──────────────────────────────────────────────────────────────
 
 /** Como reconhecer, no texto de uma pendência, de que campo ela fala. */
@@ -406,6 +649,30 @@ const PENDENCIA_DE: { campo: string; re: RegExp }[] = [
   { campo: 'nome', re: /\bnome\b/ },
   { campo: 'empregador', re: /\b(empresa|empregador\w*|contratante|tomador)\b/ },
   { campo: 'tipo_empregador', re: /\b(particular|privad\w*|public\w*|orgao|natureza|tipo de empresa)\b/ },
+  { campo: 'funcao', re: /\b(funcao|cargo|atividade|o que fazia|trabalho no dia a dia)\b/ },
+  { campo: 'pessoalidade', re: /\b(era voce mesmo|mandar outra pessoa|substituir)\b/ },
+  { campo: 'recebia_pagamento', re: /\b(recebia algum pagamento|recebia dinheiro|pagamento pelo trabalho)\b/ },
+  { campo: 'pagamento', re: /\b(quanto recebia|como era pago|como te pagavam|salario)\b/ },
+  { campo: 'trabalho_regular', re: /\b(toda semana|vez em quando|trabalho regular)\b/ },
+  { campo: 'habitualidade', re: /\b(dias por semana|quais dias|horario|rotina)\b/ },
+  { campo: 'subordinacao', re: /\b(passava o que|cobrava o servico|quem mandava|chefe)\b/ },
+  { campo: 'tem_prova', re: /\b(tem alguma prova|alguma prova desse trabalho)\b/ },
+  { campo: 'provas', re: /\b(quais provas|o que tem guardado)\b/ },
+  { campo: 'tem_testemunha', re: /\b(tem testemunha|servir de testemunha|alguem que trabalhou)\b/ },
+  { campo: 'outros_trabalhos', re: /\b(outro trabalho sem carteira|alem desse)\b/ },
+  { campo: 'banco_reu', re: /\b(nome do banco|banco que bloqueou|banco que encerrou|banco reu)\b/ },
+  { campo: 'tipo_ocorrencia', re: /\b(bloqueio ou encerramento|conta foi bloqueada|conta foi encerrada|o que aconteceu)\b/ },
+  { campo: 'data_ocorrencia', re: /\b(data do problema|mes e ano.*bloqueio|mes e ano.*encerramento|quando aconteceu)\b/ },
+  { campo: 'aviso_previo', re: /\b(aviso previo|avisou antes|banco avisou)\b/ },
+  { campo: 'tem_print', re: /\b(print|email ou tela|prova visual)\b/ },
+  { campo: 'saldo_retido', re: /\b(saldo retido|dinheiro preso|saldo preso)\b/ },
+  { campo: 'valor_saldo', re: /\b(valor retido|quanto ficou preso|quanto.*saldo)\b/ },
+  { campo: 'residencia_tipo', re: /\b(comprovante de residencia|contrato de aluguel|nome de familiar)\b/ },
+  { campo: 'titular_comprovante', re: /\b(titular do comprovante|nome e parentesco)\b/ },
+  { campo: 'declarante_nome', re: /\b(nome do declarante|pessoa que.*declarar)\b/ },
+  { campo: 'endereco_residencia', re: /\b(endereco completo|rua.*numero.*cep)\b/ },
+  { campo: 'declarante_tem_documento', re: /\b(documento do declarante|foto do documento.*pessoa)\b/ },
+  { campo: 'aceita_honorarios', re: /\b(honorarios.*40|aceitou.*40|concorda.*honorarios)\b/ },
 ];
 
 /**
@@ -419,14 +686,14 @@ const PENDENCIA_DE: { campo: string; re: RegExp }[] = [
  * nenhum ("provas", "testemunhas") nunca conta como respondido.
  */
 export function waAiAlreadyAnswered(
-  text: string, facts: Record<string, string> | null | undefined,
+  text: string, facts: Record<string, WaAiStoredFactValue> | null | undefined,
 ): boolean {
   const conhecidos = facts || {};
   const alvo = simples(text);
   if (!alvo) return false;
   const citados = PENDENCIA_DE.filter(p => p.re.test(alvo)).map(p => p.campo);
   return citados.length > 0
-    && citados.every(campo => String(conhecidos[campo] || '').trim().length > 0);
+    && citados.every(campo => String(conhecidos[campo] ?? '').trim().length > 0);
 }
 
 /**
@@ -437,7 +704,8 @@ export function waAiAlreadyAnswered(
  * já tinha dito.
  */
 export function pruneWaAiPendingItems(
-  items: string[] | null | undefined, facts: Record<string, string> | null | undefined,
+  items: string[] | null | undefined,
+  facts: Record<string, WaAiStoredFactValue> | null | undefined,
 ): string[] {
   const out: string[] = [];
 
@@ -454,7 +722,7 @@ export function pruneWaAiPendingItems(
 // ── A costura ───────────────────────────────────────────────────────────────
 
 export interface WaAiTriageState {
-  knownFacts: Record<string, string>;
+  knownFacts: Record<string, WaAiStoredFactValue>;
   pendingItems: string[];
 }
 
@@ -491,6 +759,16 @@ export function reconcileWaAiTriageState(input: {
     // que nunca falou de emprego nenhum.
     if (declaradas && declaradas.indexOf(campo) === -1) continue;
     if (!(campo in facts) && Object.keys(facts).length >= WA_AI_TRIAGE_MAX_FACTS) continue;
+    facts[campo] = limpo;
+  }
+
+  for (const [campo, valor] of Object.entries(extractWaAiDecisionFacts(input.turns))) {
+    const limpo = String(valor ?? '').trim();
+    if (!limpo) continue;
+    if (declaradas && declaradas.indexOf(campo) === -1) continue;
+    if (!(campo in facts) && Object.keys(facts).length >= WA_AI_TRIAGE_MAX_FACTS) continue;
+    // A fala do cliente, casada com a pergunta que acabou de ser feita, ganha
+    // do palpite do modelo nas decisões de alto impacto.
     facts[campo] = limpo;
   }
 

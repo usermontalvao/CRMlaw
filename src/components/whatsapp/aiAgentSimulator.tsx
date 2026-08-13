@@ -272,6 +272,11 @@ export const AiAgentSimulator: React.FC<Props> = ({ draft, onClose, runTurn }) =
               {triage && !triage.cut && triage.stage_label && (
                 <span style={{ color: '#6b7280' }}>Etapa: {triage.stage_label}</span>
               )}
+              {triage?.next_action?.type === 'ask_field' && (
+                <span style={{ color: '#1d4ed8' }}>
+                  Próxima ação do sistema: perguntar <strong>{triage.next_action.field}</strong>
+                </span>
+              )}
               {triage?.complete && (
                 <span style={{ color: '#166534' }}>Roteiro cumprido — nada mais a perguntar.</span>
               )}

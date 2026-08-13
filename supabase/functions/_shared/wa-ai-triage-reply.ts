@@ -51,6 +51,18 @@ export interface WaAiTriageReply {
   reason: string | null;
 }
 
+export type WaAiPatchValue = string | number | boolean;
+
+/** Patch factual da primeira fase. Null no JSON não entra em `updates`. */
+export interface WaAiTriagePatch {
+  ok: boolean;
+  updates: Record<string, WaAiPatchValue>;
+  unsetFields: string[];
+  ambiguities: string[];
+  degraded: boolean;
+  reason: string | null;
+}
+
 function vazia(reason: string | null): WaAiTriageReply {
   return { ok: false, message: '', updates: {}, targetField: null, degraded: reason !== null, reason };
 }
@@ -153,6 +165,63 @@ function lerAtualizacoes(raw: unknown, allowedKeys: string[]): Record<string, st
   }
 
   return out;
+}
+
+function lerAtualizacoesTipadas(raw: unknown, allowedKeys: string[]): Record<string, WaAiPatchValue> {
+  const out: Record<string, WaAiPatchValue> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  const permitidas = new Set(allowedKeys);
+
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!permitidas.has(key) || value === null || value === undefined) continue;
+    if (typeof value === 'boolean' || typeof value === 'number') {
+      if (typeof value !== 'number' || Number.isFinite(value)) out[key] = value;
+      continue;
+    }
+    if (typeof value !== 'string') continue;
+    const texto = value.replace(/\s+/g, ' ').trim();
+    if (!texto) continue;
+    out[key] = texto.length > WA_AI_REPLY_VALUE_MAX_CHARS
+      ? texto.slice(0, WA_AI_REPLY_VALUE_MAX_CHARS - 1)
+      : texto;
+  }
+  return out;
+}
+
+/**
+ * Lê exclusivamente o patch factual. Diferente da resposta conversacional,
+ * falha fechada: prosa não vira fato e JSON incompleto não altera a sessão.
+ */
+export function parseWaAiTriagePatch(raw: unknown, allowedKeys: string[]): WaAiTriagePatch {
+  const texto = String(raw ?? '').trim();
+  const falha = (reason: string): WaAiTriagePatch => ({
+    ok: false, updates: {}, unsetFields: [], ambiguities: [], degraded: true, reason,
+  });
+  if (!texto) return falha('extração vazia do modelo');
+
+  const limpo = semCerca(texto);
+  let lido: unknown;
+  try { lido = JSON.parse(limpo); } catch { return falha('patch factual fora do JSON combinado'); }
+  if (!lido || typeof lido !== 'object' || Array.isArray(lido)) {
+    return falha('patch factual não é um objeto');
+  }
+
+  const obj = lido as Record<string, unknown>;
+  const permitidas = new Set(allowedKeys);
+  const unsetFields = (Array.isArray(obj.remover_campos) ? obj.remover_campos : [])
+    .map(String).filter((key, index, all) => permitidas.has(key) && all.indexOf(key) === index);
+  const ambiguities = (Array.isArray(obj.ambiguidades) ? obj.ambiguidades : [])
+    .map(v => String(v).replace(/\s+/g, ' ').trim())
+    .filter(Boolean).slice(0, 12);
+
+  return {
+    ok: true,
+    updates: lerAtualizacoesTipadas(obj.atualizacoes, allowedKeys),
+    unsetFields,
+    ambiguities,
+    degraded: false,
+    reason: null,
+  };
 }
 
 // ── Leitura ─────────────────────────────────────────────────────────────────

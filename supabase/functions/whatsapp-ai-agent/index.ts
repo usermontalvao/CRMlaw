@@ -71,9 +71,12 @@ import {
 } from '../_shared/wa-ai-gate.ts';
 import { WA_AI_DIALOGUE_QUALITY_RULES } from '../_shared/wa-ai-dialogue.ts';
 import {
-  buildWaAiTriageSchema,
+  buildWaAiTriageConversationSchema,
+  buildWaAiTriageExtractionSchema,
+  computeWaAiTriageNextAction,
   computeWaAiTriageProgress,
   normalizeWaAiPlaybook,
+  normalizeWaAiPlaybookFactValue,
   normalizeWaAiPlaybookValue,
   waAiPlaybookField,
   waAiPlaybookFieldKeys,
@@ -81,10 +84,13 @@ import {
   waAiPlaybookPromptBlock,
   type WaAiPlaybook,
   type WaAiTriageProgress,
+  type WaAiTriageNextAction,
   type WaAiTriageSchema,
 } from '../_shared/wa-ai-playbook.ts';
 import {
+  parseWaAiTriagePatch,
   parseWaAiTriageReply,
+  type WaAiTriagePatch,
   type WaAiTriageReply,
 } from '../_shared/wa-ai-triage-reply.ts';
 import {
@@ -92,8 +98,13 @@ import {
   waAiAlreadyAnswered,
   type WaAiTriageTurn,
 } from '../_shared/wa-ai-triage-facts.ts';
+import {
+  buildWaAiCompletionPlans,
+  type WaAiCompletionExternalState,
+} from '../_shared/wa-ai-completion.ts';
 import { waAiAnnotateDates, waAiDateBlock } from '../_shared/wa-ai-now.ts';
 import { splitWaAiReply, waAiKeepOneQuestion, waAiPartPauseMs } from '../_shared/wa-ai-reply-parts.ts';
+import { ensureWaAiConversationClient } from '../_shared/wa-ai-client-link.ts';
 import {
   WA_AI_RESET_COMMANDS,
   resetWaAiConversationState,
@@ -149,6 +160,29 @@ Deno.serve(async (req: Request) => {
   // definição, não grava nada, não executa ação nenhuma e não envia mensagem.
   if (body.simulate === true) return await handleSimulation(req, body);
 
+  // Eventos de ciclo de vida são enviados somente por outras Edge Functions,
+  // com a service role. Eles não chamam modelo: apenas avançam a máquina de
+  // estados documentos -> KIT -> assinatura -> transferência.
+  if (body.lifecycle_trigger === 'documents_completed'
+    || body.lifecycle_trigger === 'signature_completed') {
+    const auth = req.headers.get('Authorization') || '';
+    if (auth !== `Bearer ${SERVICE_ROLE}`) return json({ error: 'Não autorizado.' }, 401);
+    const conversationId = String(body.conversation_id || '');
+    const resourceId = String(body.resource_id || '');
+    if (!conversationId || !resourceId) {
+      return json({ error: 'conversation_id e resource_id são obrigatórios' }, 400);
+    }
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+    try {
+      return json(await runLifecycleTurn(
+        admin, conversationId, body.lifecycle_trigger, resourceId,
+      ));
+    } catch (err) {
+      const message = await logFailure(admin, conversationId, Date.now(), err);
+      return json({ ok: false, error: message });
+    }
+  }
+
   const conversationId = String(body.conversation_id || '');
   const triggerMessageId = body.trigger_message_id ? String(body.trigger_message_id) : null;
   const followupId = body.followup_id ? String(body.followup_id) : null;
@@ -191,7 +225,6 @@ async function logFailure(admin: any, conversationId: string, started: number, e
     error: message,
     duration_ms: Date.now() - started,
   }).then(() => {}, () => {});
-  await releaseLock(admin, conversationId).catch(() => {});
   return message;
 }
 
@@ -321,7 +354,8 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   };
 
   const playbook = normalizeWaAiPlaybook(assistant.playbook);
-  const schema = playbook ? buildWaAiTriageSchema(playbook) : null;
+  const extractionSchema = playbook ? buildWaAiTriageExtractionSchema(playbook) : null;
+  const conversationSchema = playbook ? buildWaAiTriageConversationSchema(playbook) : null;
   const fieldKeys = playbook ? waAiPlaybookFieldKeys(playbook) : [];
 
   const tools = buildWaAiTools(assistant.allowed_actions, assistant.action_refs);
@@ -338,12 +372,49 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     waTimestamp: new Date(base + i * 60_000).toISOString(),
   }));
 
+  let turnMemory = normalizeWaAiMemory(memory);
+  let extractionDegraded: string | null = null;
+  if (playbook && extractionSchema && body.trigger !== 'followup') {
+    try {
+      const extraction = await callModel(
+        assistant.provider, assistant.model,
+        buildTriageExtractionMessages(playbook, turnMemory, history, assistant.history_limit),
+        [], extractionSchema,
+      );
+      const patch = parseWaAiTriagePatch(extraction.text, fieldKeys);
+      if (!patch.ok) extractionDegraded = patch.reason || 'extração factual inválida';
+      else turnMemory = applyTriagePatch(playbook, turnMemory, patch);
+    } catch (err) {
+      extractionDegraded = String(err instanceof Error ? err.message : err).slice(0, 300);
+    }
+  }
+  if (extractionDegraded) {
+    return json({
+      ok: false,
+      error: `A extração factual falhou: ${extractionDegraded}`,
+      duration_ms: Date.now() - started,
+    });
+  }
+
+  const estadoAntesDaResposta = reconcileWaAiTriageState({
+    knownFacts: turnMemory.knownFacts,
+    pendingItems: turnMemory.pendingItems,
+    turns: triageTurns(history),
+    playbookKeys: playbook ? fieldKeys : null,
+  });
+  turnMemory.knownFacts = estadoAntesDaResposta.knownFacts;
+  turnMemory.pendingItems = estadoAntesDaResposta.pendingItems;
+
   const progressoAntes = playbook
-    ? computeWaAiTriageProgress({ playbook, facts: memory.knownFacts, timeZone: assistant.timezone })
+    ? computeWaAiTriageProgress({ playbook, facts: turnMemory.knownFacts, timeZone: assistant.timezone })
     : null;
+  const nextAction = playbook && progressoAntes
+    ? computeWaAiTriageNextAction(playbook, progressoAntes)
+    : null;
+  if (progressoAntes) turnMemory.pendingItems = progressoAntes.pending;
 
   const messages: any[] = [
-    { role: 'system', content: buildSystemPrompt(ctx, memory, tools, playbook, progressoAntes) },
+    { role: 'system', content: buildSystemPrompt(ctx, turnMemory, tools, playbook, progressoAntes, nextAction) },
     ...buildWaAiPromptMessages(history, assistant.history_limit),
   ];
   if (body.trigger === 'followup') {
@@ -355,7 +426,7 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
 
   let completion: ModelCompletion;
   try {
-    completion = await callModel(assistant.provider, assistant.model, messages, tools, schema);
+    completion = await callModel(assistant.provider, assistant.model, messages, tools, conversationSchema);
   } catch (err) {
     const message = String(err instanceof Error ? err.message : err).slice(0, 400);
     return json({ ok: false, error: message, duration_ms: Date.now() - started });
@@ -374,6 +445,25 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   let memoryPatch: unknown = null;
   let terminal = false;
 
+  if (nextAction?.type === 'handoff') {
+    const handoff = deterministicHandoffPlan(assistant, playbook, turnMemory, nextAction);
+    requested.push({ action: handoff.action, args: handoff.args, source: 'backend' });
+    executed.push({ action: handoff.action, ok: true, simulated: true, args: handoff.args,
+      ...(handoff.ref ? { target: handoff.ref.target_label } : {}) });
+    terminal = true;
+  }
+
+  if (nextAction?.type === 'complete') {
+    for (const plan of buildWaAiCompletionPlans(assistant, playbook, turnMemory)) {
+      requested.push({ action: plan.action, args: plan.args, source: 'backend' });
+      executed.push({
+        action: plan.action, ok: true, simulated: true, args: plan.args,
+        ...(plan.ref ? { target: plan.ref.target_label } : {}),
+      });
+      if (getWaAiAction(plan.action)?.terminal) terminal = true;
+    }
+  }
+
   if (completion.toolCalls.length > 0) {
     messages.push(completion.rawMessage);
     let budget = WA_AI_MAX_ACTIONS_PER_RUN;
@@ -382,6 +472,13 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
       let args: unknown = {};
       try { args = call.arguments ? JSON.parse(call.arguments) : {}; } catch { args = {}; }
       requested.push({ action: call.name, args });
+
+      if (terminal) {
+        const refusal = 'Ação ignorada porque uma ação terminal já encerrou este turno.';
+        executed.push({ action: call.name, ok: false, error: refusal });
+        messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: false, erro: refusal }) });
+        continue;
+      }
 
       if (call.name === MEMORY_TOOL.function.name) {
         memoryPatch = playbook
@@ -424,7 +521,7 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     }
 
     try {
-      completion = await callModel(assistant.provider, assistant.model, messages, [], schema);
+      completion = await callModel(assistant.provider, assistant.model, messages, [], conversationSchema);
       lerResposta();
     } catch (err) {
       console.error('segunda volta da prévia falhou', err);
@@ -433,9 +530,16 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   }
 
   const ultimaLeitura = leituras.length > 0 ? leituras[leituras.length - 1] : null;
-  const degradado = !!playbook && (leituras.length === 0 || leituras.some(l => l.degraded));
-  let reply = waAiKeepOneQuestion(
-    (playbook ? String(ultimaLeitura?.message || '') : String(completion.text || '')).trim());
+  const replyAction: WaAiTriageNextAction | null = terminal
+    ? { type: 'handoff', cutId: 'acao_terminal', reason: 'transferência executada', guidance: '' }
+    : nextAction;
+  const validated = playbook && replyAction
+    ? validateReplyForAction(ultimaLeitura, replyAction)
+    : { reply: String(completion.text || '').trim(), degraded: false, reason: null };
+  const degradado = !!playbook && (
+    !!extractionDegraded || leituras.length === 0 || leituras.some(l => l.degraded) || validated.degraded
+  );
+  let reply = waAiKeepOneQuestion(validated.reply);
   if (reply.length > WA_AI_MAX_REPLY_CHARS) reply = `${reply.slice(0, WA_AI_MAX_REPLY_CHARS - 1)}…`;
   const replyParts = splitWaAiReply(reply);
 
@@ -443,21 +547,9 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     .filter((e): e is { action: string; ok: boolean } =>
       !!e && typeof e === 'object' && (e as { ok?: boolean }).ok === true)
     .map(e => e.action);
-  const nextMemory = mergeWaAiMemory(memory, memoryPatch);
+  const nextMemory = mergeWaAiMemory(turnMemory, memoryPatch);
   if (executadas.length > 0) {
     nextMemory.lastAction = `${executadas.join(', ')} (simulado)`.slice(0, 120);
-  }
-
-  // Mesma leitura do atendimento real — é para isso que a prévia serve: o
-  // administrador precisa ver na simulação o estado que a conversa gravaria.
-  if (playbook) {
-    for (const leitura of leituras) {
-      for (const [chave, valor] of Object.entries(leitura.updates)) {
-        const field = waAiPlaybookField(playbook, chave);
-        if (!field) continue;
-        nextMemory.knownFacts[field.key] = normalizeWaAiPlaybookValue(field, valor) || String(valor);
-      }
-    }
   }
 
   const estadoPrevia = reconcileWaAiTriageState({
@@ -477,7 +569,7 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   // Quando cairia a retomada, se o cliente parasse de responder agora. A conta
   // é a política de verdade — mesma função que o agendador usa.
   const attempt = Number(body.followup_attempt) > 0 ? Number(body.followup_attempt) : 1;
-  const proximo = (terminal || progressoPrevia?.cut)
+  const proximo = (terminal || progressoPrevia?.cut || progressoPrevia?.complete)
     ? null
     : nextFollowupAt(followupPolicyOf(assistant), attempt, new Date());
 
@@ -501,11 +593,14 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
         stage_label: progressoPrevia.stageLabel,
         pending: progressoPrevia.pending,
         next_field: progressoPrevia.nextField,
+        next_action: nextAction,
         cut: progressoPrevia.cut,
         complete: progressoPrevia.complete,
       },
     } : {}),
-    ...(degradado ? { degraded: String(ultimaLeitura?.reason || 'resposta fora do formato combinado') } : {}),
+    ...(degradado ? { degraded: String(
+      extractionDegraded || validated.reason || ultimaLeitura?.reason || 'resposta fora do formato combinado',
+    ) } : {}),
     duration_ms: Date.now() - started,
   });
 }
@@ -614,6 +709,133 @@ async function loadContext(admin: any, conversationId: string): Promise<TurnCont
   };
 }
 
+/** Estado externo do fechamento da campanha de conta. */
+async function loadWaAiCompletionExternalState(
+  admin: any, ctx: TurnContext, playbook: WaAiPlaybook | null,
+): Promise<WaAiCompletionExternalState> {
+  const state: WaAiCompletionExternalState = { documents: 'none', kit: 'none' };
+  if (playbook?.id !== 'bloqueio_encerramento_conta') return state;
+
+  const clientId = ctx.conversation.client_id;
+  if (clientId) {
+    const { data: request } = await admin.from('document_requests')
+      .select('id, status')
+      .eq('client_id', clientId)
+      .eq('title', 'Documentos essenciais — conta bloqueada ou encerrada')
+      .neq('status', 'cancelled')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (request) state.documents = request.status === 'complete' ? 'complete' : 'pending';
+  }
+
+  const kitBinding = (playbook.bindings || []).find(binding => binding.key === 'modelo_kit_consumidor');
+  const normalizedKitLabel = String(kitBinding?.targetLabel || kitBinding?.suggestedTargetLabel || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const kitRef = ctx.assistant.action_refs.find(ref => ref.action === 'enviar_documento'
+    && ref.target_type === 'document_template' && !!ref.target_id
+    && (!normalizedKitLabel || String(ref.target_label || '').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() === normalizedKitLabel));
+  let kitQuery = admin.from('template_fill_links')
+    .select('id, status, signature_request_id')
+    .eq('conversation_id', ctx.conversation.id)
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (kitRef?.target_id) kitQuery = kitQuery.eq('template_id', kitRef.target_id);
+  const { data: link } = await kitQuery.maybeSingle();
+  if (!link) return state;
+
+  state.kit = 'pending';
+  if (!link.signature_request_id) return state;
+  const [{ data: request }, { data: signers }] = await Promise.all([
+    admin.from('signature_requests')
+      .select('status, signed_at').eq('id', link.signature_request_id).maybeSingle(),
+    admin.from('signature_signers')
+      .select('status, signed_at, refused_at').eq('signature_request_id', link.signature_request_id),
+  ]);
+  if (request?.status === 'signed' || request?.signed_at
+    || (!!signers?.length && signers.every((item: any) => item.status === 'signed' || item.signed_at))) {
+    state.kit = 'signed';
+  } else if (request?.status === 'refused'
+    || (signers || []).some((item: any) => item.status === 'refused' || item.refused_at)) {
+    state.kit = 'refused';
+  }
+  return state;
+}
+
+/**
+ * Avança o fechamento sem depender de nova mensagem do cliente ou do modelo.
+ * O id do recurso é conferido contra a conversa antes de qualquer mutação.
+ */
+async function runLifecycleTurn(
+  admin: any,
+  conversationId: string,
+  trigger: 'documents_completed' | 'signature_completed',
+  resourceId: string,
+) {
+  const ctx = await loadContext(admin, conversationId);
+  if (!ctx) return { ok: true, skipped: 'canal sem agente de IA' };
+  const playbook = normalizeWaAiPlaybook(ctx.assistant.playbook);
+  if (playbook?.id !== 'bloqueio_encerramento_conta') {
+    return { ok: true, skipped: 'evento não pertence à campanha de conta' };
+  }
+
+  if (trigger === 'documents_completed') {
+    const { data: request } = await admin.from('document_requests')
+      .select('id, client_id, title, status').eq('id', resourceId).maybeSingle();
+    if (!request || request.client_id !== ctx.conversation.client_id
+      || request.title !== 'Documentos essenciais — conta bloqueada ou encerrada'
+      || request.status !== 'complete') {
+      return { ok: true, skipped: 'solicitação de documentos não confere' };
+    }
+  } else {
+    const { data: link } = await admin.from('template_fill_links')
+      .select('id, conversation_id, signature_request_id')
+      .eq('signature_request_id', resourceId).eq('conversation_id', conversationId)
+      .limit(1).maybeSingle();
+    if (!link) return { ok: true, skipped: 'assinatura não confere com a conversa' };
+    await Promise.all([
+      admin.from('template_fill_links').update({ followup_stopped: true })
+        .eq('signature_request_id', resourceId),
+      admin.from('signature_requests').update({ wa_tracking_stopped: true })
+        .eq('id', resourceId),
+    ]);
+  }
+
+  const memory = normalizeWaAiMemory({
+    summary: ctx.session.summary,
+    known_facts: ctx.session.known_facts,
+    pending_items: ctx.session.pending_items,
+    last_action: ctx.session.last_action,
+  });
+  const state = await loadWaAiCompletionExternalState(admin, ctx, playbook);
+  const declarationRoute = String(memory.knownFacts.residencia_tipo || '') === 'terceiro_sem_contrato';
+  const expectedActions = trigger === 'documents_completed'
+    ? (declarationRoute
+      ? ['transferir_atendimento', 'transferir_para_humano']
+      : ['enviar_documento'])
+    : ['transferir_atendimento', 'transferir_para_humano'];
+  const plan = buildWaAiCompletionPlans(ctx.assistant, playbook, memory, state)
+    .find(item => expectedActions.includes(item.action));
+  if (!plan) return { ok: true, skipped: 'nenhuma transição configurada para este estado', state };
+
+  if (ctx.assistant.mode === 'test') {
+    await addNote(admin, conversationId,
+      `🧪 Evento ${trigger} simulado: a IA executaria ${plan.action}.`);
+    return { ok: true, simulated: true, action: plan.action, state };
+  }
+
+  if (trigger === 'signature_completed') {
+    const error = await sendText(conversationId,
+      'Recebemos o KIT CONSUMIDOR assinado. Vou encaminhar seu atendimento para a equipe responsável.');
+    if (error) return { ok: false, error };
+  }
+  const outcome = await runAction(admin, ctx, plan.action, plan.args, plan.ref);
+  if (!outcome.ok) return { ok: false, error: outcome.error, action: plan.action };
+  return { ok: true, action: plan.action, result: outcome.result, state };
+}
+
 // ── Trava ───────────────────────────────────────────────────────────────────
 
 /**
@@ -647,10 +869,11 @@ async function acquireLock(admin: any, conversationId: string): Promise<string |
   return data === token ? token : null;
 }
 
-async function releaseLock(admin: any, conversationId: string) {
+async function releaseLock(admin: any, conversationId: string, token: string) {
   await admin.from('whatsapp_ai_sessions')
     .update({ lock_token: null, locked_until: null })
-    .eq('conversation_id', conversationId);
+    .eq('conversation_id', conversationId)
+    .eq('lock_token', token);
 }
 
 /**
@@ -763,7 +986,7 @@ async function runMessageTurn(
       followupInstruction: null,
     });
   } finally {
-    await releaseLock(admin, conversationId).catch(() => {});
+    await releaseLock(admin, conversationId, lock).catch(() => {});
   }
 }
 
@@ -1015,10 +1238,12 @@ async function ensureAutoFollowup(
     replySent: boolean; handedOff: boolean; followupCancelled: boolean;
     lastReply: string | null; pendingItems: string[];
     /** O estado JÁ gravado — é contra ele que a cobrança é conferida. */
-    knownFacts: Record<string, string>;
+    knownFacts: WaAiMemory['knownFacts'];
     optedOut?: boolean; scheduledAtOverride?: string | null;
     /** O corte do roteiro, quando disparou neste turno ou num anterior. */
     triageCut?: { id: string; reason: string } | null;
+    /** Roteiro qualificado e sem mais perguntas genéricas a cobrar. */
+    triageComplete?: boolean;
   },
 ): Promise<Record<string, unknown> | null> {
   const policy = followupPolicyOf(ctx.assistant);
@@ -1031,6 +1256,12 @@ async function ensureAutoFollowup(
     return {
       action: 'followup_automatico', ok: false,
       motivo: `Triagem encerrada: ${extra.triageCut.reason}.`,
+    };
+  }
+  if (extra.triageComplete) {
+    return {
+      action: 'followup_automatico', ok: false,
+      motivo: 'Triagem concluída; documentos possuem acompanhamento próprio.',
     };
   }
 
@@ -1209,7 +1440,8 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // Agente SEM roteiro segue exatamente como antes: texto livre e memória por
   // ferramenta. O roteiro é o que liga o motor novo, um agente de cada vez.
   const playbook = normalizeWaAiPlaybook(assistant.playbook);
-  const schema = playbook ? buildWaAiTriageSchema(playbook) : null;
+  const extractionSchema = playbook ? buildWaAiTriageExtractionSchema(playbook) : null;
+  const conversationSchema = playbook ? buildWaAiTriageConversationSchema(playbook) : null;
   const fieldKeys = playbook ? waAiPlaybookFieldKeys(playbook) : [];
 
   const tools = buildWaAiTools(assistant.allowed_actions, assistant.action_refs);
@@ -1221,14 +1453,73 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // a conversa acabou nem se ficou um compromisso marcado.
   const sinais = await readCustomerSignals(admin, ctx, history);
 
-  // Onde a triagem está ANTES deste turno — é o que o modelo lê para saber o
-  // que perguntar. O veredito depois da resposta é calculado de novo, lá
-  // embaixo, sobre o que o cliente acabou de informar.
-  const progressoAntes = playbook
-    ? computeWaAiTriageProgress({ playbook, facts: memory.knownFacts, timeZone: assistant.timezone })
-    : null;
+  // Primeira fase: o modelo só interpreta a fala atual. O backend aplica o
+  // patch, invalida dependências e decide o estado ANTES de qualquer mensagem.
+  let turnMemory = normalizeWaAiMemory(memory);
+  let extractionDegraded: string | null = null;
+  if (playbook && extractionSchema && !opts.followupInstruction) {
+    try {
+      const extraction = await callModel(
+        assistant.provider, assistant.model,
+        buildTriageExtractionMessages(
+          playbook, turnMemory, history, Number(assistant.history_limit) || 12,
+        ),
+        [], extractionSchema,
+      );
+      const patch = parseWaAiTriagePatch(extraction.text, fieldKeys);
+      if (!patch.ok) extractionDegraded = patch.reason || 'extração factual inválida';
+      else turnMemory = applyTriagePatch(playbook, turnMemory, patch);
+    } catch (err) {
+      extractionDegraded = String(err instanceof Error ? err.message : err).slice(0, 500);
+    }
+  }
+  if (extractionDegraded) {
+    await finishExecution(admin, executionId, {
+      status: 'error', error: `Falha na extração factual: ${extractionDegraded}`,
+      durationMs: Date.now() - opts.started,
+    });
+    return { ok: false, error: 'falha na extração factual' };
+  }
 
-  const systemPrompt = buildSystemPrompt(ctx, memory, tools, playbook, progressoAntes);
+  const estadoAntesDaResposta = reconcileWaAiTriageState({
+    knownFacts: turnMemory.knownFacts,
+    pendingItems: turnMemory.pendingItems,
+    turns: triageTurns(history),
+    playbookKeys: playbook ? fieldKeys : null,
+  });
+  turnMemory.knownFacts = estadoAntesDaResposta.knownFacts;
+  turnMemory.pendingItems = estadoAntesDaResposta.pendingItems;
+
+  const progressoAntes = playbook
+    ? computeWaAiTriageProgress({ playbook, facts: turnMemory.knownFacts, timeZone: assistant.timezone })
+    : null;
+  const nextAction = playbook && progressoAntes
+    ? computeWaAiTriageNextAction(playbook, progressoAntes)
+    : null;
+  if (progressoAntes) turnMemory.pendingItems = progressoAntes.pending;
+
+  // O cliente nunca recebe uma pergunta baseada em fatos que ainda não foram
+  // gravados. A persistência final, depois das tools, apenas acrescenta resumo,
+  // última ação e o id processado.
+  if (playbook) {
+    try {
+      await persistMemory(admin, conversation.id, turnMemory, {
+        lastProcessedMessageId: null,
+        lastCustomerMessageAt: conversation.last_customer_message_at ?? null,
+        handedOff: false,
+        triage: progressoAntes,
+      });
+    } catch (err) {
+      const message = String(err instanceof Error ? err.message : err).slice(0, 500);
+      await finishExecution(admin, executionId, {
+        status: 'error', error: `Falha ao persistir estado factual: ${message}`,
+        durationMs: Date.now() - opts.started,
+      });
+      return { ok: false, error: 'falha ao persistir o estado factual' };
+    }
+  }
+
+  const systemPrompt = buildSystemPrompt(ctx, turnMemory, tools, playbook, progressoAntes, nextAction);
   const messages: any[] = [
     { role: 'system', content: systemPrompt },
     ...buildWaAiPromptMessages(history, Number(assistant.history_limit) || 12),
@@ -1241,7 +1532,7 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // ── Modelo, primeira volta ──
   let completion: ModelCompletion;
   try {
-    completion = await callModel(assistant.provider, assistant.model, messages, tools, schema);
+    completion = await callModel(assistant.provider, assistant.model, messages, tools, conversationSchema);
   } catch (err) {
     const message = String(err instanceof Error ? err.message : err).slice(0, 800);
     await finishExecution(admin, executionId, {
@@ -1273,6 +1564,50 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // desfaria, calado, a decisão que ele tomou por um motivo.
   let followupCancelled = false;
 
+  if (nextAction?.type === 'handoff') {
+    const handoff = deterministicHandoffPlan(assistant, playbook, turnMemory, nextAction);
+    requested.push({ action: handoff.action, args: actionArgsForLog(handoff.action, handoff.args), source: 'backend' });
+    if (assistant.mode === 'test') {
+      executed.push({ action: handoff.action, ok: true, simulated: true, args: handoff.args,
+        ...(handoff.ref ? { target: handoff.ref.target_label } : {}) });
+      terminal = true;
+    } else {
+      const outcome = await runAction(admin, ctx, handoff.action, handoff.args, handoff.ref);
+      executed.push({
+        action: handoff.action, ok: outcome.ok,
+        ...(outcome.ok ? { result: outcome.result } : { error: outcome.error }),
+      });
+      terminal = outcome.ok;
+    }
+  }
+
+  if (nextAction?.type === 'complete') {
+    const externalState = await loadWaAiCompletionExternalState(admin, ctx, playbook);
+    for (const plan of buildWaAiCompletionPlans(assistant, playbook, turnMemory, externalState)) {
+      requested.push({
+        action: plan.action,
+        args: actionArgsForLog(plan.action, plan.args),
+        source: 'backend',
+      });
+      if (assistant.mode === 'test') {
+        executed.push({
+          action: plan.action, ok: true, simulated: true, args: plan.args,
+          ...(plan.ref ? { target: plan.ref.target_label } : {}),
+        });
+        if (getWaAiAction(plan.action)?.terminal) terminal = true;
+        continue;
+      }
+
+      const outcome = await runAction(admin, ctx, plan.action, plan.args, plan.ref);
+      executed.push({
+        action: plan.action, ok: outcome.ok,
+        ...(outcome.ok ? { result: outcome.result } : { error: outcome.error }),
+      });
+      if (outcome.ok && outcome.customerMessageSent) customerMessageSent = true;
+      if (outcome.ok && getWaAiAction(plan.action)?.terminal) terminal = true;
+    }
+  }
+
   // ── Ações ──
   if (completion.toolCalls.length > 0) {
     messages.push(completion.rawMessage);
@@ -1282,6 +1617,13 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
       let args: unknown = {};
       try { args = call.arguments ? JSON.parse(call.arguments) : {}; } catch { args = {}; }
       requested.push({ action: call.name, args: actionArgsForLog(call.name, args) });
+
+      if (terminal) {
+        const refusal = 'Ação ignorada porque uma ação terminal já encerrou este turno.';
+        executed.push({ action: call.name, ok: false, error: refusal });
+        messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: false, erro: refusal }) });
+        continue;
+      }
 
       // A memória é o bloco de notas do próprio agente: não escreve em nada do
       // CRM e por isso não consome o orçamento de ações.
@@ -1315,6 +1657,7 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
       if (assistant.mode === 'test') {
         executed.push({ action: validation.action, ok: true, simulated: true, args: validation.args });
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: true, modo_teste: true }) });
+        if (getWaAiAction(validation.action)?.terminal) terminal = true;
         continue;
       }
 
@@ -1336,7 +1679,7 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     // apenas com ferramentas; com mais de uma, um laço de ações.
     if (!customerMessageSent) {
       try {
-        completion = await callModel(assistant.provider, assistant.model, messages, [], schema);
+        completion = await callModel(assistant.provider, assistant.model, messages, [], conversationSchema);
         lerResposta();
       } catch (err) {
         console.error('segunda volta do modelo falhou', err);
@@ -1356,14 +1699,27 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // turno em que a leitura caiu de degrau fica MARCADO: antes disto, uma
   // resposta torta virava, calada, mensagem enviada.
   const ultimaLeitura = leituras.length > 0 ? leituras[leituras.length - 1] : null;
+  const replyAction: WaAiTriageNextAction | null = terminal
+    ? { type: 'handoff', cutId: 'acao_terminal', reason: 'transferência executada', guidance: '' }
+    : nextAction;
+  const validated = playbook && replyAction
+    ? validateReplyForAction(ultimaLeitura, replyAction)
+    : { reply: String(completion.text || '').trim(), degraded: false, reason: null };
   const textoDoModelo = playbook ? String(ultimaLeitura?.message || '') : String(completion.text || '');
   const degradado = !!playbook && !customerMessageSent
-    && (leituras.length === 0 || leituras.some(l => l.degraded));
+    && (
+      !!extractionDegraded || leituras.length === 0 || leituras.some(l => l.degraded) || validated.degraded
+    );
   const motivoDaQueda = degradado
-    ? String(ultimaLeitura?.reason || 'o modelo não respondeu no formato combinado')
+    ? String(
+      extractionDegraded || validated.reason || ultimaLeitura?.reason
+        || 'o modelo não respondeu no formato combinado',
+    )
     : null;
 
-  let reply = customerMessageSent ? '' : waAiKeepOneQuestion(textoDoModelo.trim());
+  let reply = customerMessageSent ? '' : waAiKeepOneQuestion(
+    playbook ? validated.reply : textoDoModelo.trim(),
+  );
   if (reply.length > WA_AI_MAX_REPLY_CHARS) reply = `${reply.slice(0, WA_AI_MAX_REPLY_CHARS - 1)}…`;
 
   // Uma resposta com saudação e pergunta sai como DUAS mensagens, do jeito que
@@ -1403,28 +1759,10 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     .filter((e): e is { action: string; ok: boolean } =>
       !!e && typeof e === 'object' && (e as { ok?: boolean }).ok === true)
     .map(e => e.action);
-  const nextMemory = mergeWaAiMemory(memory, memoryPatch);
+  const nextMemory = mergeWaAiMemory(turnMemory, memoryPatch);
   if (executadas.length > 0) {
     const marca = assistant.mode === 'test' ? ' (simulado)' : '';
     nextMemory.lastAction = `${executadas.join(', ')}${marca}`.slice(0, 120);
-  }
-
-  // ── O que o cliente informou neste turno ──
-  // Vem do JSON, com a lista de chaves já FECHADA pelo schema: não há apelido a
-  // traduzir nem campo inventado a descartar. Vazio nunca entra — `atualizacoes`
-  // traz todos os campos do roteiro em toda resposta, e quase todos vazios é o
-  // normal, não perda de dado.
-  if (playbook) {
-    for (const leitura of leituras) {
-      for (const [chave, valor] of Object.entries(leitura.updates)) {
-        const field = waAiPlaybookField(playbook, chave);
-        if (!field) continue;
-        // O valor que não casa com o tipo é guardado como veio: o painel mostra
-        // o que o cliente disse, e o progresso trata o campo como ainda não
-        // respondido — a pergunta é refeita em vez de o dado sumir.
-        nextMemory.knownFacts[field.key] = normalizeWaAiPlaybookValue(field, valor) || String(valor);
-      }
-    }
   }
 
   // ── Estado estruturado ──
@@ -1477,17 +1815,29 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     if (nextMemory.pendingItems.length === 0 && !playbook) nextMemory.pendingItems = auto.pendingItems;
   }
 
-  await persistMemory(admin, conversation.id, nextMemory, {
-    lastProcessedMessageId: opts.triggerMessageId,
-    lastCustomerMessageAt: conversation.last_customer_message_at ?? null,
-    handedOff: terminal,
-    triage: progresso,
-  });
+  try {
+    await persistMemory(admin, conversation.id, nextMemory, {
+      lastProcessedMessageId: opts.triggerMessageId,
+      lastCustomerMessageAt: conversation.last_customer_message_at ?? null,
+      handedOff: terminal,
+      triage: progresso,
+    });
+  } catch (err) {
+    const message = String(err instanceof Error ? err.message : err).slice(0, 500);
+    await finishExecution(admin, executionId, {
+      status: 'error', replyText: reply || null, requested, executed,
+      error: `Falha ao concluir persistência: ${message}`,
+      durationMs: Date.now() - opts.started,
+    });
+    return { ok: false, sent, error: 'falha ao concluir persistência da sessão' };
+  }
 
   // O corte é NOVO: o acompanhamento que estava marcado para amanhã ia cobrar,
   // por escrito, uma pergunta de uma triagem que acabou de ser encerrada.
   if (progresso?.cut && String(session.triage_cut || '') !== progresso.cut.id) {
     await cancelPendingFollowups(admin, conversation.id, `Triagem encerrada: ${progresso.cut.reason}.`);
+  } else if (progresso?.complete) {
+    await cancelPendingFollowups(admin, conversation.id, 'Triagem concluída e encaminhada.');
   }
 
   // ── Acompanhamento ──
@@ -1504,6 +1854,7 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     optedOut: sinais.optedOut,
     scheduledAtOverride: sinais.scheduledAt,
     triageCut: progresso?.cut ?? null,
+    triageComplete: progresso?.complete === true,
   });
   if (autoFollowup) executed.push(autoFollowup);
 
@@ -1570,7 +1921,9 @@ async function persistMemory(
   if (extra.lastCustomerMessageAt) patch.last_customer_message_at = extra.lastCustomerMessageAt;
   if (extra.handedOff) { patch.ai_active = false; patch.status = 'handed_off'; patch.ended_at = new Date().toISOString(); }
 
-  await admin.from('whatsapp_ai_sessions').update(patch).eq('conversation_id', conversationId);
+  const { error } = await admin.from('whatsapp_ai_sessions')
+    .update(patch).eq('conversation_id', conversationId);
+  if (error) throw new Error(String(error.message || error));
 }
 
 // ── Prompt ──────────────────────────────────────────────────────────────────
@@ -1646,6 +1999,150 @@ function triageTurns(history: WaAiHistoryMessage[]): WaAiTriageTurn[] {
   }));
 }
 
+function buildTriageExtractionMessages(
+  playbook: WaAiPlaybook, memory: WaAiMemory, history: WaAiHistoryMessage[], limit: number,
+): any[] {
+  const fields = playbook.fields.map(field => ({
+    key: field.key, type: field.type, options: field.options || null,
+    only_when: field.onlyWhen || null,
+  }));
+  const recent = buildWaAiPromptMessages(history, Math.min(8, Math.max(2, limit)));
+  let currentBundleStart = 0;
+  for (let index = 0; index < recent.length; index++) {
+    if (recent[index].role === 'assistant') currentBundleStart = index;
+  }
+  const currentBundle = recent.slice(currentBundleStart);
+
+  return [
+    {
+      role: 'system',
+      content:
+        '# Extração factual\n'
+        + 'Leia somente o que o cliente informou nas mensagens mais recentes. Não escreva resposta ao '
+        + 'cliente, não decida a próxima pergunta e não execute ações. Extraia TODAS as informações, '
+        + 'inclusive as antecipadas. Null significa que esta fala não alterou o campo. False é uma '
+        + 'resposta negativa real. Não invente mês, ano, número ou horário. Use remover_campos somente '
+        + 'quando o cliente corrigir explicitamente um fato anterior.\n\n'
+        + `Campos permitidos:\n${JSON.stringify(fields, null, 2)}\n\n`
+        + `Estado anterior:\n${JSON.stringify(memory.knownFacts, null, 2)}`,
+    },
+    ...currentBundle,
+  ];
+}
+
+function applyTriagePatch(
+  playbook: WaAiPlaybook, previous: WaAiMemory, patch: WaAiTriagePatch,
+): WaAiMemory {
+  const next = normalizeWaAiMemory(previous);
+
+  for (const key of patch.unsetFields) {
+    if (waAiPlaybookField(playbook, key)) delete next.knownFacts[key];
+  }
+  for (const [key, raw] of Object.entries(patch.updates)) {
+    const field = waAiPlaybookField(playbook, key);
+    if (!field) continue;
+    const value = normalizeWaAiPlaybookFactValue(field, raw);
+    if (value !== null) next.knownFacts[field.key] = value;
+  }
+
+  // Dependência falsa torna o fato subordinado inaplicável. Isso remove a saída
+  // antiga quando o cliente corrige que ainda trabalha lá, sem depender do LLM
+  // lembrar de emitir `remover_campos`.
+  for (const field of playbook.fields) {
+    if (!field.onlyWhen || !(field.key in next.knownFacts)) continue;
+    const owner = waAiPlaybookField(playbook, field.onlyWhen.field);
+    if (!owner || !(owner.key in next.knownFacts)) continue;
+    const actual = normalizeWaAiPlaybookValue(owner, next.knownFacts[owner.key]);
+    const expected = normalizeWaAiPlaybookValue(owner, field.onlyWhen.value);
+    if (!actual || actual !== expected) delete next.knownFacts[field.key];
+  }
+  return next;
+}
+
+function fallbackReplyForAction(action: WaAiTriageNextAction): string {
+  if (action.type === 'ask_field') return action.question;
+  if (action.type === 'handoff') {
+    return 'Entendi. Esse tipo de situação precisa de uma análise específica. Vou encaminhar seu atendimento para a equipe.';
+  }
+  if (action.type === 'disqualify') {
+    return 'Obrigado pelas informações. Pelos critérios desta triagem, o escritório não seguirá com este atendimento.';
+  }
+  if (action.type === 'complete') {
+    return 'Obrigado pelas informações. Concluí esta etapa e vou dar continuidade ao seu atendimento.';
+  }
+  return '';
+}
+
+function deterministicHandoffArgs(
+  memory: WaAiMemory,
+  action: Extract<WaAiTriageNextAction, { type: 'handoff' }>,
+): Record<string, unknown> {
+  const facts = Object.entries(memory.knownFacts)
+    .map(([key, value]) => `${key}: ${String(value)}`).join(' · ');
+  const pending = memory.pendingItems.join(' · ');
+  const summary = [
+    `Motivo: ${action.reason}.`,
+    facts ? `Fatos informados: ${facts}.` : 'Ainda não há fatos estruturados.',
+    pending ? `Informações faltantes: ${pending}.` : 'Sem pendências do roteiro.',
+  ].join(' ').slice(0, 800);
+  return { resumo: summary, motivo: action.reason.slice(0, 200) };
+}
+
+/**
+ * Um corte continua sendo decisão do backend, mas o DESTINO é configuração da
+ * tela. Se o vínculo sumiu ou ficou incompleto, cai com segurança na fila
+ * humana em vez de inventar pessoa/setor pelo nome escrito no prompt.
+ */
+function deterministicHandoffPlan(
+  assistant: Assistant,
+  playbook: WaAiPlaybook | null,
+  memory: WaAiMemory,
+  action: Extract<WaAiTriageNextAction, { type: 'handoff' }>,
+): { action: 'transferir_atendimento' | 'transferir_para_humano'; args: Record<string, unknown>; ref: WaAiActionRef | null } {
+  const args = deterministicHandoffArgs(memory, action);
+  const binding = (playbook?.bindings || []).find(item =>
+    item.trigger?.type === 'cut_handoff' && item.trigger.cutId === action.cutId);
+  const label = String(binding?.targetLabel || binding?.suggestedTargetLabel || '').trim();
+  const comparable = (value: string) => value.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const ref = binding?.action === 'transferir_atendimento' && label
+    ? assistant.action_refs.find(item => item.action === 'transferir_atendimento'
+      && comparable(item.target_label) === comparable(label) && !!item.target_id) || null
+    : null;
+  if (ref) {
+    return {
+      action: 'transferir_atendimento',
+      args: { ...args, destino: ref.target_label },
+      ref,
+    };
+  }
+  return { action: 'transferir_para_humano', args, ref: null };
+}
+
+function validateReplyForAction(
+  reading: WaAiTriageReply | null, action: WaAiTriageNextAction,
+): { reply: string; degraded: boolean; reason: string | null } {
+  const proposed = String(reading?.message || '').trim();
+  if (action.type === 'ask_field') {
+    const valid = proposed.length > 0 && reading?.targetField === action.field;
+    return valid
+      ? { reply: proposed, degraded: !!reading?.degraded, reason: reading?.reason || null }
+      : {
+          reply: fallbackReplyForAction(action), degraded: true,
+          reason: `resposta não apontou para o próximo campo determinístico: ${action.field}`,
+        };
+  }
+
+  const mustNotQuestion = action.type === 'handoff' || action.type === 'disqualify' || action.type === 'complete';
+  const valid = proposed.length > 0 && (!mustNotQuestion || !reading?.targetField);
+  return valid
+    ? { reply: proposed, degraded: !!reading?.degraded, reason: reading?.reason || null }
+    : {
+        reply: fallbackReplyForAction(action), degraded: true,
+        reason: 'resposta incompatível com a ação determinada pelo backend',
+      };
+}
+
 /**
  * As partes do prompt, nesta ordem: regras da plataforma, data de hoje, o que
  * deve fazer, o que não pode fazer, memória, ROTEIRO, ações permitidas (vão
@@ -1658,6 +2155,7 @@ function triageTurns(history: WaAiHistoryMessage[]): WaAiTriageTurn[] {
 function buildSystemPrompt(
   ctx: TurnContext, memory: WaAiMemory, tools: WaAiToolSchema[],
   playbook: WaAiPlaybook | null = null, progress: WaAiTriageProgress | null = null,
+  nextAction: WaAiTriageNextAction | null = null,
 ): string {
   const { assistant, conversation } = ctx;
   const nome = conversation.contact_name || 'o cliente';
@@ -1692,7 +2190,9 @@ function buildSystemPrompt(
   // cada pergunta vivia longe do campo que ela busca.
   const doText = [
     playbook ? waAiPlaybookInstructions(playbook) : '',
-    String(assistant.instructions_do || '').trim(),
+    // Configuração estruturada é a autoridade. O texto antigo pode continuar
+    // na linha até o próximo salvamento, mas não volta a disputar o fluxo.
+    playbook?.context ? '' : String(assistant.instructions_do || '').trim(),
   ].filter(Boolean).join('\n\n');
   if (doText) parts.push(`# O que você deve fazer\n${doText}`);
 
@@ -1725,6 +2225,21 @@ function buildSystemPrompt(
   }
 
   if (playbook && progress) parts.push(waAiPlaybookPromptBlock(playbook, progress));
+  if (playbook && progress && nextAction) {
+    parts.push(
+      '# Estado canônico deste turno\n'
+      + 'O backend já incorporou a resposta atual. Este JSON prevalece sobre resumo e histórico:\n'
+      + JSON.stringify({
+        facts: memory.knownFacts,
+        pending_fields: progress.missing,
+        next_field: progress.nextField,
+        stage: progress.stage,
+        cut: progress.cut,
+        complete: progress.complete,
+        next_action: nextAction,
+      }, null, 2),
+    );
+  }
 
   const nomes = tools.map(t => t.function.name).join(', ');
   parts.push(`# Ações disponíveis\n${nomes || 'nenhuma'}`);
@@ -1733,13 +2248,12 @@ function buildSystemPrompt(
   if (playbook) {
     parts.push(
       '# Formato da resposta\n'
-      + 'Sua resposta é um objeto JSON com três campos, e o sistema não aceita outro formato:\n'
+      + 'Os fatos já foram extraídos e salvos pelo sistema. Não os extraia outra vez. Sua resposta é '
+      + 'um objeto JSON com dois campos, e o sistema não aceita outro formato:\n'
       + '- `mensagem_cliente`: o texto que vai para o cliente. É o ÚNICO que ele lê;\n'
-      + '- `atualizacoes`: o que ele acabou de informar, campo a campo. Preencha SÓ o que ele '
-      + 'disse, com as palavras dele, e deixe vazio todo o resto. Nunca deduza e nunca preencha '
-      + 'com o que você supôs;\n'
-      + '- `campo_alvo`: a informação que a sua pergunta está buscando agora.\n'
-      + 'Não escreva JSON dentro de `mensagem_cliente` e não repita ali os dados coletados. '
+      + '- `campo_alvo`: copie exatamente `next_field` quando `next_action.type` for `ask_field`; '
+      + 'use vazio nos demais casos.\n'
+      + 'Não escreva JSON dentro de `mensagem_cliente`. '
       + 'As ações continuam sendo pedidas por ferramenta — o JSON não executa nada.',
     );
   }
@@ -1770,7 +2284,11 @@ async function callModel(
   if (!endpoint) throw new Error(`Provedor não suportado: ${provider}`);
   if (!endpoint.key) throw new Error(`Chave de API ausente para o provedor ${provider}`);
 
-  const body: Record<string, unknown> = { model, messages, temperature: 0.3, max_tokens: 700 };
+  const body: Record<string, unknown> = {
+    model, messages,
+    temperature: schema?.name === 'extracao_triagem' ? 0 : 0.3,
+    max_tokens: schema?.name === 'extracao_triagem' ? 500 : 700,
+  };
   if (tools.length > 0) { body.tools = tools; body.tool_choice = 'auto'; }
   // A diferença que motivou a migração inteira: ferramenta é OPCIONAL para o
   // modelo, formato de resposta não é. O agente com roteiro devolve o objeto do
@@ -1987,10 +2505,13 @@ async function actTransferir(
 async function actSolicitarDocumentos(
   admin: any, ctx: TurnContext, args: Record<string, unknown>,
 ): Promise<ActionOutcome> {
-  const clientId = ctx.conversation.client_id;
-  if (!clientId) {
-    return { ok: false, error: 'Esta conversa ainda não está vinculada a um cliente cadastrado. Peça os documentos por mensagem ou passe para um atendente.' };
-  }
+  const linked = await ensureWaAiConversationClient(
+    admin,
+    ctx.conversation,
+    String(ctx.session?.known_facts?.nome || ctx.conversation.contact_name || ''),
+  );
+  if (!linked.ok) return { ok: false, error: linked.error };
+  const clientId = linked.clientId;
 
   const documentos = (args.documentos as string[]) || [];
   if (documentos.length === 0) return { ok: false, error: 'Nenhum documento informado.' };
@@ -2015,7 +2536,9 @@ async function actSolicitarDocumentos(
   const dueDate = prazoDias
     ? new Date(Date.now() + prazoDias * 86_400_000).toISOString().slice(0, 10)
     : null;
-  const title = documentos.length === 1 ? documentos[0] : 'Solicitação de documentos';
+  const configuredTitle = String(args.titulo || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  const title = configuredTitle
+    || (documentos.length === 1 ? documentos[0] : 'Solicitação de documentos');
 
   const { data: created, error } = await admin.from('document_requests').insert({
     client_id: clientId,
@@ -2095,7 +2618,10 @@ async function actEnviarDocumento(
       return { ok: false, error: 'O template escolhido não possui mais um link ativo.' };
     }
 
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    // O acompanhamento do KIT dura até 14 dias; o link precisa sobreviver à
+    // escada inteira (com margem), ou os últimos lembretes apontariam para uma
+    // página expirada.
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const { data: created, error: createError } = await admin.from('template_fill_links').insert({
       template_id: permalink.template_id,
       template_file_id: permalink.template_file_id || null,
@@ -2283,13 +2809,14 @@ async function actTransferirParaHumano(
   const resumo = String(args.resumo || '').trim();
   const motivo = String(args.motivo || '').trim();
 
-  await admin.from('whatsapp_ai_sessions').update({
+  const { error } = await admin.from('whatsapp_ai_sessions').update({
     ai_active: false,
     status: 'handed_off',
     handoff_reason: motivo || 'Entregue ao atendimento humano pela IA.',
     handoff_summary: resumo,
     ended_at: new Date().toISOString(),
   }).eq('conversation_id', ctx.conversation.id);
+  if (error) return { ok: false, error: String(error.message || error) };
 
   await addNote(admin, ctx.conversation.id,
     `🤖 A IA passou o atendimento para uma pessoa${motivo ? ` (${motivo})` : ''}. O resumo privado aparecerá para quem assumir.`);

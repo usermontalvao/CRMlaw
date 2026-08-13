@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   WA_AI_FACT_ALIASES,
   canonicalizeWaAiFacts,
+  extractWaAiDecisionFacts,
   extractWaAiPeriodFacts,
   findWaAiMonthYears,
   normalizeWaAiFactValue,
@@ -34,6 +35,13 @@ test('mês e ano em todas as formas que o cliente escreve', () => {
   assert.equal(parseWaAiMonthYear('Agosto de 2026'), '08/2026');
   assert.equal(parseWaAiMonthYear('março de 2021'), '03/2021');
   assert.equal(parseWaAiMonthYear('DEZEMBRO DE 2023'), '12/2023');
+});
+
+test('erro de uma letra no mês não esconde a data do corte', () => {
+  assert.equal(parseWaAiMonthYear('marcço de 2023'), '03/2023');
+  assert.equal(parseWaAiMonthYear('feverero de 2024'), '02/2024');
+  assert.equal(parseWaAiMonthYear('desembro de 2022'), '12/2022');
+  assert.equal(parseWaAiMonthYear('trabalho de 2023'), null);
 });
 
 test('ano solto não vira data: metade da resposta não fecha a pergunta', () => {
@@ -76,16 +84,16 @@ test('vazio, null e objeto nunca entram — e nunca apagam', () => {
   assert.deepEqual(facts, { nome: 'Neto' });
 });
 
-test('booleano e número do modelo viram texto', () => {
+test('booleano e número permanecem tipados', () => {
   const facts = canonicalizeWaAiFacts({ provas: true, dias_semana: 5 });
-  assert.deepEqual(facts, { provas: 'true', dias_semana: '5' });
+  assert.deepEqual(facts, { provas: true, dias_semana: 5 });
 });
 
-test('"ainda trabalha" fala sim ou não', () => {
+test('"ainda trabalha" preserva booleano real e normaliza texto legado', () => {
   assert.equal(normalizeWaAiFactValue('ainda_trabalha', 'Já saí'), 'não');
   assert.equal(normalizeWaAiFactValue('ainda_trabalha', 'saiu'), 'não');
-  assert.equal(normalizeWaAiFactValue('ainda_trabalha', false), 'não');
-  assert.equal(normalizeWaAiFactValue('ainda_trabalha', true), 'sim');
+  assert.equal(normalizeWaAiFactValue('ainda_trabalha', false), false);
+  assert.equal(normalizeWaAiFactValue('ainda_trabalha', true), true);
   assert.equal(normalizeWaAiFactValue('ainda_trabalha', 'Sim'), 'sim');
 });
 
@@ -130,6 +138,15 @@ test('data respondida à pergunta "ainda trabalha ou já saiu" é a saída', () 
   assert.equal(facts.saida, '12/2023');
   assert.equal(facts.ainda_trabalha, 'não');
   assert.equal(facts.inicio, undefined);
+});
+
+test('"marcço de 2023" respondido à pergunta de saída é salvo como 03/2023', () => {
+  const facts = extractWaAiPeriodFacts(conversa([
+    ['out', 'Você ainda trabalha lá ou já saiu?'],
+    ['in', 'marcço de 2023'],
+  ]));
+  assert.equal(facts.saida, '03/2023');
+  assert.equal(facts.ainda_trabalha, 'não');
 });
 
 test('a resposta manda mais que a pergunta: "saí em dezembro" não vira início', () => {
@@ -200,6 +217,99 @@ test('a ordem cronológica manda, não a ordem do array', () => {
   assert.deepEqual(
     extractWaAiPeriodFacts(cronologica.slice().reverse()),
     extractWaAiPeriodFacts(cronologica));
+});
+
+// ── Respostas de decisão em linguagem comum ────────────────────────────────
+
+test('entende várias formas populares de responder os critérios de corte', () => {
+  const casos: [string, string, string, string][] = [
+    ['Era empresa privada ou prefeitura?', 'era uma loja privada normal', 'tipo_empregador', 'particular'],
+    ['Era da iniciativa privada ou do governo?', 'era da prefeitura mesmo', 'tipo_empregador', 'publico'],
+    ['Se você faltasse, podia colocar alguém no seu lugar?', 'não, tinha que ser eu', 'pessoalidade', 'sim'],
+    ['Era você mesmo ou alguém podia substituir você?', 'meu primo ia lá por mim', 'pessoalidade', 'não'],
+    ['Você ganhava alguma coisa por esse serviço?', 'uns 2 mil por mês', 'recebia_pagamento', 'sim'],
+    ['Você recebia algum pagamento?', 'não, era voluntário', 'recebia_pagamento', 'não'],
+    ['Com que frequência esse trabalho acontecia?', 'três vezes por semana', 'trabalho_regular', 'regular'],
+    ['Era toda semana ou só de vez em quando?', 'era um bico, só quando chamava', 'trabalho_regular', 'esporadico'],
+    ['Tinha chefe ou alguém que dizia o que fazer?', 'o gerente dava ordens e cobrava', 'subordinacao', 'sim'],
+    ['Tinha chefe ou alguém que dizia o que fazer?', 'ninguém mandava, eu fazia meu horário', 'subordinacao', 'não'],
+    ['Ficou alguma prova, comprovante ou conversa?', 'tenho recibo e extrato', 'tem_prova', 'sim'],
+    ['Tem alguma prova desse trabalho?', 'não tenho nada guardado', 'tem_prova', 'não'],
+    ['Alguém viu você trabalhando e pode confirmar?', 'minha esposa me viu', 'tem_testemunha', 'sim'],
+    ['Tem testemunha ou alguém que trabalhou com você?', 'ninguém', 'tem_testemunha', 'não'],
+    ['Além desse, teve mais algum trabalho assim?', 'foi só esse', 'outros_trabalhos', 'não'],
+  ];
+
+  for (const [pergunta, resposta, campo, esperado] of casos) {
+    const facts = extractWaAiDecisionFacts(conversa([['out', pergunta], ['in', resposta]]));
+    assert.equal(facts[campo as keyof typeof facts], esperado, `${pergunta} → ${resposta}`);
+  }
+});
+
+test('dúvida, incompreensão e sim/não perigoso não viram corte', () => {
+  const ambiguas: [string, string][] = [
+    ['Era privada ou pública?', 'não entendi'],
+    ['Era você mesmo ou podia mandar outra pessoa?', 'sim'],
+    ['Era você mesmo ou podia mandar outra pessoa?', 'não'],
+    ['Trabalhava toda semana ou de vez em quando?', 'não lembro'],
+    ['Tinha chefe?', 'talvez'],
+  ];
+  for (const [pergunta, resposta] of ambiguas) {
+    assert.deepEqual(
+      extractWaAiDecisionFacts(conversa([['out', pergunta], ['in', resposta]])),
+      {},
+      `${pergunta} → ${resposta}`,
+    );
+  }
+});
+
+test('a fala direta do cliente vence classificação errada do modelo', () => {
+  const estado = reconcileWaAiTriageState({
+    knownFacts: { trabalho_regular: 'regular', subordinacao: 'sim' },
+    pendingItems: [],
+    turns: conversa([
+      ['out', 'Era toda semana ou só de vez em quando?'],
+      ['in', 'só quando chamava, era um bico'],
+      ['out', 'Tinha chefe ou alguém que dizia o que fazer?'],
+      ['in', 'ninguém mandava, eu fazia meu horário'],
+    ]),
+  });
+  assert.equal(estado.knownFacts.trabalho_regular, 'esporadico');
+  assert.equal(estado.knownFacts.subordinacao, 'não');
+});
+
+test('entende respostas populares da campanha de conta sem depender do modelo', () => {
+  const casos: [string, string, string, string][] = [
+    ['A conta foi bloqueada ou encerrada de vez?', 'o app travou tudo, não consigo mexer', 'tipo_ocorrencia', 'bloqueio'],
+    ['A conta foi bloqueada ou encerrada de vez?', 'o banco fechou minha conta', 'tipo_ocorrencia', 'encerramento'],
+    ['A conta foi bloqueada ou encerrada de vez?', 'encerraram a conta', 'tipo_ocorrencia', 'encerramento'],
+    ['A conta foi bloqueada ou encerrada de vez?', 'bloquearam sem explicar', 'tipo_ocorrencia', 'bloqueio'],
+    ['O banco avisou antes?', 'foi do nada, só descobri depois', 'aviso_previo', 'não'],
+    ['Tem algum print, e-mail ou tela?', 'tenho screenshot da mensagem do banco', 'tem_print', 'sim'],
+    ['Ficou algum saldo preso?', 'não tinha nada lá', 'saldo_retido', 'não'],
+    ['Qual comprovante de residência você tem?', 'moro de aluguel e tenho contrato', 'residencia_tipo', 'aluguel_com_contrato'],
+    ['Qual comprovante de residência você tem?', 'casa de favor e não tenho contrato', 'residencia_tipo', 'terceiro_sem_contrato'],
+    ['O declarante consegue mandar o documento?', 'consigo mandar sim', 'declarante_tem_documento', 'sim'],
+    ['Os honorários são 40%. Está de acordo?', 'concordo', 'aceita_honorarios', 'sim'],
+  ];
+  for (const [question, answer, field, expected] of casos) {
+    const facts = extractWaAiDecisionFacts(conversa([['out', question], ['in', answer]]));
+    assert.equal(facts[field as keyof typeof facts], expected, `${question} → ${answer}`);
+  }
+});
+
+test('erro de escrita no mês da conta ainda alimenta o corte em tempo real', () => {
+  const facts = extractWaAiPeriodFacts(conversa([
+    ['out', 'Em que mês e ano aconteceu o bloqueio?'],
+    ['in', 'foi em feverero de 2024'],
+  ]));
+  assert.equal(facts.data_ocorrencia, '02/2024');
+});
+
+test('“sim” sozinho em pergunta de duas opções da conta não inventa ocorrência', () => {
+  assert.deepEqual(extractWaAiDecisionFacts(conversa([
+    ['out', 'A conta foi bloqueada ou encerrada de vez?'], ['in', 'sim'],
+  ])), {});
 });
 
 // ── Pendências ──────────────────────────────────────────────────────────────

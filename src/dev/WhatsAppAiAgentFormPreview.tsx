@@ -14,15 +14,27 @@ import { AiAgentSimulator } from '../components/whatsapp/aiAgentSimulator';
 import type {
   WhatsAppAiAssistantInput, WhatsAppAiSimulationResult, WhatsAppAiTargetOption,
 } from '../types/whatsapp.types';
+import {
+  WA_AI_PLAYBOOK_SEM_REGISTRO,
+  computeWaAiTriageNextAction,
+  computeWaAiTriageProgress,
+  normalizeWaAiPlaybook,
+  normalizeWaAiPlaybookValue,
+  waAiPlaybookField,
+} from '../utils/waAiPlaybook';
+import { reconcileWaAiTriageState, type WaAiTriageTurn } from '../utils/waAiTriageFacts';
+import { buildWaAiCompletionPlans } from '../utils/waAiCompletion';
 
 /** Dublês com dois "Pedro" de propósito: é o caso que a dica precisa desempatar. */
 const TARGETS: WhatsAppAiTargetOption[] = [
-  { type: 'user', id: '11111111-1111-4111-8111-111111111111', label: 'Pedro Rodrigues', hint: 'Advogado · Trabalhista' },
+  { type: 'user', id: '11111111-1111-4111-8111-111111111111', label: 'Pedro Rodrigues Montalvao Neto', hint: 'Advogado · Trabalhista' },
   { type: 'user', id: '22222222-2222-4222-8222-222222222222', label: 'Pedro Almeida', hint: 'Estagiário · Atendimento' },
   { type: 'user', id: '33333333-3333-4333-8333-333333333333', label: 'Lisliandra Neto', hint: 'Advogada · Previdenciário' },
   { type: 'department', id: '44444444-4444-4444-8444-444444444444', label: 'Trabalhista', hint: 'Setor' },
   { type: 'department', id: '55555555-5555-4555-8555-555555555555', label: 'Previdenciário', hint: 'Setor' },
+  { type: 'department', id: '77777777-7777-4777-8777-777777777777', label: 'Atendimento', hint: 'Setor' },
   { type: 'document_template', id: '66666666-6666-4666-8666-666666666666', label: 'Kit Trabalhista', hint: 'Link ativo · /p/kit-trabalhista-28r7' },
+  { type: 'document_template', id: '88888888-8888-4888-8888-888888888888', label: 'KIT CONSUMIDOR', hint: 'Preenchimento e assinatura' },
 ];
 
 const NEW_DRAFT: WhatsAppAiAssistantInput = {
@@ -78,6 +90,9 @@ const EDIT_DRAFT: WhatsAppAiAssistantInput = {
   followup_interval_hours: 24,
   debounce_seconds: 10,
   history_limit: 16,
+  // Mantém o texto antigo de propósito: a bancada comprova que, com contexto
+  // estruturado, ele deixa de aparecer como editor principal e será limpo ao salvar.
+  playbook: JSON.parse(JSON.stringify(WA_AI_PLAYBOOK_SEM_REGISTRO)),
 };
 
 /** Os botões vêm do CSS de Configurações, que não existe fora do CRM. */
@@ -102,48 +117,116 @@ const BUTTON_CSS = `
  * chips de ação simulada, memória e o aviso de acompanhamento.
  */
 const runTurnDublê = async (input: {
+  assistant: WhatsAppAiAssistantInput;
   messages: { role: 'cliente' | 'agente'; text: string }[];
+  memory?: WhatsAppAiSimulationResult['memory'] | null;
+  contactName?: string;
   trigger?: 'mensagem' | 'followup';
+  followupAttempt?: number;
 }): Promise<WhatsAppAiSimulationResult> => {
-  await new Promise(r => setTimeout(r, 600));
-  const turno = input.messages.filter(m => m.role === 'cliente').length;
+  await new Promise(r => setTimeout(r, 180));
   const followup = input.trigger === 'followup';
+  const playbook = normalizeWaAiPlaybook(input.assistant.playbook);
+  if (!playbook) throw new Error('Escolha uma campanha estruturada antes de testar.');
 
-  const daqui = (horas: number) => new Date(Date.now() + horas * 3_600_000).toISOString();
+  const before = { ...(input.memory?.knownFacts || {}) };
+  const prior = computeWaAiTriageProgress({
+    playbook, facts: before, timeZone: input.assistant.timezone || 'America/Cuiaba',
+  });
+  const lastInbound = [...input.messages].reverse().find(message => message.role === 'cliente')?.text.trim() || '';
+  const turns: WaAiTriageTurn[] = input.messages.map((message, index) => ({
+    direction: message.role === 'cliente' ? 'in' : 'out',
+    text: message.text,
+    at: new Date(Date.now() - (input.messages.length - index) * 1000).toISOString(),
+  }));
+  const reconciled = reconcileWaAiTriageState({
+    knownFacts: before,
+    pendingItems: input.memory?.pendingItems || [],
+    turns,
+    playbookKeys: playbook.fields.map(field => field.key),
+  });
+  const facts = { ...reconciled.knownFacts };
 
-  if (followup) {
-    return {
-      ok: true,
-      reply: 'Oi! Passando para saber se você ainda tem interesse — consegue me mandar os documentos?',
-      requested: [], executed: [],
-      memory: { summary: 'Cliente sumiu depois da triagem.', knownFacts: { nome: 'Ana' }, pendingItems: ['documentos'], lastAction: '' },
-      handed_off: false,
-      followup: { attempt: 2, scheduled_at: daqui(4) },
-      duration_ms: 610,
-    };
+  // O dublê não chama modelo. Para texto livre, a resposta à pergunta atual é
+  // suficiente; datas, sim/não e listas continuam passando pelos mesmos
+  // normalizadores e extratores determinísticos do motor real.
+  const greetingOnly = /^(oi+e*|ol[aá]|bom dia|boa tarde|boa noite|tudo bem)[!?. ]*$/i.test(lastInbound);
+  if (!followup && prior.nextField && lastInbound && !(prior.nextField === 'nome' && greetingOnly)) {
+    const field = waAiPlaybookField(playbook, prior.nextField);
+    if (field && (facts[field.key] === undefined || facts[field.key] === '')) {
+      const normalized = normalizeWaAiPlaybookValue(field, lastInbound);
+      if (normalized) facts[field.key] = normalized;
+    }
   }
 
-  if (turno >= 2) {
-    return {
-      ok: true,
-      reply: 'Obrigado, Ana. Já tenho o que preciso — vou passar seu atendimento para a equipe trabalhista.',
-      requested: [{ action: 'transferir_atendimento' }],
-      executed: [{ action: 'transferir_atendimento', ok: true, simulated: true, target: 'Trabalhista' }],
-      memory: { summary: 'Ana trabalhou sem registro por 8 meses.', knownFacts: { nome: 'Ana', assunto: 'sem registro' }, pendingItems: [], lastAction: 'transferir_atendimento (simulado)' },
-      handed_off: true,
-      followup: null,
-      duration_ms: 1240,
+  const progress = computeWaAiTriageProgress({
+    playbook, facts, timeZone: input.assistant.timezone || 'America/Cuiaba',
+  });
+  const nextAction = computeWaAiTriageNextAction(playbook, progress);
+  const attempt = Math.max(1, Number(input.followupAttempt || 1));
+  const interval = Math.max(1, Number(input.assistant.followup_interval_hours || 24));
+  const scheduled = new Date(Date.now() + interval * 3_600_000).toISOString();
+
+  let reply = '';
+  let requested: WhatsAppAiSimulationResult['requested'] = [];
+  let executed: WhatsAppAiSimulationResult['executed'] = [];
+  let lastAction = '';
+  if (progress.cut) {
+    const messages: Record<string, string> = {
+      prazo_2_anos_conta: 'Pela data informada, o caso ficou fora do período atendido pelo escritório. Por isso não vou pedir documentos por esta campanha.',
+      houve_aviso_previo: 'Esta campanha atende bloqueio ou encerramento sem aviso prévio. Como o banco avisou antes, seu relato ficou fora dos critérios desta triagem.',
+      sem_print_conta: 'O print, e-mail ou tela do aplicativo é um documento essencial. Quando conseguir essa imagem, pode voltar ao atendimento.',
+      declarante_sem_documento: 'Para preparar a declaração, precisamos da foto do documento de identificação do declarante. Quando conseguir, pode voltar ao atendimento.',
+      honorarios_nao_aceitos: 'Tudo bem, respeito sua decisão. Não vou seguir com a contratação por esta campanha.',
     };
+    reply = messages[progress.cut.id]
+      || 'Pelas informações dadas, a situação ficou fora dos critérios desta triagem.';
+    lastAction = `corte: ${progress.cut.id}`;
+  } else if (progress.complete) {
+    const plans = buildWaAiCompletionPlans({
+      allowed_actions: ['solicitar_documentos', 'enviar_documento', 'transferir_atendimento', 'transferir_para_humano'],
+      action_refs: (input.assistant.action_refs || []) as any,
+    }, playbook, { knownFacts: facts, pendingItems: [] });
+    const plan = plans[0];
+    if (plan) {
+      requested = [{ action: plan.action, args: plan.args }];
+      executed = [{ action: plan.action, args: plan.args, ok: true, simulated: true,
+        target: plan.ref?.target_label || null }];
+      lastAction = `${plan.action} (simulado)`;
+    }
+    reply = 'A triagem terminou. Vou solicitar os documentos essenciais agora. Você pode enviar um por vez por aqui mesmo.';
+  } else {
+    const question = nextAction?.type === 'ask_field'
+      ? nextAction.question
+      : waAiPlaybookField(playbook, progress.nextField || '')?.question;
+    reply = followup
+      ? `Olá${facts.nome ? `, ${String(facts.nome).split(' ')[0]}` : ''}! Ficou faltando só esta informação: ${question}`
+      : (greetingOnly && Object.keys(before).length === 0
+        ? `${playbook.opening || question || 'Como posso ajudar?'}`
+        : `${lastInbound && prior.nextField === progress.nextField ? 'Sem problema, vou perguntar de outro jeito. ' : ''}${question || 'Pode me contar um pouco mais?'}`);
   }
 
   return {
-    ok: true,
-    reply: 'Olá! Tudo bem? Vou fazer algumas perguntas rápidas para entender seu caso.\nPara começar, qual é o seu nome?',
-    requested: [], executed: [],
-    memory: { summary: 'Primeiro contato.', knownFacts: {}, pendingItems: ['nome do cliente'], lastAction: '' },
-    handed_off: false,
-    followup: { attempt: 1, scheduled_at: daqui(2) },
-    duration_ms: 780,
+    ok: true, reply, requested, executed,
+    memory: {
+      summary: `Triagem ${playbook.label}${facts.nome ? ` · ${facts.nome}` : ''}.`,
+      knownFacts: facts,
+      pendingItems: progress.pending,
+      lastAction,
+    },
+    handed_off: executed.some(item => item.action === 'transferir_atendimento'),
+    followup: input.assistant.followup_enabled && !progress.cut && !progress.complete
+      ? { attempt, scheduled_at: scheduled } : null,
+    triage: {
+      stage: progress.stage,
+      stage_label: progress.stageLabel,
+      pending: progress.pending,
+      next_field: progress.nextField,
+      next_action: nextAction,
+      cut: progress.cut,
+      complete: progress.complete,
+    },
+    duration_ms: 180,
   };
 };
 
@@ -204,7 +287,9 @@ const WhatsAppAiAgentFormPreview: React.FC = () => {
         saving={false}
         onPatch={p => setDraft(prev => ({ ...prev, ...p }))}
         onCancel={() => setSalvo({ cancelado: true })}
-        onSave={refs => setSalvo({ ...draft, action_refs: refs })}
+        onSave={(refs, allowedActions) => setSalvo({
+          ...draft, action_refs: refs, allowed_actions: allowedActions,
+        })}
       />
 
       {salvo !== null && (

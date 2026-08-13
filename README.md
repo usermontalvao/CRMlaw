@@ -2,6 +2,8 @@
 
 Sistema completo de CRM desenvolvido especificamente para escritórios de advocacia, com foco em gestão de clientes, processos e agenda.
 
+Documentação operacional: [Manual dos agentes de IA do WhatsApp](docs/WHATSAPP_AI_AGENTS.md).
+
 ## 🚀 Funcionalidades
 
 ### Módulo de Clientes (Implementado)

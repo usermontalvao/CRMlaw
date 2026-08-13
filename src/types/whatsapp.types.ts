@@ -372,6 +372,7 @@ export interface WhatsAppAiSession {
 
 /** Modo de operação do agente. */
 export type WhatsAppAiAssistantMode = 'test' | 'auto';
+export type WhatsAppAiFactValue = string | number | boolean;
 
 /** Referência compilada de uma expressão `ação=...` do editor de prompt. */
 export interface WhatsAppAiActionRef {
@@ -443,7 +444,7 @@ export interface WhatsAppAiSimulationResult {
   /** Devolver na chamada seguinte — é a continuidade da conversa. */
   memory: {
     summary: string;
-    knownFacts: Record<string, string>;
+    knownFacts: Record<string, WhatsAppAiFactValue>;
     pendingItems: string[];
     lastAction: string;
   };
@@ -455,6 +456,12 @@ export interface WhatsAppAiSimulationResult {
     stage_label: string | null;
     pending: string[];
     next_field: string | null;
+    next_action:
+      | { type: 'ask_field'; field: string; question: string }
+      | { type: 'handoff' | 'disqualify'; cutId: string; reason: string; guidance: string }
+      | { type: 'complete'; guidance: string }
+      | { type: 'none'; reason: string }
+      | null;
     cut: { id: string; effect: 'disqualify' | 'handoff'; reason: string; guidance: string } | null;
     complete: boolean;
   };
@@ -525,7 +532,7 @@ export interface WhatsAppAiConversationState {
   channelAiEnabled: boolean;
   status: WhatsAppAiSessionStatus | null;
   summary: string | null;
-  knownFacts: Record<string, string>;
+  knownFacts: Record<string, WhatsAppAiFactValue>;
   pendingItems: string[];
   lastAction: string | null;
   /** Etapa do roteiro, calculada pelo backend a cada turno. */

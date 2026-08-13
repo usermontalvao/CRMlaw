@@ -105,11 +105,11 @@ export const AiAssistantsPanel: React.FC<Props> = ({ channels, onFeedback }) => 
   // ── Persistência ────────────────────────────────────────────
 
   /** `refs` vem do formulário já podado: só as referências ainda citadas no texto. */
-  const save = async (refs: WhatsAppAiActionRef[]) => {
+  const save = async (refs: WhatsAppAiActionRef[], allowedActions: string[]) => {
     if (!draft) return;
     setSaving(true);
     try {
-      const payload = { ...draft, action_refs: refs };
+      const payload = { ...draft, action_refs: refs, allowed_actions: allowedActions };
       if (editingId && editingId !== 'new') await whatsappService.updateAiAssistant(editingId, payload);
       else await whatsappService.createAiAssistant(payload);
       onFeedback('success', 'Agente salvo.');

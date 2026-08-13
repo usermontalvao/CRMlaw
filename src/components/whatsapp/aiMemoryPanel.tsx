@@ -217,7 +217,11 @@ export const AiMemoryPanel: React.FC<{
                 <span key={key}
                   className="inline-flex max-w-full items-center gap-1 rounded-full bg-white border border-slate-200 px-1.5 py-0.5 text-[10.5px] text-slate-600">
                   <span className="text-slate-400">{key}</span>
-                  <span className="truncate font-medium">{state.knownFacts[key]}</span>
+                  <span className="truncate font-medium">
+                    {state.knownFacts[key] === true
+                      ? 'Sim'
+                      : state.knownFacts[key] === false ? 'Não' : String(state.knownFacts[key])}
+                  </span>
                 </span>
               ))}
             </div>

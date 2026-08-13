@@ -15,9 +15,11 @@ const PUBLIC_APP_ORIGIN = Deno.env.get('PUBLIC_APP_ORIGIN') || 'https://jurius.c
 const TZ = 'America/Cuiaba';
 const BIZ_START = 8;
 const BIZ_END = 18;
-// TESTE: follow-up a cada 5 minutos.
-const STEP_OFFSETS_MIN = [5, 10, 15, 20, 25];
-const GRACE_MIN = 180;
+// Produção: 4h, 1d, 3d, 7d e 14d desde o envio do KIT. A função só envia
+// dentro do expediente; a janela de 72h atravessa fins de semana sem perder a
+// tentativa e evita ressuscitar links antigos com vários avisos de uma vez.
+const STEP_OFFSETS_MIN = [4 * 60, 24 * 60, 3 * 1440, 7 * 1440, 14 * 1440];
+const GRACE_MIN = 72 * 60;
 const OPTOUT_FROM_REMINDER = 3;
 
 const DECLINE_RE = /(n[ãa]o\s+(tenho|h[aá])\s+(mais\s+)?interesse|sem\s+interesse|n[ãa]o\s+quero(\s+mais)?|n[ãa]o\s+preciso(\s+mais)?|desist|pode\s+cancelar|cancela(r)?|parar?\s+de\s+(enviar|mandar)|n[ãa]o\s+vou\s+(enviar|mandar))/i;

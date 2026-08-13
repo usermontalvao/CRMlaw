@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseWaAiTriageReply } from './waAiTriageReply.ts';
+import { parseWaAiTriagePatch, parseWaAiTriageReply } from './waAiTriageReply.ts';
 
 // ── A cópia dupla ───────────────────────────────────────────────────────────
 
@@ -136,4 +136,25 @@ test('objeto embrulhado numa lista é resgatado, mas não passa por resposta boa
   assert.deepEqual(lida.updates, { nome: 'Ana' });
   assert.equal(lida.ok, false);
   assert.equal(lida.degraded, true);
+});
+
+test('patch factual preserva false, ignora null e aceita múltiplos campos', () => {
+  const patch = parseWaAiTriagePatch(JSON.stringify({
+    atualizacoes: {
+      nome: 'Ana', empregador: 'Todimo', inicio: null, saida: null,
+      ainda_trabalha: false,
+    },
+    remover_campos: ['saida'],
+    ambiguidades: ['mês sem ano'],
+  }), CHAVES);
+  assert.equal(patch.ok, true);
+  assert.deepEqual(patch.updates, { nome: 'Ana', empregador: 'Todimo', ainda_trabalha: false });
+  assert.deepEqual(patch.unsetFields, ['saida']);
+  assert.deepEqual(patch.ambiguities, ['mês sem ano']);
+});
+
+test('patch factual falha fechado e não transforma prosa em estado', () => {
+  const patch = parseWaAiTriagePatch('Ana ainda trabalha lá', CHAVES);
+  assert.equal(patch.ok, false);
+  assert.deepEqual(patch.updates, {});
 });

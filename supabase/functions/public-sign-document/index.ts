@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { dispatchWaAiLifecycle } from '../_shared/wa-ai-lifecycle-hook.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -437,6 +438,18 @@ Deno.serve(async (req: Request) => {
         const { data: request } = await supabase.from('signature_requests').select('id,created_by,document_name,client_id,client_name,process_id,process_number,requirement_id,requirement_number,status,signed_at,created_at,updated_at').eq('id', signer.signature_request_id).single();
         if (request) await createCompletionNotification({ supabase, request, signer, totalSigners: allSigners.length });
         if (request) await dispatchSignatureCompletedWebhook({ request, signer: { id: updatedSigner.id, signature_request_id: updatedSigner.signature_request_id, name: updatedSigner.name, email: updatedSigner.email, cpf: updatedSigner.cpf, phone: updatedSigner.phone, status: updatedSigner.status, signed_at: updatedSigner.signed_at, verification_hash: updatedSigner.verification_hash, auth_provider: updatedSigner.auth_provider }, totalSigners: allSigners.length });
+        const { data: fillLink } = await supabase.from('template_fill_links')
+          .select('conversation_id').eq('signature_request_id', signer.signature_request_id)
+          .not('conversation_id', 'is', null).limit(1).maybeSingle();
+        if (fillLink?.conversation_id) {
+          await dispatchWaAiLifecycle({
+            supabaseUrl: Deno.env.get('SUPABASE_URL') || '',
+            serviceRole: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '',
+            conversationId: fillLink.conversation_id,
+            trigger: 'signature_completed',
+            resourceId: signer.signature_request_id,
+          }).catch(error => console.error('wa-ai signature lifecycle:', error));
+        }
       }
     } catch (e) { console.error('Status update error:', e); }
 

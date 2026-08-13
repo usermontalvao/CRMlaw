@@ -110,12 +110,13 @@ export const WA_AI_KNOWN_FACTS_MAX_KEYS = 30;
 export const WA_AI_FACT_VALUE_MAX_CHARS = 300;
 export const WA_AI_PENDING_ITEMS_MAX = 12;
 export const WA_AI_PENDING_ITEM_MAX_CHARS = 200;
+export type WaAiMemoryFactValue = string | number | boolean;
 
 export interface WaAiMemory {
   /** Resumo breve do caso, reescrito a cada turno. */
   summary: string;
   /** Dados já informados pelo cliente: {chave: valor}. */
-  knownFacts: Record<string, string>;
+  knownFacts: Record<string, WaAiMemoryFactValue>;
   /** O que o agente está aguardando. */
   pendingItems: string[];
   /** Última ação executada, para o operador ver de relance. */
@@ -144,18 +145,19 @@ function trimTo(value: unknown, max: number): string {
 export function normalizeWaAiMemory(raw: unknown): WaAiMemory {
   const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw as Record<string, unknown> : {};
 
-  const facts: Record<string, string> = {};
+  const facts: Record<string, WaAiMemoryFactValue> = {};
   const rawFacts = src.knownFacts ?? src.known_facts;
   if (rawFacts && typeof rawFacts === 'object' && !Array.isArray(rawFacts)) {
     for (const [key, value] of Object.entries(rawFacts as Record<string, unknown>)) {
       if (Object.keys(facts).length >= WA_AI_KNOWN_FACTS_MAX_KEYS) break;
       const cleanKey = trimTo(key, 60);
       if (!cleanKey) continue;
-      const cleanValue = typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
-        ? trimTo(String(value), WA_AI_FACT_VALUE_MAX_CHARS)
+      if (typeof value === 'boolean') { facts[cleanKey] = value; continue; }
+      if (typeof value === 'number' && Number.isFinite(value)) { facts[cleanKey] = value; continue; }
+      const cleanValue = typeof value === 'string'
+        ? trimTo(value, WA_AI_FACT_VALUE_MAX_CHARS)
         : '';
-      if (!cleanValue) continue;
-      facts[cleanKey] = cleanValue;
+      if (cleanValue) facts[cleanKey] = cleanValue;
     }
   }
 
@@ -189,7 +191,7 @@ export function mergeWaAiMemory(previous: WaAiMemory, patch: unknown): WaAiMemor
   const prev = normalizeWaAiMemory(previous);
   const next = normalizeWaAiMemory(patch);
 
-  const facts: Record<string, string> = { ...prev.knownFacts };
+  const facts: Record<string, WaAiMemoryFactValue> = { ...prev.knownFacts };
   for (const [key, value] of Object.entries(next.knownFacts)) {
     if (!(key in facts) && Object.keys(facts).length >= WA_AI_KNOWN_FACTS_MAX_KEYS) continue;
     facts[key] = value;
@@ -212,10 +214,7 @@ export function renderWaAiMemoryForPrompt(memory: WaAiMemory): string {
   const lines: string[] = [];
   if (mem.summary) lines.push(`Resumo do caso até agora: ${mem.summary}`);
   const factKeys = Object.keys(mem.knownFacts);
-  if (factKeys.length) {
-    lines.push('Dados já informados pelo cliente:');
-    for (const key of factKeys) lines.push(`- ${key}: ${mem.knownFacts[key]}`);
-  }
+  if (factKeys.length) lines.push(`Estado factual canônico (JSON):\n${JSON.stringify(mem.knownFacts, null, 2)}`);
   if (mem.pendingItems.length) {
     lines.push('Você está aguardando:');
     for (const item of mem.pendingItems) lines.push(`- ${item}`);

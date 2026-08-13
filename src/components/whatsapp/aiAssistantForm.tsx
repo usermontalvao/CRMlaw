@@ -22,7 +22,9 @@ import {
   WA_AI_PROVIDERS,
   WA_AI_TYPICAL_TURN_INPUT_TOKENS,
   WA_AI_TYPICAL_TURN_OUTPUT_TOKENS,
+  actionsUsedInPrompt,
   estimateWaAiTurnCostUsd,
+  getWaAiAction,
   getWaAiModel,
   parseWaAiPromptExpressions,
   pruneWaAiActionRefs,
@@ -35,7 +37,9 @@ import type {
 import { AiPromptEditor } from './aiPromptEditor';
 import { AiAgentSimulator } from './aiAgentSimulator';
 import { AiPlaybookEditor } from './aiPlaybookEditor';
-import { normalizeWaAiPlaybook } from '../../utils/waAiPlaybook';
+import { AiStructuredContextEditor } from './aiStructuredContextEditor';
+import { AiPlaybookConfigurationPanel } from './aiPlaybookConfigurationPanel';
+import { normalizeWaAiPlaybook, waAiPlaybookInstructions } from '../../utils/waAiPlaybook';
 
 const DAY_NAMES = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -133,7 +137,7 @@ interface Props {
   onPatch: (patch: Partial<WhatsAppAiAssistantInput>) => void;
   onCancel: () => void;
   /** Recebe as referências vivas — as órfãs já foram podadas. */
-  onSave: (refs: WhatsAppAiActionRef[]) => void;
+  onSave: (refs: WhatsAppAiActionRef[], allowedActions: string[]) => void;
 }
 
 export const AiAssistantForm: React.FC<Props> = ({
@@ -147,6 +151,56 @@ export const AiAssistantForm: React.FC<Props> = ({
   const toggle = (key: SectionKey) => setOpen(prev => ({ ...prev, [key]: !prev[key] }));
 
   // ── Ações e referências ─────────────────────────────────────
+
+  const playbookLido = useMemo(() => normalizeWaAiPlaybook(draft.playbook), [draft.playbook]);
+  const playbookText = useMemo(
+    () => playbookLido ? waAiPlaybookInstructions(playbookLido) : '',
+    [playbookLido],
+  );
+  const structuredContextActive = !!playbookLido?.context;
+  const effectiveInstructionsDo = structuredContextActive ? '' : (draft.instructions_do || '');
+  const rawPlaybook = draft.playbook && typeof draft.playbook === 'object' && !Array.isArray(draft.playbook)
+    ? draft.playbook as Record<string, unknown>
+    : null;
+  const contextForEditor = playbookLido?.context
+    || (rawPlaybook && !Array.isArray(rawPlaybook.fields) && typeof rawPlaybook.id !== 'string'
+      ? rawPlaybook : {});
+
+  const updateStructuredContext = (context: Record<string, unknown>) => {
+    // Contexto vazio significa remover a configuração estruturada inteira. Não
+    // preserve fields/bindings do objeto materializado, pois eles são derivados
+    // do JSON que acabou de ser apagado.
+    if (Object.keys(context).length === 0) {
+      onPatch({
+        playbook: {},
+        // Em agentes migrados, este texto já estava marcado para exclusão no
+        // próximo salvamento. Sem isto, apagar o JSON reativaria o prompt velho.
+        ...(structuredContextActive ? { instructions_do: '' } : {}),
+      });
+      return;
+    }
+    const raw = draft.playbook && typeof draft.playbook === 'object' && !Array.isArray(draft.playbook)
+      ? draft.playbook as Record<string, unknown>
+      : {};
+    const materialized = Array.isArray(raw.fields) || typeof raw.id === 'string';
+    onPatch({ playbook: materialized ? { ...raw, context } : context });
+  };
+
+  const updatePlaybookBinding = (key: string, target: WhatsAppAiTargetOption | null) => {
+    if (!playbookLido) return;
+    const bindings = (playbookLido.bindings || []).map(binding => binding.key === key
+      ? {
+          ...binding,
+          targetType: target?.type,
+          targetId: target?.id,
+          targetLabel: target?.label,
+          suggestedTargetLabel: target ? binding.suggestedTargetLabel : undefined,
+        }
+      : binding);
+    const binding = bindings.find(item => item.key === key);
+    if (target && binding) useAction(binding.action);
+    onPatch({ playbook: { ...playbookLido, bindings } as unknown as Record<string, unknown> });
+  };
 
   const addRef = (ref: WhatsAppAiActionRef) => {
     const already = (draft.action_refs || []).some(r =>
@@ -170,8 +224,9 @@ export const AiAssistantForm: React.FC<Props> = ({
     if (checked) { useAction(action); return; }
 
     const usos = [
-      ...parseWaAiPromptExpressions(draft.instructions_do || ''),
+      ...parseWaAiPromptExpressions(effectiveInstructionsDo),
       ...parseWaAiPromptExpressions(draft.instructions_dont || ''),
+      ...parseWaAiPromptExpressions(playbookText),
     ].filter(e => e.action === action);
 
     if (usos.length > 0) {
@@ -187,26 +242,63 @@ export const AiAssistantForm: React.FC<Props> = ({
     onPatch({ allowed_actions: (draft.allowed_actions || []).filter(a => a !== action) });
   };
 
+  // Um contexto JSON colado não passa pelo autocomplete. Quando o rótulo aponta
+  // sem ambiguidade para um destino real, compilamos a mesma referência que o
+  // menu produziria; nome inventado continua falhando na validação do serviço.
+  const inferredPlaybookRefs = useMemo(() => {
+    const normalize = (value: string) => value.normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const refs: WhatsAppAiActionRef[] = [];
+    for (const expression of parseWaAiPromptExpressions(playbookText)) {
+      if (!expression.action || !expression.label) continue;
+      const def = getWaAiAction(expression.action);
+      if (!def || def.targetSource === 'none') continue;
+      const matches = targets.filter(target => normalize(target.label) === normalize(expression.label));
+      if (matches.length !== 1) continue;
+      const target = matches[0];
+      refs.push({
+        action: expression.action,
+        target_type: target.type,
+        target_id: target.id,
+        target_label: expression.label,
+        raw: expression.raw,
+      });
+    }
+    return refs;
+  }, [playbookText, targets]);
+
   // As referências órfãs somem à medida que o texto muda, para o resumo abaixo
   // do editor sempre refletir o que está escrito agora.
-  const liveRefs = useMemo(() => pruneWaAiActionRefs(
-    (draft.action_refs || []) as WhatsAppAiActionRef[],
-    draft.instructions_do || '', draft.instructions_dont || ''),
-  [draft.action_refs, draft.instructions_do, draft.instructions_dont]);
+  const liveRefs = useMemo(() => {
+    const pruned = pruneWaAiActionRefs(
+      [...((draft.action_refs || []) as WhatsAppAiActionRef[]), ...inferredPlaybookRefs],
+      effectiveInstructionsDo, draft.instructions_dont || '', playbookText);
+    return pruned.filter((ref, index, all) => all.findIndex(other =>
+      other.action === ref.action && other.target_id === ref.target_id
+      && other.target_label === ref.target_label) === index);
+  }, [draft.action_refs, draft.instructions_dont, effectiveInstructionsDo, inferredPlaybookRefs, playbookText]);
+
+  const selectedActions = useMemo(() => Array.from(new Set([
+    ...(draft.allowed_actions || []),
+    ...actionsUsedInPrompt(playbookText),
+  ])), [draft.allowed_actions, playbookText]);
 
   const issuesDo = useMemo(
-    () => validateWaAiPrompt(draft.instructions_do || '', liveRefs, draft.allowed_actions || []),
-    [draft.instructions_do, draft.allowed_actions, liveRefs]);
+    () => validateWaAiPrompt(effectiveInstructionsDo, liveRefs, draft.allowed_actions || []),
+    [effectiveInstructionsDo, draft.allowed_actions, liveRefs]);
   const issuesDont = useMemo(
     () => validateWaAiPrompt(draft.instructions_dont || '', liveRefs, draft.allowed_actions || []),
     [draft.instructions_dont, draft.allowed_actions, liveRefs]);
+  const issuesPlaybook = useMemo(
+    () => validateWaAiPrompt(playbookText, liveRefs, selectedActions),
+    [playbookText, liveRefs, selectedActions]);
 
-  const blockingIssues = [...issuesDo, ...issuesDont].filter(i => i.level === 'erro').length;
+  const blockingIssues = [...issuesDo, ...issuesDont, ...issuesPlaybook]
+    .filter(i => i.level === 'erro').length;
   const dontWarnings = issuesDont.filter(i => i.level === 'aviso').length;
 
   // ── Resumos das seções fechadas ─────────────────────────────
 
-  const selectedActions = draft.allowed_actions || [];
   const actionsSummary = selectedActions.length === 0
     ? 'Nenhuma ação selecionada'
     : `${selectedActions.length} ação(ões) selecionada(s)`;
@@ -218,7 +310,6 @@ export const AiAssistantForm: React.FC<Props> = ({
 
   // O resumo da seção fechada conta o que o BACKEND vai ler, não o que está
   // digitado: campo sem chave não existe para ele.
-  const playbookLido = useMemo(() => normalizeWaAiPlaybook(draft.playbook), [draft.playbook]);
   const playbookSummary = playbookLido
     ? `${playbookLido.fields.length} informação(ões) · ${playbookLido.stages.length} etapa(s)`
       + ` · ${playbookLido.cuts.length} regra(s) de corte`
@@ -237,7 +328,9 @@ export const AiAssistantForm: React.FC<Props> = ({
   ].join(' · ');
 
   const doText = (draft.instructions_do || '').trim();
-  const doSummary = doText
+  const doSummary = structuredContextActive && playbookLido
+    ? `JSON estruturado ativo · ${playbookLido.fields.length} campos automáticos`
+    : doText
     ? `${doText.replace(/\s+/g, ' ').slice(0, 90)}${doText.length > 90 ? '…' : ''}`
     : 'Objetivo, estilo e roteiro do atendimento.';
 
@@ -312,25 +405,45 @@ export const AiAssistantForm: React.FC<Props> = ({
         id="do" num={2} title="O que este agente deve fazer" summary={doSummary}
         open={open.do} onToggle={() => toggle('do')}
       >
-        <p style={{ fontSize: '11.5px', color: '#6b7280', marginBottom: '8px' }}>
-          Objetivo, estilo, o que perguntar e em que ordem. Digite{' '}
-          <code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: '4px' }}>ação=</code>{' '}
-          para inserir uma ação do sistema.
-        </p>
-        <AiPromptEditor
-          id="wa-ai-do"
-          value={draft.instructions_do || ''}
-          onChange={v => onPatch({ instructions_do: v })}
-          refs={liveRefs}
-          onAddRef={addRef}
-          onUseAction={useAction}
-          targets={targets}
-          issues={issuesDo}
-          rows={12}
-          placeholder={'Ex.: Cumprimente pelo nome e descubra o assunto.\n'
-            + 'Pergunte o nome completo e o que aconteceu, uma coisa de cada vez.\n'
-            + 'Se for assunto trabalhista, ação='}
+        <AiStructuredContextEditor
+          value={contextForEditor}
+          resolvedPlaybook={playbookLido}
+          onChange={updateStructuredContext}
         />
+        {playbookLido && (
+          <AiPlaybookConfigurationPanel
+            playbook={playbookLido}
+            targets={targets}
+            onBindingChange={updatePlaybookBinding}
+          />
+        )}
+        {structuredContextActive && doText && (
+          <p style={{
+            margin: '9px 0 0', padding: '8px 10px', borderRadius: '8px',
+            background: '#f9fafb', color: '#6b7280', fontSize: '11px',
+          }}>
+            O texto antigo desta seção não é mais enviado ao agente. Ele será removido do banco
+            ao salvar esta configuração estruturada.
+          </p>
+        )}
+        {!structuredContextActive && doText && (
+          <details className="wa-ai-details" style={{ marginTop: '12px' }}>
+            <summary>Instrução em texto existente (modo legado)</summary>
+            <div style={{ marginTop: '8px' }}>
+              <AiPromptEditor
+                id="wa-ai-do"
+                value={draft.instructions_do || ''}
+                onChange={v => onPatch({ instructions_do: v })}
+                refs={liveRefs}
+                onAddRef={addRef}
+                onUseAction={useAction}
+                targets={targets}
+                issues={issuesDo}
+                rows={10}
+              />
+            </div>
+          </details>
+        )}
       </Section>
 
       {/* ── 3. Limites do atendimento ── */}
@@ -414,15 +527,26 @@ export const AiAssistantForm: React.FC<Props> = ({
         </div>
       </Section>
 
-      {/* ── 5. Roteiro da triagem ── */}
+      {/* ── 5. Edição avançada do roteiro ── */}
       <Section
-        id="playbook" num={5} title="Roteiro da triagem" summary={playbookSummary}
+        id="playbook" num={5} title="Editar roteiro e regras avançadas" summary={playbookSummary}
         open={open.playbook} onToggle={() => toggle('playbook')}
       >
         <AiPlaybookEditor
           value={draft.playbook}
           onChange={playbook => onPatch({ playbook })}
         />
+        {issuesPlaybook.length > 0 && (
+          <div style={{ marginTop: '10px', display: 'grid', gap: '5px' }}>
+            {issuesPlaybook.map((issue, index) => (
+              <p key={`${issue.raw}-${index}`} style={{
+                fontSize: '11.5px', color: issue.level === 'erro' ? '#991b1b' : '#92400e', margin: 0,
+              }}>
+                {issue.message} <code>{issue.raw}</code>
+              </p>
+            ))}
+          </div>
+        )}
       </Section>
 
       {/* ── 6. Acompanhamentos ── */}
@@ -611,7 +735,7 @@ export const AiAssistantForm: React.FC<Props> = ({
             <MessagesSquare size={13} /> Testar agente
           </button>
           <button type="button" className="settings-btn-ghost" onClick={onCancel}><X size={13} /> Cancelar</button>
-          <button type="button" className="settings-btn-primary" onClick={() => onSave(liveRefs)}
+          <button type="button" className="settings-btn-primary" onClick={() => onSave(liveRefs, selectedActions)}
             disabled={saving || blockingIssues > 0}>
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Salvar agente
           </button>
@@ -621,7 +745,7 @@ export const AiAssistantForm: React.FC<Props> = ({
       {/* A prévia recebe as referências VIVAS: é o que o agente teria de verdade. */}
       {testando && (
         <AiAgentSimulator
-          draft={{ ...draft, action_refs: liveRefs }}
+          draft={{ ...draft, action_refs: liveRefs, allowed_actions: selectedActions }}
           onClose={() => setTestando(false)}
         />
       )}

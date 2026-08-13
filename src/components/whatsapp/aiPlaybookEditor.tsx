@@ -48,6 +48,8 @@ const TIPOS: { value: WaAiFieldType; label: string; hint: string }[] = [
   { value: 'data_mes_ano', label: 'Mês e ano', hint: 'Vira MM/AAAA. É o único tipo que as regras de prazo leem.' },
   { value: 'bool', label: 'Sim ou não', hint: 'Só aceita sim ou não.' },
   { value: 'enum', label: 'Lista de opções', hint: 'Só aceita uma das opções escritas abaixo.' },
+  { value: 'numero', label: 'Número', hint: 'Gravado como número, sem confundir zero com ausência.' },
+  { value: 'hora', label: 'Horário', hint: 'Normalizado como HH:mm.' },
 ];
 
 const REGRAS: { value: WaAiCutRule['kind']; label: string }[] = [
@@ -116,14 +118,14 @@ export const AiPlaybookEditor: React.FC<Props> = ({ value, onChange }) => {
     }
   };
 
-  const fields = draft.fields || [];
-  const stages = draft.stages || [];
-  const cuts = draft.cuts || [];
-  const vazio = fields.length === 0 && stages.length === 0 && cuts.length === 0;
-
   // A MESMA leitura do backend. É o que permite mostrar, enquanto se digita, o
   // que seria descartado — em vez de descobrir isso no meio de um atendimento.
   const lido = useMemo(() => normalizeWaAiPlaybook(draft), [draft]);
+  const fields = draft.fields || [];
+  const stages = draft.stages || [];
+  const cuts = draft.cuts || [];
+  const vazio = !lido;
+  const contextoSomente = !!lido?.context && fields.length === 0;
   const chavesValidas = new Set((lido?.fields || []).map(f => f.key));
 
   const patch = (p: Partial<DraftPlaybook>) => onChange({ ...draft, ...p } as Record<string, unknown>);
@@ -198,7 +200,9 @@ export const AiPlaybookEditor: React.FC<Props> = ({ value, onChange }) => {
           ) : (
             <p style={{ fontSize: '10.5px', color: '#9ca3af', marginTop: '6px' }}>
               É exatamente o que fica gravado em <code>whatsapp_ai_assistants.playbook</code> e o que
-              vira o formato de resposta obrigatório do modelo. Dá para colar um roteiro inteiro aqui.
+              gera automaticamente os campos da extração. Também dá para colar somente o contexto
+              estruturado da campanha <code>trabalhou_sem_registro</code>: o sistema associa o roteiro
+              declarativo padrão e preserva essas regras como contexto complementar.
             </p>
           )}
         </div>
@@ -229,6 +233,20 @@ export const AiPlaybookEditor: React.FC<Props> = ({ value, onChange }) => {
               <span>{a}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {!modoJson && contextoSomente && lido && (
+        <div style={{ ...cardStyle, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+          <p style={{ fontSize: '11.5px', color: '#1e3a8a', margin: 0 }}>
+            O contexto identificou a campanha e ativou automaticamente {lido.fields.length} campos,
+            {` ${lido.stages.length}`} etapas e {lido.cuts.length} cortes. Ao salvar, esse roteiro será
+            materializado junto das regras coladas.
+          </p>
+          <button type="button" style={{ ...miniButton, marginTop: '8px', borderColor: '#93c5fd', color: '#1d4ed8' }}
+            onClick={() => onChange(JSON.parse(JSON.stringify(lido)) as Record<string, unknown>)}>
+            <Sparkles size={12} /> Editar também os campos reconhecidos
+          </button>
         </div>
       )}
 
