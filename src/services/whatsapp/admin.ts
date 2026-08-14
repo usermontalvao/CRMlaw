@@ -9,6 +9,7 @@ import {
   CHANNEL_TABLE, CHANNEL_MEMBER_TABLE, CHANNEL_FUNNEL_STAGE_TABLE, DEPT_TABLE, DEPT_MEMBER_TABLE, TEMPLATES_TABLE,
   invokeFn, openResilientChannel, type StaffOption, type AgentPrefs, type AgentTreatment,
 } from './shared';
+import { normalizeDocumentRequestPresets } from '../../utils/documentRequestPresets';
 
 export interface WhatsAppChannelMemberRow {
   channel_id: string;
@@ -370,6 +371,38 @@ export const adminApi = {
       .upsert(payload, { onConflict: 'user_id' });
     if (error) throw new Error(error.message);
     return { ...payload, treatment: payload.treatment as AgentTreatment };
+  },
+
+  /** Atalhos pessoais do usuário logado no modal de solicitação de documentos. */
+  async getMyDocumentRequestPresets(): Promise<string[]> {
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth?.user?.id;
+    if (!uid) return [];
+    const { data, error } = await supabase
+      .from('whatsapp_agent_settings')
+      .select('document_request_presets')
+      .eq('user_id', uid)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return normalizeDocumentRequestPresets(
+      Array.isArray(data?.document_request_presets) ? data.document_request_presets : [],
+    );
+  },
+
+  /**
+   * Salva somente os atalhos do próprio usuário. A RLS da tabela também amarra
+   * INSERT e UPDATE ao auth.uid(), impedindo personalização cruzada.
+   */
+  async saveMyDocumentRequestPresets(presets: readonly string[]): Promise<string[]> {
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth?.user?.id;
+    if (!uid) throw new Error('Não autenticado');
+    const normalized = normalizeDocumentRequestPresets(presets);
+    const { error } = await supabase
+      .from('whatsapp_agent_settings')
+      .upsert({ user_id: uid, document_request_presets: normalized }, { onConflict: 'user_id' });
+    if (error) throw new Error(error.message);
+    return normalized;
   },
 
   // ── Horários de atendimento + ausência (Fase N) ───────────────

@@ -8,6 +8,7 @@ import {
   waInput, waTextarea, waSelect, waSelectStyle, waBtnGhost, waBtnPrimary, waBtnDanger,
 } from '../components/whatsapp/ui';
 import { TransferModal } from '../components/whatsapp/conversationModals';
+import { RequestDocumentModal } from '../components/whatsapp/RequestDocumentModal';
 import { QueuePanel } from '../components/whatsapp/queuePanel';
 import { DEFAULT_QUEUE_POLICY, type QueuePolicy } from '../components/whatsapp/attendanceRouting';
 import { scheduleFromRows, elapsedMinutesForChannels } from '../components/whatsapp/businessTime';
@@ -16,7 +17,7 @@ import { WHATSAPP_MODULE_DEFAULTS } from '../services/settings.service';
 import type { StaffOption } from '../services/whatsapp.service';
 import type { WhatsAppConversation, WhatsAppDepartment } from '../types/whatsapp.types';
 
-type Demo = 'transfer' | 'queue' | 'close' | 'block' | 'hold' | 'schedule';
+type Demo = 'transfer' | 'queue' | 'close' | 'block' | 'hold' | 'schedule' | 'documents';
 
 // ── Cenário do modal de transferência ──
 const conversa = (patch: Partial<WhatsAppConversation> & Pick<WhatsAppConversation, 'id'>): WhatsAppConversation => ({
@@ -175,7 +176,7 @@ const WhatsAppModalsPreview: React.FC = () => {
   // modal específico exige fechar o primeiro a cada recarregamento.
   const [open, setOpen] = useState<Demo | null>(() => {
     const wanted = new URLSearchParams(window.location.search).get('wamodalspreview');
-    const known: Demo[] = ['transfer', 'queue', 'close', 'block', 'hold', 'schedule'];
+    const known: Demo[] = ['transfer', 'queue', 'close', 'block', 'hold', 'schedule', 'documents'];
     return known.includes(wanted as Demo) ? (wanted as Demo) : 'transfer';
   });
 
@@ -190,6 +191,7 @@ const WhatsAppModalsPreview: React.FC = () => {
     { id: 'block', label: 'Bloquear contato' },
     { id: 'hold', label: 'Guarda jurídica' },
     { id: 'schedule', label: 'Agendar mensagem' },
+    { id: 'documents', label: 'Solicitar documento' },
   ];
 
   return (
@@ -226,6 +228,17 @@ const WhatsAppModalsPreview: React.FC = () => {
           previousAgentIds={['dr-pedro']}
           onClose={() => setOpen(null)}
           onDone={() => setOpen(null)}
+        />
+      )}
+
+      {open === 'documents' && (
+        <RequestDocumentModal
+          conversationId="conversa-preview"
+          clientId="cliente-preview"
+          clientName="Pedro"
+          createdBy={null}
+          moduleConfig={WHATSAPP_MODULE_DEFAULTS}
+          onClose={() => setOpen(null)}
         />
       )}
 
