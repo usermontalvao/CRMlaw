@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import { dividirEmLotes } from '../utils/queryBatches';
 import type { UserNotification, CreateUserNotificationDTO } from '../types/user-notification.types';
 
 class UserNotificationService {
@@ -142,19 +143,73 @@ class UserNotificationService {
   }
 
   /**
-   * Marca notificação como lida pelo ID da intimação
+   * Marca notificação como lida pelo ID da intimação.
+   * Devolve os IDs realmente alterados — é o que permite desfazer depois sem
+   * reabrir notificações que já estavam lidas antes desta chamada.
    */
-  async markAsReadByIntimationId(intimationId: string, userId: string): Promise<void> {
-    const { error } = await supabase
+  async markAsReadByIntimationId(intimationId: string, userId: string): Promise<string[]> {
+    const { data, error } = await supabase
       .from(this.tableName)
       .update({ read: true })
       .eq('user_id', userId)
       .eq('intimation_id', intimationId)
-      .eq('read', false);
+      .eq('read', false)
+      .select('id');
 
     if (error) {
       console.error('Erro ao marcar notificação da intimação como lida:', error);
       throw new Error(error.message);
+    }
+
+    return (data ?? []).map((row: { id: string }) => row.id);
+  }
+
+  /**
+   * Versão em lote de markAsReadByIntimationId: uma consulta por lote em vez de
+   * uma por intimação. Devolve os IDs alterados, para o "desfazer".
+   */
+  async markAsReadByIntimationIds(intimationIds: string[], userId: string): Promise<string[]> {
+    if (intimationIds.length === 0) return [];
+
+    const alteradas: string[] = [];
+    for (const lote of dividirEmLotes(intimationIds)) {
+      const { data, error } = await supabase
+        .from(this.tableName)
+        .update({ read: true })
+        .eq('user_id', userId)
+        .in('intimation_id', lote)
+        .eq('read', false)
+        .select('id');
+
+      if (error) {
+        console.error('Erro ao marcar notificações das intimações como lidas:', error);
+        throw new Error(error.message);
+      }
+
+      for (const row of (data ?? []) as { id: string }[]) alteradas.push(row.id);
+    }
+
+    return alteradas;
+  }
+
+  /**
+   * Volta notificações específicas para não lidas. Usada pelo "desfazer" da
+   * leitura de intimações, sempre com os IDs devolvidos por
+   * markAsReadByIntimationId.
+   */
+  async markAsUnreadByIds(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+
+    for (const lote of dividirEmLotes(ids)) {
+      const { error } = await supabase
+        .from(this.tableName)
+        .update({ read: false })
+        .in('id', lote);
+
+      if (error) {
+        console.error('Erro ao desfazer leitura das notificações:', error);
+        throw new Error(error.message);
+      }
     }
   }
 

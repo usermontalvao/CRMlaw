@@ -3619,6 +3619,14 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
    O `grayscale` pega tudo de uma vez, inclusive a foto do contato. Ao passar o
    mouse a cor volta um pouco, indicando que a linha continua viva. */
 .wa-conv-archived {
+  /* `content-visibility` volta a `visible` SÓ nestas linhas. Um `filter` na
+     mesma caixa que pula a renderização é combinação instável: o navegador
+     aloca a superfície do filtro, mas o conteúdo dela ainda não foi pintado
+     quando a linha entra na tela — e o que se vê nesse quadro é a superfície
+     vazia, não a linha. O custo de abrir mão da economia aqui é nenhum: as
+     encerradas só aparecem quando a BUSCA as traz do arquivo, e são poucas ao
+     lado das centenas de conversas vivas, que continuam com a otimização. */
+  content-visibility: visible;
   filter: grayscale(1);
   opacity: 0.72;
   transition: filter 0.18s ease, opacity 0.18s ease;
@@ -3735,10 +3743,19 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   border-top: 9px solid var(--wa-tail, #fff);
   border-left: 9px solid transparent;
 }
+/* Sem `backdrop-filter`, pelo mesmo motivo do divisor de data e do lightbox —
+   e aqui o caso é pior. Este botão existe UMA VEZ POR BALÃO e nasce com
+   `opacity: 0`: numa conversa aberta são duas dezenas de superfícies de
+   composição invisíveis, cada uma obrigando o navegador a reler o fundo da
+   thread (que é gradiente + textura SVG) a cada quadro da rolagem. Invisível
+   não quer dizer barato — e superfície de composição que o compositor ainda
+   não preencheu aparece como um retângulo escuro por um quadro, exatamente do
+   tamanho e no lugar deste botão.
+   O que o desfoque desfocaria é o fundo CHAPADO do próprio balão (#fff ou
+   #d9fdd3), então tirá-lo não muda nada a olho nu. */
 .wa-bubble-menu-trigger {
   background: rgba(255, 255, 255, 0.78);
   box-shadow: 0 1px 4px rgba(11, 20, 26, 0.08);
-  backdrop-filter: blur(3px);
   transition: opacity 0.14s ease, background-color 0.14s ease;
 }
 .wa-bubble-menu-trigger:hover { background: rgba(255, 255, 255, 0.96); }

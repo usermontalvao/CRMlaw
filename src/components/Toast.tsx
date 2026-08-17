@@ -13,6 +13,7 @@ export interface Toast {
   action?: {
     label: string;
     onClick: () => void;
+    icon?: React.ReactNode;
   };
 }
 
@@ -115,15 +116,21 @@ const ToastItem: React.FC<ToastItemProps> = ({ toast, onDismiss }) => {
           {toast.description && (
             <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-slate-500">{toast.description}</p>
           )}
-          {toast.action && (
-            <button
-              onClick={toast.action.onClick}
-              className={`mt-1.5 text-[11px] font-semibold ${toast.type === 'whatsapp' ? 'text-[#1da851] hover:text-[#15803d]' : 'text-[#185abd] hover:text-[#124b9d]'}`}
-            >
-              {toast.action.label}
-            </button>
-          )}
         </div>
+        {/* A ação fica fora da coluna de texto e com corpo de botão: como link
+            de 11px embaixo da mensagem, passava despercebida no tempo que o
+            toast fica na tela. */}
+        {toast.action && (
+          <button
+            onClick={toast.action.onClick}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] font-bold text-white shadow-sm transition ${
+              toast.type === 'whatsapp' ? 'bg-[#1da851] hover:bg-[#15803d]' : 'bg-[#185abd] hover:bg-[#124b9d]'
+            }`}
+          >
+            {toast.action.icon}
+            {toast.action.label}
+          </button>
+        )}
         {toast.type !== 'loading' && (
           <button
             onClick={handleDismiss}

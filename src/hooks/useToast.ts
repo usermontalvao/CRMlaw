@@ -18,7 +18,7 @@ export const useToast = () => {
       options?: {
         description?: string;
         duration?: number;
-        action?: { label: string; onClick: () => void };
+        action?: { label: string; onClick: () => void; icon?: React.ReactNode };
       }
     ) => {
       const id = `toast-${++toastCounter}-${Date.now()}`;

@@ -23,6 +23,7 @@ const channels: WhatsAppChannel[] = [
     visibility_mode: 'restricted',
     funnel_enabled: true,
     funnel_initial_stage: 'novo',
+    auto_close_enabled: false, auto_close_minutes: 1440, auto_close_message: null, auto_close_business_hours_only: true,
   },
   {
     id: 'channel-pedro',
@@ -42,6 +43,7 @@ const channels: WhatsAppChannel[] = [
     visibility_mode: 'all',
     funnel_enabled: true,
     funnel_initial_stage: 'novo',
+    auto_close_enabled: false, auto_close_minutes: 1440, auto_close_message: null, auto_close_business_hours_only: true,
   },
 ];
 

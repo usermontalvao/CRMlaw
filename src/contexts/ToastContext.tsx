@@ -7,7 +7,7 @@ interface ToastContextType {
   toast: (
     type: ToastType,
     message: string,
-    options?: { description?: string; duration?: number; action?: { label: string; onClick: () => void } },
+    options?: { description?: string; duration?: number; action?: { label: string; onClick: () => void; icon?: React.ReactNode } },
   ) => string;
   success: (message: string, description?: string) => string;
   error: (message: string, description?: string) => string;

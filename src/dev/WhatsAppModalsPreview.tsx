@@ -57,6 +57,7 @@ const conversa = (patch: Partial<WhatsAppConversation> & Pick<WhatsAppConversati
   legal_hold: false,
   legal_hold_reason: null,
   absence_suppressed: false,
+  auto_close_suppressed: false,
   created_at: '2026-08-04T12:00:00.000Z',
   updated_at: '2026-08-04T13:40:00.000Z',
   ...patch,

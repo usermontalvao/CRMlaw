@@ -20,7 +20,7 @@ export type {
   ClientSchedule, ClientDocRequest, ClientPendings, ClientOverview, ClientQuickSummary,
   WhatsAppInternalNote, ClientTrackedSignatureStatus,
 } from './whatsapp/shared';
-export type { WhatsAppAiSession, WhatsAppAiPlaybook, WhatsAppAiChannelConfig, AiPlaybookQuestion } from '../types/whatsapp.types';
+export type { WhatsAppAiSession, WhatsAppAiPlaybook, WhatsAppAiChannelConfig, AiPlaybookQuestion, WhatsAppContactBookEntry } from '../types/whatsapp.types';
 export type {
   WhatsAppAiAssistant, WhatsAppAiAssistantInput, WhatsAppAiAssistantMode, WhatsAppAiActionRef,
   WhatsAppAiExecution, WhatsAppAiFollowup, WhatsAppAiConversationState, WhatsAppAiTargetOption,

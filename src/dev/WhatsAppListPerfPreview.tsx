@@ -29,6 +29,10 @@ const CANAL: WhatsAppChannel = {
   webhook_token: null, is_active: true, connected_at: null, absence_message: null,
   absence_enabled: false, timezone: 'America/Cuiaba', visibility_mode: 'all',
   funnel_enabled: true, funnel_initial_stage: 'novo',
+  // Encerramento por inatividade LIGADO: com as conversas semeadas de minuto em
+  // minuto para trás, a bancada mostra o contador nas três faixas — cinza,
+  // âmbar na última hora e vencido depois das 4h.
+  auto_close_enabled: true, auto_close_minutes: 240, auto_close_message: null, auto_close_business_hours_only: true,
 };
 
 const seed = (n: number): WhatsAppConversation[] => Array.from({ length: n }, (_, i) => ({
@@ -49,7 +53,7 @@ const seed = (n: number): WhatsAppConversation[] => Array.from({ length: n }, (_
   closed_at: null, closed_by: null, closure_reason: null, reopened_at: null,
   first_response_at: null, last_customer_message_at: null, last_agent_message_at: null,
   awaiting_accept: false, transfer_pending_since: null, contact_reason: null,
-  labels: ['Novo'], legal_hold: false, legal_hold_reason: null, absence_suppressed: false,
+  labels: ['Novo'], legal_hold: false, legal_hold_reason: null, absence_suppressed: false, auto_close_suppressed: false,
   created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
 }));
 

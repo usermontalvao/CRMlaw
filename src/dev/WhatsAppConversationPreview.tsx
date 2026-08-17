@@ -347,7 +347,7 @@ const PREVIEW_CONVERSATION: WhatsAppConversation = {
   first_response_at: null, last_customer_message_at: '2026-08-04T15:15:00.000Z', last_agent_message_at: null,
   awaiting_accept: false, transfer_pending_since: null, contact_reason: null,
   labels: ['Atendimento'],
-  legal_hold: false, legal_hold_reason: null, absence_suppressed: false,
+  legal_hold: false, legal_hold_reason: null, absence_suppressed: false, auto_close_suppressed: false,
   created_at: '2026-08-04T12:00:00.000Z', updated_at: '2026-08-04T15:15:00.000Z',
 };
 

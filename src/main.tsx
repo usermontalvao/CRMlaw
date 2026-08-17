@@ -289,6 +289,15 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: bancada das chamadas de voz do WhatsApp (?wacallspreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('wacallspreview')) {
+    const { default: WaCallsPreview } = await import('./dev/WaCallsPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WaCallsPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: vitrine dos modais do atendimento WhatsApp (?wamodalspreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('wamodalspreview')) {
     const { default: WhatsAppModalsPreview } = await import('./dev/WhatsAppModalsPreview');

@@ -73,6 +73,19 @@ export interface WhatsAppConversation {
   // Pausa a auto-mensagem de ausência (fora do horário) só nesta conversa; o
   // encerramento limpa o flag (volta ao normal no próximo contato).
   absence_suppressed: boolean;
+  /**
+   * Quando as duas mensagens automáticas saíram nesta conversa. O painel usa
+   * essas marcas para NÃO contar um recado de secretária eletrônica como
+   * resposta nossa no contador de encerramento (a mesma regra do banco).
+   */
+  absence_sent_at?: string | null;
+  reopen_prompt_sent_at?: string | null;
+  /**
+   * Tira SÓ esta conversa do encerramento automático por inatividade do canal.
+   * Como `absence_suppressed`, vale até o atendimento encerrar — a pausa não
+   * sobrevive ao caso que a justificou.
+   */
+  auto_close_suppressed: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -165,6 +178,27 @@ export interface WhatsAppClientLite {
   is_pre_cadastro?: boolean | null;
 }
 
+/**
+ * Uma linha da agenda da "Nova conversa" — um NÚMERO de um cliente, não uma
+ * pessoa (quem tem celular e fixo aparece duas vezes, como no WhatsApp).
+ *
+ * O gêmeo estrutural disto é `ContactEntry`, em `components/whatsapp/contactBook.ts`.
+ * São dois porque aquele módulo é puro por regra (sem import nenhum, para poder
+ * ser testado); a tipagem estrutural do TypeScript faz os dois se encaixarem
+ * sem conversão.
+ */
+export interface WhatsAppContactBookEntry {
+  clientId: string;
+  name: string;
+  /** Só dígitos. */
+  phone: string;
+  phoneKind: 'mobile' | 'phone';
+  doc: string | null;
+  /** Foto de perfil que o WhatsApp mandou para este número, já assinada. */
+  avatarUrl: string | null;
+  isPreCadastro: boolean;
+}
+
 /** Canal = uma conexão/número na Evolution (whatsapp_instances). */
 export type WhatsAppChannelVisibility = 'all' | 'restricted';
 
@@ -183,6 +217,18 @@ export interface WhatsAppChannel {
   absence_message: string | null;    // Fase N
   absence_enabled: boolean;          // Fase N
   timezone: string;                  // Fase N — IANA timezone para regra de horário comercial
+  /**
+   * Encerramento automático por inatividade. Desligado por padrão: canal
+   * servido por IA tem a própria escada de acompanhamento e não quer que o
+   * silêncio entre um lembrete e outro seja lido como atendimento abandonado.
+   */
+  auto_close_enabled: boolean;
+  /** Minutos de silêncio tolerados (qualquer lado da conversa reinicia a contagem). */
+  auto_close_minutes: number;
+  /** Despedida enviada antes de encerrar. Vazio = encerra sem avisar o cliente. */
+  auto_close_message: string | null;
+  /** Só encerra dentro do expediente — evita a despedida chegando de madrugada. */
+  auto_close_business_hours_only: boolean;
   /** Fonte única de visibilidade usada pela inbox, nova conversa e funil de Leads. */
   visibility_mode: WhatsAppChannelVisibility;
   /** Recebe automaticamente mensagens de entrada quando a conversa ainda não tem responsável. */

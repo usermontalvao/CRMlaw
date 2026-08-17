@@ -55,6 +55,7 @@ export interface WaConversationActionsApi {
   unmuteSelected: () => Promise<void>;
   handleClearConversation: () => Promise<void>;
   handleToggleAbsenceSuppressed: () => Promise<void>;
+  handleToggleAutoCloseSuppressed: () => Promise<void>;
   /**
    * Alterna a guarda jurídica. Remover não pede motivo (aplica direto); ativar
    * abre o modal de motivo (`legalHoldModalOpen`) — sem `prompt()` nativo.
@@ -233,6 +234,27 @@ export function useWaConversationActions({
     }
   }, [selected, toast, setConversations]);
 
+  // Tira/devolve ESTA conversa ao encerramento automático por inatividade do
+  // canal. Serve ao caso que a regra do canal não prevê: um cliente que ficou de
+  // trazer documento na semana que vem, uma perícia marcada para daqui a um mês.
+  // A pausa dura até o atendimento encerrar — o `closeConversation` limpa o flag,
+  // então ela não sobrevive ao caso que a justificou.
+  const handleToggleAutoCloseSuppressed = useCallback(async () => {
+    if (!selected) return;
+    const next = !selected.auto_close_suppressed;
+    try {
+      await whatsappService.setAutoCloseSuppressed(selected.id, next);
+      setConversations(prev => prev.map(c =>
+        c.id === selected.id ? { ...c, auto_close_suppressed: next } : c
+      ));
+      toast.success(next
+        ? 'Esta conversa não será encerrada por inatividade.'
+        : 'Encerramento por inatividade reativado nesta conversa.');
+    } catch (e: any) {
+      toast.error('Falha ao atualizar encerramento automático', e.message);
+    }
+  }, [selected, toast, setConversations]);
+
   // Estado do modal de motivo (só ao ATIVAR a guarda). Vive no hook para manter a
   // governança da conversa coesa — antes o motivo vinha de um prompt() nativo.
   const [legalHoldModalOpen, setLegalHoldModalOpen] = useState(false);
@@ -268,7 +290,7 @@ export function useWaConversationActions({
   return {
     handleReopen, handleUnblock, handleAccept, handleAssume, handleRelease,
     muteSelected, unmuteSelected, handleClearConversation,
-    handleToggleAbsenceSuppressed, handleToggleLegalHold,
+    handleToggleAbsenceSuppressed, handleToggleAutoCloseSuppressed, handleToggleLegalHold,
     legalHoldModalOpen, confirmLegalHold, closeLegalHoldModal,
   };
 }

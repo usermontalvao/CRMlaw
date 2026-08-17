@@ -19,6 +19,7 @@ import {
   waAiFirstName,
 } from '../_shared/wa-ai-followup.ts';
 import { ensureWaAiFollowupScheduled } from '../_shared/wa-ai-followup-store.ts';
+import { isWithinBusinessHours, localTimeInTz } from '../_shared/wa-business-hours.ts';
 
 const TOKEN = Deno.env.get('WA_SCHEDULER_TOKEN') || 'wa-scheduler-2026';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -172,10 +173,116 @@ Deno.serve(async (req: Request) => {
     return { enviados: 0, cancelados: 0, adiados: 0, falhas: 0 };
   });
 
-  return new Response(JSON.stringify({ ok: true, processed: (due || []).length, sent, failed, skipped, ia }), {
+  const inatividade = await encerrarPorInatividade(admin).catch((e) => {
+    console.error('encerramento por inatividade falhou', e);
+    return { encerrados: 0, avisados: 0, adiados: 0, perdidos: 0 };
+  });
+
+  return new Response(JSON.stringify({ ok: true, processed: (due || []).length, sent, failed, skipped, ia, inatividade }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });
+
+// ── Encerramento automático por inatividade ─────────────────────────────────
+
+/**
+ * Encerra as conversas que passaram do prazo de silêncio do próprio canal.
+ *
+ * Mora neste cron pelo mesmo motivo dos follow-ups da IA: o job de minuto em
+ * minuto já existe, e criar outro chamando Edge Function com JWT é a armadilha
+ * que deixou o weekly-digest seis semanas quebrado em silêncio.
+ *
+ * Quem escolhe É O BANCO (`wa_auto_close_due`): a comparação é entre o silêncio
+ * de cada conversa e o prazo do canal dela, duas tabelas diferentes, e o relógio
+ * tem de ser um só. Aqui só sobram duas decisões: o expediente (que depende do
+ * fuso de cada canal) e o envio da despedida.
+ *
+ * O relógio conta desde que o CLIENTE passou a dever resposta, e o aviso de
+ * ausência não é resposta (ver `wa_auto_close_owed_since`). Sem isso, mensagem
+ * que chega às 22h vira conversa encerrada 24h depois sem ninguém ter atendido:
+ * o robô responde, o relógio zera na resposta do robô, e o encerramento apaga
+ * do painel justamente o caso que o escritório deixou passar.
+ *
+ * A ORDEM é encerrar-e-depois-avisar, ao contrário do encerramento manual. O
+ * `wa_auto_close_claim` fecha e reserva no mesmo UPDATE, então duas varreduras
+ * cruzadas nunca mandam duas despedidas para o mesmo cliente. O preço é que uma
+ * falha de envio deixa a conversa encerrada sem aviso — some do painel, mas o
+ * cliente não recebeu nada, e é isso que o log registra.
+ */
+async function encerrarPorInatividade(admin: any) {
+  let encerrados = 0, avisados = 0, adiados = 0, perdidos = 0;
+
+  const { data: vencidas, error } = await admin.rpc('wa_auto_close_due', { p_limit: 40 });
+  if (error) {
+    console.error('wa_auto_close_due falhou', error);
+    return { encerrados, avisados, adiados, perdidos };
+  }
+
+  // Uma consulta de agenda por CANAL, não por conversa: um canal com trinta
+  // conversas paradas é o caso comum, e trinta consultas idênticas seriam um
+  // N+1 nascido pronto.
+  const agendaPorCanal = new Map<string, any[]>();
+  const carregarAgenda = async (canalId: string) => {
+    if (agendaPorCanal.has(canalId)) return agendaPorCanal.get(canalId)!;
+    const { data } = await admin.from('whatsapp_business_hours')
+      .select('day_of_week, start_time, end_time, is_active')
+      .eq('instance_id', canalId);
+    const rows = (data || []) as any[];
+    agendaPorCanal.set(canalId, rows);
+    return rows;
+  };
+
+  for (const linha of (vencidas || []) as any[]) {
+    const convId = String(linha.conversation_id);
+
+    if (linha.business_hours_only) {
+      const agenda = await carregarAgenda(String(linha.channel_id));
+      const agora = localTimeInTz(String(linha.channel_timezone || 'America/Cuiaba'));
+      // Fora do expediente a conversa só espera: continua vencida e volta a
+      // aparecer na primeira varredura depois da abertura. Nada é gravado, para
+      // que uma conversa que receba mensagem durante a noite simplesmente saia
+      // da lista sozinha.
+      if (!isWithinBusinessHours(agenda, agora)) { adiados++; continue; }
+    }
+
+    // O silêncio REAL (desde que a bola passou para o cliente), não o prazo do
+    // canal: os dois divergem sempre que a varredura fica adiada esperando o
+    // expediente abrir, e o motivo que fica registrado é lido por gente.
+    const horas = Math.round((Number(linha.silent_minutes ?? linha.idle_minutes) / 60) * 10) / 10;
+    const motivo = `Encerrado automaticamente: ${horas}h sem retorno do cliente.`;
+
+    const { data: fechou, error: claimErr } = await admin.rpc('wa_auto_close_claim', {
+      p_conversation_id: convId,
+      p_idle_minutes: Number(linha.idle_minutes),
+      p_reason: motivo,
+    });
+    if (claimErr) { console.error('wa_auto_close_claim falhou', convId, claimErr); perdidos++; continue; }
+    // NULL = o cliente escreveu no meio do caminho, ou outra varredura chegou antes.
+    if (!fechou) { adiados++; continue; }
+    encerrados++;
+
+    const despedida = String(linha.farewell || '').trim();
+    if (!despedida) continue;
+
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/evolution-send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_ROLE}` },
+        body: JSON.stringify({ conversation_id: convId, text: despedida }),
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok || j?.error) throw new Error(j?.error || `HTTP ${resp.status}`);
+      avisados++;
+    } catch (e) {
+      // A conversa já está encerrada — refazer o envio depois mandaria uma
+      // despedida solta numa conversa que ninguém está mais acompanhando.
+      console.error('despedida de inatividade não saiu', convId, String((e as Error).message || e));
+      perdidos++;
+    }
+  }
+
+  return { encerrados, avisados, adiados, perdidos };
+}
 
 // ── Acompanhamentos do assistente de IA ─────────────────────────────────────
 

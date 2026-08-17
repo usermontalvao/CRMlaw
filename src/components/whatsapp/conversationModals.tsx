@@ -352,21 +352,28 @@ export const CloseConversationModal: React.FC<{
   agent?: StaffOption | null;
   moduleConfig: WhatsAppModuleConfig;
   onClose: () => void;
-  onDone: () => void;
+  /** Recebe o encerramento já em curso — a tela fecha antes de ele terminar. */
+  onDone: (task: Promise<void>) => void;
 }> = ({ conversation, moduleConfig, onClose, onDone }) => {
   const toast = useToastContext();
   const [reason, setReason] = useState('');
   const [farewell, setFarewell] = useState(moduleConfig.close_farewell_default);
-  const [saving, setSaving] = useState(false);
 
-  const submit = async () => {
-    setSaving(true);
-    try {
-      await whatsappService.closeConversation(conversation.id, reason, { farewell: farewell.trim() || undefined });
-      onDone();
-    } catch (e: any) {
-      toast.error('Falha ao encerrar', e.message);
-    } finally { setSaving(false); }
+  /**
+   * Encerrar não faz mais o atendente esperar: o trabalho (gravar o status e
+   * mandar a despedida pelo WhatsApp) sai daqui em 2º plano e o modal fecha na
+   * hora. Quem clicou já sabe o que pediu; segurar a tela até o WhatsApp
+   * responder só transformava o clique num travamento de alguns segundos.
+   * Se algo falhar, o toast avisa — o modal já não está mais na frente.
+   */
+  const submit = () => {
+    const task = whatsappService
+      .closeConversation(conversation.id, reason, { farewell: farewell.trim() || undefined })
+      .catch((e: any) => {
+        toast.error('Falha ao encerrar', e?.message);
+        throw e;
+      });
+    onDone(task);
   };
 
   return (
@@ -380,8 +387,8 @@ export const CloseConversationModal: React.FC<{
       footer={
         <WaDialogActions>
           <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
-          <button onClick={submit} disabled={saving} className={waBtnPrimary}>
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Encerrar
+          <button onClick={submit} className={waBtnPrimary}>
+            <CheckCircle2 size={14} /> Encerrar
           </button>
         </WaDialogActions>
       }

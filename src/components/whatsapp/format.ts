@@ -365,3 +365,23 @@ export function msgTitle(m: WhatsAppMessage): string {
 export function msgDescription(m: WhatsAppMessage): string {
   return `Originado da conversa WhatsApp em ${new Date(m.wa_timestamp).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}.\n${m.content || ''}`.trim();
 }
+
+/**
+ * Prazo de inatividade do canal em texto de gente ("2 dias", "12 horas").
+ *
+ * Os minutos são o que o banco guarda, mas ninguém lê "2880 minutos" — e o
+ * painel lateral precisa dizer, numa linha, quando aquela conversa vai encerrar
+ * sozinha. Cai para a unidade cheia mais alta que couber sem sobra.
+ */
+export function autoCloseLabel(minutes: number): string {
+  const m = Math.max(1, Math.round(Number(minutes) || 0));
+  if (m % 1440 === 0) {
+    const dias = m / 1440;
+    return dias === 1 ? '1 dia' : `${dias} dias`;
+  }
+  if (m % 60 === 0) {
+    const horas = m / 60;
+    return horas === 1 ? '1 hora' : `${horas} horas`;
+  }
+  return m === 1 ? '1 minuto' : `${m} minutos`;
+}

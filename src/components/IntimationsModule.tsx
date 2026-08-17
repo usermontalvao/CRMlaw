@@ -33,6 +33,7 @@ import {
   Banknote,
   ShieldAlert,
   Gavel,
+  RotateCcw,
 } from 'lucide-react';
 import { djenService } from '../services/djen.service';
 import { djenLocalService } from '../services/djenLocal.service';
@@ -919,28 +920,91 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   // Sincronização automática movida para cron no Supabase
 
 
-  const handleMarkAsRead = async (id: string) => {
+  // Desfaz a leitura: volta as intimações para não lidas e reabre no sino
+  // apenas as notificações que a própria marcação tinha fechado.
+  const undoMarkAsRead = async (ids: string[], notificationIds: string[]) => {
     try {
-      await djenLocalService.marcarComoLida(id);
+      if (ids.length === 1) {
+        await djenLocalService.desmarcarComoLida(ids[0]);
+      } else {
+        await djenLocalService.desmarcarComoLidas(ids);
+      }
 
-      // Atualizar estado local sem recarregar tudo
+      const alvo = new Set(ids);
       setIntimations(prev => prev.map(int =>
-        int.id === id ? { ...int, lida: true, lida_em: new Date().toISOString() } : int
+        alvo.has(int.id) ? { ...int, lida: false, lida_em: null } : int
       ));
 
-      // 🔔 Marcar notificação correspondente como lida
-      if (user?.id) {
+      if (notificationIds.length > 0) {
         try {
-          await userNotificationService.markAsReadByIntimationId(id, user.id);
+          await userNotificationService.markAsUnreadByIds(notificationIds);
         } catch {}
       }
 
       events.emit(SYSTEM_EVENTS.DASHBOARD_REFRESH);
-      toast.success('Marcado como lida');
+      toast.success(
+        'Marcação desfeita',
+        ids.length === 1
+          ? 'A intimação voltou para não lida'
+          : `${ids.length} intimações voltaram para não lidas`,
+      );
+    } catch (err: any) {
+      toast.error('Erro ao desfazer', err.message);
+    }
+  };
+
+  // Caminho único de "marcar como lida": um toast só, com a opção de desfazer.
+  const markAsRead = async (ids: string[]) => {
+    if (ids.length === 0) return;
+
+    try {
+      if (ids.length === 1) {
+        await djenLocalService.marcarComoLida(ids[0]);
+      } else {
+        // Passa os IDs explicitamente para evitar UPDATE cego na tabela (sem escopo de office)
+        await djenLocalService.marcarTodasComoLidas(ids);
+      }
+
+      // Atualizar estado local sem recarregar tudo
+      const lidaEm = new Date().toISOString();
+      const alvo = new Set(ids);
+      setIntimations(prev => prev.map(int =>
+        alvo.has(int.id) ? { ...int, lida: true, lida_em: lidaEm } : int
+      ));
+
+      // 🔔 Marcar notificações correspondentes como lidas
+      let notificationIds: string[] = [];
+      if (user?.id) {
+        try {
+          notificationIds = await userNotificationService.markAsReadByIntimationIds(ids, user.id);
+        } catch {}
+      }
+
+      events.emit(SYSTEM_EVENTS.DASHBOARD_REFRESH);
+
+      const toastId = toast.toast(
+        'success',
+        ids.length === 1 ? 'Marcado como lida' : `${ids.length} intimações marcadas como lidas`,
+        {
+          // Janela maior que o padrão: o "desfazer" só serve se ainda estiver
+          // na tela quando o usuário percebe que marcou errado.
+          duration: 15000,
+          action: {
+            label: 'Desfazer',
+            icon: <RotateCcw className="h-3.5 w-3.5" />,
+            onClick: () => {
+              toast.dismiss(toastId);
+              void undoMarkAsRead(ids, notificationIds);
+            },
+          },
+        },
+      );
     } catch (err: any) {
       toast.error('Erro ao marcar', err.message);
     }
   };
+
+  const handleMarkAsRead = (id: string) => markAsRead([id]);
 
   const handleClearAllIntimations = async () => {
     if (clearingAll) return;
@@ -968,20 +1032,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // Marcar todas como lidas
   const handleMarkAllAsRead = async () => {
-    try {
-      const unreadIds = intimations.filter(int => !int.lida).map(int => int.id);
-      if (unreadIds.length === 0) {
-        toast.info('Info', 'Nenhuma intimação não lida encontrada');
-        return;
-      }
-      // Passa os IDs explicitamente para evitar UPDATE cego na tabela (sem escopo de office)
-      const count = await djenLocalService.marcarTodasComoLidas(unreadIds);
-      await reloadIntimations();
-      events.emit(SYSTEM_EVENTS.DASHBOARD_REFRESH);
-      toast.success('Sucesso', `${count} intimações marcadas como lidas`);
-    } catch (err: any) {
-      toast.error('Erro', err.message);
+    const unreadIds = intimations.filter(int => !int.lida).map(int => int.id);
+    if (unreadIds.length === 0) {
+      toast.info('Info', 'Nenhuma intimação não lida encontrada');
+      return;
     }
+    await markAsRead(unreadIds);
   };
 
   // Vincular em lote
@@ -1011,11 +1067,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const handleMarkSelectedAsRead = async () => {
     if (selectedIds.size === 0) return;
 
-    const ids = Array.from(selectedIds);
-    for (const id of ids) {
-      await handleMarkAsRead(id);
-    }
-
+    await markAsRead(Array.from(selectedIds));
     disableSelectionMode();
   };
 
@@ -2083,10 +2135,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     )}
                     {group.filter((i) => !i.lida).length > 0 && (
                       <button
-                        onClick={async () => {
-                          for (const int of group.filter((i) => !i.lida)) {
-                            await handleMarkAsRead(int.id);
-                          }
+                        onClick={() => {
+                          void markAsRead(group.filter((i) => !i.lida).map((i) => i.id));
                         }}
                         className="inline-flex items-center gap-1 px-2.5 py-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-[2px] text-[11px] font-semibold transition"
                       >
@@ -2976,10 +3026,17 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             }
             footer={
               <div className="flex flex-wrap gap-2">
-                {!detalhe.lida && (
+                {!detalhe.lida ? (
                   <button onClick={() => { handleMarkAsRead(detalhe.id); fechar(); }}
                     className="inline-flex items-center gap-1.5 bg-[#031636] hover:bg-[#0a2b5c] text-white font-medium px-3.5 py-2 rounded-[2px] transition text-xs">
                     <CheckCircle className="w-3.5 h-3.5" /> Marcar lida
+                  </button>
+                ) : (
+                  // O "Desfazer" do toast some em 15s; aqui a volta continua
+                  // disponível depois, para quem só percebe o engano ao abrir.
+                  <button onClick={() => { void undoMarkAsRead([detalhe.id], []); fechar(); }}
+                    className="inline-flex items-center gap-1.5 bg-white hover:bg-[#f8f7f5] text-slate-700 font-medium px-3.5 py-2 rounded-[2px] transition text-xs border border-[#e7e5df]">
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-400" /> Marcar não lida
                   </button>
                 )}
                 <button onClick={seguirPara(handleCreateDeadline)}

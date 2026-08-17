@@ -11,6 +11,7 @@ const channelSeed: WhatsAppChannel[] = [
     webhook_token: null, is_active: true, connected_at: new Date().toISOString(), absence_message: null,
     absence_enabled: false, timezone: 'America/Cuiaba', visibility_mode: 'restricted',
     funnel_enabled: true, funnel_initial_stage: 'novo_contato',
+    auto_close_enabled: false, auto_close_minutes: 1440, auto_close_message: null, auto_close_business_hours_only: true,
   },
   {
     id: 'channel-pedro', instance_name: 'pedro', name: 'Pedro', color: '#2563eb',
@@ -18,6 +19,7 @@ const channelSeed: WhatsAppChannel[] = [
     webhook_token: null, is_active: true, connected_at: new Date().toISOString(), absence_message: null,
     absence_enabled: false, timezone: 'America/Cuiaba', visibility_mode: 'all',
     funnel_enabled: true, funnel_initial_stage: 'entrada',
+    auto_close_enabled: false, auto_close_minutes: 1440, auto_close_message: null, auto_close_business_hours_only: true,
   },
 ];
 

@@ -1,6 +1,6 @@
 // Camada 360 do cliente: busca/match, agenda, pendências e overview consolidado.
 import { supabase } from '../../config/supabase';
-import { normalizePhone, samePhone, openResilientChannel } from './shared';
+import { normalizePhone, samePhone, openResilientChannel, attachAvatarUrls } from './shared';
 import { chaveDeConsulta, criarCompartilhadorDeConsultas } from '../realtime/inFlight';
 import { clientChangeHistoryService } from '../clientChangeHistory.service';
 import { deadlineService } from '../deadline.service';
@@ -14,7 +14,7 @@ import type { Requirement } from '../../types/requirement.types';
 import type { Process } from '../../types/process.types';
 import type { SignatureRequestWithSigners } from '../../types/signature.types';
 import type { Agreement } from '../../types/financial.types';
-import type { WhatsAppClientLite } from '../../types/whatsapp.types';
+import type { WhatsAppClientLite, WhatsAppContactBookEntry } from '../../types/whatsapp.types';
 import type { ClientSchedule, ScheduleDeadline, ClientPendings, ClientDocRequest, ClientOverview, ClientTemplateFillLink, ClientTrackedSignatureStatus } from './shared';
 
 /**
@@ -55,6 +55,48 @@ export const client360Api = {
     const { data, error } = await supabase.rpc('whatsapp_search_clients', { p_query: q });
     if (error) throw new Error(error.message);
     return (data || []) as WhatsAppClientLite[];
+  },
+
+  /**
+   * A agenda inteira da "Nova conversa": uma linha por NÚMERO, em ordem
+   * alfabética, com a foto já assinada.
+   *
+   * Vem de uma vez, e não paginada, porque o painel imita a agenda do WhatsApp
+   * — lista aberta desde o primeiro instante, busca peneirando o que já está na
+   * mão. São poucas centenas de linhas; o dia em que forem milhares, o lugar de
+   * paginar é aqui, não no componente.
+   *
+   * A foto é a que o WHATSAPP mandou, não a do cadastro. Ela vem do mesmo
+   * bucket e passa pelo mesmo cache de URL assinada da caixa de entrada — ou
+   * seja, quem já abriu a inbox vê a agenda com rosto sem uma ida a mais ao
+   * storage. O retrato do cadastro (`photo_path`) fica de fora de propósito:
+   * mora em outro caminho, com outro cache e uma cadeia de fallback própria
+   * (`useClientPhotos`), e são pouquíssimos cadastros com retrato — não paga
+   * arrastar tudo isso para dentro deste painel.
+   */
+  async listContactBook(): Promise<WhatsAppContactBookEntry[]> {
+    const { data, error } = await supabase.rpc('whatsapp_contact_book');
+    if (error) throw new Error(error.message);
+    const rows = (data || []) as {
+      client_id: string; full_name: string; cpf_cnpj: string | null;
+      phone: string; phone_kind: 'mobile' | 'phone';
+      wa_avatar_path: string | null; is_pre_cadastro: boolean | null;
+    }[];
+
+    // `attachAvatarUrls` assina em lote e é o dono do cache; emprestamos a ele
+    // o formato que ele conhece em vez de abrir um segundo caminho de assinatura.
+    const paraAssinar = rows.map(r => ({ contact_avatar_path: r.wa_avatar_path, contact_avatar_url: null as string | null }));
+    await attachAvatarUrls(paraAssinar);
+
+    return rows.map((r, i) => ({
+      clientId: r.client_id,
+      name: r.full_name,
+      phone: r.phone,
+      phoneKind: r.phone_kind,
+      doc: r.cpf_cnpj,
+      avatarUrl: paraAssinar[i].contact_avatar_url,
+      isPreCadastro: r.is_pre_cadastro === true,
+    }));
   },
 
   /** Candidatos cujo telefone casa com o do contato (normalizado no banco). */

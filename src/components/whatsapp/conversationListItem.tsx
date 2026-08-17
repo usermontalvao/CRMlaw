@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Clock, Pencil, Ban, BellOff, AlertTriangle, Users,
+  Clock, Pencil, Ban, BellOff, AlertTriangle, Users, Timer,
 } from 'lucide-react';
 import type {
   WhatsAppConversation, WhatsAppChannel, WhatsAppDepartment, WhatsAppPresence,
@@ -10,6 +10,7 @@ import {
   formatTime, prettyPhone, conversationName, presenceInfo, maskName, maskPhoneFull,
   slaSignal,
 } from './format';
+import { autoCloseClock, autoCloseIdleLabel } from './autoCloseClock';
 import type { ElapsedMinutes } from './businessTime';
 import { waPlainText } from './waRichText';
 import { inferFunnelStage } from './funnel';
@@ -125,6 +126,34 @@ export const ConversationListItem: React.FC<{
   // relógio vermelho do canto, que contava uma demora que não está havendo.
   const sla = aiChip ? null : slaSignal(c, elapsedMinutes);
   const stage = inferFunnelStage(c.labels, funnelLabels);
+  /**
+   * Aviso de encerramento iminente.
+   *
+   * Mede com `Date.now()` na renderização, como os demais relógios da linha: a
+   * lista é `React.memo` e receber o instante por prop faria toda linha
+   * re-renderizar a cada minuto só para nada mudar em 99% delas. A conversa que
+   * está mesmo perto de encerrar tem sempre algo mexendo por perto (mensagem,
+   * seleção, contagem de não lidas) — e o painel da conversa aberta tem o
+   * contador que anda sozinho.
+   *
+   * Com a IA conduzindo, some junto com os outros sinais humanos.
+   */
+  const autoClose = React.useMemo(() => {
+    if (aiChip) return null;
+    // O expediente do canal não é conhecido aqui; a linha assume aberto e o
+    // pior caso é anunciar "encerrando" um pouco antes da varredura de fato
+    // encerrar. O cabeçalho da conversa, que sabe o expediente, corrige.
+    const info = autoCloseClock(c, ch, Date.now());
+    if (info.key !== 'counting' && info.key !== 'due' && info.key !== 'waiting_hours') return null;
+    // TODA conversa que está contando mostra o contador, e não só a que está
+    // prestes a encerrar: acompanhar é ver o prazo andar. O que separa uma da
+    // outra é a cor — cinza enquanto sobra tempo, âmbar na última hora.
+    return {
+      label: info.label,
+      urgent: info.urgent,
+      title: `Sem nenhuma mensagem há ${autoCloseIdleLabel(info.idleMinutes)}.`,
+    };
+  }, [c, ch, aiChip]);
   const urgentBorder = sla?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
     : sla?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
     : '';
@@ -197,6 +226,22 @@ export const ConversationListItem: React.FC<{
             >
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: stage.color }} />
               {stage.stageLabel}
+            </span>
+          )}
+          {/* Quanto falta para esta conversa encerrar sozinha. Fica na lista
+              porque acompanhar o prazo é olhar a fila inteira, não uma conversa
+              de cada vez — e sem ele o encerramento automático só se descobre
+              depois de acontecer. Âmbar na última hora, quando ainda dá tempo
+              de responder ou de tirar a conversa da regra. */}
+          {autoClose && (
+            <span
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${
+                autoClose.urgent ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'
+              }`}
+              title={autoClose.title}
+            >
+              <Timer size={9} />
+              {autoClose.label}
             </span>
           )}
         </div>

@@ -459,6 +459,28 @@ export const adminApi = {
     if (error) throw new Error(error.message);
   },
 
+  /**
+   * Encerramento automático por inatividade do canal.
+   *
+   * O mínimo de 5 minutos e o teto de 30 dias são os mesmos do CHECK da tabela:
+   * cortar aqui devolve um formulário travado em vez de um 400 sem explicação.
+   */
+  async updateAutoCloseConfig(instanceId: string, config: {
+    enabled: boolean;
+    minutes: number;
+    message: string;
+    businessHoursOnly: boolean;
+  }): Promise<void> {
+    const minutes = Math.min(43200, Math.max(5, Math.round(Number(config.minutes) || 0) || 1440));
+    const { error } = await supabase.from(CHANNEL_TABLE).update({
+      auto_close_enabled: config.enabled,
+      auto_close_minutes: minutes,
+      auto_close_message: config.message.trim() || null,
+      auto_close_business_hours_only: config.businessHoursOnly,
+    }).eq('id', instanceId);
+    if (error) throw new Error(error.message);
+  },
+
   // ── IA de atendimento (Fase J) ────────────────────────────────
 
   async getAiChannelConfig(channelId: string): Promise<WhatsAppAiChannelConfig | null> {

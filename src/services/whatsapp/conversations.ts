@@ -6,7 +6,7 @@ import { processService } from '../process.service';
 import type { WhatsAppConversation, WhatsAppClientLite, TimelineEvent } from '../../types/whatsapp.types';
 import {
   CONV_TABLE, MSG_TABLE, TRANSFER_TABLE, NOTES_TABLE,
-  attachAvatarUrls, attachClientNames, invokeFn, normalizePhone, phoneVariants,
+  attachAvatarUrls, attachClientNames, invokeFn, normalizePhone, phoneVariants, resolveAvatarUrl,
   type WhatsAppInternalNote,
 } from './shared';
 import { messagesApi } from './messages';
@@ -326,29 +326,40 @@ export const conversationsApi = {
 
   // ── Ciclo de vida ────────────────────────────────────────────
   /**
-   * Encerra a conversa: envia a mensagem automática de encerramento ao cliente
-   * (best-effort), marca status/closed_* e registra quem encerrou e quando.
+   * Encerra a conversa: marca status/closed_*, registra quem encerrou e quando,
+   * e só então manda a despedida ao cliente (best-effort).
+   *
+   * O encerramento vem PRIMEIRO de propósito. A despedida é uma ida à Evolution
+   * e pode demorar segundos; com ela na frente, o encerramento inteiro ficava
+   * pendurado no WhatsApp — a tela esperava para saber que a conversa fechou.
+   * Gravando o status antes, fechar é imediato e o envio corre atrás.
+   *
+   * Por isso a despedida sai como `automated`: enviar numa conversa encerrada
+   * reabre o atendimento (é assim que "responder é atender" funciona), e aqui
+   * ela reabriria justamente o que acabou de fechar.
    */
   async closeConversation(conversationId: string, reason: string, options?: { farewell?: string }): Promise<void> {
     const note = reason.trim();
     // Motivo é opcional (interno): se vazio, encerra sem registrar motivo.
-    // Aviso ao cliente antes de fechar (não bloqueia o encerramento se falhar).
     const farewell = options?.farewell?.trim();
-    if (farewell) {
-      try { await messagesApi.sendText({ conversationId, text: farewell }); } catch { /* best-effort */ }
-    }
     const { data: auth } = await supabase.auth.getUser();
     const { error } = await supabase.from(CONV_TABLE).update({
       status: 'closed',
       closed_at: new Date().toISOString(),
       closed_by: auth?.user?.id ?? null,
       closure_reason: note || null,
-      // Encerrar zera a pausa do aviso de horário: volta ao normal no próximo contato.
+      // Encerrar zera as pausas de conversa: voltam ao normal no próximo contato.
       absence_suppressed: false,
+      auto_close_suppressed: false,
       // `absence_sent_at` é preservado: fechar/reabrir a conversa não pode apagar
       // o cooldown e repetir o mesmo aviso para o cliente poucos minutos depois.
     }).eq('id', conversationId);
     if (error) throw new Error(error.message);
+    // Despedida depois do fechamento: falhar aqui não desfaz o encerramento.
+    if (farewell) {
+      try { await messagesApi.sendText({ conversationId, text: farewell, automated: true }); }
+      catch { /* best-effort */ }
+    }
   },
 
   /** Reabre manualmente uma conversa encerrada (volta para a fila). */
@@ -399,6 +410,19 @@ export const conversationsApi = {
     const { error } = await supabase
       .from(CONV_TABLE)
       .update({ absence_suppressed: suppressed })
+      .eq('id', conversationId);
+    if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Tira/devolve esta conversa ao encerramento automático por inatividade do
+   * canal. Mesmo desenho da pausa de ausência: a varredura consulta o flag antes
+   * de fechar, e o encerramento o limpa — a exceção morre com o atendimento.
+   */
+  async setAutoCloseSuppressed(conversationId: string, suppressed: boolean): Promise<void> {
+    const { error } = await supabase
+      .from(CONV_TABLE)
+      .update({ auto_close_suppressed: suppressed })
       .eq('id', conversationId);
     if (error) throw new Error(error.message);
   },
@@ -484,6 +508,49 @@ export const conversationsApi = {
       .single();
     if (error) throw new Error(error.message);
     return { conversation_id: data.id as string, existed: false };
+  },
+
+  /**
+   * Quem é o dono deste telefone? — a pergunta que uma chamada RECEBIDA faz.
+   *
+   * O WaCalls avisa que está tocando e só sabe o número; o operador precisa ver
+   * o nome antes de atender. Casa pelas variantes com e sem o 9º dígito e pelo
+   * `remote_jid` (threads que entraram por `@lid` não têm o telefone no jid), e
+   * prefere a conversa com atividade mais recente — a mesma regra de
+   * `openConversation`. Devolve `null` quando o número não é conhecido: aí a
+   * chamada aparece só com o telefone, que é o comportamento pedido.
+   */
+  async findConversationByPhone(phone: string): Promise<{
+    conversationId: string;
+    clientId: string | null;
+    name: string | null;
+    avatarUrl: string | null;
+  } | null> {
+    const variants = phoneVariants(phone);
+    if (variants.length === 0) return null;
+    const jids = variants.map(v => `${v}@s.whatsapp.net`);
+    const { data } = await supabase
+      .from(CONV_TABLE)
+      .select('id, contact_name, contact_phone, contact_avatar_path, client_id, last_message_at')
+      .or(`contact_phone.in.(${variants.join(',')}),remote_jid.in.(${jids.join(',')})`)
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .limit(1);
+    const conv = (data || [])[0] as {
+      id: string; contact_name: string | null; contact_avatar_path: string | null; client_id: string | null;
+    } | undefined;
+    if (!conv) return null;
+
+    // Nome do CADASTRO manda no nome, como em toda a inbox (ver
+    // `conversationName` em components/whatsapp/format.ts).
+    let name = conv.contact_name;
+    if (conv.client_id) {
+      const { data: client } = await supabase
+        .from('clients').select('full_name').eq('id', conv.client_id).maybeSingle();
+      const fullName = (client as { full_name: string | null } | null)?.full_name;
+      if (fullName) name = fullName;
+    }
+    const avatarUrl = await resolveAvatarUrl(conv.contact_avatar_path).catch(() => null);
+    return { conversationId: conv.id, clientId: conv.client_id, name, avatarUrl };
   },
 
   // ── Governança (bloqueio) ────────────────────────────────────

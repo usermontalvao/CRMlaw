@@ -106,6 +106,7 @@ const ChatFloatingWidget = lazy(() => import('./components/ChatFloatingWidget'))
 import { usePresence } from './hooks/usePresence';
 import { useWhatsAppNotifications } from './hooks/useWhatsAppNotifications';
 import { WhatsAppNotifyHost } from './components/whatsapp/WhatsAppNotifyHost';
+import { WaCallsHost } from './components/whatsapp/WaCallsHost';
 import { useAuth } from './contexts/AuthContext';
 import {
   events,
@@ -3106,6 +3107,10 @@ useEffect(() => {
       {/* Avisos de mensagem nova do WhatsApp: pilha própria, visível em
           QUALQUER tela (inclusive dentro do módulo, onde o widget nem monta). */}
       <WhatsAppNotifyHost onOpen={(conversationId) => navigateTo('whatsapp', { conversationId })} />
+
+      {/* Chamadas de voz (WaCalls): o convite de chamada recebida precisa
+          aparecer em QUALQUER tela do CRM, não só na inbox. */}
+      <WaCallsHost />
 
       {/* #9 "” Modal de busca global ⌘K */}
       <GlobalSearchModal

@@ -18,6 +18,7 @@ import { ToastProvider } from './contexts/ToastContext';
 import { SecurityPinProvider } from './contexts/SecurityPinContext';
 import { DeleteConfirmProvider } from './contexts/DeleteConfirmContext';
 import { WhatsAppNotifyHost } from './components/whatsapp/WhatsAppNotifyHost';
+import { WaCallsHost } from './components/whatsapp/WaCallsHost';
 import { useWhatsAppNotifications } from './hooks/useWhatsAppNotifications';
 
 const WhatsAppModule = lazy(() => import('./components/WhatsAppModule'));
@@ -135,6 +136,7 @@ const WhatsAppShell: React.FC = () => {
         </Suspense>
       </div>
       <WhatsAppNotifyHost onOpen={openConversation} />
+      <WaCallsHost />
     </div>
   );
 };

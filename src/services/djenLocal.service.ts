@@ -576,6 +576,42 @@ class DjenLocalService {
   }
 
   /**
+   * Desfaz a marcação de lida (volta a intimação para "não lida").
+   */
+  async desmarcarComoLida(id: string): Promise<DjenComunicacaoLocal> {
+    return this.updateComunicacao(id, {
+      lida: false,
+      lida_em: null,
+    });
+  }
+
+  /**
+   * Desfaz a marcação de lidas de um conjunto de comunicações.
+   * Mesma regra de escopo de marcarTodasComoLidas: os `ids` são obrigatórios.
+   */
+  async desmarcarComoLidas(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+
+    let desmarcadas = 0;
+    for (const lote of dividirEmLotes(ids)) {
+      const { data, error } = await supabase
+        .from(this.tableName)
+        .update({ lida: false, lida_em: null })
+        .in('id', lote)
+        .select('id');
+
+      if (error) {
+        console.error('Erro ao desmarcar intimações como lidas:', error);
+        throw new Error(error.message);
+      }
+
+      desmarcadas += data?.length ?? 0;
+    }
+
+    return desmarcadas;
+  }
+
+  /**
    * Marca um conjunto de comunicações como lidas em um único UPDATE.
    * IMPORTANTE: a tabela djen_comunicacoes usa RLS permissivo (WHERE true) sem
    * coluna office_id. Para evitar afetar dados de outros escritórios em cenários

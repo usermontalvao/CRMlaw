@@ -45,7 +45,7 @@ export interface WaOperationalModalsApi {
   handleConversationOpened: (conversationId: string) => Promise<void>;
   onTransferDone: () => Promise<void>;
   onBlockDone: (reason: string) => void;
-  onCloseDone: () => Promise<void>;
+  onCloseDone: (task: Promise<void>) => void;
   onRequestDocCreated: () => void;
   onWorkspaceSaved: (type: string) => void;
 }
@@ -112,14 +112,37 @@ export function useWaOperationalModals({
       ? { ...c, is_blocked: true, blocked_at: new Date().toISOString(), blocked_reason: reason } : c));
   }, [selected, setConversations]);
 
-  // Encerrar atendimento → IA classifica o assunto (2º plano), limpa seleção e
-  // recarrega a lista. O closure ainda enxerga a conversa atual via classifyOnClose.
-  const onCloseDone = useCallback(async () => {
+  /**
+   * Encerrar atendimento → a tela responde na hora e o encerramento termina em
+   * 2º plano.
+   *
+   * `task` é o encerramento já em curso (status + despedida pelo WhatsApp). Em
+   * vez de esperar por ele, a conversa sai da fila ativa aqui mesmo — o status
+   * vira `closed` na lista e a seleção é limpa — e a recarga do servidor só
+   * acontece quando o trabalho de fato termina. A IA classifica o assunto em
+   * paralelo; o closure ainda enxerga a conversa atual via classifyOnClose.
+   */
+  const onCloseDone = useCallback((task: Promise<void>) => {
+    const conv = selected;
     setCloseOpen(false);
     classifyOnClose().catch(() => { /* best-effort */ });
+    if (conv) {
+      setConversations(prev => prev.map(c => c.id === conv.id
+        ? {
+          ...c,
+          status: 'closed' as const,
+          closed_at: new Date().toISOString(),
+          // Encerrar zera as pausas da conversa (mesmo efeito do servidor).
+          absence_suppressed: false,
+          auto_close_suppressed: false,
+        }
+        : c));
+    }
     setSelectedId(null);
-    await loadConversations();
-  }, [classifyOnClose, setSelectedId, loadConversations]);
+    // Falha já foi avisada por toast no modal; recarregar mesmo assim devolve a
+    // conversa ao estado real (aberta) em vez de deixar a lista mentindo.
+    void task.catch(() => { /* já sinalizado */ }).then(() => loadConversations());
+  }, [selected, classifyOnClose, setConversations, setSelectedId, loadConversations]);
 
   // Solicitou documento → recarrega overview e posiciona a conversa em
   // "Aguardando Documentos".

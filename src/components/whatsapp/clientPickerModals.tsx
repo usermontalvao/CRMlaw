@@ -2,9 +2,13 @@
 // iniciar uma nova conversa (busca por nome/CPF/telefone). Extraídos de
 // WhatsAppModule.tsx — autocontidos.
 import React, { useEffect, useState } from 'react';
-import { Link2, AlertCircle, Search, Loader2, Phone, Plus } from 'lucide-react';
+import { Link2, AlertCircle, Search, Loader2, Phone, Plus, Star } from 'lucide-react';
 import { WaDialog, WaDialogBody, waInput, waLabel } from './ui';
 import { prettyPhone, prettyDoc, initials } from './format';
+import {
+  pickInitialChannel, isPreferredChannel, togglePreferred,
+  readPreferredChannel, writePreferredChannel,
+} from './preferredChannel';
 import { whatsappService, normalizePhone } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
 import type { WhatsAppClientLite, WhatsAppChannel } from '../../types/whatsapp.types';
@@ -127,6 +131,11 @@ export const ClientPickerModal: React.FC<{
 // ── Modal: Nova conversa (Fase 0) ──
 // Campo único: busca cliente por nome/CPF/telefone e, se nada casar, permite
 // usar o telefone digitado. Reabre conversa existente do mesmo número/canal.
+//
+// O canal já vem no preferido de quem atende (ver `preferredChannel.ts`), e a
+// estrela ao lado do rótulo é o que define esse preferido — no mesmo lugar onde
+// o canal é escolhido, para que marcar o padrão seja a continuação natural de
+// tê-lo escolhido uma vez.
 export const NewConversationModal: React.FC<{
   channels: WhatsAppChannel[];
   channelRouting: WhatsAppChannelDepartmentRouting[];
@@ -137,9 +146,24 @@ export const NewConversationModal: React.FC<{
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<WhatsAppClientLite[]>([]);
   const [loading, setLoading] = useState(false);
-  const [channelId, setChannelId] = useState(channels[0]?.id || '');
+  const [preferred, setPreferred] = useState<string | null>(() => readPreferredChannel());
+  const [channelId, setChannelId] = useState(() => pickInitialChannel(readPreferredChannel(), channels.map(c => c.id)));
   const [picked, setPicked] = useState<WhatsAppClientLite | null>(null); // cliente c/ +1 telefone
   const [busy, setBusy] = useState(false);
+
+  // Um canal pode reconectar (ou cair) com o modal já aberto: `channels` só traz
+  // os conectados. Sem esta correção, a seleção continuaria apontando para um id
+  // que sumiu da lista e o `<select>` ficaria em branco.
+  useEffect(() => {
+    const ids = channels.map(c => c.id);
+    setChannelId(atual => (ids.includes(atual) ? atual : pickInitialChannel(preferred, ids)));
+  }, [channels, preferred]);
+
+  const marcarPreferido = () => {
+    const next = togglePreferred(preferred, channelId);
+    writePreferredChannel(next);
+    setPreferred(next);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -227,7 +251,23 @@ export const NewConversationModal: React.FC<{
           <>
             {channels.length > 1 && (
               <>
-                <label className={waLabel}>Canal</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className={waLabel}>Canal</label>
+                  {/* Define o canal padrão sem sair do fluxo. Fica desligado quando
+                      nada está selecionado — marcar "nenhum canal" não quer dizer nada. */}
+                  <button type="button" onClick={marcarPreferido} disabled={!channelId}
+                    title={isPreferredChannel(preferred, channelId)
+                      ? 'Este é o canal padrão. Clique para deixar de usá-lo.'
+                      : 'Usar este canal como padrão nas próximas conversas'}
+                    className={`mb-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-40 ${
+                      isPreferredChannel(preferred, channelId)
+                        ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                        : 'text-slate-400 hover:bg-[#f3f2ef] hover:text-amber-600'
+                    }`}>
+                    <Star size={12} fill={isPreferredChannel(preferred, channelId) ? 'currentColor' : 'none'} />
+                    {isPreferredChannel(preferred, channelId) ? 'Padrão' : 'Usar como padrão'}
+                  </button>
+                </div>
                 <select value={channelId} onChange={e => setChannelId(e.target.value)} className={`${waInput} mb-3`}>
                   {channels.map(c => <option key={c.id} value={c.id}>{c.name || c.instance_name}</option>)}
                 </select>

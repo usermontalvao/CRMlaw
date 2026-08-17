@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Save, Loader2, Eye, EyeOff, Plus, Trash2, QrCode, Check, Users, X, Phone,
-  Clock, BellOff, Bot, Pencil, MessageSquare, IdCard,
+  Clock, BellOff, Bot, Pencil, MessageSquare, IdCard, TimerOff,
 } from 'lucide-react';
 import {
   settingsService,
@@ -32,6 +32,25 @@ const BR_TIMEZONES = [
 ];
 
 const PALETTE = ['#ea6c00', '#16a34a', '#2563eb', '#9333ea', '#dc2626', '#0891b2', '#ca8a04', '#db2777'];
+
+// Prazos de inatividade oferecidos. Lista fechada em vez de campo livre porque
+// o valor não é uma preferência fina — é "algumas horas", "um dia", "uma
+// semana" — e um campo livre convida ao 1 minuto que encerraria a fila inteira
+// no primeiro varrimento. Os limites são os mesmos do CHECK da tabela.
+const AUTO_CLOSE_PRESETS = [
+  { label: '30 minutos', value: 30 },
+  { label: '1 hora', value: 60 },
+  { label: '2 horas', value: 120 },
+  { label: '4 horas', value: 240 },
+  { label: '8 horas', value: 480 },
+  { label: '12 horas', value: 720 },
+  { label: '24 horas', value: 1440 },
+  { label: '2 dias', value: 2880 },
+  { label: '3 dias', value: 4320 },
+  { label: '7 dias', value: 10080 },
+  { label: '15 dias', value: 21600 },
+  { label: '30 dias', value: 43200 },
+];
 
 interface Props {
   requirePin: (opts: any) => Promise<boolean>;
@@ -100,6 +119,15 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   const [hoursData, setHoursData] = useState<WhatsAppBusinessHoursRow[]>([]);
   const [absence, setAbsence] = useState({ message: '', enabled: false, timezone: 'America/Cuiaba' });
   const [savingHours, setSavingHours] = useState(false);
+  // Encerramento automático por inatividade: painel PRÓPRIO, não um rodapé do
+  // horário comercial. São decisões de naturezas diferentes — uma diz quando o
+  // escritório atende, a outra desiste de um atendimento — e quem mexe numa
+  // quase nunca quer mexer na outra.
+  const [autoCloseOpenFor, setAutoCloseOpenFor] = useState<string | null>(null);
+  const [autoClose, setAutoClose] = useState({
+    enabled: false, minutes: 1440, message: '', businessHoursOnly: true,
+  });
+  const [savingAutoClose, setSavingAutoClose] = useState(false);
   // QR / conexão por canal
   const [qrFor, setQrFor] = useState<{ id: string; qr?: string; status: string } | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -165,6 +193,34 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       onFeedback('success', 'Horários e ausência salvos!');
     } catch (e: any) { onFeedback('error', e.message); }
     finally { setSavingHours(false); }
+  };
+
+  // Encerramento por inatividade — painel próprio, com o próprio salvar.
+  const openAutoClose = useCallback((ch: WhatsAppChannel) => {
+    if (autoCloseOpenFor === ch.id) { setAutoCloseOpenFor(null); return; }
+    setAutoCloseOpenFor(ch.id);
+    setAutoClose({
+      enabled: ch.auto_close_enabled ?? false,
+      minutes: ch.auto_close_minutes || 1440,
+      message: ch.auto_close_message || '',
+      businessHoursOnly: ch.auto_close_business_hours_only ?? true,
+    });
+  }, [autoCloseOpenFor]);
+
+  const saveAutoClose = async (ch: WhatsAppChannel) => {
+    setSavingAutoClose(true);
+    try {
+      await whatsappService.updateAutoCloseConfig(ch.id, autoClose);
+      setChannels(prev => prev.map(c => c.id === ch.id ? {
+        ...c,
+        auto_close_enabled: autoClose.enabled,
+        auto_close_minutes: autoClose.minutes,
+        auto_close_message: autoClose.message.trim() || null,
+        auto_close_business_hours_only: autoClose.businessHoursOnly,
+      } : c));
+      onFeedback('success', 'Encerramento por inatividade salvo!');
+    } catch (e: any) { onFeedback('error', e.message); }
+    finally { setSavingAutoClose(false); }
   };
 
   const saveServer = async () => {
@@ -827,9 +883,13 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                   {connecting === ch.id ? <Loader2 size={13} className="animate-spin" /> : <QrCode size={13} />}
                   {ch.status === 'connected' ? 'Reconectar' : 'Conectar'}
                 </button>
-                <button onClick={() => openHours(ch)} title="Horário comercial e ausência"
+                <button onClick={() => openHours(ch)} title="Horário comercial e mensagem de ausência"
                   className="settings-btn-ghost" style={{ padding: '6px 10px', color: hoursOpenFor === ch.id ? '#d97706' : undefined }}>
                   <Clock size={13} /> Horário comercial
+                </button>
+                <button onClick={() => openAutoClose(ch)} title="Encerrar sozinho as conversas paradas"
+                  className="settings-btn-ghost" style={{ padding: '6px 10px', color: autoCloseOpenFor === ch.id ? '#d97706' : undefined }}>
+                  <TimerOff size={13} /> Encerramento
                 </button>
                 <button onClick={() => removeChannel(ch)} title="Excluir canal"
                   style={{ padding: '6px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
@@ -940,6 +1000,79 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
                     <button className="settings-btn-primary" onClick={() => saveHours(ch)} disabled={savingHours}>
                       {savingHours ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Salvar horários
+                    </button>
+                  </div>
+                </div>
+              )}
+
+
+              {/* Encerramento por inatividade: painel próprio. Ele CONSULTA o
+                  horário comercial (quando "só dentro do expediente" está
+                  ligado), mas é outra decisão — e misturar as duas fazia mexer
+                  no horário do canal esbarrar num encerramento automático que
+                  ninguém pediu para revisar. */}
+              {autoCloseOpenFor === ch.id && (
+                <div style={{ marginTop: '12px', border: '1px solid #e7e5df', borderRadius: '10px', padding: '14px', background: '#fafaf9' }}>
+                  <p style={{ fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <TimerOff size={13} /> Encerramento por inatividade
+                  </p>
+                  <p style={{ fontSize: '11.5px', color: '#6b7280', marginBottom: '10px', lineHeight: 1.5 }}>
+                    Conversa parada esperando o cliente sai da fila sozinha. O relógio é a última
+                    mensagem da conversa, e qualquer mensagem nova reinicia a contagem do zero — a
+                    sua inclusive. Mas o prazo só corre quando a última palavra é NOSSA: enquanto o
+                    escritório dever resposta, nada é encerrado.
+                  </p>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={autoClose.enabled}
+                      onChange={e => setAutoClose(a => ({ ...a, enabled: e.target.checked }))} />
+                    <span style={{ fontSize: '12px', color: '#374151' }}>Encerrar sozinho as conversas paradas deste canal</span>
+                  </label>
+                  <p style={{ margin: '0 1px 8px', fontSize: '10.5px', lineHeight: 1.4, color: '#8a94a6' }}>
+                    Deixe desligado nos canais atendidos por IA: o assistente tem a própria escada de
+                    acompanhamento, e o silêncio entre um lembrete e outro não é atendimento abandonado.
+                  </p>
+                  {autoClose.enabled && (
+                    <>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#6b7280', marginBottom: '4px' }}>
+                        Silêncio tolerado antes de encerrar
+                      </label>
+                      <select value={autoClose.minutes}
+                        onChange={e => setAutoClose(a => ({ ...a, minutes: Number(e.target.value) }))}
+                        style={{ fontSize: '12px', padding: '5px 8px', borderRadius: '7px', border: '1px solid #d1d5db', background: '#fff', color: '#111827', width: '100%', marginBottom: '4px' }}>
+                        {AUTO_CLOSE_PRESETS.map(p => (
+                          <option key={p.value} value={p.value}>{p.label}</option>
+                        ))}
+                      </select>
+                      <p style={{ margin: '0 1px 10px', fontSize: '10.5px', lineHeight: 1.4, color: '#8a94a6' }}>
+                        Contado a partir da última mensagem da conversa. Cada mensagem nova zera o
+                        relógio — inclusive as suas. Exceção: o aviso automático de fora do horário e
+                        o convite de reabertura não contam como resposta, e depois deles a conversa
+                        continua sendo pendência do escritório.
+                      </p>
+
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={autoClose.businessHoursOnly}
+                          onChange={e => setAutoClose(a => ({ ...a, businessHoursOnly: e.target.checked }))} />
+                        <span style={{ fontSize: '12px', color: '#374151' }}>Só encerrar dentro do horário comercial deste canal</span>
+                      </label>
+
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#6b7280', marginBottom: '4px' }}>
+                        Mensagem de despedida (opcional)
+                      </label>
+                      <textarea value={autoClose.message}
+                        onChange={e => setAutoClose(a => ({ ...a, message: e.target.value }))}
+                        rows={2} placeholder="Ex: Como não tivemos retorno, estou encerrando este atendimento por aqui. Se precisar, é só chamar de novo — respondemos normalmente. 🙂"
+                        style={{ width: '100%', fontSize: '12px', padding: '6px 8px', borderRadius: '6px', border: '1px solid #d1d5db', resize: 'vertical', boxSizing: 'border-box' }} />
+                      <p style={{ margin: '5px 1px 0', fontSize: '10.5px', lineHeight: 1.4, color: '#8a94a6' }}>
+                        Em branco, a conversa é encerrada sem avisar o cliente. Se ele escrever depois, o
+                        atendimento reabre normalmente.
+                      </p>
+                    </>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                    <button className="settings-btn-primary" onClick={() => saveAutoClose(ch)} disabled={savingAutoClose}>
+                      {savingAutoClose ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Salvar encerramento
                     </button>
                   </div>
                 </div>

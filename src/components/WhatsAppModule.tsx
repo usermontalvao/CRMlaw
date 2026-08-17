@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Search, Send, Loader2, MessageCircle, Phone, User as UserIcon,
+  Search, Send, Loader2, MessageCircle, Phone, PhoneCall, User as UserIcon,
   CheckCheck, Check, AlertCircle, Link2, ArrowRightLeft, X,
   Paperclip, Mic, FileText, Image as ImageIcon, CornerUpLeft,
   Pencil, UserCheck, Unlink, IdCard, Scale, Calendar,
@@ -9,7 +9,7 @@ import {
   StickyNote, Trash2, CalendarClock, MessageSquare, Filter, Maximize2,
   UserPlus, UserMinus, PenLine, HandCoins, ListTodo, FilePlus,
   Sparkles, Tag, Tags, Bot, Clapperboard,
-  Shield, ShieldCheck, Eye, EyeOff,
+  Shield, ShieldCheck, Eye, EyeOff, Timer, TimerOff,
   BarChart2, TrendingUp, Users, AlertTriangle, Clock3, CheckCircle, Inbox,
   Mail, MapPin, Play, Pause, Bell, BellOff, Info, MoreVertical, BellRing,
   Target,
@@ -19,6 +19,7 @@ import {
   AppWindow,
 } from 'lucide-react';
 import { useStaffPush } from './whatsapp/hooks/useStaffPush';
+import { useWaCalls } from '../hooks/useWaCalls';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
 import { muteStore } from '../services/whatsapp/muteStore';
 import { notifyScope } from '../services/whatsapp/notifyScope';
@@ -29,8 +30,9 @@ import {
   typeLabel, conversationPreviewLabel, firstName, agentLabel, greetingByHour, buildGreeting,
   convStatus, slaSignal, slaInternalSignal, abandonedSignal, transferAlert,
   maskSensitive, maskName, maskPhoneFull, fmtAudioTime, prettyDoc, dueInfo, fmtDateTime,
-  fmtNoteDate, conversationName, matchesConversationSearch, agentRoleLabel,
+  fmtNoteDate, conversationName, matchesConversationSearch, agentRoleLabel, autoCloseLabel,
 } from './whatsapp/format';
+import { autoCloseClock, autoCloseIdleLabel } from './whatsapp/autoCloseClock';
 import {
   WaDialog, WaDialogBody, waInput, waLabel, waBtnPrimary, waBtnGhost, waBtnDanger,
 } from './whatsapp/ui';
@@ -351,6 +353,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // O snapshot alimenta o memo de `mutedIds` (silenciar/reativar precisa
   // repintar as linhas afetadas mesmo com a lista memoizada).
   const muteSnapshot = useSyncExternalStore(muteStore.subscribe, muteStore.getSnapshot);
+  // Chamadas de voz (WaCalls). Só o botão do cabeçalho vive aqui; o modal da
+  // chamada e o convite de chamada recebida são do host global (WaCallsHost),
+  // para a ligação não cair quando esta tela desmonta.
+  const waCalls = useWaCalls();
   useEffect(() => { void muteStore.init(); }, []);
   const [muteModalOpen, setMuteModalOpen] = useState(false);
   useEffect(() => { setMuteModalOpen(false); }, [selectedId]);
@@ -719,6 +725,27 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     threadContentRef, setThreadEl, onThreadScroll,
     scrolledUp, newBelow, scrollToBottom,
   } = useWaThread(selectedId, messages, pending);
+
+  // O campo de mensagem é NÃO CONTROLADO de propósito.
+  //
+  // Com `value={draft}`, cada tecla só aparecia na tela depois do render do
+  // módulo inteiro — e digitando rápido o React chegava a reescrever o campo com
+  // um valor já vencido: as letras saíam trocadas, e era esse texto trocado que
+  // ia embora no Enter. Agora, ENQUANTO SE DIGITA, o DOM é a fonte da verdade e
+  // o estado corre atrás; o React só escreve no campo quando o rascunho muda por
+  // FORA da digitação (troca de conversa, template, emoji, correção ortográfica,
+  // formatação, envio, edição).
+  //
+  // `useLayoutEffect` e não `useEffect`: as reposições de cursor
+  // (`aplicarFormato`, `replaceComposerSpelling`) acontecem num
+  // `requestAnimationFrame` depois do setDraft. Efeito passivo pode rodar DEPOIS
+  // desse rAF, e aí a escrita do valor jogaria o cursor para o fim — quebrando
+  // encadear negrito+itálico e a troca de palavra do corretor.
+  useLayoutEffect(() => {
+    const el = draftRef.current;
+    if (!el || el.value === draft) return;
+    el.value = draft;
+  }, [draft]);
 
   // Auto-crescimento do campo de mensagem: cresce com o texto até um teto e
   // então rola. Roda a cada mudança do rascunho, então também encolhe de volta
@@ -1276,7 +1303,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const {
     handleReopen, handleUnblock, handleAccept, handleAssume, handleRelease,
     muteSelected, unmuteSelected, handleClearConversation,
-    handleToggleAbsenceSuppressed, handleToggleLegalHold,
+    handleToggleAbsenceSuppressed, handleToggleAutoCloseSuppressed, handleToggleLegalHold,
     legalHoldModalOpen, confirmLegalHold, closeLegalHoldModal,
   } = useWaConversationActions({
     selected, user, agentPrefs, moduleConfig, staffById, aiSession, confirm,
@@ -1284,6 +1311,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     closeMuteModal: () => setMuteModalOpen(false),
     setMessages, setPending, setReplyTo, setEditing, setHasMoreMsgs, oldestTsRef,
   });
+
+  // Ligar para o contato da conversa aberta. O número é o da própria conversa —
+  // o atendente nunca redigita. A tradução para o formato do WaCalls é feita
+  // uma única vez, em `services/wacalls/phone.ts`, e o número guardado no CRM
+  // não é tocado.
+  const handleCall = useCallback(() => {
+    if (!selected) return;
+    void waCalls.placeCall(selected.contact_phone, {
+      conversationId: selected.id,
+      clientId: selected.client_id ?? null,
+      name: conversationName(selected),
+      avatarUrl: selected.contact_avatar_url ?? null,
+    });
+  }, [selected, waCalls]);
 
   // IA da conversa selecionada: sugerir resposta, classificar assunto, extrair
   // dados — e exportar o histórico. Fonte de handleAiClassify (injetado abaixo
@@ -1597,6 +1638,24 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     const id = window.setInterval(() => setQueueTick(Date.now()), 60_000);
     return () => window.clearInterval(id);
   }, []);
+
+  /**
+   * Contador do encerramento automático da conversa aberta.
+   *
+   * Pega carona no mesmo tique de um minuto da fila: o encerramento é medido em
+   * horas, e um contador de segundos re-renderizaria a thread inteira para
+   * mudar um dígito que ninguém está olhando.
+   *
+   * `outsideHours` entra porque canal configurado para "só dentro do
+   * expediente" não encerra de madrugada — o prazo vence e espera. Sem isso o
+   * painel mostraria "encerra em 0min" a noite toda.
+   */
+  const autoCloseInfo = useMemo(
+    () => (selected
+      ? autoCloseClock(selected, selectedChannel, queueTick, !!outsideHours)
+      : { key: 'off' as const }),
+    [selected, selectedChannel, queueTick, outsideHours],
+  );
 
   /**
    * Medição de tempo da fila e dos badges.
@@ -2071,6 +2130,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                       <ArrowRightLeft size={11} /> {ta.label}
                     </span>
                   ) : null; })()}
+                  {/* Contador do encerramento automático. Só aparece quando o
+                      prazo está de fato correndo: com a resposta do nosso lado
+                      não há contagem, e um badge dizendo isso viraria ruído em
+                      toda conversa que acabou de chegar. O motivo fica no painel
+                      lateral, onde se liga e desliga a regra. */}
+                  {autoCloseInfo.key !== 'off' && autoCloseInfo.key !== 'suppressed' && autoCloseInfo.key !== 'waiting_us' && (
+                    <span
+                      className="inline-flex items-center gap-1 font-semibold"
+                      style={{ color: autoCloseInfo.urgent ? '#d97706' : '#64748b' }}
+                      title={`Sem nenhuma mensagem há ${autoCloseIdleLabel(autoCloseInfo.idleMinutes)}.`}
+                    >
+                      <Timer size={11} /> {autoCloseInfo.label}
+                    </span>
+                  )}
                 </div>
               </div>
               {/* Canal da conversa: por qual número se está falando, com o estado
@@ -2082,6 +2155,30 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               )}
               {/* Ações em ícone com tooltip — não quebram o layout (Fase 10.1) */}
               <div className="flex items-center gap-1.5 flex-shrink-0">
+                {/* Ligar pelo WhatsApp (voz, via WaCalls). Fica FORA do grupo que
+                    some no mobile: telefonar é ação de primeira linha em
+                    qualquer largura. Indisponibilidade não esconde o botão — o
+                    clique explica o motivo em toast, que é o que o atendente
+                    precisa saber (serviço fora, nenhum número conectado). */}
+                {!selected.is_blocked && (
+                  <button
+                    onClick={handleCall}
+                    disabled={!!waCalls.myCall}
+                    title={waCalls.myCall
+                      ? 'Você já está em uma chamada'
+                      : (waCalls.ready && !waCalls.canCall
+                        ? 'Chamadas de voz indisponíveis no momento'
+                        : `Ligar para ${conversationName(selected)}`)}
+                    aria-label="Ligar por voz"
+                    className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      waCalls.ready && !waCalls.canCall
+                        ? 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200'
+                        : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    }`}
+                  >
+                    <PhoneCall size={16} />
+                  </button>
+                )}
                 {selected.awaiting_accept && (selected.assigned_user_id === user?.id || !selected.assigned_user_id) && (
                   <button onClick={handleAccept} title="Assumir este atendimento"
                     className={`${isMobile ? 'hidden' : 'inline-flex'} items-center gap-1.5 px-3 h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[12.5px] font-semibold transition`}>
@@ -2605,7 +2702,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                       <ComposerSpellcheckOverlay text={draft} issues={composerSpellcheck.issues}
                         scrollTop={composerScrollTop} scrollbarWidth={composerScrollbarWidth} />
                     )}
-                    <textarea ref={draftRef} value={draft} onChange={e => setDraft(e.target.value)}
+                    <textarea ref={draftRef} defaultValue={draft} onChange={e => setDraft(e.target.value)}
                       onScroll={e => setComposerScrollTop(e.currentTarget.scrollTop)}
                       onContextMenu={openComposerSpellMenu}
                       onSelect={syncTextSel}
@@ -2929,6 +3026,35 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             </button>
             {selected.absence_suppressed && (
               <p className="text-[10px] text-violet-700 px-0.5">A mensagem fora do horário não será enviada até encerrar este atendimento.</p>
+            )}
+            {/* Encerramento por inatividade: tira SÓ esta conversa da regra do canal.
+                Só aparece onde a regra existe — num canal com o encerramento
+                desligado, o botão prometeria desligar algo que já está desligado. */}
+            {selectedChannel?.auto_close_enabled && (
+              <>
+                <button onClick={handleToggleAutoCloseSuppressed}
+                  className={`w-full flex items-center justify-center gap-1 py-1.5 rounded-md text-[10.5px] font-semibold transition ${
+                    selected.auto_close_suppressed
+                      ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                      : 'bg-[#f3f2ef] text-slate-500 hover:bg-sky-50 hover:text-sky-700'
+                  }`}>
+                  {selected.auto_close_suppressed ? <TimerOff size={12} /> : <Timer size={12} />}
+                  {selected.auto_close_suppressed ? 'Sem encerrar sozinha' : 'Não encerrar por inatividade'}
+                </button>
+                {/* O contador, e não a regra: "encerra depois de 4 horas" é o
+                    que o canal promete; o atendente precisa saber quanto falta
+                    NESTA conversa, e há quanto tempo ela está parada — que é o
+                    relógio que decide. */}
+                <p className={`text-[10px] px-0.5 ${autoCloseInfo.key !== 'off' && autoCloseInfo.key !== 'suppressed' && autoCloseInfo.key !== 'waiting_us' && autoCloseInfo.urgent ? 'text-amber-700 font-semibold' : 'text-slate-400'}`}>
+                  {autoCloseInfo.key === 'suppressed'
+                    ? 'Esta conversa fica de fora do encerramento automático até o atendimento ser encerrado.'
+                    : autoCloseInfo.key === 'waiting_us'
+                      ? `A contagem está parada: a resposta é nossa. O prazo de ${autoCloseLabel(selectedChannel.auto_close_minutes)} só começa a correr depois que respondermos.`
+                      : autoCloseInfo.key === 'off'
+                        ? `O canal encerra sozinho depois de ${autoCloseLabel(selectedChannel.auto_close_minutes)} sem nenhuma mensagem.`
+                        : `${autoCloseInfo.label[0].toUpperCase()}${autoCloseInfo.label.slice(1)} — parada há ${autoCloseIdleLabel(autoCloseInfo.idleMinutes)}. Qualquer mensagem reinicia a contagem.`}
+                </p>
+              </>
             )}
           </div>
         </aside>
