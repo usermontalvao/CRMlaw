@@ -17,6 +17,13 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { slimWaRaw } from '../_shared/wa-raw.ts';
+import {
+  CHANNEL_FLAP_GRACE_MS,
+  applyChannelState,
+  isWaConnectionFailure,
+  mapWaState,
+  type ChannelRow,
+} from '../_shared/wa-channel-state.ts';
 
 const MEDIA_BUCKET = 'whatsapp-media';
 const EVO_TIMEOUT_MS = 30_000;
@@ -29,59 +36,84 @@ const CORS = {
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
-function mapState(state: string): string {
-  if (state === 'open') return 'connected';
-  if (state === 'connecting') return 'connecting';
-  return 'disconnected';
-}
+/** Intervalo mínimo entre dois /instance/connect do CRM no mesmo canal. */
+const RECONNECT_COOLDOWN_MS = 5 * 60_000;
 
-async function persistChannelStatus(admin: any, channelId: string, state: string) {
-  const mapped = mapState(state);
-  await admin.from('whatsapp_instances').update({
-    status: mapped,
-    connected_at: mapped === 'connected' ? new Date().toISOString() : null,
-    updated_at: new Date().toISOString(),
-  }).eq('id', channelId);
-}
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Evita falso "desconectado" por status local stale e tenta religar a instância
- * automaticamente quando a sessão ainda é recuperável na Evolution.
+ * Garante que dá para enviar por este canal — sem transformar a checagem na causa.
+ *
+ * Duas armadilhas moram aqui, e as duas já morderam:
+ *
+ * 1. UMA leitura de `connectionState` não é veredito. Quando a sessão do número
+ *    está sendo disputada por outro cliente logado na mesma conta, a Evolution
+ *    devolve open/close/connecting alternados dentro do MESMO segundo enquanto as
+ *    mensagens entram e saem normalmente. Por isso: duas leituras, e a memória do
+ *    último `open` (last_open_at) como desempate — canal visto aberto há pouco
+ *    envia, e quem dá o veredito final é a resposta do envio.
+ *
+ * 2. `/instance/connect` num canal que ainda tem socket vivo cria um SEGUNDO
+ *    socket, e o WhatsApp derruba um dos dois por conflito. Chamar isso a cada
+ *    envio era o socorro virando a doença. Agora só quando o canal está mesmo
+ *    parado, e no máximo uma vez a cada RECONNECT_COOLDOWN_MS.
  */
 async function ensureChannelReady(
   admin: any,
   evo: (path: string, init?: RequestInit) => Promise<Response>,
-  channelId: string,
-  instanceName: string,
-  cachedStatus: string | null | undefined,
+  channel: ChannelRow & { instance_name: string; last_reconnect_attempt_at?: string | null },
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  const inst = encodeURIComponent(instanceName);
+  const inst = encodeURIComponent(channel.instance_name);
   const readState = async (): Promise<string> => {
-    const res = await evo(`/instance/connectionState/${inst}`);
-    if (!res.ok) return cachedStatus === 'connected' ? 'open' : 'close';
-    const out = await res.json().catch(() => ({}));
-    return out?.instance?.state || out?.state || 'close';
+    try {
+      const res = await evo(`/instance/connectionState/${inst}`);
+      if (!res.ok) return channel.status === 'connected' ? 'open' : 'close';
+      const out = await res.json().catch(() => ({}));
+      return out?.instance?.state || out?.state || 'close';
+    } catch {
+      // Servidor fora do ar não é canal desconectado: não muda o status.
+      return channel.status === 'connected' ? 'open' : 'close';
+    }
+  };
+  // Registra o que foi visto e mantém a linha em memória em dia, para as leituras
+  // seguintes desta mesma requisição decidirem com a informação nova.
+  const observe = async (state: string) => {
+    const decision = await applyChannelState(admin, channel, state).catch(() => null);
+    if (!decision) return;
+    channel.status = decision.status;
+    if (decision.touchLastOpen) channel.last_open_at = new Date().toISOString();
   };
 
   let state = await readState();
-  await persistChannelStatus(admin, channelId, state).catch(() => {});
+  await observe(state);
   if (state === 'open') return { ok: true };
 
-  // Tenta reconectar automaticamente. Se a sessão ainda existir, a Evolution
-  // costuma voltar sem exigir QR. Se exigir QR, devolvemos erro claro.
-  try {
-    await evo(`/instance/connect/${inst}`, { method: 'GET' }).catch(() => null);
-  } catch { /* segue para rechecagem */ }
+  await sleep(1_200);
+  state = await readState();
+  await observe(state);
+  if (state === 'open') return { ok: true };
 
-  for (let i = 0; i < 3; i++) {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    state = await readState();
-    await persistChannelStatus(admin, channelId, state).catch(() => {});
-    if (state === 'open') return { ok: true };
+  const lastOpen = channel.last_open_at ? Date.parse(channel.last_open_at) : NaN;
+  if (!Number.isNaN(lastOpen) && Date.now() - lastOpen < CHANNEL_FLAP_GRACE_MS) return { ok: true };
+
+  const lastTry = channel.last_reconnect_attempt_at ? Date.parse(channel.last_reconnect_attempt_at) : NaN;
+  const podeReconectar = Number.isNaN(lastTry) || Date.now() - lastTry > RECONNECT_COOLDOWN_MS;
+  if (podeReconectar) {
+    try {
+      await admin.from('whatsapp_instances')
+        .update({ last_reconnect_attempt_at: new Date().toISOString() }).eq('id', channel.id);
+      channel.last_reconnect_attempt_at = new Date().toISOString();
+      await evo(`/instance/connect/${inst}`, { method: 'GET' });
+    } catch { /* segue para rechecagem */ }
+    for (let i = 0; i < 3; i++) {
+      await sleep(1_500);
+      state = await readState();
+      await observe(state);
+      if (state === 'open') return { ok: true };
+    }
   }
 
-  const mapped = mapState(state);
-  if (mapped === 'connecting') {
+  if (mapWaState(state) === 'connecting') {
     return { ok: false, message: 'Canal reconectando automaticamente. Aguarde alguns segundos e tente novamente.' };
   }
   return { ok: false, message: 'Canal desconectado e não reconectou sozinho. Abra Configurações → Integrações → WhatsApp para revalidar o número.' };
@@ -243,9 +275,10 @@ Deno.serve(async (req: Request) => {
   if (!sendTarget) return json({ error: 'Destino do envio não pôde ser resolvido.' }, 400);
 
   const { data: channel } = await admin.from('whatsapp_instances')
-    .select('instance_name, status').eq('id', instanceId).maybeSingle();
+    .select('id, instance_name, status, connected_at, last_open_at, last_reconnect_attempt_at')
+    .eq('id', instanceId).maybeSingle();
   if (!channel?.instance_name) return json({ error: 'Canal sem instância configurada' }, 400);
-  const ready = await ensureChannelReady(admin, evo, instanceId, channel.instance_name, channel.status);
+  const ready = await ensureChannelReady(admin, evo, channel);
   if (!ready.ok) {
     // Flag estruturada: o cliente (frontend e scheduler) detecta "canal fora" sem
     // depender de casar o texto da mensagem — contrato robusto para a auto-fila.
@@ -327,7 +360,19 @@ Deno.serve(async (req: Request) => {
       signal: AbortSignal.timeout(EVO_TIMEOUT_MS),
     });
     const out = await res.json().catch(() => ({}));
-    if (!res.ok) return json({ error: evoError(out, `Evolution retornou ${res.status}`) }, 502);
+    if (!res.ok) {
+      const detalhe = evoError(out, `Evolution retornou ${res.status}`);
+      // Socket caído NA HORA do envio é o veredito honesto de "canal fora" — mais
+      // confiável que o estado consultado. Mesmo contrato da auto-fila: a mensagem
+      // é retida e sai sozinha quando o canal voltar, em vez de virar erro na tela.
+      if (isWaConnectionFailure(detalhe)) {
+        return json({
+          error: 'Canal reconectando automaticamente. A mensagem ficou retida e sai assim que ele voltar.',
+          reconnect_pending: true,
+        }, 503);
+      }
+      return json({ error: detalhe }, 502);
+    }
     evoId = out?.key?.id || out?.messageId || null;
     // Sem os blobs: a resposta da Evolution traz miniatura em base64 da mídia
     // que acabamos de enviar, e ela já está no storage. Ver _shared/wa-raw.ts.

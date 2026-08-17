@@ -213,6 +213,33 @@ export const ChannelDownBanner: React.FC<{
  * ocorrido. Por isso não tem botão de dispensar: sai apenas quando o scheduler
  * confirma o envio, quando o autor cancela, ou quando a pendência é resolvida.
  */
+/** Teto do scheduler: depois disso a retida desiste (ver whatsapp-scheduler). */
+const HOLD_CEILING_MS = 12 * 60 * 60_000;
+
+/**
+ * Por que ESTA mensagem não saiu — dita como aconteceu.
+ *
+ * A frase era sempre "falhou após 12 horas sem conexão", e virava mentira no caso
+ * mais comum: o canal cai no meio do envio ("Connection Closed") e a mensagem
+ * falha em segundos, não em meio dia. Quem lê precisa saber se espera o canal
+ * voltar ou se aquilo já era.
+ */
+export const describeHoldFailure = (item: WhatsAppScheduledMessage, failed: number): string => {
+  const desde = item.hold_since ? Date.parse(item.hold_since) : NaN;
+  const desistiu = !Number.isNaN(desde) && Date.now() - desde >= HOLD_CEILING_MS;
+  if (desistiu) {
+    return `${failed === 1 ? 'Uma falhou' : `${failed} falharam`} após 12 horas sem conexão`
+      + ` e precisa${failed === 1 ? '' : 'm'} de ação.`;
+  }
+  const bruto = (item.error || '').replace(/^Error:\s*/i, '').replace(/\.$/, '').trim();
+  const motivo = /connection (closed|lost)|not connected|desconect/i.test(bruto)
+    ? 'o canal caiu no meio do envio'
+    : (bruto || 'o envio falhou');
+  return failed === 1
+    ? `Uma não saiu: ${motivo}.`
+    : `${failed} não saíram — a primeira porque ${motivo}.`;
+};
+
 export const ReconnectHoldSiren: React.FC<{
   items: WhatsAppScheduledMessage[];
   conversationsById: ReadonlyMap<string, WhatsAppConversation>;
@@ -223,7 +250,7 @@ export const ReconnectHoldSiren: React.FC<{
   if (items.length === 0) return null;
 
   // Falha definitiva vem primeiro; uma mensagem ainda retida pode se resolver
-  // sozinha, a que estourou o teto já exige alguém.
+  // sozinha, a que desistiu já exige alguém.
   const first = items.find(item => item.status === 'failed') ?? items[0];
   const failed = items.filter(item => item.status === 'failed').length;
   const conversation = conversationsById.get(first.conversation_id);
@@ -251,7 +278,7 @@ export const ReconnectHoldSiren: React.FC<{
           </p>
           <p className="mt-0.5 text-[11.5px] leading-snug text-red-700">
             {failed > 0
-              ? `${failed === 1 ? 'Uma falhou' : `${failed} falharam`} após 12 horas sem conexão e precisa${failed === 1 ? '' : 'm'} de ação.`
+              ? describeHoldFailure(first, failed)
               : `A mensagem para ${recipient} está retida porque ${channelLabel} está indisponível.`}
             {' '}O cliente não recebeu. Abra a pendência para conferir ou trocar de canal.
           </p>

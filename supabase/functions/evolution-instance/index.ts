@@ -11,6 +11,7 @@
  * Requer JWT (equipe).
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { applyChannelState } from '../_shared/wa-channel-state.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -64,8 +65,8 @@ Deno.serve(async (req: Request) => {
     }
 
     if (action === 'status') {
-      await persist(admin, channel.id, channel.phone_number, state, null);
-      return json({ status: mapState(state), phone: channel.phone_number });
+      const decision = await applyChannelState(admin, channel, state);
+      return json({ status: decision.status, phone: channel.phone_number });
     }
 
     // ── connect ──
@@ -96,6 +97,36 @@ Deno.serve(async (req: Request) => {
       }),
     }).catch(() => {});
 
+    // ── Nunca criar um segundo socket para a mesma sessão ──
+    //
+    // `/instance/connect` numa instância que ainda tem socket vivo abre OUTRA
+    // conexão com a MESMA credencial, e o WhatsApp derruba uma delas com
+    // `conflict type="replaced"`. As duas reconectam, se derrubam de novo, e o
+    // canal entra numa guerra que não termina sozinha (medido em 17/08/2026:
+    // estado alternando open/close/connecting várias vezes por segundo, envios
+    // morrendo com `1006`). Só se sai dela reiniciando o processo da Evolution.
+    //
+    // Por isso duas travas antes de conectar:
+    //   1. uma leitura `open` já basta para NÃO conectar;
+    //   2. leitura ruim é conferida uma segunda vez — numa instância em guerra a
+    //      primeira leitura mente metade das vezes, e é justamente aí que o
+    //      clique de socorro colocava mais um lutador no ringue.
+    if (state === 'open') {
+      const decision = await applyChannelState(admin, channel, state);
+      return json({ status: decision.status, phone: channel.phone_number, already_connected: true });
+    }
+    if (exists) {
+      await new Promise(resolve => setTimeout(resolve, 1_200));
+      const conferencia = await evo(`/instance/connectionState/${inst}`)
+        .then(r => r.json()).catch(() => ({}));
+      const segunda = conferencia?.instance?.state || conferencia?.state || state;
+      if (segunda === 'open') {
+        const decision = await applyChannelState(admin, channel, segunda);
+        return json({ status: decision.status, phone: channel.phone_number, already_connected: true });
+      }
+      state = segunda;
+    }
+
     let qr: string | null = null;
     const connRes = await evo(`/instance/connect/${inst}`);
     if (connRes.ok) {
@@ -106,25 +137,11 @@ Deno.serve(async (req: Request) => {
     const st2 = await evo(`/instance/connectionState/${inst}`).then(r => r.json()).catch(() => ({}));
     const finalState = st2?.instance?.state || state;
 
-    await persist(admin, channel.id, channel.phone_number, finalState, qr);
-    return json({ status: mapState(finalState), qr, phone: channel.phone_number });
+    await admin.from('whatsapp_instances')
+      .update({ last_qr: qr, last_reconnect_attempt_at: new Date().toISOString() }).eq('id', channel.id);
+    const decision = await applyChannelState(admin, channel, finalState);
+    return json({ status: decision.status, qr, phone: channel.phone_number });
   } catch (err) {
     return json({ error: (err as Error).message || 'Erro ao conectar à Evolution.' }, 500);
   }
 });
-
-function mapState(state: string): string {
-  if (state === 'open') return 'connected';
-  if (state === 'connecting') return 'connecting';
-  return 'disconnected';
-}
-
-async function persist(admin: any, channelId: string, phone: string | null, state: string, qr: string | null) {
-  const mapped = mapState(state);
-  await admin.from('whatsapp_instances').update({
-    status: mapped,
-    last_qr: qr,
-    connected_at: mapped === 'connected' ? new Date().toISOString() : null,
-    updated_at: new Date().toISOString(),
-  }).eq('id', channelId);
-}

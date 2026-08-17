@@ -227,6 +227,14 @@ export interface WhatsAppChannel {
   webhook_token: string | null;
   is_active: boolean;
   connected_at: string | null;
+  /**
+   * Última vez que a Evolution reportou o canal ABERTO. É a memória que sustenta
+   * a carência anti-piscada: enquanto for recente, um `close`/`connecting` solto
+   * é o socket respirando, não queda — e o status continua verde.
+   */
+  last_open_at?: string | null;
+  /** Última vez que o CRM pediu reconexão (espaça as tentativas). */
+  last_reconnect_attempt_at?: string | null;
   absence_message: string | null;    // Fase N
   absence_enabled: boolean;          // Fase N
   timezone: string;                  // Fase N — IANA timezone para regra de horário comercial

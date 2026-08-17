@@ -20,6 +20,7 @@ import {
 } from '../_shared/wa-ai-followup.ts';
 import { ensureWaAiFollowupScheduled } from '../_shared/wa-ai-followup-store.ts';
 import { isWithinBusinessHours, localTimeInTz } from '../_shared/wa-business-hours.ts';
+import { CHANNEL_FLAP_GRACE_MS, applyChannelState, isWaConnectionFailure } from '../_shared/wa-channel-state.ts';
 
 const TOKEN = Deno.env.get('WA_SCHEDULER_TOKEN') || 'wa-scheduler-2026';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -29,6 +30,9 @@ const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // evolution-send devolve (reconnect_pending) e cai no texto só por compatibilidade.
 function isReconnectPending(flag: unknown, message: string): boolean {
   if (flag === true) return true;
+  // Socket caído no meio do envio (inclusive o código de fechamento pelado, tipo
+  // `1006`) é canal fora, não falha da mensagem: continua retida em vez de morrer.
+  if (isWaConnectionFailure(message)) return true;
   const lower = (message || '').toLowerCase();
   return lower.includes('canal desconectado')
     || lower.includes('reconectando automaticamente')
@@ -51,6 +55,44 @@ function proximaTentativaMs(esperaMs: number): number {
   return 30 * 60_000;
 }
 
+/**
+ * Batimento do estado dos canais — a contrapartida da carência anti-piscada.
+ *
+ * O status do canal só desce quando chega um evento dizendo que ele caiu. Se a
+ * Evolution simplesmente PARAR de falar (servidor derrubado, instância removida),
+ * o último evento foi um `open` e o CRM ficaria verde para sempre, prometendo um
+ * envio que não acontece. Aqui, uma vez por minuto, todo canal verde que não dá
+ * sinal há mais que a carência é conferido na fonte.
+ */
+async function reconciliarCanais(admin: any) {
+  const limite = new Date(Date.now() - CHANNEL_FLAP_GRACE_MS).toISOString();
+  const { data: canais } = await admin.from('whatsapp_instances')
+    .select('id, instance_name, status, last_open_at, connected_at')
+    .eq('is_active', true)
+    .eq('status', 'connected')
+    .or(`last_open_at.is.null,last_open_at.lt.${limite}`);
+  if (!canais?.length) return;
+
+  const { data: cfg } = await admin.from('system_settings').select('value')
+    .eq('key', 'whatsapp_evolution_config').maybeSingle();
+  const server = (cfg?.value || {}) as { base_url?: string; api_key?: string };
+  if (!server.base_url || !server.api_key) return;
+  const base = server.base_url.replace(/\/+$/, '');
+
+  for (const canal of canais as any[]) {
+    try {
+      const res = await fetch(`${base}/instance/connectionState/${encodeURIComponent(canal.instance_name)}`, {
+        headers: { apikey: server.api_key! },
+        signal: AbortSignal.timeout(10_000),
+      });
+      // Servidor fora do ar não é canal desconectado — nesse caso não se mexe no status.
+      if (!res.ok) continue;
+      const out = await res.json().catch(() => ({}));
+      await applyChannelState(admin, canal, out?.instance?.state || out?.state || 'close');
+    } catch { /* rede instável não derruba canal */ }
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   if (url.searchParams.get('token') !== TOKEN) {
@@ -59,6 +101,8 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   const nowIso = new Date().toISOString();
+
+  await reconciliarCanais(admin).catch(() => {});
 
   // Mensagens vencidas, com o estado de bloqueio da conversa-pai.
   const { data: due, error } = await admin
@@ -125,6 +169,10 @@ Deno.serve(async (req: Request) => {
         .eq('id', m.id);
       sent++;
     } catch (e) {
+      // Com pilha: em 17/08/2026 uma leva caiu com "TypeError: Cannot read
+      // properties of undefined (reading 'id')" e a linha do banco guardava só a
+      // frase — sem origem, o erro não tinha como ser encontrado.
+      console.error('envio agendado falhou', m.id, e);
       const message = String((e as Error).message || e);
       if (isReconnectPending((e as { reconnectPending?: boolean })?.reconnectPending, message)) {
         // Retida: volta sozinha quando o canal reconectar. `hold_since` guarda o

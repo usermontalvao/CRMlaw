@@ -32,6 +32,7 @@ import { slimWaRaw } from '../_shared/wa-raw.ts';
 import { triggerWaAiAfterTranscription } from '../_shared/wa-ai-transcription.ts';
 import { desembrulharMensagem, lerConteudoNativo } from '../_shared/wa-native-content.ts';
 import { classificarReabertura } from '../_shared/wa-reopen.ts';
+import { applyChannelState } from '../_shared/wa-channel-state.ts';
 import { ehTelefoneReal, patchIdentidade, stanzaIdCitado } from '../_shared/wa-identity.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
@@ -53,7 +54,8 @@ Deno.serve(async (req: Request) => {
 
   // Resolve o canal pelo token
   const { data: channel } = await admin.from('whatsapp_instances')
-    .select('id, instance_name').eq('webhook_token', token).maybeSingle();
+    .select('id, instance_name, status, last_open_at, connected_at')
+    .eq('webhook_token', token).maybeSingle();
   if (!channel) return new Response('Unauthorized', { status: 401 });
   const instanceId = channel.id;
   const instanceName = channel.instance_name;
@@ -65,13 +67,12 @@ Deno.serve(async (req: Request) => {
 
   try {
     if (event === 'connection.update') {
+      // Um evento NÃO é um veredito. Uma sessão disputada oscila open/close/
+      // connecting várias vezes por segundo enquanto entrega mensagens normalmente;
+      // gravar cada respiro enchia a inbox de "esta conversa não vai enviar" e o
+      // registro do canal de UPDATE inútil. A histerese vive em wa-channel-state.
       const state = payload?.data?.state || payload?.data?.connection || payload?.state;
-      const mapped = state === 'open' ? 'connected' : state === 'connecting' ? 'connecting' : 'disconnected';
-      await admin.from('whatsapp_instances').update({
-        status: mapped,
-        connected_at: mapped === 'connected' ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString(),
-      }).eq('id', instanceId);
+      await applyChannelState(admin, channel, state);
       return new Response('ok');
     }
 

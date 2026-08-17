@@ -1447,7 +1447,16 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     }
   }, [selected, channelById, channelRoutingById, handleConversationOpened, loadReconnectAlerts, toast]);
 
+  /**
+   * "Ver e resolver" da sirene — leva ao lugar onde a pendência TEM botão.
+   *
+   * Antes isto só selecionava a conversa, e a mensagem retida não mora na
+   * thread: quem tem "Tentar enviar agora" é a aba Agendadas. Com a conversa já
+   * aberta na tela, o clique não fazia absolutamente nada visível — o atendente
+   * ficava batendo num botão morto com a mensagem parada.
+   */
   const openReconnectAlert = useCallback((conversationId: string) => {
+    setFilter('scheduled');
     void handleConversationOpened(conversationId);
   }, [handleConversationOpened]);
 
