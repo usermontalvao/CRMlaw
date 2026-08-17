@@ -856,6 +856,66 @@ body,
   animation: wa-leads-fade 0.12s linear both;
 }
 
+/* ── Painel "Nova conversa" ──
+   Tudo aqui anima OPACIDADE e TRANSLADO, e nada mais. Altura, filtro e
+   desfoque estão fora de propósito: são eles que obrigam o navegador a
+   recompor a coluna a cada quadro — a mesma origem da piscada preta que já
+   custou dois riscos de composição neste módulo.
+
+   As animações são de UM DISPARO (`both`, sem `infinite`): terminam e saem da
+   frente do compositor. */
+@keyframes wa-newconv-in {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes wa-newconv-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateX(-16px); }
+}
+@keyframes wa-row-in {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Curva de saída rápida (`cubic-bezier(.22,.61,.36,1)`): sai depressa e chega
+   devagar, que é como uma gaveta física para. Linear parece máquina. */
+.wa-newconv {
+  animation: wa-newconv-in 0.2s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+/* Fechar também é um movimento: o painel recua antes de sumir, senão a lista
+   de conversas reaparece com um estalo. */
+.wa-newconv[data-saindo='true'] {
+  animation: wa-newconv-out 0.16s ease-in both;
+}
+
+/* Só as primeiras linhas entram escalonadas (o atraso vem inline). Da décima
+   em diante o escalonamento viraria espera: quem rolou já quer a lista lá. */
+.wa-row-in {
+  animation: wa-row-in 0.26s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* A foto chega depois da linha (a sondagem é assíncrona). Sem esta transição
+   ela ESTOURA por cima das iniciais; com ela, atravessa. */
+.wa-avatar-img {
+  opacity: 0;
+  transition: opacity 0.28s ease;
+}
+.wa-avatar-img[data-carregada='true'] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wa-newconv,
+  .wa-newconv[data-saindo='true'],
+  .wa-row-in {
+    animation: none;
+  }
+  .wa-avatar-img {
+    opacity: 1;
+    transition: none;
+  }
+}
+
 /* Apple Sidebar */
 .apple-sidebar {
   background: var(--apple-surface);

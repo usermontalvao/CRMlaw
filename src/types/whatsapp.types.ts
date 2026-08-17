@@ -199,6 +199,19 @@ export interface WhatsAppContactBookEntry {
   isPreCadastro: boolean;
 }
 
+/**
+ * O que a Evolution respondeu sobre um número da agenda: ele tem WhatsApp? qual
+ * é a foto de perfil dele? Cache em `whatsapp_contact_probes`.
+ */
+export interface WhatsAppContactProbe {
+  /** Normalizado (dígitos com 55 na frente). */
+  phone: string;
+  /** `null` = ainda não se sabe (lookup fora do ar) — diferente de `false`. */
+  hasWhatsApp: boolean | null;
+  /** Foto de perfil já assinada, quando o contato tem uma pública. */
+  avatarUrl: string | null;
+}
+
 /** Canal = uma conexão/número na Evolution (whatsapp_instances). */
 export type WhatsAppChannelVisibility = 'all' | 'restricted';
 

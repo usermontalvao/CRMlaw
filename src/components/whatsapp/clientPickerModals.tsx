@@ -1,18 +1,16 @@
-// Modais de seleção/abertura por cliente: vincular um cliente à conversa e
-// iniciar uma nova conversa (busca por nome/CPF/telefone). Extraídos de
-// WhatsAppModule.tsx — autocontidos.
+// Modal de vínculo de cliente à conversa. Autocontido (extraído de
+// WhatsAppModule.tsx).
+//
+// A "Nova conversa" morava aqui e saiu: virou painel deslizante com a agenda
+// inteira, em `newConversationPanel.tsx`. O modal antigo abria vazio, dependia
+// de duas letras digitadas para mostrar alguém e não dizia se o número tinha
+// WhatsApp — ver o cabeçalho de lá.
 import React, { useEffect, useState } from 'react';
-import { Link2, AlertCircle, Search, Loader2, Phone, Plus, Star } from 'lucide-react';
-import { WaDialog, WaDialogBody, waInput, waLabel } from './ui';
+import { Link2, AlertCircle, Search, Loader2, Phone } from 'lucide-react';
+import { WaDialog, WaDialogBody, waInput } from './ui';
 import { prettyPhone, prettyDoc, initials } from './format';
-import {
-  pickInitialChannel, isPreferredChannel, togglePreferred,
-  readPreferredChannel, writePreferredChannel,
-} from './preferredChannel';
 import { whatsappService, normalizePhone } from '../../services/whatsapp.service';
-import { useToastContext } from '../../contexts/ToastContext';
-import type { WhatsAppClientLite, WhatsAppChannel } from '../../types/whatsapp.types';
-import type { WhatsAppChannelDepartmentRouting } from '../../services/settings.service';
+import type { WhatsAppClientLite } from '../../types/whatsapp.types';
 
 // ── Vincular cliente à conversa (com alerta anti-duplicado de telefone) ──
 export const ClientPickerModal: React.FC<{
@@ -123,197 +121,6 @@ export const ClientPickerModal: React.FC<{
             })}
           </div>
         </>)}
-      </WaDialogBody>
-    </WaDialog>
-  );
-};
-
-// ── Modal: Nova conversa (Fase 0) ──
-// Campo único: busca cliente por nome/CPF/telefone e, se nada casar, permite
-// usar o telefone digitado. Reabre conversa existente do mesmo número/canal.
-//
-// O canal já vem no preferido de quem atende (ver `preferredChannel.ts`), e a
-// estrela ao lado do rótulo é o que define esse preferido — no mesmo lugar onde
-// o canal é escolhido, para que marcar o padrão seja a continuação natural de
-// tê-lo escolhido uma vez.
-export const NewConversationModal: React.FC<{
-  channels: WhatsAppChannel[];
-  channelRouting: WhatsAppChannelDepartmentRouting[];
-  onClose: () => void;
-  onOpened: (conversationId: string) => void;
-}> = ({ channels, channelRouting, onClose, onOpened }) => {
-  const toast = useToastContext();
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<WhatsAppClientLite[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [preferred, setPreferred] = useState<string | null>(() => readPreferredChannel());
-  const [channelId, setChannelId] = useState(() => pickInitialChannel(readPreferredChannel(), channels.map(c => c.id)));
-  const [picked, setPicked] = useState<WhatsAppClientLite | null>(null); // cliente c/ +1 telefone
-  const [busy, setBusy] = useState(false);
-
-  // Um canal pode reconectar (ou cair) com o modal já aberto: `channels` só traz
-  // os conectados. Sem esta correção, a seleção continuaria apontando para um id
-  // que sumiu da lista e o `<select>` ficaria em branco.
-  useEffect(() => {
-    const ids = channels.map(c => c.id);
-    setChannelId(atual => (ids.includes(atual) ? atual : pickInitialChannel(preferred, ids)));
-  }, [channels, preferred]);
-
-  const marcarPreferido = () => {
-    const next = togglePreferred(preferred, channelId);
-    writePreferredChannel(next);
-    setPreferred(next);
-  };
-
-  useEffect(() => {
-    let alive = true;
-    const q = query.trim();
-    if (q.length < 2) { setResults([]); setLoading(false); return; }
-    setLoading(true);
-    const t = setTimeout(() => {
-      whatsappService.searchClients(q)
-        .then(list => { if (alive) setResults(list); })
-        .catch(() => { if (alive) setResults([]); })
-        .finally(() => { if (alive) setLoading(false); });
-    }, 280);
-    return () => { alive = false; clearTimeout(t); };
-  }, [query]);
-
-  const digits = query.replace(/\D/g, '');
-  const typedPhone = digits.length >= 10 ? normalizePhone(query) : '';
-
-  const open = async (phone: string, client: WhatsAppClientLite | null) => {
-    if (!channelId) { toast.warning('Selecione um canal conectado'); return; }
-    setBusy(true);
-    try {
-      const { conversation_id } = await whatsappService.openConversation({
-        phone,
-        channelId,
-        clientId: client?.id ?? null,
-        contactName: client?.full_name ?? null,
-        departmentId: channelRouting.find(item => item.channel_id === channelId)?.default_department_id || null,
-      });
-      onOpened(conversation_id);
-    } catch (e: any) {
-      toast.error('Falha ao abrir conversa', e.message);
-    } finally { setBusy(false); }
-  };
-
-  // Telefones únicos do cliente (móvel primeiro), já normalizados.
-  const phonesOf = (c: WhatsAppClientLite): string[] => {
-    const raw = [c.mobile, c.phone].filter((p): p is string => !!p);
-    const norm = raw.map(normalizePhone).filter(Boolean);
-    return Array.from(new Set(norm));
-  };
-
-  const onPickClient = (c: WhatsAppClientLite) => {
-    const phones = phonesOf(c);
-    if (phones.length === 0) { toast.warning('Cliente sem telefone cadastrado', 'Digite um número para conversar.'); return; }
-    if (phones.length === 1) { void open(phones[0], c); return; }
-    setPicked(c); // escolher qual número
-  };
-
-  // Enter fecha o fluxo sem tirar as mãos do teclado — digitar o número e
-  // apertar Enter é como se abre uma conversa em qualquer aplicativo. Só age
-  // quando o alvo é ÓBVIO (um telefone digitado, ou um único cliente na lista);
-  // com vários resultados, escolher por conta própria abriria conversa com a
-  // pessoa errada, então a tecla não faz nada e a escolha continua sendo do
-  // atendente.
-  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter' || busy) return;
-    if (typedPhone) { e.preventDefault(); void open(typedPhone, null); return; }
-    if (!loading && results.length === 1) { e.preventDefault(); onPickClient(results[0]); }
-  };
-
-  return (
-    <WaDialog title="Nova conversa" icon={<Plus size={18} />} onClose={onClose} size="sm">
-      <WaDialogBody>
-        {channels.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-[#e0ded8] p-5 text-center text-[12.5px] text-slate-500">
-            Nenhum canal conectado. Conecte um número do WhatsApp para iniciar conversas.
-          </div>
-        ) : picked ? (
-          // Passo de escolha de número (cliente com vários telefones).
-          <div>
-            <button onClick={() => setPicked(null)} className="text-[12px] font-semibold text-[#017561] hover:underline mb-2">← Voltar</button>
-            <p className="text-[13px] text-slate-600 mb-2">Qual número de <strong>{picked.full_name}</strong> usar?</p>
-            <div className="space-y-1.5">
-              {phonesOf(picked).map(ph => (
-                <button key={ph} onClick={() => open(ph, picked)} disabled={busy}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left border border-[#e7e5df] hover:bg-[#00a884]/10 hover:border-[#00a884] transition disabled:opacity-50">
-                  <Phone size={14} className="text-slate-400" />
-                  <span className="text-[13px] font-semibold text-slate-700">{prettyPhone(ph)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <>
-            {channels.length > 1 && (
-              <>
-                <div className="flex items-center justify-between gap-2">
-                  <label className={waLabel}>Canal</label>
-                  {/* Define o canal padrão sem sair do fluxo. Fica desligado quando
-                      nada está selecionado — marcar "nenhum canal" não quer dizer nada. */}
-                  <button type="button" onClick={marcarPreferido} disabled={!channelId}
-                    title={isPreferredChannel(preferred, channelId)
-                      ? 'Este é o canal padrão. Clique para deixar de usá-lo.'
-                      : 'Usar este canal como padrão nas próximas conversas'}
-                    className={`mb-1.5 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold transition disabled:opacity-40 ${
-                      isPreferredChannel(preferred, channelId)
-                        ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                        : 'text-slate-400 hover:bg-[#f3f2ef] hover:text-amber-600'
-                    }`}>
-                    <Star size={12} fill={isPreferredChannel(preferred, channelId) ? 'currentColor' : 'none'} />
-                    {isPreferredChannel(preferred, channelId) ? 'Padrão' : 'Usar como padrão'}
-                  </button>
-                </div>
-                <select value={channelId} onChange={e => setChannelId(e.target.value)} className={`${waInput} mb-3`}>
-                  {channels.map(c => <option key={c.id} value={c.id}>{c.name || c.instance_name}</option>)}
-                </select>
-              </>
-            )}
-
-            <div className="relative mb-3">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input autoFocus value={query} onChange={e => setQuery(e.target.value)} onKeyDown={onSearchKeyDown}
-                placeholder="Nome, CPF/CNPJ ou telefone…" className={`${waInput} pl-9`} />
-            </div>
-
-            <div className="max-h-[320px] overflow-y-auto -mx-1">
-              {/* Telefone digitado sem cliente: oferta direta. */}
-              {typedPhone && (
-                <button onClick={() => open(typedPhone, null)} disabled={busy}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-[#00a884]/10 transition disabled:opacity-50 border border-dashed border-[#00a884] mb-1">
-                  <span className="w-9 h-9 rounded-full bg-[#00a884]/15 text-[#017561] flex items-center justify-center flex-shrink-0"><Phone size={16} /></span>
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-slate-800">Conversar com este telefone</p>
-                    <p className="text-[11.5px] text-slate-400">{prettyPhone(typedPhone)}</p>
-                  </div>
-                </button>
-              )}
-
-              {loading ? (
-                <div className="flex items-center justify-center py-8 text-slate-400"><Loader2 size={18} className="animate-spin" /></div>
-              ) : results.length === 0 ? (
-                !typedPhone && <p className="text-center py-8 text-[13px] text-slate-400">{query.trim().length >= 2 ? 'Nenhum cliente encontrado.' : 'Busque um cliente ou digite um telefone.'}</p>
-              ) : results.map(c => (
-                <button key={c.id} onClick={() => onPickClient(c)} disabled={busy}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-[#00a884]/10 transition disabled:opacity-50">
-                  <span className="w-9 h-9 rounded-full bg-[#00a884]/15 text-[#017561] flex items-center justify-center text-[12px] font-bold flex-shrink-0">
-                    {initials(c.full_name, '')}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[13px] font-semibold text-slate-800 truncate">{c.full_name}</p>
-                    <p className="text-[11.5px] text-slate-400 truncate">
-                      {[prettyDoc(c.cpf_cnpj), c.mobile || c.phone].filter(Boolean).join(' · ') || 'sem telefone'}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </>
-        )}
       </WaDialogBody>
     </WaDialog>
   );

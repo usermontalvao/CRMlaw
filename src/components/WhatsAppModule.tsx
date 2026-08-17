@@ -42,7 +42,8 @@ import { ForwardMessageModal } from './whatsapp/forwardMessageModal';
 import { stripAgentSignature } from './whatsapp/waRichText';
 import { ConversationSummaryModal, ConversationTimelineModal } from './whatsapp/infoModals';
 import { RequestDocumentModal } from './whatsapp/RequestDocumentModal';
-import { ClientPickerModal, NewConversationModal } from './whatsapp/clientPickerModals';
+import { ClientPickerModal } from './whatsapp/clientPickerModals';
+import { NewConversationPanel } from './whatsapp/newConversationPanel';
 import { CreateDeadlineFromMessageModal, CreateTaskFromMessageModal } from './whatsapp/createFromMessageModals';
 import {
   CasosPanel, ClientAgendaPanel, ClientPendingsPanel, ClientSignaturesPanel, ClientAgreementsPanel,
@@ -1911,7 +1912,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       {/* ── Lista de conversas ── */}
       <aside style={isMobile ? undefined : { width: listWidth }}
         data-testid="whatsapp-conversation-list"
-        className={`flex-shrink-0 flex-col border-r border-[#e7e5df] bg-white min-h-0 ${isMobile ? (selectedId ? 'hidden' : 'flex w-full') : 'flex'}`}>
+        className={`relative flex-shrink-0 flex-col border-r border-[#e7e5df] bg-white min-h-0 ${isMobile ? (selectedId ? 'hidden' : 'flex w-full') : 'flex'}`}>
         <div className={`border-b border-[#e7e5df] ${embedded ? 'px-3 pt-2.5 pb-2' : 'px-4 pt-4 pb-3'}`}>
           {!embedded && (
             <div className="flex items-center justify-between gap-2 mb-3">
@@ -2058,6 +2059,18 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           />
           )}
         </div>
+
+        {/* "Nova conversa" cobre ESTA coluna, e não o meio da tela: escolher com
+            quem falar é a mesma tarefa de escolher uma conversa, e a agenda
+            quer a altura inteira. Ver o cabeçalho de `newConversationPanel`. */}
+        {newConvOpen && (
+          <NewConversationPanel
+            channels={connectedChannels}
+            channelRouting={channelRouting}
+            onClose={() => setNewConvOpen(false)}
+            onOpened={handleConversationOpened}
+          />
+        )}
       </aside>
 
       {/* Divisória arrastável lista ↔ thread (Fase 10.1) */}
@@ -3127,15 +3140,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           previousAgentIds={conversationAgentIds}
           onClose={() => setTransferOpen(false)}
           onDone={onTransferDone}
-        />
-      )}
-
-      {newConvOpen && (
-        <NewConversationModal
-          channels={connectedChannels}
-          channelRouting={channelRouting}
-          onClose={() => setNewConvOpen(false)}
-          onOpened={handleConversationOpened}
         />
       )}
 

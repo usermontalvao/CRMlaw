@@ -1,6 +1,6 @@
 // Camada 360 do cliente: busca/match, agenda, pendências e overview consolidado.
 import { supabase } from '../../config/supabase';
-import { normalizePhone, samePhone, openResilientChannel, attachAvatarUrls } from './shared';
+import { normalizePhone, samePhone, openResilientChannel, attachAvatarUrls, invokeFn } from './shared';
 import { chaveDeConsulta, criarCompartilhadorDeConsultas } from '../realtime/inFlight';
 import { clientChangeHistoryService } from '../clientChangeHistory.service';
 import { deadlineService } from '../deadline.service';
@@ -14,7 +14,7 @@ import type { Requirement } from '../../types/requirement.types';
 import type { Process } from '../../types/process.types';
 import type { SignatureRequestWithSigners } from '../../types/signature.types';
 import type { Agreement } from '../../types/financial.types';
-import type { WhatsAppClientLite, WhatsAppContactBookEntry } from '../../types/whatsapp.types';
+import type { WhatsAppClientLite, WhatsAppContactBookEntry, WhatsAppContactProbe } from '../../types/whatsapp.types';
 import type { ClientSchedule, ScheduleDeadline, ClientPendings, ClientDocRequest, ClientOverview, ClientTemplateFillLink, ClientTrackedSignatureStatus } from './shared';
 
 /**
@@ -45,6 +45,28 @@ function daysOverdue(due: string, startOfToday: Date): number {
   if (Number.isNaN(d.getTime())) return 0;
   d.setHours(0, 0, 0, 0);
   return Math.max(0, Math.round((startOfToday.getTime() - d.getTime()) / 86_400_000));
+}
+
+/** Linha crua de `whatsapp_contact_probes` (ou da Edge Function de sondagem). */
+interface ProbeRow {
+  phone: string;
+  has_whatsapp: boolean | null;
+  avatar_path: string | null;
+}
+
+/**
+ * Troca o caminho da foto por uma URL assinada, em lote e pelo mesmo cache das
+ * conversas — quem já abriu a inbox costuma ver a agenda com rosto sem uma ida
+ * a mais ao storage.
+ */
+async function assinarProbes(rows: ProbeRow[]): Promise<WhatsAppContactProbe[]> {
+  const paraAssinar = rows.map(r => ({ contact_avatar_path: r.avatar_path, contact_avatar_url: null as string | null }));
+  await attachAvatarUrls(paraAssinar);
+  return rows.map((r, i) => ({
+    phone: r.phone,
+    hasWhatsApp: r.has_whatsapp,
+    avatarUrl: paraAssinar[i].contact_avatar_url,
+  }));
 }
 
 export const client360Api = {
@@ -97,6 +119,45 @@ export const client360Api = {
       avatarUrl: paraAssinar[i].contact_avatar_url,
       isPreCadastro: r.is_pre_cadastro === true,
     }));
+  },
+
+  /**
+   * O que já se sabe, sem perguntar nada à Evolution: quais números da agenda
+   * têm WhatsApp e qual a foto de perfil de cada um.
+   *
+   * É o cache (`whatsapp_contact_probes`) sendo lido de uma vez na abertura do
+   * painel. A tabela tem uma linha por número JÁ sondado — poucas centenas no
+   * pior caso —, então trazê-la inteira custa menos do que montar um `in(...)`
+   * com a agenda toda.
+   */
+  async listContactProbes(): Promise<WhatsAppContactProbe[]> {
+    const { data, error } = await supabase
+      .from('whatsapp_contact_probes')
+      .select('phone, has_whatsapp, avatar_path');
+    if (error) return [];
+    return assinarProbes((data || []) as ProbeRow[]);
+  },
+
+  /**
+   * Pergunta à Evolution sobre os números que ainda não estão no cache: existe
+   * WhatsApp nesse número? qual a foto?
+   *
+   * Chamada com o que está NA TELA, em lotes pequenos — ver o cabeçalho da Edge
+   * Function. Falha de rede não é erro do painel: a agenda continua servindo sem
+   * rosto e sem selo, então o erro vira lista vazia.
+   */
+  async probeContacts(phones: string[], channelId?: string | null): Promise<WhatsAppContactProbe[]> {
+    const alvos = Array.from(new Set(phones.map(normalizePhone).filter(Boolean)));
+    if (alvos.length === 0) return [];
+    try {
+      const data = await invokeFn('whatsapp-contact-probe', {
+        phones: alvos,
+        channel_id: channelId || null,
+      });
+      return assinarProbes((data?.results || []) as ProbeRow[]);
+    } catch {
+      return [];
+    }
   },
 
   /** Candidatos cujo telefone casa com o do contato (normalizado no banco). */
