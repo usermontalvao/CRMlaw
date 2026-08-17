@@ -1,5 +1,6 @@
 import type { IntimationAnalysis, DeadlineExtraction } from '../types/ai.types';
 import { supabase } from '../config/supabase';
+import { contarPrazoDaIntimacao } from '../utils/intimationDeadline';
 import { settingsService, type AiTaskConfig } from './settings.service';
 import { streamChatCompletion } from './aiStream';
 import {
@@ -194,20 +195,20 @@ class AIService {
     this.initialize();
   }
 
-  private addBusinessDays(startDate: Date, daysToAdd: number): Date {
-    const result = new Date(startDate);
-    let remainingDays = daysToAdd;
-
-    while (remainingDays > 0) {
-      result.setDate(result.getDate() + 1);
-      const dayOfWeek = result.getDay();
-      const dateStr = result.toISOString().slice(0, 10);
-      if (dayOfWeek !== 0 && dayOfWeek !== 6 && !this.holidayDates.has(dateStr)) {
-        remainingDays--;
-      }
-    }
-
-    return result;
+  /**
+   * Vencimento estimado de um prazo processual, em dias úteis e pela regra do
+   * CPC (publicação no dia útil seguinte à disponibilização; o dia do começo não
+   * se conta). A conta mora em `utils/intimationDeadline.ts`, testada e sem
+   * dependência do fuso do navegador — a versão anterior misturava hora local e
+   * UTC e mandava 30% dos vencimentos para sábado ou domingo.
+   */
+  private venceEm(disponibilizacao: string | Date, dias: number): string | null {
+    const conta = contarPrazoDaIntimacao(
+      disponibilizacao instanceof Date ? disponibilizacao : String(disponibilizacao),
+      dias,
+      this.holidayDates,
+    );
+    return conta ? `${conta.vencimento}T00:00:00.000Z` : null;
   }
 
   private initialize() {
@@ -1438,9 +1439,7 @@ ${texto}`;
       
       // Calcular data de vencimento usando dias úteis A PARTIR DA DATA DE DISPONIBILIZAÇÃO
       if (analysis.deadline && analysis.deadline.days) {
-        const startDate = new Date(dataDisponibilizacao);
-        const dueDate = this.addBusinessDays(startDate, analysis.deadline.days);
-        analysis.deadline.dueDate = dueDate.toISOString();
+        analysis.deadline.dueDate = this.venceEm(dataDisponibilizacao, analysis.deadline.days);
       }
 
       return analysis;
@@ -1494,9 +1493,7 @@ Se não houver prazo, retorne null para days e dueDate.`;
 
       // Calcular data usando dias úteis
       if (result.days) {
-        const today = new Date();
-        const dueDate = this.addBusinessDays(today, result.days);
-        result.dueDate = dueDate.toISOString();
+        result.dueDate = this.venceEm(new Date(), result.days);
       }
 
       return result;

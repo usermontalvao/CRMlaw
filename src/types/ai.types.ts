@@ -12,7 +12,7 @@ export interface IntimationAnalysis {
 
 export interface DeadlineExtraction {
   days: number; // Número de dias
-  dueDate: string; // Data limite (ISO)
+  dueDate: string | null; // Data limite (ISO) — a IA sempre devolve null; quem calcula é utils/intimationDeadline.ts
   description: string; // Descrição do prazo
   confidence: 'baixa' | 'media' | 'alta'; // Confiança na extração
 }

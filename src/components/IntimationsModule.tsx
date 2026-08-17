@@ -63,12 +63,13 @@ import { useSelectionState } from '../hooks/useSelectionState';
 import type { DjenComunicacaoLocal, DjenConsultaParams, UpdateDjenComunicacaoDTO } from '../types/djen.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
-import type { CreateDeadlineDTO, Deadline, DeadlineType, DeadlinePriority, DeadlineStatus } from '../types/deadline.types';
+import type { CreateDeadlineDTO, DeadlineType, DeadlinePriority, DeadlineStatus } from '../types/deadline.types';
 import type { CreateCalendarEventDTO, CalendarEventType } from '../types/calendar.types';
 import type { Profile } from '../services/profile.service';
 import type { IntimationAnalysis } from '../types/ai.types';
 import { addMinutesToWallTime } from '../utils/officeTime';
-import { escolherMelhorCandidato, resolverAncora, type AncoraCasamento } from '../utils/deadlineIntimationMatch';
+import { detectIntimationOutcome, type IntimationOutcomeKind } from '../utils/intimationOutcome';
+import { dataInternaDoPrazo, prioridadePorUrgencia } from '../utils/intimationDeadline';
 
 interface ModuleSettings {
   defaultGroupByProcess: boolean;
@@ -220,20 +221,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const [prescriptionBaseDate, setPrescriptionBaseDate] = useState('');
   const [prescriptionError, setPrescriptionError] = useState<string | null>(null);
   const [prescriptionSuccess, setPrescriptionSuccess] = useState<string | null>(null);
-
-  // Guardião de prazos: bloqueia "marcar como lida" quando há prazo (IA)
-  // detectado sem cadastro vinculado. `candidate` é o prazo que existe no mesmo
-  // processo mas nasceu sem `intimation_id` — nesse caso não é bloqueio, é a
-  // pergunta "é este aqui?".
-  const [readGuard, setReadGuard] = useState<{
-    intimation: DjenComunicacaoLocal;
-    dueDate?: string | null;
-    days?: number | null;
-    candidate?: Deadline | null;
-    ancora?: AncoraCasamento | null;
-  } | null>(null);
-  const [linkingDeadline, setLinkingDeadline] = useState(false);
-  const pendingReadAfterDeadlineRef = useRef<string | null>(null);
 
   // Seleção múltipla
   const {
@@ -931,125 +918,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   // Sincronização automática movida para cron no Supabase
 
-  // Guardião de prazos: procura o prazo já cadastrado desta intimação.
-  //
-  // Primeiro o vínculo forte (deadlines.intimation_id). Falhando ele, o vínculo
-  // fraco — mesmo processo, cadastrado logo depois, vencendo na janela — porque
-  // o campo forte só é preenchido quando o prazo nasce pelo card da intimação, e
-  // quase todo prazo do escritório nasce pelo módulo de Prazos.
-  const findExistingDeadline = async (
-    intimation: DjenComunicacaoLocal,
-    estimativaVencimento: string | null,
-  ): Promise<{ linked: boolean; candidate: Deadline | null; ancora: AncoraCasamento | null }> => {
-    const linked = await deadlineService.getIntimationIdsWithDeadlines([intimation.id]);
-    if (linked.has(intimation.id)) return { linked: true, candidate: null, ancora: null };
 
-    // A intimação pode ter chegado sem processo e sem cliente; nesse caso as
-    // irmãs de mesmo número de processo emprestam a âncora delas.
-    const ancoras = resolverAncora(intimation, intimations);
-    if (!ancoras.process_id && !ancoras.client_id) {
-      return { linked: false, candidate: null, ancora: null };
-    }
-
-    const prazos = await deadlineService.getDeadlineCandidates({
-      processIds: ancoras.process_id ? [ancoras.process_id] : [],
-      clientIds: ancoras.client_id ? [ancoras.client_id] : [],
-    });
-    const escolhido = escolherMelhorCandidato(prazos, {
-      id: intimation.id,
-      ...ancoras,
-      data_disponibilizacao: intimation.data_disponibilizacao,
-      estimativaVencimento,
-    });
-
-    return {
-      linked: false,
-      candidate: escolhido?.prazo ?? null,
-      ancora: escolhido?.ancora ?? null,
-    };
-  };
-
-  // Guardião de prazos: retorna os IDs (entre os informados) que têm prazo
-  // detectado pela IA e NENHUM prazo cadastrado — nem vinculado, nem casável no
-  // mesmo processo. Consulta o banco (não o estado local) para cobrir intimações
-  // cuja análise não está carregada.
-  const getUnprotectedIntimationIds = async (ids: string[]): Promise<string[]> => {
-    if (ids.length === 0) return [];
-    const analyses = await intimationAnalysisService.getAnalysesByIntimationIds(ids);
-    const withAiDeadline = ids.filter(id => analyses.get(id)?.deadline_due_date);
-    if (withAiDeadline.length === 0) return [];
-
-    const linked = await deadlineService.getIntimationIdsWithDeadlines(withAiDeadline);
-    const semVinculoForte = withAiDeadline.filter(id => !linked.has(id));
-    if (semVinculoForte.length === 0) return [];
-
-    const porId = new Map(intimations.map(i => [i.id, i]));
-    // Resolve a âncora de cada uma (emprestando das irmãs quando órfã) antes de
-    // ir ao banco, para as duas consultas cobrirem o lote inteiro. O vínculo
-    // fraco não pode custar uma ida ao banco por intimação quando o operador
-    // marca 300 de uma vez.
-    const ancorasPorId = new Map<string, { process_id: string | null; client_id: string | null }>();
-    for (const id of semVinculoForte) {
-      const intimation = porId.get(id);
-      if (intimation) ancorasPorId.set(id, resolverAncora(intimation, intimations));
-    }
-
-    const coletar = (campo: 'process_id' | 'client_id') =>
-      Array.from(ancorasPorId.values())
-        .map(ancora => ancora[campo])
-        .filter((valor): valor is string => !!valor);
-
-    const processIds = coletar('process_id');
-    const clientIds = coletar('client_id');
-    if (processIds.length === 0 && clientIds.length === 0) return semVinculoForte;
-
-    const prazos = await deadlineService.getDeadlineCandidates({ processIds, clientIds });
-
-    return semVinculoForte.filter(id => {
-      const intimation = porId.get(id);
-      const ancoras = ancorasPorId.get(id);
-      if (!intimation || !ancoras) return true;
-      const candidato = escolherMelhorCandidato(prazos, {
-        id,
-        ...ancoras,
-        data_disponibilizacao: intimation.data_disponibilizacao,
-        estimativaVencimento: analyses.get(id)?.deadline_due_date ?? null,
-      });
-      return !candidato;
-    });
-  };
-
-  // Marcar como lida
-  const handleMarkAsRead = async (id: string, force = false) => {
-    // Guardião de prazos: intimação com prazo detectado pela IA só pode ser
-    // marcada como lida com prazo vinculado ou decisão explícita do operador.
-    // Fail-closed: se a checagem falhar, a trava dispara mesmo assim.
-    if (!force) {
-      const intimation = intimations.find(int => int.id === id);
-      const analysis = aiAnalysis.get(id);
-      // 1) Guardião de prazos
-      if (intimation && analysis?.deadline) {
-        let hasLinkedDeadline = false;
-        let candidate: Deadline | null = null;
-        let ancora: AncoraCasamento | null = null;
-        try {
-          const found = await findExistingDeadline(intimation, analysis.deadline.dueDate || null);
-          hasLinkedDeadline = found.linked;
-          candidate = found.candidate;
-          ancora = found.ancora;
-        } catch { /* fail-closed */ }
-        if (!hasLinkedDeadline) {
-          setReadGuard({
-            intimation,
-            dueDate: analysis.deadline.dueDate || null,
-            days: analysis.deadline.days ?? null,
-            candidate,
-            ancora,
-          });
-          return;
-        }
-      }
-    }
+  const handleMarkAsRead = async (id: string) => {
     try {
       await djenLocalService.marcarComoLida(id);
 
@@ -1069,25 +939,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       toast.success('Marcado como lida');
     } catch (err: any) {
       toast.error('Erro ao marcar', err.message);
-    }
-  };
-
-  // Guardião de prazos: o operador confirmou que o prazo achado no processo é o
-  // desta intimação. Grava o vínculo forte e segue com a marcação — a partir
-  // daqui esta intimação não volta a ser cobrada.
-  const handleLinkCandidateDeadline = async () => {
-    if (!readGuard?.candidate || linkingDeadline) return;
-    const { intimation, candidate } = readGuard;
-    setLinkingDeadline(true);
-    try {
-      await deadlineService.linkDeadlineToIntimation(candidate.id, intimation.id);
-      setReadGuard(null);
-      toast.success('Prazo vinculado', `"${candidate.title}" agora está ligado a esta intimação.`);
-      await handleMarkAsRead(intimation.id, true);
-    } catch (err: any) {
-      toast.error('Erro ao vincular', err.message || 'Não foi possível vincular o prazo.');
-    } finally {
-      setLinkingDeadline(false);
     }
   };
 
@@ -1123,18 +974,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         toast.info('Info', 'Nenhuma intimação não lida encontrada');
         return;
       }
-      // Guardião de prazos: alertar sobre prazos sem cadastro
-      try {
-        const unprotectedDeadlines = await getUnprotectedIntimationIds(unreadIds);
-        if (unprotectedDeadlines.length > 0) {
-          const ok = window.confirm(
-            `⚠️ ATENÇÃO ao marcar todas como lidas:\n\n` +
-            `• ${unprotectedDeadlines.length} com PRAZO detectado e sem prazo cadastrado\n\n` +
-            `Marcar mesmo assim? Prazos NÃO serão criados.`
-          );
-          if (!ok) return;
-        }
-      } catch { /* checagem falhou — segue com confirmação genérica abaixo */ }
       // Passa os IDs explicitamente para evitar UPDATE cego na tabela (sem escopo de office)
       const count = await djenLocalService.marcarTodasComoLidas(unreadIds);
       await reloadIntimations();
@@ -1173,20 +1012,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     if (selectedIds.size === 0) return;
 
     const ids = Array.from(selectedIds);
-    // Guardião de prazos: checa o lote de uma vez (evita um modal por item)
-    try {
-      const unprotectedDeadlines = await getUnprotectedIntimationIds(ids);
-      if (unprotectedDeadlines.length > 0) {
-        const ok = window.confirm(
-          `⚠️ ATENÇÃO nas ${ids.length} selecionada(s):\n\n` +
-          `• ${unprotectedDeadlines.length} com PRAZO e sem prazo cadastrado\n\n` +
-          `Marcar como lidas mesmo assim? Prazos NÃO serão criados.`
-        );
-        if (!ok) return;
-      }
-    } catch { /* fail-open no lote: o operador confirmou a ação em massa */ }
     for (const id of ids) {
-      await handleMarkAsRead(id, true);
+      await handleMarkAsRead(id);
     }
 
     disableSelectionMode();
@@ -1779,29 +1606,20 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   }
 
   // ── helpers de urgência ──────────────────────────────────────────────
-  // Detecta resultado do julgamento a partir do resumo da IA
+  // Detecta resultado do julgamento a partir do resumo da IA.
+  // A leitura mora em src/utils/intimationOutcome.ts (puro e testado); aqui só as cores.
+  const outcomeStyles: Record<IntimationOutcomeKind, string> = {
+    procedente:       'bg-emerald-50 text-emerald-700 border-emerald-300',
+    improcedente:     'bg-red-50 text-red-700 border-red-300',
+    parcial:          'bg-amber-50 text-amber-700 border-amber-300',
+    tutela_concedida: 'bg-violet-50 text-violet-700 border-violet-300',
+    tutela_negada:    'bg-red-50 text-red-700 border-red-300',
+    condenacao:       'bg-red-50 text-red-700 border-red-300',
+  };
+
   const detectOutcome = (summary?: string): { label: string; cls: string } | null => {
-    if (!summary) return null;
-    const s = summary.toUpperCase();
-    if (/PROCEDENTE/.test(s) && !/IMPROCEDENTE/.test(s)) {
-      return { label: 'PROCEDENTE', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300' };
-    }
-    if (/IMPROCEDENTE/.test(s)) {
-      return { label: 'IMPROCEDENTE', cls: 'bg-red-50 text-red-700 border-red-300' };
-    }
-    if (/PARCIALMENTE PROCEDENTE/.test(s)) {
-      return { label: 'PARCIAL', cls: 'bg-amber-50 text-amber-700 border-amber-300' };
-    }
-    if (/TUTELA\s+(DE URGÊNCIA|CONCEDIDA|DEFERIDA)|LIMINAR\s+(CONCEDIDA|DEFERIDA)/.test(s)) {
-      return { label: 'TUTELA CONCEDIDA', cls: 'bg-violet-50 text-violet-700 border-violet-300' };
-    }
-    if (/TUTELA\s+(NEGADA|INDEFERIDA)|LIMINAR\s+(NEGADA|INDEFERIDA)/.test(s)) {
-      return { label: 'TUTELA NEGADA', cls: 'bg-red-50 text-red-700 border-red-300' };
-    }
-    if (/CONDENADO|CONDENA[ÇC][ÃA]O/.test(s)) {
-      return { label: 'CONDENAÇÃO', cls: 'bg-red-50 text-red-700 border-red-300' };
-    }
-    return null;
+    const outcome = detectIntimationOutcome(summary);
+    return outcome ? { label: outcome.label, cls: outcomeStyles[outcome.kind] } : null;
   };
 
   // ── Classificação de ações sugeridas pela IA ────────────────────────
@@ -1881,174 +1699,6 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     if (!rawText) return null;
     return htmlToText(rawText);
   };
-
-  // Visualização de detalhes
-  if (selectedIntimation) {
-    const client = getClientName(selectedIntimation.client_id);
-    const process = getProcessCode(selectedIntimation.process_id);
-    const detailAnalysis = aiAnalysis.get(selectedIntimation.id);
-    const detailUrgency = detailAnalysis?.urgency as keyof typeof urgencyConfig | undefined;
-    const detailUrgCfg = detailUrgency ? urgencyConfig[detailUrgency] : null;
-
-    const decodedTexto = htmlToText(selectedIntimation.texto || '');
-    const partes = selectedIntimation.djen_destinatarios && selectedIntimation.djen_destinatarios.length > 0
-      ? selectedIntimation.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
-      : extractPartesFromTexto(decodedTexto);
-
-    return (
-      <div className="flex flex-col h-full rounded-2xl overflow-hidden border border-[#e7e5df]/80 shadow-lg bg-white">
-
-        {/* ── Header ── */}
-        <div className="bg-slate-900 px-5 py-4 flex-shrink-0">
-          <div className="flex items-center justify-between mb-3">
-            <button
-              onClick={() => setSelectedIntimation(null)}
-              className="inline-flex items-center gap-1.5 text-slate-400 hover:text-white transition text-xs font-medium"
-            >
-              <ChevronRight className="w-3.5 h-3.5 rotate-180" />
-              Voltar à lista
-            </button>
-            <div className="flex items-center gap-1.5">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#f8f7f5]/10 text-white">
-                {selectedIntimation.sigla_tribunal}
-              </span>
-              {!selectedIntimation.lida && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-400/20 text-amber-300">
-                  <EyeOff className="w-3 h-3" /> Não lida
-                </span>
-              )}
-              {detailUrgCfg && (
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold ${detailUrgCfg.badge}`}>
-                  {urgencyConfig[detailUrgency!].label}
-                </span>
-              )}
-              <button onClick={() => setSelectedIntimation(null)} className="ml-1 p-1.5 text-slate-500 hover:text-white hover:bg-white/10 rounded-lg transition">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-          <p className="text-lg font-bold text-white font-mono leading-tight">
-            {selectedIntimation.numero_processo_mascara || selectedIntimation.numero_processo || 'Sem número'}
-          </p>
-          <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 mt-1">
-            <span className="text-xs text-slate-400">{formatDate(selectedIntimation.data_disponibilizacao)}</span>
-            {selectedIntimation.nome_orgao && <span className="text-xs text-slate-500">{selectedIntimation.nome_orgao}</span>}
-            {selectedIntimation.tipo_comunicacao && (
-              <span className="text-xs text-amber-400/80 font-medium">{selectedIntimation.tipo_comunicacao}</span>
-            )}
-            {selectedIntimation.nome_classe && (
-              <span className="text-xs text-slate-500">{selectedIntimation.nome_classe}</span>
-            )}
-          </div>
-        </div>
-
-        {/* ── Metadata compacta ── */}
-        {(client || process || partes.length > 0) && (
-          <div className="flex-shrink-0 border-b border-slate-100 bg-slate-50/60 px-5 py-3 flex flex-wrap gap-4">
-            {client && (
-              <div className="min-w-0">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Cliente</p>
-                <p className="text-xs font-semibold text-slate-800 truncate max-w-[160px]">{client}</p>
-              </div>
-            )}
-            {process && (
-              <div className="min-w-0">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Processo</p>
-                <p className="text-xs font-mono font-semibold text-slate-800 truncate max-w-[160px]">{process}</p>
-              </div>
-            )}
-            {partes.length > 0 && (
-              <div className="min-w-0 flex-1">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Partes</p>
-                <div className="flex flex-wrap gap-1">
-                  {partes.slice(0, 3).map((p, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#f8f7f5] border border-[#e7e5df] rounded text-[11px] text-slate-700">
-                      <span className="font-medium">{p.nome}</span>
-                      {p.polo && <span className="text-slate-400 text-[10px]">({p.polo})</span>}
-                    </span>
-                  ))}
-                  {partes.length > 3 && <span className="text-[11px] text-slate-400">+{partes.length - 3}</span>}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── IA Analysis (se disponível) ── */}
-        {detailAnalysis && (
-          <div className="flex-shrink-0 border-b border-slate-100">
-            <div className={`mx-4 my-3 rounded-xl p-3.5 border ${detailUrgCfg?.badge ?? 'bg-amber-50 border-amber-200'}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                  <p className="text-xs font-semibold text-slate-800 leading-snug">{detailAnalysis.summary}</p>
-                </div>
-                {detailAnalysis.deadline && (
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-bold text-slate-900">{detailAnalysis.deadline.days}d úteis</p>
-                    {detailAnalysis.deadline.dueDate && (
-                      <p className="text-[10px] text-slate-600">{formatDate(detailAnalysis.deadline.dueDate)}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-              {detailAnalysis.deadline?.description && (
-                <p className="text-[11px] text-slate-600 mt-1.5 ml-5">{detailAnalysis.deadline.description}</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Conteúdo do documento ── */}
-        <div className="flex-1 overflow-y-auto bg-[#f8f7f5]">
-          <div className="px-6 py-5">
-            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
-              <div className="w-1 h-4 rounded-full bg-amber-500" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Conteúdo da Intimação</span>
-            </div>
-            <div className="text-sm text-slate-700 whitespace-pre-wrap leading-[1.8] font-[system-ui] selection:bg-amber-100">
-              {highlightText(selectedIntimation.texto || '', detailAnalysis?.importantPassages)}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Ações ── */}
-        <div className="flex-shrink-0 border-t border-[#e7e5df] bg-[#f8f7f5] px-4 py-3">
-          <div className="flex flex-wrap gap-2">
-            {!selectedIntimation.lida && (
-              <button onClick={() => { handleMarkAsRead(selectedIntimation.id); setSelectedIntimation(null); }}
-                className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-3.5 py-2 rounded-lg transition text-xs shadow-sm shadow-emerald-200">
-                <CheckCircle className="w-3.5 h-3.5" /> Marcar lida
-              </button>
-            )}
-            <button onClick={() => { handleCreateDeadline(selectedIntimation); setSelectedIntimation(null); }}
-              className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3.5 py-2 rounded-lg transition text-xs shadow-sm shadow-amber-200">
-              <Clock className="w-3.5 h-3.5" /> Novo Prazo
-            </button>
-            <button onClick={() => { handleCreateAppointment(selectedIntimation); setSelectedIntimation(null); }}
-              className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
-              <CalendarIcon className="w-3.5 h-3.5 text-indigo-500" /> Compromisso
-            </button>
-            <button onClick={() => { handleOpenPrescriptionModal(selectedIntimation); setSelectedIntimation(null); }}
-              className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
-              <AlertTriangle className="w-3.5 h-3.5 text-orange-500" /> Prescrição
-            </button>
-            <button onClick={() => { handleOpenLinkModal(selectedIntimation); setSelectedIntimation(null); }}
-              className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
-              <Link2 className="w-3.5 h-3.5 text-blue-500" /> Vincular
-            </button>
-            {selectedIntimation.link && (
-              <a href={selectedIntimation.link} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
-                <ExternalLink className="w-3.5 h-3.5 text-purple-500" /> Ver Diário
-              </a>
-            )}
-          </div>
-        </div>
-
-      </div>
-    );
-  }
 
   return (
     <div>
@@ -3217,37 +2867,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         const analysis = aiAnalysis.get(intimation.id);
         const client = clients.find(c => c.id === intimation.client_id);
 
-        const getPriorityFromUrgency = (urgency?: string): import('../types/deadline.types').DeadlinePriority => {
-          if (urgency === 'critica' || urgency === 'alta') return 'alta';
-          if (urgency === 'media') return 'media';
-          return 'alta';
-        };
-
-        const getDeadlineDate = (): string => {
-          if (!analysis?.deadline?.dueDate) return '';
-          const d = new Date(analysis.deadline.dueDate);
-          d.setDate(d.getDate() - 1);
-          return d.toISOString().split('T')[0];
-        };
+        const getPriorityFromUrgency = prioridadePorUrgencia;
+        const getDeadlineDate = (): string => dataInternaDoPrazo(analysis?.deadline?.dueDate);
 
         const processNumber = intimation.numero_processo_mascara || intimation.numero_processo || '';
 
         return (
           <DeadlineFormModal
             open={deadlineModalOpen}
-            onClose={() => { setDeadlineModalOpen(false); setCurrentIntimationForAction(null); pendingReadAfterDeadlineRef.current = null; }}
+            onClose={() => { setDeadlineModalOpen(false); setCurrentIntimationForAction(null); }}
             onSaved={() => {
               setDeadlineModalOpen(false);
               setCurrentIntimationForAction(null);
               toast.success('Prazo criado', 'Prazo cadastrado com sucesso');
-              // Guardião: prazo criado a partir da trava → retomar a marcação
-              // como lida. force=false para que o guardião de compromissos ainda
-              // possa disparar caso a intimação também tenha audiência/perícia.
-              const pendingId = pendingReadAfterDeadlineRef.current;
-              if (pendingId) {
-                pendingReadAfterDeadlineRef.current = null;
-                handleMarkAsRead(pendingId, false);
-              }
             }}
             source="intimation"
             intimationId={intimation.id}
@@ -3255,7 +2887,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               process_number: processNumber,
               client_name: client?.full_name,
               type: intimation.tipo_comunicacao || 'Intimação',
-              analysis_due_date: analysis?.deadline?.dueDate,
+              analysis_due_date: analysis?.deadline?.dueDate ?? undefined,
             }}
             initialData={{
               title: analysis?.deadline?.description
@@ -3298,131 +2930,159 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         />
       )}
 
-      {/* Guardião de prazos: intimação com prazo (IA) sendo marcada como lida sem cadastro */}
-      <Modal
-        open={!!readGuard}
-        onClose={() => setReadGuard(null)}
-        title={readGuard?.candidate ? 'Prazo encontrado neste processo' : 'Prazo detectado sem cadastro'}
-        eyebrow="Guardião de Prazos"
-        size="md"
-        zIndex={80}
-        footer={
-          <div className="flex flex-wrap justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setReadGuard(null)}
-              disabled={linkingDeadline}
-              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!readGuard) return;
-                const id = readGuard.intimation.id;
-                setReadGuard(null);
-                handleMarkAsRead(id, true);
-              }}
-              disabled={linkingDeadline}
-              className="px-3 py-1.5 text-[13px] font-medium text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition disabled:opacity-50"
-            >
-              Marcar como lida sem prazo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!readGuard) return;
-                const intimation = readGuard.intimation;
-                setReadGuard(null);
-                pendingReadAfterDeadlineRef.current = intimation.id;
-                handleCreateDeadline(intimation);
-              }}
-              disabled={linkingDeadline}
-              className={
-                readGuard?.candidate
-                  ? 'px-3 py-1.5 text-[13px] font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition disabled:opacity-50'
-                  : 'px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50'
-              }
-            >
-              {readGuard?.candidate ? null : <Clock className="w-4 h-4" />}
-              {readGuard?.candidate ? 'Criar outro prazo' : 'Criar prazo agora'}
-            </button>
-            {readGuard?.candidate && (
-              <button
-                type="button"
-                onClick={handleLinkCandidateDeadline}
-                disabled={linkingDeadline}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
-              >
-                {linkingDeadline ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-                Vincular e marcar como lida
-              </button>
-            )}
-          </div>
-        }
-      >
-        <ModalBody className="px-5 py-4">
-          {readGuard ? (
-            <div className="space-y-3">
-              {readGuard.candidate ? (
-                <>
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                    <p className="text-sm text-emerald-900 font-semibold">
-                      {readGuard.ancora === 'cliente'
-                        ? '✅ Já existe um prazo aberto deste cliente na mesma janela. Ele só não está vinculado a esta intimação.'
-                        : '✅ Já existe um prazo cadastrado neste processo. Ele só não está vinculado a esta intimação.'}
-                    </p>
-                    <div className="mt-2 rounded-md bg-white/70 border border-emerald-200 px-2.5 py-2">
-                      <p className="text-sm font-semibold text-slate-800">{readGuard.candidate.title}</p>
-                      <p className="text-xs text-slate-600 mt-0.5">
-                        Vence em <strong>{formatDate(readGuard.candidate.due_date)}</strong>
-                        {' · '}
-                        {deadlineStatusOptions.find(s => s.key === readGuard.candidate?.status)?.label
-                          ?? readGuard.candidate.status}
-                        {readGuard.candidate.deadline_days != null && (
-                          <> · {readGuard.candidate.deadline_days} dias
-                            {readGuard.candidate.counting_type === 'processual' ? ' úteis' : ' corridos'}</>
-                        )}
-                      </p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        Cadastrado em {formatDate(readGuard.candidate.created_at)}
-                      </p>
+      {/* Detalhes completos — modal, para não perder a lista, os filtros nem o scroll */}
+      {selectedIntimation && (() => {
+        const detalhe = selectedIntimation;
+        const client = getClientName(detalhe.client_id);
+        const process = getProcessCode(detalhe.process_id);
+        const detailAnalysis = aiAnalysis.get(detalhe.id);
+        const detailUrgency = detailAnalysis?.urgency as keyof typeof urgencyConfig | undefined;
+        const detailUrgCfg = detailUrgency ? urgencyConfig[detailUrgency] : null;
+        const outcome = detectOutcome(detailAnalysis?.summary);
+        const decodedTexto = htmlToText(detalhe.texto || '');
+        const partes = detalhe.djen_destinatarios && detalhe.djen_destinatarios.length > 0
+          ? detalhe.djen_destinatarios.map(d => ({ nome: d.nome, polo: d.polo || '' }))
+          : extractPartesFromTexto(decodedTexto);
+        const fechar = () => setSelectedIntimation(null);
+        // Ação que abre outro modal precisa fechar este antes, senão os dois
+        // disputam o foco e o scroll do body.
+        const seguirPara = (acao: (i: DjenComunicacaoLocal) => void) => () => { fechar(); acao(detalhe); };
+
+        return (
+          <Modal
+            open
+            onClose={fechar}
+            size="xl"
+            zIndex={60}
+            eyebrow={detalhe.sigla_tribunal || 'Intimação'}
+            title={detalhe.numero_processo_mascara || detalhe.numero_processo || 'Sem número'}
+            icon={<Gavel className="w-4 h-4" fill="currentColor" />}
+            iconContainerClassName="bg-[#ffb783] text-[#482100] rounded-lg"
+            subtitle={
+              <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5">
+                <span className="text-xs text-slate-500">{formatDate(detalhe.data_disponibilizacao)}</span>
+                {detalhe.nome_orgao && <span className="text-xs text-slate-500">{detalhe.nome_orgao}</span>}
+                {detalhe.tipo_comunicacao && <span className="text-xs font-medium text-amber-600">{detalhe.tipo_comunicacao}</span>}
+                {detalhe.nome_classe && <span className="text-xs text-slate-500">{detalhe.nome_classe}</span>}
+              </div>
+            }
+            headerActions={
+              <div className="hidden sm:flex items-center gap-1.5">
+                {!detalhe.lida && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                    <EyeOff className="w-3 h-3" /> Não lida
+                  </span>
+                )}
+                {outcome && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${outcome.cls}`}>
+                    {outcome.label}
+                  </span>
+                )}
+                {detailUrgCfg && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${detailUrgCfg.badge}`}>
+                    {detailUrgCfg.label}
+                  </span>
+                )}
+              </div>
+            }
+            footer={
+              <div className="flex flex-wrap gap-2">
+                {!detalhe.lida && (
+                  <button onClick={() => { handleMarkAsRead(detalhe.id); fechar(); }}
+                    className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-3.5 py-2 rounded-lg transition text-xs shadow-sm shadow-emerald-200">
+                    <CheckCircle className="w-3.5 h-3.5" /> Marcar lida
+                  </button>
+                )}
+                <button onClick={seguirPara(handleCreateDeadline)}
+                  className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3.5 py-2 rounded-lg transition text-xs shadow-sm shadow-amber-200">
+                  <Clock className="w-3.5 h-3.5" /> Novo Prazo
+                </button>
+                <button onClick={seguirPara(handleCreateAppointment)}
+                  className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
+                  <CalendarIcon className="w-3.5 h-3.5 text-indigo-500" /> Compromisso
+                </button>
+                <button onClick={seguirPara(handleOpenPrescriptionModal)}
+                  className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
+                  <AlertTriangle className="w-3.5 h-3.5 text-orange-500" /> Prescrição
+                </button>
+                <button onClick={seguirPara(handleOpenLinkModal)}
+                  className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
+                  <Link2 className="w-3.5 h-3.5 text-blue-500" /> Vincular
+                </button>
+                {detalhe.link && (
+                  <a href={detalhe.link} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
+                    <ExternalLink className="w-3.5 h-3.5 text-purple-500" /> Ver Diário
+                  </a>
+                )}
+              </div>
+            }
+          >
+            {(client || process || partes.length > 0) && (
+              <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3 flex flex-wrap gap-4">
+                {client && (
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Cliente</p>
+                    <p className="text-xs font-semibold text-slate-800 truncate max-w-[200px]">{client}</p>
+                  </div>
+                )}
+                {process && (
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Processo</p>
+                    <p className="text-xs font-mono font-semibold text-slate-800 truncate max-w-[200px]">{process}</p>
+                  </div>
+                )}
+                {partes.length > 0 && (
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Partes</p>
+                    <div className="flex flex-wrap gap-1">
+                      {partes.slice(0, 3).map((parte, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-[#e7e5df] rounded text-[11px] text-slate-700">
+                          <span className="font-medium">{parte.nome}</span>
+                          {parte.polo && <span className="text-slate-400 text-[10px]">({parte.polo})</span>}
+                        </span>
+                      ))}
+                      {partes.length > 3 && <span className="text-[11px] text-slate-400">+{partes.length - 3}</span>}
                     </div>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    Vincular grava a ligação entre este prazo e a intimação, e o Guardião para de cobrar.
-                    {readGuard.ancora === 'cliente' && ' Este prazo não tem processo vinculado, então a ligação é pelo cliente — confira o título antes de confirmar.'}
-                    {' '}Se não for este o prazo, use "Criar outro prazo".
-                  </p>
-                </>
-              ) : (
-                <>
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    <p className="text-sm text-amber-900 font-semibold">
-                      ⚠️ A IA detectou um prazo nesta intimação e nenhum prazo foi cadastrado no sistema.
-                    </p>
-                    <p className="text-xs text-amber-800 mt-1.5">
-                      <strong>Processo:</strong>{' '}
-                      {readGuard.intimation.numero_processo_mascara || readGuard.intimation.numero_processo || 'Sem número'}
-                    </p>
-                    {readGuard.days != null && (
-                      <p className="text-xs text-amber-800 mt-0.5">
-                        <strong>Prazo estimado:</strong> {readGuard.days} dia(s)
-                        {readGuard.dueDate && <> — vencimento {formatDate(readGuard.dueDate)}</>}
-                      </p>
-                    )}
+                )}
+              </div>
+            )}
+
+            {detailAnalysis && (
+              <div className={`mx-4 mt-4 rounded-xl p-3.5 border ${detailUrgCfg?.badge ?? 'bg-amber-50 border-amber-200'}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                    <p className="text-xs font-semibold text-slate-800 leading-snug">{detailAnalysis.summary}</p>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    Marcar como lida sem cadastrar o prazo remove esta intimação do radar de pendências.
-                    A estimativa da IA usa dias corridos — confirme a contagem em dias úteis ao criar o prazo.
-                  </p>
-                </>
-              )}
+                  {detailAnalysis.deadline && (
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-bold text-slate-900">{detailAnalysis.deadline.days}d úteis</p>
+                      {detailAnalysis.deadline.dueDate && (
+                        <p className="text-[10px] text-slate-600">{formatDate(detailAnalysis.deadline.dueDate)}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {detailAnalysis.deadline?.description && (
+                  <p className="text-[11px] text-slate-600 mt-1.5 ml-5">{detailAnalysis.deadline.description}</p>
+                )}
+              </div>
+            )}
+
+            <div className="px-6 py-5">
+              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
+                <div className="w-1 h-4 rounded-full bg-amber-500" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Conteúdo da Intimação</span>
+              </div>
+              <div className="text-sm text-slate-700 whitespace-pre-wrap leading-[1.8] selection:bg-amber-100">
+                {highlightText(detalhe.texto || '', detailAnalysis?.importantPassages)}
+              </div>
             </div>
-          ) : null}
-        </ModalBody>
-      </Modal>
+          </Modal>
+        );
+      })()}
 
       <Modal
         open={prescriptionModalOpen && !!currentIntimationForAction}
@@ -3562,21 +3222,12 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
   const process = processes.find((p) => p.id === intimation.process_id);
   const client = clients.find((c) => c.id === intimation.client_id);
 
-  // Determinar prioridade baseada na urgência da IA
-  const getPriorityFromUrgency = (urgency?: string): DeadlinePriority => {
-    if (!urgency) return 'alta';
-    if (urgency === 'critica' || urgency === 'alta') return 'alta';
-    if (urgency === 'media') return 'media';
-    return 'baixa';
-  };
+  // Prioridade e margem interna vêm de utils/intimationDeadline.ts — antes eram
+  // duas cópias que discordavam entre si sobre a urgência 'baixa'.
+  const getPriorityFromUrgency = (urgency?: string): DeadlinePriority => prioridadePorUrgencia(urgency);
 
-  // Calcular data de vencimento: 1 dia ANTES do prazo detectado
-  const getDeadlineDate = (analysis?: IntimationAnalysis): string => {
-    if (!analysis?.deadline?.dueDate) return '';
-    const dueDate = new Date(analysis.deadline.dueDate);
-    dueDate.setDate(dueDate.getDate() - 1); // 1 dia antes
-    return dueDate.toISOString().split('T')[0];
-  };
+  const getDeadlineDate = (analysis?: IntimationAnalysis): string =>
+    dataInternaDoPrazo(analysis?.deadline?.dueDate);
 
   const [formData, setFormData] = useState({
     title: analysis?.deadline?.description 
