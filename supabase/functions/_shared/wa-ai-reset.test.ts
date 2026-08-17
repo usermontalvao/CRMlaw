@@ -28,7 +28,7 @@ function fakeAdmin(errorByTable: Record<string, string> = {}) {
 }
 
 test('reconhece somente os comandos explícitos de reinício', () => {
-  assert.deepEqual([...WA_AI_RESET_COMMANDS], ['/clear', '/limpar', '/reiniciar', '/reset']);
+  assert.deepEqual([...WA_AI_RESET_COMMANDS], ['/clear', '/limpar', '/zerar', '/reiniciar', '/reset']);
   assert.equal(WA_AI_RESET_COMMANDS.includes('/cleae' as never), false);
 });
 

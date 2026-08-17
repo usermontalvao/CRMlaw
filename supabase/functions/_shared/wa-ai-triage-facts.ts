@@ -56,8 +56,9 @@ export interface WaAiTriageTurn {
 export type WaAiPeriodField = 'inicio' | 'ainda_trabalha' | 'saida' | 'data_ocorrencia';
 export type WaAiDecisionField = 'tipo_empregador' | 'pessoalidade' | 'recebia_pagamento'
   | 'trabalho_regular' | 'subordinacao' | 'tem_prova' | 'tem_testemunha' | 'outros_trabalhos'
-  | 'tipo_ocorrencia' | 'aviso_previo' | 'tem_print' | 'saldo_retido'
-  | 'residencia_tipo' | 'declarante_tem_documento' | 'aceita_honorarios';
+  | 'tipo_ocorrencia' | 'recebeu_comunicacao' | 'momento_comunicacao' | 'aviso_previo'
+  | 'tem_print' | 'saldo_retido'
+  | 'residencia_tipo' | 'declarante_tem_documento' | 'aceita_honorarios' | 'envio_provas';
 
 // ── Texto ───────────────────────────────────────────────────────────────────
 
@@ -69,6 +70,33 @@ function simples(text: unknown): string {
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Correspondência conservadora com a lista interna da campanha de conta.
+ *
+ * Só nomes completos ou aliases expressamente cadastrados entram. Uma palavra
+ * parecida não pode encerrar a triagem de um banco diferente.
+ */
+export function isWaAiExcludedLiquidationInstitution(bank: unknown): boolean {
+  const key = simples(bank).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const aliases = new Set([
+    'banco master', 'banco master sa', 'banco master de investimento sa',
+    'banco master multiplo sa', 'master', 'master investimentos', 'master multiplo',
+    'banco letsbank sa', 'letsbank', 'lets bank',
+    'master sa corretora de cambio titulos e valores mobiliarios', 'master corretora',
+    'will financeira sa credito financiamento e investimento', 'will financeira',
+    'will bank', 'willbank', 'banco will', 'will',
+    'dank sociedade de credito direto sa scd', 'dank', 'dank scd',
+    'cbsf distribuidora de titulos e valores mobiliarios sa dtvm', 'cbsf', 'cbsf dtvm',
+    'banco pleno sa', 'banco pleno', 'pleno distribuidora de titulos e valores mobiliarios sa dtvm',
+    'pleno', 'pleno dtvm',
+    'advanced corretora de cambio ltda', 'advanced', 'advanced corretora',
+    'frente sociedade corretora de cambio sa', 'frente', 'frente corretora',
+    'frente corretora de cambio',
+    'cooperativa de credito poupanca e servicos financeiros creditag', 'creditag',
+  ]);
+  return aliases.has(key);
 }
 
 // ── Chaves ──────────────────────────────────────────────────────────────────
@@ -440,6 +468,16 @@ export function extractWaAiPeriodFacts(turns: WaAiTriageTurn[]): Partial<Record<
       out.data_ocorrencia = datas[datas.length - 1].valor;
       continue;
     }
+    if (topicos.includes('data_ocorrencia') && datas.length === 0) {
+      const anos = resposta.match(/\b(?:19|20)\d{2}\b/g) || [];
+      // A ocorrência bancária consegue decidir a janela de dois anos só com o
+      // ano quando ele está claramente dentro ou fora. O motor do playbook
+      // pedirá o mês apenas se o ano cair exatamente na fronteira.
+      if (anos.length === 1) {
+        out.data_ocorrencia = anos[0];
+        continue;
+      }
+    }
 
     for (const data of datas) {
       const antes = resposta.slice(Math.max(0, data.index - 45), data.index);
@@ -477,12 +515,15 @@ export function extractWaAiPeriodFacts(turns: WaAiTriageTurn[]): Partial<Record<
 function campoDeDecisao(pergunta: string): WaAiDecisionField | null {
   const q = simples(pergunta);
   if (/conta foi bloqueada|foi bloqueio|foi encerrada|encerrada de vez/.test(q)) return 'tipo_ocorrencia';
+  if (/quando essa comunicacao chegou|quando (?:esse email|essa mensagem) chegou|conta ainda funcionava|ja estava bloqueada|ja estava encerrada/.test(q)) return 'momento_comunicacao';
+  if (/enviou algum email|enviou.*sms|enviou.*notificacao|outra mensagem.*bloqueio|recebeu.*(?:email|sms|notificacao|mensagem).*(?:banco|bloqueio|encerramento)/.test(q)) return 'recebeu_comunicacao';
   if (/banco avisou|avisou antes|recebeu algum aviso|teve aviso previo/.test(q)) return 'aviso_previo';
-  if (/tem algum print|tem print|email ou tela|prova do bloqueio|prova do encerramento/.test(q)) return 'tem_print';
+  if (/tem algum print|tem print|apresentar.{0,20}print|print do aplicativo|print.{0,35}comunicacao|email ou tela|prova do bloqueio|prova do encerramento/.test(q)) return 'tem_print';
   if (/saldo preso|dinheiro preso|saldo retido|ficou algum dinheiro/.test(q)) return 'saldo_retido';
   if (/comprovante de residencia|contrato de aluguel|nome de esposa|nome do pai|nome da mae|nenhum desses/.test(q)) return 'residencia_tipo';
   if (/pessoa consegue mandar|declarante.*documento|foto do documento de identificacao dela/.test(q)) return 'declarante_tem_documento';
-  if (/honorarios.*40|40%.*valor|esta de acordo.*honorarios/.test(q)) return 'aceita_honorarios';
+  if (/honorarios.*40|40%.*valor|40%.*exito|esta de acordo.*honorarios/.test(q)) return 'aceita_honorarios';
+  if (/enviar essas provas|mandar essas provas|enviar as provas|mandar as provas|manda essas provas|me enviar essas provas/.test(q)) return 'envio_provas';
   if (/empresa particular|empresa privada|iniciativa privada|prefeitura|governo|orgao publico|empresa publica/.test(q)) return 'tipo_empregador';
   if (/era voce mesm|tinha que ser voce|mandar outra pessoa|colocar alguem|alguem no seu lugar|outra pessoa no seu lugar|substituir voce/.test(q)) return 'pessoalidade';
   if (/recebia algum pagamento|recebia dinheiro|pagavam pelo trabalho|ganhava alguma coisa|era pago|tinha salario/.test(q)) return 'recebia_pagamento';
@@ -527,6 +568,25 @@ function lerDecisao(campo: WaAiDecisionField, respostaBruta: string): string | n
     return null;
   }
 
+  if (campo === 'recebeu_comunicacao') {
+    if (/\b(nao recebeu|nao recebi|nenhuma mensagem|nenhum email|nenhum sms|so descobri no aplicativo|so descobri no app|foi do nada)\b/.test(r)
+      || NAO_CURTO.test(r)) return 'não';
+    if (/\b(email|e-mail|sms|notificacao|mensagem|chat do banco)\b/.test(r)
+      || SIM_CURTO.test(r)) return 'sim';
+    return null;
+  }
+
+  if (campo === 'momento_comunicacao') {
+    if (/\b(ainda funcionava|funcionando normalmente|continuei usando|antes de bloquear|antes de encerrar|seria bloqueada|seria encerrada)\b/.test(r)) {
+      return 'anterior_com_acesso_normal';
+    }
+    if (/\b(mesma hora|mesmo momento|na hora|quando recebi.*ja|assim que recebi)\b/.test(r)) return 'simultaneo';
+    if (/\b(ja estava bloquead\w*|ja estava encerrad\w*|depois do bloqueio|depois que bloqueou|depois do encerramento|so chegou depois|ja nao conseguia)\b/.test(r)) {
+      return 'posterior';
+    }
+    return null;
+  }
+
   if (campo === 'tem_print') {
     if (/\b(nao tenho|nao tirei|sem print|apaguei|nao consigo printar)\b/.test(r)) return 'não';
     if (/\b(print|screenshot|captura|foto da tela|email|mensagem do banco|tela do aplicativo|tela do app)\b/.test(r)
@@ -551,9 +611,12 @@ function lerDecisao(campo: WaAiDecisionField, respostaBruta: string): string | n
     return null;
   }
 
-  if (campo === 'declarante_tem_documento' || campo === 'aceita_honorarios') {
-    if (SIM_CURTO.test(r) || /\b(concordo|de acordo|consigo mandar|pode mandar)\b/.test(r)) return 'sim';
-    if (NAO_CURTO.test(r) || /\b(nao concordo|nao aceito|nao consigo mandar)\b/.test(r)) return 'não';
+  if (campo === 'declarante_tem_documento' || campo === 'aceita_honorarios'
+    || campo === 'envio_provas') {
+    if (SIM_CURTO.test(r)
+      || /\b(concordo|de acordo|consigo mandar|pode mandar|mando|envio|te mando|ja mando|mandar sim)\b/.test(r)) return 'sim';
+    if (NAO_CURTO.test(r)
+      || /\b(nao concordo|nao aceito|nao consigo mandar|nao tenho como mandar|nao vou mandar)\b/.test(r)) return 'não';
     return null;
   }
 
@@ -628,10 +691,23 @@ export function extractWaAiDecisionFacts(
     .map(item => item.t);
   const out: Partial<Record<WaAiDecisionField, string>> = {};
   let campo: WaAiDecisionField | null = null;
+  let direcaoAnterior: WaAiTriageTurn['direction'] | null = null;
   for (const turn of ordenados) {
     const texto = String(turn?.text || '').trim();
     if (!texto) continue;
-    if (turn.direction === 'out') { campo = campoDeDecisao(texto); continue; }
+    if (turn.direction === 'out') {
+      const detectado = campoDeDecisao(texto);
+      // Uma única fala do agente pode sair em várias bolhas. A primeira traz o
+      // assunto ("honorários de 40%") e a última só a pergunta curta ("Você
+      // está de acordo?"). Enquanto não houver resposta do cliente, todas as
+      // bolhas pertencem à mesma rodada e a última não pode apagar o campo que
+      // a primeira abriu. Depois de uma entrada, porém, uma nova saída inicia
+      // outra rodada e não herda assunto antigo.
+      campo = direcaoAnterior === 'out' ? (detectado || campo) : detectado;
+      direcaoAnterior = 'out';
+      continue;
+    }
+    direcaoAnterior = 'in';
     if (!campo) continue;
     const valor = lerDecisao(campo, texto);
     if (valor !== null) out[campo] = valor;
@@ -663,6 +739,8 @@ const PENDENCIA_DE: { campo: string; re: RegExp }[] = [
   { campo: 'banco_reu', re: /\b(nome do banco|banco que bloqueou|banco que encerrou|banco reu)\b/ },
   { campo: 'tipo_ocorrencia', re: /\b(bloqueio ou encerramento|conta foi bloqueada|conta foi encerrada|o que aconteceu)\b/ },
   { campo: 'data_ocorrencia', re: /\b(data do problema|mes e ano.*bloqueio|mes e ano.*encerramento|quando aconteceu)\b/ },
+  { campo: 'recebeu_comunicacao', re: /\b(recebeu comunicacao|email.*sms.*notificacao|mensagem do banco)\b/ },
+  { campo: 'momento_comunicacao', re: /\b(momento da comunicacao|conta ainda funcionava|ja estava bloqueada|ja estava encerrada)\b/ },
   { campo: 'aviso_previo', re: /\b(aviso previo|avisou antes|banco avisou)\b/ },
   { campo: 'tem_print', re: /\b(print|email ou tela|prova visual)\b/ },
   { campo: 'saldo_retido', re: /\b(saldo retido|dinheiro preso|saldo preso)\b/ },
@@ -770,6 +848,24 @@ export function reconcileWaAiTriageState(input: {
     // A fala do cliente, casada com a pergunta que acabou de ser feita, ganha
     // do palpite do modelo nas decisões de alto impacto.
     facts[campo] = limpo;
+  }
+
+  // O nome do banco decide a exclusão por liquidação sem transformar a lista
+  // interna em pergunta para o consumidor. Sempre recalcula: se o cliente
+  // corrigir o banco, a classificação antiga não pode permanecer.
+  if (declaradas?.includes('instituicao_liquidada') && facts.banco_reu) {
+    facts.instituicao_liquidada = isWaAiExcludedLiquidationInstitution(facts.banco_reu)
+      ? 'sim' : 'não';
+  }
+
+  // “Recebi um e-mail” não é aviso prévio. A conclusão só nasce da cronologia:
+  // anterior com acesso normal = sim; simultâneo, posterior ou nenhuma
+  // comunicação = não.
+  if (declaradas?.includes('aviso_previo')) {
+    const momento = simples(facts.momento_comunicacao);
+    if (momento === 'anterior_com_acesso_normal') facts.aviso_previo = 'sim';
+    else if (momento === 'simultaneo' || momento === 'posterior'
+      || simples(facts.recebeu_comunicacao) === 'nao') facts.aviso_previo = 'não';
   }
 
   return { knownFacts: facts, pendingItems: pruneWaAiPendingItems(input.pendingItems, facts) };

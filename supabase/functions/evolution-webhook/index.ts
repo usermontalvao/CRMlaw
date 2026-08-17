@@ -27,6 +27,7 @@ import {
   absenceSuppressedByAi,
   isAbsenceCooldownActive,
 } from '../_shared/absence-cooldown.ts';
+import { WA_AI_RESET_COMMANDS } from '../_shared/wa-ai-reset.ts';
 import { slimWaRaw } from '../_shared/wa-raw.ts';
 import { triggerWaAiAfterTranscription } from '../_shared/wa-ai-transcription.ts';
 import { desembrulharMensagem, lerConteudoNativo } from '../_shared/wa-native-content.ts';
@@ -446,7 +447,7 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   // receber o comunicado comercial mesmo quando a conversa estava encerrada.
   // O cooldown sobrevive a encerramento/reabertura e evita repetição excessiva.
   if (!fromMe) {
-    const job = maybeAutoSendAbsence(admin, instanceId, conv.id);
+    const job = maybeAutoSendAbsence(admin, instanceId, conv.id, content);
     if (typeof EdgeRuntime !== 'undefined') EdgeRuntime.waitUntil(job);
     else await job.catch(() => {});
   }
@@ -711,8 +712,21 @@ async function classifyReopenWithAI(admin: any, convId: string, text: string): P
  * Disparada async para cada inbound. Cooldown: não reenvia se já enviou nas
  * últimas 12 horas para a mesma conversa (anti-loop).
  */
-async function maybeAutoSendAbsence(admin: any, instanceId: string, convId: string) {
+async function maybeAutoSendAbsence(
+  admin: any, instanceId: string, convId: string, inboundText: string | null = null,
+) {
   try {
+    // ── Comando de reinício não é pergunta de cliente ──
+    // "/clear" numa conversa em `handed_off` cai aqui com a IA ainda desligada,
+    // então `aiRespondeAgora()` responde "não vai ter resposta" e o aviso sai —
+    // e dois segundos depois o comando religa a sessão e a IA cumprimenta. Em
+    // 14/08/2026 o cliente leu "estamos fora do horário, retornaremos depois"
+    // às 22:51:50 e "Olá! Tudo bem?" às 22:52:08. O silêncio que o aviso existe
+    // para explicar nunca aconteceu.
+    if (WA_AI_RESET_COMMANDS.includes(String(inboundText || '').trim().toLowerCase() as never)) {
+      return;
+    }
+
     const { data: ch } = await admin.from('whatsapp_instances')
       .select('absence_enabled, absence_message, timezone')
       .eq('id', instanceId)

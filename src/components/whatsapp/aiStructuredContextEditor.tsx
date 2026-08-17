@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Braces, CheckCircle2, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Braces, CheckCircle2 } from 'lucide-react';
 import {
-  WA_AI_CONTEXT_CONTA_BLOQUEADA,
-  WA_AI_CONTEXT_SEM_REGISTRO,
   normalizeWaAiPlaybook,
   type WaAiPlaybook,
 } from '../../utils/waAiPlaybook';
@@ -12,12 +10,6 @@ interface Props {
   resolvedPlaybook: WaAiPlaybook | null;
   onChange: (context: Record<string, unknown>) => void;
 }
-
-const buttonStyle: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px',
-  borderRadius: '8px', border: '1px solid #d1d5db', background: '#fff',
-  color: '#374151', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer',
-};
 
 /**
  * Editor principal do agente. Ele mostra somente o contexto fornecido pelo
@@ -72,22 +64,13 @@ export const AiStructuredContextEditor: React.FC<Props> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
-        <p style={{ flex: 1, minWidth: '240px', fontSize: '11.5px', color: '#6b7280', margin: 0 }}>
-          Cole aqui a configuração estruturada. O sistema identifica a campanha e transforma
-          automaticamente as informações do roteiro em campos tipados para salvar a resposta.
-        </p>
-        <div aria-label="Modelos de campanha" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          <button type="button" style={buttonStyle}
-            onClick={() => update(JSON.stringify(WA_AI_CONTEXT_SEM_REGISTRO, null, 2))}>
-            <RotateCcw size={12} /> Trabalho sem registro
-          </button>
-          <button type="button" style={buttonStyle}
-            onClick={() => update(JSON.stringify(WA_AI_CONTEXT_CONTA_BLOQUEADA, null, 2))}>
-            <RotateCcw size={12} /> Conta bloqueada ou encerrada
-          </button>
-        </div>
-      </div>
+      {/* Havia aqui dois botões de "restaurar modelo" de campanha. Um clique
+          sobrescrevia todo o JSON já configurado do agente, sem confirmação —
+          e a lista de campanhas não tem por que morar dentro deste editor. */}
+      <p style={{ fontSize: '11.5px', color: '#6b7280', margin: 0 }}>
+        Cole aqui a configuração estruturada. O sistema identifica a campanha e transforma
+        automaticamente as informações do roteiro em campos tipados para salvar a resposta.
+      </p>
 
       <div style={{ position: 'relative' }}>
         <Braces size={16} style={{ position: 'absolute', top: '11px', right: '11px', color: '#9ca3af' }} />

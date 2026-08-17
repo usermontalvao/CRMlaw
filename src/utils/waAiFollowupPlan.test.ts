@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  WA_AI_ACCOUNT_FOLLOWUP_PRESET,
   formatWaAiFollowupHours,
   parseWaAiFollowupPlan,
+  waAiCampaignFollowupPreset,
 } from './waAiFollowupPlan.ts';
 
 /**
@@ -102,4 +104,16 @@ test('texto vazio não produz configuração nenhuma', () => {
 
 test('a escada é escrita em horas e dias, como se lê em voz alta', () => {
   assert.equal(formatWaAiFollowupHours([2, 24, 48, 168]), '2h · 1 dia · 2 dias · 7 dias');
+});
+
+test('campanha de conta tem follow-ups ligados com a escada revisada', () => {
+  const preset = waAiCampaignFollowupPreset('bloqueio_encerramento_conta');
+  assert.equal(preset?.followup_enabled, true);
+  assert.equal(preset?.followup_strategy, 'custom');
+  assert.deepEqual(preset?.followup_custom_hours, [2, 4, 8, 24, 48, 168, 240, 336]);
+  assert.equal(preset?.followup_max_attempts, 8);
+  assert.deepEqual(preset?.followup_days, [1, 2, 3, 4, 5]);
+  assert.equal(preset?.timezone, 'America/Cuiaba');
+  assert.match(WA_AI_ACCOUNT_FOLLOWUP_PRESET.followup_instructions, /não duplique essas cobranças/);
+  assert.equal(waAiCampaignFollowupPreset('outra_campanha'), null);
 });

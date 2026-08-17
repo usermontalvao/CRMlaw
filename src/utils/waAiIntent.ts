@@ -50,7 +50,8 @@ function normalizar(text: string): string {
 
 /**
  * Recusa explícita. Cada uma destas é uma frase que ninguém escreve por acaso
- * no meio de um atendimento que está indo bem.
+ * no meio de um atendimento que está indo bem — inclusive quando a mensagem
+ * está respondendo a uma pergunta do roteiro.
  */
 const SEM_INTERESSE = [
   'nao tenho interesse', 'nao tenho mais interesse', 'sem interesse',
@@ -62,11 +63,24 @@ const SEM_INTERESSE = [
   'me tira da lista', 'me tire da lista', 'sai da minha lista', 'me remove',
   'me descadastra', 'descadastrar', 'cancelar inscricao',
   'nao me procure', 'nao me procura', 'nao me liga', 'nao me ligue',
-  'nao precisa mais', 'nao preciso mais', 'nao precisa nao',
   'desisti', 'desistir do processo', 'nao vou dar continuidade',
-  'ja resolvi', 'ja resolvido', 'ja contratei', 'ja tenho advogado',
+  'ja contratei', 'ja tenho advogado',
   'ja estou com outro advogado', 'contratei outro',
   'me deixa em paz', 'para com isso', 'chega de mensagem', 'chega disso',
+];
+
+/**
+ * Recusa SÓ FORA de uma pergunta pendente.
+ *
+ * Cada frase aqui é recusa quando chega solta e é RESPOSTA quando chega logo
+ * depois de uma pergunta do roteiro. "Foi um engano" é o motivo que o banco
+ * deu; "já resolvi" é a situação atual da conta; "não preciso mais" é o que a
+ * pessoa diz do saldo. Tratar qualquer uma delas como desistência desliga o
+ * atendimento no meio de uma resposta legítima — e o cliente nunca sabe por quê.
+ */
+const SEM_INTERESSE_FORA_DE_PERGUNTA = [
+  'nao precisa mais', 'nao preciso mais', 'nao precisa nao',
+  'ja resolvi', 'ja resolvido',
   'nao era eu', 'numero errado', 'pessoa errada', 'engano',
 ];
 
@@ -101,6 +115,19 @@ export interface WaAiInterestInput {
   text: string | null | undefined;
   /** A última pergunta da IA. Se for pergunta fechada, "não" é RESPOSTA. */
   lastQuestion?: string | null;
+  /**
+   * O roteiro tinha uma pergunta pendente quando esta mensagem chegou.
+   *
+   * Quem responde uma pergunta não está desistindo dela. Em 14/08/2026 um "Não"
+   * respondendo "O banco enviou algum e-mail, SMS ou notificação?" foi lido como
+   * recusa e desligou as retomadas da conversa inteira — a mesma coisa
+   * aconteceu de novo em "Ficou algum dinheiro preso nessa conta?". O texto da
+   * pergunta não bastava: `perguntaFechada` reconhece "Você...", "Já...", e as
+   * perguntas desta campanha começam por "O banco...", "Ficou...", "A conta...".
+   * Este sinal vem do BACKEND, que sabe qual campo estava pendente, em vez de
+   * ser adivinhado da frase.
+   */
+  pendingQuestion?: boolean;
 }
 
 /** Uma pergunta que aceita "sim/não" como resposta de conteúdo. */
@@ -123,8 +150,15 @@ export function classifyWaAiInterest(input: WaAiInterestInput): WaAiInterestRead
   const texto = normalizar(input.text || '');
   if (!texto) return { level: 'engajado', matched: null };
 
+  const respondendo = input.pendingQuestion === true;
+
   for (const frase of SEM_INTERESSE) {
     if (texto.includes(frase)) return { level: 'sem_interesse', matched: frase };
+  }
+  if (!respondendo) {
+    for (const frase of SEM_INTERESSE_FORA_DE_PERGUNTA) {
+      if (texto.includes(frase)) return { level: 'sem_interesse', matched: frase };
+    }
   }
 
   const palavras = texto.split(' ');
@@ -135,8 +169,9 @@ export function classifyWaAiInterest(input: WaAiInterestInput): WaAiInterestRead
       // conteúdo — "não sei", "não lembro", "não tenho" são o cliente
       // RESPONDENDO, e desligar o atendimento neles seria o pior erro possível.
       const sozinho = palavras.length === 1;
-      // E mesmo sozinho: logo depois de uma pergunta fechada, é a resposta dela.
-      if (sozinho && !perguntaFechada(input.lastQuestion)) {
+      // E mesmo sozinho: logo depois de uma pergunta fechada, é a resposta dela
+      // — ou de qualquer pergunta que o roteiro ainda esperava responder.
+      if (sozinho && !respondendo && !perguntaFechada(input.lastQuestion)) {
         return { level: 'sem_interesse', matched: achou };
       }
       return { level: 'engajado', matched: null };
@@ -149,6 +184,69 @@ export function classifyWaAiInterest(input: WaAiInterestInput): WaAiInterestRead
   }
 
   return { level: 'engajado', matched: null };
+}
+
+// ── Objeções ────────────────────────────────────────────────────────────────
+
+export type WaAiObjectionKind = 'honorarios' | 'confianca_privacidade'
+  | 'envio_documentos' | 'prazo_resultado';
+
+export interface WaAiObjectionReading {
+  kind: WaAiObjectionKind;
+  matched: string;
+}
+
+const OBJECOES: { kind: WaAiObjectionKind; patterns: RegExp[] }[] = [
+  {
+    kind: 'honorarios',
+    patterns: [
+      /\b40\s*%\s*(?:e|eh|esta|ta)\s*(?:muito|alto|caro)\b/,
+      /\b(?:honorarios?|percentual|porcentagem|taxa)\s+(?:muito\s+)?(?:alto|alta|caro|cara)\b/,
+      /\bnao\s+(?:concordo|aceito)\s+com\s+(?:os\s+)?(?:40\s*%|honorarios?|percentual)\b/,
+    ],
+  },
+  {
+    kind: 'confianca_privacidade',
+    patterns: [
+      /\b(?:isso\s+)?(?:e|eh)\s+golpe\b/,
+      /\b(?:nao\s+confio|como\s+(?:eu\s+)?sei\s+que\s+nao\s+e\s+golpe)\b/,
+      /\b(?:meus\s+)?dados\s+(?:estao|ficam|sao)\s+seguros\b/,
+      /\b(?:privacidade|lgpd|vazar\s+(?:meus\s+)?dados)\b/,
+    ],
+  },
+  {
+    kind: 'envio_documentos',
+    patterns: [
+      /\b(?:nao\s+quero|tenho\s+medo|receio)\s+(?:de\s+)?(?:mandar|enviar)\s+(?:meus\s+)?documentos?\b/,
+      /\bpor\s+que\s+(?:voce|voces)\s+(?:precisa|precisam|quer|querem)\s+(?:do|dos|de)\s+(?:meu|meus|o|os)?\s*documentos?\b/,
+    ],
+  },
+  {
+    kind: 'prazo_resultado',
+    patterns: [
+      /\bquanto\s+tempo\s+(?:isso\s+)?(?:demora|leva|vai\s+demorar)\b/,
+      /\b(?:voce|voces)\s+(?:garante|garantem)\s+(?:que\s+)?(?:eu\s+)?(?:ganho|vou\s+ganhar)\b/,
+      /\b(?:e|eh)\s+certeza\s+que\s+(?:eu\s+)?(?:ganho|vou\s+ganhar)\b/,
+      /\bquanto\s+(?:eu\s+)?(?:vou|posso)\s+receber\b/,
+    ],
+  },
+];
+
+/**
+ * Reconhece objeções frequentes sem transformá-las em recusa. A Edge Function
+ * usa a categoria para dar uma resposta curta e transparente; a decisão de
+ * parar continua exclusiva de `classifyWaAiInterest`.
+ */
+export function classifyWaAiObjection(text: string | null | undefined): WaAiObjectionReading | null {
+  const normalized = normalizar(text || '');
+  if (!normalized) return null;
+  for (const group of OBJECOES) {
+    for (const pattern of group.patterns) {
+      const match = pattern.exec(normalized);
+      if (match) return { kind: group.kind, matched: match[0] };
+    }
+  }
+  return null;
 }
 
 // ── Hora marcada ────────────────────────────────────────────────────────────

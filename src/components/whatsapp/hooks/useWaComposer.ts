@@ -11,6 +11,7 @@ import {
   type StaffOption,
 } from '../../../services/whatsapp.service';
 import { agentLabel, conversationPreviewLabel } from '../format';
+import { createSendQueue, type SendQueue } from '../sendQueue';
 import { isReconnectPendingError, enqueueReconnectHold } from '../../../services/whatsapp/resilientSend';
 import { playWaActionSound } from '../../../utils/waActionSounds';
 import { useToastContext } from '../../../contexts/ToastContext';
@@ -55,6 +56,8 @@ export interface WaComposerApi {
   recLevel: number;
   attachStaged: File[] | null;
   setAttachStaged: React.Dispatch<React.SetStateAction<File[] | null>>;
+  /** Texto que estava no compositor quando o anexo foi escolhido — vira legenda. */
+  stagedCaption: string;
   // Ações.
   handleSend: () => Promise<void>;
   beginEdit: (m: WhatsAppMessage) => void;
@@ -67,6 +70,8 @@ export interface WaComposerApi {
   onPickFiles: (e: React.ChangeEvent<HTMLInputElement>, kind: 'media' | 'document') => void;
   handleDroppedFiles: (files: File[]) => void;
   confirmStagedSend: (caption: string, files: File[]) => void;
+  /** Desiste do anexo: a legenda escrita volta a ser o texto do compositor. */
+  cancelStagedSend: (caption: string) => void;
   sendGif: (file: File) => Promise<void>;
 }
 
@@ -125,6 +130,10 @@ export function useWaComposer({
   const [sending, setSending] = useState(false);
   // Anexos selecionados aguardando preview/legenda antes do envio (Fase 0.1+).
   const [attachStaged, setAttachStaged] = useState<File[] | null>(null);
+  // Texto que já estava escrito quando o anexo foi escolhido. Ele NÃO se perde:
+  // entra no preview como legenda e, se o anexo for descartado, volta ao
+  // compositor como texto (ver stageAttachments / cancelStagedSend).
+  const [stagedCaption, setStagedCaption] = useState('');
   const [replyTo, setReplyTo] = useState<WhatsAppMessage | null>(null);
   const [editing, setEditing] = useState<WhatsAppMessage | null>(null);
   const [recording, setRecording] = useState(false);
@@ -338,18 +347,42 @@ export function useWaComposer({
     setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'failed', status: 'failed' } : p));
   }, []);
 
-  // Trava SÍNCRONA contra reenvio. O estado `sending` atualiza de forma assíncrona,
-  // então dois disparos quase simultâneos (dois Enter, key-repeat, ou Enter + clique)
-  // passavam ambos pela checagem antes do setSending(true) e rodavam handleSend duas
-  // vezes — enviando a mensagem em duplicidade. O ref barra na hora.
+  // Marcas válidas só enquanto a rajada de envios dura: o que a PRIMEIRA
+  // mensagem já resolveu (assumir o atendimento, pausar o aviso de ausência) as
+  // seguintes não precisam refazer. Cada envio enfileirado carrega um retrato da
+  // conversa tirado no momento do gesto, e esse retrato não enxerga o que a
+  // mensagem anterior mudou — sem estas marcas, três linhas seguidas numa
+  // conversa sem dono virariam três chamadas de "assumir".
+  const burstFlagsRef = useRef<Set<string>>(new Set());
+
+  // Fila de saída: as mensagens saem na ordem em que foram disparadas, mas o
+  // compositor não espera nenhuma delas para aceitar a próxima.
+  const sendQueueRef = useRef<SendQueue | null>(null);
+  if (!sendQueueRef.current) sendQueueRef.current = createSendQueue(() => burstFlagsRef.current.clear());
+  const sendQueue = sendQueueRef.current;
+
+  // Trava SÍNCRONA contra reenvio, usada na EDIÇÃO (que continua sendo uma de
+  // cada vez). O estado `sending` atualiza de forma assíncrona, então dois
+  // disparos quase simultâneos (dois Enter, key-repeat, ou Enter + clique)
+  // passavam ambos pela checagem antes do setSending(true). No envio normal quem
+  // barra o disparo repetido é o esvaziamento síncrono de `draftValRef`.
   const sendingRef = useRef(false);
 
   const handleSend = async () => {
-    const rawText = draft.trim();
-    if (!rawText || !selected || sending || sendingRef.current) return;
-    sendingRef.current = true;
+    // O texto sai do REF, não do estado: dois disparos no mesmo tick (Enter com
+    // key-repeat, Enter + clique) leriam o mesmo `draft`, porque o setDraft('')
+    // do primeiro ainda não teria repintado — e a mensagem iria duas vezes.
+    // Esvaziar o ref na hora é o que fecha essa janela agora que a fila
+    // substituiu a trava única de envio.
+    const rawText = draftValRef.current.trim();
+    if (!rawText || !selected) return;
 
     if (editing) {
+      // Edição continua uma de cada vez: ela reescreve uma mensagem que já está
+      // na tela, e enfileirar duas versões do mesmo texto não faria sentido.
+      if (sending || sendingRef.current) return;
+      sendingRef.current = true;
+      draftValRef.current = '';
       const target = editing;
       const convId = selected.id;
       // Mesma regra do envio: a bolha já mostra o texto novo e o compositor
@@ -367,10 +400,21 @@ export function useWaComposer({
       return;
     }
 
+    draftValRef.current = ''; // trava síncrona: o próximo disparo não acha texto
+
     const conversation = selected;
     const me = user ? staffById.get(user.id) : null;
 
-    const needsAssume = !conversation.assigned_user_id && !conversation.is_blocked && !!user?.id;
+    // Decididos no gesto (e não lá dentro da fila) para que a segunda mensagem
+    // da rajada já saiba que a primeira vai cuidar disso.
+    const assumeKey = `assume:${conversation.id}`;
+    const needsAssume = !conversation.assigned_user_id && !conversation.is_blocked && !!user?.id
+      && !burstFlagsRef.current.has(assumeKey);
+    if (needsAssume) burstFlagsRef.current.add(assumeKey);
+    const absenceKey = `absence:${conversation.id}`;
+    const needsAbsenceRelease = conversation.absence_suppressed === false
+      && !burstFlagsRef.current.has(absenceKey);
+    if (needsAbsenceRelease) burstFlagsRef.current.add(absenceKey);
 
     // Prefixo de identificação do agente: *Dr. Pedro:*\n antes do texto.
     // Usa agentLabel para incluir Dr./Dra. em advogados automaticamente.
@@ -391,12 +435,16 @@ export function useWaComposer({
     retryRef.current.set(tempId, { kind: 'text', text, replyId });
     setPending(prev => [...prev, optimistic]);
     bumpConversationPreview(conversation.id, rawText, sentAt);
-    setDraft(''); setReplyTo(null); setSending(true);
+    setDraft(''); setReplyTo(null);
     // Toca junto com a bolha aparecendo, não quando o servidor confirma: o som é
     // o par do gesto (o Enter), e atrasá-lo até a rede responder o transformaria
     // num aviso solto, chegando quando a pessoa já está escrevendo a próxima.
     playWaActionSound('send');
+    // Lugar na fila reservado AGORA: é esta ordem — a que o atendente viu as
+    // bolhas aparecerem — que o cliente vai ver do outro lado.
+    const turn = sendQueue.take();
     try {
+      await turn.wait;
       // Auto-assumir: responder uma conversa SEM dono (na fila) assume o atendimento
       // automaticamente para você — antes da 1ª mensagem sair. Conversa já minha
       // ou de outro atendente não é tocada (takeover explícito continua no botão Assumir).
@@ -404,6 +452,8 @@ export function useWaComposer({
         try {
           await whatsappService.assumeConversation(conversation.id);
         } catch (e: any) {
+          // Falhou: a marca sai, para a próxima mensagem da rajada tentar de novo.
+          burstFlagsRef.current.delete(assumeKey);
           throw new Error(`Não foi possível assumir o atendimento: ${e.message}`);
         }
         // Fase J: aborta sessão de IA quando o humano assume.
@@ -415,7 +465,7 @@ export function useWaComposer({
       // Ao responder, pausa o aviso de horário (ausência) nesta conversa: o atendente
       // está atendendo, então o cliente não deve mais receber o auto-aviso "fora do
       // horário". Reativado automaticamente quando o atendimento é encerrado.
-      if (conversation.absence_suppressed === false) {
+      if (needsAbsenceRelease) {
         whatsappService.setAbsenceSuppressed(conversation.id, true).catch(() => {});
         setConversations(prev => prev.map(c => c.id === conversation.id ? { ...c, absence_suppressed: true } : c));
       }
@@ -438,13 +488,18 @@ export function useWaComposer({
       }
       markPendingFailed(tempId);
       toast.error('Mensagem não enviada', err?.message || 'Falha ao enviar pelo WhatsApp.');
-    } finally { setSending(false); sendingRef.current = false; }
+    } finally { turn.release(); }
   };
 
   // ── Envio de mídia (imagem/vídeo/áudio/documento) ──
-  const sendFile = async (file: File, kind: 'image' | 'video' | 'audio' | 'document', captionOverride?: string) => {
+  // A legenda SEMPRE vem de quem chama (do preview de anexos ou do descritor de
+  // retry). Antes ela era lida do compositor aqui dentro — o que fazia o texto
+  // digitado sumir sem virar legenda quando o preview era confirmado com o campo
+  // já esvaziado. Agora o texto é transferido para a legenda no momento em que o
+  // anexo é escolhido (ver stageAttachments).
+  const sendFile = async (file: File, kind: 'image' | 'video' | 'audio' | 'document', captionRaw: string) => {
     if (!selected) return;
-    const caption = captionOverride !== undefined ? captionOverride.trim() : draft.trim();
+    const caption = captionRaw.trim();
     const sentAt = new Date().toISOString();
     const tempId = newTempId();
     let uploaded: Awaited<ReturnType<typeof whatsappService.uploadMedia>> | null = null;
@@ -458,7 +513,10 @@ export function useWaComposer({
     retryRef.current.set(tempId, { kind: 'media', file, mediaKind: kind, caption, replyId });
     setPending(prev => [...prev, optimistic]);
     bumpConversationPreview(selected.id, conversationPreviewLabel(kind, caption, file.name), sentAt);
-    setDraft(''); setReplyTo(null);
+    setReplyTo(null);
+    // Lugar na fila reservado no gesto; o upload abaixo corre em paralelo com o
+    // dos outros anexos e com o texto seguinte — só o disparo espera a vez.
+    const turn = sendQueue.take();
 
     // Timer que simula progresso de 0 → 85% durante o upload (UX padrão — sem XHR nativo).
     let pct = 0;
@@ -484,6 +542,7 @@ export function useWaComposer({
         return;
       }
       setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'sending' } : p));
+      await turn.wait;
       settleSend(selected.id, tempId, await whatsappService.sendMedia({
         conversationId: selected.id, type: kind, text: caption || undefined,
         storagePath: up.storagePath, mimeType: up.mimeType, fileName: up.fileName, replyToId: replyId,
@@ -515,6 +574,7 @@ export function useWaComposer({
       markPendingFailed(tempId);
       toast.error('Arquivo não enviado', err?.message || 'Falha ao enviar o anexo pelo WhatsApp.');
     } finally {
+      turn.release();
       if (previewUrl) setTimeout(() => URL.revokeObjectURL(previewUrl), 30_000);
     }
   };
@@ -538,9 +598,11 @@ export function useWaComposer({
     });
     setPending(prev => [...prev, optimistic]);
     bumpConversationPreview(conversationId, conversationPreviewLabel('video'), sentAt);
+    const turn = sendQueue.take();
     try {
       const up = await whatsappService.uploadMedia(file, { conversationId });
       setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'sending' } : p));
+      await turn.wait;
       settleSend(conversationId, tempId, await whatsappService.sendMedia({
         conversationId, type: 'video', storagePath: up.storagePath,
         mimeType: up.mimeType, fileName: up.fileName, asGif: true,
@@ -550,9 +612,10 @@ export function useWaComposer({
       markPendingFailed(tempId);
       toast.error('GIF não enviado', err?.message || 'Falha ao enviar pelo WhatsApp.');
     } finally {
+      turn.release();
       setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
     }
-  }, [selected, bumpConversationPreview, settleSend, markPendingFailed, refreshMessages, toast]);
+  }, [selected, sendQueue, bumpConversationPreview, settleSend, markPendingFailed, refreshMessages, toast]);
 
   // Reenvia uma mensagem que falhou (texto ou mídia), reusando o que foi guardado.
   const retryPending = (m: WhatsAppMessage) => {
@@ -594,7 +657,9 @@ export function useWaComposer({
     retryRef.current.set(tempId, { kind: 'text', text, replyId });
     setPending(prev => [...prev, optimistic]);
     bumpConversationPreview(selected.id, text, sentAt);
+    const turn = sendQueue.take();
     try {
+      await turn.wait;
       settleSend(selected.id, tempId, await whatsappService.sendText({ conversationId: selected.id, text, replyToId: replyId }));
       retryRef.current.delete(tempId);
       void refreshMessages(selected.id);
@@ -609,7 +674,7 @@ export function useWaComposer({
       }
       markPendingFailed(tempId);
       toast.error('Mensagem não enviada', err?.message || 'Falha ao reenviar pelo WhatsApp.');
-    }
+    } finally { turn.release(); }
   };
 
   // Reenvio rápido de um arquivo já enviado: reaproveita o objeto no storage
@@ -625,7 +690,9 @@ export function useWaComposer({
     };
     setPending(prev => [...prev, optimistic]);
     bumpConversationPreview(selected.id, conversationPreviewLabel(kind, m.content || '', m.file_name || ''), sentAt);
+    const turn = sendQueue.take();
     try {
+      await turn.wait;
       settleSend(selected.id, tempId, await whatsappService.sendMedia({
         conversationId: selected.id, type: kind, text: m.content || undefined,
         storagePath: m.storage_path, mimeType: m.media_mime || 'application/octet-stream', fileName: m.file_name || undefined,
@@ -647,7 +714,7 @@ export function useWaComposer({
       }
       markPendingFailed(tempId);
       toast.error('Arquivo não enviado', err?.message || 'Falha ao reenviar o anexo pelo WhatsApp.');
-    }
+    } finally { turn.release(); }
   };
 
   const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>, _kind: 'media' | 'document') => {
@@ -667,14 +734,38 @@ export function useWaComposer({
       const names = [...tooBig, ...empty].map(f => f.name || 'arquivo').join(', ');
       toast.warning(tooBig.length ? 'Arquivo acima de 100 MB' : 'Arquivo vazio ou inválido', names);
     }
-    if (ok.length) setAttachStaged(ok);
+    if (!ok.length) return;
+    // O que já estava escrito ACOMPANHA o anexo: entra no preview como legenda e
+    // sai do compositor, como no WhatsApp. Antes o texto ficava para trás e era
+    // apagado no envio do arquivo — quem escrevia a explicação e só depois
+    // anexava o documento via o texto simplesmente sumir.
+    setStagedCaption(draftValRef.current);
+    draftValRef.current = '';
+    setDraft('');
+    setAttachStaged(ok);
   };
 
   // Confirma o envio dos anexos do preview: a legenda vai com o 1º arquivo
   // (padrão WhatsApp para álbum); os demais seguem sem legenda.
   const confirmStagedSend = (caption: string, files: File[]) => {
     setAttachStaged(null);
+    setStagedCaption('');
     files.forEach((f, i) => sendFile(f, kindForFile(f), i === 0 ? caption : ''));
+  };
+
+  // Desistiu do anexo (fechou o preview ou tirou a última imagem da tira): a
+  // legenda volta a ser o texto do compositor — o caminho de volta do que
+  // stageAttachments levou. Sem isto, cancelar o anexo apagaria a frase escrita.
+  const cancelStagedSend = (caption: string) => {
+    setAttachStaged(null);
+    setStagedCaption('');
+    if (!caption) return;
+    // Concatena se algo novo foi digitado no compositor enquanto o preview
+    // estava aberto (raro, mas nada do que se escreveu pode se perder aqui).
+    const atual = draftValRef.current;
+    const restaurado = atual ? `${caption}\n${atual}` : caption;
+    draftValRef.current = restaurado;
+    setDraft(restaurado);
   };
 
   // Classifica o arquivo solto pelo MIME; sem tipo claro, segue como documento.
@@ -820,10 +911,12 @@ export function useWaComposer({
     });
     setPending(prev => [...prev, optimistic]); setReplyTo(null);
     bumpConversationPreview(selected.id, conversationPreviewLabel('audio'), sentAt);
+    const turn = sendQueue.take();
     try {
       const up = await whatsappService.uploadMedia(blob, { conversationId: selected.id, fileName: 'audio.webm' });
       uploaded = up;
       setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'sending' } : p));
+      await turn.wait;
       settleSend(selected.id, tempId, await whatsappService.sendAudio({
         conversationId: selected.id, storagePath: up.storagePath, mimeType: up.mimeType,
         fileName: up.fileName, replyToId: replyId,
@@ -845,6 +938,7 @@ export function useWaComposer({
       markPendingFailed(tempId);
       toast.error('Falha ao enviar áudio', err.message);
     } finally {
+      turn.release();
       setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
     }
   };
@@ -861,11 +955,11 @@ export function useWaComposer({
     pending, setPending,
     uploadProgress,
     recording, recSeconds, recLevel,
-    attachStaged, setAttachStaged,
+    attachStaged, setAttachStaged, stagedCaption,
     handleSend, beginEdit,
     retryPending, discardPending, cancelUpload, resendExisting,
     startRecording, stopRecording,
-    onPickFiles, handleDroppedFiles, confirmStagedSend,
+    onPickFiles, handleDroppedFiles, confirmStagedSend, cancelStagedSend,
     sendGif,
   };
 }

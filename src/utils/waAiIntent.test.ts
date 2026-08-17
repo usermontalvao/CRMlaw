@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import {
+  classifyWaAiObjection,
   classifyWaAiInterest,
   describeWaAiRequestedTime,
   parseWaAiRequestedTime,
@@ -52,6 +53,47 @@ test('"não sei" e companhia são RESPOSTA, nunca recusa', () => {
   assert.equal(nivel('não recebi'), 'engajado');
 });
 
+// ── A regressão de 14/08/2026 ───────────────────────────────────────────────
+//
+// Duas vezes na mesma triagem de conta bloqueada um "Não" respondendo à
+// pergunta do roteiro foi lido como recusa: o backend gravou `followup_opt_out`,
+// cancelou as retomadas e anotou na conversa que o cliente tinha desistido — 
+// enquanto ele seguia respondendo tudo até o fim. `perguntaFechada` só
+// reconhecia "Você...", "Já...", e esta campanha pergunta "O banco...",
+// "Ficou...", "A conta...". A correção não é ampliar a lista de prefixos: é o
+// backend dizer que havia pergunta pendente.
+
+const respondendo = (text: string, lastQuestion?: string) =>
+  classifyWaAiInterest({ text, lastQuestion, pendingQuestion: true }).level;
+
+test('"não" respondendo pergunta pendente do roteiro é RESPOSTA, não recusa', () => {
+  assert.equal(
+    respondendo('Não', 'O banco enviou algum e-mail, SMS, notificação ou outra mensagem sobre o bloqueio ou encerramento?'),
+    'engajado');
+  assert.equal(respondendo('Não', 'Ficou algum dinheiro ou saldo preso nessa conta?'), 'engajado');
+  // Sem o sinal do backend, é exatamente o caso que quebrou em produção.
+  assert.equal(nivel('Não', 'O banco enviou algum e-mail, SMS ou notificação?'), 'sem_interesse');
+});
+
+test('responder uma pergunta não protege quem recusa de verdade', () => {
+  assert.equal(respondendo('para de mandar mensagem'), 'sem_interesse');
+  assert.equal(respondendo('não tenho interesse'), 'sem_interesse');
+  assert.equal(respondendo('já contratei outro advogado'), 'sem_interesse');
+  assert.equal(respondendo('me deixa em paz'), 'sem_interesse');
+});
+
+test('a frase ambígua é motivo enquanto o roteiro espera, e recusa quando chega solta', () => {
+  // "O banco informou algum motivo?" → "foi um engano deles" é o MOTIVO.
+  assert.equal(respondendo('disseram que foi um engano'), 'engajado');
+  // "A conta continua bloqueada?" → "já resolvi" é a SITUAÇÃO ATUAL.
+  assert.equal(respondendo('já resolvi com eles'), 'engajado');
+  assert.equal(respondendo('não preciso mais desse dinheiro'), 'engajado');
+  // Fora de pergunta, as mesmas frases continuam encerrando a conversa.
+  assert.equal(nivel('foi engano'), 'sem_interesse');
+  assert.equal(nivel('já resolvi'), 'sem_interesse');
+  assert.equal(nivel('não precisa mais'), 'sem_interesse');
+});
+
 test('"não" no meio de uma explicação não é recusa', () => {
   assert.equal(nivel('não sei o mês exato, foi por volta de janeiro'), 'engajado');
   assert.equal(nivel('trabalhei lá mas não tinha carteira assinada'), 'engajado');
@@ -76,6 +118,22 @@ test('conversa normal continua engajada', () => {
   assert.equal(nivel('Janeiro de 2025'), 'engajado');
   assert.equal(nivel('sim, saí em março'), 'engajado');
   assert.equal(nivel(''), 'engajado');
+});
+
+test('objeções são classificadas sem virar desinteresse', () => {
+  assert.equal(classifyWaAiObjection('40% é muito alto')?.kind, 'honorarios');
+  assert.equal(classifyWaAiObjection('como eu sei que isso não é golpe?')?.kind, 'confianca_privacidade');
+  assert.equal(classifyWaAiObjection('tenho medo de mandar meus documentos')?.kind, 'envio_documentos');
+  assert.equal(classifyWaAiObjection('vocês garantem que eu vou ganhar?')?.kind, 'prazo_resultado');
+  assert.equal(classifyWaAiObjection('quanto tempo isso demora?')?.kind, 'prazo_resultado');
+  assert.equal(nivel('40% é muito alto'), 'engajado');
+  assert.equal(nivel('tenho medo de mandar meus documentos'), 'engajado');
+});
+
+test('resposta comum da triagem não é confundida com objeção', () => {
+  assert.equal(classifyWaAiObjection('não tenho o número da conta'), null);
+  assert.equal(classifyWaAiObjection('tenho o print do aplicativo'), null);
+  assert.equal(classifyWaAiObjection('o banco encerrou em julho'), null);
 });
 
 // ── Hora marcada ────────────────────────────────────────────────────────────

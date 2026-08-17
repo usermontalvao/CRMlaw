@@ -422,10 +422,6 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   const [pendingAccessCount, setPendingAccessCount] = useState(0);
   const [navSearch, setNavSearch] = useState('');
 
-  // Painéis recolhíveis da página unificada de WhatsApp (Módulos → WhatsApp)
-  const [waHubExpanded, setWaHubExpanded] = useState<Record<string, boolean>>({ connection: false, funnel: false });
-  const toggleWaHub = (k: string) => setWaHubExpanded(prev => ({ ...prev, [k]: !prev[k] }));
-
   // Sidebar grupos colapsáveis (estado salvo no localStorage)
   const [expandedGroups, setExpandedGroupsState] = useState<Record<SettingsGroupKey, boolean>>(() => {
     try {
@@ -1534,6 +1530,38 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   }
   .settings-card { transition: border-color .16s ease, box-shadow .16s ease; }
   .settings-card:hover { border-color: rgba(234,108,0,0.16); box-shadow: 0 2px 16px rgba(15,23,42,0.05); }
+
+  /* ── WhatsApp: navegação hierárquica sem roubar largura do formulário ── */
+  .whatsapp-settings-layout {
+    padding: 22px clamp(18px, 2.4vw, 32px) 32px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .whatsapp-settings-nav { padding: 16px 18px; background: #fff; }
+  .whatsapp-settings-nav-group {
+    display: grid; grid-template-columns: 118px minmax(0, 1fr);
+    align-items: start; gap: 12px; padding: 10px 0;
+  }
+  .whatsapp-settings-nav-group + .whatsapp-settings-nav-group {
+    border-top: 1px solid rgba(15,23,42,0.06);
+  }
+  .whatsapp-settings-nav-items { display: flex; flex-wrap: wrap; gap: 7px; }
+  .whatsapp-settings-nav-button {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 34px;
+    padding: 6px 10px; border: 1px solid #e8e9ec; border-radius: 9px;
+    background: #fff; color: #4b5563; cursor: pointer;
+    font-size: 12.5px; font-weight: 600; transition: all .14s ease;
+  }
+  .whatsapp-settings-nav-button:hover { border-color: #fed7aa; background: #fffaf5; color: #c2410c; }
+  .whatsapp-settings-nav-button.is-active {
+    border-color: #fb923c; background: #fff7ed; color: #c2410c;
+    box-shadow: 0 0 0 2px rgba(251,146,60,0.08);
+  }
+  .whatsapp-settings-content { min-width: 0; }
+  .whatsapp-settings-content > .settings-card { background: #fff; }
+  @media (max-width: 980px) {
+    .whatsapp-settings-layout { padding-left: 16px; padding-right: 16px; }
+    .whatsapp-settings-nav-group { grid-template-columns: 1fr; gap: 7px; }
+  }
 `;
 
   // Corpo compartilhado — sem sidebar duplicado, header unificado no topo
@@ -4270,8 +4298,8 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                     </div>
                 )}
 
-                {/* ── Módulos → Leads / WhatsApp (gestão unificada) ── */}
-                {(activeSection === 'modules_leads' || activeSection === 'modules_whatsapp') && (() => {
+                {/* ── Módulos → Leads ── */}
+                {activeSection === 'modules_leads' && (() => {
                   const LEAD_COLOR_HEX: Record<string, string> = {
                     slate: '#64748b', blue: '#3b82f6', emerald: '#10b981',
                     amber: '#f59e0b', red: '#ef4444', violet: '#8b5cf6',
@@ -4283,10 +4311,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                   const stageItems = normalizeItems(leadConfig.stages.map(s => ({
                     ...s,
                     color: LEAD_COLOR_HEX[s.color] ?? '#64748b',
-                  }))).map(it => ({
-                    ...it,
-                    metadata: { ...it.metadata, labels: leadConfig.stages.find(s => s.key === it.id)?.labels ?? [] },
-                  }));
+                  })));
                   const leadsCards = (
                       <>
 
@@ -4306,22 +4331,6 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               const { data } = await supabase.rpc('count_leads_by_stage', { p_stage: item.id });
                               return Number(data ?? 0);
                             }}
-                            extraFields={(draft, patch) => {
-                              const labels = Array.isArray(draft.metadata?.labels) ? (draft.metadata!.labels as string[]) : [];
-                              return (
-                                <div>
-                                  <label className="block text-xs font-semibold text-slate-600 mb-1">Etiquetas desta etapa</label>
-                                  <input
-                                    type="text"
-                                    defaultValue={labels.join(', ')}
-                                    onBlur={e => patch({ metadata: { ...draft.metadata, labels: e.target.value.split(',').map(s => s.trim()).filter(Boolean) } })}
-                                    placeholder="Ex: Proposta enviada, Aguardando retorno"
-                                    className="w-full px-3 py-2 text-sm border border-[#e7e5df] rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 bg-[#f8f7f5]"
-                                  />
-                                  <p className="text-[11px] text-slate-400 mt-1">Separe por vírgula. Essas etiquetas aparecem no seletor da conversa, sob esta etapa.</p>
-                                </div>
-                              );
-                            }}
                             onChange={async items => {
                               const newStages = items.map(item => ({
                                 key:         item.id,
@@ -4330,7 +4339,9 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 color:       (HEX_TO_LEAD_COLOR[item.color ?? ''] ?? leadConfig.stages.find(s => s.key === item.id)?.color ?? 'slate') as any,
                                 active:      item.active,
                                 isDefault:   item.isDefault ?? false,
-                                labels:      Array.isArray(item.metadata?.labels) ? (item.metadata!.labels as string[]) : (leadConfig.stages.find(s => s.key === item.id)?.labels ?? []),
+                                // Mantido apenas como vínculo interno para não
+                                // desconectar conversas antigas da etapa.
+                                labels:      leadConfig.stages.find(s => s.key === item.id)?.labels ?? [item.label],
                               }));
                                 const newConfig = { ...leadConfig, stages: newStages };
                                 const persisted = await runWithSettingsPin(
@@ -4354,7 +4365,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         <div className="settings-card">
                           <p className="settings-card-title">Funis dos canais do WhatsApp</p>
                           <p style={{ fontSize: '11.5px', color: '#9ca3af', margin: '-4px 0 12px' }}>
-                            Cada número agora tem seu próprio fluxo. Edite etapas, ordem, cores, etiquetas e entrada inicial em <strong>WhatsApp → Funis</strong>. O funil configurado acima permanece como modelo-base para copiar e para leads sem canal do WhatsApp.
+                            Cada número agora tem seu próprio fluxo. Edite etapas, ordem, cores e entrada inicial em <strong>WhatsApp → Funis</strong>. O funil configurado acima permanece como modelo-base para copiar e para leads sem canal do WhatsApp.
                           </p>
                           {waFunnelChannels.length === 0 ? (
                             <p style={{ fontSize: '12.5px', color: '#9ca3af' }}>Nenhuma conta de WhatsApp conectada.</p>
@@ -4442,57 +4453,21 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         </div>
                       </>
                   );
-                  const isWa = activeSection === 'modules_whatsapp';
-                  if (!isWa) {
-                    return (
-                      <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        {leadsCards}
-                      </div>
-                    );
-                  }
-                  const waPanelHeader = (k: string, Icon: React.ComponentType<any>, title: string, subtitle: string) => (
-                    <button
-                      type="button"
-                      onClick={() => toggleWaHub(k)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', padding: '16px 18px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px', borderRadius: '9px', background: '#fff7ed', color: '#f97316', flexShrink: 0 }}>
-                        <Icon size={17} />
-                      </span>
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 700, color: '#374151' }}>{title}</span>
-                        <span style={{ display: 'block', fontSize: '11.5px', color: '#9ca3af' }}>{subtitle}</span>
-                      </span>
-                      <ChevronDown size={18} style={{ color: '#94a3b8', flexShrink: 0, transition: 'transform 0.15s', transform: waHubExpanded[k] ? 'rotate(180deg)' : 'none' }} />
-                    </button>
-                  );
                   return (
-                    <div style={{ padding: '24px 40px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <p style={{ fontSize: '11.5px', color: '#9ca3af', margin: '0 2px 4px' }}>
-                        Tudo do atendimento por WhatsApp em um só lugar. Expanda cada seção para configurar.
-                      </p>
-
-                      {/* Painel 1 — Conexão, servidor, canais e departamentos (Evolution) */}
-                      <div className="settings-card" style={{ padding: 0, overflow: 'hidden' }}>
-                        {waPanelHeader('connection', MessageCircle, 'Conexão & Servidor', 'Servidor Evolution, canais conectados e departamentos')}
-                        {waHubExpanded.connection && (
-                          <div style={{ borderTop: '1px solid #f1f0ec' }}>
-                            <WhatsAppIntegrationSettings requirePin={requirePin} userName={currentProfile?.name} onFeedback={setFeedback} />
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Painel 2 — Funil de atendimento (mesma config do módulo Leads) */}
-                      <div className="settings-card" style={{ padding: 0, overflow: 'hidden' }}>
-                        {waPanelHeader('funnel', Target, 'Funil de atendimento (Leads)', 'Estágios, canais sincronizados, etiquetas e origens')}
-                        {waHubExpanded.funnel && (
-                          <div style={{ borderTop: '1px solid #f1f0ec', padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                            {leadsCards}
-                          </div>
-                        )}
-                      </div>
+                    <div style={{ padding: '28px 40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      {leadsCards}
                     </div>
                   );
                 })()}
+
+                {/* ── Módulos → WhatsApp ── */}
+                {activeSection === 'modules_whatsapp' && (
+                  <WhatsAppIntegrationSettings
+                    requirePin={requirePin}
+                    userName={currentProfile?.name}
+                    onFeedback={setFeedback}
+                  />
+                )}
 
                 {/* ── Módulos → Agenda ── */}
                 {activeSection === 'modules_agenda' && (
@@ -6569,7 +6544,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   const sidebarNav = (
     <aside
       className="settings-scroll"
-      style={{ width: '276px', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(15,23,42,0.07)', background: '#fbfbfc', overflowY: 'auto' }}
+      style={{ width: '244px', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', borderRight: '1px solid rgba(15,23,42,0.07)', background: '#fbfbfc', overflowY: 'auto' }}
     >
       <div style={{ padding: '22px 20px 14px' }}>
         <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#ea6c00', marginBottom: '5px' }}>Sistema</p>

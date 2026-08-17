@@ -10,11 +10,11 @@ import { useResizableLayout } from '../components/whatsapp/hooks/useResizableLay
 // decorativa dele foi justamente o que deixou a bancada mostrar um layout que o
 // módulo já não tinha mais.
 import { ContactIdentity, AttendanceSummary } from '../components/whatsapp/detailsPanelHeader';
-import { ConversationLabelsPanel } from '../components/whatsapp/conversationLabels';
+import { ConversationStageSelect } from '../components/whatsapp/conversationLabels';
 import { QuickActions } from '../components/whatsapp/quickActions';
 import { ForwardMessageModal } from '../components/whatsapp/forwardMessageModal';
 import { PreCadastroModal } from '../components/whatsapp/preCadastroModal';
-import { AiHandoffSummaryBanner } from '../components/whatsapp/aiHandoffSummaryBanner';
+import { AiHandoffSummaryCard, AiHandoffSummaryStrip, useAiHandoffSummary } from '../components/whatsapp/aiHandoffSummary';
 import { ToastProvider } from '../contexts/ToastContext';
 import type { FunnelLabel } from '../services/settings.service';
 import type { WhatsAppAiConversationState, WhatsAppConversation, WhatsAppMessage } from '../types/whatsapp.types';
@@ -418,7 +418,17 @@ const bubbleActions = {
   onCreateTask: noop,
 };
 
+/** O Provider precisa envolver ESTE componente: o resumo da IA é lido por um
+ *  hook no corpo dele, e o hook fala com o toast. */
 export default function WhatsAppConversationPreview() {
+  return (
+    <ToastProvider>
+      <PreviewBench />
+    </ToastProvider>
+  );
+}
+
+function PreviewBench() {
   const [detailsCollapsed, setDetailsCollapsed] = useState(false);
   const { panelWidth, startPanelResize } = useResizableLayout();
   const [previewImageReady, setPreviewImageReady] = useState(false);
@@ -431,6 +441,15 @@ export default function WhatsAppConversationPreview() {
   // Encaminhar: a bancada abre o modal de verdade, com conversas de mentira.
   const [forwardSource, setForwardSource] = useState<WhatsAppMessage | null>(null);
   const [preCadastroOpen, setPreCadastroOpen] = useState(false);
+  // A bancada lê o handoff uma vez, como o módulo: a faixa fina na thread e o
+  // cartão do painel saem do mesmo estado.
+  const handoffSummary = useAiHandoffSummary({
+    conversationId: 'preview-conversation',
+    currentUserId: 'pedro',
+    assignedUserId: 'pedro',
+    loadState: loadPreviewHandoff,
+    resumeAi: resumePreviewAi,
+  });
   useEffect(() => {
     let url: string | null = null;
     buildPreviewPdf().then(out => { url = out; setPdfUrl(out); });
@@ -443,9 +462,6 @@ export default function WhatsAppConversationPreview() {
   }, []);
 
   return (
-    // O painel de etiquetas avisa por toast quando o salvamento falha — sem
-    // Provider ele nem monta.
-    <ToastProvider>
     <div className="min-h-screen bg-slate-200 p-4 lg:p-8">
       <div className="relative mx-auto flex h-[calc(100vh-2rem)] max-w-[1180px] overflow-hidden rounded-xl bg-white shadow-2xl lg:h-[calc(100vh-4rem)]">
         <section data-preview-thread className="flex min-w-0 flex-1 flex-col">
@@ -462,13 +478,7 @@ export default function WhatsAppConversationPreview() {
           </div>
         </header>
 
-        <AiHandoffSummaryBanner
-          conversationId="preview-conversation"
-          currentUserId="pedro"
-          assignedUserId="pedro"
-          loadState={loadPreviewHandoff}
-          resumeAi={resumePreviewAi}
-        />
+        <AiHandoffSummaryStrip data={handoffSummary} onOpenPanel={() => undefined} />
 
         <main className="wa-thread-bg flex-1 overflow-y-auto overscroll-contain">
           <div className="mx-auto w-full max-w-[1050px] px-5 py-4">
@@ -551,8 +561,15 @@ export default function WhatsAppConversationPreview() {
             <AttendanceSummary
               assignee="Dr. Pedro"
               department="Previdenciário"
-              stage={{ stageLabel: 'Em atendimento', color: '#dc2626' }}
+              stageControl={(
+                <ConversationStageSelect
+                  conversation={PREVIEW_CONVERSATION}
+                  funnelLabels={PREVIEW_FUNNEL}
+                  onChanged={noop}
+                />
+              )}
             />
+            <AiHandoffSummaryCard data={handoffSummary} />
             <QuickActions
               blocked={false}
               onMarkUnread={noop}
@@ -566,14 +583,6 @@ export default function WhatsAppConversationPreview() {
               onMute={noop}
               onUnmute={noop}
             />
-            <div className="space-y-1.5">
-              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Etiquetas</p>
-              <ConversationLabelsPanel
-                conversation={PREVIEW_CONVERSATION}
-                funnelLabels={PREVIEW_FUNNEL}
-                onChanged={noop}
-              />
-            </div>
             <div className="rounded-xl border border-[#e7e5df] p-3">
               <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cliente vinculado</p>
               <p className="mt-2 text-[12px] font-bold text-slate-800">PEDRO RODRIGUES MONTALVAO NETO</p>
@@ -612,6 +621,5 @@ export default function WhatsAppConversationPreview() {
         />
       )}
     </div>
-    </ToastProvider>
   );
 }

@@ -58,6 +58,29 @@ async function setJob(supabase: Supa, jobId: string, patch: Record<string, unkno
   await supabase.from('signature_finalization_jobs').update(patch).eq('id', jobId);
 }
 
+/**
+ * Conta ao WhatsApp que o envelope foi assinado.
+ *
+ * Idempotente por construção: `runLifecycleTurn` marca `wa_tracking_stopped` e
+ * `followup_stopped` logo no começo, então a segunda chamada não repete nada.
+ * É por isso que ela também pode ser feita do caminho "já estava assinado".
+ */
+async function avisarWhatsApp(
+  supabase: Supa, supabaseUrl: string, serviceRoleKey: string, requestId: string,
+): Promise<void> {
+  const { data: fillLink } = await supabase.from('template_fill_links')
+    .select('conversation_id').eq('signature_request_id', requestId)
+    .not('conversation_id', 'is', null).limit(1).maybeSingle();
+  if (!fillLink?.conversation_id) return;
+  await dispatchWaAiLifecycle({
+    supabaseUrl,
+    serviceRole: serviceRoleKey,
+    conversationId: String(fillLink.conversation_id),
+    trigger: 'signature_completed',
+    resourceId: requestId,
+  }).catch(error => console.error('wa-ai signature lifecycle:', error));
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders });
   try {
@@ -88,7 +111,7 @@ Deno.serve(async (req: Request) => {
 
     // Lifecycle guard (mesmas regras do public-sign-document).
     const { data: request0 } = await supabase.from('signature_requests')
-      .select('id, status, deleted_at, archived_at, blocked_at, attachment_paths, document_name, created_by, envelope_verification_code, signature_model')
+      .select('id, status, deleted_at, archived_at, blocked_at, attachment_paths, document_name, created_by, envelope_verification_code, signature_model, wa_tracking_stopped')
       .eq('id', requestId).maybeSingle();
     if (!request0) return jsonResponse({ success: false, error: 'Request not found' }, 404);
     if (request0.deleted_at || request0.archived_at || request0.blocked_at) {
@@ -98,6 +121,19 @@ Deno.serve(async (req: Request) => {
     // Já finalizado? Resposta idempotente imediata — ANTES de enfileirar, para
     // não criar job órfão em envelopes que já estão 'signed'.
     if (request0.status === 'signed') {
+      // ── Recuperação ──
+      // Envelope já assinado, mas o WhatsApp nunca soube: é o estado de todo
+      // envelope finalizado enquanto esta função rodava sem o aviso (a v12, de
+      // 06/07/2026, não tinha o `dispatchWaAiLifecycle` — o código existia no
+      // repositório e nunca foi implantado). Sem esta porta, esses casos ficam
+      // presos para sempre: o cliente assinou, ninguém respondeu, a etiqueta
+      // parou em "Aguardando Documentos" e nada mais dispara.
+      // `wa_tracking_stopped` é a marca que o próprio gancho grava, então isto
+      // roda no máximo uma vez por envelope.
+      if (request0.wa_tracking_stopped !== true) {
+        await avisarWhatsApp(supabase, supabaseUrl, serviceRoleKey, requestId);
+        return jsonResponse({ success: true, finalized: true, request_status: 'signed', wa_recovered: true });
+      }
       return jsonResponse({ success: true, finalized: true, request_status: 'signed' });
     }
 
@@ -229,18 +265,7 @@ Deno.serve(async (req: Request) => {
           } catch (e) { console.error('webhook error', e); }
         }
 
-        const { data: fillLink } = await supabase.from('template_fill_links')
-          .select('conversation_id').eq('signature_request_id', requestId)
-          .not('conversation_id', 'is', null).limit(1).maybeSingle();
-        if (fillLink?.conversation_id) {
-          await dispatchWaAiLifecycle({
-            supabaseUrl,
-            serviceRole: serviceRoleKey,
-            conversationId: fillLink.conversation_id,
-            trigger: 'signature_completed',
-            resourceId: requestId,
-          }).catch(error => console.error('wa-ai signature lifecycle:', error));
-        }
+        await avisarWhatsApp(supabase, supabaseUrl, serviceRoleKey, requestId);
       }
 
       await setJob(supabase, jobId, { status: 'finalized', stage: 'concluído', progress: 100, persisted_document_count: persisted, finalized_at: nowIso, locked_at: null, lock_expires_at: null, last_error: null });

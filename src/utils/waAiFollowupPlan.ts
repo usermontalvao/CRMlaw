@@ -36,6 +36,43 @@ export interface WaAiFollowupPlan {
   warnings: string[];
 }
 
+export interface WaAiCampaignFollowupPreset {
+  followup_enabled: boolean;
+  followup_instructions: string;
+  followup_max_attempts: number;
+  followup_strategy: 'custom';
+  followup_interval_hours: number;
+  followup_custom_hours: number[];
+  followup_days: number[];
+  followup_start_minute: number;
+  followup_end_minute: number;
+  timezone: string;
+}
+
+/** Configuração revisada para a campanha de conta; usada pelo formulário e pelos testes. */
+export const WA_AI_ACCOUNT_FOLLOWUP_PRESET: WaAiCampaignFollowupPreset = {
+  followup_enabled: true,
+  followup_instructions: 'Retome exatamente a primeira informação da triagem que ficou pendente, '
+    + 'sem repetir perguntas já respondidas. Faça as tentativas em 2h, 4h, 8h, 24h, 48h, 7 dias, '
+    + '10 dias e 14 dias, somente de segunda a sexta, das 08h às 18h de Cuiabá. Pare quando o '
+    + 'cliente responder, recusar, o caso for desqualificado, um humano assumir ou houver '
+    + 'transferência. Documentos, KIT e assinatura têm acompanhamento próprio: não duplique essas cobranças.',
+  followup_max_attempts: 8,
+  followup_strategy: 'custom',
+  followup_interval_hours: 24,
+  followup_custom_hours: [2, 4, 8, 24, 48, 168, 240, 336],
+  followup_days: [1, 2, 3, 4, 5],
+  followup_start_minute: 8 * 60,
+  followup_end_minute: 18 * 60,
+  timezone: 'America/Cuiaba',
+};
+
+export function waAiCampaignFollowupPreset(playbookId: string | null | undefined): WaAiCampaignFollowupPreset | null {
+  return playbookId === 'bloqueio_encerramento_conta'
+    ? { ...WA_AI_ACCOUNT_FOLLOWUP_PRESET, followup_custom_hours: [...WA_AI_ACCOUNT_FOLLOWUP_PRESET.followup_custom_hours], followup_days: [...WA_AI_ACCOUNT_FOLLOWUP_PRESET.followup_days] }
+    : null;
+}
+
 /** Teto absoluto de um intervalo: 30 dias. Acima disso ninguém retoma nada. */
 export const WA_AI_FOLLOWUP_MAX_HOURS = 30 * 24;
 

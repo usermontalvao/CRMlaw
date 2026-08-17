@@ -30,7 +30,9 @@ import {
   pruneWaAiActionRefs,
   validateWaAiPrompt,
 } from '../../utils/waAiActionCatalog';
-import { formatWaAiFollowupHours, parseWaAiFollowupPlan } from '../../utils/waAiFollowupPlan';
+import {
+  formatWaAiFollowupHours, parseWaAiFollowupPlan, waAiCampaignFollowupPreset,
+} from '../../utils/waAiFollowupPlan';
 import type {
   WhatsAppAiActionRef, WhatsAppAiAssistantInput, WhatsAppAiTargetOption,
 } from '../../types/whatsapp.types';
@@ -183,7 +185,14 @@ export const AiAssistantForm: React.FC<Props> = ({
       ? draft.playbook as Record<string, unknown>
       : {};
     const materialized = Array.isArray(raw.fields) || typeof raw.id === 'string';
-    onPatch({ playbook: materialized ? { ...raw, context } : context });
+    const nextPlaybook = normalizeWaAiPlaybook(context);
+    const preset = playbookLido?.id !== nextPlaybook?.id
+      ? waAiCampaignFollowupPreset(nextPlaybook?.id)
+      : null;
+    onPatch({
+      playbook: materialized ? { ...raw, context } : context,
+      ...(preset || {}),
+    });
   };
 
   const updatePlaybookBinding = (key: string, target: WhatsAppAiTargetOption | null) => {
@@ -341,6 +350,7 @@ export const AiAssistantForm: React.FC<Props> = ({
         : `a cada ${draft.followup_interval_hours ?? 24}h`)
       + ` · ${minutesToTime(draft.followup_start_minute ?? 480)}–${minutesToTime(draft.followup_end_minute ?? 1080)}`
     : 'Desligado — o agente só responde quando o cliente escreve.';
+  const campaignFollowupPreset = waAiCampaignFollowupPreset(playbookLido?.id);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -553,6 +563,21 @@ export const AiAssistantForm: React.FC<Props> = ({
       <Section
         id="followup" num={6} title="Acompanhamentos" summary={followupSummary} collapsible={false}
       >
+        {campaignFollowupPreset && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+            flexWrap: 'wrap', marginBottom: '12px', padding: '10px 12px', borderRadius: '9px',
+            background: '#fffbf5', border: '1px solid #fdebd6',
+          }}>
+            <span style={{ fontSize: '11.5px', color: '#6b7280' }}>
+              Preset da campanha: 2h · 4h · 8h · 24h · 48h · 7d · 10d · 14d, em horário comercial.
+            </span>
+            <button type="button" className="wa-ai-apply"
+              onClick={() => onPatch(campaignFollowupPreset)}>
+              <Wand2 size={12} aria-hidden="true" /> Aplicar preset da campanha
+            </button>
+          </div>
+        )}
         <label style={{ display: 'flex', alignItems: 'center', gap: '7px', cursor: 'pointer' }}>
           <input type="checkbox" checked={draft.followup_enabled === true}
             onChange={e => onPatch({ followup_enabled: e.target.checked })} />

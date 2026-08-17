@@ -414,10 +414,7 @@ const ChannelFunnelManager: React.FC<ChannelFunnelManagerProps> = ({
                       <button type="button" onClick={() => moveStage(index, 1)} disabled={index === draft.stages.length - 1} title="Descer" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-25"><ArrowDown size={14} /></button>
                       <button type="button" onClick={() => removeStage(index)} title="Excluir etapa" className="rounded-lg p-1.5 text-red-500 hover:bg-red-50"><Trash2 size={14} /></button>
                     </div>
-                    <div className="mt-2 grid gap-2 md:grid-cols-2">
-                      <input value={stage.description} onChange={event => updateStage(index, { description: event.target.value })} placeholder="Descrição da etapa" className="rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-amber-300" />
-                      <input value={stage.labels.join(', ')} onChange={event => updateStage(index, { labels: event.target.value.split(',') })} placeholder="Etiquetas separadas por vírgula" className="rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-amber-300" />
-                    </div>
+                    <input value={stage.description} onChange={event => updateStage(index, { description: event.target.value })} placeholder="Descrição da etapa" className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-amber-300" />
                     <p className="mt-1.5 text-[10px] text-slate-400">Identificador: {stage.stage_key}{stage.is_default ? ' · etapa inicial' : ''}</p>
 
                     <button type="button"

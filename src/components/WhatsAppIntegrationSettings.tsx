@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Save, Loader2, Eye, EyeOff, Plus, Trash2, QrCode, Check, Users, X, Phone,
-  Clock, BellOff, Bot, Pencil, MessageSquare, Share2, LockKeyhole, GitBranch, IdCard,
+  Clock, BellOff, Bot, Pencil, MessageSquare, IdCard,
 } from 'lucide-react';
 import {
   settingsService,
@@ -39,6 +39,26 @@ interface Props {
   onFeedback: (type: 'error' | 'success', msg: string) => void;
 }
 
+type WhatsAppSettingsSection =
+  | 'connection'
+  | 'identity'
+  | 'channels'
+  | 'departments'
+  | 'copies'
+  | 'templates'
+  | 'agents';
+
+interface WhatsAppSettingsGroup {
+  label: string;
+  description: string;
+  items: Array<{
+    key: WhatsAppSettingsSection;
+    label: string;
+    summary: string;
+    icon: React.ComponentType<{ size?: number }>;
+  }>;
+}
+
 const statusColor = (s: string) => s === 'connected' ? '#16a34a' : s === 'connecting' ? '#f59e0b' : '#9ca3af';
 const statusLabel = (s: string) => s === 'connected' ? 'Conectado' : s === 'connecting' ? 'Conectando…' : 'Desconectado';
 
@@ -64,8 +84,11 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   // Identidade de atendimento do usuário logado (assinatura das mensagens).
   const [agentPrefs, setAgentPrefs] = useState<AgentPrefs>(DEFAULT_AGENT_PREFS);
   const [savingIdentity, setSavingIdentity] = useState(false);
-  const [activeSection, setActiveSection] = useState<'connection' | 'identity' | 'channels' | 'access' | 'funnels' | 'departments' | 'routing' | 'copies' | 'templates' | 'agents'>('connection');
-  const [activeChannelSection, setActiveChannelSection] = useState<'list' | 'new'>('list');
+  const [activeSection, setActiveSection] = useState<WhatsAppSettingsSection>('connection');
+  // Acessos, funis e roteamento são propriedades DO canal — moram aqui dentro,
+  // não como itens soltos no menu lateral.
+  const [activeChannelSection, setActiveChannelSection] =
+    useState<'list' | 'access' | 'funnels' | 'routing' | 'new'>('list');
   const [loading, setLoading] = useState(true);
 
   // formulário de canal
@@ -513,20 +536,34 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     } finally { setSavingIdentity(false); }
   };
 
-  const sectionItems = [
-    { key: 'connection' as const, label: 'Conexão', summary: 'Servidor Evolution e API', icon: QrCode },
-    { key: 'identity' as const, label: 'Minha assinatura', summary: 'Nome exibido nas mensagens', icon: IdCard },
-    { key: 'channels' as const, label: 'Canais', summary: 'Números, horários e IA', icon: Phone },
-    { key: 'access' as const, label: 'Acessos', summary: 'Quem vê cada canal', icon: LockKeyhole },
-    { key: 'funnels' as const, label: 'Funis', summary: 'Fluxo próprio por canal', icon: GitBranch },
-    { key: 'departments' as const, label: 'Departamentos', summary: 'Setores e membros', icon: Users },
-    { key: 'routing' as const, label: 'Roteamento', summary: 'Canais × departamentos', icon: Share2 },
-    { key: 'copies' as const, label: 'Textos padrão', summary: 'Copys operacionais', icon: Pencil },
-    { key: 'templates' as const, label: 'Modelos', summary: 'Mensagens prontas', icon: MessageSquare },
-    { key: 'agents' as const, label: 'Agentes de IA', summary: 'Assistente que atende sozinho', icon: Bot },
+  const sectionGroups: WhatsAppSettingsGroup[] = [
+    {
+      label: 'Infraestrutura',
+      description: 'Conexão técnica',
+      items: [
+        { key: 'connection' as const, label: 'Conexão', summary: 'Servidor Evolution e API', icon: QrCode },
+      ],
+    },
+    {
+      label: 'Atendimento',
+      description: 'Equipe e operação',
+      items: [
+        { key: 'identity' as const, label: 'Minha assinatura', summary: 'Nome exibido nas mensagens', icon: IdCard },
+        { key: 'channels' as const, label: 'Canais', summary: 'Números, horários, acessos, funis e roteamento', icon: Phone },
+        { key: 'departments' as const, label: 'Departamentos', summary: 'Setores e membros', icon: Users },
+      ],
+    },
+    {
+      label: 'Conteúdo e IA',
+      description: 'Mensagens e automação',
+      items: [
+        { key: 'copies' as const, label: 'Textos padrão', summary: 'Copys operacionais', icon: Pencil },
+        { key: 'templates' as const, label: 'Modelos', summary: 'Mensagens prontas', icon: MessageSquare },
+        { key: 'agents' as const, label: 'Agentes de IA', summary: 'Assistente que atende sozinho', icon: Bot },
+      ],
+    },
   ];
-
-  const renderSection = (key: typeof sectionItems[number]['key'], title: string, summary: string, content: React.ReactNode) => {
+  const renderSection = (key: WhatsAppSettingsSection, title: string, summary: string, content: React.ReactNode) => {
     if (activeSection !== key) return null;
     return (
       <div className="settings-card">
@@ -556,60 +593,40 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   }
 
   return (
-    <div style={{ padding: '28px 40px' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '240px minmax(0, 1fr)', gap: '20px', alignItems: 'start' }}>
-        <div className="settings-card" style={{ position: 'sticky', top: '16px' }}>
-          <p className="settings-card-title">WhatsApp</p>
-          <p style={{ fontSize: '12.5px', color: '#9ca3af', marginBottom: '14px' }}>
-            Submenu do módulo para separar conexão, canais, textos e automações.
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {sectionItems.map(item => {
-              const active = activeSection === item.key;
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setActiveSection(item.key)}
-                  style={{
-                    width: '100%',
-                    textAlign: 'left',
-                    borderRadius: '12px',
-                    border: active ? '1px solid #f59e0b' : '1px solid #ebe7df',
-                    background: active ? '#fff7ed' : '#fff',
-                    padding: '10px 12px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                    <span style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '999px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: active ? '#fed7aa' : '#f8fafc',
-                      color: active ? '#c2410c' : '#6b7280',
-                      flexShrink: 0,
-                    }}>
-                      <Icon size={13} />
-                    </span>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: active ? '#c2410c' : '#1f2937' }}>
-                      {item.label}
-                    </div>
-                  </div>
-                  <div style={{ fontSize: '11.5px', color: active ? '#9a3412' : '#9ca3af' }}>
-                    {item.summary}
-                  </div>
-                </button>
-              );
-            })}
+    <div className="whatsapp-settings-layout">
+      <nav className="settings-card whatsapp-settings-nav" aria-label="Áreas de configuração do WhatsApp">
+        {sectionGroups.map(group => (
+          <div className="whatsapp-settings-nav-group" key={group.label}>
+            <div>
+              <p style={{ margin: 0, fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#64748b' }}>
+                {group.label}
+              </p>
+              <p style={{ margin: '2px 0 0', fontSize: '10.5px', color: '#a0a7b2' }}>{group.description}</p>
+            </div>
+            <div className="whatsapp-settings-nav-items">
+              {group.items.map(item => {
+                const active = activeSection === item.key;
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={`whatsapp-settings-nav-button${active ? ' is-active' : ''}`}
+                    aria-current={active ? 'page' : undefined}
+                    title={item.summary}
+                    onClick={() => setActiveSection(item.key)}
+                  >
+                    <Icon size={14} />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        ))}
+      </nav>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div className="whatsapp-settings-content" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* ── Servidor Evolution ── */}
       {renderSection('connection', 'Conexão com Evolution', 'Servidor global e credenciais da API', <>
         <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '12px' }}>
@@ -751,14 +768,17 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       </>)}
 
       {/* ── Canais ── */}
-      {renderSection('channels', 'Canais', `${channels.length} canal${channels.length !== 1 ? 'is' : ''} configurado${channels.length !== 1 ? 's' : ''}`, <>
+      {renderSection('channels', 'Canais', `${channels.length} canal${channels.length !== 1 ? 'is' : ''} configurado${channels.length !== 1 ? 's' : ''} · números, acessos, funis e roteamento`, <>
         <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '12px' }}>
-          O horário comercial é configurado por canal. Em cada número, use o botão <strong>Horário comercial</strong> para definir dias,
-          faixa de atendimento, fuso e a mensagem automática fora do horário.
+          Tudo o que pertence a um número mora aqui: horário comercial, quem enxerga o canal, o funil dele e
+          quais departamentos o atendem.
         </p>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
           {[
             { key: 'list' as const, label: 'Lista de canais' },
+            { key: 'access' as const, label: 'Acessos' },
+            { key: 'funnels' as const, label: 'Funis' },
+            { key: 'routing' as const, label: 'Roteamento' },
             { key: 'new' as const, label: 'Novo canal' },
           ].map(item => {
             const active = activeChannelSection === item.key;
@@ -944,8 +964,8 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
               )}
 
               <p style={{ marginTop: '12px', borderTop: '1px dashed #ece7df', paddingTop: '12px', fontSize: '11.5px', color: '#9ca3af' }}>
-                Os departamentos que atendem este número são definidos na aba <strong>Roteamento</strong>;
-                o assistente de IA deste canal, na aba <strong>Agentes de IA</strong>.
+                Acessos, funil e departamentos deste número estão nas abas acima; o assistente de IA
+                deste canal, em <strong>Agentes de IA</strong>.
               </p>
             </div>
           ))}
@@ -986,78 +1006,46 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
           </div>
         </div>
         )}
-      </>)}
 
-      {/* ── Acesso por usuário (mesma fonte para WhatsApp + Leads) ── */}
-      {renderSection('access', 'Acessos por usuário', 'Defina quem enxerga cada canal no atendimento e no funil de Leads', <>
-        <ChannelAccessManager
-          channels={channels}
-          staff={staff}
-          requirePin={requirePin}
-          onFeedback={onFeedback}
-          onChannelsChange={setChannels}
-        />
-      </>)}
-
-      {/* ── Funil comercial/jurídico próprio de cada canal ── */}
-      {renderSection('funnels', 'Funis por canal', 'Personalize etapas, ordem, cores, etiquetas e entrada inicial de cada número', <>
-        <ChannelFunnelManager
-          channels={channels}
-          departments={departments}
-          staff={staff}
-          moduleConfig={copyConfig}
-          requirePin={requirePin}
-          onFeedback={onFeedback}
-          onChannelsChange={setChannels}
-        />
-      </>)}
-
-      {/* ── Departamentos ── */}
-      {renderSection('departments', 'Departamentos', `${departments.length} setor${departments.length !== 1 ? 'es' : ''} configurado${departments.length !== 1 ? 's' : ''}`, <>
-        <p className="settings-card-title">Departamentos (setores)</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
-          {departments.length === 0 && (
-            <p style={{ fontSize: '12.5px', color: '#9ca3af' }}>Nenhum departamento. Crie setores como Suporte, Comercial, Cancelamento.</p>
-          )}
-          {departments.map(d => (
-            <div key={d.id}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid #e7e5df', borderRadius: '10px', padding: '10px 12px' }}>
-                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: d.color || '#16a34a', flexShrink: 0 }} />
-                <span style={{ flex: 1, fontSize: '13.5px', fontWeight: 600, color: '#1f2937' }}>{d.name}</span>
-                <button onClick={() => openMembers(d.id)} className="settings-btn-ghost" style={{ padding: '6px 10px' }}>
-                  <Users size={13} /> Membros
-                </button>
-                <button onClick={() => removeDepartment(d)} title="Excluir"
-                  style={{ padding: '6px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-
-              {editMembersFor?.id === d.id && renderMemberEditor('0 0 10px 10px')}
-            </div>
-          ))}
+        {/* Quem enxerga o canal — atendimento e funil de Leads leem a mesma fonte. */}
+        {activeChannelSection === 'access' && (
+        <div>
+          <p className="settings-card-title">Acessos por usuário</p>
+          <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '14px' }}>
+            Defina quem enxerga cada canal no atendimento e no funil de Leads.
+          </p>
+          <ChannelAccessManager
+            channels={channels}
+            staff={staff}
+            requirePin={requirePin}
+            onFeedback={onFeedback}
+            onChannelsChange={setChannels}
+          />
         </div>
+        )}
 
-        <div style={{ borderTop: '1px dashed #e0ded8', paddingTop: '14px', display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-          <div style={{ flex: 1 }}>
-            <label className="settings-label">Novo departamento</label>
-            <input className="settings-input" value={newDept.name}
-              onChange={e => setNewDept({ ...newDept, name: e.target.value })} placeholder="Ex: Suporte" />
-          </div>
-          <div style={{ display: 'flex', gap: '6px', paddingBottom: '8px' }}>
-            {PALETTE.map(c => (
-              <button key={c} onClick={() => setNewDept({ ...newDept, color: c })}
-                style={{ width: '20px', height: '20px', borderRadius: '50%', background: c, border: newDept.color === c ? '2px solid #1f2937' : '2px solid transparent', cursor: 'pointer' }} />
-            ))}
-          </div>
-          <button className="settings-btn-primary" onClick={addDepartment} disabled={addingDept}>
-            {addingDept ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Adicionar
-          </button>
+        {/* Funil comercial/jurídico próprio de cada canal. */}
+        {activeChannelSection === 'funnels' && (
+        <div>
+          <p className="settings-card-title">Funis por canal</p>
+          <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '14px' }}>
+            Personalize as etapas, a ordem, as cores e a entrada inicial de cada número.
+          </p>
+          <ChannelFunnelManager
+            channels={channels}
+            departments={departments}
+            staff={staff}
+            moduleConfig={copyConfig}
+            requirePin={requirePin}
+            onFeedback={onFeedback}
+            onChannelsChange={setChannels}
+          />
         </div>
-      </>)}
+        )}
 
-      {/* ── Roteamento: matriz canal × departamento ── */}
-      {renderSection('routing', 'Roteamento', 'Quais departamentos atendem cada canal e qual é o padrão', <>
+        {/* Quais departamentos atendem cada número — propriedade do canal. */}
+        {activeChannelSection === 'routing' && (
+        <div>
         <p className="settings-card-title">Canais × departamentos</p>
         <p style={{ fontSize: '12.5px', color: '#6b7280', marginBottom: '14px' }}>
           Marque quais setores podem atender cada número. O <strong>padrão</strong> recebe as novas conversas
@@ -1066,8 +1054,9 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
 
         {channels.length === 0 || departments.length === 0 ? (
           <p style={{ fontSize: '12.5px', color: '#9ca3af' }}>
-            {channels.length === 0 ? 'Cadastre canais na aba Canais.' : 'Cadastre departamentos na aba Departamentos.'}
-            {channels.length > 0 && departments.length === 0 ? '' : ''}
+            {channels.length === 0
+              ? 'Cadastre um número na aba Lista de canais.'
+              : 'Cadastre setores na área Departamentos.'}
           </p>
         ) : (
           <div style={{ overflowX: 'auto', border: '1px solid #ece7df', borderRadius: '12px' }}>
@@ -1148,8 +1137,55 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
             </button>
           </div>
         )}
+        </div>
+        )}
       </>)}
 
+      {/* ── Departamentos ── */}
+      {renderSection('departments', 'Departamentos', `${departments.length} setor${departments.length !== 1 ? 'es' : ''} configurado${departments.length !== 1 ? 's' : ''}`, <>
+        <p className="settings-card-title">Departamentos (setores)</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
+          {departments.length === 0 && (
+            <p style={{ fontSize: '12.5px', color: '#9ca3af' }}>Nenhum departamento. Crie setores como Suporte, Comercial, Cancelamento.</p>
+          )}
+          {departments.map(d => (
+            <div key={d.id}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', border: '1px solid #e7e5df', borderRadius: '10px', padding: '10px 12px' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: d.color || '#16a34a', flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: '13.5px', fontWeight: 600, color: '#1f2937' }}>{d.name}</span>
+                <button onClick={() => openMembers(d.id)} className="settings-btn-ghost" style={{ padding: '6px 10px' }}>
+                  <Users size={13} /> Membros
+                </button>
+                <button onClick={() => removeDepartment(d)} title="Excluir"
+                  style={{ padding: '6px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+
+              {editMembersFor?.id === d.id && renderMemberEditor('0 0 10px 10px')}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ borderTop: '1px dashed #e0ded8', paddingTop: '14px', display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
+          <div style={{ flex: 1 }}>
+            <label className="settings-label">Novo departamento</label>
+            <input className="settings-input" value={newDept.name}
+              onChange={e => setNewDept({ ...newDept, name: e.target.value })} placeholder="Ex: Suporte" />
+          </div>
+          <div style={{ display: 'flex', gap: '6px', paddingBottom: '8px' }}>
+            {PALETTE.map(c => (
+              <button key={c} onClick={() => setNewDept({ ...newDept, color: c })}
+                style={{ width: '20px', height: '20px', borderRadius: '50%', background: c, border: newDept.color === c ? '2px solid #1f2937' : '2px solid transparent', cursor: 'pointer' }} />
+            ))}
+          </div>
+          <button className="settings-btn-primary" onClick={addDepartment} disabled={addingDept}>
+            {addingDept ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Adicionar
+          </button>
+        </div>
+      </>)}
+
+      {/* ── Roteamento: matriz canal × departamento ── */}
       {/* ── Copys e textos padrão do módulo ── */}
       {renderSection('copies', 'Textos padrão', 'Saudações, horários, transferências e mensagens automáticas', <>
         <p className="settings-card-title">Copys e textos padrão</p>
@@ -1307,7 +1343,6 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       {/* ── Agentes de IA ── */}
       {renderSection('agents', 'Agentes de IA', 'Assistente que atende sozinho no WhatsApp',
         <AiAssistantsPanel channels={channels} onFeedback={onFeedback} />)}
-        </div>
       </div>
     </div>
   );

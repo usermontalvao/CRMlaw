@@ -8,9 +8,7 @@
 //
 // A separação aqui é por natureza da informação:
 //   · identidade  — quem é (foto grande, nome, telefone);
-//   · atendimento — estado atual, só leitura (responsável, setor, etapa);
-//   · etiquetas   — a única parte editável, com a largura toda (fica no painel
-//                   de etiquetas, ao lado).
+//   · atendimento — responsável, setor e a única etapa editável do funil.
 import React, { useState } from 'react';
 import { Building2, Check, Copy, Phone, Target, UserRound, ZoomIn } from 'lucide-react';
 import { Avatar } from './avatar';
@@ -131,15 +129,21 @@ export const AttendanceSummary: React.FC<{
   assignee: string;
   department: string;
   stage?: { stageLabel: string; color: string } | null;
-}> = ({ assignee, department, stage }) => (
+  stageControl?: React.ReactNode;
+}> = ({ assignee, department, stage, stageControl }) => (
   <div className="rounded-xl border border-[#f1f0ec] bg-[#fbfaf8] p-2.5">
     <div className="grid grid-cols-2 gap-2">
       <Campo icon={<UserRound size={10} />} label="Responsável" value={assignee} />
       <Campo icon={<Building2 size={10} />} label="Setor" value={department} />
     </div>
-    {stage && (
+    {(stage || stageControl) && (
       <div className="mt-2 border-t border-[#f1f0ec] pt-2">
-        <Campo icon={<Target size={10} />} label="Etapa" value={stage.stageLabel} tone={stage.color} />
+        <p className="mb-0.5 flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+          <Target size={10} />Etapa
+        </p>
+        {stageControl ?? (stage && (
+          <p className="truncate text-[12.5px] font-semibold" style={{ color: stage.color }}>{stage.stageLabel}</p>
+        ))}
       </div>
     )}
   </div>

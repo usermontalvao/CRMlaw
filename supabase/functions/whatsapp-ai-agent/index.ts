@@ -30,6 +30,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
   WA_AI_MAX_ACTIONS_PER_RUN,
   WA_AI_MAX_REPLY_CHARS,
+  actionsUsedInPrompt,
   buildWaAiTools,
   getWaAiAction,
   isWaAiModelAllowed,
@@ -54,6 +55,7 @@ import {
   ensureWaAiFollowupScheduled,
 } from '../_shared/wa-ai-followup-store.ts';
 import {
+  classifyWaAiObjection,
   classifyWaAiInterest,
   describeWaAiRequestedTime,
   parseWaAiRequestedTime,
@@ -71,6 +73,7 @@ import {
 } from '../_shared/wa-ai-gate.ts';
 import { WA_AI_DIALOGUE_QUALITY_RULES } from '../_shared/wa-ai-dialogue.ts';
 import {
+  WA_AI_VAZIO,
   buildWaAiTriageConversationSchema,
   buildWaAiTriageExtractionSchema,
   computeWaAiTriageNextAction,
@@ -79,6 +82,7 @@ import {
   normalizeWaAiPlaybookFactValue,
   normalizeWaAiPlaybookValue,
   waAiPlaybookField,
+  waAiPlaybookOnlyWhenSatisfied,
   waAiPlaybookFieldKeys,
   waAiPlaybookInstructions,
   waAiPlaybookPromptBlock,
@@ -98,8 +102,22 @@ import {
   waAiAlreadyAnswered,
   type WaAiTriageTurn,
 } from '../_shared/wa-ai-triage-facts.ts';
+import { renderWaAiDocumentStatus } from '../_shared/wa-ai-document-status.ts';
 import {
+  pickWaAiFunnelStage,
+  shouldMoveWaAiFunnel,
+  waAiFunnelLabelFor,
+  type WaAiFunnelMilestone,
+} from '../_shared/wa-ai-funnel.ts';
+import {
+  WA_AI_REQUEST_DESCRIPTION_PREFIX,
+  isWaAiCreatedDocumentRequest,
+} from '../_shared/wa-ai-doc-intake.ts';
+import {
+  WA_AI_ACCOUNT_DOCS_TITLE,
+  WA_AI_ACCOUNT_ROUTE_DOCS_TITLE,
   buildWaAiCompletionPlans,
+  renderWaAiHandoffSummary,
   type WaAiCompletionExternalState,
 } from '../_shared/wa-ai-completion.ts';
 import { waAiAnnotateDates, waAiDateBlock } from '../_shared/wa-ai-now.ts';
@@ -179,6 +197,30 @@ Deno.serve(async (req: Request) => {
       ));
     } catch (err) {
       const message = await logFailure(admin, conversationId, Date.now(), err);
+      return json({ ok: false, error: message });
+    }
+  }
+
+  // Cutucão do sistema: algo que o BACKEND descobriu sozinho e que muda o que
+  // falta perguntar — hoje, o nome lido no comprovante de residência. Não é uma
+  // mensagem do cliente, então não passa pelo debounce nem pela idempotência da
+  // mensagem; passa pela mesma portaria de segurança (conversa assumida por
+  // humano, IA desligada, canal bloqueado).
+  if (body.nudge_trigger) {
+    const auth = req.headers.get('Authorization') || '';
+    if (auth !== `Bearer ${SERVICE_ROLE}`) return json({ error: 'Não autorizado.' }, 401);
+    const conversationId = String(body.conversation_id || '');
+    const nudgeKey = String(body.nudge_key || '');
+    if (!conversationId || !nudgeKey) {
+      return json({ error: 'conversation_id e nudge_key são obrigatórios' }, 400);
+    }
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+    const started = Date.now();
+    try {
+      return json(await runNudgeTurn(
+        admin, conversationId, nudgeKey, String(body.nudge_instruction || '')));
+    } catch (err) {
+      const message = await logFailure(admin, conversationId, started, err);
       return json({ ok: false, error: message });
     }
   }
@@ -354,11 +396,12 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   };
 
   const playbook = normalizeWaAiPlaybook(assistant.playbook);
+  assistant.allowed_actions = effectiveAllowedActions(assistant, playbook);
   const extractionSchema = playbook ? buildWaAiTriageExtractionSchema(playbook) : null;
-  const conversationSchema = playbook ? buildWaAiTriageConversationSchema(playbook) : null;
   const fieldKeys = playbook ? waAiPlaybookFieldKeys(playbook) : [];
 
-  const tools = buildWaAiTools(assistant.allowed_actions, assistant.action_refs);
+  const tools = toolsForModel(
+    buildWaAiTools(assistant.allowed_actions, assistant.action_refs), playbook);
   tools.push(playbook ? SUMMARY_TOOL : MEMORY_TOOL);
 
   // O relógio das mensagens é fictício e crescente: `buildWaAiPromptMessages`
@@ -408,8 +451,19 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   const progressoAntes = playbook
     ? computeWaAiTriageProgress({ playbook, facts: turnMemory.knownFacts, timeZone: assistant.timezone })
     : null;
+  const latestCustomerText = history.find(item => item.direction === 'in');
   const nextAction = playbook && progressoAntes
-    ? computeWaAiTriageNextAction(playbook, progressoAntes)
+    ? computeWaAiTriageNextAction(
+        playbook, progressoAntes,
+        String(latestCustomerText?.transcriptionText || latestCustomerText?.content || ''),
+      )
+    : null;
+  // O `campo_alvo` da resposta deixa de ser escolha do modelo: o enum do schema
+  // já vem fechado no valor que o backend decidiu. Ver o comentário de
+  // `buildWaAiTriageConversationSchema`.
+  const conversationSchema = playbook
+    ? buildWaAiTriageConversationSchema(
+        playbook, nextAction?.type === 'ask_field' ? nextAction.field : WA_AI_VAZIO)
     : null;
   if (progressoAntes) turnMemory.pendingItems = progressoAntes.pending;
 
@@ -442,6 +496,21 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
 
   const requested: unknown[] = [];
   const executed: unknown[] = [];
+  /**
+   * O que o BACKEND já executou sozinho neste turno.
+   *
+   * O fechamento determinístico roda ANTES das ferramentas do modelo, e o
+   * modelo — que leu no roteiro que os documentos são pedidos ali — pede a
+   * mesma coisa por conta própria. Em 14/08/2026 isso criou DUAS solicitações
+   * de documentos para o mesmo cliente no mesmo segundo: uma com os rótulos
+   * legíveis do backend e outra com as chaves internas do roteiro. Duas listas,
+   * duas cobranças automáticas, dois checklists para a mesma pessoa.
+   *
+   * Quem manda é o backend: a chamada repetida volta ao modelo como erro, com o
+   * motivo, para ele contar ao cliente uma coisa só.
+   */
+  const feitasPeloBackend = new Set<string>();
+
   let memoryPatch: unknown = null;
   let terminal = false;
 
@@ -461,6 +530,7 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
         ...(plan.ref ? { target: plan.ref.target_label } : {}),
       });
       if (getWaAiAction(plan.action)?.terminal) terminal = true;
+      feitasPeloBackend.add(plan.action);
     }
   }
 
@@ -479,6 +549,15 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: false, erro: refusal }) });
         continue;
       }
+
+      if (feitasPeloBackend.has(call.name)) {
+        const refusal = 'O sistema já executou esta ação neste atendimento. Não peça de novo: '
+          + 'fale com o cliente sobre o que já foi feito, sem duplicar.';
+        executed.push({ action: call.name, ok: false, error: refusal });
+        messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: false, erro: refusal }) });
+        continue;
+      }
+
 
       if (call.name === MEMORY_TOOL.function.name) {
         memoryPatch = playbook
@@ -534,7 +613,8 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     ? { type: 'handoff', cutId: 'acao_terminal', reason: 'transferência executada', guidance: '' }
     : nextAction;
   const validated = playbook && replyAction
-    ? validateReplyForAction(ultimaLeitura, replyAction)
+    ? validateReplyForAction(ultimaLeitura, replyAction,
+        executed.filter((item: any) => item?.ok).map((item: any) => String(item?.action || '')))
     : { reply: String(completion.text || '').trim(), degraded: false, reason: null };
   const degradado = !!playbook && (
     !!extractionDegraded || leituras.length === 0 || leituras.some(l => l.degraded) || validated.degraded
@@ -642,6 +722,41 @@ interface TurnContext {
   session: Record<string, any>;
 }
 
+/**
+ * O roteiro nativo é configuração administrativa e pode ganhar uma ação nova
+ * antes de um agente antigo ser salvo novamente. A Edge aplica a mesma regra
+ * do editor: toda ação declarada no roteiro é habilitada no turno.
+ */
+/**
+ * As ações que o BACKEND executa sozinho e o modelo não deve sequer enxergar.
+ *
+ * Continuam em `allowed_actions` — é de lá que `buildWaAiCompletionPlans` tira
+ * permissão para agir. O que sai é a FERRAMENTA: oferecer ao modelo um botão
+ * que o backend já apertou é convidar a duplicata, e foi exatamente o que
+ * aconteceu em 14/08/2026 (duas solicitações de documentos para o mesmo cliente
+ * no mesmo segundo). Transferência fica de fora desta lista de propósito: pedir
+ * um humano no meio da triagem é decisão legítima do modelo, e tirar essa
+ * ferramenta calaria o cliente que pede para falar com alguém.
+ */
+const WA_AI_BACKEND_OWNED_ACTIONS: Record<string, string[]> = {
+  bloqueio_encerramento_conta: ['solicitar_documentos', 'enviar_documento'],
+};
+
+/** As ferramentas oferecidas ao modelo, sem as que o backend já opera. */
+function toolsForModel(tools: WaAiToolSchema[], playbook: WaAiPlaybook | null): WaAiToolSchema[] {
+  const donas = WA_AI_BACKEND_OWNED_ACTIONS[String(playbook?.id || '')] || [];
+  if (donas.length === 0) return tools;
+  return tools.filter(tool => donas.indexOf(tool.function.name) === -1);
+}
+
+function effectiveAllowedActions(assistant: Assistant, playbook: WaAiPlaybook | null): string[] {
+  const playbookText = playbook ? waAiPlaybookInstructions(playbook) : '';
+  return normalizeWaAiAllowedActions([
+    ...(assistant.allowed_actions || []),
+    ...actionsUsedInPrompt(playbookText),
+  ]);
+}
+
 function followupPolicyOf(assistant: Assistant): WaAiFollowupPolicy {
   return normalizeWaAiFollowupPolicy({
     enabled: assistant.followup_enabled,
@@ -709,6 +824,181 @@ async function loadContext(admin: any, conversationId: string): Promise<TurnCont
   };
 }
 
+/**
+ * Move o card do funil para o degrau que o backend acabou de alcançar.
+ *
+ * Best-effort de propósito: o funil é painel, não fluxo. Se a etapa não existe
+ * no canal, se a conversa já passou dela ou se um humano assumiu, não acontece
+ * nada — e a escada segue igual. Nunca deixa a ação principal falhar por causa
+ * de uma etiqueta.
+ */
+async function moveWaAiFunnel(
+  admin: any, ctx: TurnContext, milestone: WaAiFunnelMilestone,
+): Promise<void> {
+  try {
+    const instanceId = ctx.conversation.instance_id;
+    if (!instanceId) return;
+    const { data: canal } = await admin.from('whatsapp_instances')
+      .select('funnel_enabled').eq('id', instanceId).maybeSingle();
+    if (canal?.funnel_enabled !== true) return;
+
+    const { data: linhas } = await admin.from('whatsapp_channel_funnel_stages')
+      .select('stage_key, label, labels, position, is_active').eq('channel_id', instanceId);
+    const stages = (linhas || []).map((item: any) => ({
+      stageKey: String(item.stage_key || ''), label: String(item.label || ''),
+      labels: item.labels || [], position: Number(item.position || 0),
+      isActive: item.is_active,
+    }));
+    if (stages.length === 0) return;
+
+    // Releitura: o dono e a etiqueta podem ter mudado durante o turno.
+    const { data: conv } = await admin.from('whatsapp_conversations')
+      .select('labels, assigned_user_id').eq('id', ctx.conversation.id).maybeSingle();
+
+    const target = pickWaAiFunnelStage(milestone, stages);
+    if (!shouldMoveWaAiFunnel({
+      milestone, target, stages,
+      currentLabels: conv?.labels || [],
+      hasHumanOwner: !!conv?.assigned_user_id,
+    })) return;
+
+    await admin.from('whatsapp_conversations')
+      .update({ labels: [waAiFunnelLabelFor(target!)] }).eq('id', ctx.conversation.id);
+    console.log('wa-ai funil', ctx.conversation.id, milestone, '->', waAiFunnelLabelFor(target!));
+  } catch (err) {
+    console.error('wa-ai funil falhou (ignorado)', err);
+  }
+}
+
+/**
+ * Fecha o que a IA abriu nesta conversa: coleta de documentos e KIT.
+ *
+ * Reiniciar a memória e deixar esses dois de pé produz um atendimento que
+ * MENTE. Os dois casos foram vistos em 14/08/2026, na mesma conversa:
+ *
+ *   - solicitação antiga ainda aberta: o fechamento entende que a coleta já
+ *     está em andamento e não cria pedido nenhum, então a triagem documental
+ *     recebe os arquivos, não acha item pendente e os deixa parados;
+ *   - link de KIT de 28/06, com assinatura: a escada lê "kit assinado", pula
+ *     o envio e transfere anunciando "KIT CONSUMIDOR assinado" — de um KIT que
+ *     esta conversa nunca mandou.
+ *
+ * As solicitações são reconhecidas pela DESCRIÇÃO que a própria IA escreve
+ * ("Solicitado pelo assistente de IA (…) no WhatsApp."): é o que separa o
+ * resíduo da conversa de um pedido que um advogado montou à mão para o mesmo
+ * cliente, e que um "/clear" não pode cancelar.
+ *
+ * O TÍTULO não serve para isso, e foi assim que a primeira versão deste
+ * cancelamento deixou passar dois pedidos. O título é argumento da ação: o
+ * fechamento determinístico manda os dois títulos canônicos, mas
+ * `solicitar_documentos` aceita qualquer um — e em 14/08/2026 nasceram, na
+ * mesma conversa, dois pedidos "Solicitação de documentos" com as CHAVES do
+ * roteiro como rótulo (5a872d66 e f1d337c6). Filtrar por título os deixaria
+ * abertos, e um pedido aberto é exatamente o que trava a rodada seguinte.
+ * `created_by IS NULL` também não basta sozinho: há solicitação manual antiga
+ * sem autor gravado (c14ba65c, 768a42da), de antes de a coluna ser preenchida.
+ */
+async function cancelWaAiDocumentRequests(
+  admin: any, ctx: TurnContext, motivo: string,
+): Promise<number> {
+  const clientId = ctx.conversation.client_id;
+  let total = 0;
+
+  if (clientId) {
+    // Lê e DEPOIS decide, em vez de confiar o corte a um filtro do PostgREST:
+    // a regra que separa o resíduo da IA do trabalho do advogado é uma função
+    // pura, com teste em cima das linhas reais de produção.
+    const { data: candidatas } = await admin.from('document_requests')
+      .select('id, created_by, description')
+      .eq('client_id', clientId)
+      .neq('status', 'cancelled');
+    const daIa = (candidatas || []).filter(isWaAiCreatedDocumentRequest).map((item: any) => item.id);
+    if (daIa.length > 0) {
+      await admin.from('document_requests').update({ status: 'cancelled' }).in('id', daIa);
+    }
+    total += daIa.length;
+  }
+
+  // O KIT é por CONVERSA, então não depende de haver cliente vinculado.
+  const { data: links } = await admin.from('template_fill_links')
+    .update({ status: 'cancelled' })
+    .eq('conversation_id', ctx.conversation.id)
+    .neq('status', 'cancelled')
+    .select('id');
+  total += (links || []).length;
+
+  if (total > 0) console.log('wa-ai reset: coleta e KIT cancelados', ctx.conversation.id, total, motivo);
+  return total;
+}
+
+/**
+ * A frase sobre documentos, quando o cliente acabou de enviar algum.
+ *
+ * Devolve vazio — e o modelo segue mandando na conversa — sempre que este turno
+ * não foi disparado por arquivo, ou quando não há coleta aberta. Não existe
+ * "quase certo" aqui: ou o backend sabe o estado e escreve, ou não escreve.
+ */
+async function buildDocumentStatusReply(
+  admin: any, ctx: TurnContext,
+): Promise<{ text: string; silence: boolean }> {
+  const MUDO = { text: '', silence: false };
+  const clientId = ctx.conversation.client_id;
+  if (!clientId) return MUDO;
+
+  // O gatilho é a ÚLTIMA fala do cliente ter sido um arquivo. Quem mandou os
+  // documentos e depois perguntou "quanto tempo demora?" merece resposta à
+  // pergunta dele, não a lista de novo — por isso não basta "houve mídia
+  // recente", tem de ser a mensagem que provocou este turno.
+  const { data: ultima } = await admin.from('whatsapp_messages')
+    .select('type').eq('conversation_id', ctx.conversation.id).eq('direction', 'in')
+    .is('deleted_at', null)
+    .order('wa_timestamp', { ascending: false }).limit(1).maybeSingle();
+  if (!ultima || (ultima.type !== 'image' && ultima.type !== 'document')) return MUDO;
+
+  const { data: midias } = await admin.from('whatsapp_messages')
+    .select('id, doc_intake_status')
+    .eq('conversation_id', ctx.conversation.id)
+    .eq('direction', 'in')
+    .in('type', ['image', 'document'])
+    .is('deleted_at', null)
+    .gte('wa_timestamp', new Date(Date.now() - 15 * 60 * 1000).toISOString())
+    .limit(10);
+  if (!midias || midias.length === 0) return MUDO;
+
+  const { data: pedidos } = await admin.from('document_requests')
+    .select('id, status, document_request_items(label, status)')
+    .eq('client_id', clientId)
+    .in('title', [WA_AI_ACCOUNT_DOCS_TITLE, WA_AI_ACCOUNT_ROUTE_DOCS_TITLE])
+    .neq('status', 'cancelled')
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const pedido = (pedidos || [])[0];
+  if (!pedido) return MUDO;
+
+  const items = (pedido.document_request_items || [])
+    .map((item: any) => ({ label: String(item?.label || ''), status: String(item?.status || '') }));
+
+  // Enquanto algum arquivo não foi conferido, QUALQUER lista está velha: o que
+  // cabe é avisar que chegou. UMA vez — quem manda três fotos manda em rajada,
+  // e cada arquivo é um turno: em 14/08/2026 o cliente leu "Recebi seus
+  // arquivos e já estou conferindo" três vezes em 22 segundos (23:01:12, :24,
+  // :34). Se a última coisa que dissemos já foi essa, o segundo e o terceiro
+  // arquivo entram calados.
+  if (midias.some((item: any) => !item?.doc_intake_status)) {
+    const aviso = renderWaAiDocumentStatus({ items, aguardandoTriagem: true });
+    const { data: ultimaNossa } = await admin.from('whatsapp_messages')
+      .select('content').eq('conversation_id', ctx.conversation.id).eq('direction', 'out')
+      .is('deleted_at', null)
+      .order('wa_timestamp', { ascending: false }).limit(1).maybeSingle();
+    if (String(ultimaNossa?.content || '').trim() === aviso.trim()) {
+      return { text: '', silence: true };
+    }
+    return { text: aviso, silence: false };
+  }
+
+  return { text: renderWaAiDocumentStatus({ items }), silence: false };
+}
+
 /** Estado externo do fechamento da campanha de conta. */
 async function loadWaAiCompletionExternalState(
   admin: any, ctx: TurnContext, playbook: WaAiPlaybook | null,
@@ -718,15 +1008,29 @@ async function loadWaAiCompletionExternalState(
 
   const clientId = ctx.conversation.client_id;
   if (clientId) {
-    const { data: request } = await admin.from('document_requests')
-      .select('id, status')
-      .eq('client_id', clientId)
-      .eq('title', 'Documentos essenciais — conta bloqueada ou encerrada')
-      .neq('status', 'cancelled')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (request) state.documents = request.status === 'complete' ? 'complete' : 'pending';
+    const ultimoPedido = async (titulo: string) => {
+      const { data } = await admin.from('document_requests')
+        .select('id, status, created_at')
+        .eq('client_id', clientId)
+        .eq('title', titulo)
+        .neq('status', 'cancelled')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    };
+    const essenciais = await ultimoPedido(WA_AI_ACCOUNT_DOCS_TITLE);
+    if (essenciais) {
+      state.documents = essenciais.status === 'complete' ? 'complete' : 'pending';
+      // O KIT só existe DEPOIS dos essenciais, então um link anterior a este
+      // pedido é de outra rodada e não diz nada sobre esta. Sem este corte, um
+      // link de 28/06 com assinatura fazia a escada pular o envio e transferir
+      // anunciando "KIT CONSUMIDOR assinado" — de um KIT que esta conversa
+      // nunca mandou (14/08/2026).
+      state.kitDesde = String(essenciais.created_at || '');
+    }
+    const daRota = await ultimoPedido(WA_AI_ACCOUNT_ROUTE_DOCS_TITLE);
+    if (daRota) state.routeDocuments = daRota.status === 'complete' ? 'complete' : 'pending';
   }
 
   const kitBinding = (playbook.bindings || []).find(binding => binding.key === 'modelo_kit_consumidor');
@@ -743,6 +1047,7 @@ async function loadWaAiCompletionExternalState(
     .order('created_at', { ascending: false })
     .limit(1);
   if (kitRef?.target_id) kitQuery = kitQuery.eq('template_id', kitRef.target_id);
+  if (state.kitDesde) kitQuery = kitQuery.gte('created_at', state.kitDesde);
   const { data: link } = await kitQuery.maybeSingle();
   if (!link) return state;
 
@@ -780,12 +1085,17 @@ async function runLifecycleTurn(
   if (playbook?.id !== 'bloqueio_encerramento_conta') {
     return { ok: true, skipped: 'evento não pertence à campanha de conta' };
   }
+  if ((playbook.context?.document_workflow as Record<string, unknown> | undefined)
+    ?.ai_must_not_request_documents === true) {
+    return { ok: true, skipped: 'a campanha agora transfere antes da coleta documental' };
+  }
 
   if (trigger === 'documents_completed') {
     const { data: request } = await admin.from('document_requests')
       .select('id, client_id, title, status').eq('id', resourceId).maybeSingle();
     if (!request || request.client_id !== ctx.conversation.client_id
-      || request.title !== 'Documentos essenciais — conta bloqueada ou encerrada'
+      || (request.title !== WA_AI_ACCOUNT_DOCS_TITLE
+        && request.title !== WA_AI_ACCOUNT_ROUTE_DOCS_TITLE)
       || request.status !== 'complete') {
       return { ok: true, skipped: 'solicitação de documentos não confere' };
     }
@@ -809,12 +1119,31 @@ async function runLifecycleTurn(
     pending_items: ctx.session.pending_items,
     last_action: ctx.session.last_action,
   });
+  // A triagem pode ter REABERTO depois que os documentos chegaram: é o que
+  // acontece quando o sistema lê o comprovante e o nome não é o do cliente.
+  // Sem esta trava o gancho seguiria em frente e mandaria o KIT para quem ainda
+  // precisa explicar de quem é o comprovante — o gancho não passa por
+  // `computeWaAiTriageProgress`, então a pendência lhe seria invisível.
+  const progresso = computeWaAiTriageProgress({
+    playbook, facts: memory.knownFacts, timeZone: ctx.assistant.timezone,
+  });
+  if (!progresso.complete) {
+    return { ok: true, skipped: 'a triagem reabriu e ainda tem pergunta pendente', pending: progresso.missing };
+  }
+
+  await moveWaAiFunnel(admin, ctx,
+    trigger === 'signature_completed' ? 'kit_assinado' : 'documentos_completos');
+
   const state = await loadWaAiCompletionExternalState(admin, ctx, playbook);
-  const declarationRoute = String(memory.knownFacts.residencia_tipo || '') === 'terceiro_sem_contrato';
+  const rota = String(memory.knownFacts.residencia_tipo || '');
+  const declarationRoute = rota === 'terceiro_sem_contrato' || rota === 'companheiro';
+  // Documentos completos podem significar TRÊS coisas agora: pedir o documento
+  // do vínculo, mandar o KIT ou transferir para a declaração. O gancho aceita
+  // qualquer uma — quem escolhe continua sendo `buildWaAiCompletionPlans`.
   const expectedActions = trigger === 'documents_completed'
     ? (declarationRoute
-      ? ['transferir_atendimento', 'transferir_para_humano']
-      : ['enviar_documento'])
+      ? ['transferir_atendimento', 'transferir_para_humano', 'solicitar_documentos']
+      : ['enviar_documento', 'solicitar_documentos'])
     : ['transferir_atendimento', 'transferir_para_humano'];
   const plan = buildWaAiCompletionPlans(ctx.assistant, playbook, memory, state)
     .find(item => expectedActions.includes(item.action));
@@ -826,9 +1155,34 @@ async function runLifecycleTurn(
     return { ok: true, simulated: true, action: plan.action, state };
   }
 
+  // ── O gancho também FALA ──
+  // Este caminho não passa pelo modelo: nada aqui escreve para o cliente a não
+  // ser esta linha. Sem ela, `documents_completed` conseguia transferir a
+  // conversa (ai_active = false, sessão handed_off) sem que o cliente lesse uma
+  // palavra sobre isso — do lado dele o atendimento simplesmente parava. Vale
+  // igual para o pedido do documento da rota: um checklist novo aparecia no
+  // portal e ninguém avisava.
+  // O cliente acabou de assinar e não fica com nada nas mãos: o PDF vive no
+  // painel do escritório. A página pública de verificação já existe e é o
+  // mesmo link que o e-mail de conclusão manda — mandar por aqui é dar ao
+  // cliente o comprovante do que ele assinou, sem login e sem pedir nada.
+  let linkConsulta = '';
   if (trigger === 'signature_completed') {
-    const error = await sendText(conversationId,
-      'Recebemos o KIT CONSUMIDOR assinado. Vou encaminhar seu atendimento para a equipe responsável.');
+    const { data: envelope } = await admin.from('signature_requests')
+      .select('envelope_verification_code').eq('id', resourceId).maybeSingle();
+    const codigo = String(envelope?.envelope_verification_code || '').trim();
+    if (codigo) linkConsulta = `\n\nPara consultar o documento assinado quando quiser:\n${PUBLIC_APP_ORIGIN}/#/verificar/${codigo}`;
+  }
+  const anuncio = trigger === 'signature_completed'
+    ? `Recebemos o KIT CONSUMIDOR assinado. Vou encaminhar seu atendimento para a equipe responsável.${linkConsulta}`
+    : (plan.action === 'transferir_atendimento' || plan.action === 'transferir_para_humano'
+      ? 'Seus documentos estão completos. Vou encaminhar seu atendimento para a equipe responsável, que segue com você por aqui mesmo.'
+      : (plan.action === 'solicitar_documentos'
+        ? `Obrigado! Para seguir, ainda preciso deste documento:\n${((plan.args.documentos as string[]) || [])
+          .map(item => `• ${item}`).join('\n')}\n\nPode mandar por aqui mesmo.`
+        : ''));
+  if (anuncio) {
+    const error = await sendText(conversationId, anuncio);
     if (error) return { ok: false, error };
   }
   const outcome = await runAction(admin, ctx, plan.action, plan.args, plan.ref);
@@ -904,7 +1258,19 @@ async function handleResetCommand(
   // O helper libera/reabre a conversa primeiro e só então religa a sessão.
   await resetWaAiConversationState(admin, conversationId, corte);
 
+  // A COLETA também recomeça. Sem isto o pedido antigo continua aberto, o
+  // fechamento entende que a coleta já está em andamento e não cria pedido
+  // nenhum — a IA manda a lista de documentos e a triagem documental, ao
+  // receber os arquivos, não acha item pendente para casar e os deixa parados.
+  // Só os pedidos que a PRÓPRIA IA criou saem: solicitação feita à mão por um
+  // advogado não é resíduo de conversa e não pode ser cancelada por um "/clear".
+  const cancelados = await cancelWaAiDocumentRequests(admin, ctx, 'Conversa reiniciada por comando na conversa.');
+
   await cancelPendingFollowups(admin, conversationId, 'Conversa reiniciada por comando na conversa.');
+  if (cancelados > 0) {
+    await addNote(admin, conversationId,
+      `🤖 ${cancelados} pendência(s) criada(s) pela IA (documentos e/ou KIT) foram canceladas junto com o reinício.`);
+  }
   await addNote(admin, conversationId,
     `Memória da IA apagada por "${texto}". A conversa foi devolvida à IA, que recomeça do zero e ignora as mensagens anteriores.`);
 
@@ -984,6 +1350,64 @@ async function runMessageTurn(
       triggerMessageId,
       started,
       followupInstruction: null,
+    });
+  } finally {
+    await releaseLock(admin, conversationId, lock).catch(() => {});
+  }
+}
+
+/**
+ * Turno que o SISTEMA pede, sem mensagem nova do cliente.
+ *
+ * Existe porque um fato pode nascer fora da conversa: a triagem documental lê o
+ * comprovante de residência, vê que o nome não é o do cliente e reabre uma
+ * pergunta que já estava fechada. Sem isto, essa pergunta ficaria esperando o
+ * cliente falar de novo — e quem acabou de mandar três arquivos costuma calar.
+ *
+ * DUAS DIFERENÇAS do turno por mensagem, ambas deliberadas:
+ *   - a idempotência é do EVENTO (`nudge_key`), não da mensagem, senão o gate
+ *     recusaria por já ter processado o arquivo que chegou;
+ *   - `lastProcessedMessageId` vai nulo pelo mesmo motivo. O resto da portaria
+ *     continua valendo: conversa assumida, IA desligada, canal bloqueado e
+ *     trava de concorrência barram este turno como barram qualquer outro.
+ */
+async function runNudgeTurn(
+  admin: any, conversationId: string, nudgeKey: string, instruction: string,
+) {
+  const started = Date.now();
+  const ctx = await loadContext(admin, conversationId);
+  if (!ctx) return { ok: true, skipped: 'canal sem agente de IA' };
+
+  const { data: latestInbound } = await admin.from('whatsapp_messages')
+    .select('id').eq('conversation_id', conversationId).eq('direction', 'in')
+    .is('deleted_at', null)
+    .order('wa_timestamp', { ascending: false }).limit(1).maybeSingle();
+
+  const decision = decideWaAiRun({
+    triggerMessageId: latestInbound?.id ?? '',
+    latestInboundMessageId: latestInbound?.id ?? null,
+    lastProcessedMessageId: null,
+    conversationStatus: String(ctx.conversation.status || 'open'),
+    conversationBlocked: ctx.conversation.is_blocked === true,
+    aiActive: ctx.session.ai_active !== false,
+    channelAiEnabled: ctx.channelAiEnabled,
+    assistantActive: ctx.assistant.is_active === true,
+    assignedUserId: ctx.conversation.assigned_user_id ?? null,
+    awaitingAccept: ctx.conversation.awaiting_accept === true,
+    lockedUntilIso: ctx.session.locked_until ?? null,
+    nowIso: new Date().toISOString(),
+  });
+  if (!decision.run) return { ok: true, skipped: decision.reason };
+
+  const lock = await acquireLock(admin, conversationId);
+  if (!lock) return { ok: true, skipped: 'outra execução em andamento' };
+
+  try {
+    return await executeTurn(admin, ctx, {
+      idempotencyKey: `nudge:${conversationId}:${nudgeKey}`,
+      triggerMessageId: null,
+      started,
+      followupInstruction: instruction || null,
     });
   } finally {
     await releaseLock(admin, conversationId, lock).catch(() => {});
@@ -1172,7 +1596,16 @@ async function readCustomerSignals(
     return null;
   })();
 
-  const leitura = classifyWaAiInterest({ text: texto, lastQuestion: ultimaPergunta });
+  // O roteiro estava esperando resposta? `pending_items` é o estado gravado no
+  // fim do turno anterior — ou seja, exatamente o que a última pergunta pediu.
+  // Sem isto, "Não" respondendo "O banco enviou algum e-mail?" desligava as
+  // retomadas da conversa inteira (14/08/2026, duas vezes na mesma triagem).
+  const pendingQuestion = Array.isArray(ctx.session?.pending_items)
+    && ctx.session.pending_items.length > 0;
+
+  const leitura = classifyWaAiInterest({
+    text: texto, lastQuestion: ultimaPergunta, pendingQuestion,
+  });
 
   if (leitura.level === 'sem_interesse') {
     out.optedOut = true;
@@ -1188,6 +1621,59 @@ async function readCustomerSignals(
       + 'frases: agradeça, diga que ninguém mais vai procurá-lo sobre isto e que ele pode '
       + 'escrever quando quiser. NÃO faça nenhuma pergunta e NÃO tente convencer.');
     return out;
+  }
+
+  // ── Arquivo recém-chegado, ainda não conferido ──
+  // O webhook acorda a IA em segundos; a triagem documental roda em até três
+  // minutos. Nessa janela `consultar_documentos` responde a VERDADE ANTIGA —
+  // "tudo pendente" — e o modelo repassa isso a quem acabou de mandar os
+  // arquivos. Em 14/08/2026 o cliente enviou os três e ouviu que faltavam dois,
+  // com um "recebemos seu documento de identificação" inventado por cima, que a
+  // ferramenta não tinha dito. Aqui o backend entrega o estado real da janela.
+  const { data: emTriagem } = await admin.from('whatsapp_messages')
+    .select('id')
+    .eq('conversation_id', ctx.conversation.id)
+    .eq('direction', 'in')
+    .in('type', ['image', 'document'])
+    .is('doc_intake_status', null)
+    .is('deleted_at', null)
+    .gte('wa_timestamp', new Date(Date.now() - 30 * 60 * 1000).toISOString())
+    .limit(5);
+  if (emTriagem && emTriagem.length > 0) {
+    const quantos = emTriagem.length === 1 ? 'um arquivo' : `${emTriagem.length} arquivos`;
+    out.instructions.push(
+      `O cliente acabou de enviar ${quantos} e o sistema AINDA ESTÁ CONFERINDO — a conferência `
+      + 'automática leva alguns minutos. Neste turno, agradeça o envio e diga que vai conferir e '
+      + 'avisar. NÃO diga quais documentos faltam, NÃO afirme que algum foi recebido, aprovado ou '
+      + 'recusado e NÃO peça o mesmo documento de novo: a lista que a consulta devolve agora é '
+      + 'anterior ao que ele acabou de mandar. Faça no máximo UMA pergunta, e só se ela não for '
+      + 'sobre documentos.');
+  }
+
+  const objecao = classifyWaAiObjection(texto);
+  if (objecao?.kind === 'honorarios') {
+    out.instructions.push(
+      'O cliente apresentou uma objeção sobre honorários. Acolha sem pressionar e explique em linguagem '
+      + 'simples que os 40% incidem somente sobre o valor efetivamente recebido ao final; sem êxito '
+      + 'financeiro, não há honorários de êxito. Se ele apenas questionou o percentual, pergunte se ficou '
+      + 'claro e se concorda. Se recusou expressamente, respeite a recusa e não tente negociar. Faça no '
+      + 'máximo UMA pergunta.');
+  } else if (objecao?.kind === 'confianca_privacidade') {
+    out.instructions.push(
+      'O cliente demonstrou receio de golpe, confiança ou privacidade. Reconheça o receio, explique apenas '
+      + 'a finalidade da informação ou documento que está sendo pedido e não invente certificações nem '
+      + 'promessas de segurança. Ofereça transferência humana se ele continuar desconfortável. Faça no '
+      + 'máximo UMA pergunta.');
+  } else if (objecao?.kind === 'envio_documentos') {
+    out.instructions.push(
+      'O cliente apresentou objeção ao envio de documentos. Explique brevemente por que o documento é '
+      + 'necessário e que ele pode enviar um item por vez. Não trate o receio como recusa automática e não '
+      + 'diga que recebeu algo sem consultar o sistema. Faça no máximo UMA pergunta.');
+  } else if (objecao?.kind === 'prazo_resultado') {
+    out.instructions.push(
+      'O cliente perguntou sobre prazo, valor ou garantia de resultado. Diga com transparência que não é '
+      + 'possível prometer vitória, indenização ou prazo e que a equipe jurídica confirmará a análise e os '
+      + 'próximos passos. Depois retome somente a informação pendente, com no máximo UMA pergunta.');
   }
 
   if (leitura.level === 'duvida' && !ctx.session.interest_checked_at) {
@@ -1440,11 +1926,12 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // Agente SEM roteiro segue exatamente como antes: texto livre e memória por
   // ferramenta. O roteiro é o que liga o motor novo, um agente de cada vez.
   const playbook = normalizeWaAiPlaybook(assistant.playbook);
+  assistant.allowed_actions = effectiveAllowedActions(assistant, playbook);
   const extractionSchema = playbook ? buildWaAiTriageExtractionSchema(playbook) : null;
-  const conversationSchema = playbook ? buildWaAiTriageConversationSchema(playbook) : null;
   const fieldKeys = playbook ? waAiPlaybookFieldKeys(playbook) : [];
 
-  const tools = buildWaAiTools(assistant.allowed_actions, assistant.action_refs);
+  const tools = toolsForModel(
+    buildWaAiTools(assistant.allowed_actions, assistant.action_refs), playbook);
   tools.push(playbook ? SUMMARY_TOOL : MEMORY_TOOL);
 
   // ── Leitura do que o cliente quis dizer ──
@@ -1493,8 +1980,19 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   const progressoAntes = playbook
     ? computeWaAiTriageProgress({ playbook, facts: turnMemory.knownFacts, timeZone: assistant.timezone })
     : null;
+  const latestCustomerText = history.find(item => item.direction === 'in');
   const nextAction = playbook && progressoAntes
-    ? computeWaAiTriageNextAction(playbook, progressoAntes)
+    ? computeWaAiTriageNextAction(
+        playbook, progressoAntes,
+        String(latestCustomerText?.transcriptionText || latestCustomerText?.content || ''),
+      )
+    : null;
+  // O `campo_alvo` da resposta deixa de ser escolha do modelo: o enum do schema
+  // já vem fechado no valor que o backend decidiu. Ver o comentário de
+  // `buildWaAiTriageConversationSchema`.
+  const conversationSchema = playbook
+    ? buildWaAiTriageConversationSchema(
+        playbook, nextAction?.type === 'ask_field' ? nextAction.field : WA_AI_VAZIO)
     : null;
   if (progressoAntes) turnMemory.pendingItems = progressoAntes.pending;
 
@@ -1556,6 +2054,21 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
 
   const requested: unknown[] = [];
   const executed: unknown[] = [];
+  /**
+   * O que o BACKEND já executou sozinho neste turno.
+   *
+   * O fechamento determinístico roda ANTES das ferramentas do modelo, e o
+   * modelo — que leu no roteiro que os documentos são pedidos ali — pede a
+   * mesma coisa por conta própria. Em 14/08/2026 isso criou DUAS solicitações
+   * de documentos para o mesmo cliente no mesmo segundo: uma com os rótulos
+   * legíveis do backend e outra com as chaves internas do roteiro. Duas listas,
+   * duas cobranças automáticas, dois checklists para a mesma pessoa.
+   *
+   * Quem manda é o backend: a chamada repetida volta ao modelo como erro, com o
+   * motivo, para ele contar ao cliente uma coisa só.
+   */
+  const feitasPeloBackend = new Set<string>();
+
   let memoryPatch: unknown = null;
   let terminal = false;
   let customerMessageSent = false;
@@ -1605,6 +2118,7 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
       });
       if (outcome.ok && outcome.customerMessageSent) customerMessageSent = true;
       if (outcome.ok && getWaAiAction(plan.action)?.terminal) terminal = true;
+      if (outcome.ok) feitasPeloBackend.add(plan.action);
     }
   }
 
@@ -1624,6 +2138,15 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: false, erro: refusal }) });
         continue;
       }
+
+      if (feitasPeloBackend.has(call.name)) {
+        const refusal = 'O sistema já executou esta ação neste atendimento. Não peça de novo: '
+          + 'fale com o cliente sobre o que já foi feito, sem duplicar.';
+        executed.push({ action: call.name, ok: false, error: refusal });
+        messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify({ ok: false, erro: refusal }) });
+        continue;
+      }
+
 
       // A memória é o bloco de notas do próprio agente: não escreve em nada do
       // CRM e por isso não consome o orçamento de ações.
@@ -1703,8 +2226,26 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     ? { type: 'handoff', cutId: 'acao_terminal', reason: 'transferência executada', guidance: '' }
     : nextAction;
   const validated = playbook && replyAction
-    ? validateReplyForAction(ultimaLeitura, replyAction)
+    ? validateReplyForAction(ultimaLeitura, replyAction,
+        executed.filter((item: any) => item?.ok).map((item: any) => String(item?.action || '')))
     : { reply: String(completion.text || '').trim(), degraded: false, reason: null };
+
+  // ── A situação dos documentos é ESCRITA PELO BACKEND ──
+  // Transformar uma lista de situações em texto corrido é onde o modelo troca
+  // os itens: em 14/08/2026 ele agradeceu o recebimento e cobrou o MESMO
+  // documento na frase seguinte, duas vezes na mesma conversa. O banco sabe
+  // exatamente o que chegou; então o texto vem de `renderWaAiDocumentStatus` e
+  // o modelo não opina. Só vale quando o cliente acabou de MANDAR arquivo —
+  // fora disso ele continua conduzindo a conversa normalmente.
+  const statusDocumental = !terminal && playbook && !customerMessageSent
+    ? await buildDocumentStatusReply(admin, ctx)
+    : { text: '', silence: false };
+  if (statusDocumental.text) {
+    validated.reply = statusDocumental.text;
+    validated.degraded = false;
+    validated.reason = null;
+  }
+
   const textoDoModelo = playbook ? String(ultimaLeitura?.message || '') : String(completion.text || '');
   const degradado = !!playbook && !customerMessageSent
     && (
@@ -1717,9 +2258,23 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     )
     : null;
 
-  let reply = customerMessageSent ? '' : waAiKeepOneQuestion(
+  // O silêncio é DELIBERADO e vence o modelo: o cliente acabou de mandar arquivo
+  // e a conferência ainda não terminou. Deixar a prosa livre sair aqui era o que
+  // produzia três "recebi seus arquivos" em 22 segundos, um por foto.
+  let reply = (customerMessageSent || statusDocumental.silence) ? '' : waAiKeepOneQuestion(
     playbook ? validated.reply : textoDoModelo.trim(),
   );
+
+  // Transferiu, tem de DIZER. Em 14/08/2026 o backend passou a conversa para a
+  // fila humana e o cliente leu "aguarde um momento" — do lado dele o
+  // atendimento simplesmente parou, sem ninguém avisar que alguém assumiria.
+  // O teste procura o ANÚNCIO, não uma palavra qualquer do campo semântico:
+  // "vou verificar com a equipe e retorno" contém "equipe" e não avisa nada.
+  // Anunciar duas vezes é redundante; não anunciar é o cliente achar que a IA
+  // travou — e foi isso que aconteceu em 14/08/2026.
+  if (terminal && reply && !/encaminh|transfer[iêe]|vou passar (seu|o) atendimento|assumir? a partir/i.test(reply)) {
+    reply = `${reply.replace(/\s*$/, '')}\n\nVou encaminhar seu atendimento para a equipe responsável, que segue com você por aqui mesmo.`;
+  }
   if (reply.length > WA_AI_MAX_REPLY_CHARS) reply = `${reply.slice(0, WA_AI_MAX_REPLY_CHARS - 1)}…`;
 
   // Uma resposta com saudação e pergunta sai como DUAS mensagens, do jeito que
@@ -2048,27 +2603,59 @@ function applyTriagePatch(
   // Dependência falsa torna o fato subordinado inaplicável. Isso remove a saída
   // antiga quando o cliente corrige que ainda trabalha lá, sem depender do LLM
   // lembrar de emitir `remover_campos`.
+  //
+  // A leitura da condição vem do MÓDULO DO ROTEIRO, não daqui. A versão escrita
+  // à mão neste arquivo comparava com `String(onlyWhen.value)` e não sabia que
+  // o valor pode ser uma LISTA: para `['pai_ou_mae','conjuge']` ela produzia
+  // "pai_ou_mae,conjuge", nunca batia, e apagava o campo a cada turno — com o
+  // motor de etapas, que lê certo, perguntando de novo logo em seguida.
   for (const field of playbook.fields) {
     if (!field.onlyWhen || !(field.key in next.knownFacts)) continue;
     const owner = waAiPlaybookField(playbook, field.onlyWhen.field);
     if (!owner || !(owner.key in next.knownFacts)) continue;
-    const actual = normalizeWaAiPlaybookValue(owner, next.knownFacts[owner.key]);
-    const expected = normalizeWaAiPlaybookValue(owner, field.onlyWhen.value);
-    if (!actual || actual !== expected) delete next.knownFacts[field.key];
+    if (!waAiPlaybookOnlyWhenSatisfied(playbook, field, next.knownFacts)) {
+      delete next.knownFacts[field.key];
+    }
   }
   return next;
 }
 
-function fallbackReplyForAction(action: WaAiTriageNextAction): string {
+/**
+ * A frase que vai ao cliente quando a do modelo não serve.
+ *
+ * `complete` não é mais sinônimo de transferência: na campanha de conta o fim
+ * da coleta abre a escada documental, e o degrau varia. Uma reserva fixa
+ * dizendo "vou encaminhar" mentiria para quem acabou de receber um pedido de
+ * documentos — foi o que saiu em 14/08/2026 ("Concluí esta etapa"), que ainda
+ * por cima anunciava a etapa, coisa que o roteiro proíbe.
+ */
+function fallbackReplyForAction(
+  action: WaAiTriageNextAction, executedActions: string[] = [],
+): string {
   if (action.type === 'ask_field') return action.question;
   if (action.type === 'handoff') {
+    // Ação terminal do BACKEND é outra coisa: nada ficou pendente, o caso
+    // fechou. A frase genérica de corte ("precisa de uma análise específica")
+    // soaria como problema onde houve conclusão.
+    if (action.cutId === 'acao_terminal') {
+      return 'Perfeito, está tudo certo por aqui. Vou encaminhar seu atendimento para a equipe responsável, que segue com você por aqui mesmo.';
+    }
     return 'Entendi. Esse tipo de situação precisa de uma análise específica. Vou encaminhar seu atendimento para a equipe.';
   }
   if (action.type === 'disqualify') {
     return 'Obrigado pelas informações. Pelos critérios desta triagem, o escritório não seguirá com este atendimento.';
   }
   if (action.type === 'complete') {
-    return 'Obrigado pelas informações. Concluí esta etapa e vou dar continuidade ao seu atendimento.';
+    if (executedActions.indexOf('solicitar_documentos') !== -1) {
+      return 'Obrigado! Agora preciso de alguns documentos para seguir. Acabei de registrar a lista aqui e você pode me enviar por aqui mesmo, um de cada vez.';
+    }
+    if (executedActions.indexOf('transferir_atendimento') !== -1
+      || executedActions.indexOf('transferir_para_humano') !== -1) {
+      return 'Perfeito. Vou encaminhar seu atendimento agora para a equipe responsável.';
+    }
+    // Nada a executar quer dizer que o caso está esperando o cliente — o pedido
+    // de documentos ou a assinatura, que têm cobrança automática própria.
+    return 'Obrigado! Fico no aguardo para dar continuidade ao seu atendimento.';
   }
   return '';
 }
@@ -2076,15 +2663,16 @@ function fallbackReplyForAction(action: WaAiTriageNextAction): string {
 function deterministicHandoffArgs(
   memory: WaAiMemory,
   action: Extract<WaAiTriageNextAction, { type: 'handoff' }>,
+  playbook: WaAiPlaybook | null = null,
 ): Record<string, unknown> {
-  const facts = Object.entries(memory.knownFacts)
-    .map(([key, value]) => `${key}: ${String(value)}`).join(' · ');
-  const pending = memory.pendingItems.join(' · ');
-  const summary = [
-    `Motivo: ${action.reason}.`,
-    facts ? `Fatos informados: ${facts}.` : 'Ainda não há fatos estruturados.',
-    pending ? `Informações faltantes: ${pending}.` : 'Sem pendências do roteiro.',
-  ].join(' ').slice(0, 800);
+  // MESMO renderizador do fechamento por escada: quem recebe a conversa lê o
+  // mesmo formato, tenha ela terminado por conclusão ou por corte.
+  const summary = renderWaAiHandoffSummary({
+    motivo: `${action.reason}.`,
+    facts: memory.knownFacts,
+    pendingItems: memory.pendingItems,
+    fields: playbook?.fields,
+  });
   return { resumo: summary, motivo: action.reason.slice(0, 200) };
 }
 
@@ -2099,7 +2687,7 @@ function deterministicHandoffPlan(
   memory: WaAiMemory,
   action: Extract<WaAiTriageNextAction, { type: 'handoff' }>,
 ): { action: 'transferir_atendimento' | 'transferir_para_humano'; args: Record<string, unknown>; ref: WaAiActionRef | null } {
-  const args = deterministicHandoffArgs(memory, action);
+  const args = deterministicHandoffArgs(memory, action, playbook);
   const binding = (playbook?.bindings || []).find(item =>
     item.trigger?.type === 'cut_handoff' && item.trigger.cutId === action.cutId);
   const label = String(binding?.targetLabel || binding?.suggestedTargetLabel || '').trim();
@@ -2121,26 +2709,45 @@ function deterministicHandoffPlan(
 
 function validateReplyForAction(
   reading: WaAiTriageReply | null, action: WaAiTriageNextAction,
+  executedActions: string[] = [],
 ): { reply: string; degraded: boolean; reason: string | null } {
   const proposed = String(reading?.message || '').trim();
+  const cair = (reason: string) => ({
+    reply: fallbackReplyForAction(action, executedActions), degraded: true, reason,
+  });
+  const aceitar = () => ({
+    reply: proposed, degraded: !!reading?.degraded, reason: reading?.reason || null,
+  });
+
   if (action.type === 'ask_field') {
-    const valid = proposed.length > 0 && reading?.targetField === action.field;
-    return valid
-      ? { reply: proposed, degraded: !!reading?.degraded, reason: reading?.reason || null }
-      : {
-          reply: fallbackReplyForAction(action), degraded: true,
-          reason: `resposta não apontou para o próximo campo determinístico: ${action.field}`,
-        };
+    // O enum do schema já fecha `campo_alvo` no campo decidido, então divergir
+    // virou impossível pelo provedor. A checagem fica como rede para o dia em
+    // que a resposta vier por um caminho degradado, sem schema nenhum.
+    return proposed.length > 0 && reading?.targetField === action.field ? aceitar()
+      : cair(`resposta não apontou para o próximo campo determinístico: ${action.field}`);
   }
 
-  const mustNotQuestion = action.type === 'handoff' || action.type === 'disqualify' || action.type === 'complete';
-  const valid = proposed.length > 0 && (!mustNotQuestion || !reading?.targetField);
-  return valid
-    ? { reply: proposed, degraded: !!reading?.degraded, reason: reading?.reason || null }
-    : {
-        reply: fallbackReplyForAction(action), degraded: true,
-        reason: 'resposta incompatível com a ação determinada pelo backend',
-      };
+  // ── Depois de uma ação terminal, quem escreve é o backend ──
+  // O modelo redige a resposta ANTES de saber o que o backend executou, então
+  // ele continua a conversa que já acabou. Em 14/08/2026 às 23:27 o backend
+  // executou `transferir_para_humano` e o texto que saiu foi "envie uma foto do
+  // documento de identificação dessa pessoa que mora com você" — um pedido que
+  // ninguém ia atender, porque a IA se desligou no mesmo segundo. E o pedido era
+  // errado por conta própria: na rota `pai_ou_mae` o backend não pede documento
+  // nenhum (ver `waAiAccountRouteDocument`). Filtrar por "?" não pegava: a frase
+  // não tinha pergunta, tinha ordem.
+  if (action.type === 'handoff' && action.cutId === 'acao_terminal') {
+    return cair('o backend executou uma ação terminal; o fechamento é escrito por ele');
+  }
+
+  if (proposed.length === 0) return cair('resposta incompatível com a ação determinada pelo backend');
+
+  // Fim de conversa não faz pergunta: um corte que termina com "?" reabre a
+  // triagem que o backend acabou de encerrar.
+  if ((action.type === 'handoff' || action.type === 'disqualify') && proposed.indexOf('?') !== -1) {
+    return cair('a mensagem de encerramento veio com pergunta');
+  }
+  return aceitar();
 }
 
 /**
@@ -2224,7 +2831,7 @@ function buildSystemPrompt(
     parts.push(`# Como retomar o contato\n${String(assistant.followup_instructions).trim()}`);
   }
 
-  if (playbook && progress) parts.push(waAiPlaybookPromptBlock(playbook, progress));
+  if (playbook && progress) parts.push(waAiPlaybookPromptBlock(playbook, progress, nextAction));
   if (playbook && progress && nextAction) {
     parts.push(
       '# Estado canônico deste turno\n'
@@ -2498,6 +3105,7 @@ async function actTransferir(
 
   await cancelPendingFollowups(admin, conversation.id, 'Atendimento transferido.');
 
+  await moveWaAiFunnel(admin, ctx, 'transferido');
   return { ok: true, result: { transferido_para: ref.target_label, aguardando_aceite: true } };
 }
 
@@ -2543,7 +3151,9 @@ async function actSolicitarDocumentos(
   const { data: created, error } = await admin.from('document_requests').insert({
     client_id: clientId,
     title,
-    description: `Solicitado pelo assistente de IA (${ctx.assistant.name}) no WhatsApp.`,
+    // A descrição é o CARIMBO que o "/clear" procura para saber o que é resíduo
+    // de conversa e o que é pedido de advogado — ver cancelWaAiDocumentRequests.
+    description: `${WA_AI_REQUEST_DESCRIPTION_PREFIX} (${ctx.assistant.name}) no WhatsApp.`,
     due_date: dueDate,
     created_by: null,
   }).select('id').maybeSingle();
@@ -2561,6 +3171,7 @@ async function actSolicitarDocumentos(
 
   await addNote(admin, ctx.conversation.id,
     `🤖 A IA solicitou documentos: ${documentos.join(', ')}${dueDate ? ` (prazo ${dueDate})` : ''}.`);
+  await moveWaAiFunnel(admin, ctx, 'documentos_solicitados');
 
   return {
     ok: true,
@@ -2656,6 +3267,7 @@ async function actEnviarDocumento(
 
   await addNote(admin, conversation.id,
     `🤖 A IA enviou o documento "${ref.target_label}" por link exclusivo e ativou o acompanhamento automático.`);
+  await moveWaAiFunnel(admin, ctx, 'kit_enviado');
 
   return {
     ok: true,
@@ -2822,6 +3434,7 @@ async function actTransferirParaHumano(
     `🤖 A IA passou o atendimento para uma pessoa${motivo ? ` (${motivo})` : ''}. O resumo privado aparecerá para quem assumir.`);
 
   await cancelPendingFollowups(admin, ctx.conversation.id, 'Atendimento entregue a um humano.');
+  await moveWaAiFunnel(admin, ctx, 'transferido');
 
   return { ok: true, result: { entregue: true } };
 }

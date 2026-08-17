@@ -7,6 +7,7 @@ import {
   extractWaAiDecisionFacts,
   extractWaAiPeriodFacts,
   findWaAiMonthYears,
+  isWaAiExcludedLiquidationInstitution,
   normalizeWaAiFactValue,
   parseWaAiMonthYear,
   pruneWaAiPendingItems,
@@ -48,6 +49,17 @@ test('ano solto não vira data: metade da resposta não fecha a pergunta', () =>
   assert.equal(parseWaAiMonthYear('foi em 2020'), null);
   assert.equal(parseWaAiMonthYear('faz uns três anos'), null);
   assert.equal(parseWaAiMonthYear('13/2020'), null);
+});
+
+test('na ocorrência bancária, ano solto fica registrado para o relógio do backend', () => {
+  const facts = extractWaAiPeriodFacts(conversa([
+    ['out', 'Em que mês e ano isso aconteceu?'],
+    ['in', 'Olha, o mês eu não me recordo, mas foi agora, em 2026.'],
+  ]));
+  assert.equal(facts.data_ocorrencia, '2026');
+  // A regra continua restrita à pergunta da ocorrência: ano solto genérico não
+  // vira início ou saída trabalhista.
+  assert.equal(parseWaAiMonthYear('2026'), null);
 });
 
 test('as datas saem na ordem em que foram escritas', () => {
@@ -284,8 +296,10 @@ test('entende respostas populares da campanha de conta sem depender do modelo', 
     ['A conta foi bloqueada ou encerrada de vez?', 'o banco fechou minha conta', 'tipo_ocorrencia', 'encerramento'],
     ['A conta foi bloqueada ou encerrada de vez?', 'encerraram a conta', 'tipo_ocorrencia', 'encerramento'],
     ['A conta foi bloqueada ou encerrada de vez?', 'bloquearam sem explicar', 'tipo_ocorrencia', 'bloqueio'],
-    ['O banco avisou antes?', 'foi do nada, só descobri depois', 'aviso_previo', 'não'],
+    ['O banco enviou algum e-mail, SMS ou notificação?', 'foi do nada, só descobri no aplicativo', 'recebeu_comunicacao', 'não'],
+    ['Quando essa comunicação chegou, sua conta ainda funcionava normalmente?', 'já estava bloqueada quando chegou', 'momento_comunicacao', 'posterior'],
     ['Tem algum print, e-mail ou tela?', 'tenho screenshot da mensagem do banco', 'tem_print', 'sim'],
+    ['Você consegue apresentar um print do aplicativo ou da comunicação mostrando o bloqueio ou encerramento?', 'tenho sim, salvei o e-mail e tirei print da tela do aplicativo', 'tem_print', 'sim'],
     ['Ficou algum saldo preso?', 'não tinha nada lá', 'saldo_retido', 'não'],
     ['Qual comprovante de residência você tem?', 'moro de aluguel e tenho contrato', 'residencia_tipo', 'aluguel_com_contrato'],
     ['Qual comprovante de residência você tem?', 'casa de favor e não tenho contrato', 'residencia_tipo', 'terceiro_sem_contrato'],
@@ -296,6 +310,46 @@ test('entende respostas populares da campanha de conta sem depender do modelo', 
     const facts = extractWaAiDecisionFacts(conversa([['out', question], ['in', answer]]));
     assert.equal(facts[field as keyof typeof facts], expected, `${question} → ${answer}`);
   }
+});
+
+test('preserva a decisão quando contexto e pergunta saem em bolhas separadas', () => {
+  const facts = extractWaAiDecisionFacts(conversa([
+    ['out', 'Sobre os honorários: o escritório recebe 40% sobre o êxito, incluindo FGTS e seguro-desemprego.'],
+    ['out', 'Você está de acordo?'],
+    ['in', 'Sim'],
+  ]));
+  assert.equal(facts.aceita_honorarios, 'sim');
+});
+
+test('pergunta genérica de uma nova rodada não herda decisão anterior', () => {
+  const facts = extractWaAiDecisionFacts(conversa([
+    ['out', 'Os honorários são 40% sobre o êxito.'],
+    ['out', 'Você está de acordo?'],
+    ['in', 'Sim'],
+    ['out', 'Pode me explicar melhor?'],
+    ['in', 'Não'],
+  ]));
+  assert.equal(facts.aceita_honorarios, 'sim');
+});
+
+test('lista de liquidação usa correspondência segura e deriva aviso pela cronologia', () => {
+  assert.equal(isWaAiExcludedLiquidationInstitution('Banco Master'), true);
+  assert.equal(isWaAiExcludedLiquidationInstitution('Will Bank'), true);
+  assert.equal(isWaAiExcludedLiquidationInstitution('Banco Pleno'), true);
+  assert.equal(isWaAiExcludedLiquidationInstitution('Mastercard'), false);
+  assert.equal(isWaAiExcludedLiquidationInstitution('Banco Willian'), false);
+
+  const state = reconcileWaAiTriageState({
+    knownFacts: {
+      banco_reu: 'Banco Master', recebeu_comunicacao: 'sim',
+      momento_comunicacao: 'posterior', aviso_previo: 'sim',
+    },
+    pendingItems: [], turns: [],
+    playbookKeys: ['banco_reu', 'instituicao_liquidada', 'recebeu_comunicacao',
+      'momento_comunicacao', 'aviso_previo'],
+  });
+  assert.equal(state.knownFacts.instituicao_liquidada, 'sim');
+  assert.equal(state.knownFacts.aviso_previo, 'não');
 });
 
 test('erro de escrita no mês da conta ainda alimenta o corte em tempo real', () => {

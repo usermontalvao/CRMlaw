@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Bot, Clock, Pencil, Ban, BellOff, FileText, UserPlus, ArrowRightLeft, Tag, X, AlertTriangle, Users,
+  Clock, Pencil, Ban, BellOff, AlertTriangle, Users,
 } from 'lucide-react';
 import type {
   WhatsAppConversation, WhatsAppChannel, WhatsAppDepartment, WhatsAppPresence,
@@ -8,11 +8,11 @@ import type {
 import type { FunnelLabel } from '../../services/settings.service';
 import {
   formatTime, prettyPhone, conversationName, presenceInfo, maskName, maskPhoneFull,
-  slaSignal, slaInternalSignal, abandonedSignal, transferAlert,
+  slaSignal,
 } from './format';
 import type { ElapsedMinutes } from './businessTime';
 import { waPlainText } from './waRichText';
-import { resolveLabelMeta } from './funnel';
+import { inferFunnelStage } from './funnel';
 import { Avatar } from './avatar';
 
 /**
@@ -124,13 +124,9 @@ export const ConversationListItem: React.FC<{
   // Com a IA conduzindo, os sinais de espera humana saem de cena — inclusive o
   // relógio vermelho do canto, que contava uma demora que não está havendo.
   const sla = aiChip ? null : slaSignal(c, elapsedMinutes);
-  const slaInt = aiChip ? null : slaInternalSignal(c, elapsedMinutes);
-  const ta = transferAlert(c, elapsedMinutes);
-  const ab = aiChip ? null : abandonedSignal(c, elapsedMinutes);
+  const stage = inferFunnelStage(c.labels, funnelLabels);
   const urgentBorder = sla?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
     : sla?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
-    : slaInt?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
-    : slaInt?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
     : '';
   return (
     <button onClick={() => onSelect(c.id)}
@@ -194,99 +190,15 @@ export const ConversationListItem: React.FC<{
               {failedSends === 1 ? 'Não enviada' : `${failedSends} não enviadas`}
             </span>
           )}
-          {aiChip && (
-            <span title={aiChip.title}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-violet-100 text-violet-700">
-              <Bot size={9} /> {aiChip.label}
+          {stage && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
+              style={{ background: `${stage.color}22`, color: stage.color }}
+            >
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: stage.color }} />
+              {stage.stageLabel}
             </span>
           )}
-          {/* Bloqueada e encerrada continuam aparecendo mesmo com a IA: são
-              estados da CONVERSA, não da espera, e mudam o que o atendente
-              pode fazer ali. */}
-          {(!aiChip || statusKey === 'blocked' || statusKey === 'closed') && (
-          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${statusCls}`}>
-            {statusKey === 'blocked' && <Ban size={9} />}{statusLabel}
-            {/* A linha inteira já é um <button>, e botão dentro de botão é HTML
-                inválido (o React reclama e o navegador desmonta a árvore do seu
-                jeito). Um span com papel de botão mantém o clique, o foco e o
-                teclado sem aninhar nada. */}
-            {onDismissTracking && (
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => { e.stopPropagation(); onDismissTracking(); }}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' && e.key !== ' ') return;
-                  // preventDefault: sem ele, o Espaço rola a lista e o Enter
-                  // dispara o clique da linha logo atrás.
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onDismissTracking();
-                }}
-                title="Fechar acompanhamento"
-                aria-label="Fechar acompanhamento"
-                className="inline-flex items-center justify-center h-3 w-3 cursor-pointer rounded-full bg-white/60 transition hover:bg-slate-700 hover:text-white"
-              >
-                <X size={8} strokeWidth={2.75} />
-              </span>
-            )}
-          </span>
-          )}
-          {ds && (
-            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${ds === 'awaiting' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-              <FileText size={9} /> {ds === 'awaiting' ? 'Aguardando docs' : 'Docs prontos'}
-            </span>
-          )}
-          {/* Por qual número do escritório este atendimento entrou. A mesma pessoa
-              que escreve para dois números do escritório tem uma conversa em cada
-              — são atendimentos distintos, e é assim que a inbox os separa. Sem
-              dizer o canal, as duas linhas ficam idênticas e parecem duplicata.
-              A bolinha colorida no avatar já dizia isso, mas só a quem parasse o
-              mouse em cima para ler a dica. */}
-          {showChannelName && ch && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
-              style={{ background: (ch.color || '#ea6c00') + '1f', color: ch.color || '#ea6c00' }}>
-              <span className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: ch.color || '#ea6c00' }} />
-              {ch.name || ch.instance_name}
-            </span>
-          )}
-          {dept && (
-            <span className="inline-block px-1.5 py-0.5 rounded text-[9.5px] font-semibold" style={{ background: (dept.color || '#16a34a') + '22', color: dept.color || '#16a34a' }}>
-              {dept.name}
-            </span>
-          )}
-          {slaInt && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
-              style={{ background: slaInt.color + '22', color: slaInt.color }}>
-              <Clock size={9} /> {slaInt.label}
-            </span>
-          )}
-          {!aiChip && !c.is_blocked && c.status !== 'closed' && !c.assigned_user_id && !c.awaiting_accept && !c.department_id && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-500">
-              <UserPlus size={9} /> Na fila
-            </span>
-          )}
-          {ta && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
-              style={{ background: ta.color + '22', color: ta.color }}>
-              <ArrowRightLeft size={9} /> {ta.label}
-            </span>
-          )}
-          {ab && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
-              style={{ background: '#7c3aed22', color: '#7c3aed' }}>
-              <Clock size={9} /> {ab.label}
-            </span>
-          )}
-          {(c.labels ?? []).slice(0, aiChip ? 1 : 2).map(lbl => {
-            const meta = resolveLabelMeta(lbl, funnelLabels);
-            return (
-              <span key={lbl} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-semibold"
-                style={{ background: meta.bg, color: meta.color }}>
-                <Tag size={8} />{lbl}
-              </span>
-            );
-          })}
         </div>
       </div>
     </button>

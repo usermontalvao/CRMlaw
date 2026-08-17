@@ -9,7 +9,7 @@
  * sessão deixaria uma janela em que a portaria ainda recusaria o próximo turno.
  */
 
-export const WA_AI_RESET_COMMANDS = ['/clear', '/limpar', '/reiniciar', '/reset'] as const;
+export const WA_AI_RESET_COMMANDS = ['/clear', '/limpar', '/zerar', '/reiniciar', '/reset'] as const;
 
 export const WA_AI_RESET_CONVERSATION_PATCH = {
   assigned_user_id: null,

@@ -56,7 +56,7 @@ import { ConversationSummaryBanner } from './whatsapp/conversationSummaryBanner'
 import { ConversationMuteModal } from './whatsapp/conversationMuteModal';
 import { InternalNotesSection } from './whatsapp/internalNotes';
 import { AttachmentPreviewModal } from './whatsapp/attachmentPreviewModal';
-import { ConversationLabelsPanel } from './whatsapp/conversationLabels';
+import { ConversationStageSelect } from './whatsapp/conversationLabels';
 import { ContactIdentity, AttendanceSummary } from './whatsapp/detailsPanelHeader';
 import { ConversationArchiveButton } from './whatsapp/conversationArchive';
 import { QuickActions } from './whatsapp/quickActions';
@@ -101,7 +101,7 @@ import { ClientFillLinksPanel } from './whatsapp/clientFillLinksPanel';
 import { AiMemoryPanel } from './whatsapp/aiMemoryPanel';
 import { AiAgentBanner } from './whatsapp/aiAgentBanner';
 import { waAiListChip } from '../utils/waAiFollowupDisplay';
-import { AiHandoffSummaryBanner } from './whatsapp/aiHandoffSummaryBanner';
+import { AiHandoffSummaryCard, AiHandoffSummaryStrip, useAiHandoffSummary } from './whatsapp/aiHandoffSummary';
 import { PresenceText, DateDivider } from './whatsapp/conversationListItem';
 import { DockedDetailsToggle } from './whatsapp/DockedDetailsToggle';
 import { ConversationList } from './whatsapp/conversationList';
@@ -435,6 +435,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     () => conversations.find(c => c.id === selectedId) || null,
     [conversations, selectedId],
   );
+  // Uma leitura só do handoff da IA, consumida em dois lugares: a faixa fina da
+  // thread e o cartão do painel. Ver aiHandoffSummary.tsx.
+  const handoffSummary = useAiHandoffSummary({
+    conversationId: selected?.id ?? '',
+    currentUserId: user?.id ?? null,
+    assignedUserId: selected?.assigned_user_id ?? null,
+  });
   // Linhas da MESMA pessoa. O escritório tem mais de um número, e quem escreve
   // para dois deles ganha uma conversa em cada — mas continua sendo um contato só,
   // com um histórico só. A thread aberta é a união dessas linhas; a resposta segue
@@ -482,8 +489,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       : funnelLabelsForChannel(channelFilter);
     const seen = new Set<string>();
     return source.filter(label => {
-      if (seen.has(label.key)) return false;
-      seen.add(label.key);
+      if (seen.has(label.stageKey)) return false;
+      seen.add(label.stageKey);
       return true;
     });
   }, [channelFilter, channels, funnelLabelsForChannel]);
@@ -503,7 +510,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   }, [departments]);
   useEffect(() => {
     if (!canSanitize(labelFilterOptions)) return;
-    setLabelFilter(current => sanitizeLabelFilter(current, labelFilterOptions.map(l => l.key)));
+    setLabelFilter(current => sanitizeLabelFilter(current, labelFilterOptions.map(l => l.stageKey)));
   }, [labelFilterOptions]);
   // Inbox e quadro de Leads compartilham o mesmo recorte de canal. O filtro
   // "Todos" continua válido apenas para a inbox, porque cada quadro possui um
@@ -693,11 +700,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     pending, setPending,
     uploadProgress,
     recording, recSeconds, recLevel,
-    attachStaged, setAttachStaged,
+    attachStaged, stagedCaption,
     handleSend, beginEdit,
     retryPending, discardPending, cancelUpload, resendExisting,
     startRecording, stopRecording,
-    onPickFiles, handleDroppedFiles, confirmStagedSend, sendGif,
+    onPickFiles, handleDroppedFiles, confirmStagedSend, cancelStagedSend, sendGif,
   } = useWaComposer({
     selectedId, selected, user, agentPrefs, moduleConfig, staffById, aiSession,
     messages, setMessages, setConversations, refreshMessages,
@@ -910,21 +917,28 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     // e desdizer meio segundo depois é pior do que esperar a resposta.
     if (!businessHoursLoaded) return;
     const ch = channels.find(c => c.id === instanceId);
+    // O texto do canal só entra na faixa se ele estiver REALMENTE saindo para o
+    // cliente. Com `absence_enabled` desligado a faixa mostrava, mesmo assim, a
+    // mensagem automática — anunciando ao atendente um aviso que ninguém
+    // recebeu (14/08/2026, canal "Comercial"). Fora do horário a faixa continua
+    // aparecendo, porque isso é verdade e o atendente precisa saber; o que
+    // muda é o texto, que passa a ser o genérico do horário.
+    const textoDoCanal = ch?.absence_enabled ? (ch.absence_message || '') : '';
     const schedule = schedulesByChannel[instanceId];
     // Canal sem expediente cadastrado (nem uma linha ativa) segue tratado como
     // fechado, como antes — configurar horário é o que "abre" o canal.
     if (!schedule) {
-      setOutsideHours({ message: ch?.absence_message || moduleConfig.outside_hours_fallback_message });
+      setOutsideHours({ message: textoDoCanal || moduleConfig.outside_hours_fallback_message });
       return;
     }
     const status = businessHoursStatus(Date.now(), schedule);
     if (status.open) { setOutsideHours(null); return; }
     if (status.windows.length === 0) {
-      setOutsideHours({ message: ch?.absence_message || moduleConfig.outside_hours_fallback_message });
+      setOutsideHours({ message: textoDoCanal || moduleConfig.outside_hours_fallback_message });
       return;
     }
     setOutsideHours({
-      message: ch?.absence_message || renderTemplate(moduleConfig.outside_hours_schedule_template, {
+      message: textoDoCanal || renderTemplate(moduleConfig.outside_hours_schedule_template, {
         extraVars: {
           inicio: status.windows[0].start,
           fim: status.windows[status.windows.length - 1].end,
@@ -980,7 +994,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         if (channelFilter !== 'all' && c.instance_id !== channelFilter) return false;
         if (deptFilter === 'none' && c.department_id) return false;
         if (deptFilter !== 'all' && deptFilter !== 'none' && c.department_id !== deptFilter) return false;
-        if (labelFilter && !(c.labels ?? []).includes(labelFilter)) return false;
+        if (labelFilter && inferFunnelStage(c.labels, funnelLabelsForChannel(c.instance_id))?.stageKey !== labelFilter) return false;
         if (!q) return true;
         return matchesConversationSearch(c, q);
       })
@@ -1008,7 +1022,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     // linhas encerradas já vem dentro da thread da conversa viva, e o filtro
     // "Encerradas" continua listando cada uma delas separadamente.
     return collapseContactThreads(ordenadas, selectedId);
-  }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
+  }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, funnelLabelsForChannel]);
 
   // As encerradas que a BUSCA trouxe do arquivo. A lista as usa para duas coisas:
   // desenhar a divisória "Encerradas" onde o grupo começa e pintar essas linhas
@@ -1231,7 +1245,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       if (channelFilter !== 'all' && c.instance_id !== channelFilter) return false;
       if (deptFilter === 'none' && c.department_id) return false;
       if (deptFilter !== 'all' && deptFilter !== 'none' && c.department_id !== deptFilter) return false;
-      if (labelFilter && !(c.labels ?? []).includes(labelFilter)) return false;
+      if (labelFilter && inferFunnelStage(c.labels, funnelLabelsForChannel(c.instance_id))?.stageKey !== labelFilter) return false;
       if (q && !matchesConversationSearch(c, q)) return false;
       return true;
     });
@@ -1242,7 +1256,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       unread: porPessoa.filter(c => !c.is_blocked && c.unread_count > 0).length,
       mine: porPessoa.filter(c => c.assigned_user_id === user?.id).length,
     };
-  }, [conversations, search, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id]);
+  }, [conversations, search, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, funnelLabelsForChannel]);
 
   const anyConnected = channels.some(c => c.status === 'connected');
   const connectedChannels = useMemo(() => channels.filter(c => c.status === 'connected'), [channels]);
@@ -1907,8 +1921,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             </select>
             <select value={labelFilter} onChange={e => setLabelFilter(e.target.value)}
               className="min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none">
-              <option value="">Todas as etiquetas</option>
-              {labelFilterOptions.map(l => <option key={l.key} value={l.key}>{l.stageLabel} › {l.key}</option>)}
+              <option value="">Todas as etapas</option>
+              {labelFilterOptions.map(l => <option key={l.stageKey} value={l.stageKey}>{l.stageLabel}</option>)}
             </select>
           </div>
           )}
@@ -2237,10 +2251,16 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 assinou". O próprio banner some quando não há nada a dizer. */}
             <ConversationSummaryBanner embedded={embedded} overview={overview} docStatus={selected.client_id ? effectiveDocStatus(selected.client_id) : null} clientId={selected.client_id} onOpenWorkspace={openWa} onDismissDocReady={() => selected.client_id && dismissDocReady(selected.client_id)} onDismissTemplateFill={stopTemplateFillTracking} onStopSignatureTracking={stopSignatureTracking} />
 
-            <AiHandoffSummaryBanner
-              conversationId={selected.id}
-              currentUserId={user?.id ?? null}
-              assignedUserId={selected.assigned_user_id}
+            {/* O resumo por extenso mora na coluna lateral: com o roteiro de
+                triagem inteiro, a faixa larga que ficava aqui tomava meia tela
+                e empurrava as mensagens para fora da vista. Sobra a linha que
+                avisa que ele existe — e leva até ele. */}
+            <AiHandoffSummaryStrip
+              data={handoffSummary}
+              onOpenPanel={() => {
+                if (panelDocked) setDetailsPanelCollapsed(false);
+                else setMobilePanelOpen(true);
+              }}
             />
 
             {/* A faixa do agente. O contador antigo ("N turnos · passo N") saiu:
@@ -2610,6 +2630,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                       onReplace={replaceComposerSpelling} onClose={closeComposerSpellMenu} />
                   </div>
                   {draft.trim() || editing ? (
+                    /* `sending` aqui é só a EDIÇÃO (uma de cada vez). Envio normal
+                       nunca desabilita o botão: as mensagens entram numa fila
+                       interna e saem na ordem digitada, então dá para escrever a
+                       próxima enquanto a anterior ainda está carregando. */
                     <button onClick={handleSend} disabled={sending || !draft.trim()}
                       className={`flex-shrink-0 w-10 h-10 rounded-full bg-[#00a884] text-white flex items-center justify-center hover:bg-[#008f72] hover:scale-105 disabled:opacity-40 transition active:scale-90 ${sending ? '' : 'wa-send-ready'}`}>
                       {sending ? <Loader2 size={16} className="animate-spin" /> : editing ? <Check size={18} /> : <Send size={16} />}
@@ -2677,8 +2701,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           <AttendanceSummary
             assignee={selected.assigned_user_id ? (staffByUser.get(selected.assigned_user_id) || '—') : 'Ninguém'}
             department={selected.department_id ? (deptById.get(selected.department_id)?.name || '—') : 'Nenhum'}
-            stage={inferFunnelStage(selected.labels ?? [], selectedFunnelLabels)}
+            stageControl={(
+              <ConversationStageSelect
+                conversation={selected}
+                funnelLabels={selectedFunnelLabels}
+                onChanged={conv => setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels: conv.labels } : c))}
+                onStageEntered={runFunnelStageActions}
+              />
+            )}
           />
+
+          {/* O recado da IA para quem assumiu: por que a conversa chegou aqui e
+              o que já foi apurado. Fica no alto, junto do "de quem é", porque é
+              a primeira coisa a ler antes de responder. */}
+          <AiHandoffSummaryCard data={handoffSummary} />
 
           {/* Ações rápidas. Subiram para cá: são o que se usa a cada atendimento,
               e estavam abaixo das etiquetas — metadado que se mexe de vez em
@@ -2708,17 +2744,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             conversationIds={threadIds.length > 0 ? threadIds : [selected.id]}
             contactName={conversationName(selected)}
           />
-
-          {/* Etiquetas: classificação, no fim do bloco. */}
-          <div className="space-y-1.5">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Etiquetas</p>
-            <ConversationLabelsPanel
-              conversation={selected}
-              funnelLabels={selectedFunnelLabels}
-              onChanged={conv => setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels: conv.labels } : c))}
-              onStageEntered={runFunnelStageActions}
-            />
-          </div>
 
           {/* Assunto detectado pela IA (somente leitura; preenchido ao encerrar o atendimento) */}
           {selected.contact_reason && (
@@ -2999,7 +3024,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       {attachStaged && selected && (
         <AttachmentPreviewModal
           files={attachStaged}
-          onClose={() => setAttachStaged(null)}
+          initialCaption={stagedCaption}
+          onClose={cancelStagedSend}
           onConfirm={confirmStagedSend}
         />
       )}

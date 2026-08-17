@@ -26,14 +26,24 @@ const FERRAMENTAS: Array<{ kind: AnnotationKind; Icone: typeof Pencil; titulo: s
 
 export const AttachmentPreviewModal: React.FC<{
   files: File[];
-  onClose: () => void;
+  /** Texto que já estava no compositor quando o anexo foi escolhido. */
+  initialCaption?: string;
+  /** Recebe a legenda escrita: quem desiste do anexo devolve o texto ao compositor. */
+  onClose: (caption: string) => void;
   onConfirm: (caption: string, files: File[]) => void;
-}> = ({ files, onClose, onConfirm }) => {
+}> = ({ files, initialCaption = '', onClose, onConfirm }) => {
   const [items, setItems] = useState<File[]>(files);
   const [active, setActive] = useState(0);
-  const [caption, setCaption] = useState('');
+  const [caption, setCaption] = useState(initialCaption);
   const [urls, setUrls] = useState<(string | null)[]>([]);
   const addInputRef = useRef<HTMLInputElement>(null);
+  // A legenda atual em um ref: o `onClose` é chamado de lugares que não
+  // re-assinam a cada tecla (atalho de teclado, clique no fundo), e é o texto
+  // digitado AGORA que precisa voltar para o compositor.
+  const captionRef = useRef(caption);
+  captionRef.current = caption;
+  /** Sai do preview devolvendo a legenda — ela vira o texto do compositor. */
+  const fechar = useCallback(() => onClose(captionRef.current), [onClose]);
 
   // ── Anotação ──────────────────────────────────────────────────────────
   // Por índice de item: trocar de imagem na tira não pode perder o que já foi
@@ -222,7 +232,7 @@ export const AttachmentPreviewModal: React.FC<{
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (textEdit) return; // digitando: as teclas pertencem ao campo
-      if (e.key === 'Escape') { if (tool) { setTool(null); return; } onClose(); }
+      if (e.key === 'Escape') { if (tool) { setTool(null); return; } fechar(); }
       if (e.key === 'ArrowRight') setActive(a => Math.min(a + 1, items.length - 1));
       if (e.key === 'ArrowLeft') setActive(a => Math.max(a - 1, 0));
       if (tool && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -233,11 +243,12 @@ export const AttachmentPreviewModal: React.FC<{
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onClose, items.length, tool, active, textEdit]);
+  }, [fechar, items.length, tool, active, textEdit]);
 
   const removeAt = (i: number) => {
     const next = items.filter((_, idx) => idx !== i);
-    if (next.length === 0) { onClose(); return; }
+    // Tirou o último anexo: o preview fecha e a legenda volta a ser texto.
+    if (next.length === 0) { fechar(); return; }
     setActive(a => Math.min(a, next.length - 1));
     setItems(next);
     setAnnByItem({}); // os índices mudaram; manter anotações casaria com a imagem errada
@@ -246,7 +257,7 @@ export const AttachmentPreviewModal: React.FC<{
   const btnBase = 'w-8 h-8 rounded-lg flex items-center justify-center transition flex-shrink-0';
 
   return createPortal(
-    <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4" onClick={fechar}>
       {/* A moldura ABRAÇA a imagem: a largura do modal é a largura que a imagem
           assume depois de limitada por `max-h`/`max-w`, sem faixa escura em
           volta. O mínimo existe só para o cabeçalho não espremer as
@@ -260,7 +271,7 @@ export const AttachmentPreviewModal: React.FC<{
             ferramentas flutuam sobre a imagem, no topo, longe do rodapé (que é
             onde o conteúdo do print costuma estar). */}
         {cur && (
-          <button onClick={onClose} title="Fechar"
+          <button onClick={fechar} title="Fechar"
             className="absolute top-3 left-3 z-20 w-9 h-9 rounded-full bg-[#0b141a]/85 backdrop-blur ring-1 ring-white/25 text-white/90 hover:text-white hover:bg-[#0b141a] transition flex items-center justify-center shadow-lg">
             <X size={18} />
           </button>

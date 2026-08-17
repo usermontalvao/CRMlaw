@@ -20,17 +20,19 @@ import {
 } from 'lucide-react';
 import { whatsappService } from '../../services/whatsapp.service';
 import { WA_AI_ACTIONS } from '../../utils/waAiActionCatalog';
+import { isWaAiResetCommand } from '../../utils/waAiResetCommand';
 import type {
   WhatsAppAiAssistantInput, WhatsAppAiSimulatedAction, WhatsAppAiSimulationResult,
 } from '../../types/whatsapp.types';
 
 const SIMULATOR_CSS = `
-  /* Painel flutuante, nunca colado nas bordas: assim ele não cobre o topo do
-     CRM nem cresce além da janela. A altura é a da viewport menos a margem. */
+  /* Painel flutuante ancorado no canto de baixo. Antes ia de topo a rodapé e
+     tapava a tela inteira do CRM; agora tem altura própria e só cresce até o
+     limite da janela em telas baixas. A conversa rola dentro do corpo. */
   .wa-sim {
-    position: fixed; right: 14px; top: 14px; bottom: 14px; z-index: 60;
+    position: fixed; right: 14px; bottom: 14px; z-index: 60;
     width: min(410px, calc(100vw - 28px));
-    max-height: calc(100vh - 28px);
+    height: min(560px, calc(100vh - 28px));
     display: flex; flex-direction: column; overflow: hidden;
     background: #fff; border: 1px solid #e7e5df; border-radius: 14px;
     box-shadow: 0 20px 50px rgba(15,23,42,.18);
@@ -64,7 +66,7 @@ const SIMULATOR_CSS = `
   }
   @media (max-width: 640px) {
     .wa-sim {
-      inset: 0; width: 100vw; max-height: 100vh;
+      inset: 0; width: 100vw; height: 100vh;
       border: none; border-radius: 0;
     }
   }
@@ -203,6 +205,13 @@ export const AiAgentSimulator: React.FC<Props> = ({ draft, onClose, runTurn }) =
     const texto = input.trim();
     if (!texto || busy) return;
     setInput('');
+    if (isWaAiResetCommand(texto)) {
+      setTurns([]);
+      setMemory(null);
+      setTriage(null);
+      inputRef.current?.focus();
+      return;
+    }
     const proximas = [...conversa, { role: 'cliente' as const, text: texto }];
     setTurns(prev => [...prev, { who: 'cliente', text: texto }]);
     await rodar(proximas, 'mensagem');
@@ -214,7 +223,9 @@ export const AiAgentSimulator: React.FC<Props> = ({ draft, onClose, runTurn }) =
     await rodar(conversa, 'followup');
   };
 
-  const reiniciar = () => { setTurns([]); setMemory(null); setInput(''); inputRef.current?.focus(); };
+  const reiniciar = () => {
+    setTurns([]); setMemory(null); setTriage(null); setInput(''); inputRef.current?.focus();
+  };
 
   const timezone = draft.timezone || 'America/Cuiaba';
 

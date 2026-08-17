@@ -19,11 +19,13 @@ import assert from 'node:assert/strict';
 import {
   WA_AI_PLAYBOOK_CONTA_BLOQUEADA,
   WA_AI_PLAYBOOK_SEM_REGISTRO,
+  computeWaAiTriageNextAction,
   computeWaAiTriageProgress,
   normalizeWaAiPlaybookValue,
   waAiPlaybookField,
   waAiPlaybookFieldKeys,
 } from './waAiPlaybook.ts';
+import { buildWaAiCompletionPlans } from './waAiCompletion.ts';
 import { parseWaAiTriageReply } from './waAiTriageReply.ts';
 import { reconcileWaAiTriageState, type WaAiTriageTurn } from './waAiTriageFacts.ts';
 
@@ -283,6 +285,9 @@ test('fluxo qualificado completo sobrevive a gíria, erro de escrita e respostas
     ['out', 'Ficou alguma prova, comprovante ou conversa?'], ['in', 'tenho conversa no zap e pix'],
     ['out', 'Alguém viu você trabalhando e pode confirmar?'], ['in', 'minha esposa me viu todo dia'],
     ['out', 'Além desse, teve mais algum trabalho assim?'], ['in', 'foi só esse'],
+    ['out', 'Consegue mandar essas provas por aqui?'], ['in', 'mando sim'],
+    ['out', 'Os honorários são 40% sobre o êxito, incluindo FGTS e seguro-desemprego. De acordo?'],
+    ['in', 'de acordo'],
   ]);
   const estado = turno({}, resposta('Pronto, terminei a triagem.', {
     nome: 'Ana', empregador: 'Mercadinho', funcao: 'caixa e reposição',
@@ -300,6 +305,8 @@ test('fluxo qualificado completo sobrevive a gíria, erro de escrita e respostas
   assert.equal(estado.facts.trabalho_regular, 'regular');
   assert.equal(estado.facts.subordinacao, 'sim');
   assert.equal(estado.facts.outros_trabalhos, 'não');
+  assert.equal(estado.facts.envio_provas, 'sim');
+  assert.equal(estado.facts.aceita_honorarios, 'sim');
 });
 
 // ── A queda ─────────────────────────────────────────────────────────────────
@@ -355,6 +362,8 @@ test('a triagem inteira, do começo ao fim, sem sobra e sem pendência', () => {
     ['Quais provas?', { provas: 'conversas de WhatsApp e comprovantes de Pix' }],
     ['Tem testemunha?', { tem_testemunha: 'sim' }],
     ['Teve outro trabalho sem carteira?', { outros_trabalhos: 'não' }],
+    ['Consegue enviar essas provas por aqui?', { envio_provas: 'sim' }],
+    ['Os honorários são 40% sobre o êxito. De acordo?', { aceita_honorarios: 'sim' }],
   ];
 
   let estado: Estado | null = null;
@@ -369,64 +378,241 @@ test('a triagem inteira, do começo ao fim, sem sobra e sem pendência', () => {
   assert.equal(estado!.facts.saida, undefined, 'quem não saiu não tem data de saída');
 });
 
+test('as provas vêm antes dos honorários, e a transferência só depois do "sim"', () => {
+  const base: Record<string, string> = {
+    nome: 'Ana', empregador: 'Todimo', tipo_empregador: 'particular', inicio: '03/2025',
+    ainda_trabalha: 'sim', funcao: 'vendedora', pessoalidade: 'sim', recebia_pagamento: 'sim',
+    pagamento: 'Pix, 2000 por mês', trabalho_regular: 'regular',
+    habitualidade: 'seg a sex, 8h às 17h', subordinacao: 'sim', tem_prova: 'sim',
+    provas: 'conversas de WhatsApp', tem_testemunha: 'sim', outros_trabalhos: 'não',
+  };
+
+  // Qualificada, ela ainda não ouviu falar em honorários: o que falta é mandar
+  // as provas.
+  const provas = computeWaAiTriageProgress({ playbook: ROTEIRO, facts: base, now: HOJE, timeZone: TZ });
+  assert.equal(provas.nextField, 'envio_provas');
+  assert.equal(provas.complete, false);
+
+  // Só então os 40% — e antes disso a triagem não fecha nem transfere.
+  const honorarios = computeWaAiTriageProgress({
+    playbook: ROTEIRO, facts: { ...base, envio_provas: 'sim' }, now: HOJE, timeZone: TZ,
+  });
+  assert.equal(honorarios.nextField, 'aceita_honorarios');
+  assert.equal(honorarios.complete, false);
+  const pergunta = computeWaAiTriageNextAction(ROTEIRO, honorarios);
+  assert.equal(pergunta.type, 'ask_field');
+  assert.match(String((pergunta as { question: string }).question), /40%/);
+  assert.match(String((pergunta as { question: string }).question), /FGTS/);
+  assert.match(String((pergunta as { question: string }).question), /seguro-desemprego/);
+
+  const fim = computeWaAiTriageProgress({
+    playbook: ROTEIRO, facts: { ...base, envio_provas: 'sim', aceita_honorarios: 'sim' },
+    now: HOJE, timeZone: TZ,
+  });
+  assert.equal(fim.cut, null);
+  assert.equal(fim.complete, true);
+
+  // Recusou: encerra sem transferência e sem pedir documento nenhum.
+  const recusa = computeWaAiTriageProgress({
+    playbook: ROTEIRO, facts: { ...base, envio_provas: 'sim', aceita_honorarios: 'não' },
+    now: HOJE, timeZone: TZ,
+  });
+  assert.equal(recusa.cut?.id, 'honorarios_nao_aceitos');
+  assert.equal(recusa.cut?.effect, 'disqualify');
+  assert.deepEqual(recusa.pending, []);
+});
+
 test('conta: fluxo qualificado completo resiste a erro, gíria e resposta negativa popular', () => {
   const playbook = WA_AI_PLAYBOOK_CONTA_BLOQUEADA;
   const turns = fala([
     ['out', 'A conta foi bloqueada ou encerrada de vez?'], ['in', 'bloquearam tudo, não consigo usar'],
     ['out', 'Em que mês e ano isso aconteceu?'], ['in', 'setenbro de 2025'],
-    ['out', 'O banco avisou antes?'], ['in', 'foi do nada, só descobri no aplicativo'],
+    ['out', 'O banco enviou algum e-mail, SMS ou notificação?'], ['in', 'foi do nada, só descobri no aplicativo'],
     ['out', 'Tem algum print, e-mail ou tela?'], ['in', 'tenho screenshot da mensagem'],
     ['out', 'Ficou algum saldo preso?'], ['in', 'não ficou nada'],
-    ['out', 'Qual comprovante de residência você tem?'], ['in', 'está no nome da minha mãe'],
     ['out', 'Os honorários são 40%. Está de acordo?'], ['in', 'sim, concordo'],
   ]);
   const reconciled = reconcileWaAiTriageState({
-    knownFacts: { nome: 'Ana', banco_reu: 'Nubank', titular_comprovante: 'Maria, mãe' },
+    knownFacts: {
+      nome: 'Ana', tipo_atendimento: 'conta_bloqueada_ou_encerrada',
+      banco_reu: 'Nubank',
+      motivo_informado: 'não informou', situacao_atual: 'continua bloqueada',
+      agencia: 'não informado', conta: 'não informado',
+    },
     pendingItems: [], turns, playbookKeys: waAiPlaybookFieldKeys(playbook),
   });
   const progress = computeWaAiTriageProgress({ playbook, facts: reconciled.knownFacts, now: HOJE, timeZone: TZ });
   assert.equal(progress.cut, null);
+  // O "sim" dos honorários fecha a coleta: a rota do comprovante não é mais
+  // perguntada aqui — ela nasce do arquivo que a pessoa enviar.
   assert.equal(progress.complete, true);
   assert.deepEqual(progress.pending, []);
   assert.equal(reconciled.knownFacts.tipo_ocorrencia, 'bloqueio');
   assert.equal(reconciled.knownFacts.data_ocorrencia, '09/2025');
   assert.equal(reconciled.knownFacts.aviso_previo, 'não');
-  assert.equal(reconciled.knownFacts.residencia_tipo, 'familiar');
+  assert.equal(reconciled.knownFacts.aceita_honorarios, 'sim');
 });
 
-test('conta: saldo retido abre valor; casa de favor abre declaração e documento do declarante', () => {
+test('conta: “Oi” não vira nome e “foi agora, em 2026” não repete a data', () => {
   const playbook = WA_AI_PLAYBOOK_CONTA_BLOQUEADA;
-  const base = {
-    nome: 'Ana', banco_reu: 'Banco X', tipo_ocorrencia: 'encerramento',
-    data_ocorrencia: '01/2026', aviso_previo: 'não', tem_print: 'sim',
-    saldo_retido: 'sim', residencia_tipo: 'terceiro_sem_contrato', aceita_honorarios: 'sim',
-  };
-  const pending = computeWaAiTriageProgress({ playbook, facts: base, now: HOJE, timeZone: TZ });
-  assert.ok(pending.missing.includes('valor_saldo'));
-  assert.ok(pending.missing.includes('declarante_nome'));
-  assert.ok(pending.missing.includes('endereco_residencia'));
-  assert.ok(pending.missing.includes('declarante_tem_documento'));
-
-  const done = computeWaAiTriageProgress({
-    playbook,
-    facts: {
-      ...base, valor_saldo: 'R$ 1.200', declarante_nome: 'Carlos Souza',
-      endereco_residencia: 'Rua A, 10, Centro, Cuiabá, 78000-000',
-      declarante_tem_documento: 'sim',
+  const turns = fala([
+    ['in', 'Oi'],
+    ['out', 'Qual é o nome do banco que bloqueou ou encerrou sua conta?'], ['in', 'Neon'],
+    ['out', 'A conta foi bloqueada ou foi encerrada de vez?'], ['in', 'Encerrada'],
+    ['out', 'Em que mês e ano isso aconteceu?'],
+    ['in', 'Olha, o mês eu não me recordo, mas foi agora, em 2026.'],
+  ]);
+  const reconciled = reconcileWaAiTriageState({
+    // Reproduz também uma sessão já contaminada pela versão anterior.
+    knownFacts: {
+      nome: 'Oi', tipo_atendimento: 'conta_bloqueada_ou_encerrada',
+      banco_reu: 'Neon', tipo_ocorrencia: 'encerramento',
     },
-    now: HOJE, timeZone: TZ,
+    pendingItems: [], turns, playbookKeys: waAiPlaybookFieldKeys(playbook),
   });
-  assert.equal(done.cut, null);
-  assert.equal(done.complete, true);
+  assert.equal(reconciled.knownFacts.data_ocorrencia, '2026');
+
+  const beforeName = computeWaAiTriageProgress({
+    playbook, facts: reconciled.knownFacts, now: HOJE, timeZone: TZ,
+  });
+  assert.equal(beforeName.nextField, 'nome');
+  const askName = computeWaAiTriageNextAction(playbook, beforeName, turns.at(-1)?.text);
+  assert.equal(askName.type === 'ask_field' ? askName.question : '', 'Para começar, qual é o seu nome?');
+
+  const afterName = computeWaAiTriageProgress({
+    playbook, facts: { ...reconciled.knownFacts, nome: 'Igor' }, now: HOJE, timeZone: TZ,
+  });
+  const next = computeWaAiTriageNextAction(playbook, afterName, 'Igor');
+  assert.equal(afterName.nextField, 'recebeu_comunicacao');
+  assert.equal(next.type === 'ask_field' ? next.field : '', 'recebeu_comunicacao');
+  assert.doesNotMatch(next.type === 'ask_field' ? next.question : '', /mês e ano/i);
 });
 
-test('conta: cada corte comercial encerra antes de pedir documentos', () => {
+test('conta: a triagem inteira, pergunta a pergunta, até abrir a coleta documental', () => {
+  // O teste que o roteiro precisava ter: em vez de conferir um estado final
+  // montado à mão, ele ANDA o fluxo — a cada resposta, pergunta ao motor qual é
+  // a próxima e responde exatamente aquela. Se alguma pergunta sumir, voltar,
+  // repetir ou vier fora de ordem, é aqui que aparece.
+  const playbook = WA_AI_PLAYBOOK_CONTA_BLOQUEADA;
+  const respostas: Record<string, string> = {
+    nome: 'Igor',
+    banco_reu: 'Nubank',
+    tipo_ocorrencia: 'encerramento',
+    data_ocorrencia: '01/2026',
+    recebeu_comunicacao: 'sim',
+    tipo_comunicacao: 'notificação do aplicativo',
+    momento_comunicacao: 'posterior',
+    motivo_informado: 'disseram que foi questão de segurança',
+    situacao_atual: 'continua encerrada',
+    saldo_retido: 'sim',
+    valor_saldo: 'R$ 3.400',
+    agencia: 'não informado',
+    conta: 'não informado',
+    tem_print: 'sim',
+    aceita_honorarios: 'sim',
+  };
+
+  const facts: Record<string, string> = {};
+  const perguntadas: string[] = [];
+  for (let volta = 0; volta < 40; volta++) {
+    const progress = computeWaAiTriageProgress({ playbook, facts, now: HOJE, timeZone: TZ });
+    assert.equal(progress.cut, null, `corte inesperado em ${JSON.stringify(facts)}`);
+    if (progress.complete) break;
+    const action = computeWaAiTriageNextAction(playbook, progress);
+    assert.equal(action.type, 'ask_field');
+    const campo = action.type === 'ask_field' ? action.field : '';
+    assert.equal(perguntadas.includes(campo), false, `${campo} foi perguntado duas vezes`);
+    assert.ok(respostas[campo] !== undefined, `roteiro pediu ${campo}, que a conversa não previu`);
+    // A pergunta que sai ao cliente é a do roteiro, e não uma invenção do turno.
+    assert.ok((action.type === 'ask_field' ? action.question : '').length > 0);
+    perguntadas.push(campo);
+    facts[campo] = respostas[campo];
+  }
+
+  // A ordem exata: identificação, ocorrência, conta, honorários e só então a
+  // residência. Os honorários vêm depois de tudo o que qualifica o caso.
+  // `tipo_atendimento` NÃO aparece: a campanha é direcionada, então a rota
+  // bancária é a premissa e o campo só é preenchido se a pessoa, por conta
+  // própria, trouxer outro assunto.
+  assert.deepEqual(perguntadas, [
+    'nome', 'banco_reu',
+    'tipo_ocorrencia', 'data_ocorrencia', 'recebeu_comunicacao', 'tipo_comunicacao',
+    'momento_comunicacao', 'motivo_informado', 'situacao_atual',
+    'saldo_retido', 'valor_saldo', 'agencia', 'conta', 'tem_print',
+    'aceita_honorarios',
+  ]);
+
+  const fim = computeWaAiTriageProgress({ playbook, facts, now: HOJE, timeZone: TZ });
+  assert.equal(fim.complete, true);
+  assert.deepEqual(fim.pending, []);
+  // Terminar a coleta é o gatilho do fechamento, e o fechamento desta campanha
+  // começa pedindo os documentos.
+  const acao = computeWaAiTriageNextAction(playbook, fim);
+  assert.equal(acao.type, 'complete');
+  const plans = buildWaAiCompletionPlans({
+    allowed_actions: ['solicitar_documentos', 'enviar_documento', 'transferir_atendimento'],
+    action_refs: [],
+  }, { id: playbook.id, bindings: playbook.bindings }, { knownFacts: facts, pendingItems: [] });
+  assert.deepEqual(plans.map(item => item.action), ['solicitar_documentos']);
+});
+
+test('conta: comprovante em outro nome reabre a conversa e leva à declaração', () => {
+  const playbook = WA_AI_PLAYBOOK_CONTA_BLOQUEADA;
+  // O estado logo depois de o sistema ler o comprovante e ver outro nome nele.
+  const base = {
+    nome: 'Ana', tipo_atendimento: 'conta_bloqueada_ou_encerrada',
+    banco_reu: 'Banco X', tipo_ocorrencia: 'encerramento',
+    data_ocorrencia: '01/2026', recebeu_comunicacao: 'não',
+    motivo_informado: 'não informou', situacao_atual: 'encerrada',
+    agencia: 'não informado', conta: 'não informado', tem_print: 'sim',
+    saldo_retido: 'não', aceita_honorarios: 'sim',
+    comprovante_titularidade: 'terceiro',
+    residencia_tipo: 'terceiro_sem_contrato',
+  };
+  const semDeclarante = computeWaAiTriageProgress({ playbook, facts: base, now: HOJE, timeZone: TZ });
+  assert.deepEqual(semDeclarante.missing,
+    ['declarante_nome', 'endereco_residencia', 'declarante_tem_documento']);
+
+  const facts = {
+    ...base, declarante_nome: 'José Silva',
+    endereco_residencia: 'Rua A, 10, Centro, Cuiabá, 78000-000',
+    declarante_tem_documento: 'sim',
+  };
+  const fim = computeWaAiTriageProgress({ playbook, facts, now: HOJE, timeZone: TZ });
+  assert.equal(fim.complete, true);
+
+  // Nesta rota o KIT não é enviado: a pasta vai para quem prepara a declaração.
+  const assistente = {
+    allowed_actions: ['solicitar_documentos', 'enviar_documento', 'transferir_atendimento'],
+    action_refs: [{
+      action: 'transferir_atendimento', target_type: 'department' as const, target_id: 'setor-1',
+      target_label: 'Atendimento', raw: 'ação=transferir(Atendimento)',
+    }],
+  };
+  const pb = { id: playbook.id, bindings: playbook.bindings };
+  const mem = { knownFacts: facts, pendingItems: [] as string[] };
+
+  // Primeiro o sistema pede o documento que ESTA rota exige — o do declarante,
+  // porque não há certidão que prove morar em imóvel de terceiro.
+  const pedido = buildWaAiCompletionPlans(assistente, pb, mem,
+    { documents: 'complete', routeDocuments: 'none', kit: 'none' });
+  assert.deepEqual(pedido.map(item => item.action), ['solicitar_documentos']);
+  assert.deepEqual(pedido[0].args.documentos, ['Documento de identificação com foto do declarante']);
+
+  // E só com ele entregue a pasta vai para quem prepara a declaração.
+  const plans = buildWaAiCompletionPlans(assistente, pb, mem,
+    { documents: 'complete', routeDocuments: 'complete', kit: 'none' });
+  assert.deepEqual(plans.map(item => item.action), ['transferir_atendimento']);
+  assert.match(String(plans[0].args.motivo), /declaração de residência/);
+});
+
+test('conta: cada corte comercial encerra a triagem', () => {
   const playbook = WA_AI_PLAYBOOK_CONTA_BLOQUEADA;
   const cases: [Record<string, string>, string][] = [
+    [{ instituicao_liquidada: 'sim' }, 'instituicao_em_liquidacao'],
     [{ data_ocorrencia: '02/2024' }, 'prazo_2_anos_conta'],
-    [{ aviso_previo: 'sim' }, 'houve_aviso_previo'],
+    [{ recebeu_comunicacao: 'sim', momento_comunicacao: 'anterior_com_acesso_normal' }, 'houve_aviso_previo'],
     [{ tem_print: 'não' }, 'sem_print_conta'],
-    [{ residencia_tipo: 'terceiro_sem_contrato', declarante_tem_documento: 'não' }, 'declarante_sem_documento'],
     [{ aceita_honorarios: 'não' }, 'honorarios_nao_aceitos'],
   ];
   for (const [facts, cut] of cases) {

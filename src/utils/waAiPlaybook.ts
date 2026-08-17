@@ -100,7 +100,8 @@ export const WA_AI_CONTEXT_SEM_REGISTRO: Record<string, unknown> = {
       "prazo",
       "orgao_publico",
       "falta_de_elemento_minimo",
-      "falta_de_prova_e_testemunha"
+      "falta_de_prova_e_testemunha",
+      "honorarios_nao_aceitos"
     ],
 
     "when_closed": {
@@ -482,10 +483,16 @@ export const WA_AI_CONTEXT_SEM_REGISTRO: Record<string, unknown> = {
 export type WaAiFieldType = 'data_mes_ano' | 'bool' | 'enum' | 'numero' | 'hora' | 'texto';
 export type WaAiFactValue = string | number | boolean;
 
-/** Um campo só é perguntado quando a condição vale (saída, se já saiu). */
+/**
+ * Um campo só é perguntado quando a condição vale (saída, se já saiu).
+ *
+ * `value` aceita LISTA porque rotas diferentes desembocam no mesmo documento:
+ * quem mora com companheiro e quem mora em imóvel de terceiro precisam, os
+ * dois, da declaração de residência — e do mesmo declarante.
+ */
 export interface WaAiFieldCondition {
   field: string;
-  value: string;
+  value: string | string[];
 }
 
 export interface WaAiPlaybookField {
@@ -641,22 +648,20 @@ export const WA_AI_PLAYBOOK_SEM_REGISTRO: WaAiPlaybook = {
     'Não diga que a pessoa "tem direito", "vai ganhar" ou que o caso está ganho.',
     'Analise um empregador por vez. Não misture datas, pagamentos, rotina, provas ou testemunhas de empresas diferentes.',
   ],
-  closing: 'Peça os documentos: diga em uma frase que o caso pode ser encaminhado para análise e que '
-    + 'você vai precisar de alguns documentos, que podem ser enviados por ali mesmo. Depois registre '
-    + 'ação=solicitar_documentos(), listando documento de identificação com foto, CTPS Digital e '
-    + 'as provas que a própria pessoa disse possuir. Não invente documentos ou provas que ela não '
-    + 'mencionou.\n'
-    + 'Ela pode mandar os documentos um por vez ou todos juntos. Antes de afirmar que um documento '
-    + 'chegou, está faltando ou já foi enviado, sempre confira por ação=consultar_documentos() — '
-    + 'nunca diga que recebeu algo porque lembra da conversa. Se faltar documento, peça só o que '
-    + 'falta, um item por vez.\n'
-    + 'Quando os documentos possíveis tiverem sido recebidos ou registrados como pendentes, avise em '
-    + 'uma frase curta que vai passar o caso para a equipe e faça '
-    + 'ação=transferir({{destino_triagem_concluida}}).\n'
+  closing: 'A qualificação terminou, as provas já foram pedidas e a pessoa concordou com os '
+    + 'honorários. NÃO peça documento de identificação, CTPS Digital nem qualquer outro documento '
+    + 'pessoal: quem faz isso, quando for o caso, é a equipe depois da análise. O pedido formal das '
+    + 'provas é registrado pelo próprio sistema — não repita ação=solicitar_documentos() por conta '
+    + 'própria.\n'
+    + 'Diga em uma frase curta que vai passar o caso para a equipe analisar e que as provas podem '
+    + 'ser enviadas por ali mesmo, a qualquer momento. Antes de afirmar que uma prova chegou, está '
+    + 'faltando ou já foi enviada, sempre confira por ação=consultar_documentos() — nunca diga que '
+    + 'recebeu algo porque lembra da conversa.\n'
     + 'No resumo escreva, em até 800 caracteres, nesta ordem e sem enfeite:\n'
     + 'Nome | Empresa | Período | Ainda trabalha | Função | Salário aprox. | Dias e horário | '
     + 'CTPS não assinada | Pessoalidade, pagamento, habitualidade e subordinação | Testemunha | '
-    + 'Provas que tem | Provas recebidas | Documentos pendentes | Observações | STATUS: LEAD QUALIFICADO\n'
+    + 'Provas que tem | Provas recebidas | Honorários 40% aceitos | Observações | '
+    + 'STATUS: LEAD QUALIFICADO\n'
     + 'Só escreva LEAD QUALIFICADO com todos estes pontos confirmados ao mesmo tempo: era a própria '
     + 'pessoa que precisava trabalhar; recebia pelo serviço; trabalhava com regularidade, e não de vez '
     + 'em quando; alguém determinava tarefas, horários ou cobrava o serviço; a carteira não foi '
@@ -754,6 +759,19 @@ export const WA_AI_PLAYBOOK_SEM_REGISTRO: WaAiPlaybook = {
       ask: 'se teve outro trabalho sem carteira',
       question: 'Você teve algum outro trabalho sem carteira assinada além desse?',
     },
+    {
+      key: 'envio_provas', label: 'Vai enviar as provas', type: 'bool', required: true,
+      ask: 'se consegue enviar as provas por aqui para o advogado analisar',
+      question: 'Perfeito. Você consegue me enviar essas provas por aqui mesmo, para o advogado '
+        + 'analisar o seu caso?',
+      onlyWhen: { field: 'tem_prova', value: 'sim' },
+    },
+    {
+      key: 'aceita_honorarios', label: 'Aceitou honorários de 40%', type: 'bool', required: true,
+      ask: 'se concorda com os honorários de 40% sobre o êxito',
+      question: 'Sobre os honorários: o escritório recebe 40% sobre o êxito, ou seja, sobre o que '
+        + 'você receber ao final, incluindo o FGTS e o seguro-desemprego. Você está de acordo?',
+    },
   ],
   stages: [
     { id: 'identificacao', label: 'Quem é e para quem trabalhou', fields: ['nome', 'empregador', 'tipo_empregador'] },
@@ -761,6 +779,8 @@ export const WA_AI_PLAYBOOK_SEM_REGISTRO: WaAiPlaybook = {
     { id: 'vinculo', label: 'Como era o trabalho', fields: ['funcao', 'pessoalidade', 'recebia_pagamento', 'pagamento', 'trabalho_regular', 'habitualidade', 'subordinacao'] },
     { id: 'provas', label: 'Provas e testemunhas', fields: ['tem_prova', 'provas', 'tem_testemunha'] },
     { id: 'fechamento', label: 'Fechamento', fields: ['outros_trabalhos'] },
+    { id: 'envio_das_provas', label: 'Envio das provas', fields: ['envio_provas'] },
+    { id: 'honorarios', label: 'Honorários', fields: ['aceita_honorarios'] },
   ],
   cuts: [
     {
@@ -823,6 +843,15 @@ export const WA_AI_PLAYBOOK_SEM_REGISTRO: WaAiPlaybook = {
       guidance: 'Pare a triagem. Não peça documentos pessoais e não trate como lead qualificado. '
         + 'Encerre de forma educada, sem dizer que o caso é fraco ou que falta prova.',
     },
+    {
+      id: 'honorarios_nao_aceitos',
+      rule: { kind: 'field_equals', field: 'aceita_honorarios', values: ['não'] },
+      effect: 'disqualify',
+      reason: 'não concordou com os honorários de 40% sobre o êxito',
+      guidance: 'Respeite a decisão: não pressione, não negocie percentual e não peça documentos. '
+        + 'Agradeça em uma frase, encerre com educação e diga que o escritório fica à disposição '
+        + 'caso ela mude de ideia. Marque STATUS: NÃO QUALIFICADO — HONORÁRIOS NÃO ACEITOS.',
+    },
   ],
 };
 
@@ -845,11 +874,14 @@ export const WA_AI_CONTEXT_CONTA_BLOQUEADA: Record<string, unknown> = {
     agent: { must_follow_playbook: true, may_override_playbook_decision: false },
   },
   document_workflow: {
+    starts_after: 'concordancia_com_os_honorarios',
     essential_documents: [
       'documento_de_identificacao_do_cliente',
       'prova_do_bloqueio_ou_encerramento_em_print',
       'comprovante_de_residencia_aceito_conforme_a_rota',
     ],
+    requested_by: 'backend_deterministico',
+    ai_must_not_request_documents: false,
     residence_routes: {
       own_or_family: 'Aceitar comprovante em nome próprio, esposa, esposo, pai ou mãe.',
       rented_with_contract: 'Na falta de comprovante aceito, coletar contrato de aluguel.',
@@ -865,36 +897,73 @@ export const WA_AI_CONTEXT_CONTA_BLOQUEADA: Record<string, unknown> = {
     },
   },
   commercial_terms: {
-    fees: 'Honorários contratuais de 40% do valor obtido ao final.',
+    fees: 'Honorários contratuais de 40% somente sobre o êxito, calculados sobre o valor efetivamente recebido pelo cliente ao final.',
+    timing: 'Depois de confirmar os critérios da triagem, informar a viabilidade jurídica sem prometer resultado, explicar os honorários e colher a concordância.',
     must_explain_before_acceptance: true,
     may_promise_result: false,
   },
   qualified_lead_sequence: [
-    'solicitar_e_conferir_documentos',
-    'enviar_kit_consumidor',
-    'orientar_reu_com_nome_do_banco',
-    'acompanhar_preenchimento_e_assinatura',
-    'conferir_assinatura_no_sistema',
-    'transferir_somente_depois_de_assinado',
+    'concluir_qualificacao_do_caso',
+    'informar_viabilidade_juridica_sem_prometer_resultado',
+    'explicar_honorarios_de_40_por_cento_sobre_o_exito',
+    'registrar_concordancia_com_os_honorarios',
+    'definir_a_rota_do_comprovante_de_residencia',
+    'solicitar_os_documentos_essenciais_da_rota',
+    'enviar_o_kit_consumidor_quando_os_documentos_estiverem_completos',
+    'transferir_somente_depois_da_assinatura_ou_pela_rota_de_declaracao',
   ],
   followup: {
+    recommended_schedule: '2h, 4h, 8h, 24h, 48h, 7 dias, 10 dias e 14 dias, somente de segunda a sexta, das 08h às 18h de Cuiabá.',
     triage: 'Retomar exatamente a primeira informação ainda pendente.',
-    documents: 'Usar o acompanhamento automático da solicitação de documentos.',
+    documents: 'Usar o acompanhamento automático da solicitação de documentos; não agendar retomada para isso.',
     kit_and_signature: 'Usar os acompanhamentos automáticos do kit e da assinatura.',
     stop_when: ['cliente_responde', 'caso_desqualificado', 'assinatura_concluida', 'transferencia'],
     forbid_duplicate_generic_followup: true,
   },
+  objection_handling: {
+    general_rule: 'Acolher a objeção, responder com transparência em uma mensagem curta e fazer no máximo uma pergunta. Não pressionar nem discutir.',
+    fees: 'Explicar que os 40% incidem somente sobre o valor efetivamente recebido ao final e que, sem êxito financeiro, não há honorários de êxito. Depois perguntar se a pessoa concorda. Só registrar recusa quando ela disser claramente que não aceita.',
+    trust_or_privacy: 'Explicar para que cada informação será usada, não prometer segurança que o sistema não comprovou e oferecer atendimento humano se a pessoa continuar desconfortável.',
+    time_or_result: 'Nunca prometer prazo, indenização ou vitória. Informar que a análise jurídica e os próximos passos serão confirmados pela equipe.',
+    stop: 'Se a pessoa disser claramente que não quer continuar, respeitar, cancelar as retomadas e encerrar sem tentar convencê-la.',
+  },
+  out_of_scope_or_human_transfer: {
+    rule: 'Se a pessoa trouxer outro assunto com possível relevância jurídica, não descarte e não continue forçando as perguntas de conta.',
+    minimum_context: [
+      'o que aconteceu',
+      'quando aconteceu ou em que período',
+      'quem está envolvido ou contra quem é a questão',
+      'o que a pessoa precisa ou espera resolver',
+    ],
+    conversation: 'Colete somente esse contexto mínimo, uma pergunta por vez, sem dar parecer jurídico e sem pedir documentos.',
+    transfer: 'Depois do contexto mínimo, faça ação=transferir_para_humano() com resumo e motivo. Se o assunto não tiver nenhuma relevância jurídica aparente, encerre com educação sem transferir.',
+  },
   global_prohibitions: [
     'nao_dizer_que_o_cliente_vai_ganhar',
-    'nao_afirmar_documento_recebido_sem_consultar_o_sistema',
-    'nao_enviar_kit_antes_dos_documentos_essenciais',
-    'nao_transferir_antes_da_assinatura_salvo_rota_de_declaracao',
+    'nao_anunciar_ao_cliente_que_a_qualificacao_ou_etapa_foi_concluida',
     'nao_inventar_nome_do_banco',
+    'nao_afirmar_documento_recebido_sem_consultar_o_sistema',
+    'nao_pedir_documentos_antes_da_concordancia_com_os_honorarios',
+    'nao_enviar_kit_antes_dos_documentos_essenciais',
+    'nao_mencionar_o_kit_ao_cliente_antes_de_o_sistema_envia_lo',
+    'nao_perguntar_de_quem_e_o_comprovante_antes_de_o_arquivo_chegar',
+    'nao_transferir_antes_da_assinatura_salvo_rota_de_declaracao',
   ],
+  liquidated_institutions: {
+    rule: 'Excluir somente por correspondência segura com a lista; nomes apenas parecidos não bastam.',
+    aliases: [
+      'Banco Master', 'Master', 'Master Investimentos', 'Master Múltiplo', 'Letsbank',
+      'Lets Bank', 'Master Corretora', 'Will Bank', 'Will', 'Willbank', 'Banco Will',
+      'Will Financeira', 'Dank', 'Dank SCD', 'CBSF', 'CBSF DTVM', 'Banco Pleno',
+      'Pleno', 'Pleno DTVM', 'Advanced', 'Advanced Corretora', 'Frente',
+      'Frente Corretora', 'Frente Corretora de Câmbio', 'Creditag',
+    ],
+  },
   action_catalog: {
     kit_consumidor: 'ação=enviar_documento({{modelo_kit_consumidor}})',
     operador_declaracao: 'ação=transferir({{destino_declaracao_residencia}})',
     destino_assinado: 'ação=transferir({{destino_pos_assinatura}})',
+    outro_assunto_juridico: 'ação=transferir_para_humano()',
   },
 };
 
@@ -930,32 +999,69 @@ export const WA_AI_PLAYBOOK_CONTA_BLOQUEADA: WaAiPlaybook = {
     'Uma pergunta por vez e mensagens curtas de WhatsApp.',
     'Use palavras simples. Se a pessoa não entender, dê exemplos e pergunte de outro jeito.',
     'Não repita o que já foi respondido, inclusive quando vier em várias mensagens curtas.',
+    'Nunca pergunte se o atendimento é sobre a conta ou sobre outro assunto: quem chegou aqui veio pela campanha da conta. Só mude de rota se a própria pessoa trouxer outro problema.',
     'Nunca prometa resultado, indenização ou prazo do processo.',
+    'Não diga ao cliente que a qualificação, a triagem ou uma etapa foi concluída.',
+    'Depois de confirmar os critérios, diga que o caso possui viabilidade jurídica para seguir com a análise, sem prometer vitória, indenização ou resultado.',
+    'Na mesma etapa, explique que os honorários contratuais são de 40% sobre o êxito e peça a concordância.',
+    'Ao pedir documentos, escreva UM POR LINHA, cada linha começando com "• ". Nunca emende os documentos numa frase corrida.',
+    'Nunca prometa, anuncie ou cite o KIT CONSUMIDOR antes de o sistema enviá-lo. Ao pedir os documentos, fale só dos documentos.',
     'O banco é o réu: quando o KIT perguntar Réu, oriente a pessoa a escrever o nome do banco informado na triagem.',
-    'Explique com clareza que os honorários contratuais são de 40% do valor obtido ao final.',
+    'Só diga que um documento chegou, foi aprovado ou foi assinado depois de consultar pela ferramenta correspondente.',
+    'Nunca trate e-mail ou mensagem dizendo que a conta já foi bloqueada como aviso prévio. Aviso prévio só existe se a conta ainda funcionava normalmente quando o banco informou que bloquearia ou encerraria depois.',
   ],
-  closing: 'Quando a triagem terminar sem corte, NÃO transfira imediatamente. Primeiro registre '
-    + 'ação=solicitar_documentos() com os documentos essenciais da rota de residência escolhida e '
-    + 'o print do bloqueio ou encerramento. Antes de dizer que chegou, use ação=consultar_documentos().\n'
-    + 'Se a residência for em imóvel de terceiro sem comprovante aceito nem contrato, colete documento '
-    + 'do declarante. Diga que a declaração pode ser escrita numa folha, assinada e enviada por foto. '
-    + 'Depois dos documentos desta rota, transfira para ação=transferir({{destino_declaracao_residencia}}) '
-    + 'preparar a declaração; não envie o KIT automaticamente nessa rota.\n'
-    + 'Nas demais rotas, somente quando TODOS os documentos essenciais estiverem aprovados, envie '
-    + 'ação=enviar_documento({{modelo_kit_consumidor}}). Na mensagem, explique que no campo Réu deve '
-    + 'colocar o nome do banco. O acompanhamento do preenchimento e da assinatura é automático.\n'
-    + 'Nunca confie apenas em “assinei”: confirme por ação=consultar_assinatura(). Somente quando o '
-    + 'sistema retornar assinado, avise que recebeu e faça ação=transferir({{destino_pos_assinatura}}) '
-    + 'com resumo dos fatos, saldo retido, documentos e honorários aceitos.',
+  closing: 'Se `tipo_atendimento=outro_assunto_juridico`, ignore todo o fechamento bancário abaixo: '
+    + 'colete apenas o contexto mínimo do outro assunto e faça ação=transferir_para_humano(), sem pedir '
+    + 'documentos.\n'
+    + 'Na rota bancária, quando os critérios estiverem confirmados, informe que o caso possui '
+    + 'viabilidade jurídica para seguir com a análise, sem apresentar isso como garantia de resultado, '
+    + 'explique que os honorários são de 40% somente sobre o valor efetivamente recebido ao final e '
+    + 'pergunte se a pessoa entendeu e concorda.\n'
+    + 'Depois do aceite, é o SISTEMA que registra sozinho a ação=solicitar_documentos() — você NÃO '
+    + 'deve chamar essa ferramenta e não deve inventar outra lista. Sua única tarefa aqui é escrever a '
+    + 'mensagem que apresenta os documentos ao cliente, UM POR LINHA, cada linha começando com "• ", '
+    + 'dizendo que ele pode mandar um de cada vez por aqui mesmo. NÃO cite o KIT nem prometa nenhum '
+    + 'passo seguinte nessa mensagem. Antes de dizer que algo chegou, use ação=consultar_documentos().\n'
+    + 'De quem é o comprovante de residência, você NÃO pergunta: quem lê isso é o sistema, no arquivo '
+    + 'que a pessoa enviar. Só quando ele avisar que o nome é de outra pessoa é que a pergunta sobre '
+    + 'parentesco ou contrato de aluguel aparece para você fazer.\n'
+    + 'Na rota de imóvel de terceiro sem contrato, diga que a declaração pode ser escrita numa folha, '
+    + 'assinada e enviada por foto; o sistema transfere para ação=transferir({{destino_declaracao_residencia}}) '
+    + 'e o KIT não é enviado nessa rota.\n'
+    + 'Nas demais rotas, quando os documentos essenciais estiverem completos, o sistema envia '
+    + 'ação=enviar_documento({{modelo_kit_consumidor}}) com a orientação do campo Réu. O acompanhamento '
+    + 'do preenchimento e da assinatura é automático. Nunca confie apenas em “assinei”: confirme por '
+    + 'ação=consultar_assinatura(). Só depois de o sistema retornar assinado vem '
+    + 'ação=transferir({{destino_pos_assinatura}}) com resumo dos fatos, saldo retido, documentos e '
+    + 'honorários aceitos.',
   fields: [
     {
       key: 'nome', label: 'Nome', type: 'texto', required: true, ask: 'o nome do cliente',
       question: 'Para começar, qual é o seu nome?',
     },
     {
+      // NUNCA perguntado — e é por isso que não tem `question` nem `required`.
+      // Quem chega aqui veio de uma campanha sobre conta bloqueada: perguntar
+      // "seu atendimento é sobre conta ou sobre outra coisa?" soa deslocado e
+      // ainda sugere à pessoa que talvez ela esteja no lugar errado. O valor é
+      // IDENTIFICADO pela fase de extração a partir do que ela conta, e vazio
+      // já significa a rota bancária (ver `campoVale`).
+      key: 'tipo_atendimento', label: 'Tipo de atendimento', type: 'enum',
+      options: ['conta_bloqueada_ou_encerrada', 'outro_assunto_juridico', 'sem_relevancia_juridica'],
+      required: false,
+      ask: 'identificado pelo relato, sem perguntar: deixe vazio enquanto a conversa for sobre a conta '
+        + 'bloqueada ou encerrada; marque outro_assunto_juridico quando a pessoa trouxer, por conta '
+        + 'própria, um problema diferente com possível relevância jurídica; marque '
+        + 'sem_relevancia_juridica quando o assunto que ela trouxer não tiver questão jurídica nenhuma',
+    },
+    {
       key: 'banco_reu', label: 'Banco (réu)', type: 'texto', required: true,
       ask: 'o nome do banco que bloqueou ou encerrou a conta',
       question: 'Qual é o nome do banco que bloqueou ou encerrou sua conta?',
+    },
+    {
+      key: 'instituicao_liquidada', label: 'Instituição na lista de liquidação', type: 'bool', required: false,
+      ask: 'se o banco corresponde com segurança à lista interna de instituições em liquidação',
     },
     {
       key: 'tipo_ocorrencia', label: 'O que aconteceu', type: 'enum',
@@ -969,14 +1075,36 @@ export const WA_AI_PLAYBOOK_CONTA_BLOQUEADA: WaAiPlaybook = {
       question: 'Em que mês e ano isso aconteceu?',
     },
     {
-      key: 'aviso_previo', label: 'Recebeu aviso prévio', type: 'bool', required: true,
-      ask: 'se o banco avisou antes que bloquearia ou encerraria a conta',
-      question: 'Antes disso acontecer, o banco avisou que bloquearia ou encerraria a conta?',
+      key: 'recebeu_comunicacao', label: 'Recebeu comunicação', type: 'bool', required: true,
+      ask: 'se recebeu e-mail, SMS, notificação ou outra mensagem do banco sobre o bloqueio ou encerramento',
+      question: 'O banco enviou algum e-mail, SMS, notificação ou outra mensagem sobre o bloqueio ou encerramento?',
     },
     {
-      key: 'tem_print', label: 'Tem print do problema', type: 'bool', required: true,
-      ask: 'se tem print, e-mail ou tela mostrando o bloqueio ou encerramento',
-      question: 'Você tem algum print, e-mail ou tela do aplicativo mostrando o bloqueio ou encerramento?',
+      key: 'tipo_comunicacao', label: 'Tipo de comunicação', type: 'texto', required: true,
+      ask: 'qual foi o tipo de comunicação recebida',
+      question: 'Essa comunicação chegou por e-mail, SMS, notificação do aplicativo ou outro meio?',
+      onlyWhen: { field: 'recebeu_comunicacao', value: 'sim' },
+    },
+    {
+      key: 'momento_comunicacao', label: 'Momento da comunicação', type: 'enum',
+      options: ['anterior_com_acesso_normal', 'simultaneo', 'posterior'], required: true,
+      ask: 'se a comunicação chegou antes, enquanto a conta ainda funcionava, no mesmo momento ou depois da restrição',
+      question: 'Quando essa comunicação chegou, sua conta ainda funcionava normalmente ou ela já estava bloqueada ou encerrada?',
+      onlyWhen: { field: 'recebeu_comunicacao', value: 'sim' },
+    },
+    {
+      key: 'aviso_previo', label: 'Verdadeiro aviso prévio', type: 'bool', required: false,
+      ask: 'se houve comunicação anterior enquanto a conta ainda funcionava normalmente',
+    },
+    {
+      key: 'motivo_informado', label: 'Motivo informado pelo banco', type: 'texto', required: true,
+      ask: 'o motivo que o banco informou, ou que não informou motivo',
+      question: 'O banco informou algum motivo para o bloqueio ou encerramento?',
+    },
+    {
+      key: 'situacao_atual', label: 'Situação atual da conta', type: 'texto', required: true,
+      ask: 'se a conta continua restrita ou se o acesso já foi liberado',
+      question: 'A conta continua bloqueada ou encerrada, ou o banco já liberou o acesso?',
     },
     {
       key: 'saldo_retido', label: 'Tem saldo retido', type: 'bool', required: true,
@@ -990,49 +1118,130 @@ export const WA_AI_PLAYBOOK_CONTA_BLOQUEADA: WaAiPlaybook = {
       onlyWhen: { field: 'saldo_retido', value: 'sim' },
     },
     {
-      key: 'residencia_tipo', label: 'Comprovante de residência', type: 'enum',
-      options: ['proprio', 'familiar', 'aluguel_com_contrato', 'terceiro_sem_contrato'], required: true,
-      ask: 'qual documento consegue usar para comprovar a residência',
-      question: 'O comprovante de residência está no seu nome, no nome de esposa, esposo, pai ou mãe, você tem contrato de aluguel, ou não tem nenhum desses?',
+      key: 'agencia', label: 'Agência', type: 'texto', required: true,
+      ask: 'o número da agência, aceitando “não informado” sem insistir',
+      question: 'Você sabe me informar o número da agência dessa conta?',
+    },
+    {
+      key: 'conta', label: 'Conta', type: 'texto', required: true,
+      ask: 'o número da conta, aceitando “não informado” sem insistir',
+      question: 'E o número da conta, você sabe informar?',
+    },
+    {
+      key: 'tem_print', label: 'Tem prova mínima', type: 'bool', required: true,
+      ask: 'se consegue apresentar print do aplicativo ou da comunicação mostrando o bloqueio ou encerramento',
+      // Pede a prova em vez de perguntar se ela existe. Quem manda o print aqui
+      // não perde o arquivo: a triagem documental segura a mídia por 30 minutos
+      // esperando a solicitação aparecer (`NO_REQUEST_GRACE_MS`), e depois casa
+      // as duas. Uma pergunta a menos e um documento a mais.
+      question: 'Você tem um print do aplicativo ou da mensagem mostrando o bloqueio ou encerramento? Se tiver, pode mandar aqui agora mesmo.',
+    },
+    {
+      key: 'aceita_honorarios', label: 'Aceitou honorários de 40% sobre o êxito', type: 'bool', required: true,
+      ask: 'se entendeu e concorda com honorários de 40% somente sobre o valor que efetivamente receber ao final',
+      question: 'Pelas informações que você apresentou, seu caso possui viabilidade jurídica para seguirmos com a análise. Isso não é garantia de resultado. Os honorários do escritório são de 40% sobre o êxito, ou seja, somente sobre o valor que você efetivamente receber ao final. Você entendeu e está de acordo?',
+    },
+    {
+      key: 'comprovante_titularidade', label: 'Titularidade do comprovante', type: 'enum',
+      options: ['proprio', 'terceiro'], required: false,
+      ask: 'de quem é o nome que aparece no comprovante de residência enviado',
+    },
+    {
+      // NÃO é mais a primeira pergunta da etapa: agora ela só existe quando o
+      // comprovante JÁ CHEGOU e o nome nele não é o do cliente. Perguntar antes
+      // era pedir que a pessoa lembrasse de cor o que o documento diz — e ela
+      // erra, de boa-fé. Quem responde isto agora é o próprio arquivo.
+      // Cada rota exige um documento diferente, e é por isso que elas são
+      // separadas: cônjuge se prova com certidão de casamento, companheiro não
+      // tem certidão nenhuma e cai na declaração de residência, e pai ou mãe
+      // não precisa de prova adicional. Juntar tudo em "familiar" mandaria o
+      // caso de união estável seguir sem documento que sustente o endereço.
+      key: 'residencia_tipo', label: 'Vínculo com o titular do comprovante', type: 'enum',
+      // 'proprio' NÃO está aqui, e a ausência é a trava: este campo só existe
+      // quando o sistema JÁ LEU o comprovante e o nome não é o do cliente.
+      // Deixar a opção disponível permitia ao modelo desfazer, por extração do
+      // histórico, o que o documento tinha acabado de provar — foi o que
+      // aconteceu em 14/08/2026, quando um "tá no meu nome mesmo" dito antes
+      // do envio sobrescreveu a leitura da conta de água.
+      options: ['pai_ou_mae', 'conjuge', 'companheiro', 'aluguel_com_contrato', 'terceiro_sem_contrato'],
+      required: true,
+      ask: 'qual é o vínculo com quem aparece no comprovante, ou se há contrato de aluguel',
+      question: 'Vi que o comprovante está em outro nome. Essa pessoa é seu pai ou sua mãe, seu marido ou sua esposa, seu companheiro ou companheira? Se não for nenhum desses, você tem contrato de aluguel no seu nome?',
+      onlyWhen: { field: 'comprovante_titularidade', value: 'terceiro' },
     },
     {
       key: 'titular_comprovante', label: 'Titular do comprovante', type: 'texto', required: true,
-      ask: 'o nome e o parentesco de quem aparece no comprovante',
-      question: 'Qual é o nome dessa pessoa e qual é o parentesco dela com você?',
-      onlyWhen: { field: 'residencia_tipo', value: 'familiar' },
+      ask: 'o nome de quem aparece no comprovante',
+      question: 'Qual é o nome completo dessa pessoa?',
+      onlyWhen: { field: 'residencia_tipo', value: ['pai_ou_mae', 'conjuge'] },
     },
     {
       key: 'declarante_nome', label: 'Nome do declarante', type: 'texto', required: true,
       ask: 'o nome completo da pessoa que declarará a residência',
       question: 'Qual é o nome completo da pessoa que pode declarar que você mora nesse endereço?',
-      onlyWhen: { field: 'residencia_tipo', value: 'terceiro_sem_contrato' },
+      onlyWhen: { field: 'residencia_tipo', value: ['terceiro_sem_contrato', 'companheiro'] },
     },
     {
       key: 'endereco_residencia', label: 'Endereço completo', type: 'texto', required: true,
       ask: 'o endereço completo para a declaração de residência',
       question: 'Qual é o endereço completo, com rua, número, bairro, cidade e CEP?',
-      onlyWhen: { field: 'residencia_tipo', value: 'terceiro_sem_contrato' },
+      onlyWhen: { field: 'residencia_tipo', value: ['terceiro_sem_contrato', 'companheiro'] },
     },
     {
       key: 'declarante_tem_documento', label: 'Documento do declarante', type: 'bool', required: true,
       ask: 'se o declarante consegue enviar foto do documento de identificação',
       question: 'Essa pessoa consegue mandar uma foto do documento de identificação dela?',
-      onlyWhen: { field: 'residencia_tipo', value: 'terceiro_sem_contrato' },
+      onlyWhen: { field: 'residencia_tipo', value: ['terceiro_sem_contrato', 'companheiro'] },
     },
     {
-      key: 'aceita_honorarios', label: 'Aceitou honorários de 40%', type: 'bool', required: true,
-      ask: 'se entendeu e concorda com os honorários de 40% do valor obtido ao final',
-      question: 'Os honorários do escritório são de 40% do valor obtido ao final. Você entendeu e está de acordo?',
+      key: 'assunto_juridico_relato', label: 'Relato do outro assunto jurídico', type: 'texto', required: true,
+      ask: 'o que aconteceu no outro assunto com possível relevância jurídica',
+      question: 'Entendi. Pode me contar, de forma resumida, o que aconteceu?',
+      onlyWhen: { field: 'tipo_atendimento', value: 'outro_assunto_juridico' },
+    },
+    {
+      key: 'assunto_juridico_periodo', label: 'Período do outro assunto', type: 'texto', required: true,
+      ask: 'quando o outro problema aconteceu ou em que período ocorreu',
+      question: 'Quando isso aconteceu ou em que período vem acontecendo?',
+      onlyWhen: { field: 'tipo_atendimento', value: 'outro_assunto_juridico' },
+    },
+    {
+      key: 'assunto_juridico_envolvidos', label: 'Envolvidos no outro assunto', type: 'texto', required: true,
+      ask: 'quem está envolvido ou contra quem é a questão',
+      question: 'Quem está envolvido nessa situação ou contra quem seria a questão?',
+      onlyWhen: { field: 'tipo_atendimento', value: 'outro_assunto_juridico' },
+    },
+    {
+      key: 'assunto_juridico_objetivo', label: 'Objetivo no outro assunto', type: 'texto', required: true,
+      ask: 'o que a pessoa precisa ou espera resolver',
+      question: 'E o que você precisa ou espera conseguir resolver com essa situação?',
+      onlyWhen: { field: 'tipo_atendimento', value: 'outro_assunto_juridico' },
     },
   ],
   stages: [
-    { id: 'identificacao', label: 'Cliente e banco', fields: ['nome', 'banco_reu'] },
-    { id: 'ocorrencia', label: 'Bloqueio ou encerramento', fields: ['tipo_ocorrencia', 'data_ocorrencia', 'aviso_previo', 'tem_print'] },
-    { id: 'saldo', label: 'Saldo retido', fields: ['saldo_retido', 'valor_saldo'] },
-    { id: 'residencia', label: 'Documento de residência', fields: ['residencia_tipo', 'titular_comprovante', 'declarante_nome', 'endereco_residencia', 'declarante_tem_documento'] },
-    { id: 'honorarios', label: 'Honorários', fields: ['aceita_honorarios'] },
+    { id: 'identificacao', label: 'Cliente e banco', fields: ['nome', 'tipo_atendimento', 'banco_reu'] },
+    { id: 'ocorrencia', label: 'Bloqueio ou encerramento', fields: ['tipo_ocorrencia', 'data_ocorrencia', 'recebeu_comunicacao', 'tipo_comunicacao', 'momento_comunicacao', 'motivo_informado', 'situacao_atual'] },
+    { id: 'conta', label: 'Dados da conta e prova mínima', fields: ['saldo_retido', 'valor_saldo', 'agencia', 'conta', 'tem_print'] },
+    { id: 'honorarios', label: 'Honorários após a qualificação', fields: ['aceita_honorarios'] },
+    { id: 'residencia', label: 'Comprovante em outro nome', fields: ['residencia_tipo', 'titular_comprovante', 'declarante_nome', 'endereco_residencia', 'declarante_tem_documento'] },
+    { id: 'outro_assunto_juridico', label: 'Contexto mínimo para encaminhamento jurídico', fields: ['assunto_juridico_relato', 'assunto_juridico_periodo', 'assunto_juridico_envolvidos', 'assunto_juridico_objetivo'] },
   ],
   cuts: [
+    {
+      id: 'assunto_sem_relevancia_juridica',
+      rule: { kind: 'field_equals', field: 'tipo_atendimento', values: ['sem_relevancia_juridica'] },
+      effect: 'disqualify',
+      reason: 'o relato informado não apresenta questão jurídica aparente',
+      guidance: 'Explique com educação que este canal é destinado a questões jurídicas e encerre sem pedir dados ou documentos. Não faça parecer sobre o assunto.',
+    },
+    {
+      id: 'instituicao_em_liquidacao',
+      rule: { kind: 'field_equals', field: 'instituicao_liquidada', values: ['sim'] },
+      effect: 'disqualify',
+      reason: 'instituição consta da lista segura de exclusão por liquidação',
+      guidance: 'Pare a triagem imediatamente. Responda apenas que essa instituição não se enquadra '
+        + 'neste atendimento específico do escritório. Não explique FGC ou a liquidação e não peça outros dados.',
+    },
     {
       id: 'prazo_2_anos_conta',
       rule: { kind: 'older_than', field: 'data_ocorrencia', years: 2 },
@@ -1043,10 +1252,11 @@ export const WA_AI_PLAYBOOK_CONTA_BLOQUEADA: WaAiPlaybook = {
     },
     {
       id: 'houve_aviso_previo',
-      rule: { kind: 'field_equals', field: 'aviso_previo', values: ['sim'] },
+      rule: { kind: 'field_equals', field: 'momento_comunicacao', values: ['anterior_com_acesso_normal'] },
       effect: 'disqualify',
-      reason: 'o banco informou previamente o bloqueio ou encerramento',
-      guidance: 'Pare a triagem. Explique sem parecer jurídico que esta campanha atende situações '
+      reason: 'o banco comunicou antes e a conta ainda funcionava normalmente',
+      guidance: 'Pare a triagem somente porque ficou claro que o aviso veio antes e a conta ainda '
+        + 'funcionava normalmente. Explique sem parecer jurídico que esta campanha atende situações '
         + 'sem aviso prévio e que o relato ficou fora dos critérios desta triagem.',
     },
     {
@@ -1058,19 +1268,19 @@ export const WA_AI_PLAYBOOK_CONTA_BLOQUEADA: WaAiPlaybook = {
         + 'a pessoa a obter essa imagem e voltar ao atendimento; não peça documentos pessoais agora.',
     },
     {
+      id: 'honorarios_nao_aceitos',
+      rule: { kind: 'field_equals', field: 'aceita_honorarios', values: ['não'] },
+      effect: 'disqualify',
+      reason: 'não concordou com os honorários contratuais informados',
+      guidance: 'Respeite a decisão, não tente pressionar e encerre de forma educada. Não peça documentos.',
+    },
+    {
       id: 'declarante_sem_documento',
       rule: { kind: 'field_equals', field: 'declarante_tem_documento', values: ['não'] },
       effect: 'disqualify',
       reason: 'declarante não consegue fornecer documento de identificação',
       guidance: 'Explique que o documento do declarante é essencial para preparar a declaração e '
         + 'oriente a pessoa a retornar quando conseguir a foto do documento.',
-    },
-    {
-      id: 'honorarios_nao_aceitos',
-      rule: { kind: 'field_equals', field: 'aceita_honorarios', values: ['não'] },
-      effect: 'disqualify',
-      reason: 'não concordou com os honorários contratuais informados',
-      guidance: 'Respeite a decisão, não tente pressionar e encerre de forma educada. Não peça documentos.',
     },
   ],
 };
@@ -1181,9 +1391,15 @@ function hojeNoFuso(agora: Date, timeZone: string): { ano: number; mes: number }
  */
 function maisVelhoQue(valor: string, anos: number, agora: Date, timeZone: string): boolean {
   const data = lerMesAno(valor);
-  if (!data) return false;
   const hoje = hojeNoFuso(agora, timeZone);
   const corte = { ano: hoje.ano - anos, mes: hoje.mes };
+  // Na campanha de conta, o ano isolado basta quando está claramente dentro
+  // ou fora da janela. Só o ano exatamente no limite continua precisando do
+  // mês. Assim “foi agora, em 2026” não vira uma pergunta repetida, enquanto
+  // “foi em 2024” não é aprovado no chute em agosto de 2026.
+  const anoParcial = /^(?:19|20)\d{2}$/.test(valor) ? Number(valor) : null;
+  if (!data && anoParcial !== null) return anoParcial < corte.ano;
+  if (!data) return false;
   return data.ano < corte.ano || (data.ano === corte.ano && data.mes < corte.mes);
 }
 
@@ -1206,9 +1422,23 @@ export function normalizeWaAiPlaybookValue(field: WaAiPlaybookField, value: unkn
   const bruto = String(value ?? '').replace(/\s+/g, ' ').trim();
   if (!bruto) return WA_AI_VAZIO;
 
+  if (field.key === 'nome') {
+    // A primeira mensagem de campanha costuma ser só “Oi”. Como `nome` é
+    // texto livre, antes essa saudação passava pela normalização e fazia o
+    // roteiro saltar direto para o banco. Nome precisa continuar pendente até
+    // aparecer algo que não seja apenas cumprimento ou cortesia.
+    const candidato = simples(bruto).replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
+    if (/^(?:oi+|oie+|ola+|opa|e ai|bom dia|boa tarde|boa noite)(?: tudo bem)?$/.test(candidato)
+      || /^(?:tudo bem|como vai|bom|bem)$/.test(candidato)) return WA_AI_VAZIO;
+  }
+
   if (field.type === 'data_mes_ano') {
     const data = lerMesAno(bruto);
-    return data ? `${String(data.mes).padStart(2, '0')}/${data.ano}` : WA_AI_VAZIO;
+    if (data) return `${String(data.mes).padStart(2, '0')}/${data.ano}`;
+    // Somente a ocorrência bancária aceita precisão anual. Início e saída de
+    // vínculo continuam exigindo mês/ano, porque usam a data em outras regras.
+    if (field.key === 'data_ocorrencia' && /^(?:19|20)\d{2}$/.test(bruto)) return bruto;
+    return WA_AI_VAZIO;
   }
 
   if (field.type === 'bool') {
@@ -1290,11 +1520,45 @@ export function waAiPlaybookFieldKeys(playbook: WaAiPlaybook): string[] {
 
 /** O campo está em jogo neste momento? (`saida` só existe para quem já saiu.) */
 function campoVale(playbook: WaAiPlaybook, field: WaAiPlaybookField, facts: Record<string, unknown>): boolean {
+  if (playbook.id === 'bloqueio_encerramento_conta') {
+    const rota = simples(facts.tipo_atendimento);
+    const campoOutroAssunto = field.key.startsWith('assunto_juridico_');
+    if (rota === 'outro_assunto_juridico') {
+      // A troca de assunto é uma bifurcação real do roteiro. Sem esta trava, o
+      // motor determinístico continuaria perguntando banco, conta e saldo antes
+      // de deixar a IA coletar o contexto jurídico para o atendente.
+      return field.key === 'nome' || field.key === 'tipo_atendimento' || campoOutroAssunto;
+    }
+    if (rota === 'sem_relevancia_juridica') {
+      return field.key === 'nome' || field.key === 'tipo_atendimento';
+    }
+    if (campoOutroAssunto) return false;
+  }
+  return waAiPlaybookOnlyWhenSatisfied(playbook, field, facts);
+}
+
+/**
+ * A dependência `onlyWhen` deste campo está satisfeita?
+ *
+ * EXPORTADA porque duas partes do sistema precisam da MESMA leitura, e uma
+ * delas a reimplementou errado. `onlyWhen.value` aceita lista — é assim que a
+ * rota de residência declara `['pai_ou_mae', 'conjuge']` —, e a versão de fora
+ * comparava com `String(value)`, que para uma lista devolve
+ * "pai_ou_mae,conjuge". Nunca era igual a "pai_ou_mae", então o campo
+ * `titular_comprovante` era APAGADO dos fatos a cada turno enquanto o motor de
+ * etapas, que lê certo, tornava a perguntar. O cliente respondia, a resposta
+ * sumia, a pergunta voltava (14/08/2026, conversa 358ea6b3, 23:17).
+ */
+export function waAiPlaybookOnlyWhenSatisfied(
+  playbook: WaAiPlaybook, field: WaAiPlaybookField, facts: Record<string, unknown>,
+): boolean {
   if (!field.onlyWhen) return true;
   const dono = waAiPlaybookField(playbook, field.onlyWhen.field);
   if (!dono) return true;
   const atual = normalizeWaAiPlaybookValue(dono, facts[dono.key]);
-  return atual !== WA_AI_VAZIO && simples(atual) === simples(field.onlyWhen.value);
+  if (atual === WA_AI_VAZIO) return false;
+  const aceitos = Array.isArray(field.onlyWhen.value) ? field.onlyWhen.value : [field.onlyWhen.value];
+  return aceitos.some(valor => simples(atual) === simples(valor));
 }
 
 /** O valor guardado, já validado contra o tipo. Vazio = não respondido. */
@@ -1328,6 +1592,10 @@ export function evaluateWaAiCuts(
   agora: Date,
   timeZone: string,
 ): WaAiTriageCut | null {
+  // Outro assunto possivelmente jurídico tem sua própria coleta mínima e não
+  // pode herdar um corte antigo da rota bancária guardado na memória.
+  if (playbook.id === 'bloqueio_encerramento_conta'
+    && simples(facts.tipo_atendimento) === 'outro_assunto_juridico') return null;
   for (const cut of playbook.cuts) {
     if (!disparou(playbook, cut.rule, facts, agora, timeZone)) continue;
     return { id: cut.id, effect: cut.effect, reason: cut.reason, guidance: cut.guidance };
@@ -1396,9 +1664,21 @@ export type WaAiTriageNextAction =
   | { type: 'complete'; guidance: string }
   | { type: 'none'; reason: string };
 
+/** Ano citado sem mês na resposta mais recente, ou nada quando a data já veio completa. */
+function anoParcialDaOcorrencia(text: string | null | undefined): string | null {
+  const value = simples(text || '');
+  if (!value) return null;
+  const years = value.match(/\b(?:19|20)\d{2}\b/g) || [];
+  if (years.length !== 1) return null;
+  if (new RegExp(`\\b(?:${NOMES_DE_MES})\\b`).test(value)) return null;
+  if (/\b(?:0?[1-9]|1[0-2])[\/.-](?:19|20)\d{2}\b/.test(value)) return null;
+  return years[0];
+}
+
 /** A próxima ação é projeção do estado; o modelo nunca a escolhe. */
 export function computeWaAiTriageNextAction(
   playbook: WaAiPlaybook, progress: WaAiTriageProgress,
+  latestCustomerText?: string | null,
 ): WaAiTriageNextAction {
   if (progress.cut) {
     return {
@@ -1414,9 +1694,14 @@ export function computeWaAiTriageNextAction(
   if (progress.nextField) {
     const field = waAiPlaybookField(playbook, progress.nextField);
     if (field) {
+      const anoParcial = field.key === 'data_ocorrencia'
+        ? anoParcialDaOcorrencia(latestCustomerText)
+        : null;
       return {
         type: 'ask_field', field: field.key,
-        question: String(field.question || field.ask || field.label).trim(),
+        question: anoParcial
+          ? `Entendi que foi em ${anoParcial}. Você lembra pelo menos em qual mês aconteceu?`
+          : String(field.question || field.ask || field.label).trim(),
       };
     }
   }
@@ -1458,7 +1743,13 @@ export function computeWaAiTriageProgress(input: {
       const field = waAiPlaybookField(playbook, key);
       if (!field || !field.required) continue;
       if (!campoVale(playbook, field, facts)) continue;
-      if (valorDoCampo(field, facts)) continue;
+      const valor = valorDoCampo(field, facts);
+      if (valor) {
+        const anoParcialNoLimite = field.key === 'data_ocorrencia'
+          && /^(?:19|20)\d{2}$/.test(valor)
+          && Number(valor) === hojeNoFuso(agora, timeZone).ano - 2;
+        if (!anoParcialNoLimite) continue;
+      }
       if (!stage) stage = etapa;
       missing.push(field.key);
       if (pending.indexOf(field.ask) === -1) pending.push(field.ask);
@@ -1487,7 +1778,12 @@ export interface WaAiTriageSchema {
 function descricaoDoCampo(field: WaAiPlaybookField): string {
   const base = `${field.label}: ${field.ask}.`;
   if (field.type === 'data_mes_ano') return `${base} Formato MM/AAAA.`;
-  if (field.onlyWhen) return `${base} Só se aplica quando ${field.onlyWhen.field} = ${field.onlyWhen.value}.`;
+  if (field.onlyWhen) {
+    const valores = Array.isArray(field.onlyWhen.value)
+      ? field.onlyWhen.value.join(' ou ')
+      : field.onlyWhen.value;
+    return `${base} Só se aplica quando ${field.onlyWhen.field} = ${valores}.`;
+  }
   return base;
 }
 
@@ -1558,9 +1854,27 @@ export function buildWaAiTriageExtractionSchema(playbook: WaAiPlaybook): WaAiTri
   };
 }
 
-/** Contrato da SEGUNDA fase: o estado já foi decidido; resta escrever. */
-export function buildWaAiTriageConversationSchema(playbook: WaAiPlaybook): WaAiTriageSchema {
+/**
+ * Contrato da SEGUNDA fase: o estado já foi decidido; resta escrever.
+ *
+ * `expectedField` FECHA o `enum` de `campo_alvo` no único valor que o backend
+ * já decidiu — a chave quando a ação é `ask_field`, vazio nas demais. Não é
+ * rigor decorativo: enquanto a lista ficou aberta, o gpt-4.1-mini devolveu o
+ * campo errado (ou nenhum) em cerca de um terço dos turnos de 14/08/2026, e
+ * cada uma dessas vezes o cliente recebeu a pergunta crua do roteiro no lugar
+ * da frase que o modelo tinha acabado de escrever. Com um valor só no enum, o
+ * modo estrito do provedor torna o erro impossível em vez de detectável.
+ *
+ * Sem `expectedField` (o simulador antes de conhecer a próxima ação) a lista
+ * continua aberta, e a checagem de `validateReplyForAction` segue valendo.
+ */
+export function buildWaAiTriageConversationSchema(
+  playbook: WaAiPlaybook, expectedField?: string | null,
+): WaAiTriageSchema {
   const keys = waAiPlaybookFieldKeys(playbook);
+  const alvo = expectedField === undefined
+    ? [WA_AI_VAZIO, ...keys]
+    : [expectedField && keys.indexOf(expectedField) !== -1 ? expectedField : WA_AI_VAZIO];
   return {
     name: 'resposta_triagem',
     strict: true,
@@ -1573,7 +1887,7 @@ export function buildWaAiTriageConversationSchema(playbook: WaAiPlaybook): WaAiT
           description: 'Mensagem curta e natural em português do Brasil, com no máximo uma pergunta.',
         },
         campo_alvo: {
-          type: 'string', enum: [WA_AI_VAZIO, ...keys],
+          type: 'string', enum: alvo,
           description: 'Campo determinado pelo sistema que a mensagem pergunta; vazio sem pergunta.',
         },
       },
@@ -1658,6 +1972,7 @@ export function buildWaAiTriageSchema(playbook: WaAiPlaybook): WaAiTriageSchema 
  */
 export function waAiPlaybookPromptBlock(
   playbook: WaAiPlaybook, progress: WaAiTriageProgress,
+  nextAction?: WaAiTriageNextAction | null,
 ): string {
   const linhas: string[] = ['# Roteiro da triagem'];
 
@@ -1686,10 +2001,13 @@ export function waAiPlaybookPromptBlock(
   // diferente de listar exemplos e torcer para o modelo achar o certo: ele erra
   // menos quando não precisa escolher.
   const proximo = progress.nextField ? waAiPlaybookField(playbook, progress.nextField) : null;
-  if (proximo?.question) {
+  const pergunta = nextAction?.type === 'ask_field' && nextAction.field === proximo?.key
+    ? nextAction.question
+    : proximo?.question;
+  if (pergunta) {
     linhas.push('', 'A pergunta desta vez é esta, e ela já está escrita do jeito que o cliente entende. '
       + 'Use estas palavras, mudando só o necessário para encaixar no que ele acabou de dizer:',
-      `"${proximo.question}"`);
+      `"${pergunta}"`);
   }
 
   return linhas.join('\n');
@@ -1810,11 +2128,14 @@ export function normalizeWaAiPlaybook(raw: unknown): WaAiPlaybook | null {
 
   // Atualiza automaticamente o roteiro estrutural antigo desta campanha. Os
   // primeiros agentes materializados tinham 14 campos, não perguntavam função
-  // nem outro trabalho e deixavam pagamento/regularidade em texto livre. Sem
-  // esta migração de leitura, salvar a tela nova não corrigiria o agente que já
-  // está no banco. Contexto e destinos escolhidos pelo escritório permanecem.
+  // nem outro trabalho e deixavam pagamento/regularidade em texto livre; depois
+  // vieram o pedido das provas e os honorários, que precisam vir ANTES da
+  // transferência. Sem esta migração de leitura, salvar a tela nova não
+  // corrigiria o agente que já está no banco. Contexto e destinos escolhidos
+  // pelo escritório permanecem.
   const rawFields = Array.isArray(src.fields) ? src.fields : [];
-  const oldSemRegistro = isSemRegistro && !['funcao', 'recebia_pagamento', 'trabalho_regular']
+  const oldSemRegistro = isSemRegistro
+    && !['funcao', 'recebia_pagamento', 'trabalho_regular', 'envio_provas', 'aceita_honorarios']
     .every(key => rawFields.some(item => item && typeof item === 'object'
       && chaveNormalizada((item as Record<string, unknown>).key) === key));
   if (oldSemRegistro) {
@@ -1828,10 +2149,23 @@ export function normalizeWaAiPlaybook(raw: unknown): WaAiPlaybook | null {
       bindings: src.bindings ?? WA_AI_PLAYBOOK_SEM_REGISTRO.bindings,
     };
   }
-  const oldContaBloqueada = isContaBloqueada && !['banco_reu', 'data_ocorrencia', 'residencia_tipo', 'aceita_honorarios']
+  // A campanha de conta tem DUAS gerações antigas no banco: a que ainda não
+  // tinha a bifurcação de assunto nem os dados da conta, e a que perdeu a etapa
+  // de residência quando o fechamento virou transferência direta. As duas são
+  // reconhecidas pela mesma pergunta — falta alguma chave da versão atual? —
+  // em vez de por uma lista de sintomas que envelhece a cada mudança.
+  //
+  // Os DESTINOS escolhidos pelo escritório sobrevivem à migração: reescrever
+  // `bindings` aqui apagaria o KIT e os setores que o administrador já
+  // selecionou na tela, e o fechamento voltaria a não ter para onde ir.
+  const oldContaBloqueada = isContaBloqueada
+    && !['banco_reu', 'recebeu_comunicacao', 'momento_comunicacao', 'motivo_informado',
+      'situacao_atual', 'agencia', 'conta', 'aceita_honorarios',
+      'residencia_tipo', 'declarante_tem_documento']
     .every(key => rawFields.some(item => item && typeof item === 'object'
       && chaveNormalizada((item as Record<string, unknown>).key) === key));
   if (oldContaBloqueada) {
+    const guardados = Array.isArray(src.bindings) ? src.bindings : [];
     src = {
       ...src,
       opening: WA_AI_PLAYBOOK_CONTA_BLOQUEADA.opening,
@@ -1840,8 +2174,8 @@ export function normalizeWaAiPlaybook(raw: unknown): WaAiPlaybook | null {
       fields: WA_AI_PLAYBOOK_CONTA_BLOQUEADA.fields,
       stages: WA_AI_PLAYBOOK_CONTA_BLOQUEADA.stages,
       cuts: WA_AI_PLAYBOOK_CONTA_BLOQUEADA.cuts,
-      context: src.context ?? WA_AI_CONTEXT_CONTA_BLOQUEADA,
-      bindings: src.bindings ?? WA_AI_PLAYBOOK_CONTA_BLOQUEADA.bindings,
+      context: WA_AI_CONTEXT_CONTA_BLOQUEADA,
+      bindings: guardados.length > 0 ? guardados : WA_AI_PLAYBOOK_CONTA_BLOQUEADA.bindings,
     };
   }
 
@@ -1873,8 +2207,16 @@ export function normalizeWaAiPlaybook(raw: unknown): WaAiPlaybook | null {
     const ask = textoAparado(f.ask) || label;
 
     const cond = (f.onlyWhen && typeof f.onlyWhen === 'object') ? f.onlyWhen as Record<string, unknown> : null;
-    const onlyWhen = cond && chaveNormalizada(cond.field) && textoAparado(cond.value, 60)
-      ? { field: chaveNormalizada(cond.field), value: textoAparado(cond.value, 60) }
+    // O JSON do editor pode trazer um valor ou vários; os dois viram a mesma
+    // condição, e a lista vazia é descartada junto com a condição inteira.
+    const condValores = Array.isArray(cond?.value)
+      ? (cond!.value as unknown[]).map(item => textoAparado(item, 60)).filter(Boolean)
+      : [textoAparado(cond?.value, 60)].filter(Boolean);
+    const onlyWhen = cond && chaveNormalizada(cond.field) && condValores.length > 0
+      ? {
+          field: chaveNormalizada(cond.field),
+          value: condValores.length === 1 ? condValores[0] : condValores,
+        }
       : undefined;
 
     // A pergunta é a única coisa daqui que vai INTEIRA para o cliente, então

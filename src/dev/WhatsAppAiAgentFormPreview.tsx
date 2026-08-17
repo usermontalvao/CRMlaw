@@ -139,6 +139,12 @@ const runTurnDublê = async (input: {
     text: message.text,
     at: new Date(Date.now() - (input.messages.length - index) * 1000).toISOString(),
   }));
+  // A primeira fala é a resposta à campanha, não a resposta à primeira
+  // pergunta do roteiro: essa pergunta ainda nem foi feita. Sem esse corte,
+  // uma abertura humana como "Oi, vi o anúncio sobre conta encerrada" virava o
+  // nome do cliente e a prévia pulava direto para o banco.
+  const firstClientTurn = input.messages.filter(message => message.role === 'cliente').length === 1
+    && !input.messages.some(message => message.role === 'agente');
   const reconciled = reconcileWaAiTriageState({
     knownFacts: before,
     pendingItems: input.memory?.pendingItems || [],
@@ -151,7 +157,8 @@ const runTurnDublê = async (input: {
   // suficiente; datas, sim/não e listas continuam passando pelos mesmos
   // normalizadores e extratores determinísticos do motor real.
   const greetingOnly = /^(oi+e*|ol[aá]|bom dia|boa tarde|boa noite|tudo bem)[!?. ]*$/i.test(lastInbound);
-  if (!followup && prior.nextField && lastInbound && !(prior.nextField === 'nome' && greetingOnly)) {
+  if (!followup && !firstClientTurn && prior.nextField && lastInbound
+    && !(prior.nextField === 'nome' && greetingOnly)) {
     const field = waAiPlaybookField(playbook, prior.nextField);
     if (field && (facts[field.key] === undefined || facts[field.key] === '')) {
       const normalized = normalizeWaAiPlaybookValue(field, lastInbound);
@@ -201,7 +208,7 @@ const runTurnDublê = async (input: {
       : waAiPlaybookField(playbook, progress.nextField || '')?.question;
     reply = followup
       ? `Olá${facts.nome ? `, ${String(facts.nome).split(' ')[0]}` : ''}! Ficou faltando só esta informação: ${question}`
-      : (greetingOnly && Object.keys(before).length === 0
+      : (firstClientTurn || (greetingOnly && Object.keys(before).length === 0)
         ? `${playbook.opening || question || 'Como posso ajudar?'}`
         : `${lastInbound && prior.nextField === progress.nextField ? 'Sem problema, vou perguntar de outro jeito. ' : ''}${question || 'Pode me contar um pouco mais?'}`);
   }
