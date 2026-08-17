@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { contarPrazoDaIntimacao } from "../_shared/intimation-deadline.ts";
 
 /**
  * analyze-intimations — Edge Function
@@ -35,9 +36,20 @@ const SYSTEM_PROMPT = `Você é um assistente jurídico. Analise a intimação e
 }
 Critérios de urgência: critica = prazo <= 2 dias; alta = prazo <= 5 dias; media = prazo <= 15 dias; baixa = prazo > 15 dias ou sem prazo.`;
 
-function addDays(baseIso: string, days: number): string {
-  const base = new Date(baseIso);
-  return new Date(base.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+/**
+ * Feriados forenses, para a contagem pular o que o fórum não abre.
+ *
+ * Falha aqui não derruba a análise: sem feriados a conta ainda acerta fim de
+ * semana, que já é o grosso. Melhor uma data um dia otimista do que nenhuma.
+ */
+async function carregarFeriados(supabase: any): Promise<Set<string>> {
+  try {
+    const { data, error } = await supabase.from("holidays").select("date");
+    if (error || !data) return new Set<string>();
+    return new Set<string>(data.map((h: { date: string }) => String(h.date).slice(0, 10)));
+  } catch {
+    return new Set<string>();
+  }
 }
 
 function parseJson(content: string): AnalysisResult | null {
@@ -209,6 +221,8 @@ Deno.serve(async (_req: Request) => {
       .select("user_id")
       .eq("is_active", true);
 
+    const feriados = await carregarFeriados(supabase);
+
     let analyzed = 0;
     let notified = 0;
 
@@ -227,7 +241,11 @@ Deno.serve(async (_req: Request) => {
       const analyzedAt = new Date().toISOString();
       const deadlineDays = typeof analysis.deadline?.days === "number" ? analysis.deadline.days : null;
       const baseDateIso = (intimation.data_disponibilizacao || analyzedAt) as string;
-      const deadlineDueDate = deadlineDays ? addDays(baseDateIso, deadlineDays) : null;
+      // Dias ÚTEIS pela regra do CPC. Antes eram dias CORRIDOS sobre a data de
+      // disponibilização, o que encurtava todo prazo — num de 30 dias, ~14 dias
+      // a menos que a conta certa.
+      const contagem = contarPrazoDaIntimacao(baseDateIso, deadlineDays, feriados);
+      const deadlineDueDate = contagem ? `${contagem.vencimento}T00:00:00.000Z` : null;
 
       const { error: saveError } = await supabase.from("intimation_ai_analysis").insert({
         intimation_id: intimation.id,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   contarPrazoDaIntimacao,
   dataDePublicacao,
@@ -16,6 +17,14 @@ const FERIADOS = ['2026-09-07', '2026-10-12', '2026-11-02', '2026-11-15'];
 
 const diaDaSemana = (dia: string) =>
   ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'][new Date(`${dia}T00:00:00Z`).getUTCDay()];
+
+test('o espelho em supabase/functions/_shared é idêntico byte a byte', () => {
+  const src = readFileSync(new URL('./intimationDeadline.ts', import.meta.url), 'utf8');
+  const espelho = readFileSync(
+    new URL('../../supabase/functions/_shared/intimation-deadline.ts', import.meta.url), 'utf8');
+  assert.equal(espelho, src,
+    'intimation-deadline.ts divergiu de intimationDeadline.ts — copie o arquivo inteiro');
+});
 
 // ── O defeito que originou o módulo ──────────────────────────────────────────
 

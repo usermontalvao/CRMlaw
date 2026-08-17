@@ -1307,8 +1307,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       label: 'Resumo Geral',
       description: 'Status do cron e indicadores',
       icon: <Sparkles className="w-4 h-4" />,
-      bg: 'bg-amber-50',
-      text: 'text-amber-700',
+      bg: 'bg-[#f8f7f5]',
+      text: 'text-[#031636]',
       target: overviewSectionRef,
     },
     {
@@ -1316,8 +1316,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       label: 'Configurações',
       description: 'Token externo e preferências',
       icon: <FileCog className="w-4 h-4" />,
-      bg: 'bg-emerald-50',
-      text: 'text-emerald-700',
+      bg: 'bg-[#f8f7f5]',
+      text: 'text-[#031636]',
       target: configSectionRef,
     },
     {
@@ -1325,8 +1325,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       label: 'Filtros & Agrupamento',
       description: 'Controle de visualização e busca',
       icon: <Filter className="w-4 h-4" />,
-      bg: 'bg-blue-50',
-      text: 'text-blue-700',
+      bg: 'bg-[#f8f7f5]',
+      text: 'text-[#031636]',
       target: filterSectionRef,
     },
     {
@@ -1334,8 +1334,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       label: 'Lista de Intimações',
       description: 'Gerencie comunicações e ações',
       icon: <FileText className="w-4 h-4" />,
-      bg: 'bg-purple-50',
-      text: 'text-purple-700',
+      bg: 'bg-[#f8f7f5]',
+      text: 'text-[#031636]',
       target: listSectionRef,
     },
   ];
@@ -1484,18 +1484,18 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     : null;
 
   const getStatusBadgeClass = (status?: string | null) => {
-    if (!status) return 'bg-slate-100 text-slate-600';
+    if (!status) return 'bg-white text-slate-600 border border-[#e7e5df]';
     const normalized = status.toLowerCase();
     if (['success', 'completed', 'ok'].some((tag) => normalized.includes(tag))) {
-      return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+      return 'bg-white text-emerald-700 border border-emerald-300';
     }
     if (['error', 'failed'].some((tag) => normalized.includes(tag))) {
-      return 'bg-red-100 text-red-700';
+      return 'bg-white text-red-700 border border-red-300';
     }
     if (['running', 'processing', 'partial'].some((tag) => normalized.includes(tag))) {
-      return 'bg-amber-100 text-amber-700';
+      return 'bg-[#f8f7f5] text-slate-600 border border-[#e7e5df]';
     }
-    return 'bg-slate-100 text-slate-600';
+    return 'bg-white text-slate-600 border border-[#e7e5df]';
   };
 
   // Criar prazo a partir da intimação
@@ -1608,13 +1608,15 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   // ── helpers de urgência ──────────────────────────────────────────────
   // Detecta resultado do julgamento a partir do resumo da IA.
   // A leitura mora em src/utils/intimationOutcome.ts (puro e testado); aqui só as cores.
+  // Ganhou / perdeu / no meio. Sem preenchimento: o selo informa, não grita —
+  // quem grita é a urgência, e só ela.
   const outcomeStyles: Record<IntimationOutcomeKind, string> = {
-    procedente:       'bg-emerald-50 text-emerald-700 border-emerald-300',
-    improcedente:     'bg-red-50 text-red-700 border-red-300',
-    parcial:          'bg-amber-50 text-amber-700 border-amber-300',
-    tutela_concedida: 'bg-violet-50 text-violet-700 border-violet-300',
-    tutela_negada:    'bg-red-50 text-red-700 border-red-300',
-    condenacao:       'bg-red-50 text-red-700 border-red-300',
+    procedente:       'bg-white text-emerald-700 border-emerald-300',
+    improcedente:     'bg-white text-red-700 border-red-300',
+    parcial:          'bg-white text-slate-700 border-[#d8d5cd]',
+    tutela_concedida: 'bg-white text-emerald-700 border-emerald-300',
+    tutela_negada:    'bg-white text-red-700 border-red-300',
+    condenacao:       'bg-white text-red-700 border-red-300',
   };
 
   const detectOutcome = (summary?: string): { label: string; cls: string } | null => {
@@ -1654,19 +1656,22 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
     badge: string;
     onClick: (intimation: DjenComunicacaoLocal) => void;
   }> = {
-    prazo:      { icon: Clock,         cls: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',       badge: 'Prazo',       onClick: (i) => handleCreateDeadline(i) },
-    audiencia:  { icon: CalendarIcon,  cls: 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100',   badge: 'Audiência',   onClick: (i) => handleCreateAppointment(i) },
-    pagamento:  { icon: Banknote,      cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100', badge: 'Pagamento',  onClick: (_i) => onNavigateToModule?.('financeiro') },
-    vinculo:    { icon: Link2,         cls: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100',            badge: 'Vínculo',     onClick: (i) => handleOpenLinkModal(i) },
-    prescricao: { icon: ShieldAlert,   cls: 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100',   badge: 'Prescrição',  onClick: (i) => handleOpenPrescriptionModal(i) },
-    info:       { icon: Lightbulb,     cls: 'bg-slate-50 text-slate-600 border-[#e7e5df] hover:bg-slate-100',       badge: '',            onClick: (_i) => {} },
+    prazo:      { icon: Clock,         cls: 'bg-white text-slate-700 border-[#e7e5df] hover:bg-[#f8f7f5]',       badge: 'Prazo',       onClick: (i) => handleCreateDeadline(i) },
+    audiencia:  { icon: CalendarIcon,  cls: 'bg-white text-slate-700 border-[#e7e5df] hover:bg-[#f8f7f5]',   badge: 'Audiência',   onClick: (i) => handleCreateAppointment(i) },
+    pagamento:  { icon: Banknote,      cls: 'bg-white text-slate-700 border-[#e7e5df] hover:bg-[#f8f7f5]', badge: 'Pagamento',  onClick: (_i) => onNavigateToModule?.('financeiro') },
+    vinculo:    { icon: Link2,         cls: 'bg-white text-slate-700 border-[#e7e5df] hover:bg-[#f8f7f5]',            badge: 'Vínculo',     onClick: (i) => handleOpenLinkModal(i) },
+    prescricao: { icon: ShieldAlert,   cls: 'bg-white text-slate-700 border-[#e7e5df] hover:bg-[#f8f7f5]',   badge: 'Prescrição',  onClick: (i) => handleOpenPrescriptionModal(i) },
+    info:       { icon: Lightbulb,     cls: 'bg-white text-slate-700 border-[#e7e5df] hover:bg-[#f8f7f5]',       badge: '',            onClick: (_i) => {} },
   };
 
+  // Uma cor só, em intensidades: vermelho responde "isto exige ação minha?".
+  // Laranja e âmbar saíram daqui — eram cor sem pergunta, e competiam com o
+  // âmbar dos botões e o âmbar do prazo.
   const urgencyConfig = {
-    critica: { border: 'border-l-red-500',    dot: 'bg-red-500',    badge: 'bg-red-50 text-red-700 border-red-300',          label: 'Crítica' },
-    alta:    { border: 'border-l-orange-400', dot: 'bg-orange-400', badge: 'bg-orange-50 text-orange-700 border-orange-300', label: 'Alta' },
-    media:   { border: 'border-l-amber-300',  dot: 'bg-amber-400',  badge: 'bg-amber-50 text-amber-700 border-amber-200',    label: 'Média' },
-    baixa:   { border: 'border-l-slate-200',  dot: 'bg-slate-300',  badge: 'bg-slate-50 text-slate-500 border-[#e7e5df]',    label: 'Baixa' },
+    critica: { border: 'border-l-red-600',       dot: 'bg-red-600',    badge: 'bg-red-600 text-white border-red-600',        label: 'Crítica' },
+    alta:    { border: 'border-l-red-300',       dot: 'bg-red-400',    badge: 'bg-white text-red-700 border-red-300',        label: 'Alta' },
+    media:   { border: 'border-l-slate-200',     dot: 'bg-slate-400',  badge: 'bg-white text-slate-600 border-[#d8d5cd]',    label: 'Média' },
+    baixa:   { border: 'border-l-transparent',   dot: 'bg-slate-300',  badge: 'bg-white text-slate-400 border-[#e7e5df]',    label: 'Baixa' },
   };
 
   // ── highlight text using AI passages + light structural markers ──────
@@ -1702,16 +1707,16 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   return (
     <div>
-      <div className="rounded-xl overflow-hidden border border-[#e7e5df] bg-[#f8f7f5]">
+      <div className="rounded-none overflow-hidden border border-[#e7e5df] bg-[#f8f7f5]">
 
-        {/* Branding header — Material Design 3 (primary #031636, tertiary-fixed-dim #ffb783) */}
+        {/* Cabeçalho — cor da marca (#031636) para ação; o resto é neutro. */}
         <div className="px-5 py-4 border-b border-[#e7e5df] flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-11 h-11 rounded-lg bg-[#ffb783] flex items-center justify-center flex-shrink-0">
-              <Gavel className="w-5 h-5 text-[#482100]" fill="currentColor" />
+            <div className="w-9 h-9 border border-[#e7e5df] bg-white flex items-center justify-center flex-shrink-0">
+              <Gavel className="w-4 h-4 text-[#031636]" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-[18px] font-semibold text-[#031636] leading-tight tracking-tight">Diário de Justiça Eletrônico</h2>
+              <h2 className="text-[15px] font-semibold text-[#031636] leading-tight tracking-tight">Diário de Justiça Eletrônico</h2>
               <div className="flex items-center gap-3 mt-1">
                 <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#105ac0]">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#105ac0]" />
@@ -1731,10 +1736,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Buscar processo, parte..."
-                className="w-64 bg-white border border-slate-300 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#105ac0] focus:border-[#105ac0] transition" />
+                className="w-64 bg-white border border-slate-300 rounded-[2px] pl-9 pr-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#105ac0] focus:border-[#105ac0] transition" />
             </div>
             <button onClick={handleSync} disabled={syncing}
-              className="inline-flex items-center gap-2 bg-[#E67E22] hover:bg-[#D26F1B] text-white text-sm font-semibold px-5 py-2 rounded-lg transition disabled:opacity-50 shadow-sm">
+              className="inline-flex items-center gap-2 bg-[#031636] hover:bg-[#0a2b5c] text-white text-[13px] font-medium px-4 py-2 rounded-[2px] transition disabled:opacity-50">
               {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
               <span className="hidden sm:inline">{syncing ? 'Sincronizando...' : 'Sincronizar'}</span>
             </button>
@@ -1747,7 +1752,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Buscar processo, parte..."
-              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#105ac0] focus:border-[#105ac0] transition" />
+              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-[2px] text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#105ac0] focus:border-[#105ac0] transition" />
           </div>
         </div>
 
@@ -1772,11 +1777,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   }`}
                 >
                   {tab.label}
-                  <span className={`text-[10px] tabular-nums font-bold px-1.5 py-0.5 rounded ${
+                  <span className={`text-[10px] tabular-nums font-bold px-1.5 py-0.5 rounded-[2px] ${
                     active && tab.highlight && tab.count > 0
-                      ? 'bg-[#ffdcc5] text-[#301400]'
+                      ? 'bg-[#031636] text-white'
                       : active
-                        ? 'bg-slate-100 text-slate-600'
+                        ? 'bg-white text-slate-600 border border-[#e7e5df]'
                         : 'text-slate-400'
                   }`}>
                     {tab.count}
@@ -1793,7 +1798,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               <div className="relative">
                 <button
                   onClick={() => { setMobileControlsExpanded(!mobileControlsExpanded); setShowClearMenu(false); setShowExportMenu(false); setShowSettingsMenu(false); }}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[2px] text-xs font-semibold border transition ${
                     mobileControlsExpanded || tribunalFilter !== 'all' || dateFilter !== '30days' || urgencyFilter !== 'all' || groupByProcess || showFilters || selectionMode
                       ? 'bg-[#031636] text-white border-[#031636]'
                       : 'bg-[#f8f7f5] text-slate-700 border-slate-300 hover:bg-slate-50'
@@ -1802,19 +1807,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   <Filter className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Filtros</span>
                   {(tribunalFilter !== 'all' || dateFilter !== '30days' || urgencyFilter !== 'all' || groupByProcess) && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 flex-shrink-0" />
                   )}
                 </button>
 
                 {mobileControlsExpanded && (
-                  <div className="absolute right-0 mt-1.5 w-72 bg-white rounded-xl shadow-2xl border border-[#e7e5df] z-50 p-4 space-y-3">
+                  <div className="absolute right-0 mt-1.5 w-72 bg-white rounded-none shadow-2xl border border-[#e7e5df] z-50 p-4 space-y-3">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Filtros avançados</p>
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Tribunal</label>
                         <select value={tribunalFilter} onChange={(e) => setTribunalFilter(e.target.value)}
-                          className="w-full px-2 py-1.5 border border-[#e7e5df] rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-[#f8f7f5]">
+                          className="w-full px-2 py-1.5 border border-[#e7e5df] rounded-[2px] text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 bg-[#f8f7f5]">
                           <option value="all">Todos</option>
                           {availableTribunals.map((t) => <option key={t} value={t}>{t}</option>)}
                         </select>
@@ -1822,7 +1827,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       <div>
                         <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Período</label>
                         <select value={dateFilter} onChange={(e) => setDateFilter(e.target.value as any)}
-                          className="w-full px-2 py-1.5 border border-[#e7e5df] rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-[#f8f7f5]">
+                          className="w-full px-2 py-1.5 border border-[#e7e5df] rounded-[2px] text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 bg-[#f8f7f5]">
                           <option value="30days">30 dias</option>
                           <option value="60days">60 dias</option>
                           <option value="90days">90 dias</option>
@@ -1841,8 +1846,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           { key: 'baixa' as const, label: 'Baixa' },
                         ]).map(c => (
                           <button key={c.key} onClick={() => setUrgencyFilter(c.key)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
-                              urgencyFilter === c.key ? 'bg-amber-500 text-white border-amber-500' : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-slate-300'
+                            className={`px-2.5 py-1 rounded-[2px] text-xs font-semibold border transition ${
+                              urgencyFilter === c.key ? 'bg-[#031636] text-white border-[#031636]' : 'bg-[#f8f7f5] text-slate-600 border-[#e7e5df] hover:border-slate-300'
                             }`}>{c.label}</button>
                         ))}
                       </div>
@@ -1851,19 +1856,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
                       <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                         <input type="checkbox" checked={groupByProcess} onChange={(e) => setGroupByProcess(e.target.checked)}
-                          className="rounded border-slate-300 accent-amber-500" />
+                          className="rounded-[2px] border-slate-300 accent-[#031636]" />
                         <Layers className="w-3.5 h-3.5 text-slate-400" />
                         Agrupar por processo
                       </label>
                       <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                         <input type="checkbox" checked={selectionMode}
                           onChange={(e) => { setSelectionMode(e.target.checked); if (!e.target.checked) clearSelectedIds(); }}
-                          className="rounded border-slate-300 accent-amber-500" />
+                          className="rounded-[2px] border-slate-300 accent-[#031636]" />
                         Modo seleção múltipla
                       </label>
                       <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                         <input type="checkbox" checked={showFilters} onChange={(e) => setShowFilters(e.target.checked)}
-                          className="rounded border-slate-300 accent-amber-500" />
+                          className="rounded-[2px] border-slate-300 accent-[#031636]" />
                         Filtrar por data personalizada
                       </label>
                     </div>
@@ -1873,12 +1878,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         <div>
                           <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">De</label>
                           <input type="date" value={customDateStart} onChange={(e) => setCustomDateStart(e.target.value)}
-                            className="w-full px-2 py-1.5 border border-[#e7e5df] rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                            className="w-full px-2 py-1.5 border border-[#e7e5df] rounded-[2px] text-xs focus:outline-none focus:ring-2 focus:ring-slate-300" />
                         </div>
                         <div>
                           <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Até</label>
                           <input type="date" value={customDateEnd} onChange={(e) => setCustomDateEnd(e.target.value)}
-                            className="w-full px-2 py-1.5 border border-[#e7e5df] rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                            className="w-full px-2 py-1.5 border border-[#e7e5df] rounded-[2px] text-xs focus:outline-none focus:ring-2 focus:ring-slate-300" />
                         </div>
                       </div>
                     )}
@@ -1898,11 +1903,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               <div className="relative">
                 <button onClick={() => { setShowClearMenu(!showClearMenu); setShowExportMenu(false); setShowSettingsMenu(false); setMobileControlsExpanded(false); }}
                   disabled={syncing}
-                  className="p-1.5 rounded-lg border border-[#e7e5df] text-slate-500 hover:bg-white hover:border-slate-300 bg-white/70 transition disabled:opacity-40" title="Limpar">
+                  className="p-1.5 rounded-[2px] border border-[#e7e5df] text-slate-500 hover:bg-white hover:border-slate-300 bg-white/70 transition disabled:opacity-40" title="Limpar">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
                 {showClearMenu && (
-                  <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-[#e7e5df] z-50 py-1 text-sm text-slate-700">
+                  <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-none shadow-xl border border-[#e7e5df] z-50 py-1 text-sm text-slate-700">
                     <button onClick={handleDeleteSelected} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2">
                       <CheckCircle className="w-4 h-4 text-slate-400" /> Remover selecionadas
                     </button>
@@ -1925,11 +1930,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               <div className="relative">
                 <button onClick={() => { setShowExportMenu(!showExportMenu); setShowClearMenu(false); setShowSettingsMenu(false); setMobileControlsExpanded(false); }}
                   disabled={filteredIntimations.length === 0}
-                  className="p-1.5 rounded-lg border border-[#e7e5df] text-slate-500 hover:bg-white hover:border-slate-300 bg-white/70 transition disabled:opacity-40" title="Exportar">
+                  className="p-1.5 rounded-[2px] border border-[#e7e5df] text-slate-500 hover:bg-white hover:border-slate-300 bg-white/70 transition disabled:opacity-40" title="Exportar">
                   <Download className="w-3.5 h-3.5" />
                 </button>
                 {showExportMenu && (
-                  <div className="absolute right-0 mt-1.5 w-36 bg-white rounded-xl shadow-xl border border-[#e7e5df] z-50 py-1 text-sm text-slate-700">
+                  <div className="absolute right-0 mt-1.5 w-36 bg-white rounded-none shadow-xl border border-[#e7e5df] z-50 py-1 text-sm text-slate-700">
                     <button onClick={handleExportCSV} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2"><FileText className="w-4 h-4 text-slate-400" /> CSV</button>
                     <button onClick={handleExportExcel} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2"><FileText className="w-4 h-4 text-slate-400" /> Excel</button>
                     <button onClick={handleExportPDF} className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2"><FileText className="w-4 h-4 text-slate-400" /> PDF</button>
@@ -1940,23 +1945,23 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               {/* Config */}
               <div className="relative">
                 <button onClick={() => { setShowSettingsMenu(!showSettingsMenu); setShowClearMenu(false); setShowExportMenu(false); setMobileControlsExpanded(false); }}
-                  className="p-1.5 rounded-lg border border-[#e7e5df] text-slate-500 hover:bg-white hover:border-slate-300 bg-white/70 transition" title="Configurações">
+                  className="p-1.5 rounded-[2px] border border-[#e7e5df] text-slate-500 hover:bg-white hover:border-slate-300 bg-white/70 transition" title="Configurações">
                   <Settings className="w-3.5 h-3.5" />
                 </button>
                 {showSettingsMenu && (
-                  <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-xl shadow-xl border border-[#e7e5df] z-50 p-4 space-y-3">
+                  <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-none shadow-xl border border-[#e7e5df] z-50 p-4 space-y-3">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Configurações</p>
                     <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                       <input type="checkbox" checked={moduleSettings.defaultGroupByProcess}
                         onChange={(e) => { setModuleSettings((prev) => ({ ...prev, defaultGroupByProcess: e.target.checked })); setGroupByProcess(e.target.checked); }}
-                        className="rounded border-slate-300 accent-amber-500" />
+                        className="rounded-[2px] border-slate-300 accent-[#031636]" />
                       Agrupar por processo (padrão)
                     </label>
                     <div className="pt-2 border-t border-slate-100">
                       <label className="block text-xs font-medium text-slate-600 mb-1">Filtro padrão</label>
                       <select value={moduleSettings.defaultStatusFilter}
                         onChange={(e) => { const v = e.target.value as 'all' | 'unread' | 'read'; setModuleSettings((prev) => ({ ...prev, defaultStatusFilter: v })); }}
-                        className="w-full px-2 py-1.5 border border-[#e7e5df] rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300 bg-[#f8f7f5]">
+                        className="w-full px-2 py-1.5 border border-[#e7e5df] rounded-[2px] text-xs focus:outline-none focus:ring-2 focus:ring-slate-300 bg-[#f8f7f5]">
                         <option value="all">Todas</option>
                         <option value="unread">Não lidas</option>
                         <option value="read">Lidas</option>
@@ -1971,7 +1976,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
         {/* ── LOADING BANNER ── */}
         {loading && hasCompletedInitialLoad && (
-          <div className="flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-50 border-b border-amber-100 px-4 sm:px-5 py-1.5">
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-600 bg-[#f8f7f5] border-b border-[#e7e5df] px-4 sm:px-5 py-1.5">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
             Atualizando em segundo plano...
           </div>
@@ -1979,29 +1984,29 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
         {/* ── SELECTION TOOLBAR ── */}
         {selectionMode && selectedIds.size > 0 && (
-          <div className="bg-amber-50 border-b border-amber-100 px-4 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm text-amber-800">
-              <strong className="text-amber-900">{selectedIds.size}</strong> selecionada(s)
+          <div className="bg-[#f8f7f5] border-b border-[#e7e5df] px-4 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm text-slate-600">
+              <strong className="text-[#031636]">{selectedIds.size}</strong> selecionada(s)
             </span>
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={handleMarkSelectedAsRead}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition border border-[#e7e5df]">
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-[2px] transition border border-[#e7e5df]">
                 <CheckCircle className="w-3.5 h-3.5 text-slate-400" /> Marcar lidas
               </button>
               <button onClick={handleBatchLink}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition border border-[#e7e5df]">
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-[2px] transition border border-[#e7e5df]">
                 <Link2 className="w-3.5 h-3.5 text-slate-400" /> Vincular
               </button>
               <button onClick={handleExportSelected}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg transition border border-[#e7e5df]">
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-[2px] transition border border-[#e7e5df]">
                 <Download className="w-3.5 h-3.5 text-slate-400" /> Exportar
               </button>
               <button onClick={handleDeleteSelected}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#f8f7f5] hover:bg-red-50 text-red-600 text-xs font-semibold rounded-lg transition border border-red-200">
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#f8f7f5] hover:bg-red-50 text-red-600 text-xs font-semibold rounded-[2px] transition border border-red-200">
                 <Trash2 className="w-3.5 h-3.5" /> Remover
               </button>
               <button onClick={disableSelectionMode}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-transparent hover:bg-slate-200 text-slate-500 text-xs font-semibold rounded-lg transition">
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-transparent hover:bg-slate-200 text-slate-500 text-xs font-semibold rounded-[2px] transition">
                 <X className="w-3.5 h-3.5" /> Cancelar
               </button>
             </div>
@@ -2013,8 +2018,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           {filteredIntimations.length === 0 ? (
 
             /* Empty state */
-            <div className="bg-[#f8f7f5] rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-10 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+            <div className="bg-[#f8f7f5] rounded-none shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] p-10 text-center">
+              <div className="w-16 h-16 rounded-none bg-slate-100 flex items-center justify-center mx-auto mb-4">
                 <Bell className="w-8 h-8 text-slate-300" />
               </div>
               <h4 className="text-base font-semibold text-slate-900 mb-1">Nenhuma intimação encontrada</h4>
@@ -2030,7 +2035,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               {statusFilter === 'unread' && totalUnreadAllTime > 0 && (
                 <button
                   onClick={handleMarkAllAsRead}
-                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium transition"
+                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-[2px] bg-[#031636] hover:bg-[#0a2b5c] text-white text-sm font-medium transition"
                 >
                   <CheckCircle className="w-4 h-4" />
                   Marcar todas as {totalUnreadAllTime} como lidas
@@ -2042,12 +2047,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
             /* ── GROUPED VIEW ── */
             Array.from(groupedByProcess.entries()).map(([processNum, group]) => (
-              <div key={processNum} className="bg-[#f8f7f5] rounded-xl overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] hover:shadow-md transition-shadow">
+              <div key={processNum} className="bg-[#f8f7f5] rounded-none overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.05)] ring-1 ring-black/[0.04] hover:shadow-md transition-shadow">
 
                 {/* Group header */}
                 <div className="px-4 sm:px-5 py-3 flex items-center justify-between gap-3 border-b border-slate-100">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+                    <div className="w-7 h-7 rounded-[2px] bg-slate-100 flex items-center justify-center flex-shrink-0">
                       <FileText className="w-3.5 h-3.5 text-slate-400" />
                     </div>
                     <div className="min-w-0">
@@ -2055,7 +2060,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         <button
                           type="button"
                           onClick={(event) => openLinkedProcess(event, group[0])}
-                          className="block max-w-full truncate text-left text-slate-900 hover:text-blue-700 hover:underline underline-offset-2 font-mono font-bold text-sm leading-tight transition-colors cursor-pointer"
+                          className="block max-w-full truncate text-left text-slate-900 hover:text-[#105ac0] hover:underline underline-offset-2 font-mono font-bold text-sm leading-tight transition-colors cursor-pointer"
                           title="Abrir detalhes do processo"
                         >
                           {processNum}
@@ -2070,7 +2075,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {group.filter((i) => !i.lida).length > 0 ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-[2px] text-[10px] font-bold bg-[#f8f7f5] text-slate-600 border border-[#e7e5df]">
                         {group.filter((i) => !i.lida).length} não lida{group.filter((i) => !i.lida).length !== 1 ? 's' : ''}
                       </span>
                     ) : (
@@ -2083,7 +2088,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                             await handleMarkAsRead(int.id);
                           }
                         }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg text-[11px] font-semibold transition"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-[2px] text-[11px] font-semibold transition"
                       >
                         <CheckCircle className="w-3 h-3" />
                         <span className="hidden sm:inline">Marcar todas</span>
@@ -2123,7 +2128,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 checked={selectedIds.has(intimation.id)}
                                 onChange={() => toggleSelectedId(intimation.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="mt-1 w-4 h-4 accent-amber-500 border-slate-300 rounded flex-shrink-0"
+                                className="mt-1 w-4 h-4 accent-[#031636] border-slate-300 rounded-[2px] flex-shrink-0"
                               />
                             )}
                             <div className="flex-shrink-0 mt-1.5">
@@ -2135,11 +2140,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               {/* Top row: tribunal + tipo + right: urgency + date + chevron */}
                               <div className="flex items-center justify-between gap-2 mb-1.5">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 flex-shrink-0">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-[2px] text-[10px] font-bold bg-slate-100 text-slate-600 flex-shrink-0">
                                     {intimation.sigla_tribunal}
                                   </span>
                                   {sig && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 flex-shrink-0">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[2px] text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 flex-shrink-0">
                                       <ShieldAlert className="w-3 h-3" /> SIGILOSO · consultar autos
                                     </span>
                                   )}
@@ -2154,7 +2159,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 </div>
                                 <div className="flex items-center gap-2 flex-shrink-0">
                                   {analysis && (
-                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-[2px] text-[10px] font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
                                       <Sparkles className="w-2.5 h-2.5" />
                                       {urgencyConfig[analysis.urgency].label}
                                     </span>
@@ -2174,12 +2179,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                   </p>
                                   {analysis?.deadline && (
                                     <div className="flex items-center gap-2">
-                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg text-[11px] font-semibold">
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-[#e7e5df] text-slate-600 rounded-[2px] text-[11px] font-semibold">
                                         <Clock className="w-3 h-3" /> {analysis.deadline.days} dias úteis
                                       </span>
                                       <button
                                         onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition shadow-amber-200">
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#031636] hover:bg-[#0a2b5c] text-white rounded-[2px] text-[11px] font-bold transition shadow-amber-200">
                                         + Criar prazo
                                       </button>
                                     </div>
@@ -2187,12 +2192,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                   {!analysis && !analyzingIds.has(intimation.id) && aiService.isEnabled() && (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg transition">
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-[#031636] bg-white hover:bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px] transition">
                                       <Sparkles className="w-3 h-3" /> Analisar com IA
                                     </button>
                                   )}
                                   {analyzingIds.has(intimation.id) && (
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] text-slate-500 bg-slate-50 border border-[#e7e5df] rounded-lg">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] text-slate-500 bg-slate-50 border border-[#e7e5df] rounded-[2px]">
                                       <Loader2 className="w-3 h-3 animate-spin" /> Analisando...
                                     </span>
                                   )}
@@ -2211,61 +2216,52 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         {isExpanded && (
                           <div className="px-4 sm:px-5 pb-4 pt-3 border-t border-slate-100 space-y-3">
                             {!analysis && (
-                              <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 flex items-center justify-between gap-3">
+                              <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px] p-4 flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2.5">
-                                  <Sparkles className="w-4 h-4 text-violet-500 flex-shrink-0" />
+                                  <Sparkles className="w-4 h-4 text-slate-400 flex-shrink-0" />
                                   <div>
-                                    <p className="text-sm font-semibold text-violet-900">Sem análise de IA</p>
-                                    <p className="text-xs text-violet-600">A IA pode resumir, detectar prazos e sugerir ações.</p>
+                                    <p className="text-sm font-semibold text-slate-800">Sem análise de IA</p>
+                                    <p className="text-xs text-slate-500">A IA pode resumir, detectar prazos e sugerir ações.</p>
                                   </div>
                                 </div>
                                 {aiService.isEnabled() ? (
                                   analyzingIds.has(intimation.id) ? (
-                                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 bg-[#f8f7f5] border border-[#e7e5df] rounded-lg">
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px]">
                                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analisando...
                                     </span>
                                   ) : (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition flex-shrink-0">
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-[#031636] hover:bg-[#0a2b5c] rounded-[2px] transition flex-shrink-0">
                                       <Sparkles className="w-3.5 h-3.5" /> Analisar agora
                                     </button>
                                   )
                                 ) : (
-                                  <span className="text-xs text-violet-500">Configure a chave OpenAI</span>
+                                  <span className="text-xs text-slate-500">Configure a chave OpenAI</span>
                                 )}
                               </div>
                             )}
                             {analysis && (
-                              <div className="bg-slate-50 border border-[#e7e5df] rounded-lg p-4 space-y-3">
+                              <div className="bg-slate-50 border border-[#e7e5df] rounded-[2px] p-4 space-y-3">
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="flex items-center gap-2">
-                                    <Sparkles className="w-4 h-4 text-violet-600" />
-                                    <span className="text-sm font-bold text-slate-900">Análise IA</span>
+                                    <Sparkles className="w-4 h-4 text-slate-400" />
+                                    <span className="text-sm font-semibold text-slate-800">Análise IA</span>
                                   </div>
                                   <div className="flex items-center gap-1.5">
-                                    {(() => {
-                                      const outcome = detectOutcome(analysis.summary);
-                                      return outcome ? (
-                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${outcome.cls}`}>{outcome.label}</span>
-                                      ) : null;
-                                    })()}
-                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
-                                      {urgencyConfig[analysis.urgency].label}
-                                    </span>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
                                       title="Re-analisar"
                                       disabled={analyzingIds.has(intimation.id)}
-                                      className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded transition disabled:opacity-50">
+                                      className="p-1 text-slate-400 hover:text-[#031636] hover:bg-[#f8f7f5] rounded-[2px] transition disabled:opacity-50">
                                       {analyzingIds.has(intimation.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                                     </button>
                                   </div>
                                 </div>
                                 <p className="text-sm text-slate-700"><strong>Resumo:</strong> {analysis.summary}</p>
                                 {analysis.deadline && (
-                                  <div className="bg-[#f8f7f5] border border-amber-200 rounded-lg p-3 text-xs space-y-1">
-                                    <p className="font-semibold text-amber-800 flex items-center gap-1.5">
+                                  <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px] p-3 text-xs space-y-1">
+                                    <p className="font-semibold text-slate-700 flex items-center gap-1.5">
                                       <Clock className="w-3.5 h-3.5" /> Prazo detectado
                                     </p>
                                     <p className="text-slate-700"><strong>{analysis.deadline.days} dias úteis</strong> — {analysis.deadline.description}</p>
@@ -2277,7 +2273,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 {analysis.suggestedActions && analysis.suggestedActions.length > 0 && (
                                   <div>
                                     <p className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1">
-                                      <Lightbulb className="w-3.5 h-3.5 text-amber-500" /> Ações sugeridas pela IA:
+                                      <Lightbulb className="w-3.5 h-3.5 text-slate-400" /> Ações sugeridas pela IA:
                                     </p>
                                     <div className="flex flex-wrap gap-1.5">
                                       {analysis.suggestedActions.map((a, i) => {
@@ -2288,7 +2284,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                           <button
                                             key={i}
                                             onClick={(e) => { e.stopPropagation(); cfg.onClick(intimation); }}
-                                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${cfg.cls}`}
+                                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[2px] text-xs font-semibold border transition ${cfg.cls}`}
                                           >
                                             <Icon className="w-3 h-3 flex-shrink-0" />
                                             {label}
@@ -2310,31 +2306,31 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                             <div className="flex flex-wrap gap-2">
                               {!intimation.lida && (
                                 <button onClick={(e) => { e.stopPropagation(); handleMarkAsRead(intimation.id); }}
-                                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-lg transition">
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
                                   <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> Marcar lida
                                 </button>
                               )}
                               <button onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
-                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-lg transition">
-                                <Clock className="w-3.5 h-3.5 text-amber-600" /> Prazo
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
+                                <Clock className="w-3.5 h-3.5 text-slate-400" /> Prazo
                               </button>
                               <button onClick={(e) => { e.stopPropagation(); handleCreateAppointment(intimation); }}
-                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-lg transition">
-                                <CalendarIcon className="w-3.5 h-3.5 text-amber-600" /> Compromisso
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
+                                <CalendarIcon className="w-3.5 h-3.5 text-slate-400" /> Compromisso
                               </button>
                               <button onClick={(e) => { e.stopPropagation(); setLinkingIntimation(intimation); setSelectedClientId(intimation.client_id || ''); setSelectedProcessId(intimation.process_id || ''); setLinkModalOpen(true); }}
-                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-lg transition">
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
                                 <Link2 className="w-3.5 h-3.5 text-slate-400" /> Vincular
                               </button>
                               {intimation.link && (
                                 <a href={intimation.link} target="_blank" rel="noopener noreferrer"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-lg transition">
-                                  <ExternalLink className="w-3.5 h-3.5 text-purple-600" /> Ver Diário
+                                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
+                                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" /> Ver Diário
                                 </a>
                               )}
                               <button onClick={(e) => { e.stopPropagation(); setSelectedIntimation(intimation); }}
-                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition">
+                                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px] transition">
                                 <Eye className="w-3.5 h-3.5" /> Detalhes completos
                               </button>
                             </div>
@@ -2350,7 +2346,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           ) : (
 
             /* ── LIST VIEW (inbox style) ── */
-            <div className="rounded-xl border border-[#e7e5df] overflow-hidden bg-[#f8f7f5] divide-y divide-slate-100">
+            <div className="rounded-none border border-[#e7e5df] overflow-hidden bg-[#f8f7f5] divide-y divide-slate-100">
             {filteredIntimations.map((intimation) => {
               const isExpanded = expandedIntimationIds.has(intimation.id);
               const analysis = aiAnalysis.get(intimation.id);
@@ -2364,7 +2360,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     !intimation.lida ? 'bg-[#f8f7f5]' : 'bg-slate-50/30'
                   } ${
                     selectionMode && selectedIds.has(intimation.id)
-                      ? 'bg-blue-50/50'
+                      ? 'bg-slate-100'
                       : 'hover:bg-slate-50'
                   }`}`}
                 >
@@ -2385,11 +2381,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
                     {/* Unread dot (cor por urgência) */}
                     <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                      !intimation.lida ? (urgCfg?.dot ?? 'bg-[#E67E22]') : 'bg-transparent'
+                      !intimation.lida ? (urgCfg?.dot ?? 'bg-slate-400') : 'bg-transparent'
                     }`} />
 
                     {/* Tribunal chip (largura fixa para alinhamento tabular) */}
-                    <span className="hidden sm:inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 flex-shrink-0 w-14">
+                    <span className="hidden sm:inline-flex items-center justify-center px-1.5 py-0.5 rounded-[2px] text-[10px] font-bold bg-slate-100 text-slate-600 flex-shrink-0 w-14">
                       {intimation.sigla_tribunal}
                     </span>
 
@@ -2398,7 +2394,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       <button
                         type="button"
                         onClick={(event) => openLinkedProcess(event, intimation)}
-                        className={`font-mono text-[12px] sm:text-[13px] tabular-nums flex-shrink-0 truncate max-w-[140px] sm:max-w-[180px] hover:text-blue-700 hover:underline underline-offset-2 transition-colors ${
+                        className={`font-mono text-[12px] sm:text-[13px] tabular-nums flex-shrink-0 truncate max-w-[140px] sm:max-w-[180px] hover:text-[#105ac0] hover:underline underline-offset-2 transition-colors ${
                           !intimation.lida ? 'font-bold text-[#031636]' : 'font-medium text-slate-500'
                         }`}
                         title="Abrir detalhes do processo"
@@ -2415,7 +2411,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
                     {/* Sigiloso — destaque de atenção (DJEN não traz o inteiro teor) */}
                     {sig && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 flex-shrink-0">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[2px] text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 flex-shrink-0">
                         <ShieldAlert className="w-3 h-3" />
                         <span className="hidden sm:inline">SIGILOSO</span>
                       </span>
@@ -2459,19 +2455,19 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       {(() => {
                         const outcome = detectOutcome(analysis?.summary);
                         return outcome ? (
-                          <span className={`hidden lg:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border ${outcome.cls}`}>
+                          <span className={`hidden lg:inline-flex items-center px-1.5 py-0.5 rounded-[2px] text-[10px] font-bold border ${outcome.cls}`}>
                             {outcome.label}
                           </span>
                         ) : null;
                       })()}
                       {analysis && (
-                        <span className={`hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
+                        <span className={`hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[2px] text-[10px] font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
                           <Sparkles className="w-2.5 h-2.5" />
                           {urgencyConfig[analysis.urgency].label}
                         </span>
                       )}
                       {analysis?.deadline && (
-                        <span className="hidden lg:inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#ffdcc5] text-[#301400]">
+                        <span className="hidden lg:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[2px] text-[10px] font-semibold text-slate-700 border border-[#e7e5df] bg-white">
                           <Clock className="w-2.5 h-2.5" /> {analysis.deadline.days}d
                         </span>
                       )}
@@ -2491,61 +2487,52 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     <div className="border-t border-slate-100 px-4 sm:px-5 py-4 space-y-4">
                       {/* AI analysis panel */}
                       {!analysis && (
-                        <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 flex items-center justify-between gap-3">
+                        <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px] p-4 flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2.5">
-                            <Sparkles className="w-4 h-4 text-violet-500 flex-shrink-0" />
+                            <Sparkles className="w-4 h-4 text-slate-400 flex-shrink-0" />
                             <div>
-                              <p className="text-sm font-semibold text-violet-900">Sem análise de IA</p>
-                              <p className="text-xs text-violet-600">A IA pode resumir, detectar prazos e sugerir ações.</p>
+                              <p className="text-sm font-semibold text-slate-800">Sem análise de IA</p>
+                              <p className="text-xs text-slate-500">A IA pode resumir, detectar prazos e sugerir ações.</p>
                             </div>
                           </div>
                           {aiService.isEnabled() ? (
                             analyzingIds.has(intimation.id) ? (
-                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 bg-[#f8f7f5] border border-[#e7e5df] rounded-lg">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px]">
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> Analisando...
                               </span>
                             ) : (
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg transition flex-shrink-0">
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-[#031636] hover:bg-[#0a2b5c] rounded-[2px] transition flex-shrink-0">
                                 <Sparkles className="w-3.5 h-3.5" /> Analisar agora
                               </button>
                             )
                           ) : (
-                            <span className="text-xs text-violet-500">Configure a chave OpenAI</span>
+                            <span className="text-xs text-slate-500">Configure a chave OpenAI</span>
                           )}
                         </div>
                       )}
                       {analysis && (
-                        <div className="bg-zinc-50 border border-zinc-200 rounded-lg p-4 space-y-3">
+                        <div className="bg-slate-50 border border-[#e7e5df] rounded-[2px] p-4 space-y-3">
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
-                              <Sparkles className="w-4 h-4 text-violet-600" />
-                              <span className="text-sm font-bold text-slate-900">Análise com IA</span>
+                              <Sparkles className="w-4 h-4 text-slate-400" />
+                              <span className="text-sm font-semibold text-slate-800">Análise IA</span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              {(() => {
-                                const outcome = detectOutcome(analysis.summary);
-                                return outcome ? (
-                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${outcome.cls}`}>{outcome.label}</span>
-                                ) : null;
-                              })()}
-                              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${urgencyConfig[analysis.urgency].badge}`}>
-                                {urgencyConfig[analysis.urgency].label}
-                              </span>
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleAnalyzeSingle(intimation); }}
                                 title="Re-analisar com IA"
                                 disabled={analyzingIds.has(intimation.id)}
-                                className="p-1 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded transition disabled:opacity-50">
+                                className="p-1 text-slate-400 hover:text-[#031636] hover:bg-[#f8f7f5] rounded-[2px] transition disabled:opacity-50">
                                 {analyzingIds.has(intimation.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                               </button>
                             </div>
                           </div>
                           <p className="text-sm text-slate-700"><strong>Resumo:</strong> {analysis.summary}</p>
                           {analysis.deadline && (
-                            <div className="bg-[#f8f7f5] border border-amber-200 rounded-lg p-3 space-y-1 text-xs">
-                              <p className="font-semibold text-amber-800 flex items-center gap-1.5">
+                            <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px] p-3 space-y-1 text-xs">
+                              <p className="font-semibold text-slate-700 flex items-center gap-1.5">
                                 <Clock className="w-3.5 h-3.5" /> Prazo detectado
                               </p>
                               <p className="text-slate-700"><strong>{analysis.deadline.days} dias úteis</strong> — {analysis.deadline.description}</p>
@@ -2553,7 +2540,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 <>
                                   <p className="text-slate-500">Disponibilizado: {formatDate(intimation.data_disponibilizacao)}</p>
                                   <p className="text-slate-700 font-medium">Vencimento: {formatDateLong(analysis.deadline.dueDate)}</p>
-                                  <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+                                  <p className="text-slate-600 bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px] px-2 py-1 mt-1">
                                     ⚠️ Cálculo sem feriados — confira o calendário oficial!
                                   </p>
                                 </>
@@ -2563,7 +2550,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           {analysis.suggestedActions && analysis.suggestedActions.length > 0 && (
                             <div>
                               <p className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1">
-                                <Lightbulb className="w-3.5 h-3.5 text-amber-500" /> Ações sugeridas pela IA:
+                                <Lightbulb className="w-3.5 h-3.5 text-slate-400" /> Ações sugeridas pela IA:
                               </p>
                               <div className="flex flex-wrap gap-1.5">
                                 {analysis.suggestedActions.map((a, i) => {
@@ -2574,7 +2561,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                     <button
                                       key={i}
                                       onClick={(e) => { e.stopPropagation(); cfg.onClick(intimation); }}
-                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${cfg.cls}`}
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[2px] text-xs font-semibold border transition ${cfg.cls}`}
                                     >
                                       <Icon className="w-3 h-3 flex-shrink-0" />
                                       {label}
@@ -2589,8 +2576,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                               <p className="text-xs font-semibold text-slate-700 mb-1.5">🎯 Pontos-chave:</p>
                               <div className="flex flex-wrap gap-1">
                                 {analysis.keyPoints.map((kp, i) => (
-                                  <span key={i} className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs">
-                                    <span className="text-blue-400">→</span> {kp}
+                                  <span key={i} className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-slate-50 text-slate-700 border border-[#e7e5df] rounded-[2px] text-xs">
+                                    <span className="text-slate-400">→</span> {kp}
                                   </span>
                                 ))}
                               </div>
@@ -2616,31 +2603,31 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
                         {!intimation.lida && (
                           <button onClick={(e) => { e.stopPropagation(); handleMarkAsRead(intimation.id); }}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-lg transition">
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
                             <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> Marcar lida
                           </button>
                         )}
                         <button onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-lg transition">
-                          <Clock className="w-3.5 h-3.5 text-amber-600" /> Novo Prazo
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
+                          <Clock className="w-3.5 h-3.5 text-slate-600" /> Novo Prazo
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); handleCreateAppointment(intimation); }}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-lg transition">
-                          <CalendarIcon className="w-3.5 h-3.5 text-amber-600" /> Compromisso
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
+                          <CalendarIcon className="w-3.5 h-3.5 text-slate-400" /> Compromisso
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); handleOpenLinkModal(intimation); }}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-lg transition">
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
                           <Link2 className="w-3.5 h-3.5 text-slate-400" /> Vincular
                         </button>
                         {intimation.link && (
                           <a href={intimation.link} target="_blank" rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-lg transition">
-                            <ExternalLink className="w-3.5 h-3.5 text-purple-600" /> Ver Diário
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
+                            <ExternalLink className="w-3.5 h-3.5 text-slate-400" /> Ver Diário
                           </a>
                         )}
                         <button onClick={(e) => { e.stopPropagation(); setSelectedIntimation(intimation); }}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition">
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-[#f8f7f5] border border-blue-200 rounded-[2px] transition">
                           <Eye className="w-3.5 h-3.5" /> Detalhes completos
                         </button>
                       </div>
@@ -2658,6 +2645,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
       {/* Modal de Vínculo */}
       <Modal
+        accentBarClassName="bg-[#031636]"
         open={linkModalOpen && !!linkingIntimation}
         onClose={() => setLinkModalOpen(false)}
         title="Vincular Intimação"
@@ -2669,14 +2657,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <button
               type="button"
               onClick={() => setLinkModalOpen(false)}
-              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded-[2px] transition"
             >
               Cancelar
             </button>
             <button
               type="button"
               onClick={handleSaveLinks}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition"
+              className="px-4 py-2 bg-[#031636] hover:bg-[#0a2b5c] text-white text-sm font-medium rounded-[2px] flex items-center gap-2 transition"
             >
               Salvar Vínculos
             </button>
@@ -2723,7 +2711,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       onFocus={() => setProcessDropdownOpen(true)}
                       placeholder={selectedClientId ? 'Buscar processo do cliente...' : 'Selecione um cliente primeiro'}
                       disabled={!selectedClientId}
-                      className="w-full h-[34px] pl-9 pr-9 rounded text-[13px] bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                      className="w-full h-[34px] pl-9 pr-9 rounded-[2px] text-[13px] bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] disabled:opacity-50 disabled:cursor-not-allowed transition"
                     />
                     {(selectedProcessId || processSearchTerm) && (
                       <button
@@ -2746,7 +2734,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         return code.includes(processSearchTerm.toLowerCase()) || (term && digits.includes(term));
                       });
                     return (
-                      <div className="absolute z-50 mt-1 w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                      <div className="absolute z-50 mt-1 w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-[2px] shadow-lg max-h-52 overflow-y-auto">
                         {filtered.length === 0 && !processSearchTerm && (
                           <p className="px-4 py-3 text-sm text-slate-400">Nenhum processo cadastrado para este cliente</p>
                         )}
@@ -2755,7 +2743,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                             key={p.id}
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => { setSelectedProcessId(p.id); setSelectedProcessName(p.process_code); setProcessDropdownOpen(false); setProcessSearchTerm(''); }}
-                            className="w-full text-left px-4 py-2.5 text-sm text-zinc-900 dark:text-white hover:bg-amber-50 dark:hover:bg-zinc-700 font-mono transition-colors"
+                            className="w-full text-left px-4 py-2.5 text-sm text-zinc-900 dark:text-white hover:bg-[#f8f7f5] dark:hover:bg-zinc-700 font-mono transition-colors"
                           >
                             {p.process_code}
                           </button>
@@ -2768,7 +2756,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                             setProcessDropdownOpen(false);
                             setCreatingProcess(true);
                           }}
-                          className="w-full text-left px-4 py-2.5 text-sm text-amber-600 hover:bg-amber-50 dark:hover:bg-zinc-700 font-medium flex items-center gap-2 border-t border-zinc-100 dark:border-zinc-700 transition-colors"
+                          className="w-full text-left px-4 py-2.5 text-sm text-slate-600 hover:bg-[#f8f7f5] dark:hover:bg-zinc-700 font-medium flex items-center gap-2 border-t border-zinc-100 dark:border-zinc-700 transition-colors"
                         >
                           <Plus className="w-4 h-4" /> Cadastrar novo processo
                         </button>
@@ -2780,8 +2768,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
               {/* Mini-form: Novo Processo */}
               {creatingProcess && selectedClientId && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-4 space-y-3 mt-1">
-                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide">Novo Processo</p>
+                <div className="rounded-none border border-[#e7e5df] bg-[#f8f7f5] dark:bg-zinc-800 dark:border-[#e7e5df] p-4 space-y-3 mt-1">
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Novo Processo</p>
 
                   <div>
                     <label className="block text-xs text-zinc-600 dark:text-zinc-300 mb-1">Número do processo</label>
@@ -2790,7 +2778,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                       value={newProcessCode}
                       onChange={(e) => setNewProcessCode(e.target.value)}
                       placeholder="0000000-00.0000.0.00.0000"
-                      className="w-full h-[34px] px-3 rounded text-[13px] font-mono bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 transition"
+                      className="w-full h-[34px] px-3 rounded-[2px] text-[13px] font-mono bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] transition"
                     />
                   </div>
 
@@ -2799,7 +2787,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     <select
                       value={newProcessArea}
                       onChange={(e) => setNewProcessArea(e.target.value as typeof newProcessArea)}
-                      className="w-full h-[34px] px-3 rounded text-[13px] bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 transition appearance-none"
+                      className="w-full h-[34px] px-3 rounded-[2px] text-[13px] bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-600 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] transition appearance-none"
                     >
                       <option value="civel">Cível</option>
                       <option value="trabalhista">Trabalhista</option>
@@ -2812,13 +2800,13 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Vara / Órgão</label>
-                      <p className="text-xs text-zinc-700 dark:text-zinc-300 bg-[#f8f7f5] dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 truncate min-h-[34px]">
+                      <p className="text-xs text-zinc-700 dark:text-zinc-300 bg-[#f8f7f5] dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-[2px] px-3 py-2 truncate min-h-[34px]">
                         {linkingIntimation?.nome_orgao || '—'}
                       </p>
                     </div>
                     <div>
                       <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1">Data de distribuição</label>
-                      <p className="text-xs text-zinc-700 dark:text-zinc-300 bg-[#f8f7f5] dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 min-h-[34px]">
+                      <p className="text-xs text-zinc-700 dark:text-zinc-300 bg-[#f8f7f5] dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-[2px] px-3 py-2 min-h-[34px]">
                         {linkingIntimation?.data_disponibilizacao ? formatDate(linkingIntimation.data_disponibilizacao) : '—'}
                       </p>
                     </div>
@@ -2828,14 +2816,14 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     <button
                       onClick={handleCreateAndLinkProcess}
                       disabled={!newProcessCode.trim() || newProcessSaving}
-                      className="flex-1 h-9 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg flex items-center justify-center gap-2 transition"
+                      className="flex-1 h-9 bg-[#031636] hover:bg-[#031636] disabled:opacity-50 text-white text-sm font-medium rounded-[2px] flex items-center justify-center gap-2 transition"
                     >
                       {newProcessSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                       {newProcessSaving ? 'Criando...' : 'Criar e Vincular'}
                     </button>
                     <button
                       onClick={() => setCreatingProcess(false)}
-                      className="px-4 h-9 text-sm text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white border border-zinc-200 dark:border-zinc-700 rounded-lg transition"
+                      className="px-4 h-9 text-sm text-slate-600 hover:text-slate-900 dark:text-zinc-400 dark:hover:text-white border border-zinc-200 dark:border-zinc-700 rounded-[2px] transition"
                     >
                       Cancelar
                     </button>
@@ -2950,6 +2938,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
         return (
           <Modal
+            accentBarClassName="bg-[#031636]"
             open
             onClose={fechar}
             size="xl"
@@ -2957,29 +2946,29 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             eyebrow={detalhe.sigla_tribunal || 'Intimação'}
             title={detalhe.numero_processo_mascara || detalhe.numero_processo || 'Sem número'}
             icon={<Gavel className="w-4 h-4" fill="currentColor" />}
-            iconContainerClassName="bg-[#ffb783] text-[#482100] rounded-lg"
+            iconContainerClassName="border border-[#e7e5df] bg-white text-[#031636]"
             subtitle={
               <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5">
                 <span className="text-xs text-slate-500">{formatDate(detalhe.data_disponibilizacao)}</span>
                 {detalhe.nome_orgao && <span className="text-xs text-slate-500">{detalhe.nome_orgao}</span>}
-                {detalhe.tipo_comunicacao && <span className="text-xs font-medium text-amber-600">{detalhe.tipo_comunicacao}</span>}
+                {detalhe.tipo_comunicacao && <span className="text-xs font-medium text-slate-600">{detalhe.tipo_comunicacao}</span>}
                 {detalhe.nome_classe && <span className="text-xs text-slate-500">{detalhe.nome_classe}</span>}
               </div>
             }
             headerActions={
               <div className="hidden sm:flex items-center gap-1.5">
                 {!detalhe.lida && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[2px] text-[11px] font-bold bg-[#f8f7f5] text-slate-600 border border-[#e7e5df]">
                     <EyeOff className="w-3 h-3" /> Não lida
                   </span>
                 )}
                 {outcome && (
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${outcome.cls}`}>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-[2px] text-[11px] font-bold border ${outcome.cls}`}>
                     {outcome.label}
                   </span>
                 )}
                 {detailUrgCfg && (
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border ${detailUrgCfg.badge}`}>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-[2px] text-[11px] font-bold border ${detailUrgCfg.badge}`}>
                     {detailUrgCfg.label}
                   </span>
                 )}
@@ -2989,30 +2978,30 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               <div className="flex flex-wrap gap-2">
                 {!detalhe.lida && (
                   <button onClick={() => { handleMarkAsRead(detalhe.id); fechar(); }}
-                    className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-3.5 py-2 rounded-lg transition text-xs shadow-sm shadow-emerald-200">
+                    className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-3.5 py-2 rounded-[2px] transition text-xs shadow-sm shadow-emerald-200">
                     <CheckCircle className="w-3.5 h-3.5" /> Marcar lida
                   </button>
                 )}
                 <button onClick={seguirPara(handleCreateDeadline)}
-                  className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3.5 py-2 rounded-lg transition text-xs shadow-sm shadow-amber-200">
+                  className="inline-flex items-center gap-1.5 bg-[#031636] hover:bg-[#0a2b5c] text-white font-semibold px-3.5 py-2 rounded-[2px] transition text-xs shadow-sm shadow-amber-200">
                   <Clock className="w-3.5 h-3.5" /> Novo Prazo
                 </button>
                 <button onClick={seguirPara(handleCreateAppointment)}
-                  className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
-                  <CalendarIcon className="w-3.5 h-3.5 text-indigo-500" /> Compromisso
+                  className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-[2px] transition text-xs border border-[#e7e5df]">
+                  <CalendarIcon className="w-3.5 h-3.5 text-slate-400" /> Compromisso
                 </button>
                 <button onClick={seguirPara(handleOpenPrescriptionModal)}
-                  className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
-                  <AlertTriangle className="w-3.5 h-3.5 text-orange-500" /> Prescrição
+                  className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-[2px] transition text-xs border border-[#e7e5df]">
+                  <AlertTriangle className="w-3.5 h-3.5 text-slate-400" /> Prescrição
                 </button>
                 <button onClick={seguirPara(handleOpenLinkModal)}
-                  className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
-                  <Link2 className="w-3.5 h-3.5 text-blue-500" /> Vincular
+                  className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-[2px] transition text-xs border border-[#e7e5df]">
+                  <Link2 className="w-3.5 h-3.5 text-slate-400" /> Vincular
                 </button>
                 {detalhe.link && (
                   <a href={detalhe.link} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-lg transition text-xs border border-[#e7e5df]">
-                    <ExternalLink className="w-3.5 h-3.5 text-purple-500" /> Ver Diário
+                    className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-[2px] transition text-xs border border-[#e7e5df]">
+                    <ExternalLink className="w-3.5 h-3.5 text-slate-400" /> Ver Diário
                   </a>
                 )}
               </div>
@@ -3037,7 +3026,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                     <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Partes</p>
                     <div className="flex flex-wrap gap-1">
                       {partes.slice(0, 3).map((parte, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-[#e7e5df] rounded text-[11px] text-slate-700">
+                        <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-[#e7e5df] rounded-[2px] text-[11px] text-slate-700">
                           <span className="font-medium">{parte.nome}</span>
                           {parte.polo && <span className="text-slate-400 text-[10px]">({parte.polo})</span>}
                         </span>
@@ -3050,10 +3039,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             )}
 
             {detailAnalysis && (
-              <div className={`mx-4 mt-4 rounded-xl p-3.5 border ${detailUrgCfg?.badge ?? 'bg-amber-50 border-amber-200'}`}>
+              <div className={`mx-4 mt-4 rounded-none p-3.5 border ${detailUrgCfg?.badge ?? 'bg-[#f8f7f5] border-[#e7e5df]'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                    <Sparkles className="w-3.5 h-3.5 shrink-0 text-slate-600" />
                     <p className="text-xs font-semibold text-slate-800 leading-snug">{detailAnalysis.summary}</p>
                   </div>
                   {detailAnalysis.deadline && (
@@ -3073,10 +3062,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
             <div className="px-6 py-5">
               <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
-                <div className="w-1 h-4 rounded-full bg-amber-500" />
+                <div className="w-1 h-4 bg-slate-300" />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Conteúdo da Intimação</span>
               </div>
-              <div className="text-sm text-slate-700 whitespace-pre-wrap leading-[1.8] selection:bg-amber-100">
+              <div className="text-sm text-slate-700 whitespace-pre-wrap leading-[1.8] selection:bg-slate-200">
                 {highlightText(detalhe.texto || '', detailAnalysis?.importantPassages)}
               </div>
             </div>
@@ -3085,6 +3074,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       })()}
 
       <Modal
+        accentBarClassName="bg-[#031636]"
         open={prescriptionModalOpen && !!currentIntimationForAction}
         onClose={() => { setPrescriptionModalOpen(false); setCurrentIntimationForAction(null); }}
         title="Execução Sobrestada"
@@ -3096,7 +3086,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             <button
               type="button"
               onClick={() => { setPrescriptionModalOpen(false); setCurrentIntimationForAction(null); }}
-              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded-[2px] transition"
             >
               Cancelar
             </button>
@@ -3104,7 +3094,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               type="button"
               onClick={handleCreatePrescriptionEvent}
               disabled={savingPrescription}
-              className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+              className="px-4 py-2 bg-[#031636] hover:bg-[#0a2b5c] text-white text-sm font-medium rounded-[2px] flex items-center gap-2 transition disabled:opacity-50"
             >
               {savingPrescription && <Loader2 className="w-4 h-4 animate-spin" />}
               Criar na Agenda
@@ -3114,11 +3104,11 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       >
         <ModalBody className="px-5 py-4">
               {currentIntimationForAction && <>
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <p className="text-xs text-amber-800">
+              <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px] p-3">
+                <p className="text-xs text-slate-800">
                   <strong>Processo:</strong> {currentIntimationForAction.numero_processo_mascara || currentIntimationForAction.numero_processo || 'Sem número'}
                 </p>
-                <p className="text-xs text-amber-700 mt-1">
+                <p className="text-xs text-slate-600 mt-1">
                   O sistema criará um compromisso na agenda 6 meses antes da prescrição estimada (data-base + 18 meses).
                 </p>
               </div>
@@ -3131,7 +3121,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   type="date"
                   value={prescriptionBaseDate}
                   onChange={(e) => setPrescriptionBaseDate(e.target.value)}
-                  className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
+                  className="w-full rounded-[2px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
                   required
                 />
                 <p className="text-xs text-slate-500 mt-1">
@@ -3141,10 +3131,10 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
               {/* Projeção de datas */}
               {prescriptionBaseDate && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <p className="text-xs font-semibold text-amber-800 mb-2">Projeção de Datas</p>
+                <div className="bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px] p-3">
+                  <p className="text-xs font-semibold text-slate-700 mb-2">Projeção de Datas</p>
                   <div className="space-y-1">
-                    <p className="text-xs text-amber-700">
+                    <p className="text-xs text-slate-600">
                       <strong>Prescrição estimada:</strong> {(() => {
                         const addMonths = (date: Date, months: number) => {
                           const d = new Date(date);
@@ -3160,7 +3150,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                         return formatDate(addMonths(new Date(`${prescriptionBaseDate}T12:00:00`), 24));
                       })()}
                     </p>
-                    <p className="text-xs text-amber-700">
+                    <p className="text-xs text-slate-600">
                       <strong>Aviso na agenda:</strong> {(() => {
                         const addMonths = (date: Date, months: number) => {
                           const d = new Date(date);
@@ -3181,13 +3171,13 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               )}
 
               {prescriptionError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <div className="bg-red-50 border border-red-200 rounded-[2px] p-3">
                   <p className="text-sm text-red-800">{prescriptionError}</p>
                 </div>
               )}
 
               {prescriptionSuccess && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-[2px] p-3">
                   <p className="text-sm text-emerald-800">{prescriptionSuccess}</p>
                 </div>
               )}
@@ -3319,11 +3309,12 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
     }
   };
 
-  const inputStyle = 'w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition';
+  const inputStyle = 'w-full rounded-[2px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition';
   const labelStyle = 'block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1';
 
   return (
     <Modal
+      accentBarClassName="bg-[#031636]"
       open={true}
       onClose={onClose}
       title="Criar Prazo"
@@ -3335,7 +3326,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
+            className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded-[2px] transition"
           >
             Cancelar
           </button>
@@ -3343,7 +3334,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
             type="submit"
             form="deadline-form"
             disabled={saving}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg flex items-center gap-2 transition disabled:opacity-50"
+            className="px-4 py-2 bg-[#031636] hover:bg-[#0a2b5c] text-white text-sm font-medium rounded-[2px] flex items-center gap-2 transition disabled:opacity-50"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             Criar Prazo
@@ -3353,17 +3344,17 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
     >
       <ModalBody className="px-5 py-4">
         {/* Informações da Intimação */}
-        <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
-          <h4 className="text-sm font-semibold text-blue-900 mb-2">Intimação Vinculada</h4>
-          <p className="text-sm text-blue-800">
+        <div className="bg-[#f8f7f5] dark:bg-zinc-800 border border-[#e7e5df] dark:border-[#e7e5df] rounded-[2px] p-4 mb-6">
+          <h4 className="text-sm font-semibold text-[#031636] mb-2">Intimação Vinculada</h4>
+          <p className="text-sm text-slate-600">
             <strong>Processo:</strong> {intimation.numero_processo_mascara || intimation.numero_processo || 'Sem número'}
           </p>
           {client && (
-            <p className="text-sm text-blue-800">
+            <p className="text-sm text-slate-600">
               <strong>Cliente:</strong> {client.full_name}
             </p>
           )}
-          <p className="text-sm text-blue-800">
+          <p className="text-sm text-slate-600">
             <strong>Tipo:</strong> {intimation.tipo_comunicacao || 'Intimação'}
           </p>
         </div>
@@ -3378,7 +3369,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               type="text"
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
+              className="w-full rounded-[2px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
               required
             />
           </div>
@@ -3392,7 +3383,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={4}
-              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
+              className="w-full rounded-[2px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
             />
           </div>
 
@@ -3405,16 +3396,16 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               type="date"
               value={formData.due_date}
               onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
+              className="w-full rounded-[2px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
               min={new Date().toISOString().split('T')[0]}
               required
             />
             {analysis?.deadline?.dueDate && (
-              <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-xs text-amber-900 font-semibold">
+              <div className="mt-2 p-2 bg-[#f8f7f5] border border-[#e7e5df] rounded-[2px]">
+                <p className="text-xs text-[#031636] font-semibold">
                   ⚠️ Prazo Final: {formatDateLong(analysis.deadline.dueDate)}
                 </p>
-                <p className="text-xs text-amber-700 mt-1">
+                <p className="text-xs text-slate-600 mt-1">
                   ✓ Data sugerida preenchida: 1 dia antes (margem de segurança)
                 </p>
               </div>
@@ -3445,7 +3436,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
                   onClick={() => setFormData({ ...formData, responsible_id: formData.responsible_id === (m.user_id || m.id) ? '' : (m.user_id || m.id) })}
                   className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
                     formData.responsible_id === (m.user_id || m.id)
-                      ? 'ring-2 ring-offset-2 ring-amber-500'
+                      ? 'ring-2 ring-offset-2 ring-[#031636]'
                       : 'ring-1 ring-transparent hover:ring-slate-300'
                   }`}
                   title={m.name || m.email || ''}
@@ -3453,12 +3444,12 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
                   {m.avatar_url ? (
                     <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
                   ) : (
-                    <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
+                    <div className="w-9 h-9 rounded-full bg-[#f8f7f5] flex items-center justify-center text-sm font-semibold text-slate-600">
                       {(m.name || m.email || '?')[0].toUpperCase()}
                     </div>
                   )}
                   {formData.responsible_id === (m.user_id || m.id) && (
-                    <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                    <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-[#031636] rounded-full flex items-center justify-center">
                       <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M2 6l3 3 5-5"/>
                       </svg>
@@ -3468,7 +3459,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               ))}
             </div>
             {formData.responsible_id && (
-              <p className="text-xs text-amber-600 mt-2">
+              <p className="text-xs text-slate-600 mt-2">
                 ✓ {members.find(m => (m.user_id || m.id) === formData.responsible_id)?.name || 'Responsável selecionado'}
               </p>
             )}
@@ -3483,7 +3474,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               <select
                 value={formData.type}
                 onChange={(e) => setFormData({ ...formData, type: e.target.value as DeadlineType })}
-                className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
+                className="w-full rounded-[2px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
               >
                 <option value="processo">Processo</option>
                 <option value="requerimento">Requerimento</option>
@@ -3498,7 +3489,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
               <select
                 value={formData.priority}
                 onChange={(e) => setFormData({ ...formData, priority: e.target.value as DeadlinePriority })}
-                className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
+                className="w-full rounded-[2px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition"
               >
                 <option value="urgente">Urgente</option>
                 <option value="alta">Alta</option>
@@ -3509,7 +3500,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+            <div className="bg-red-50 border border-red-200 rounded-[2px] p-3">
               <p className="text-sm text-red-800">{error}</p>
             </div>
           )}
@@ -3661,11 +3652,12 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
     }
   };
 
-  const inputStyle = 'w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition';
+  const inputStyle = 'w-full rounded-[2px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] placeholder:text-slate-400 transition';
   const labelStyle = 'block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1';
 
   return (
     <Modal
+      accentBarClassName="bg-[#031636]"
       open={true}
       onClose={onClose}
       title="Adicionar Compromisso"
@@ -3677,7 +3669,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition"
+            className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded-[2px] transition"
           >
             Cancelar
           </button>
@@ -3685,7 +3677,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
             type="submit"
             form="appointment-form"
             disabled={saving}
-            className="flex items-center gap-2 rounded bg-orange-500 hover:bg-orange-600 px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-50"
+            className="flex items-center gap-2 rounded-[2px] bg-[#031636] hover:bg-[#031636] px-4 py-1.5 text-[13px] font-semibold text-white transition disabled:opacity-50"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             Criar Compromisso
@@ -3716,7 +3708,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
-              className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
+              className="w-full rounded-[2px] text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-[#031636]/40 focus:border-[#e7e5df] border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
             />
           </div>
 
@@ -3775,18 +3767,18 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
             <label className={labelStyle}>Tipo de Compromisso</label>
             <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
               {([
-                { value: 'meeting',     label: 'Reunião',    active: 'bg-teal-500 text-white border-teal-500',       idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-teal-400 hover:text-teal-600' },
+                { value: 'meeting',     label: 'Reunião',    active: 'bg-[#031636] text-white border-[#031636]',       idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-slate-400 hover:text-[#031636]' },
                 { value: 'hearing',     label: 'Audiência',  active: 'bg-red-500 text-white border-red-500',         idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-red-400 hover:text-red-600' },
-                { value: 'deadline',    label: 'Prazo',      active: 'bg-blue-500 text-white border-blue-500',       idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-blue-400 hover:text-blue-600' },
-                { value: 'requirement', label: 'Diligência', active: 'bg-orange-500 text-white border-orange-500',   idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-orange-400 hover:text-orange-600' },
+                { value: 'deadline',    label: 'Prazo',      active: 'bg-[#031636] text-white border-[#031636]',       idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-slate-400 hover:text-[#031636]' },
+                { value: 'requirement', label: 'Diligência', active: 'bg-[#031636] text-white border-[#e7e5df]',   idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-[#e7e5df] hover:text-slate-600' },
                 { value: 'payment',     label: 'Pagamento',  active: 'bg-emerald-500 text-white border-emerald-500', idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-emerald-400 hover:text-emerald-600' },
-                { value: 'pericia',     label: 'Perícia',    active: 'bg-purple-500 text-white border-purple-500',   idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-purple-400 hover:text-purple-600' },
+                { value: 'pericia',     label: 'Perícia',    active: 'bg-[#031636] text-white border-[#031636]',   idle: 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-zinc-600 hover:border-slate-400 hover:text-[#031636]' },
               ] as const).map(({ value, label, active, idle }) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => setFormData({ ...formData, type: value, event_mode: '' })}
-                  className={`py-1.5 rounded text-xs font-semibold border transition-all text-center ${formData.type === value ? active : idle}`}
+                  className={`py-1.5 rounded-[2px] text-xs font-semibold border transition-all text-center ${formData.type === value ? active : idle}`}
                 >
                   {label}
                 </button>
@@ -3799,7 +3791,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
             <div className="flex items-baseline gap-2 mb-2">
               <label className={labelStyle}>Responsável *</label>
               {formData.responsible_id
-                ? <span className="text-xs text-orange-600 font-semibold truncate">{members.find(m => (m.user_id || m.id) === formData.responsible_id)?.name || 'Selecionado'}</span>
+                ? <span className="text-xs text-slate-600 font-semibold truncate">{members.find(m => (m.user_id || m.id) === formData.responsible_id)?.name || 'Selecionado'}</span>
                 : <span className="text-xs text-slate-400">Selecione um advogado</span>
               }
             </div>
@@ -3811,7 +3803,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
                   onClick={() => setFormData({ ...formData, responsible_id: formData.responsible_id === (m.user_id || m.id) ? '' : (m.user_id || m.id) })}
                   className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all hover:scale-110 ${
                     formData.responsible_id === (m.user_id || m.id)
-                      ? 'ring-2 ring-offset-2 ring-orange-500 scale-110'
+                      ? 'ring-2 ring-offset-2 ring-[#031636] scale-110'
                       : 'ring-1 ring-white dark:ring-zinc-600 hover:ring-slate-300'
                   }`}
                   title={m.name || m.email || ''}
@@ -3819,12 +3811,12 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
                   {m.avatar_url ? (
                     <img src={m.avatar_url} className="w-10 h-10 rounded-full object-cover" alt={m.name || ''} />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-xs font-bold text-amber-700 dark:text-amber-400">
+                    <div className="w-10 h-10 rounded-[2px] bg-[#f8f7f5] dark:bg-[#031636]/30 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-400">
                       {(m.name || m.email || '?')[0].toUpperCase()}
                     </div>
                   )}
                   {formData.responsible_id === (m.user_id || m.id) && (
-                    <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-orange-500 rounded-full flex items-center justify-center">
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#031636] rounded-full flex items-center justify-center">
                       <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M2 6l3 3 5-5"/>
                       </svg>
@@ -3836,7 +3828,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+            <div className="bg-red-50 border border-red-200 rounded-[2px] p-3">
               <p className="text-sm text-red-800">{error}</p>
             </div>
           )}
