@@ -2184,7 +2184,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                       </span>
                                       <button
                                         onClick={(e) => { e.stopPropagation(); handleCreateDeadline(intimation); }}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#031636] hover:bg-[#0a2b5c] text-white rounded-[2px] text-[11px] font-bold transition shadow-amber-200">
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-[#031636] hover:bg-[#0a2b5c] text-white rounded-[2px] text-[11px] font-bold transition">
                                         + Criar prazo
                                       </button>
                                     </div>
@@ -2326,7 +2326,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                                 <a href={intimation.link} target="_blank" rel="noopener noreferrer"
                                   onClick={(e) => e.stopPropagation()}
                                   className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
-                                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" /> Ver Diário
+                                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" /> Ver diário
                                 </a>
                               )}
                               <button onClick={(e) => { e.stopPropagation(); setSelectedIntimation(intimation); }}
@@ -2623,7 +2623,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                           <a href={intimation.link} target="_blank" rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
                             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-[#f8f7f5] hover:bg-slate-50 border border-[#e7e5df] rounded-[2px] transition">
-                            <ExternalLink className="w-3.5 h-3.5 text-slate-400" /> Ver Diário
+                            <ExternalLink className="w-3.5 h-3.5 text-slate-400" /> Ver diário
                           </a>
                         )}
                         <button onClick={(e) => { e.stopPropagation(); setSelectedIntimation(intimation); }}
@@ -2978,13 +2978,13 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
               <div className="flex flex-wrap gap-2">
                 {!detalhe.lida && (
                   <button onClick={() => { handleMarkAsRead(detalhe.id); fechar(); }}
-                    className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-3.5 py-2 rounded-[2px] transition text-xs shadow-sm shadow-emerald-200">
+                    className="inline-flex items-center gap-1.5 bg-[#031636] hover:bg-[#0a2b5c] text-white font-medium px-3.5 py-2 rounded-[2px] transition text-xs">
                     <CheckCircle className="w-3.5 h-3.5" /> Marcar lida
                   </button>
                 )}
                 <button onClick={seguirPara(handleCreateDeadline)}
-                  className="inline-flex items-center gap-1.5 bg-[#031636] hover:bg-[#0a2b5c] text-white font-semibold px-3.5 py-2 rounded-[2px] transition text-xs shadow-sm shadow-amber-200">
-                  <Clock className="w-3.5 h-3.5" /> Novo Prazo
+                  className="inline-flex items-center gap-1.5 bg-white hover:bg-[#f8f7f5] text-slate-700 font-medium px-3.5 py-2 rounded-[2px] transition text-xs border border-[#e7e5df]">
+                  <Clock className="w-3.5 h-3.5 text-slate-400" /> Novo prazo
                 </button>
                 <button onClick={seguirPara(handleCreateAppointment)}
                   className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-[2px] transition text-xs border border-[#e7e5df]">
@@ -3001,71 +3001,73 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                 {detalhe.link && (
                   <a href={detalhe.link} target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 bg-[#f8f7f5] hover:bg-slate-50 text-slate-700 font-medium px-3.5 py-2 rounded-[2px] transition text-xs border border-[#e7e5df]">
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-400" /> Ver Diário
+                    <ExternalLink className="w-3.5 h-3.5 text-slate-400" /> Ver diário
                   </a>
                 )}
               </div>
             }
           >
+            {/* Uma margem esquerda só para as três faixas — antes eram px-5,
+                mx-4 e px-6 empilhados, e as bordas não batiam. */}
             {(client || process || partes.length > 0) && (
-              <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3 flex flex-wrap gap-4">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 border-b border-[#e7e5df] bg-[#f8f7f5] px-6 py-3.5">
                 {client && (
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Cliente</p>
-                    <p className="text-xs font-semibold text-slate-800 truncate max-w-[200px]">{client}</p>
-                  </div>
+                  <>
+                    <dt className="text-[11px] text-slate-400">Cliente</dt>
+                    <dd className="text-[13px] text-slate-800 truncate">{client}</dd>
+                  </>
                 )}
                 {process && (
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Processo</p>
-                    <p className="text-xs font-mono font-semibold text-slate-800 truncate max-w-[200px]">{process}</p>
-                  </div>
+                  <>
+                    <dt className="text-[11px] text-slate-400">Processo</dt>
+                    <dd className="text-[13px] font-mono tabular-nums text-slate-800 truncate">{process}</dd>
+                  </>
                 )}
                 {partes.length > 0 && (
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Partes</p>
-                    <div className="flex flex-wrap gap-1">
-                      {partes.slice(0, 3).map((parte, i) => (
-                        <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-[#e7e5df] rounded-[2px] text-[11px] text-slate-700">
-                          <span className="font-medium">{parte.nome}</span>
-                          {parte.polo && <span className="text-slate-400 text-[10px]">({parte.polo})</span>}
+                  <>
+                    <dt className="text-[11px] text-slate-400">Partes</dt>
+                    <dd className="text-[13px] text-slate-700">
+                      {partes.slice(0, 4).map((parte, i) => (
+                        <span key={i}>
+                          {i > 0 && <span className="text-slate-300"> · </span>}
+                          {parte.nome}
+                          {parte.polo && <span className="text-slate-400"> ({parte.polo})</span>}
                         </span>
                       ))}
-                      {partes.length > 3 && <span className="text-[11px] text-slate-400">+{partes.length - 3}</span>}
-                    </div>
-                  </div>
+                      {partes.length > 4 && <span className="text-slate-400"> +{partes.length - 4}</span>}
+                    </dd>
+                  </>
                 )}
-              </div>
+              </dl>
             )}
 
+            {/* O resumo NÃO herda mais as classes do selo de urgência: com a
+                paleta nova, "Crítica" é vermelho sólido e virava um bloco
+                vermelho com texto escuro em cima. A urgência entra como um
+                filete na borda esquerda, que é onde ela informa sem gritar. */}
             {detailAnalysis && (
-              <div className={`mx-4 mt-4 rounded-none p-3.5 border ${detailUrgCfg?.badge ?? 'bg-[#f8f7f5] border-[#e7e5df]'}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Sparkles className="w-3.5 h-3.5 shrink-0 text-slate-600" />
-                    <p className="text-xs font-semibold text-slate-800 leading-snug">{detailAnalysis.summary}</p>
-                  </div>
-                  {detailAnalysis.deadline && (
-                    <div className="shrink-0 text-right">
-                      <p className="text-sm font-bold text-slate-900">{detailAnalysis.deadline.days}d úteis</p>
+              <div className={`border-b border-[#e7e5df] border-l-2 ${detailUrgCfg?.border ?? 'border-l-transparent'} bg-white px-6 py-4`}>
+                <div className="flex items-start justify-between gap-6">
+                  <p className="text-[13px] text-slate-800 leading-relaxed flex-1 min-w-0">{detailAnalysis.summary}</p>
+                  {detailAnalysis.deadline?.days != null && (
+                    <div className="shrink-0 text-right border-l border-[#e7e5df] pl-4">
+                      <p className="text-[18px] font-semibold text-[#031636] tabular-nums leading-none">{detailAnalysis.deadline.days}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-slate-400 mt-1">dias úteis</p>
                       {detailAnalysis.deadline.dueDate && (
-                        <p className="text-[10px] text-slate-600">{formatDate(detailAnalysis.deadline.dueDate)}</p>
+                        <p className="text-[11px] text-slate-600 tabular-nums mt-1.5">{formatDate(detailAnalysis.deadline.dueDate)}</p>
                       )}
                     </div>
                   )}
                 </div>
                 {detailAnalysis.deadline?.description && (
-                  <p className="text-[11px] text-slate-600 mt-1.5 ml-5">{detailAnalysis.deadline.description}</p>
+                  <p className="text-[12px] text-slate-500 mt-2">{detailAnalysis.deadline.description}</p>
                 )}
               </div>
             )}
 
             <div className="px-6 py-5">
-              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
-                <div className="w-1 h-4 bg-slate-300" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Conteúdo da Intimação</span>
-              </div>
-              <div className="text-sm text-slate-700 whitespace-pre-wrap leading-[1.8] selection:bg-slate-200">
+              <p className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">Conteúdo da intimação</p>
+              <div className="text-[13px] text-slate-700 whitespace-pre-wrap leading-[1.75] selection:bg-slate-200">
                 {highlightText(detalhe.texto || '', detailAnalysis?.importantPassages)}
               </div>
             </div>
