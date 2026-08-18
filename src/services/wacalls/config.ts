@@ -49,3 +49,22 @@ export function waCallsLog(message: string, extra?: unknown): void {
   if (extra === undefined) console.log(`[WaCalls] ${message}`);
   else console.log(`[WaCalls] ${message}`, extra);
 }
+
+/**
+ * Servidores ICE da ponte ENTRE NAVEGADORES (segundo atendente e
+ * transferência) — nada a ver com a ponte para o WaCalls, que é servidor
+ * público e dispensa STUN.
+ *
+ * Duas mesas na mesma rede do escritório se acham por candidato local; quem
+ * atende de casa precisa de STUN para descobrir o próprio endereço externo.
+ * Sem TURN de propósito: relay de áudio é banda paga, e o caso que ele
+ * resolveria (NAT simétrico dos dois lados) é raro numa operação de escritório.
+ * `VITE_WEBRTC_ICE_SERVERS` aceita uma lista separada por vírgula.
+ */
+export const WEBRTC_ICE_SERVERS: RTCIceServer[] = (() => {
+  const bruto = String(import.meta.env.VITE_WEBRTC_ICE_SERVERS || '').trim();
+  if (bruto) {
+    return bruto.split(',').map(u => ({ urls: u.trim() })).filter(s => !!s.urls);
+  }
+  return [{ urls: 'stun:stun.l.google.com:19302' }];
+})();

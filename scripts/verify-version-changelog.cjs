@@ -1,7 +1,18 @@
 const { execSync } = require('node:child_process');
 
+/**
+ * O changelog (`DocsChangesPage.tsx`) passou de 1 MB, que e exatamente o buffer
+ * padrao do `execSync`: o `git show` daquele arquivo passou a morrer com
+ * ENOBUFS, derrubando o hook inteiro em vez de reprovar o commit - e um hook
+ * que quebra sozinho nao protege nada. Como o arquivo so cresce (uma versao por
+ * release), o teto sobe junto e com folga.
+ */
+const MAX_BUFFER = 64 * 1024 * 1024;
+
 function run(cmd) {
-  return execSync(cmd, { stdio: ['ignore', 'pipe', 'pipe'] }).toString('utf8').trim();
+  return execSync(cmd, { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER })
+    .toString('utf8')
+    .trim();
 }
 
 function safeRun(cmd) {

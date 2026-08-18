@@ -12,7 +12,17 @@ import type { MissedCall } from '../services/wacalls/missedCalls';
 import { playCallConnectedTone, playCallEndedTone, startRing, stopRing } from '../services/wacalls/ringtone';
 import { waCallsService } from '../services/wacalls.service';
 import { WACALLS_BASE_URL } from '../services/wacalls/config';
+import { buildCallLadder, decideCallRing } from '../services/wacalls/callRouting';
 import type { WaCall, WaCallPhase, WaCallsSession } from '../services/wacalls/types';
+import type { CallGuest } from '../services/wacalls/callBridge';
+import type { InvitableOperator } from '../services/wacalls/callGuests';
+
+/** O escritório de mentira da bancada. */
+const EQUIPE_DEMO: InvitableOperator[] = [
+  { userId: 'ana', name: 'Ana Beatriz', busy: false },
+  { userId: 'bruno', name: 'Bruno Alves', busy: true },
+  { userId: 'carla', name: 'Carla Menezes', busy: false },
+];
 
 const chamada = (patch: Partial<WaCall>): WaCall => ({
   callId: 'call-demo',
@@ -28,7 +38,7 @@ const chamada = (patch: Partial<WaCall>): WaCall => ({
   endedAt: null,
   endReason: null,
   muted: false,
-  route: { ring: true, show: true, label: 'Sem responsável definido — tocando para todos' },
+  route: { ring: true, show: true, source: 'assigned', targetUserIds: [], hasNextStep: false, label: 'Sem responsável definido — tocando para todos' },
   recording: false,
   recorded: false,
   error: null,
@@ -73,11 +83,29 @@ const WaCallsPreview: React.FC = () => {
   // As três leituras possíveis do convite: minha, de outro atendente (calada) e
   // escalada. É a regra do `callRouting` vista pelos olhos de quem está na mesa.
   const [rota, setRota] = useState<0 | 1 | 2>(0);
-  const rotaDoConvite = [
-    { ring: true, show: true, label: 'Sem responsável definido — tocando para todos' },
-    { ring: false, show: true, label: 'Tocando para Bruno (responsável pela conversa)' },
-    { ring: true, show: true, label: 'Bruno não atendeu: a chamada foi liberada para todos' },
-  ][rota];
+  // A bancada roda a REGRA de verdade, não rótulos escritos à mão: o escritório
+  // de exemplo tem Bruno como responsável da conversa, a Recepção ligada ao
+  // canal e a administração no fim da escada; o botão só anda com a escalada.
+  const escadaDoExemplo = buildCallLadder({
+    assignedUserId: 'bruno', assignedName: 'Bruno',
+    channelDepartments: [{ name: 'Recepção', memberIds: ['davi', 'eu'] }],
+    adminIds: ['chefe'],
+  });
+  const rotaDoConvite = decideCallRing({
+    me: rota === 0 ? 'bruno' : 'eu',
+    ladder: escadaDoExemplo,
+    step: rota,
+    contactBlocked: false,
+    imBusy: false,
+  });
+  // A bancada do segundo atendente: convidar move o cartão pelos estados sem
+  // rede nenhuma envolvida (a ponte de verdade precisa de duas abas logadas).
+  const [convidados, setConvidados] = useState<CallGuest[]>([]);
+  useEffect(() => {
+    if (convidados.length === 0 || convidados[0].status !== 'inviting') return;
+    const t = setTimeout(() => setConvidados(atual => atual.map(g => ({ ...g, status: 'live' }))), 1200);
+    return () => clearTimeout(t);
+  }, [convidados]);
   const [recebida, setRecebida] = useState(true);
   // Convite que chegou endereçado só por LID: o WhatsApp não mandou telefone
   // nenhum, e o cartão precisa DIZER isso em vez de inventar um número. Foi o
@@ -170,6 +198,11 @@ const WaCallsPreview: React.FC = () => {
       <ActiveCallWidget
         call={ativa}
         linkDown={semRede}
+        guests={convidados}
+        operators={EQUIPE_DEMO}
+        me="eu"
+        onInviteGuest={(userId, name, mode) => setConvidados([{ userId, name, mode, status: 'inviting' }])}
+        onRemoveGuest={(userId) => setConvidados(atual => atual.filter(g => g.userId !== userId))}
         onHangUp={() => setFase('ENDED')}
         onToggleMute={() => setMudo(v => !v)}
         onToggleRecording={() => setGravando(v => !v)}

@@ -17,6 +17,7 @@
 //      porque quem manda áudio é o worklet, não o WebRTC;
 //   3. o áudio remoto toca num <audio> criado aqui, e não num elemento da
 //      árvore React: a chamada não pode emudecer porque um modal desmontou.
+import { applyOutputToElement, microphoneConstraints } from '../../utils/audioDevices';
 import { waCallsLog } from './config';
 import { float32ToInt16LE, int16LEToFloat32 } from './pcm';
 
@@ -98,11 +99,21 @@ export async function openMicrophone(): Promise<MediaStream> {
     );
   }
   try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    return await navigator.mediaDevices.getUserMedia({ audio: microphoneConstraints() });
   } catch (err) {
     const name = (err as DOMException)?.name;
+    // O microfone ESCOLHIDO no painel de áudio não está aí (desconectado, ou
+    // tomado por outro programa). Uma ligação não pode morrer por causa de uma
+    // preferência: cai no padrão do sistema e segue. A escolha continua salva —
+    // o headset volta a valer assim que for plugado de novo.
+    if ((name === 'OverconstrainedError' || name === 'NotFoundError') && microphoneConstraints().deviceId) {
+      waCallsLog('microfone preferido indisponível — usando o padrão do sistema');
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+      } catch { /* cai nas mensagens abaixo com o erro original */ }
+    }
     if (name === 'NotAllowedError' || name === 'SecurityError') {
       throw new MicrophoneError(
         'Permissão de microfone necessária para realizar a chamada. Libere o microfone nas permissões do navegador.',
@@ -142,6 +153,22 @@ export interface WaCallAudioBridge {
   /** Encerra a gravação e devolve o arquivo. `null` se não havia gravação. */
   stopRecording: () => Promise<WaCallRecording | null>;
   isRecording: () => boolean;
+  /**
+   * A CONVERSA INTEIRA como stream, para mandar a um segundo atendente.
+   *
+   * É o mesmo par de vozes da gravação (minha + a do cliente) e de propósito
+   * NÃO leva a voz do convidado: devolver a ele o próprio som seria eco puro.
+   * `null` antes de o grafo subir.
+   */
+  guestFeed: () => MediaStream | null;
+  /**
+   * Liga a voz do segundo atendente na ligação: ela entra no MESMO worklet de
+   * captura que o microfone daqui, e é isso que faz o cliente ouvi-la — o
+   * WhatsApp continua vendo uma chamada só, com uma linha de áudio só.
+   */
+  attachGuest: (stream: MediaStream) => void;
+  /** Tira o convidado do áudio, sem tocar na chamada. */
+  detachGuest: () => void;
   /** Libera tudo: DataChannel, PeerConnection, microfone, AudioContext e o <audio>. */
   close: () => void;
 }
@@ -190,6 +217,12 @@ export async function openCallAudio(params: {
   let context: AudioContext | null = null;
   let audioEl: HTMLAudioElement | null = null;
   let recordDestination: MediaStreamAudioDestinationNode | null = null;
+  /** Destino que leva a conversa ao segundo atendente (sem a voz dele). */
+  let guestDestination: MediaStreamAudioDestinationNode | null = null;
+  /** O nó de captura, para a voz do convidado poder entrar no mesmo lugar. */
+  let captureInput: AudioWorkletNode | null = null;
+  /** A voz do convidado, enquanto ela estiver ligada. */
+  let guestSource: MediaStreamAudioSourceNode | null = null;
   let recorder: MediaRecorder | null = null;
   let recordingChunks: Blob[] = [];
   let recordingStartedAt = 0;
@@ -207,6 +240,8 @@ export async function openCallAudio(params: {
     try { if (recorder && recorder.state !== 'inactive') recorder.stop(); } catch { /* já parado */ }
     recorder = null;
     recordingChunks = [];
+    try { guestSource?.disconnect(); } catch { /* já solto */ }
+    guestSource = null;
     try { channel.close(); } catch { /* já fechado */ }
     try { micStream.getTracks().forEach(track => track.stop()); } catch { /* idem */ }
     try { void context?.close(); } catch { /* idem */ }
@@ -256,11 +291,23 @@ export async function openCallAudio(params: {
     micSource.connect(recordDestination);
     playbackNode.connect(recordDestination);
 
+    // A MESMA composição, num destino separado, é o que o segundo atendente
+    // ouve. Separado e não reaproveitado porque a voz DELE entra na gravação
+    // (ele é parte do atendimento) e não pode entrar no que volta para ele.
+    guestDestination = context.createMediaStreamDestination();
+    micSource.connect(guestDestination);
+    playbackNode.connect(guestDestination);
+    captureInput = captureNode;
+
     audioEl = document.createElement('audio');
     audioEl.autoplay = true;
     audioEl.srcObject = streamDestination.stream;
     audioEl.style.display = 'none';
     document.body.appendChild(audioEl);
+    // A voz do cliente vai para o alto-falante escolhido no painel de áudio.
+    // Assíncrono e sem `await`: se o dispositivo tiver sumido, o áudio sai no
+    // padrão do sistema — nunca em lugar nenhum.
+    void applyOutputToElement(audioEl);
     // O gesto do operador (o clique em Ligar/Atender) já libera o autoplay; se
     // ainda assim o navegador recusar, não há o que fazer além de seguir.
     void audioEl.play().catch(() => {});
@@ -344,8 +391,32 @@ export async function openCallAudio(params: {
     });
   };
 
+  const attachGuest = (stream: MediaStream) => {
+    if (closed || !context || !captureInput) return;
+    detachGuest();
+    guestSource = context.createMediaStreamSource(stream);
+    // O WebAudio SOMA tudo o que chega na mesma entrada: ligar a voz do
+    // convidado no nó de captura mistura as duas vozes no PCM que sobe, sem
+    // mixer nenhum no caminho. É também por isso que ele obedece ao mudo daqui
+    // — o corte é no envio dos quadros, depois da soma.
+    guestSource.connect(captureInput);
+    // E entra na gravação: quem falou com o cliente faz parte do atendimento.
+    if (recordDestination) guestSource.connect(recordDestination);
+    waCallsLog('segundo atendente no áudio', { callId });
+  };
+
+  const detachGuest = () => {
+    if (!guestSource) return;
+    try { guestSource.disconnect(); } catch { /* já solto */ }
+    guestSource = null;
+    waCallsLog('segundo atendente fora do áudio', { callId });
+  };
+
   return {
     callId,
+    guestFeed: () => guestDestination?.stream ?? null,
+    attachGuest,
+    detachGuest,
     startRecording,
     stopRecording,
     isRecording: () => recorder !== null,

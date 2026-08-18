@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.327': { name: 'Cafe Ligacao Com Dono e Com Reforco', emoji: '[phone]' },
   '1.10.326': { name: 'Cafe Microfone Certo na Ligacao', emoji: '[phone]' },
   '1.10.325': { name: 'Cafe Chamada Perdida na Tela', emoji: '[phone]' },
   '1.10.324': { name: 'Cafe Etapa e Documento Lado a Lado', emoji: '[memo]' },
@@ -966,6 +967,43 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.327',
+    date: '18/08/2026',
+    summary: 'A ligação que chega passou a ter dono: toca primeiro para quem é responsável, desce sozinha quando ninguém atende e a chamada perdida avisa quem devia ter atendido. E dá para chamar um colega para a ligação ou passá-la para ele sem desligar.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'O telefone toca na ordem de quem responde pelo atendimento',
+            description: 'O serviço de voz avisa todos os navegadores conectados e não sabe o que é responsável, setor ou canal — sem regra, a recepção inteira tocava junto e três pessoas corriam para atender a mesma ligação. Agora a chamada desce uma escada: responsável da conversa, depois o setor da conversa, depois o responsável do canal, depois os setores do canal e, por fim, a administração. Ninguém definido em degrau nenhum continua tocando para todos — nenhuma regra pode terminar com o telefone sem tocar em lugar nenhum. O cartão aparece calado para quem não é da vez, com o nome de quem deveria atender: quem sabe que o colega saiu para o fórum pode pegar a ligação sem esperar.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Quem não está com o CRM aberto não segura a ligação',
+            description: 'Esperar quinze segundos pela mesa de quem foi ao fórum é tempo que o cliente passa ouvindo chamar. O degrau em que ninguém está online é pulado na hora. E se ninguém atende, a chamada desce um degrau a cada quinze segundos SOMANDO gente: quem já estava tocando nunca para de tocar por causa da escalada — o responsável que foi buscar um café não perde a própria ligação.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Quem atende primeiro fica responsável pela conversa',
+            description: 'O convite toca em várias mesas de propósito quando o degrau é um setor inteiro. Sem isto, a ligação atendida não deixava dono: o cliente falava com quem pegou o telefone e a conversa continuava órfã na inbox, então o próximo retorno tocava de novo para todo mundo e quem já conhecia o caso não tinha prioridade nenhuma. Só a conversa SEM responsável é assumida — cobrir a chamada de um colega é um favor, não uma transferência.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A chamada perdida avisa quem devia ter atendido',
+            description: 'O cartão de perdida aparecia para o escritório inteiro, e um aviso em cinco telas produz cinco pessoas achando que a sexta vai retornar a ligação. Agora ele segue a mesma hierarquia do toque e para no primeiro degrau. O distintivo da aba de Ligações conta exatamente as mesmas — dois avisos discordando sobre a mesma ligação seria pior que um só —, mas a LISTA da aba continua inteira: ela é o registro do escritório, e esconder ligação de colega ali seria apagar histórico.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Chamar um colega para a ligação, ou passar a ligação para ele',
+            description: 'Dentro do painel da chamada em curso aparecem "Chamar" e "Transferir", com a lista de quem está com o CRM aberto agora e não está em outra ligação — transferir para uma mesa vazia é desligar na cara do cliente com passos extras. Quem é chamado recebe um cartão no alto da tela e entra na conversa junto; na transferência, o atendimento passa a ser dele e o microfone de quem transferiu se cala. IMPORTANTE: a janela de quem atendeu primeiro é a ponte de áudio da ligação, e o painel avisa isso em amarelo — fechá-la encerra a chamada para todos.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.326',
     date: '18/08/2026',

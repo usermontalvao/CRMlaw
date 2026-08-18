@@ -20,9 +20,13 @@ import {
   Phone, PhoneOff, Square, WifiOff,
 } from 'lucide-react';
 import { Avatar } from './avatar';
+import { AnchorNotice, CallGuestsSection } from './callGuestPanel';
+import { WaAudioDeviceButton } from './audioDeviceSettings';
 import { prettyPhone } from './format';
 import { callElapsedSeconds, formatCallTimer, phaseLabel } from '../../services/wacalls/callOutcome';
 import { isCallRingMuted, setCallRingMuted, stopRing } from '../../services/wacalls/ringtone';
+import type { CallInviteMode, InvitableOperator } from '../../services/wacalls/callGuests';
+import type { CallGuest } from '../../services/wacalls/callBridge';
 import {
   clampCallWidgetPosition,
   defaultCallWidgetPosition,
@@ -401,6 +405,13 @@ const MinimizedCallPill: React.FC<{
  */
 export const ActiveCallWidget: React.FC<{
   call: WaCall;
+  /** Quem foi chamado para esta ligação (ver `callBridge`). */
+  guests?: CallGuest[];
+  /** Atendentes online, para a lista de "chamar" e "transferir". */
+  operators?: InvitableOperator[];
+  me?: string | null;
+  onInviteGuest?: (userId: string, name: string | null, mode: CallInviteMode) => void;
+  onRemoveGuest?: (userId: string) => void;
   /** Rede local ou serviço de chamadas fora do ar — ver `WaCallsSnapshot.linkDown`. */
   linkDown?: boolean;
   onHangUp: () => void;
@@ -408,7 +419,10 @@ export const ActiveCallWidget: React.FC<{
   onToggleRecording: () => void;
   /** Abre a conversa deste contato na inbox. Ausente para número sem conversa. */
   onOpenConversation?: () => void;
-}> = ({ call, linkDown = false, onHangUp, onToggleMute, onToggleRecording, onOpenConversation }) => {
+}> = ({
+  call, linkDown = false, onHangUp, onToggleMute, onToggleRecording, onOpenConversation,
+  guests = [], operators = [], me = null, onInviteGuest, onRemoveGuest,
+}) => {
   const [minimized, setMinimized] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const { pos, dragging, handlers } = useDraggablePosition(cardRef, {
@@ -465,6 +479,13 @@ export const ActiveCallWidget: React.FC<{
         }`}>
           {finished ? 'Chamada' : 'Chamada em curso'}
         </p>
+        {/* O atalho para os dispositivos de áudio: é NA ligação que se descobre
+            que o som está saindo no monitor em vez do headset, e voltar à inbox
+            para corrigir custa a chamada. Mesmo painel do fone do cabeçalho. */}
+        <WaAudioDeviceButton
+          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white hover:text-slate-600"
+          sobreAChamada
+        />
         <RingMuteButton className="text-slate-400 hover:bg-white hover:text-slate-600" />
         <button
           onPointerDown={(e) => e.stopPropagation()}
@@ -530,6 +551,21 @@ export const ActiveCallWidget: React.FC<{
           </button>
         )}
       </div>
+
+      {/* Chamar um colega para a ligação ou passá-la adiante. Só com o áudio de
+          pé: convidar alguém para uma chamada que ainda está chamando é
+          convidá-lo para o silêncio. */}
+      {!finished && onInviteGuest && (
+        <CallGuestsSection
+          guests={guests}
+          operators={operators}
+          me={me}
+          canInvite={call.phase === 'ACTIVE'}
+          onInvite={onInviteGuest}
+          onRemove={userId => onRemoveGuest?.(userId)}
+        />
+      )}
+      {guests.some(g => g.status === 'live' || g.status === 'joining') && <AnchorNotice />}
 
       {!finished && (
         <div className="flex items-start justify-center gap-6 border-t border-[#f1f0ec] px-4 py-4">

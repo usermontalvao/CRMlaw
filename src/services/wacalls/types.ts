@@ -1,7 +1,7 @@
 // Tipos do WaCalls — espelham o que o servidor Go publica em /api e no SSE.
 // Nomes e formas vêm de `cmd/server/broker.go` e `cmd/server/httpapi.go` do
 // repositório JotaDev66/WaCalls; mudar aqui sem mudar lá quebra em silêncio.
-import type { CallRoute } from './callRouting';
+import type { CallDegree, CallRoute } from './callRouting';
 
 /** Estado da conexão da conta WhatsApp no WaCalls. */
 export type WaCallsSessionState = 'connecting' | 'qr' | 'open' | 'logged_out';
@@ -99,6 +99,12 @@ export interface WaCall {
    * aparece calado, e o som entra assim que a decisão chega.
    */
   route: CallRoute | null;
+  /**
+   * A escada de atendimento desta chamada (ver `callRouting`), guardada aqui
+   * para o aviso de perdida saber de quem ela é sem refazer as consultas
+   * depois que o telefone já parou de tocar.
+   */
+  ladder?: CallDegree[];
   /** Gravando AGORA (o operador ligou a gravação). */
   recording: boolean;
   /** Esta chamada já produziu uma gravação — só uma por chamada. */

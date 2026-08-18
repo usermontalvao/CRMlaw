@@ -21,7 +21,10 @@ import {
   type CallablePhoneCandidate,
 } from './phone';
 import { endReasonIsFailure, endReasonMessage, phaseFromStatus } from './callOutcome';
-import { decideCallRing, CALL_ESCALATION_MS, type CallRoute, type CallRouteSource } from './callRouting';
+import { decideCallRing, CALL_ESCALATION_MS, type CallDegree, type CallRoute } from './callRouting';
+import { buildLadderFor, conversationRouting } from './routingData';
+import { operatorPresence } from './operatorPresence';
+import { callBridge } from './callBridge';
 import { supabase } from '../../config/supabase';
 import type { WaCall, WaCallContact, WaCallsEvent, WaCallsSession, WaCallsStatus } from './types';
 
@@ -122,6 +125,10 @@ function emit(): void {
     sessionId,
     calls: Array.from(calls.values()).sort((a, b) => b.startedAt - a.startedAt),
   };
+  // Os colegas precisam saber que esta mesa está em ligação: é o que impede a
+  // transferência para quem já está falando e o que o cartão lê para não tocar
+  // por cima de uma conversa. `setBusy` ignora repetição, então cabe aqui.
+  operatorPresence.setBusy(liveMineCalls().length > 0);
   listeners.forEach(fn => fn());
 }
 
@@ -374,6 +381,10 @@ function finishCall(callId: string, endReason: string | null, failed = false): v
   }
   // O cartão da chamada some da tela em segundos; a PERDIDA não pode sumir
   // junto — quem estava no processo ou na agenda nem viu o telefone tocar.
+  // Quem estava na ligação como convidado sai junto: um segundo atendente com
+  // a tela dizendo "em atendimento" depois de o cliente desligar é pior que
+  // nenhum aviso.
+  callBridge.endCall(callId);
   if (isMissedInboundCall(updated, failed)) missedListeners.forEach(fn => fn(updated));
   scheduleRemoval(callId, failed ? FAILED_LINGER_MS : ENDED_LINGER_MS);
   void closeAndArchive(updated, failed);
@@ -530,29 +541,34 @@ async function currentUserId(): Promise<string | null> {
   return cachedUserId;
 }
 
-/** Nome de quem deveria atender — o cartão explica para quem está tocando. */
-const nameCache = new Map<string, string | null>();
-async function profileName(userId: string): Promise<string | null> {
-  const cached = nameCache.get(userId);
-  if (cached !== undefined) return cached;
+/**
+ * QUEM ATENDE PRIMEIRO FICA RESPONSÁVEL.
+ *
+ * O convite toca em várias mesas de propósito (o degrau pode ser um setor
+ * inteiro), e sem isto a ligação atendida não deixava dono: o cliente falava
+ * com quem pegou o telefone, e a conversa continuava órfã na inbox — o próximo
+ * retorno tocaria de novo para o setor inteiro, e a pessoa que já conhece o
+ * caso não teria prioridade nenhuma.
+ *
+ * Só a conversa SEM responsável é assumida. Atender a ligação de um caso que já
+ * é de outra pessoa (ela saiu para o fórum, alguém cobriu) não pode tomar o
+ * atendimento dela — cobrir uma chamada é um favor, não uma transferência.
+ *
+ * Best-effort de ponta a ponta: falhou, a ligação continua de pé. Ninguém perde
+ * uma chamada porque a atribuição não gravou.
+ */
+async function assumirAtendimento(call: WaCall): Promise<void> {
+  const conversationId = call.contact?.conversationId;
+  if (!conversationId) return;
   try {
-    const { data } = await supabase.from('profiles').select('name').eq('user_id', userId).maybeSingle();
-    const name = (data as { name: string | null } | null)?.name ?? null;
-    nameCache.set(userId, name);
-    return name;
+    const rota = (await conversationRouting([conversationId])).get(conversationId);
+    if (rota?.assignedUserId) return;
+    const me = await currentUserId();
+    if (!me) return;
+    await whatsappService.assignConversation(conversationId, me, 'Assumiu ao atender a chamada');
+    waCallsLog('atendimento assumido por quem atendeu', { callId: call.callId });
   } catch {
-    return null;
-  }
-}
-
-/** Padrão de atendimento do canal (`whatsapp_instances.default_assignee_id`). */
-async function channelDefaultAssignee(instanceId: string): Promise<string | null> {
-  try {
-    const { data } = await supabase
-      .from('whatsapp_instances').select('default_assignee_id').eq('id', instanceId).maybeSingle();
-    return (data as { default_assignee_id: string | null } | null)?.default_assignee_id ?? null;
-  } catch {
-    return null;
+    // A ligação vale mais que o registro do responsável.
   }
 }
 
@@ -577,8 +593,9 @@ async function resolveIncomingRoute(
   lid: string | null,
   peerSessionId: string | null,
 ): Promise<void> {
-  let targetUserId: string | null = null;
-  let source: CallRouteSource = 'everyone';
+  let assignedUserId: string | null = null;
+  let departmentId: string | null = null;
+  let instanceId: string | null = null;
   let contactBlocked = false;
 
   // Convite endereçado por LID: o número não veio, e o LID NÃO é um número.
@@ -660,12 +677,21 @@ async function resolveIncomingRoute(
       waCallsLog('LID reconhecido pela conversa', { callId });
     }
     contactBlocked = identidade.isBlocked;
-    if (identidade.assignedUserId) {
-      targetUserId = identidade.assignedUserId;
-      source = 'assigned';
-    } else if (identidade.instanceId) {
-      const padrao = await channelDefaultAssignee(identidade.instanceId);
-      if (padrao) { targetUserId = padrao; source = 'channel'; }
+    assignedUserId = identidade.assignedUserId;
+    instanceId = identidade.instanceId;
+    // O SETOR da conversa não vem na identificação do contato (ela responde
+    // "quem está ligando", não "de quem é o atendimento"), e é o segundo degrau
+    // da escada. Uma consulta a mais, com a conversa já em mãos.
+    const convId = identidade.contact.conversationId;
+    if (convId) {
+      const rota = (await conversationRouting([convId])).get(convId);
+      if (rota) {
+        // O banco manda: a conversa pode ter sido transferida enquanto o
+        // telefone tocava, e é a transferência mais recente que vale.
+        assignedUserId = rota.assignedUserId ?? assignedUserId;
+        departmentId = rota.departmentId;
+        instanceId = rota.instanceId ?? instanceId;
+      }
     }
   }
 
@@ -675,47 +701,69 @@ async function resolveIncomingRoute(
 
   if (!numero && !identidade) {
     // Nem número, nem conversa, nem ficha (com ou sem nome de perfil na tela):
-    // não há responsável, canal nem bloqueio a consultar. Toca para todos,
-    // como qualquer chamada sem dono.
-    const me = await currentUserId();
-    patch(callId, {
-      route: decideCallRing({
-        me, targetUserId: null, source: 'everyone', contactBlocked: false,
-        imBusy: inAnotherCall(callId), escalated: false,
-      }),
-    });
+    // não há responsável, setor nem canal a consultar. A escada começa e termina
+    // na administração — uma ligação sem dono é do escritório, e o escritório
+    // tem quem responda por ele.
+    const [me, orfa] = await Promise.all([currentUserId(), buildLadderFor({})]);
+    escalar(callId, orfa, me, false);
     return;
   }
 
-  const [me, targetName] = await Promise.all([
+  const [me, escada] = await Promise.all([
     currentUserId(),
-    targetUserId ? profileName(targetUserId) : Promise.resolve(null),
+    buildLadderFor({ assignedUserId, departmentId, instanceId }),
   ]);
+  // A escada fica guardada na chamada: o cartão de perdida lê dela depois, sem
+  // refazer as quatro consultas quando o telefone já parou de tocar.
+  patch(callId, { ladder: escada });
+  escalar(callId, escada, me, contactBlocked);
+}
 
-  const apply = (escalated: boolean) => {
+/**
+ * Aplica a escada e agenda a descida.
+ *
+ * Um degrau por vez, com a carência entre eles, até o último. Cada passo SOMA
+ * gente ao toque (ver `decideCallRing`) — descer nunca cala o telefone de quem
+ * já estava chamando, só chama mais gente para uma ligação que ninguém pegou.
+ */
+function escalar(
+  callId: string,
+  ladder: CallDegree[],
+  me: string | null,
+  contactBlocked: boolean,
+): void {
+  let passo = 0;
+
+  const aplicar = (): CallRoute | null => {
     const call = calls.get(callId);
-    if (!call || call.phase !== 'RINGING' || call.mine) return;
+    if (!call || call.phase !== 'RINGING' || call.mine) return null;
     const route = decideCallRing({
-      me, targetUserId, source, targetName, contactBlocked,
+      me,
+      ladder,
+      online: operatorPresence.onlineUserIds(),
+      step: passo,
+      contactBlocked,
       imBusy: inAnotherCall(callId),
-      escalated,
     });
     patch(callId, { route });
     return route;
   };
 
-  const route = apply(false);
-  waCallsLog('rota da chamada recebida', { callId, source, targetUserId, ring: route?.ring });
-
-  // Escalada: o dono não é a mesa dele. Passados alguns segundos sem ninguém
-  // atender, o convite deixa de ser exclusivo.
-  if (route && !route.ring && route.show) {
+  const agendar = (route: CallRoute | null) => {
+    if (!route || !route.hasNextStep || !route.show) return;
     const timer = setTimeout(() => {
       escalationTimers.delete(callId);
-      apply(true);
+      passo += 1;
+      agendar(aplicar());
     }, CALL_ESCALATION_MS);
     escalationTimers.set(callId, timer);
-  }
+  };
+
+  const inicial = aplicar();
+  waCallsLog('rota da chamada recebida', {
+    callId, source: inicial?.source, alvo: inicial?.targetUserIds?.length ?? 0, ring: inicial?.ring,
+  });
+  agendar(inicial);
 }
 
 function handleEvent(event: WaCallsEvent): void {
@@ -861,6 +909,24 @@ export const waCallsStore = {
   async init(): Promise<void> {
     if (initializing) return initializing;
     watchLink();
+    // Quem está na mesa agora — a hierarquia pula o degrau vazio com isto (ver
+    // `operatorPresence`). Idempotente, e falha em silêncio: sem presença, a
+    // regra trata todo mundo como disponível.
+    operatorPresence.init();
+    // A ponte entre navegadores (segundo atendente e transferência) precisa do
+    // áudio DESTA chamada; o mapa de pontes vivas é privado deste módulo, então
+    // é ele quem empresta o que ela pode usar — e nada além disso.
+    callBridge.bindHostAudio(callId => {
+      const bridge = bridges.get(callId);
+      if (!bridge) return null;
+      return {
+        feed: () => bridge.guestFeed(),
+        attachGuest: stream => bridge.attachGuest(stream),
+        detachGuest: () => bridge.detachGuest(),
+        mute: () => { bridge.setMuted(true); patch(callId, { muted: true }); },
+      };
+    });
+    callBridge.init();
     initializing = (async () => {
       try {
         applySessions(await waCallsService.getSessions());
@@ -1000,7 +1066,7 @@ export const waCallsStore = {
       endReason: null,
       muted: false,
       // Chamada que sai daqui é minha por definição: nada a rotear.
-      route: { ring: false, show: true, label: '' },
+      route: { ring: false, show: true, label: '', source: 'assigned', targetUserIds: [], hasNextStep: false },
       recording: false,
       recorded: false,
       error: null,
@@ -1046,6 +1112,7 @@ export const waCallsStore = {
       finishCall(callId, 'failed', true);
       return;
     }
+    void assumirAtendimento(call);
     await this.attachAudio(call.sessionId, callId, micStream);
   },
 

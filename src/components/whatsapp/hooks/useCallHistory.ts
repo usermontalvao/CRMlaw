@@ -23,6 +23,7 @@ import { waCallsStore } from '../../../services/wacalls/callStore';
 import {
   markCallsSeen, readCallsSeenUntil, subscribeCallsSeen,
 } from '../../../services/wacalls/callsSeen';
+import { missedCallsForMe } from '../../../services/wacalls/routingData';
 import { newestCallAt, unseenMissedCount } from '../callHistory';
 
 /** Quanto esperar depois do fim da chamada para o registro já estar gravado. */
@@ -104,7 +105,31 @@ export function useCallHistory(enabled = true): CallHistory {
   // distintivo acompanha sem esperar recarregamento.
   useEffect(() => subscribeCallsSeen(() => setSeenUntil(readCallsSeenUntil())), []);
 
-  const unseen = useMemo(() => unseenMissedCount(calls, seenUntil), [calls, seenUntil]);
+  // O DISTINTIVO CONTA SÓ O QUE É MEU.
+  //
+  // A LISTA continua inteira — a aba de Ligações é o registro do escritório, e
+  // esconder ligação de colega ali seria apagar histórico. O que é pessoal é o
+  // AVISO: o número vermelho no alto da aba conta as perdidas que caíram na
+  // minha parte da hierarquia, exatamente as mesmas que o cartão na tela
+  // mostra (ver `missedCallsForMe`). Sem isto, o distintivo acenderia por uma
+  // ligação que nenhum cartão meu mostra — e dispensar o cartão não o apagaria.
+  const [minhas, setMinhas] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    const perdidas = calls.filter(c => c.direction === 'inbound' && c.outcome === 'missed');
+    if (perdidas.length === 0) { setMinhas(new Set()); return; }
+    void missedCallsForMe(perdidas).then(lista => {
+      if (vivo) setMinhas(new Set(lista.map(c => c.callId)));
+    });
+    return () => { vivo = false; };
+  }, [calls]);
+
+  const unseen = useMemo(
+    // `minhas` nulo é "ainda não sei de quem são": conta tudo, como antes. Um
+    // distintivo a mais por dois segundos é melhor que um aviso que sumiu.
+    () => unseenMissedCount(minhas ? calls.filter(c => minhas.has(c.callId)) : calls, seenUntil),
+    [calls, seenUntil, minhas],
+  );
 
   const markSeen = useCallback(() => {
     // A marca é o horário da chamada MAIS RECENTE da lista, não `Date.now()`:

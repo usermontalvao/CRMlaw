@@ -12,13 +12,20 @@
 //    telefone para de tocar. É o caminho rápido, e o único que funciona com o
 //    CRM aberto em qualquer tela.
 //  · A RELEITURA do registro (`callLogService.listRecentMissed`), para o que
-//    tocou na mesa do colega, no celular do escritório, ou enquanto esta aba
-//    estava fechada. Sem ela, o aviso seria pessoal em vez de ser do
-//    escritório — e chamada perdida é do escritório.
+//    tocou enquanto esta aba estava fechada ou em outra mesa. Sem ela, a
+//    perdida da manhã não estaria na tela de quem chegou depois.
+//
+// E UM FILTRO por cima das duas: a perdida é de QUEM DEVIA TER ATENDIDO, na
+// mesma hierarquia do toque (responsável → setor da conversa → responsável do
+// canal → setor do canal → administração). Ver `missedCallsForMe`. O cartão
+// aparecer em cinco telas produzia cinco pessoas achando que a sexta ia
+// retornar a ligação; agora ele aparece na tela de quem tem de retornar. O
+// histórico completo continua onde sempre esteve: na aba de Ligações.
 //
 // O que a lista mostra é decidido pelas regras puras de `missedCalls.ts`; aqui
 // só moram a persistência, as fontes e o relógio.
 import { callLogService, type CallLogRow } from '../callLog.service';
+import { missedCallsForMe } from './routingData';
 import { waCallsStore } from './callStore';
 import { markCallsSeen, readCallsSeenUntilMs, subscribeCallsSeen } from './callsSeen';
 import {
@@ -101,10 +108,20 @@ function recompute(persist = true): void {
   listeners.forEach(fn => fn());
 }
 
-/** Entram chamadas novas (do evento ou da releitura) e a tela se refaz. */
-function add(novas: readonly MissedCall[]): void {
+/**
+ * Entram chamadas novas (do evento ou da releitura) e a tela se refaz — depois
+ * de perguntar de quem elas são.
+ *
+ * A pergunta é assíncrona porque a resposta mora no banco (responsável, setor,
+ * canal), e por isso `add` não é mais uma função que "só junta listas": entre a
+ * chamada chegar e o cartão subir há uma ida ao servidor. Falhando, nada é
+ * escondido (ver `missedCallsForMe`).
+ */
+async function add(novas: readonly MissedCall[]): Promise<void> {
   if (novas.length === 0) return;
-  entries = mergeMissedCalls(entries, novas, {
+  const minhas = await missedCallsForMe(novas);
+  if (minhas.length === 0) return;
+  entries = mergeMissedCalls(entries, minhas, {
     now: Date.now(),
     dismissed: dismissed.map(d => d.callId),
     seenUntil: readCallsSeenUntilMs(),
@@ -167,7 +184,7 @@ export const missedCallsStore = {
     recompute(false);
 
     // 1. O telefone parou de tocar aqui.
-    cleanups.push(waCallsStore.onMissedCall(call => add([fromWaCall(call)])));
+    cleanups.push(waCallsStore.onMissedCall(call => { void add([fromWaCall(call)]); }));
 
     // 2. Alguém deu as ligações por vistas (aqui, no cartão, ou na aba).
     cleanups.push(subscribeCallsSeen(() => recompute()));
@@ -204,7 +221,7 @@ export const missedCallsStore = {
       try {
         const desde = Date.now() - MISSED_CALL_WINDOW_MS;
         const rows = await callLogService.listRecentMissed(desde);
-        add(rows.map(fromLogRow));
+        await add(rows.map(fromLogRow));
       } catch {
         // Sem rede, fica o que já está na tela.
       } finally {

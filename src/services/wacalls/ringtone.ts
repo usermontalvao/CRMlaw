@@ -93,10 +93,21 @@ export function scheduleRingCycle(ac: BaseAudioContext, destination: AudioNode, 
 let cycleTimer: ReturnType<typeof setInterval> | null = null;
 let currentKind: RingKind | null = null;
 
-/** Vibração no celular acompanhando o toque (ignorada onde não existe). */
+/**
+ * Vibração no celular acompanhando o toque (ignorada onde não existe).
+ *
+ * `vibrando` existe para o cancelamento: pedir `vibrate(0)` sem nunca ter
+ * vibrado é inofensivo, mas o Chrome registra uma "Intervention" no console
+ * quando a aba ainda não recebeu clique nenhum — e `stopRing()` roda em toda
+ * montagem do host, o que enchia o console de aviso a cada carregamento.
+ */
+let vibrando = false;
+
 function vibrate(kind: RingKind): void {
   if (kind !== 'incoming') return;
-  try { navigator.vibrate?.([420, 180, 420]); } catch { /* sem vibração — tudo bem */ }
+  try {
+    if (navigator.vibrate?.([420, 180, 420])) vibrando = true;
+  } catch { /* sem vibração — tudo bem */ }
 }
 
 function ringOnce(kind: RingKind): void {
@@ -129,7 +140,10 @@ export function stopRing(): void {
   if (cycleTimer) clearInterval(cycleTimer);
   cycleTimer = null;
   currentKind = null;
-  try { navigator.vibrate?.(0); } catch { /* sem vibração */ }
+  if (vibrando) {
+    vibrando = false;
+    try { navigator.vibrate?.(0); } catch { /* sem vibração */ }
+  }
 }
 
 /**

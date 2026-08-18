@@ -18,6 +18,7 @@
 import React, { useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useCallBridge, useOnlineOperators } from '../../hooks/useCallBridge';
 import { useMissedCalls } from '../../hooks/useMissedCalls';
 import { useWaCalls } from '../../hooks/useWaCalls';
 import { waCallsStore } from '../../services/wacalls/callStore';
@@ -25,6 +26,7 @@ import {
   playCallConnectedTone, playCallEndedTone, startRing, stopRing,
 } from '../../services/wacalls/ringtone';
 import { ActiveCallWidget, IncomingCallCard, callDisplayName } from './callModals';
+import { CallInviteCard, GuestCallBar } from './callGuestPanel';
 import { MissedCallWidget } from './MissedCallWidget';
 import type { WaCall } from '../../services/wacalls/types';
 
@@ -164,8 +166,12 @@ function useCallRinging(myCall: WaCall | null, incoming: WaCall | null): void {
  * atendente, sem aviso nenhum. O navegador só permite o diálogo padrão dele —
  * não dá para escrever o texto —, mas o segundo de hesitação já resolve.
  */
-function useConfirmLeaveDuringCall(myCall: WaCall | null): void {
-  const live = !!myCall && myCall.phase !== 'ENDED' && myCall.phase !== 'FAILED';
+function useConfirmLeaveDuringCall(myCall: WaCall | null, bridging = false): void {
+  // `bridging` é a mesa que está segurando o áudio de um segundo atendente: a
+  // janela dela não é só a dela. Fechá-la derruba a ligação para os dois lados
+  // (ver `services/wacalls/callBridge`), e é o único caso em que o aviso do
+  // navegador aparece sem esta pessoa estar, ela própria, ao telefone.
+  const live = bridging || (!!myCall && myCall.phase !== 'ENDED' && myCall.phase !== 'FAILED');
   useEffect(() => {
     if (!live) return;
     const handler = (event: BeforeUnloadEvent) => {
@@ -188,10 +194,16 @@ export const WaCallsHost: React.FC<{
     myCall, incoming, linkDown, canCall, placeCall, acceptCall, rejectCall, hangUp, setMuted, setRecording,
   } = useWaCalls();
   const { calls: missed, dismiss: dismissMissed, dismissAll: dismissAllMissed } = useMissedCalls();
+  const {
+    guests, invite, joined, anchoring, guestMuted, me,
+    accept: acceptInvite, decline: declineInvite, leave: leaveCall,
+    setGuestMuted, convidar, removeGuest,
+  } = useCallBridge();
+  const operators = useOnlineOperators();
 
   useCallRinging(myCall, incoming);
   useSystemCallNotification(incoming);
-  useConfirmLeaveDuringCall(myCall);
+  useConfirmLeaveDuringCall(myCall, anchoring);
 
   // A aba está indo embora: microfone, AudioContext e SSE liberados na saída.
   useEffect(() => () => waCallsStore.shutdown(), []);
@@ -206,6 +218,28 @@ export const WaCallsHost: React.FC<{
 
   return (
     <>
+      {/* Convite para entrar na ligação de um colega — no alto e ao centro,
+          como a chamada recebida: é uma pessoa esperando resposta agora. */}
+      <AnimatePresence>
+        {invite && !joined && (
+          <CallInviteCard
+            key={invite.callId}
+            invite={invite}
+            onAccept={acceptInvite}
+            onDecline={declineInvite}
+          />
+        )}
+      </AnimatePresence>
+      {/* Entrei na ligação de outra pessoa: barra enxuta, sem botão de
+          encerrar — quem encerra a chamada do cliente é quem atendeu. */}
+      {joined && (
+        <GuestCallBar
+          invite={joined.invite}
+          muted={guestMuted}
+          onToggleMute={() => setGuestMuted(!guestMuted)}
+          onLeave={leaveCall}
+        />
+      )}
       <AnimatePresence>
         {incoming && (
           <IncomingCallCard
@@ -241,6 +275,20 @@ export const WaCallsHost: React.FC<{
           key={myCall.callId}
           call={myCall}
           linkDown={linkDown}
+          guests={guests}
+          operators={operators}
+          me={me}
+          onInviteGuest={(userId, name, mode) => convidar({
+            callId: myCall.callId,
+            toUserId: userId,
+            toName: name,
+            mode,
+            contactName: myCall.contact?.name ?? null,
+            phone: myCall.phone,
+            conversationId: myCall.contact?.conversationId ?? null,
+            clientId: myCall.contact?.clientId ?? null,
+          })}
+          onRemoveGuest={(userId) => removeGuest(myCall.callId, userId)}
           onHangUp={() => { void hangUp(myCall.callId); }}
           onToggleMute={() => setMuted(myCall.callId, !myCall.muted)}
           onToggleRecording={() => setRecording(myCall.callId, !myCall.recording)}
