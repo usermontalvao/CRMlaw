@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Clock, Pencil, Ban, BellOff, AlertTriangle, Users, Timer,
+  Clock, Pencil, Ban, BellOff, AlertTriangle, Users, Timer, FileText,
 } from 'lucide-react';
 import type {
   WhatsAppConversation, WhatsAppChannel, WhatsAppDepartment, WhatsAppPresence,
@@ -238,13 +238,39 @@ export const ConversationListItem: React.FC<{
               {failedSends === 1 ? 'Não enviada' : `${failedSends} não enviadas`}
             </span>
           )}
+          {/* ETAPA do funil — onde o atendimento está no processo. Anda por
+              arrasto no quadro, pela etiqueta ou por automação, e é sempre uma
+              decisão de gente. O ponto colorido é a marca da etapa: é o que a
+              distingue, a olho nu, do chip de documentos ao lado. */}
           {stage && (
             <span
               className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
               style={{ background: `${stage.color}22`, color: stage.color }}
+              title={`Etapa do funil: ${stage.stageLabel}`}
             >
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: stage.color }} />
               {stage.stageLabel}
+            </span>
+          )}
+          {/* ESTADO da solicitação de documentos — fato, lido de
+              `document_requests`, não posição no funil.
+              Voltou para a lista porque sem ele a linha só tinha a etapa, e uma
+              etapa chamada "Aguardando documentos" continuava dizendo isso
+              DEPOIS de os arquivos chegarem: o resumo lá em cima anunciava
+              "Documentos prontos" e a lista, a mesma conversa, "Aguardando
+              docs". Os dois convivem, cada um com o seu desenho — ícone de
+              arquivo aqui, ponto de etapa ali — e o texto nunca repete o da
+              etapa. */}
+          {ds && (
+            <span
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${
+                ds === 'awaiting' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+              }`}
+              title={ds === 'awaiting'
+                ? 'Há solicitação de documentos pendente para este cliente'
+                : 'Os documentos solicitados já chegaram — a etapa do funil continua onde estava'}
+            >
+              <FileText size={9} /> {ds === 'awaiting' ? 'Docs pendentes' : 'Docs prontos'}
             </span>
           )}
           {/* Quanto falta para esta conversa encerrar sozinha. Fica na lista

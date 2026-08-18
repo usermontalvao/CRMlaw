@@ -93,6 +93,51 @@ export function resolveStageTarget(
     ?? null;
 }
 
+/**
+ * A etiqueta da PRÓXIMA etapa depois de `stageKey` no funil deste canal.
+ *
+ * O funil chega aqui achatado em etiquetas, e uma etapa pode ter várias — por
+ * isso a busca pula todas as etiquetas da etapa atual antes de aceitar a
+ * seguinte. Sem próxima etapa (a atual é a última), devolve null e quem chamou
+ * não faz nada.
+ */
+export function nextStageAfter(funnel: FunnelLabel[], stageKey: string): FunnelLabel | null {
+  const atual = resolveStageTarget(funnel, stageKey);
+  if (!atual) return null;
+  const idx = funnel.findIndex(l => l.stageKey === atual.stageKey);
+  if (idx < 0) return null;
+  return funnel.find((l, i) => i > idx && l.stageKey !== atual.stageKey) ?? null;
+}
+
+/**
+ * Para onde vai a conversa quando os documentos solicitados ficam prontos.
+ *
+ * Pedir documento já jogava a conversa em "Aguardando Documentos"
+ * (`onRequestDocCreated`), mas nada a tirava de lá: a solicitação virava
+ * `complete`, o resumo passava a dizer "Documentos prontos" e o cartão continuava
+ * parado na coluna de espera — o funil mentindo sobre um trabalho que já estava
+ * feito.
+ *
+ * Só mexe em quem está EXATAMENTE na etapa de documentos: conversa que já andou
+ * para a frente (ou que nunca esteve lá) fica onde está. Sem etapa de documentos
+ * no funil do canal, ou sem etapa seguinte, é no-op — nunca inventa destino.
+ */
+export function stageAfterDocumentsReady(
+  labels: string[] | null | undefined,
+  funnel: FunnelLabel[],
+): { from: FunnelLabel; to: FunnelLabel } | null {
+  const docs = resolveStageTarget(funnel, 'aguardando_documentos');
+  if (!docs) return null;
+  const atual = inferFunnelStage(labels, funnel);
+  if (!atual || atual.stageKey !== docs.stageKey) return null;
+  const proxima = nextStageAfter(funnel, docs.stageKey);
+  if (!proxima) return null;
+  // A etiqueta que a conversa realmente carrega é a que a troca condicional vai
+  // exigir no banco; pode não ser a primeira da etapa.
+  const carregada = (labels ?? []).find(l => funnel.some(f => f.key === l && f.stageKey === docs.stageKey));
+  return { from: carregada ? { ...docs, key: carregada } : docs, to: proxima };
+}
+
 /** Recorte mínimo de conversa que o quadro do funil precisa avaliar. */
 export interface FunnelBoardCandidate {
   instance_id: string | null;

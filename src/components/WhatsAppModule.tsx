@@ -57,7 +57,7 @@ import {
 import type { ConfirmOpts, ConfirmFn, WaOpenWorkspaceFn } from './whatsapp/types';
 import { MessageBubble, ImageAlbum } from './whatsapp/messageBubble';
 import { Avatar } from './whatsapp/avatar';
-import { WA_LABELS, resolveLabelMeta, inferFunnelStage, funnelLabelsFromChannelStages } from './whatsapp/funnel';
+import { WA_LABELS, resolveLabelMeta, inferFunnelStage, funnelLabelsFromChannelStages, stageAfterDocumentsReady } from './whatsapp/funnel';
 import { ClientLinkPanel } from './whatsapp/clientLinkPanel';
 import { PreCadastroModal } from './whatsapp/preCadastroModal';
 import { ConversationSummaryBanner } from './whatsapp/conversationSummaryBanner';
@@ -572,6 +572,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // realtime). Banner-resumo e painéis laterais consomem deste estado.
   const {
     overview, setOverview, reloadOverview,
+    docStatusByClient,
     effectiveDocStatus, trackedSignatureStatus, effectiveConversationStatus,
     dismissDocReady, stopTemplateFillTracking, stopSignatureTracking,
   } = useClientOverview(selectedClientId, conversations, selected?.contact_phone ?? null);
@@ -618,6 +619,73 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       toast.warning('Etapa alterada com ações pendentes', result.errors.join(' · '));
     }
   }, [channelFunnelStages, departments, staff, loadConversations, toast]);
+
+  /**
+   * Documentos prontos → a conversa sai sozinha de "Aguardando documentos".
+   *
+   * Pedir documento já empurrava a conversa PARA a etapa de espera; nada a
+   * tirava de lá. O resultado aparecia como contradição na tela: o resumo da
+   * conversa anunciando "Documentos prontos" e, na mesma linha da lista, a
+   * etapa ainda dizendo que se espera documento. Quem lê a fila pela coluna
+   * acabava cobrando arquivo que já tinha chegado.
+   *
+   * Reage à MUDANÇA, não ao retrato: só avança o cliente que estava esperando
+   * e passou a ter tudo. Sem isso, abrir o painel arrastaria de uma vez todos
+   * os cartões antigos parados na coluna — e ainda dispararia as ações de
+   * entrada da etapa seguinte para cada um deles.
+   *
+   * A troca é condicional no banco (`updateLabelsIfStillTagged`): o mesmo
+   * evento chega a todos os painéis abertos do escritório ao mesmo tempo, e
+   * quem move é um só.
+   */
+  const avancarEtapaPorDocumentos = useCallback(async (
+    conv: WhatsAppConversation,
+    movimento: { from: FunnelLabel; to: FunnelLabel },
+  ): Promise<boolean> => {
+    const funil = funnelLabelsForChannel(conv.instance_id);
+    const chavesDoFunil = new Set(funil.map(l => l.key));
+    // Etapa é única: sai a etiqueta de funil antiga, ficam as tags livres.
+    const next = [...(conv.labels ?? []).filter(l => !chavesDoFunil.has(l)), movimento.to.key];
+    let moveu = false;
+    try {
+      moveu = await whatsappService.updateLabelsIfStillTagged(conv.id, movimento.from.key, next);
+    } catch { return false; }
+    if (!moveu) return false; // outro painel (ou um atendente) chegou primeiro
+    setConversations(prev => prev.map(c => (c.id === conv.id ? { ...c, labels: next } : c)));
+    toast.info('Documentos prontos',
+      `${conversationName(conv)} avançou para “${movimento.to.stageLabel}”.`);
+    // Entrar por automação vale o mesmo que arrastar no quadro: as ações de
+    // entrada da etapa rodam aqui também — e só para quem de fato moveu.
+    try { await runFunnelStageActions({ ...conv, labels: next }, movimento.to.stageKey); }
+    catch { /* best-effort: a etapa já mudou */ }
+    return true;
+  }, [funnelLabelsForChannel, setConversations, runFunnelStageActions, toast]);
+
+  const docStatusAnteriorRef = useRef<Record<string, 'awaiting' | 'ready'> | null>(null);
+  const avancoDeDocsEmCursoRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const anterior = docStatusAnteriorRef.current;
+    docStatusAnteriorRef.current = docStatusByClient;
+    if (!anterior) return; // primeira leitura é retrato, não acontecimento
+    const ficaramProntos = Object.keys(docStatusByClient).filter(
+      id => docStatusByClient[id] === 'ready' && anterior[id] && anterior[id] !== 'ready',
+    );
+    if (ficaramProntos.length === 0) return;
+    const alvos = new Set(ficaramProntos);
+    for (const conv of conversations) {
+      if (!conv.client_id || !alvos.has(conv.client_id)) continue;
+      if (conv.status === 'closed' || conv.is_blocked) continue;
+      if (avancoDeDocsEmCursoRef.current.has(conv.id)) continue;
+      const movimento = stageAfterDocumentsReady(conv.labels, funnelLabelsForChannel(conv.instance_id));
+      if (!movimento) continue;
+      avancoDeDocsEmCursoRef.current.add(conv.id);
+      void avancarEtapaPorDocumentos(conv, movimento).then(moveu => {
+        // Não moveu (falha de rede, ou outro painel na frente): libera para a
+        // próxima vez que os documentos desta conversa ficarem prontos.
+        if (!moveu) avancoDeDocsEmCursoRef.current.delete(conv.id);
+      });
+    }
+  }, [docStatusByClient, conversations, funnelLabelsForChannel, avancarEtapaPorDocumentos]);
 
   // Camada de dados da thread: janela de mensagens da conversa aberta, com
   // carregamento inicial, paginação e refresh em tempo real. Vive aqui (antes de

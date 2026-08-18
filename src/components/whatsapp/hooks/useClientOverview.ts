@@ -35,6 +35,11 @@ export interface ClientOverviewApi {
   overview: ClientOverview | null;
   setOverview: React.Dispatch<React.SetStateAction<ClientOverview | null>>;
   reloadOverview: () => void;
+  /**
+   * Estado das solicitações de documentos por cliente, SEM a dispensa visual do
+   * aviso. É a fonte das automações de funil; a tela usa `effectiveDocStatus`.
+   */
+  docStatusByClient: Record<string, 'awaiting' | 'ready'>;
   effectiveDocStatus: (clientId: string | null | undefined) => 'awaiting' | 'ready' | null;
   trackedSignatureStatus: (clientId: string | null | undefined) => ClientTrackedSignatureStatus | null;
   effectiveConversationStatus: (c: ConvStatusInput) => ReturnType<typeof convStatus>;
@@ -282,6 +287,11 @@ export function useClientOverview(
 
   return {
     overview, setOverview, reloadOverview,
+    // O mapa CRU sai junto do `effectiveDocStatus` porque a automação de funil
+    // não pode obedecer à dispensa do aviso: "não quero mais ver este aviso" é
+    // decisão de tela de um atendente, e não desfaz o fato de os documentos
+    // terem chegado.
+    docStatusByClient,
     effectiveDocStatus, trackedSignatureStatus, effectiveConversationStatus,
     dismissDocReady, stopTemplateFillTracking, stopSignatureTracking,
   };

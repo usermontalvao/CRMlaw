@@ -34,12 +34,18 @@ export interface AutoCloseConversation {
   /** De que lado veio a última mensagem: é ela que diz de quem é a vez. */
   last_message_direction: 'in' | 'out' | null;
   /**
-   * Marcas das duas mensagens automáticas. Servem para reconhecer que a última
+   * Marcas das mensagens automáticas. Servem para reconhecer que a última
    * mensagem que saiu foi um recado de secretária eletrônica — e não uma
    * resposta que passa a bola para o cliente.
+   *
+   * `document_ack_sent_at` é o "Recebemos os seus arquivos!": o cliente manda
+   * cinco documentos, o robô agradece e, sem esta marca, o agradecimento vale
+   * como atendimento — o painel passa a contar o encerramento de um caso que
+   * ninguém leu ainda.
    */
   absence_sent_at?: string | null;
   reopen_prompt_sent_at?: string | null;
+  document_ack_sent_at?: string | null;
 }
 
 export interface AutoCloseChannel {
@@ -65,10 +71,12 @@ export type AutoCloseClock =
  * resposta nossa. A janela é a mesma da migration: a marca é gravada ANTES do
  * envio e a mensagem entra alguns segundos depois.
  */
-const isAutomatic = (sentAt: number, markIso: string | null | undefined): boolean => {
+const isAutomatic = (
+  sentAt: number, markIso: string | null | undefined, beforeMs = 5_000,
+): boolean => {
   const mark = markIso ? new Date(markIso).getTime() : NaN;
   if (Number.isNaN(mark)) return false;
-  return sentAt >= mark - 5_000 && sentAt <= mark + 60_000;
+  return sentAt >= mark - beforeMs && sentAt <= mark + 60_000;
 };
 
 const ms = (iso: string | null | undefined): number | null => {
@@ -130,8 +138,11 @@ export function autoCloseClock(
   if (conv.last_message_direction !== 'out') return { key: 'waiting_us' };
   // A última coisa que saiu foi automática — recado de secretária eletrônica
   // não passa a bola para o cliente.
+  // O aviso de documentos recebidos abre a janela para os dois lados (60s): a
+  // marca dele é gravada DEPOIS do envio, ao contrário das outras duas.
   if (isAutomatic(lastActivity, conv.absence_sent_at)
-      || isAutomatic(lastActivity, conv.reopen_prompt_sent_at)) {
+      || isAutomatic(lastActivity, conv.reopen_prompt_sent_at)
+      || isAutomatic(lastActivity, conv.document_ack_sent_at, 60_000)) {
     return { key: 'waiting_us' };
   }
 

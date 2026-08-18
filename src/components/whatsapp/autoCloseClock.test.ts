@@ -77,6 +77,57 @@ test('resposta de gente logo depois do aviso automático volta a contar', () => 
   assert.equal(c.key, 'counting');
 });
 
+test('"recebemos os seus arquivos" não passa a bola para o cliente', () => {
+  // O caso do Hiago (18/08): o aviso saiu 16:30:04.898 e a marca foi gravada
+  // 35ms DEPOIS — o doc-intake carimba a conversa só quando o envio confirma,
+  // ao contrário dos outros dois avisos. Com a janela contando só para trás, o
+  // painel anunciava "encerra em 2h44" para um caso que o BANCO nem contava:
+  // ninguém tinha lido os cinco arquivos que acabaram de chegar.
+  const enviado = AGORA + min(-90);
+  const c = autoCloseClock(
+    conversa({
+      last_message_at: new Date(enviado).toISOString(),
+      document_ack_sent_at: new Date(enviado + 35).toISOString(),
+    }),
+    canal, AGORA,
+  );
+  assert.equal(c.key, 'waiting_us');
+});
+
+test('o carimbo do aviso de documentos vale para os dois lados', () => {
+  // Envio lento: a marca pode cair antes ou depois da mensagem. Os 60s de folga
+  // são os mesmos da migration `wa_doc_ack_nao_conta_para_encerrar`.
+  const enviado = AGORA + min(-90);
+  const antes = autoCloseClock(
+    conversa({
+      last_message_at: new Date(enviado).toISOString(),
+      document_ack_sent_at: new Date(enviado - 30_000).toISOString(),
+    }),
+    canal, AGORA,
+  );
+  assert.equal(antes.key, 'waiting_us');
+  // Fora da janela é mensagem nossa de verdade, e o prazo volta a correr.
+  const fora = autoCloseClock(
+    conversa({
+      last_message_at: new Date(enviado).toISOString(),
+      document_ack_sent_at: new Date(enviado - 61_000).toISOString(),
+    }),
+    canal, AGORA,
+  );
+  assert.equal(fora.key, 'counting');
+});
+
+test('atendente respondendo depois do aviso de documentos volta a contar', () => {
+  // Ainda no caso do Hiago: o "Ok." das 17:55 é gente falando, e aí o prazo
+  // corre com razão — o carimbo antigo do aviso não protege a conversa para
+  // sempre.
+  const c = autoCloseClock(
+    conversa({ last_message_at: iso(-5), document_ack_sent_at: iso(-90) }),
+    canal, AGORA,
+  );
+  assert.equal(c.key, 'counting');
+});
+
 test('conversa parada além do prazo encerra na próxima varredura', () => {
   const c = autoCloseClock(conversa({ last_message_at: iso(-500) }), canal, AGORA);
   assert.equal(c.key, 'due');

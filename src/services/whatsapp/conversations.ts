@@ -665,6 +665,30 @@ export const conversationsApi = {
     if (error) throw new Error(error.message);
   },
 
+  /**
+   * Troca as etiquetas SÓ se a conversa ainda estiver na etiqueta esperada.
+   * Devolve `true` quando foi ESTA chamada que mudou a conversa.
+   *
+   * Existe para as automações que disparam sozinhas, sem ninguém clicando: o
+   * mesmo evento (uma solicitação de documentos que fica pronta) chega ao mesmo
+   * tempo a todos os painéis abertos do escritório, e todos tentariam mover o
+   * mesmo cartão. Com a condição no WHERE, o primeiro move e os outros recebem
+   * zero linhas — e só quem moveu roda as ações de entrada da etapa, que podem
+   * mandar mensagem ao cliente ou até encerrar o atendimento.
+   */
+  async updateLabelsIfStillTagged(
+    conversationId: string, requiredLabel: string, labels: string[],
+  ): Promise<boolean> {
+    const { data, error } = await supabase
+      .from(CONV_TABLE)
+      .update({ labels })
+      .eq('id', conversationId)
+      .contains('labels', [requiredLabel])
+      .select('id');
+    if (error) throw new Error(error.message);
+    return (data?.length ?? 0) > 0;
+  },
+
   // ── Notas internas (Fase 7) ──────────────────────────────────
   async listNotes(conversationId: string): Promise<WhatsAppInternalNote[]> {
     const { data, error } = await supabase

@@ -74,12 +74,17 @@ export interface WhatsAppConversation {
   // encerramento limpa o flag (volta ao normal no próximo contato).
   absence_suppressed: boolean;
   /**
-   * Quando as duas mensagens automáticas saíram nesta conversa. O painel usa
-   * essas marcas para NÃO contar um recado de secretária eletrônica como
-   * resposta nossa no contador de encerramento (a mesma regra do banco).
+   * Quando cada mensagem automática saiu nesta conversa. O painel usa essas
+   * marcas para NÃO contar um recado de secretária eletrônica como resposta
+   * nossa no contador de encerramento (a mesma regra do banco).
+   *
+   * `document_ack_sent_at` é o "Recebemos os seus arquivos!" do doc-intake, e é
+   * o único gravado DEPOIS do envio — daí a janela dele valer para os dois
+   * lados em `autoCloseClock`.
    */
   absence_sent_at?: string | null;
   reopen_prompt_sent_at?: string | null;
+  document_ack_sent_at?: string | null;
   /**
    * Tira SÓ esta conversa do encerramento automático por inatividade do canal.
    * Como `absence_suppressed`, vale até o atendimento encerrar — a pausa não

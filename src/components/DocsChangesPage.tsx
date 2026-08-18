@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.324': { name: 'Cafe Etapa e Documento Lado a Lado', emoji: '[memo]' },
   '1.10.323': { name: 'Cafe Triagem Que Relê a Conversa', emoji: '[memo]' },
   '1.10.316': { name: 'Cafe Login Unico e Email Confirmado', emoji: '[shield]' },
   '1.10.315': { name: 'Cafe Orbita Estavel no Splash', emoji: '[art]' },
@@ -963,6 +964,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.324',
+    date: '18/08/2026',
+    summary: 'A lista de conversas voltou a dizer se os documentos chegaram — separado da etapa do funil, que é outra coisa — e a conversa sai sozinha da coluna de espera quando a solicitação fica completa. O contador de encerramento parou de contar o aviso automático de documentos como se fosse resposta de gente.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O contador de encerramento parou de contar o aviso de documentos',
+            description: 'A regra já estava certa no servidor, mas o relógio que aparece na tela é uma segunda cópia dela — e essa cópia não tinha recebido a exceção do "Recebemos os seus arquivos!". O resultado era um susto sem motivo: a conversa do cliente que acabara de mandar cinco arquivos anunciava "encerra em 2h44" enquanto o servidor, corretamente, nem contava. As duas pontas voltaram a dizer a mesma coisa, e agora há teste cobrindo o aviso de documentos junto dos outros dois avisos automáticos.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Etapa do funil e estado dos documentos deixaram de se confundir',
+            description: 'O resumo no alto da conversa dizia "Documentos prontos" e a mesma conversa, na lista, continuava marcada como "Aguardando docs" — parecia contradição, mas eram dois assuntos com nomes parecidos: um é a ETAPA do funil, movida por gente, e o outro é o ESTADO da solicitação, que é fato. A linha da lista voltou a mostrar os dois, cada um com o seu desenho: a etapa com o ponto colorido do funil, os documentos com ícone de arquivo e texto próprio — "Docs pendentes" em âmbar, "Docs prontos" em verde.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Documento entregue tira a conversa da coluna de espera',
+            description: 'Pedir documento já empurrava a conversa para "Aguardando documentos"; nada a trazia de volta. Quem lia a fila pela coluna acabava cobrando arquivo que já tinha chegado. Agora, quando a solicitação fica completa, a conversa avança sozinha para a etapa seguinte do funil daquele canal — e só ela: quem já andou para a frente, ou está em outra etapa, fica onde está. Se o canal não tiver etapa seguinte, nada acontece, em vez de inventar destino.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.323',
     date: '18/08/2026',

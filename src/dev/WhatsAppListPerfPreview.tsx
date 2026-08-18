@@ -53,11 +53,17 @@ const seed = (n: number): WhatsAppConversation[] => Array.from({ length: n }, (_
   closed_at: null, closed_by: null, closure_reason: null, reopened_at: null,
   first_response_at: null, last_customer_message_at: null, last_agent_message_at: null,
   awaiting_accept: false, transfer_pending_since: null, contact_reason: null,
-  labels: ['Novo'], legal_hold: false, legal_hold_reason: null, absence_suppressed: false, auto_close_suppressed: false,
+  // As com cadastro entram na etapa de documentos: é a linha onde os DOIS
+  // chips convivem — etapa do funil (ponto colorido) e estado da solicitação
+  // (ícone de arquivo) —, que é o que esta bancada precisa deixar à vista.
+  labels: i % 4 === 0 ? ['Aguardando docs'] : ['Novo'], legal_hold: false, legal_hold_reason: null, absence_suppressed: false, auto_close_suppressed: false,
   created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
 }));
 
-const FUNNEL = [{ key: 'Novo', stageKey: 'novo', stageLabel: 'Novo', color: '#64748b', bg: '#64748b22' }];
+const FUNNEL = [
+  { key: 'Novo', stageKey: 'novo', stageLabel: 'Novo', color: '#64748b', bg: '#64748b22' },
+  { key: 'Aguardando docs', stageKey: 'aguardando_documentos', stageLabel: 'Aguardando documentos', color: '#f59e0b', bg: '#f59e0b22' },
+];
 
 // Duas encerradas para conferir a fronteira entre a fila e o arquivo: divisória
 // "Encerradas" e, abaixo dela, as linhas em preto e branco. Na inbox de verdade
@@ -113,7 +119,13 @@ const WhatsAppListPerfPreview: React.FC = () => {
     () => () => ({ key: 'waiting_you', label: 'Aguardando você', cls: 'bg-amber-100 text-amber-700' }),
     [],
   );
-  const semDoc = useMemo(() => () => null, []);
+  // Metade dos cadastros com documento pendente, metade com tudo entregue: a
+  // linha da conversa precisa mostrar o FATO (docs) sem se confundir com a
+  // ETAPA, que continua parada em "Aguardando documentos" até alguém mover.
+  const docPorCliente = useMemo(() => (clientId: string | null | undefined) => {
+    if (!clientId) return null;
+    return Number(clientId.replace('cli', '')) % 8 === 0 ? 'ready' as const : 'awaiting' as const;
+  }, []);
   const semAssinatura = useMemo(() => () => null, []);
   // Recorte que o módulo faz: o rascunho da conversa ABERTA fica de fora, então
   // digitar nela não muda a identidade desta prop.
@@ -201,7 +213,7 @@ const WhatsAppListPerfPreview: React.FC = () => {
               funnelLabelsForChannel={funnelPorCanal}
               aiChipFor={chipDeIa}
               conversationStatus={statusDaConversa}
-              docStatusFor={semDoc}
+              docStatusFor={docPorCliente}
               trackedSignatureFor={semAssinatura}
               onSelect={onSelect}
               onStopSignatureTracking={noop}
@@ -219,7 +231,7 @@ const WhatsAppListPerfPreview: React.FC = () => {
                 statusKey="waiting_you"
                 statusLabel="Aguardando você"
                 statusCls="bg-amber-100 text-amber-700"
-                docStatus={null}
+                docStatus={docPorCliente(c.client_id)}
                 muted={false}
                 draftPreview={c.id === selectedId ? '' : (draftMap[c.id] ?? '')}
                 failedSends={FALHAS.get(c.id) ?? 0}
