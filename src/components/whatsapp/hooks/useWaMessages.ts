@@ -10,6 +10,25 @@ import type { WhatsAppMessage } from '../../../types/whatsapp.types';
 
 const MSG_PAGE = 60; // mensagens por bloco de paginação
 
+/**
+ * Quantas threads ficam guardadas em memória para a volta ser instantânea.
+ *
+ * Dez porque é a ordem de grandeza do vaivém real de um turno — responder três
+ * ou quatro pessoas alternando entre elas, voltar na de antes para conferir uma
+ * data. Guardar tudo seria um vazamento lento em quem deixa a inbox aberta o dia
+ * inteiro; guardar duas ou três não cobriria o vaivém e a espera voltaria.
+ */
+const MAX_THREADS_EM_CACHE = 10;
+
+interface JanelaGuardada {
+  /** Assinatura do grupo de linhas que gerou esta janela (ver `scopeKeyFor`). */
+  scopeKey: string;
+  msgs: WhatsAppMessage[];
+  /** A âncora da paginação, para "carregar mais" continuar de onde parou. */
+  oldestTs: string | null;
+  hasMore: boolean;
+}
+
 export interface WaMessagesApi {
   messages: WhatsAppMessage[];
   setMessages: React.Dispatch<React.SetStateAction<WhatsAppMessage[]>>;
@@ -59,6 +78,52 @@ export function useWaMessages(selectedId: string | null, threadIds?: readonly st
   const scopeFor = (convId: string): string[] => {
     const ids = threadIdsRef.current;
     return ids.includes(convId) ? [...ids] : [convId];
+  };
+  /**
+   * A assinatura do grupo de linhas que alimenta a thread. É o que impede o
+   * cache de servir uma janela velha depois que o contato ganhou (ou perdeu)
+   * uma conversa irmã em outro número do escritório: mudou o grupo, mudou a
+   * chave, e a janela guardada deixa de valer sozinha.
+   */
+  const scopeKeyFor = (convId: string): string => [...scopeFor(convId)].sort().join('|');
+
+  /**
+   * As últimas threads lidas, para voltar a uma conversa não custar uma ida ao
+   * servidor. É a diferença entre alternar entre dois clientes como se fossem
+   * duas abas e alternar assistindo a um spinner a cada clique.
+   *
+   * NÃO ENFRAQUECE A GUARDA DA TROCA. O que a limpeza da thread evitava era
+   * mostrar as mensagens de um cliente sob o nome de outro; aqui o que se
+   * mostra é a janela DAQUELA conversa, buscada com a chave dela. O conteúdo
+   * está certo desde o primeiro quadro — o que ele pode estar é atrasado em
+   * alguns segundos, e o `refreshMessages` disparado logo atrás costura por
+   * cima em silêncio, sem piscar e sem perder a rolagem.
+   *
+   * A janela paginada vem junto: quem rolou para cima procurando um documento,
+   * saiu para responder outra pessoa e voltou reencontra o histórico onde
+   * estava, em vez de ter que rolar tudo de novo.
+   */
+  const cacheRef = useRef<Map<string, JanelaGuardada>>(new Map());
+  // O que está NA TELA neste render. Espelhados durante o render, como
+  // `activeConvRef` e `threadIdsRef` acima, porque quem os lê é a limpeza da
+  // troca de conversa — e ela precisa do que ficou na tela da conversa que está
+  // saindo, não do que já foi pedido para a que está entrando.
+  const messagesRef = useRef<WhatsAppMessage[]>([]);
+  messagesRef.current = messages;
+  const hasMoreRef = useRef(false);
+  hasMoreRef.current = hasMoreMsgs;
+
+  const guardar = (convId: string, janela: JanelaGuardada) => {
+    const cache = cacheRef.current;
+    // Regravar move a conversa para o fim do Map: a ordem de inserção é a
+    // ordem de uso, e é por ela que a mais esquecida sai quando o teto chega.
+    cache.delete(convId);
+    cache.set(convId, janela);
+    while (cache.size > MAX_THREADS_EM_CACHE) {
+      const maisAntiga = cache.keys().next().value;
+      if (maisAntiga === undefined) break;
+      cache.delete(maisAntiga);
+    }
   };
 
   const loadMessages = useCallback(async (convId: string) => {
@@ -117,18 +182,74 @@ export function useWaMessages(selectedId: string | null, threadIds?: readonly st
     } catch {/* */}
   }, []);
 
-  // Reset de paginação/mensagens ao trocar de conversa. O markRead + atualização
-  // do contador de não-lidas continua no módulo (domínio de conversa).
+  // Troca de conversa. O markRead + atualização do contador de não-lidas
+  // continua no módulo (domínio de conversa).
+  //
+  // A JANELA É GUARDADA NA SAÍDA, e o lugar importa mais do que parece. A
+  // tentação é gravar o cache a cada vez que `messages` muda, mas o render em
+  // que a conversa troca tem `selectedId` já apontando para a NOVA e `messages`
+  // ainda com as da ANTERIOR — gravar ali arquivaria a thread de um cliente sob
+  // a chave de outro, e a volta seguinte a mostraria com a maior convicção. É
+  // exatamente o vazamento que a limpeza da thread sempre existiu para evitar.
+  // Na limpeza do efeito não há ambiguidade: `conv` é a conversa que está
+  // saindo, e o espelho tem o que estava na tela dela.
   useEffect(() => {
-    setHasMoreMsgs(false); setLoadingMore(false); oldestTsRef.current = null;
-    if (!selectedId) { setMessages([]); return; }
-    // Limpa a thread ANTES de buscar: sem isso, as mensagens da conversa
+    const conv = selectedId;
+    // Capturado na ENTRADA, quando `threadIdsRef` ainda descreve esta conversa.
+    const scopeKey = conv ? scopeKeyFor(conv) : '';
+
+    // A saída é a mesma pelos dois caminhos (janela guardada ou busca nova):
+    // o que fica na tela desta conversa é o que se leva para o cache dela.
+    const aoSair = () => {
+      // A thread vazia nunca é guardada: ela é o estado de quem saiu antes de a
+      // conversa chegar, e gravá-la ensinaria o cache que aquela pessoa não tem
+      // mensagem nenhuma — um vazio instantâneo e convincente na próxima volta.
+      if (!conv || messagesRef.current.length === 0) return;
+      guardar(conv, {
+        scopeKey,
+        msgs: messagesRef.current,
+        oldestTs: oldestTsRef.current,
+        hasMore: hasMoreRef.current,
+      });
+    };
+
+    setLoadingMore(false);
+    if (!selectedId) {
+      setLoadingMsgs(false);
+      setHasMoreMsgs(false); oldestTsRef.current = null; setMessages([]);
+      return aoSair;
+    }
+
+    // Se esta conversa já foi lida neste turno, ela volta pronta: a janela
+    // guardada entra na tela no mesmo quadro do clique e o servidor é
+    // consultado atrás dela, sem spinner. É o caminho comum do vaivém entre
+    // dois ou três clientes, e é onde o módulo deixa de parecer lento.
+    const guardada = cacheRef.current.get(selectedId);
+    if (guardada && guardada.scopeKey === scopeKey && guardada.msgs.length > 0) {
+      // Apaga um spinner que pode ter ficado aceso: se a conversa anterior ainda
+      // estava carregando quando se trocou, o `finally` dela não desliga a luz
+      // (a guarda de resposta atrasada o impede, e com razão). Antes isso se
+      // resolvia sozinho porque toda troca chamava `loadMessages`; por este
+      // caminho não há busca com spinner, então a luz precisa ser apagada aqui —
+      // senão a thread guardada aparece sob um carregamento que não existe.
+      setLoadingMsgs(false);
+      setMessages(guardada.msgs);
+      setHasMoreMsgs(guardada.hasMore);
+      oldestTsRef.current = guardada.oldestTs;
+      refreshMessages(selectedId);
+      return aoSair;
+    }
+
+    // Primeira visita: limpa ANTES de buscar. Sem isso, as mensagens da conversa
     // anterior continuavam na tela sob o nome do novo contato até a resposta
     // chegar — um piscar de conteúdo errado (e, num escritório, a conversa de um
-    // cliente aparecendo brevemente na aba de outro). Prefere-se o spinner.
+    // cliente aparecendo brevemente na aba de outro). Aqui o spinner é honesto:
+    // não há o que mostrar daquela pessoa ainda.
+    setHasMoreMsgs(false); oldestTsRef.current = null;
     setMessages([]);
     loadMessages(selectedId);
-  }, [selectedId, loadMessages]);
+    return aoSair;
+  }, [selectedId, loadMessages, refreshMessages]);
 
   return {
     messages, setMessages,

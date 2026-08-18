@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Search, Send, Loader2, MessageCircle, Phone, PhoneCall, User as UserIcon,
@@ -21,7 +21,7 @@ import {
 import { useStaffPush } from './whatsapp/hooks/useStaffPush';
 import { useWaCalls } from '../hooks/useWaCalls';
 import { CallHistoryList } from './whatsapp/CallHistoryList';
-import { InboxTabs, InboxViewSwitch } from './whatsapp/InboxTabs';
+import { InboxTabs, InboxViewSwitch, InboxWaitingMenu } from './whatsapp/InboxTabs';
 import { useCallHistory } from './whatsapp/hooks/useCallHistory';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
 import { muteStore } from '../services/whatsapp/muteStore';
@@ -80,7 +80,8 @@ import { giphyService } from '../services/giphy.service';
 import { sendReconnectHoldsThroughChannel } from '../services/whatsapp/resilientSend';
 import { ConversationFunnelBoard } from './whatsapp/conversationFunnelBoard';
 import { nextLeadChannelFilter } from './whatsapp/channelFilterSync';
-import { hiddenByStatusFilter, searchRank } from './whatsapp/inboxStatusScope';
+import { hiddenByStatusFilter, searchRank, type InboxStatusFilter, type WaitingFilter } from './whatsapp/inboxStatusScope';
+import { returnScopeForConversation, type InboxScopeTab } from './whatsapp/inboxReturnScope';
 import { collapseContactThreads, contactKey, siblingThreadIds } from './whatsapp/contactThreads';
 import {
   INBOX_FILTER_KEYS, readFilter, writeFilter, canSanitize,
@@ -410,9 +411,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Fase 3: por padrão a lista mostra apenas conversas ativas (status "Abertas");
   // encerradas saem da fila e só aparecem no filtro próprio "Encerradas" — ou
   // quando o cliente volta a falar e a conversa é reaberta (status → open).
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'waiting_you' | 'waiting_internal' | 'reopened' | 'closed'>(() => {
+  const [statusFilter, setStatusFilter] = useState<InboxStatusFilter>(() => {
     const v = localStorage.getItem('wa_status_filter');
-    return v === 'all' || v === 'open' || v === 'waiting_you' || v === 'waiting_internal' || v === 'reopened' || v === 'closed' ? v : 'open';
+    return v === 'all' || v === 'open' || v === 'waiting_you' || v === 'waiting_client'
+      || v === 'waiting_internal' || v === 'reopened' || v === 'closed' ? v : 'open';
   });
   // Larguras das colunas com persistência local + divisórias arrastáveis (Fase 10.1).
   const { panelWidth, listWidth, startPanelResize, startListResize } = useResizableLayout();
@@ -1179,8 +1181,27 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     return () => window.clearInterval(id);
   }, [selectedId]);
 
+  // O TEXTO QUE A FILA OBEDECE — atrás do que está sendo digitado.
+  //
+  // Cada tecla na busca refaz três varreduras da fila inteira: a lista, os
+  // contadores das abas e os dois números da ampulheta, cada uma passando por
+  // todas as conversas e ainda agrupando por pessoa. Com a fila cheia isso
+  // acontecia ENTRE a tecla e a letra aparecer na tela, e digitar um nome saía
+  // aos solavancos — o campo é o lugar do módulo onde a lentidão mais se sente,
+  // porque é o único em que se digita esperando resposta imediata.
+  //
+  // `useDeferredValue` separa as duas velocidades: a letra aparece na hora, e a
+  // fila se refaz logo atrás, em prioridade baixa e interrompível — se a próxima
+  // tecla chegar antes do fim, o React abandona o trabalho a meio caminho e
+  // recomeça com o texto novo, em vez de terminar uma lista que já nasceu velha.
+  // Mesmo recurso que a agenda já usa na busca dela.
+  //
+  // O TECLADO NÃO USA ESTE VALOR: Esc limpar a busca tem de responder à tecla
+  // que a pessoa acabou de apertar, não à fila de um quadro atrás.
+  const deferredSearch = useDeferredValue(search);
+
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     const searching = q.length > 0;
     const ordenadas = conversations
       .filter(c => {
@@ -1195,6 +1216,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         if (hiddenByStatusFilter({
           filter: statusFilter, closed: c.status === 'closed',
           reopened: !!c.reopened_at, liveKey: convStatus(c).key, searching,
+          selected: c.id === selectedId,
         })) return false;
         if (channelFilter !== 'all' && c.instance_id !== channelFilter) return false;
         if (deptFilter === 'none' && c.department_id) return false;
@@ -1227,7 +1249,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     // linhas encerradas já vem dentro da thread da conversa viva, e o filtro
     // "Encerradas" continua listando cada uma delas separadamente.
     return collapseContactThreads(ordenadas, selectedId);
-  }, [conversations, search, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, funnelLabelsForChannel]);
+  }, [conversations, deferredSearch, filter, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, funnelLabelsForChannel]);
 
   // As encerradas que a BUSCA trouxe do arquivo. A lista as usa para duas coisas:
   // desenhar a divisória "Encerradas" onde o grupo começa e pintar essas linhas
@@ -1240,14 +1262,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   const archivedIdsRef = useRef<Set<string>>(new Set());
   const archivedIds = useMemo(() => {
     const next = new Set<string>();
-    if (search.trim() && statusFilter !== 'closed') {
+    if (deferredSearch.trim() && statusFilter !== 'closed') {
       for (const c of filtered) if (c.status === 'closed') next.add(c.id);
     }
     const prev = archivedIdsRef.current;
     if (next.size === prev.size && [...next].every(id => prev.has(id))) return prev;
     archivedIdsRef.current = next;
     return next;
-  }, [filtered, search, statusFilter]);
+  }, [filtered, deferredSearch, statusFilter]);
 
   // Abrir a conversa encerra a busca. Procurar é o caminho até a pessoa, não um
   // modo em que se fica: com o texto no campo, a lista continuava mostrando só
@@ -1261,6 +1283,39 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     setSelectedId(id);
     setSearch('');
   }, []);
+
+  // O escopo de fila em que a pessoa estava ANTES de entrar numa aba de
+  // consulta. Vive num ref porque só é lido na volta: virar estado faria a
+  // inbox redesenhar a cada troca de aba para guardar uma lembrança.
+  const lastQueueScope = useRef<InboxScopeTab>(filter === 'all' || filter === 'unread' ? filter : 'mine');
+  useEffect(() => {
+    if (filter === 'all' || filter === 'unread' || filter === 'mine') lastQueueScope.current = filter;
+  }, [filter]);
+
+  /**
+   * Abrir a conversa a partir da aba de LIGAÇÕES — e devolver a lateral à fila.
+   *
+   * A aba de ligações responde a uma pergunta ("quem ligou?"); o clique em
+   * "abrir a conversa" é o fim dela. Ficar com o histórico de chamadas na
+   * lateral e uma thread aberta ao lado deixava as duas metades da tela
+   * falando de assuntos diferentes — e quem respondia à pessoa escrevia sem a
+   * fila à vista. Por isso, aqui, ao contrário das agendadas, abrir TROCA de
+   * aba: para onde, é `returnScopeForConversation` quem decide.
+   */
+  const openConversationFromCalls = useCallback((id: string) => {
+    setSelectedId(id);
+    const conv = conversations.find(c => c.id === id);
+    // Só a ABA muda. O filtro de status fica onde a pessoa o deixou: ele é
+    // gravado no navegador, e alargá-lo aqui deixava a fila do dia com o
+    // arquivo inteiro dentro em todas as sessões seguintes. A conversa
+    // encerrada que se acabou de abrir aparece por ser a aberta, sem que
+    // nenhuma outra encerrada venha junto (ver `inboxStatusScope`).
+    const destino = returnScopeForConversation({
+      previous: lastQueueScope.current,
+      mine: !!conv && conv.assigned_user_id === user?.id,
+    });
+    setFilter(destino.tab);
+  }, [conversations, user?.id]);
 
   // ── Teclado da inbox ─────────────────────────────────────────────────
   // Andar pela fila sem tirar as mãos do teclado: ↑/↓ trocam de conversa,
@@ -1449,7 +1504,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // conversa encerrada e atribuída ainda contava em "Minhas" mesmo sumindo da lista
   // sob o filtro "Abertas" (badge "Minhas (1)" com lista vazia).
   const tabCounts = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     const searching = q.length > 0;
     const base = conversations.filter(c => {
       if (!c.last_message_at && c.id !== selectedId) return false;
@@ -1459,6 +1514,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       if (hiddenByStatusFilter({
         filter: statusFilter, closed: c.status === 'closed',
         reopened: !!c.reopened_at, liveKey: convStatus(c).key, searching,
+        selected: c.id === selectedId,
       })) return false;
       if (channelFilter !== 'all' && c.instance_id !== channelFilter) return false;
       if (deptFilter === 'none' && c.department_id) return false;
@@ -1474,7 +1530,55 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       unread: porPessoa.filter(c => !c.is_blocked && c.unread_count > 0).length,
       mine: porPessoa.filter(c => c.assigned_user_id === user?.id).length,
     };
-  }, [conversations, search, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, funnelLabelsForChannel]);
+  }, [conversations, deferredSearch, channelFilter, deptFilter, statusFilter, labelFilter, selectedId, user?.id, funnelLabelsForChannel]);
+
+  // Quem está esperando — os dois números do menu da ampulheta.
+  //
+  // Varia só a dimensão da ESPERA: o escopo aberto (Todas/Não lidas/Minhas) e
+  // os filtros de fila continuam valendo, exatamente como nos contadores das
+  // abas. É o que faz o número ser verdade: abrir o menu em "Minhas" e ler "4"
+  // tem de dar quatro linhas na lista depois do clique. A dimensão de STATUS é
+  // a única ignorada aqui — ela é justamente o que o clique vai trocar, e
+  // considerá-la zeraria o lado que não está ligado no momento.
+  //
+  // Encerrada e bloqueada não entram por consequência, sem regra extra:
+  // `convStatus` dá a elas as chaves 'closed' e 'blocked', não as de espera.
+  const waitingCounts = useMemo(() => {
+    const q = deferredSearch.trim().toLowerCase();
+    // Dentro de uma vista (Agendadas/Ligações) não há escopo à vista; vale o
+    // último em que a pessoa esteve, que é para onde o clique devolve a lista.
+    const escopo = filter === 'all' || filter === 'unread' || filter === 'mine' ? filter : lastQueueScope.current;
+    const base = conversations.filter(c => {
+      if (!c.last_message_at && c.id !== selectedId) return false;
+      if (escopo === 'unread' && c.unread_count === 0) return false;
+      if (escopo === 'mine' && c.assigned_user_id !== user?.id) return false;
+      if (channelFilter !== 'all' && c.instance_id !== channelFilter) return false;
+      if (deptFilter === 'none' && c.department_id) return false;
+      if (deptFilter !== 'all' && deptFilter !== 'none' && c.department_id !== deptFilter) return false;
+      if (labelFilter && inferFunnelStage(c.labels, funnelLabelsForChannel(c.instance_id))?.stageKey !== labelFilter) return false;
+      if (q && !matchesConversationSearch(c, q)) return false;
+      return true;
+    });
+    // Mesma regra da lista e das abas: conta PESSOAS, não linhas.
+    const porPessoa = collapseContactThreads(base, selectedId);
+    return {
+      waiting_you: porPessoa.filter(c => convStatus(c).key === 'waiting_you').length,
+      waiting_client: porPessoa.filter(c => convStatus(c).key === 'waiting_client').length,
+    };
+  }, [conversations, deferredSearch, filter, channelFilter, deptFilter, labelFilter, selectedId, user?.id, funnelLabelsForChannel]);
+
+  const activeWaiting: WaitingFilter | null =
+    statusFilter === 'waiting_you' || statusFilter === 'waiting_client' ? statusFilter : null;
+
+  const pickWaiting = useCallback((waiting: WaitingFilter | null) => {
+    // Desligar devolve "Abertas", e não "Todos os status": este é o escopo de
+    // trabalho da inbox, e cair em "todos" traria o arquivo inteiro junto —
+    // desligar um filtro não pode acabar mostrando MAIS coisa do que antes.
+    setStatusFilter(waiting ?? 'open');
+    // Dentro de uma vista o filtro não teria onde agir: devolve as conversas,
+    // no escopo em que a pessoa estava. É a mesma saída que clicar numa aba dá.
+    if (filter === 'scheduled' || filter === 'calls') setFilter(lastQueueScope.current);
+  }, [filter]);
 
   const anyConnected = channels.some(c => c.status === 'connected');
   const connectedChannels = useMemo(() => channels.filter(c => c.status === 'connected'), [channels]);
@@ -2242,7 +2346,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               className="min-w-0 text-[12px] pl-2 pr-6 py-1.5 rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none">
               <option value="all">Todos os status</option>
               <option value="open">Abertas</option>
-              <option value="waiting_you">Aguardando você</option>
+              <option value="waiting_you">Aguardando sua resposta</option>
+              <option value="waiting_client">Aguardando o cliente</option>
               <option value="waiting_internal">Aguardando setor</option>
               <option value="reopened">Reabertas</option>
               <option value="closed">Encerradas</option>
@@ -2261,6 +2366,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               dos dois numa fila só de ícones era o que impedia os nomes. */}
           <div className={`flex items-center gap-2 ${embedded ? 'mt-2' : 'mt-2.5'}`}>
             <InboxTabs active={filter} onChange={setFilter} counts={tabCounts} className="min-w-0 flex-1" />
+            {/* Do lado dos FILTROS, antes do fio: a espera recorta a mesma
+                lista, não a substitui. */}
+            <InboxWaitingMenu active={activeWaiting} counts={waitingCounts} onPick={pickWaiting} />
             <span aria-hidden className="w-px h-3.5 bg-[#e2ded4] shrink-0" />
             <InboxViewSwitch
               active={filter}
@@ -2280,10 +2388,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             error={callHistory.error}
             onReload={callHistory.reload}
             privateMode={privateMode}
-            /* Abrir a conversa NÃO troca de aba, pelo mesmo motivo das
-               agendadas: quem está varrendo as ligações perderia o lugar a
-               cada clique. */
-            onOpenConversation={setSelectedId}
+            /* Abrir a conversa TROCA de aba — ao contrário das agendadas.
+               Lá a lista é uma fila que se percorre item a item, e trocar de
+               aba faria perder o lugar; aqui o clique é a resposta à pergunta
+               "quem ligou?", e a lateral volta para a fila de atendimento
+               junto com a thread que abriu. Ver `inboxReturnScope`. */
+            onOpenConversation={openConversationFromCalls}
             /* Ligar de novo pela MESMA porta de todas as outras ligações do
                módulo: quem decide se aquilo é um número discável é
                `resolveCallablePhone`, nunca a lista. */

@@ -11,6 +11,7 @@ const conversa = (patch: Partial<StatusScopeInput> = {}): StatusScopeInput => ({
   reopened: false,
   liveKey: 'waiting_you',
   searching: false,
+  selected: false,
   ...patch,
 });
 
@@ -32,7 +33,7 @@ test('"Encerradas" continua só encerradas, mesmo buscando', () => {
 test('estados de trabalho não são ampliados pela busca', () => {
   // Escolher "Aguardando você" é dizer o que se quer fazer agora; a busca não
   // pode desfazer esse pedido trazendo conversas de outro estado.
-  for (const filter of ['waiting_you', 'waiting_internal'] as InboxStatusFilter[]) {
+  for (const filter of ['waiting_you', 'waiting_client', 'waiting_internal'] as InboxStatusFilter[]) {
     assert.equal(
       hiddenByStatusFilter(conversa({ filter, liveKey: 'outro', searching: true })),
       true,
@@ -43,6 +44,18 @@ test('estados de trabalho não são ampliados pela busca', () => {
       false,
     );
   }
+});
+
+test('os dois lados da espera são excludentes — nenhuma conversa cai nos dois', () => {
+  // O menu da ampulheta depende disso: os dois números vêm da MESMA lista, e
+  // um contato contado duas vezes faria a soma passar do total da aba.
+  const cliente = conversa({ liveKey: 'waiting_client' });
+  assert.equal(hiddenByStatusFilter({ ...cliente, filter: 'waiting_client' }), false);
+  assert.equal(hiddenByStatusFilter({ ...cliente, filter: 'waiting_you' }), true);
+
+  const voce = conversa({ liveKey: 'waiting_you' });
+  assert.equal(hiddenByStatusFilter({ ...voce, filter: 'waiting_you' }), false);
+  assert.equal(hiddenByStatusFilter({ ...voce, filter: 'waiting_client' }), true);
 });
 
 test('"Reaberta" exige reabertura e conversa ainda aberta', () => {
@@ -71,4 +84,17 @@ test('a encerrada trazida pela busca desce para o fim da lista', () => {
 test('fora da busca ninguém desce — a ordem por data é a que vale', () => {
   assert.equal(searchRank({ closed: true, searching: false }), 0);
   assert.equal(searchRank({ closed: false, searching: false }), 0);
+});
+
+test('a conversa ABERTA na thread nunca some da lista, em nenhum filtro', () => {
+  // O caso do dia a dia: abrir uma encerrada pela aba de Ligações estando em
+  // "Abertas". A linha dela fica; o resto do arquivo continua fora.
+  assert.equal(hiddenByStatusFilter(conversa({ closed: true, selected: true })), false);
+  assert.equal(hiddenByStatusFilter(conversa({ closed: true, selected: false })), true);
+});
+
+test('a exceção é só da linha aberta — vale até sob "Encerradas"', () => {
+  const f: Partial<StatusScopeInput> = { filter: 'closed', closed: false };
+  assert.equal(hiddenByStatusFilter(conversa({ ...f, selected: true })), false);
+  assert.equal(hiddenByStatusFilter(conversa({ ...f, selected: false })), true);
 });

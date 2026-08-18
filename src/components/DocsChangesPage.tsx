@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.325': { name: 'Cafe Chamada Perdida na Tela', emoji: '[phone]' },
   '1.10.324': { name: 'Cafe Etapa e Documento Lado a Lado', emoji: '[memo]' },
   '1.10.323': { name: 'Cafe Triagem Que Relê a Conversa', emoji: '[memo]' },
   '1.10.316': { name: 'Cafe Login Unico e Email Confirmado', emoji: '[shield]' },
@@ -964,6 +965,43 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.325',
+    date: '18/08/2026',
+    summary: 'A chamada perdida passou a avisar como no celular: um cartão que fica no alto da tela em qualquer módulo até alguém dizer que viu. E a ligação que chega parou de dizer "Número não identificado" para quem o escritório conhece.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'A chamada perdida fica avisando na tela, em qualquer módulo',
+            description: 'O registro da ligação perdida já existia, mas as duas formas de ver isso — a linha no histórico e o distintivo da aba de Ligações — exigiam que alguém ABRISSE a inbox. Quem estava no processo, na agenda ou no editor de petições só descobria a perdida das 9h à tarde, que na prática é o cliente ligando para o escritório do lado. Agora o cartão aparece no alto da tela onde a pessoa estiver e FICA lá até ser dispensado: não é um toast que some em cinco segundos, quase sempre enquanto se está falando com outra pessoa. Quem ligou três vezes seguidas é uma linha só, com "3 chamadas", como no celular. Chamada recusada não entra (recusar é um ato: quem recusou viu), nem a de contato bloqueado.',
+          },
+          {
+            type: 'improvement' as const,
+            title: '"Já vi as ligações" virou uma marca só, para os dois avisos',
+            description: 'Abrir a aba de Ligações e continuar com o cartão de aviso na tela é o tipo de aviso que se aprende a ignorar — e dispensar o cartão sem zerar o distintivo é o mesmo defeito ao contrário. Os dois passaram a ler e escrever a mesma marca, que nunca recua. Ela mora no navegador de propósito: "eu já vi" é do operador e da mesa dele, então a recepcionista abrir a aba não apaga o aviso do advogado que ainda não olhou.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A ligação que chega diz quem é em mais dois casos',
+            description: 'O cartão escrevia "Número não identificado" em duas situações que o CRM tinha como responder: a conversa que nasceu endereçada pelo apelido interno do WhatsApp (tinha nome, foto e cliente vinculado ali dentro, e calava só por não ter telefone no cadastro dela) e o cliente com ficha no escritório que nunca trocou mensagem por WhatsApp — o nome estava a uma consulta de distância e a tela mostrava só os dígitos. Os dois caminhos entraram, na ordem da confiança. O que não se sabe continua não se sabendo: melhor uma ligação sem nome do que um nome errado na tela.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Sem cadastro, entra a foto de perfil do WhatsApp',
+            description: 'Quando não há ficha nenhuma, o que sobrava na tela era um número — e um número não é ninguém. Agora aparece a mesma foto que o celular mostraria, pela sondagem que a "Nova conversa" já usa (com cache, então a segunda ligação da mesma pessoa não custa nada). A busca corre DEPOIS de o cartão já estar na tela e falha em silêncio: a foto é um enfeite útil, nunca um motivo para atrasar o telefone tocando.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Abrir a conversa pela aba de Ligações devolve a lista lateral',
+            description: '"Ligações" é uma pergunta ("quem ligou?"), não uma fila de trabalho. Respondida a pergunta com o clique em "abrir a conversa", ficar dentro da consulta deixava a lateral falando de um assunto e a tela do meio de outro. Agora a lateral volta para a lista de conversas — no escopo em que a pessoa estava, quando ele mostra a conversa recém-aberta, e em "Todas" quando o escondê-la seria a mesma desorientação ao contrário. Nenhum filtro de canal, setor, etiqueta ou status é tocado: são recortes configurados de propósito.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.324',
     date: '18/08/2026',

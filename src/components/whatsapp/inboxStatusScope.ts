@@ -22,7 +22,18 @@
 // vazia já foi bug aqui antes. Uma função só, testada, mantém os dois honestos.
 
 export type InboxStatusFilter =
-  | 'all' | 'open' | 'waiting_you' | 'waiting_internal' | 'reopened' | 'closed';
+  | 'all' | 'open' | 'waiting_you' | 'waiting_client' | 'waiting_internal' | 'reopened' | 'closed';
+
+/**
+ * Os dois lados da espera — o par que o menu da ampulheta liga e desliga.
+ *
+ * São estados VIVOS derivados da última mensagem (ver `convStatus`), não
+ * campos que alguém marca: "esperam você" é conversa cuja última mensagem veio
+ * de fora, "esperam o cliente" é o contrário. Por isso pertencem a esta
+ * dimensão e não a uma aba nova — filtrar por elas é recortar a mesma lista.
+ */
+export const WAITING_FILTERS = ['waiting_you', 'waiting_client'] as const;
+export type WaitingFilter = (typeof WAITING_FILTERS)[number];
 
 export interface StatusScopeInput {
   filter: InboxStatusFilter;
@@ -34,10 +45,24 @@ export interface StatusScopeInput {
   liveKey: string;
   /** Há texto na busca agora. */
   searching: boolean;
+  /** Esta é a conversa aberta na thread ao lado. */
+  selected: boolean;
 }
 
 /** `true` = esconder esta conversa sob o filtro de status atual. */
 export function hiddenByStatusFilter(i: StatusScopeInput): boolean {
+  // A conversa ABERTA na thread nunca some da lista. Ler um atendimento
+  // encerrado e não achar a linha dele ao lado — nem para voltar depois, nem
+  // para saber onde se está — é a lista contradizendo a tela do meio. Vale para
+  // qualquer filtro: quem abre uma encerrada estando em "Abertas" continua em
+  // "Abertas", e é só aquela linha que fica; ao trocar de conversa, ela sai
+  // sozinha. É a mesma exceção que a lista já faz para o rascunho sem mensagem.
+  //
+  // Esta exceção existe também para tapar um buraco: antes, abrir uma conversa
+  // encerrada pela aba de Ligações trocava o filtro inteiro para "Todos os
+  // status" — e como o filtro é gravado no navegador, a fila do dia voltava com
+  // o arquivo inteiro dentro, para sempre, sem ninguém ter pedido.
+  if (i.selected) return false;
   switch (i.filter) {
     case 'open':
       // A única concessão da busca: encerrada só some quando não se está buscando.
@@ -46,6 +71,8 @@ export function hiddenByStatusFilter(i: StatusScopeInput): boolean {
       return !i.closed;
     case 'waiting_you':
       return i.liveKey !== 'waiting_you';
+    case 'waiting_client':
+      return i.liveKey !== 'waiting_client';
     case 'waiting_internal':
       return i.liveKey !== 'waiting_internal';
     case 'reopened':

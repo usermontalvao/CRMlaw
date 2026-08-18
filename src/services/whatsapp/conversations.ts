@@ -533,6 +533,61 @@ export const conversationsApi = {
   },
 
   /**
+   * QUEM É este LID — a conversa inteira, não só o telefone.
+   *
+   * A `phoneByLid` responde "qual o número?" e cala quando não há número: uma
+   * conversa que NASCEU endereçada por LID (`remote_jid = '<n>@lid'`, sem
+   * telefone no cadastro dela) tem nome, foto e cliente vinculado, e mesmo
+   * assim fazia a chamada aparecer como "número não identificado" — o CRM
+   * sabia de quem era e dizia que não sabia.
+   *
+   * Esta pergunta é a outra: "de quem é esta ligação?". O telefone vem junto
+   * quando existir, e vem VAZIO quando o que está guardado ali não é telefone.
+   */
+  async contactByLid(lid: string): Promise<{
+    conversationId: string;
+    phone: string;
+    clientId: string | null;
+    name: string | null;
+    avatarUrl: string | null;
+    assignedUserId: string | null;
+    instanceId: string | null;
+    isBlocked: boolean;
+  } | null> {
+    const digits = (lid || '').replace(/\D/g, '');
+    if (!digits) return null;
+    const { data, error } = await supabase.rpc('wa_contact_by_lid', { p_lid: digits });
+    if (error) return null;
+    const row = (data as Array<{
+      conversation_id: string; contact_phone: string | null; contact_name: string | null;
+      contact_avatar_path: string | null; client_id: string | null; assigned_user_id: string | null;
+      instance_id: string | null; is_blocked: boolean | null;
+    }> | null)?.[0];
+    if (!row?.conversation_id) return null;
+
+    // Nome do CADASTRO manda, como em `findConversationByPhone` e no resto da
+    // inbox (ver `conversationName` em components/whatsapp/format.ts).
+    let name = row.contact_name;
+    if (row.client_id) {
+      const { data: client } = await supabase
+        .from('clients').select('full_name').eq('id', row.client_id).maybeSingle();
+      const fullName = (client as { full_name: string | null } | null)?.full_name;
+      if (fullName) name = fullName;
+    }
+    const avatarUrl = await resolveAvatarUrl(row.contact_avatar_path).catch(() => null);
+    return {
+      conversationId: row.conversation_id,
+      phone: row.contact_phone || '',
+      clientId: row.client_id ?? null,
+      name,
+      avatarUrl,
+      assignedUserId: row.assigned_user_id ?? null,
+      instanceId: row.instance_id ?? null,
+      isBlocked: row.is_blocked === true,
+    };
+  },
+
+  /**
    * De quem é este LID, segundo o HISTÓRICO DE CHAMADAS.
    *
    * A segunda evidência, para quando o mapeamento ainda não conhece o apelido.

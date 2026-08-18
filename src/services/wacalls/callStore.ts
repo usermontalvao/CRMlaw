@@ -93,6 +93,8 @@ const removalTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const escalationTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const listeners = new Set<() => void>();
 const noticeListeners = new Set<(notice: WaCallsNotice) => void>();
+/** Quem quer saber das chamadas que ninguém atendeu (ver `missedCallStore`). */
+const missedListeners = new Set<(call: WaCall) => void>();
 
 let sessions: WaCallsSession[] = [];
 let sessionId: string | null = null;
@@ -125,6 +127,27 @@ function emit(): void {
 
 function notify(notice: WaCallsNotice): void {
   noticeListeners.forEach(fn => fn(notice));
+}
+
+/**
+ * Esta chamada é uma PERDIDA — daquelas que ficam avisando na tela?
+ *
+ * Recebida, nunca atendida, e não recusada: recusar é um ato, quem recusou já
+ * viu a chamada. Uma que outro operador atendeu nem chega aqui (o
+ * `incoming-claimed` a tira do mapa antes), e a que falhou também não entra: o
+ * cartão diz "chamada perdida", e uma chamada que nem chegou a tocar direito
+ * seria uma meia-verdade na tela de todo mundo.
+ *
+ * `route.show === false` é o contato BLOQUEADO. O bloqueio existe justamente
+ * para essa pessoa não alcançar o escritório; avisar que ela ligou desfaria o
+ * bloqueio pela porta dos fundos.
+ */
+function isMissedInboundCall(call: WaCall, failed: boolean): boolean {
+  return call.direction === 'inbound'
+    && !failed
+    && call.connectedAt === null
+    && call.endReason !== 'declined'
+    && call.route?.show !== false;
 }
 
 /** As chamadas desta aba que ainda estão de pé. */
@@ -349,6 +372,9 @@ function finishCall(callId: string, endReason: string | null, failed = false): v
     const message = endReasonMessage(endReason, { answered, direction: call.direction });
     notify({ kind: endReasonIsFailure(endReason, answered) ? 'error' : 'info', message });
   }
+  // O cartão da chamada some da tela em segundos; a PERDIDA não pode sumir
+  // junto — quem estava no processo ou na agenda nem viu o telefone tocar.
+  if (isMissedInboundCall(updated, failed)) missedListeners.forEach(fn => fn(updated));
   scheduleRemoval(callId, failed ? FAILED_LINGER_MS : ENDED_LINGER_MS);
   void closeAndArchive(updated, failed);
 }
@@ -366,6 +392,128 @@ async function resolveContact(phone: string): Promise<WaCallContact | null> {
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Quem está ligando — tudo o que o CRM consegue saber, em UMA resposta.
+ *
+ * A ordem é a da confiança, e cada degrau existe porque o cartão já disse
+ * "Número não identificado" para alguém que o escritório conhecia:
+ *
+ *  1. A CONVERSA pelo telefone. O caminho normal.
+ *  2. A CONVERSA pelo LID. Uma thread que nasceu endereçada por `<n>@lid` não
+ *     tem telefone no cadastro dela, e o mapeamento (`phoneByLid`, que só
+ *     devolve número válido) calava — mesmo com nome, foto e cliente ali.
+ *  3. A FICHA pelo telefone. Quem tem cadastro no escritório mas nunca trocou
+ *     mensagem pelo WhatsApp não tem conversa nenhuma: até aqui a tela mostrava
+ *     só os dígitos de um cliente antigo. Reaproveita a
+ *     `whatsapp_match_client_by_phone`, que já trata o nono dígito, olha o
+ *     celular e o fixo e ignora ficha arquivada ou mesclada.
+ *
+ * O que NÃO se sabe continua não se sabendo: sem nenhum dos três, a chamada
+ * segue anônima. Melhor uma ligação sem nome do que um nome errado na tela.
+ */
+interface CallerIdentity {
+  contact: WaCallContact;
+  /** Telefone descoberto no caminho (o convite por LID chega sem ele). */
+  phone: string;
+  assignedUserId: string | null;
+  instanceId: string | null;
+  isBlocked: boolean;
+}
+
+async function resolveCallerIdentity(phone: string, lid: string | null): Promise<CallerIdentity | null> {
+  if (phone) {
+    const found = await whatsappService.findConversationByPhone(phone).catch(() => null);
+    if (found) {
+      return {
+        contact: {
+          conversationId: found.conversationId,
+          clientId: found.clientId,
+          name: found.name,
+          avatarUrl: found.avatarUrl,
+        },
+        phone,
+        assignedUserId: found.assignedUserId,
+        instanceId: found.instanceId,
+        isBlocked: found.isBlocked,
+      };
+    }
+  }
+
+  if (!phone && lid) {
+    const porLid = await whatsappService.contactByLid(lid).catch(() => null);
+    if (porLid) {
+      return {
+        contact: {
+          conversationId: porLid.conversationId,
+          clientId: porLid.clientId,
+          name: porLid.name,
+          avatarUrl: porLid.avatarUrl,
+        },
+        phone: porLid.phone,
+        assignedUserId: porLid.assignedUserId,
+        instanceId: porLid.instanceId,
+        isBlocked: porLid.isBlocked,
+      };
+    }
+  }
+
+  if (phone) {
+    const fichas = await whatsappService.matchClientsByPhone(phone).catch(() => []);
+    const ficha = fichas[0];
+    if (ficha) {
+      return {
+        // Sem conversa não há o que abrir na inbox: `conversationId` fica nulo
+        // e o botão "Abrir conversa" simplesmente não aparece no painel.
+        contact: {
+          conversationId: null,
+          clientId: ficha.id,
+          name: ficha.full_name || null,
+          avatarUrl: null,
+        },
+        phone,
+        assignedUserId: null,
+        instanceId: null,
+        isBlocked: false,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * O rosto do WhatsApp para quem o CRM não tem foto.
+ *
+ * Pedido do escritório, e com razão: não tendo cadastro, o que sobra na tela é
+ * um número — e um número não é ninguém. A foto de perfil é o que o celular
+ * mostraria, e ela vem da mesma sondagem que a agenda da "Nova conversa" já
+ * usa (com cache em `whatsapp_contact_probes`, então a segunda ligação da
+ * mesma pessoa não custa nada).
+ *
+ * Corre DEPOIS de o cartão já estar na tela e falha em silêncio: uma foto é um
+ * enfeite útil, nunca um motivo para atrasar o telefone tocando.
+ */
+async function fillProfilePhoto(callId: string, phone: string): Promise<void> {
+  if (!phone) return;
+  try {
+    const [probe] = await whatsappService.probeContacts([phone]);
+    if (!probe?.avatarUrl) return;
+    const call = calls.get(callId);
+    // Chegou tarde, ou a foto do cadastro já entrou no lugar: não sobrescreve.
+    if (!call || call.contact?.avatarUrl) return;
+    patch(callId, {
+      contact: {
+        conversationId: call.contact?.conversationId ?? null,
+        clientId: call.contact?.clientId ?? null,
+        name: call.contact?.name ?? null,
+        avatarUrl: probe.avatarUrl,
+      },
+    });
+  } catch {
+    // Sondagem fora do ar: fica as iniciais, como antes.
   }
 }
 
@@ -472,9 +620,63 @@ async function resolveIncomingRoute(
       }
     }
   }
-  if (!numero) {
-    // Sem número não há conversa, responsável nem canal a consultar: toca para
-    // todos, como qualquer chamada sem dono.
+  // Sem telefone AINDA não quer dizer sem identidade: a conversa pode morar no
+  // próprio LID (ver `contactByLid`). Só depois de tentar tudo é que a chamada
+  // é dada como anônima.
+  let identidade = await resolveCallerIdentity(numero, lid).catch(() => null);
+
+  // ÚLTIMA TENTATIVA: perguntar ao WhatsApp de quem é o apelido.
+  //
+  // Chega aqui a ligação que o CRM não reconheceu por nada que seja dele —
+  // sem mapeamento, sem callback, sem conversa. A Evolution ainda pode saber:
+  // a lista de participantes dos GRUPOS traz o LID e o telefone na mesma
+  // linha. Achando o telefone, tudo recomeça do começo, agora com número em
+  // mãos (conversa, ficha, responsável); achando só o nome de perfil, ele já
+  // é melhor do que "não identificado" na tela de quem vai atender.
+  if (!numero && lid && !identidade) {
+    const doWhatsApp = await whatsappService.probeLid(lid).catch(() => null);
+    if (doWhatsApp?.phone) {
+      numero = doWhatsApp.phone;
+      patch(callId, { phone: doWhatsApp.phone });
+      waCallsLog('LID reconhecido pelo WhatsApp', { callId });
+      identidade = await resolveCallerIdentity(numero, lid).catch(() => null);
+    }
+    if (!identidade && (doWhatsApp?.name || doWhatsApp?.avatarUrl)) {
+      patch(callId, {
+        contact: {
+          conversationId: null,
+          clientId: null,
+          name: doWhatsApp.name,
+          avatarUrl: doWhatsApp.avatarUrl,
+        },
+      });
+    }
+  }
+  if (identidade) {
+    patch(callId, { contact: identidade.contact });
+    if (!numero && identidade.phone) {
+      numero = identidade.phone;
+      patch(callId, { phone: identidade.phone });
+      waCallsLog('LID reconhecido pela conversa', { callId });
+    }
+    contactBlocked = identidade.isBlocked;
+    if (identidade.assignedUserId) {
+      targetUserId = identidade.assignedUserId;
+      source = 'assigned';
+    } else if (identidade.instanceId) {
+      const padrao = await channelDefaultAssignee(identidade.instanceId);
+      if (padrao) { targetUserId = padrao; source = 'channel'; }
+    }
+  }
+
+  // Sem rosto e com número em mãos: pergunta a foto do WhatsApp. Não é esperado
+  // — o cartão já está na tela e a foto entra quando chegar.
+  if (numero && !identidade?.contact.avatarUrl) void fillProfilePhoto(callId, numero);
+
+  if (!numero && !identidade) {
+    // Nem número, nem conversa, nem ficha (com ou sem nome de perfil na tela):
+    // não há responsável, canal nem bloqueio a consultar. Toca para todos,
+    // como qualquer chamada sem dono.
     const me = await currentUserId();
     patch(callId, {
       route: decideCallRing({
@@ -483,30 +685,6 @@ async function resolveIncomingRoute(
       }),
     });
     return;
-  }
-
-  try {
-    const found = await whatsappService.findConversationByPhone(numero);
-    if (found) {
-      patch(callId, {
-        contact: {
-          conversationId: found.conversationId,
-          clientId: found.clientId,
-          name: found.name,
-          avatarUrl: found.avatarUrl,
-        },
-      });
-      contactBlocked = found.isBlocked;
-      if (found.assignedUserId) {
-        targetUserId = found.assignedUserId;
-        source = 'assigned';
-      } else if (found.instanceId) {
-        const padrao = await channelDefaultAssignee(found.instanceId);
-        if (padrao) { targetUserId = padrao; source = 'channel'; }
-      }
-    }
-  } catch {
-    // Sem dados, sem exclusividade: toca para todos.
   }
 
   const [me, targetName] = await Promise.all([
@@ -653,6 +831,18 @@ export const waCallsStore = {
 
   getSnapshot(): WaCallsSnapshot {
     return snapshot;
+  },
+
+  /**
+   * Uma chamada recebida acabou sem que ninguém atendesse.
+   *
+   * Separado do `onNotice` de propósito: o toast do desfecho é para quem está
+   * olhando AGORA, e some sozinho; isto aqui alimenta o cartão que fica na
+   * tela até alguém dizer que viu (ver `missedCallStore`).
+   */
+  onMissedCall(fn: (call: WaCall) => void): () => void {
+    missedListeners.add(fn);
+    return () => { missedListeners.delete(fn); };
   },
 
   /** Avisos para virar toast na UI (ver WaCallsHost). */

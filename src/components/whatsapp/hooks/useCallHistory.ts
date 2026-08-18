@@ -20,6 +20,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { callLogService, type CallLogRow } from '../../../services/callLog.service';
 import { waCallsStore } from '../../../services/wacalls/callStore';
+import {
+  markCallsSeen, readCallsSeenUntil, subscribeCallsSeen,
+} from '../../../services/wacalls/callsSeen';
 import { newestCallAt, unseenMissedCount } from '../callHistory';
 
 /** Quanto esperar depois do fim da chamada para o registro já estar gravado. */
@@ -33,21 +36,13 @@ const RELOAD_DELAY_MS = 1200;
 const BACKGROUND_MS = 5 * 60_000;
 
 /**
- * Onde a marca de "já vi as ligações até aqui" fica guardada.
+ * A marca de "já vi as ligações até aqui" mora em `services/wacalls/callsSeen`.
  *
- * No navegador, e não no banco, de propósito: "eu já vi" é do OPERADOR e da
- * mesa dele, não do escritório. A recepcionista abrir a aba não pode apagar o
- * aviso do advogado que ainda não olhou — foi para essa pessoa que o aviso
- * existia. É a mesma escolha que o WhatsApp faz entre um aparelho e outro.
+ * Ela não é mais só deste distintivo: o cartão de chamada perdida que fica na
+ * tela em qualquer módulo (`missedCallStore`) lê e escreve a MESMA marca. Abrir
+ * esta aba apaga aquele cartão, e dispensar aquele cartão zera este distintivo
+ * — dois avisos discordando sobre a mesma ligação seria pior do que um só.
  */
-const SEEN_KEY = 'wa:callsSeenUntil';
-
-const lerMarca = (): string | null => {
-  try { return localStorage.getItem(SEEN_KEY); } catch { return null; }
-};
-const gravarMarca = (iso: string): void => {
-  try { localStorage.setItem(SEEN_KEY, iso); } catch { /* aba privada: o aviso volta, e tudo bem */ }
-};
 
 export interface CallHistory {
   calls: CallLogRow[];
@@ -66,7 +61,7 @@ export interface CallHistory {
 
 export function useCallHistory(enabled = true): CallHistory {
   const [calls, setCalls] = useState<CallLogRow[]>([]);
-  const [seenUntil, setSeenUntil] = useState<string | null>(lerMarca);
+  const [seenUntil, setSeenUntil] = useState<string | null>(readCallsSeenUntil);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -105,6 +100,10 @@ export function useCallHistory(enabled = true): CallHistory {
     };
   }, [enabled, reload]);
 
+  // Quem dispensou o cartão de chamada perdida (aqui ou noutra aba) já viu: o
+  // distintivo acompanha sem esperar recarregamento.
+  useEffect(() => subscribeCallsSeen(() => setSeenUntil(readCallsSeenUntil())), []);
+
   const unseen = useMemo(() => unseenMissedCount(calls, seenUntil), [calls, seenUntil]);
 
   const markSeen = useCallback(() => {
@@ -113,8 +112,7 @@ export function useCallHistory(enabled = true): CallHistory {
     // com horário anterior ao relógio e nunca mais seria contada.
     const marca = newestCallAt(calls);
     if (!marca || marca === seenUntil) return;
-    gravarMarca(marca);
-    setSeenUntil(marca);
+    if (markCallsSeen(marca)) setSeenUntil(marca);
   }, [calls, seenUntil]);
 
   return { calls, loading, error, reload, unseen, markSeen };

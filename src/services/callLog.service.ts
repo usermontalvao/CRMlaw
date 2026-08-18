@@ -276,6 +276,32 @@ export const callLogService = {
   },
 
   /**
+   * AS PERDIDAS RECENTES — o que alimenta o cartão que fica na tela.
+   *
+   * Uma consulta curta e específica, e não a `listRecent` inteira, porque esta
+   * roda em QUALQUER módulo do CRM (o cartão é global) e a outra é da inbox: o
+   * filtro é do banco, o teto é pequeno e a janela é de horas.
+   *
+   * Ela existe por causa da mesa do colega: uma ligação que tocou no navegador
+   * dele não gera evento nenhum aqui dentro, e sem esta releitura a perdida do
+   * escritório só apareceria para quem estava com a inbox aberta. Traz nome e
+   * rosto junto — um aviso de chamada perdida com um telefone cru obriga a
+   * pessoa a abrir outra tela para saber quem ligou.
+   */
+  async listRecentMissed(sinceMs: number, limit = 20): Promise<CallLogRow[]> {
+    const { data, error } = await supabase
+      .from('whatsapp_call_logs')
+      .select('*')
+      .eq('direction', 'inbound')
+      .eq('outcome', 'missed')
+      .gte('started_at', new Date(sinceMs).toISOString())
+      .order('started_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    return withContacts((data ?? []).map(mapRow));
+  },
+
+  /**
    * Só as chamadas que deixaram gravação — a aba "Gravações".
    *
    * A mesma consulta da aba "Chamadas" com um filtro a mais. Vale a viagem

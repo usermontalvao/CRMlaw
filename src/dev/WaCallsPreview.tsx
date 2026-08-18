@@ -7,6 +7,8 @@
 import React, { useEffect, useState } from 'react';
 import { PhoneCall } from 'lucide-react';
 import { ActiveCallWidget, IncomingCallCard } from '../components/whatsapp/callModals';
+import { MissedCallWidget } from '../components/whatsapp/MissedCallWidget';
+import type { MissedCall } from '../services/wacalls/missedCalls';
 import { playCallConnectedTone, playCallEndedTone, startRing, stopRing } from '../services/wacalls/ringtone';
 import { waCallsService } from '../services/wacalls.service';
 import { WACALLS_BASE_URL } from '../services/wacalls/config';
@@ -35,6 +37,34 @@ const chamada = (patch: Partial<WaCall>): WaCall => ({
 
 const FASES: WaCallPhase[] = ['PREPARING', 'CALLING', 'RINGING', 'ACTIVE', 'ENDING', 'ENDED', 'FAILED'];
 
+/**
+ * As perdidas da bancada: as três formas que uma chamada perdida tem de
+ * aparecer — quem tem cadastro, quem só tem número, e quem ligou anônimo (só
+ * LID). A do meio insistiu duas vezes, para conferir o agrupamento.
+ */
+const PERDIDAS: MissedCall[] = [
+  {
+    callId: 'm1', phone: '5565996128787', lid: null, name: 'Lisliandra Cerqueira',
+    avatarUrl: null, avatarPath: null, conversationId: 'c1', clientId: 'cli-1',
+    startedAt: Date.now() - 4 * 60_000,
+  },
+  {
+    callId: 'm2', phone: '5565992216459', lid: null, name: null,
+    avatarUrl: null, avatarPath: null, conversationId: null, clientId: null,
+    startedAt: Date.now() - 26 * 60_000,
+  },
+  {
+    callId: 'm3', phone: '5565992216459', lid: null, name: null,
+    avatarUrl: null, avatarPath: null, conversationId: null, clientId: null,
+    startedAt: Date.now() - 39 * 60_000,
+  },
+  {
+    callId: 'm4', phone: '', lid: '252677908865131', name: null,
+    avatarUrl: null, avatarPath: null, conversationId: null, clientId: null,
+    startedAt: Date.now() - 3 * 60 * 60_000,
+  },
+];
+
 const WaCallsPreview: React.FC = () => {
   const [fase, setFase] = useState<WaCallPhase>('CALLING');
   const [mudo, setMudo] = useState(false);
@@ -53,6 +83,7 @@ const WaCallsPreview: React.FC = () => {
   // nenhum, e o cartão precisa DIZER isso em vez de inventar um número. Foi o
   // defeito de 17/08/2026 (ver `services/wacalls/phone.ts`).
   const [semNumero, setSemNumero] = useState(false);
+  const [perdidas, setPerdidas] = useState<MissedCall[]>(PERDIDAS);
   const [sessoes, setSessoes] = useState<WaCallsSession[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [sse, setSse] = useState('conectando…');
@@ -114,6 +145,11 @@ const WaCallsPreview: React.FC = () => {
           className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${semRede ? 'bg-amber-500 text-white' : 'border border-[#e7e5df] bg-white text-slate-600'}`}>
           sem internet
         </button>
+        <button onClick={() => setPerdidas(PERDIDAS)}
+          title="Devolve o cartão de chamadas perdidas ao estado inicial"
+          className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">
+          repor perdidas
+        </button>
         <button onClick={() => setSemNumero(v => !v)}
           title="O convite chegou endereçado por LID: o WhatsApp não mandou telefone nenhum"
           className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${semNumero ? 'bg-amber-500 text-white' : 'border border-[#e7e5df] bg-white text-slate-600'}`}>
@@ -138,6 +174,16 @@ const WaCallsPreview: React.FC = () => {
         onToggleMute={() => setMudo(v => !v)}
         onToggleRecording={() => setGravando(v => !v)}
         onOpenConversation={() => window.alert('abriria a conversa do contato')}
+      />
+      {/* O aviso de chamada perdida: aqui ele é alimentado à mão, sem o store —
+          a bancada confere o desenho e as ações, não a persistência. */}
+      <MissedCallWidget
+        calls={perdidas}
+        canCall
+        onCallBack={(call) => window.alert(`ligaria de volta para ${call.phone}`)}
+        onOpenConversation={() => window.alert('abriria a conversa do contato')}
+        onDismiss={(ids) => setPerdidas(atual => atual.filter(c => !ids.includes(c.callId)))}
+        onDismissAll={() => setPerdidas([])}
       />
       {recebida && (
         <IncomingCallCard

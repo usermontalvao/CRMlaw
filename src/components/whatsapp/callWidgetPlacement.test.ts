@@ -51,3 +51,9 @@ test('convite mais largo que a janela encosta na margem, sem x negativo', () => 
   const p = topCenterPosition({ width: 320, height: 640 }, { width: 400, height: 180 });
   assert.equal(p.x, CALL_WIDGET_MARGIN);
 });
+
+test('o aviso de chamada perdida nasce onde o convite nasce — alto e ao centro', () => {
+  const p = topCenterPosition(VIEWPORT, { width: 352, height: 260 });
+  assert.equal(p.x, (1440 - 352) / 2);
+  assert.equal(p.y, CALL_WIDGET_MARGIN);
+});

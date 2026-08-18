@@ -216,7 +216,7 @@ const viewportBox = (): CallWidgetBox => ({ width: window.innerWidth, height: wi
  * quadro estourava o limite e o painel nascia grudado no canto superior
  * esquerdo, longe de onde deveria.
  */
-function useDraggablePosition(
+export function useDraggablePosition(
   nodeRef: React.RefObject<HTMLElement | null>,
   options: {
     /** Chave no localStorage — cada peça guarda a SUA posição. */

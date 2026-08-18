@@ -23,7 +23,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AudioLines, Loader2, MessageSquare, Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing, RefreshCw } from 'lucide-react';
 import { type CallLogRow } from '../../services/callLog.service';
-import { resolveAvatarUrl } from '../../services/whatsapp/shared';
+import { normalizePhone, resolveAvatarUrl } from '../../services/whatsapp/shared';
+import { useContactProbes } from './contactProbes';
 import { callHistoryIdentity, formatCallPhone } from './callHistory';
 import { threadCallLabel, type ThreadCallTone } from './threadCalls';
 import { dayLabel, initials } from './format';
@@ -58,7 +59,20 @@ const TONES: Record<ThreadCallTone, { chip: string; title: string; row: string }
  * tem dezenas de linhas, não centenas, e um histórico de ligações sem rosto
  * obriga a ler o nome de cada uma para achar a pessoa certa.
  */
-const CallAvatar: React.FC<{ path: string | null | undefined; name: string; phone: string }> = ({ path, name, phone }) => {
+const CallAvatar: React.FC<{
+  path: string | null | undefined;
+  name: string;
+  phone: string;
+  /**
+   * A foto PÚBLICA do WhatsApp, para quem não tem conversa no CRM.
+   *
+   * Sem cadastro, a linha fica com um número e mais nada — e um número não é
+   * ninguém. O rosto que o celular mostraria vem da mesma sondagem da agenda
+   * (ver `contactProbes`), então quem tem foto pública aparece com ela e quem
+   * não tem continua nas iniciais.
+   */
+  fallbackUrl?: string | null;
+}> = ({ path, name, phone, fallbackUrl }) => {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!path) { setUrl(null); return; }
@@ -67,8 +81,9 @@ const CallAvatar: React.FC<{ path: string | null | undefined; name: string; phon
     return () => { vivo = false; };
   }, [path]);
 
-  if (url) {
-    return <img src={url} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />;
+  const foto = url || fallbackUrl || null;
+  if (foto) {
+    return <img src={foto} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />;
   }
   return (
     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e7e5df] text-[12.5px] font-bold text-slate-500">
@@ -94,6 +109,16 @@ export const CallHistoryList: React.FC<{
   /** Ligar de novo. Ausente = chamadas indisponíveis neste host. */
   onCall?: (phone: string, name: string | null, conversationId: string | null) => void;
 }> = ({ calls, loading, error: erro, onReload, privateMode, onOpenConversation, onCall }) => {
+  // A foto pública de quem NÃO tem conversa no CRM. Só desses: quem tem
+  // conversa já traz o rosto do próprio cadastro, e perguntar de novo à
+  // Evolution seria trabalho para mostrar a mesma coisa. Modo privado não
+  // pergunta nada — ali a tela não mostra nem nome nem número.
+  const semRosto = useMemo(
+    () => (privateMode ? [] : calls.filter(c => !c.contactAvatarPath && c.phone).map(c => c.phone)),
+    [calls, privateMode],
+  );
+  const fotosPublicas = useContactProbes(semRosto);
+
   // Agrupado por dia, como qualquer histórico de ligações — "hoje" e "ontem"
   // localizam a chamada melhor do que a data cheia.
   const porDia = useMemo(() => {
@@ -181,7 +206,12 @@ export const CallHistoryList: React.FC<{
                 }`}>
                 {privateMode
                   ? <span className="h-10 w-10 shrink-0 rounded-full bg-[#e7e5df]" />
-                  : <CallAvatar path={call.contactAvatarPath} name={identidade.unknown ? '' : identidade.title} phone={call.phone} />}
+                  : <CallAvatar
+                      path={call.contactAvatarPath}
+                      name={identidade.unknown ? '' : identidade.title}
+                      phone={call.phone}
+                      fallbackUrl={fotosPublicas.get(normalizePhone(call.phone))?.avatarUrl ?? null}
+                    />}
 
                 <div className="min-w-0 flex-1">
                   <p className={`truncate text-[13.5px] font-semibold ${

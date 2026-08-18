@@ -161,6 +161,41 @@ export const client360Api = {
     }
   },
 
+  /**
+   * DE QUEM É ESTE APELIDO? — a pergunta que o telefone tocando faz.
+   *
+   * Última tentativa depois que o CRM procurou no que é dele (mapeamento,
+   * callback, conversa): pergunta ao WhatsApp. A resposta boa vem dos GRUPOS,
+   * onde a lista de participantes traz o LID e o telefone na mesma linha —
+   * evidência exata, não palpite. Vindo telefone, a Edge Function já registra o
+   * mapeamento, e a próxima ligação da mesma pessoa chega com nome sozinha.
+   *
+   * Falha de rede devolve vazio: a chamada continua anônima, como antes.
+   */
+  async probeLid(lid: string, channelId?: string | null): Promise<{
+    phone: string;
+    name: string | null;
+    avatarUrl: string | null;
+  } | null> {
+    const digits = (lid || '').replace(/\D/g, '');
+    if (!digits) return null;
+    try {
+      const data = await invokeFn('whatsapp-contact-probe', {
+        lid: digits,
+        channel_id: channelId || null,
+      });
+      const phone = String(data?.phone || '');
+      const name = (data?.name as string | null) || null;
+      const path = (data?.avatar_path as string | null) || null;
+      if (!phone && !name && !path) return null;
+      const alvo = [{ contact_avatar_path: path, contact_avatar_url: null as string | null }];
+      if (path) await attachAvatarUrls(alvo);
+      return { phone, name, avatarUrl: alvo[0].contact_avatar_url };
+    } catch {
+      return null;
+    }
+  },
+
   /** Candidatos cujo telefone casa com o do contato (normalizado no banco). */
   async matchClientsByPhone(phone: string): Promise<WhatsAppClientLite[]> {
     if (!phone) return [];

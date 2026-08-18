@@ -4,6 +4,20 @@
  * POST { phones: string[], channel_id?: string, refresh?: boolean } (JWT da equipe)
  * → { results: [{ phone, has_whatsapp, jid, avatar_path }] }
  *
+ * E a segunda pergunta, do telefone tocando:
+ *
+ * POST { lid: string, channel_id?: string }
+ * → { lid, phone, name, avatar_path, source }
+ *
+ * DE QUEM É ESTE APELIDO? O WhatsApp entrega algumas chamadas endereçadas só
+ * por LID (`<n>@lid`), sem telefone nenhum dentro, e o cartão da ligação
+ * escrevia "Número não identificado" para gente que o escritório conhece. A
+ * evidência que resolve isso está nos GRUPOS: a lista de participantes que a
+ * Evolution devolve traz, na mesma linha, o LID (`id`) e o telefone real
+ * (`phoneNumber`). Não é palpite — é o próprio WhatsApp dizendo que aquele
+ * apelido é daquele número. Achando, o mapeamento é REGISTRADO na conversa
+ * (`wa_link_lid`), e a próxima ligação da mesma pessoa já chega com nome.
+ *
  * Quem responde é a Evolution: `/chat/whatsappNumbers` diz se o número existe
  * (e devolve o jid já com a variante certa do nono dígito brasileiro) e
  * `/chat/fetchProfilePictureUrl` dá a foto de perfil. A foto é BAIXADA e
@@ -49,6 +63,44 @@ interface Probe {
   avatar_path: string | null;
 }
 
+/**
+ * Baixa a foto de perfil e guarda no bucket, devolvendo o caminho.
+ *
+ * A URL que o WhatsApp devolve é de CDN e expira em horas; por isso a cópia.
+ * `alvo` é o que a Evolution entende como destinatário (número ou jid) e
+ * `arquivo` é o nome no bucket — o telefone quando há telefone, o apelido
+ * quando a ligação só tem apelido.
+ */
+async function baixarFotoPerfil(
+  admin: any, base: string, apikey: string, inst: string, alvo: string, arquivo: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch(`${base}/chat/fetchProfilePictureUrl/${inst}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey },
+      body: JSON.stringify({ number: alvo }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const out = res.ok ? await res.json().catch(() => ({})) : {};
+    const picUrl: string | null = out?.profilePictureUrl || out?.profilePicUrl || null;
+    if (!picUrl) return null;
+
+    const img = await fetch(picUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!img.ok) return null;
+    const mime = img.headers.get('content-type') || 'image/jpeg';
+    const bytes = new Uint8Array(await img.arrayBuffer());
+    if (bytes.byteLength === 0) return null;
+
+    const ext = (mime.split('/')[1] || 'jpg').replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'jpg';
+    const path = `avatars/contacts/${arquivo}.${ext}`;
+    const up = await admin.storage.from(MEDIA_BUCKET)
+      .upload(path, bytes, { contentType: mime, upsert: true });
+    return up.error ? null : path;
+  } catch {
+    return null; // contato sem foto, privacidade fechada ou rede: fica sem rosto
+  }
+}
+
 /** Dígitos, com 55 na frente — o mesmo formato de `normalizePhone` no cliente. */
 function normalize(raw: string): string {
   const d = String(raw || '').replace(/@.*/, '').replace(/\D/g, '');
@@ -56,6 +108,133 @@ function normalize(raw: string): string {
   if (d.startsWith('55')) return d;
   if (d.length === 10 || d.length === 11) return `55${d}`;
   return d;
+}
+
+/**
+ * QUEM É ESTE LID — a resposta em quatro degraus, do mais exato ao mais fraco.
+ *
+ *  1. AS CONVERSAS (`/chat/findChats`). É onde o mapeamento REALMENTE mora: a
+ *     última mensagem do chat traz `key.remoteJidAlt` com o telefone de verdade
+ *     ao lado do `remoteJid` em `@lid`, e o `pushName` de quebra. Conferido em
+ *     18/08/2026 com uma ligação que o CRM tinha dado como anônima: o apelido
+ *     `16758979195047` era do Lucindo Vieira, cliente com ficha e conversa
+ *     abertas — o número estava ali o tempo todo, ninguém tinha perguntado.
+ *  2. AS MENSAGENS (`/chat/findMessages`). Mesma evidência, para quando o chat
+ *     não veio (mensagem antiga, chat arquivado).
+ *  3. OS GRUPOS. Participante traz `id` (LID) e `phoneNumber` na mesma linha:
+ *     resolve quem nunca escreveu para o escritório, mas está num grupo com ele.
+ *  4. O NOME DE PERFIL (`/chat/findContacts`). Não identifica cliente, mas é
+ *     muito melhor do que "não identificado" na tela de quem vai atender.
+ *
+ * A foto vem pelo telefone quando ele aparece; pelo próprio apelido quando não
+ * (a Evolution aceita o jid `<n>@lid`). Sem nenhum dos quatro, devolve vazio —
+ * e o cartão continua dizendo a verdade.
+ */
+async function resolverLid(
+  admin: any, base: string, apikey: string, instancias: string[], lid: string,
+): Promise<{ phone: string; name: string | null; avatar_path: string | null; source: string }> {
+  let phone = '';
+  let name: string | null = null;
+  let source = 'none';
+  const alvoJid = `${lid}@lid`;
+
+  /** O telefone escondido no `remoteJidAlt` de uma chave de mensagem. */
+  const doAlt = (key: any): string => {
+    const alt = normalize(String(key?.remoteJidAlt || ''));
+    return alt.length >= 12 && alt.length <= 13 ? alt : '';
+  };
+  const anota = (achado: string, origem: string) => {
+    if (!achado || phone) return;
+    phone = achado;
+    source = origem;
+  };
+
+  const post = async (inst: string, rota: string, corpo: unknown, ms = 8_000) => {
+    const res = await fetch(`${base}/${rota}/${inst}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey },
+      body: JSON.stringify(corpo),
+      signal: AbortSignal.timeout(ms),
+    });
+    return res.ok ? await res.json().catch(() => null) : null;
+  };
+
+  for (const nome of instancias) {
+    const inst = encodeURIComponent(nome);
+
+    // 1. A conversa daquele apelido.
+    if (!phone || !name) {
+      try {
+        const chats = await post(inst, 'chat/findChats', { where: { remoteJid: alvoJid } });
+        for (const chat of Array.isArray(chats) ? chats : []) {
+          anota(doAlt(chat?.lastMessage?.key), 'chat');
+          const push = String(chat?.pushName || chat?.lastMessage?.pushName || '').trim();
+          if (push && !name) name = push;
+        }
+      } catch { /* conversas fora do ar: tenta o resto */ }
+    }
+
+    // 2. As mensagens daquele apelido.
+    if (!phone) {
+      try {
+        const out = await post(inst, 'chat/findMessages', { where: { key: { remoteJid: alvoJid } } });
+        const registros = out?.messages?.records ?? out?.records ?? [];
+        for (const m of Array.isArray(registros) ? registros : []) {
+          anota(doAlt(m?.key), 'message');
+          const push = String(m?.pushName || '').trim();
+          if (push && !name) name = push;
+          if (phone) break;
+        }
+      } catch { /* mensagens fora do ar */ }
+    }
+
+    // 3. Os grupos.
+    if (!phone) {
+      try {
+        // Dez segundos e não mais: do outro lado tem um telefone TOCANDO, e um
+        // nome que chega depois de a pessoa desligar não serviu para nada.
+        const res = await fetch(`${base}/group/fetchAllGroups/${inst}?getParticipants=true`, {
+          headers: { apikey },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) {
+          const grupos = await res.json().catch(() => []);
+          for (const g of Array.isArray(grupos) ? grupos : []) {
+            for (const p of Array.isArray(g?.participants) ? g.participants : []) {
+              if (String(p?.id || '').replace(/\D/g, '') !== lid) continue;
+              const numero = normalize(String(p?.phoneNumber || ''));
+              // 12/13 dígitos: telefone brasileiro de verdade. Qualquer outra
+              // coisa é o próprio apelido voltando disfarçado.
+              if (numero.length >= 12 && numero.length <= 13) anota(numero, 'group');
+              break;
+            }
+            if (phone) break;
+          }
+        }
+      } catch { /* grupos fora do ar */ }
+    }
+
+    // 4. O nome de perfil, quando nada mais deu nome.
+    if (!name) {
+      try {
+        const arr = await post(inst, 'chat/findContacts', { where: { remoteJid: alvoJid } });
+        const push = String((Array.isArray(arr) ? arr : [])[0]?.pushName || '').trim();
+        if (push) {
+          name = push;
+          if (source === 'none') source = 'pushname';
+        }
+      } catch { /* contatos fora do ar */ }
+    }
+
+    if (phone && name) break;
+  }
+
+  const inst0 = encodeURIComponent(instancias[0] || '');
+  const avatar_path = inst0
+    ? await baixarFotoPerfil(admin, base, apikey, inst0, phone || alvoJid, phone || `lid-${lid}`)
+    : null;
+
+  return { phone, name, avatar_path, source };
 }
 
 Deno.serve(async (req: Request) => {
@@ -77,6 +256,37 @@ Deno.serve(async (req: Request) => {
 
   let body: any;
   try { body = await req.json(); } catch { return json({ error: 'JSON inválido' }, 400); }
+
+  // ── A pergunta do telefone tocando: de quem é este apelido? ───────────────
+  const lidPedido = String(body?.lid ?? '').replace(/\D/g, '');
+  if (lidPedido) {
+    const { data: cfgLid } = await admin.from('system_settings')
+      .select('value').eq('key', 'whatsapp_evolution_config').maybeSingle();
+    const srv = (cfgLid?.value || {}) as { base_url?: string; api_key?: string };
+    const { data: canais } = await admin.from('whatsapp_instances')
+      .select('instance_name').eq('status', 'connected');
+    const nomes = (canais || [])
+      .map((c: { instance_name: string | null }) => c.instance_name)
+      .filter((n: string | null): n is string => !!n);
+    if (!srv.base_url || !srv.api_key || nomes.length === 0) {
+      return json({ lid: lidPedido, phone: '', name: null, avatar_path: null, source: 'none' });
+    }
+    // O LID é global: vale perguntar a QUALQUER conta conectada, não só à que
+    // recebeu a ligação (que, no caso das chamadas de voz, nem é uma instância
+    // da Evolution — o WaCalls usa um terceiro número).
+    const achado = await resolverLid(
+      admin, srv.base_url.replace(/\/+$/, ''), srv.api_key, nomes, lidPedido,
+    );
+    // Aprendeu: registra na conversa para a PRÓXIMA ligação já chegar com nome,
+    // e devolve identidade às chamadas que ficaram anônimas com este apelido.
+    if (achado.phone) {
+      try {
+        await userClient.rpc('wa_link_lid', { p_phone: achado.phone, p_lid: lidPedido });
+        await userClient.rpc('wa_resolve_call_lids', { p_lid: lidPedido });
+      } catch { /* ganho futuro, nunca um erro na tela */ }
+    }
+    return json({ lid: lidPedido, ...achado });
+  }
 
   const pedidos: string[] = Array.from(new Set(
     (Array.isArray(body?.phones) ? body.phones : []).map((p: unknown) => normalize(String(p))).filter(Boolean),
@@ -168,33 +378,8 @@ Deno.serve(async (req: Request) => {
   // da Evolution, que atende o envio de mensagens ao mesmo tempo.
   const FRENTES = 6;
 
-  async function buscarFoto(phone: string, jid: string | null): Promise<string | null> {
-    try {
-      const res = await fetch(`${base}/chat/fetchProfilePictureUrl/${inst}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: server.api_key! },
-        body: JSON.stringify({ number: jid || phone }),
-        signal: AbortSignal.timeout(15_000),
-      });
-      const out = res.ok ? await res.json().catch(() => ({})) : {};
-      const picUrl: string | null = out?.profilePictureUrl || out?.profilePicUrl || null;
-      if (!picUrl) return null;
-
-      const img = await fetch(picUrl, { signal: AbortSignal.timeout(15_000) });
-      if (!img.ok) return null;
-      const mime = img.headers.get('content-type') || 'image/jpeg';
-      const bytes = new Uint8Array(await img.arrayBuffer());
-      if (bytes.byteLength === 0) return null;
-
-      const ext = (mime.split('/')[1] || 'jpg').replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'jpg';
-      const path = `avatars/contacts/${phone}.${ext}`;
-      const up = await admin.storage.from(MEDIA_BUCKET)
-        .upload(path, bytes, { contentType: mime, upsert: true });
-      return up.error ? null : path;
-    } catch {
-      return null; // contato sem foto, privacidade fechada ou rede: fica sem rosto
-    }
-  }
+  const buscarFoto = (phone: string, jid: string | null) =>
+    baixarFotoPerfil(admin, base, server.api_key!, inst, jid || phone, phone);
 
   const comFoto: string[] = [];
   for (const phone of faltando) {

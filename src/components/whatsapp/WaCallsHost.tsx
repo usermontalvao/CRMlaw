@@ -9,17 +9,23 @@
 // É também o único lugar que liga a escuta de eventos (via `useWaCalls` →
 // `waCallsStore.init`), o que garante uma única conexão SSE por aba.
 //
+// É também a casa do AVISO DE CHAMADA PERDIDA (`MissedCallWidget`), pelo mesmo
+// motivo: a ligação que ninguém atendeu precisa aparecer para quem está no
+// processo, na agenda ou no editor — não só para quem tem a inbox aberta.
+//
 // Nada de estado de chamada aqui dentro: o estado é do store, este componente
 // só desenha, toca os avisos sonoros e traduz os recados em toasts.
 import React, { useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useMissedCalls } from '../../hooks/useMissedCalls';
 import { useWaCalls } from '../../hooks/useWaCalls';
 import { waCallsStore } from '../../services/wacalls/callStore';
 import {
   playCallConnectedTone, playCallEndedTone, startRing, stopRing,
 } from '../../services/wacalls/ringtone';
 import { ActiveCallWidget, IncomingCallCard, callDisplayName } from './callModals';
+import { MissedCallWidget } from './MissedCallWidget';
 import type { WaCall } from '../../services/wacalls/types';
 
 /**
@@ -179,8 +185,9 @@ export const WaCallsHost: React.FC<{
 }> = ({ onOpenConversation }) => {
   const toast = useToastContext();
   const {
-    myCall, incoming, linkDown, acceptCall, rejectCall, hangUp, setMuted, setRecording,
+    myCall, incoming, linkDown, canCall, placeCall, acceptCall, rejectCall, hangUp, setMuted, setRecording,
   } = useWaCalls();
+  const { calls: missed, dismiss: dismissMissed, dismissAll: dismissAllMissed } = useMissedCalls();
 
   useCallRinging(myCall, incoming);
   useSystemCallNotification(incoming);
@@ -209,6 +216,26 @@ export const WaCallsHost: React.FC<{
           />
         )}
       </AnimatePresence>
+      {/* O aviso de perdida cala a boca enquanto o telefone toca ou há linha
+          aberta: o que interessa nesse instante é a chamada de agora. Ele volta
+          sozinho assim que a tela fica livre — nada é perdido no caminho. */}
+      {!incoming && !myCall && (
+        <MissedCallWidget
+          calls={missed}
+          canCall={canCall}
+          onCallBack={(call) => {
+            void placeCall(call.phone, {
+              conversationId: call.conversationId,
+              clientId: call.clientId,
+              name: call.name,
+              avatarUrl: call.avatarUrl,
+            });
+          }}
+          onOpenConversation={onOpenConversation}
+          onDismiss={dismissMissed}
+          onDismissAll={dismissAllMissed}
+        />
+      )}
       {myCall && (
         <ActiveCallWidget
           key={myCall.callId}
