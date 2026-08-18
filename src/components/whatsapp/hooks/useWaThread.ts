@@ -70,6 +70,17 @@ export interface WaThreadApi {
 const REALCE_MS = 2600;
 
 /**
+ * Janela em que o salto MANDA na rolagem. Abrir uma conversa e saltar acontecem
+ * no mesmo instante, e logo depois a thread ainda se assenta: fotos e áudios
+ * chegam com altura desconhecida, as ligações entram, os cards crescem. Cada um
+ * desses eventos passava pelo auto-scroll e pelo ResizeObserver, que — vendo a
+ * thread "no fim" — devolviam a conversa para o rodapé um quadro depois do
+ * salto. Era por isso que o primeiro clique numa agendada concluída parecia só
+ * abrir a conversa, e o segundo (com a thread já assentada) ia até a mensagem.
+ */
+const SALTO_ASSENTAMENTO_MS = 2200;
+
+/**
  * Deriva a thread renderizável (merge otimista + álbuns + galeria) e administra
  * o auto-scroll/posição de rolagem. Recebe a janela de mensagens (useWaMessages)
  * e a fila otimista (useWaComposer); não busca dados nem persiste nada.
@@ -110,6 +121,15 @@ export function useWaThread(
   // o fim = pin) sem depender só da distância — evita soltar o grude na corrida
   // entre o pin e o crescimento tardio de mídia/blocos.
   const lastScrollTopRef = useRef(0);
+  // Até quando o salto até uma mensagem manda na rolagem, e qual é a mensagem.
+  // Enquanto essa janela está aberta, nada mais leva a thread ao fim, e o que
+  // cresce acima do alvo é compensado recentralizando-o (ver o ResizeObserver).
+  const saltoAteRef = useRef(0);
+  const saltoAlvoRef = useRef<string | null>(null);
+  /** O salto ainda está no comando da rolagem? */
+  const saltoAtivo = () => saltoAteRef.current > Date.now();
+  /** Encerra o salto: a rolagem volta a ser do usuário e do auto-scroll. */
+  const encerrarSalto = () => { saltoAteRef.current = 0; saltoAlvoRef.current = null; };
 
   // Mescla mensagens reais + otimistas (que ainda não voltaram do servidor).
   // A fila otimista atravessa a troca de conversa — é assim que um envio em voo
@@ -284,6 +304,8 @@ export function useWaThread(
     if (!el) return;
     const isSwitch = lastConvRef.current !== selectedId;
     if (isSwitch) {
+      // Sair da conversa cancela o salto que estava assentando nela.
+      encerrarSalto();
       // Render da troca: `messages` ainda é da conversa anterior (o clear só aplica
       // no próximo render). Salta pro fim, zera o "pronto" e RE-GRUDA no fim — a
       // fixação real acontece quando as mensagens DESTA conversa chegam.
@@ -294,6 +316,10 @@ export function useWaThread(
       jumpToBottom();
       return;
     }
+    // Quem abriu a conversa POR uma mensagem já disse aonde quer ir: enquanto o
+    // salto assenta, nenhuma leva de mensagens (nem as ligações, que chegam por
+    // outra consulta) tem o direito de puxar a thread de volta ao fim.
+    if (saltoAtivo()) return;
     // Enquanto não fixamos o fim desta conversa, salta para baixo a cada leva de
     // mensagens (o 1º paint vem vazio); só marca como pronto quando há conteúdo.
     // Garante abrir SEMPRE na mensagem mais recente, sem scroll suave a partir do topo.
@@ -334,6 +360,8 @@ export function useWaThread(
   const scrollToBottom = useCallback(() => {
     const el = threadRef.current;
     if (!el) return;
+    // Pedir o fim encerra o salto: daqui em diante quem manda é o rodapé.
+    encerrarSalto();
     stickBottomRef.current = true;
     atBottomRef.current = true;
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
@@ -348,6 +376,24 @@ export function useWaThread(
   // fim — sem isso, o auto-scroll (e o ResizeObserver que persegue o fim
   // enquanto mídia carrega) desfaria a rolagem no quadro seguinte.
   const realceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * Põe a mensagem no meio da janela. Centraliza pela diferença de retângulos, e
+   * não com `scrollIntoView`: este último rola TAMBÉM os ancestrais, e a thread
+   * mora dentro do módulo (que pode estar numa janela flutuante sobre o CRM) — a
+   * página inteira pulava.
+   */
+  const centralizar = useCallback((alvo: HTMLElement, suave: boolean) => {
+    const el = threadRef.current;
+    if (!el) return;
+    const caixa = el.getBoundingClientRect();
+    const linha = alvo.getBoundingClientRect();
+    const destino = el.scrollTop + (linha.top - caixa.top) - (el.clientHeight - linha.height) / 2;
+    const topo = Math.max(0, Math.min(destino, el.scrollHeight - el.clientHeight));
+    el.scrollTo({ top: topo, behavior: suave ? 'smooth' : 'auto' });
+    lastScrollTopRef.current = topo;
+  }, []);
+
   const jumpToMessage = useCallback((messageId: string): boolean => {
     const el = threadRef.current;
     if (!el || !messageId) return false;
@@ -359,15 +405,13 @@ export function useWaThread(
     // A conversa já tem um fim fixado: sem isto, o efeito de auto-scroll
     // trataria a próxima leva de mensagens como "primeira" e saltaria ao fim.
     didInitialScrollRef.current = true;
+    // Abre a janela em que o salto manda na rolagem. É o que faz UM clique
+    // bastar: no primeiro clique a conversa acaba de abrir e ainda vai crescer
+    // (mídia, ligações, cards), e cada crescimento devolvia a thread ao rodapé.
+    saltoAteRef.current = Date.now() + SALTO_ASSENTAMENTO_MS;
+    saltoAlvoRef.current = messageId;
 
-    // Centraliza pela diferença de retângulos, e não com `scrollIntoView`: este
-    // último rola TAMBÉM os ancestrais, e a thread mora dentro do módulo (que
-    // pode estar numa janela flutuante sobre o CRM) — a página inteira pulava.
-    const caixa = el.getBoundingClientRect();
-    const linha = alvo.getBoundingClientRect();
-    const destino = el.scrollTop + (linha.top - caixa.top) - (el.clientHeight - linha.height) / 2;
-    el.scrollTo({ top: Math.max(0, destino), behavior: 'smooth' });
-    lastScrollTopRef.current = Math.max(0, destino);
+    centralizar(alvo, true);
     setScrolledUp(true);
 
     // Acende a bolha por um instante: no meio de uma conversa longa, chegar
@@ -377,7 +421,7 @@ export function useWaThread(
     alvo.classList.add('wa-msg-focus');
     realceTimerRef.current = setTimeout(() => alvo.classList.remove('wa-msg-focus'), REALCE_MS);
     return true;
-  }, []);
+  }, [centralizar]);
 
   useEffect(() => () => { if (realceTimerRef.current) clearTimeout(realceTimerRef.current); }, []);
 
@@ -392,17 +436,36 @@ export function useWaThread(
     const content = threadContentRef.current;
     if (!el || !content || typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => {
+      // Com um salto em curso, o que cresce é justamente o que empurra a
+      // mensagem procurada para fora da tela — uma foto acima dela terminando
+      // de carregar. Então o observador persegue o ALVO, não o fim.
+      if (saltoAtivo()) {
+        const alvo = saltoAlvoRef.current
+          ? el.querySelector<HTMLElement>(`[data-msg-id="${CSS.escape(saltoAlvoRef.current)}"]`)
+          : null;
+        if (alvo) centralizar(alvo, false);
+        return;
+      }
       if (stickBottomRef.current || atBottomRef.current) el.scrollTop = el.scrollHeight;
     });
     ro.observe(content);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [selectedId]);
+  }, [selectedId, centralizar]);
 
   const onThreadScroll = useCallback(() => {
     const el = threadRef.current;
     if (!el) return;
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // Os eventos que chegam durante o salto são a ANIMAÇÃO a caminho da
+    // mensagem, não o usuário. O primeiro deles sai do rodapé (dist ≈ 0) e
+    // remarcava "estou no fim" — bastava isso para a leva seguinte de conteúdo
+    // trazer a conversa de volta para baixo.
+    if (saltoAtivo()) {
+      lastScrollTopRef.current = el.scrollTop;
+      setScrolledUp(dist > 320);
+      return;
+    }
     atBottomRef.current = dist < 80;
     // Distingue intenção do usuário de pin programático SEM olhar só a distância:
     // um pin sempre AUMENTA o scrollTop (vai ao fim); o usuário subindo DIMINUI o

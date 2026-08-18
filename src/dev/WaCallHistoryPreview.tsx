@@ -14,7 +14,8 @@
 //    igual" aparece.
 import React, { useMemo, useState } from 'react';
 import { CallHistoryList } from '../components/whatsapp/CallHistoryList';
-import { InboxTabs, type InboxTab } from '../components/whatsapp/InboxTabs';
+import { InboxTabs, InboxViewSwitch, type InboxTab } from '../components/whatsapp/InboxTabs';
+import { Bell, ListTodo, MessageCircle, MoreVertical, Plus, Search } from 'lucide-react';
 import { newestCallAt, unseenMissedCount } from '../components/whatsapp/callHistory';
 import type { CallLogRow } from '../services/callLog.service';
 
@@ -83,6 +84,54 @@ const CHAMADAS: CallLogRow[] = [
   }),
 ];
 
+/**
+ * A coluna da lista como ela é no módulo: cabeçalho (ícone + vistas + ações),
+ * busca e a barra dos três filtros. É aqui que se confere se as duas vistas
+ * escritas cabem na linha do título — a conta que decidiu o desenho novo.
+ */
+const ColunaDaLista: React.FC<{
+  aba: InboxTab; setAba: (t: InboxTab) => void; naoVistas: number; falhas: number; embutido?: boolean;
+}> = ({ aba, setAba, naoVistas, falhas, embutido = false }) => {
+  const acoes = (
+    <div className="flex items-center gap-2 shrink-0">
+      <span title="Online" className="flex items-center">
+        <span className="inline-block w-2 h-2 rounded-full" style={{ background: '#16a34a' }} />
+      </span>
+      <button className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600"><Bell size={15} /></button>
+      {!embutido && <button className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-100 text-amber-700"><ListTodo size={15} /></button>}
+      {!embutido && <button className="flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600"><MoreVertical size={15} /></button>}
+      <button className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white"><Plus size={16} /></button>
+    </div>
+  );
+  return (
+    <div className={`border-b border-[#e7e5df] ${embutido ? 'px-3 pt-2.5 pb-2' : 'px-4 pt-4 pb-3'}`} data-bancada="coluna">
+      {!embutido && (
+        <div className="flex items-center justify-between gap-2 mb-3" data-bancada="cabecalho">
+          <div className="flex items-center gap-2 min-w-0">
+            <MessageCircle size={18} className="text-amber-600 shrink-0" />
+            <h2 className="font-bold text-slate-800 text-[15px] truncate">WhatsApp</h2>
+          </div>
+          {acoes}
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 min-w-0">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input readOnly placeholder="Buscar conversa…"
+            className={`w-full pl-9 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent outline-none ${embutido ? 'py-1.5 pr-3' : 'py-2 pr-12'}`} />
+        </div>
+        <button className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[12.5px] font-semibold bg-[#f3f2ef] text-slate-600">Filtros</button>
+        {embutido && acoes}
+      </div>
+      <div className={`flex items-center gap-2 ${embutido ? 'mt-2' : 'mt-2.5'}`} data-bancada="abas">
+        <InboxTabs active={aba} onChange={setAba} counts={{ all: 1284, unread: 7, mine: 12 }} className="min-w-0 flex-1" />
+        <span aria-hidden className="w-px h-3.5 bg-[#e2ded4] shrink-0" />
+        <InboxViewSwitch active={aba} onChange={setAba} scheduledPending={3} scheduledFailed={falhas} callsUnseen={naoVistas} />
+      </div>
+    </div>
+  );
+};
+
 const Coluna: React.FC<{ titulo: string; nota: string; width: number; children: React.ReactNode }> = ({
   titulo, nota, width, children,
 }) => (
@@ -132,25 +181,16 @@ export const WaCallHistoryPreview: React.FC = () => {
       </div>
 
       <div className="mt-5 flex flex-wrap items-start gap-8">
-        <Coluna titulo="Abas — módulo cheio (360 px)" nota="Sem pendência nenhuma: tudo âmbar." width={360}>
-          <div className="p-3">
-            <InboxTabs active={aba} onChange={setAba} counts={{ all: 128, unread: 7, mine: 12 }}
-              scheduledPending={3} scheduledFailed={0} callsUnseen={0} />
-          </div>
+        <Coluna titulo="Coluna no mínimo — 320 px" nota="A largura mais apertada do módulo cheio: é a linha dos filtros que a define." width={320}>
+          <ColunaDaLista aba={aba} setAba={setAba} naoVistas={naoVistas} falhas={0} />
         </Coluna>
 
-        <Coluna titulo="Abas — com novidade" nota="Agendada não entregue e perdida ainda não vista gritam em vermelho." width={360}>
-          <div className="p-3">
-            <InboxTabs active={aba} onChange={setAba} counts={{ all: 128, unread: 7, mine: 12 }}
-              scheduledPending={3} scheduledFailed={2} callsUnseen={naoVistas} />
-          </div>
+        <Coluna titulo="Coluna padrão — 340 px" nota="Agendada não entregue e perdida não vista gritam em vermelho, no cabeçalho." width={340}>
+          <ColunaDaLista aba={aba} setAba={setAba} naoVistas={naoVistas} falhas={2} />
         </Coluna>
 
-        <Coluna titulo="Abas — widget embutido (300 px)" nota="A largura mais apertada do CRM." width={300}>
-          <div className="p-3">
-            <InboxTabs active={aba} onChange={setAba} counts={{ all: 1284, unread: 132, mine: 12 }}
-              scheduledPending={3} scheduledFailed={1} callsUnseen={naoVistas} />
-          </div>
+        <Coluna titulo="Widget embutido — 320 px" nota="Sem linha de título; o resto é igual — filtros escritos, vistas na ponta." width={320}>
+          <ColunaDaLista aba={aba} setAba={setAba} naoVistas={naoVistas} falhas={1} embutido />
         </Coluna>
       </div>
 

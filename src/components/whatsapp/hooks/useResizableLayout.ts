@@ -6,9 +6,15 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 const PANEL_MIN = 260;
 const PANEL_MAX = 560;
 const PANEL_DEFAULT = 300;
-// Abaixo disto o cabeçalho da lista (título + status + ações + "nova conversa")
-// não cabe em uma linha e os botões da ponta saem cortados na borda da coluna.
-const LIST_MIN = 312;
+// Quem define este piso é a LINHA DOS FILTROS, não mais o cabeçalho. Medido:
+// "Todas / Não lidas / Minhas" escritos com os contadores pedem 211 px, o fio e
+// as duas vistas (agendadas, ligações) pedem mais 49, e as folgas 16 — 276 px
+// de conteúdo, 308 com o padding da coluna. 312 fecharia com 4 px de sobra;
+// 320 deixa os 12 que uma fonte um pouco maior no sistema do usuário consome. Abaixo disso a fila dos filtros começa
+// a rolar na horizontal (a rede de segurança de `InboxTabs`) e some da vista.
+// O cabeçalho — título, status e os quatro botões — pede 296, e portanto já não
+// é ele o apertado.
+const LIST_MIN = 320;
 const LIST_MAX = 520;
 const LIST_DEFAULT = 340;
 

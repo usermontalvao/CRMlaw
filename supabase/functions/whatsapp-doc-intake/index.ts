@@ -9,20 +9,36 @@
 // Token na query (?token=...). Aceita body { message_ids?: string[] } para triagem
 // alvo (teste/forçar), ignorando a janela de tempo e o status já gravado.
 //
-// A FILA: entram os arquivos nunca lidos e os `no_match` cujo veredito é mais
-// VELHO que alguma solicitação aberta — porque o veredito é uma comparação com
-// a lista de itens pendentes, e essa lista muda debaixo dele. Ver
+// A FILA: entram os arquivos nunca lidos e os `no_match`/`skipped` cujo veredito
+// é mais VELHO que alguma solicitação aberta — porque o veredito é uma comparação
+// com a lista de itens pendentes, e essa lista muda debaixo dele. Ver
 // `_shared/wa-ai-doc-intake.ts` para a regra e o freio de três tentativas.
+//
+// O LOTE É ORÇAMENTO DE VISÃO, NÃO DE LINHAS. Em 18/08/2026 às 15:42 o ciclo
+// leu 8 mensagens e devolveu `waiting_request` nas 8: eram fotos de um cliente
+// sem pedido aberto, que de propósito NÃO são carimbadas para poderem ser
+// relidas. Como a fila é a mais antiga primeiro, as mesmas 8 voltavam a cada 3
+// minutos e o PDF do Procon de outro cliente — esse com pedido aberto — era o
+// 20º da fila e não chegava a ser lido nunca. Quem não custa leitura de visão
+// não consome o lote; o orçamento existe para o que baixa arquivo e chama a IA.
+//
+// Aceita também body { client_id } — a varredura que o nascimento de uma
+// solicitação dispara (trigger em `document_request_items`), para dar baixa no
+// que o cliente já tinha mandado ANTES de alguém pedir.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import {
   compareWaAiResidenceHolder,
   isWaAiResidenceProofLabel,
   matchWaAiResidenceHolderToParent,
 } from '../_shared/wa-ai-residence-holder.ts';
+import { isWithinBusinessHours, localTimeInTz } from '../_shared/wa-business-hours.ts';
 import {
   shouldReadWaAiDocIntakeAgain,
+  shouldSendWaAiDocStatus,
+  WA_DOC_INTAKE_ACK_TEXT,
   waAiDocIntakeMarkForNoMatch,
   WA_AI_DOC_INTAKE_MAX_ATTEMPTS,
+  WA_AI_DOC_INTAKE_RETRY_STATUS,
   WA_AI_DOCUMENT_DOMAIN_KNOWLEDGE,
 } from '../_shared/wa-ai-doc-intake.ts';
 
@@ -35,7 +51,10 @@ const WA_BUCKET = 'whatsapp-media';
 const SRC_BUCKET = 'client-documents';
 const MATCH_FLOOR = 0.5;                 // abaixo disso não cria upload (evita anexar imagem aleatória)
 const LOOKBACK_MS = 6 * 60 * 60 * 1000;  // só mídias recentes — não backfilla histórico antigo
-const BATCH = 8;
+const BATCH = 8;                         // ORÇAMENTO: leituras de visão por ciclo
+const SCAN = 60;                         // candidatos examinados por ciclo (o barato não gasta orçamento)
+const RETRO_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000; // varredura por pedido novo: até uma semana de conversa
+const RETRO_MAX = 12;                    // ...e no máximo isto de arquivos, do mais recente para trás
 const MAX_DOC_BYTES = 12 * 1024 * 1024;  // acima disso não manda para a IA (custo/token) → revisão manual
 const NO_REQUEST_GRACE_MS = 30 * 60 * 1000; // espera o pedido de documentos aparecer antes de descartar
 
@@ -100,6 +119,122 @@ async function matchItem(bytes: Uint8Array, mime: string, clientName: string, it
   }
 }
 
+/**
+ * "Recebemos os seus arquivos" — uma vez por rajada, quando não falta ler nada.
+ *
+ * O envio mora AQUI, no fim do ciclo, porque só quem acabou de triar sabe que a
+ * fila daquela conversa esvaziou. As três condições são de
+ * `shouldSendWaAiDocStatus`: silêncio de 5 minutos (falar no meio da rajada
+ * cobra um arquivo que está chegando), NADA por ler (senão o aviso sai antes de
+ * a conferência existir) e nada dito desde o último arquivo.
+ *
+ * Quem tem assistente de IA ativo na conversa fica de fora: lá quem fala é ele,
+ * com o texto que também diz o que ainda falta. Este aviso é para a conversa
+ * tocada por gente, que hoje não responde nada a quem envia documento.
+ *
+ * Fora do expediente o aviso ESPERA, não se perde: nada é marcado, e a próxima
+ * varredura dentro da janela manda. É a mesma escolha da despedida automática.
+ */
+async function avisarArquivosRecebidos(admin: any) {
+  const avisados: any[] = [];
+  const desde = new Date(Date.now() - LOOKBACK_MS).toISOString();
+
+  const { data: midias } = await admin.from('whatsapp_messages')
+    .select('conversation_id, wa_timestamp, doc_intake_status')
+    .eq('direction', 'in')
+    .in('type', ['image', 'document'])
+    .not('storage_path', 'is', null)
+    .gte('wa_timestamp', desde)
+    .order('wa_timestamp', { ascending: true })
+    .limit(400);
+
+  // Por conversa: quando chegou o último arquivo e se sobrou algo por ler.
+  const porConversa = new Map<string, { ultima: string; porLer: boolean }>();
+  for (const m of (midias || []) as any[]) {
+    const atual = porConversa.get(m.conversation_id) || { ultima: '', porLer: false };
+    if (String(m.wa_timestamp) > atual.ultima) atual.ultima = String(m.wa_timestamp);
+    // Sem veredito é fila; `error` e `ai_unavailable` também são "ainda não sei",
+    // e prometer análise sobre o que não foi lido é a promessa que não se cumpre.
+    const veredito = String(m.doc_intake_status || '');
+    if (!veredito || veredito === 'error' || veredito === 'ai_unavailable') atual.porLer = true;
+    porConversa.set(m.conversation_id, atual);
+  }
+  if (porConversa.size === 0) return avisados;
+
+  const { data: convs } = await admin.from('whatsapp_conversations')
+    .select('id, client_id, instance_id, status, document_ack_sent_at')
+    .in('id', [...porConversa.keys()]);
+
+  const agendaPorCanal = new Map<string, { rows: any[]; tz: string }>();
+  const canalAberto = async (instanceId: string | null) => {
+    if (!instanceId) return true;
+    if (!agendaPorCanal.has(instanceId)) {
+      const [{ data: rows }, { data: canal }] = await Promise.all([
+        admin.from('whatsapp_business_hours').select('day_of_week, start_time, end_time, is_active').eq('instance_id', instanceId),
+        admin.from('whatsapp_instances').select('timezone').eq('id', instanceId).maybeSingle(),
+      ]);
+      agendaPorCanal.set(instanceId, { rows: (rows || []) as any[], tz: String(canal?.timezone || 'America/Cuiaba') });
+    }
+    const { rows, tz } = agendaPorCanal.get(instanceId)!;
+    return isWithinBusinessHours(rows, localTimeInTz(tz));
+  };
+
+  for (const conv of (convs || []) as any[]) {
+    const momento = porConversa.get(conv.id)!;
+    if (conv.status !== 'open' && conv.status !== 'pending') continue;
+    if (!conv.client_id) continue;
+    if (!shouldSendWaAiDocStatus({
+      lastMediaAt: momento.ultima,
+      hasUntriaged: momento.porLer,
+      lastSentAt: conv.document_ack_sent_at,
+    })) continue;
+
+    // Só onde alguém pediu documento: "recebemos os seus arquivos" numa conversa
+    // sem solicitação nenhuma é resposta a uma pergunta que não foi feita.
+    const { data: pedido } = await admin.from('document_requests')
+      .select('id').eq('client_id', conv.client_id).in('status', ['pending', 'partial']).limit(1).maybeSingle();
+    if (!pedido) continue;
+
+    // Gente já respondeu depois do último arquivo? Então está dito, e melhor
+    // dito: o aviso automático em cima da resposta humana soa como duas pessoas
+    // falando ao mesmo tempo.
+    const { data: nossaResposta } = await admin.from('whatsapp_messages')
+      .select('id')
+      .eq('conversation_id', conv.id)
+      .eq('direction', 'out')
+      .is('deleted_at', null)
+      .gt('wa_timestamp', momento.ultima)
+      .limit(1).maybeSingle();
+    if (nossaResposta) continue;
+
+    const { data: sessao } = await admin.from('whatsapp_ai_sessions')
+      .select('status, ai_active').eq('conversation_id', conv.id).maybeSingle();
+    if (sessao?.status === 'active' && sessao?.ai_active !== false) continue;
+
+    if (!(await canalAberto(conv.instance_id))) { avisados.push({ conversation_id: conv.id, result: 'fora_do_expediente' }); continue; }
+
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/evolution-send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_ROLE}` },
+        body: JSON.stringify({ conversation_id: conv.id, text: WA_DOC_INTAKE_ACK_TEXT }),
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok || j?.error) throw new Error(j?.error || `HTTP ${resp.status}`);
+      // O carimbo é o que impede o segundo aviso — e é ele que tira esta
+      // mensagem da conta do encerramento por inatividade
+      // (`wa_auto_close_idle_since`): aviso automático não é resposta do
+      // escritório, e não pode fazer o relógio de fechar a conversa começar.
+      await admin.from('whatsapp_conversations')
+        .update({ document_ack_sent_at: new Date().toISOString() }).eq('id', conv.id);
+      avisados.push({ conversation_id: conv.id, result: 'avisado' });
+    } catch (e) {
+      avisados.push({ conversation_id: conv.id, result: 'falhou', error: String((e as Error).message || e).slice(0, 200) });
+    }
+  }
+  return avisados;
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (url.searchParams.get('token') !== TOKEN) {
@@ -108,35 +243,76 @@ Deno.serve(async (req) => {
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   const body = await req.json().catch(() => ({}));
   const targetIds: string[] | null = Array.isArray(body?.message_ids) && body.message_ids.length ? body.message_ids : null;
+  // Nasceu uma solicitação para este cliente: relê a conversa inteira (dentro
+  // da janela) atrás do que ele já tinha mandado antes de alguém pedir.
+  const retroClientId: string | null =
+    !targetIds && typeof body?.client_id === 'string' && body.client_id ? body.client_id : null;
 
   let q = admin.from('whatsapp_messages')
-    .select('id, conversation_id, type, storage_path, media_mime, wa_timestamp, created_at, doc_intake_status, doc_intake_at, doc_intake_attempts, whatsapp_conversations(client_id)')
+    .select('id, conversation_id, type, storage_path, media_mime, media_size, wa_timestamp, created_at, doc_intake_status, doc_intake_at, doc_intake_attempts, whatsapp_conversations(client_id)')
     .eq('direction', 'in')
     .in('type', ['image', 'document'])
-    .not('storage_path', 'is', null)
-    .order('wa_timestamp', { ascending: true })
-    .limit(BATCH);
-  if (targetIds) q = q.in('id', targetIds);
-  // `no_match` volta à fila porque o veredito depende da LISTA de itens
-  // pendentes no instante da leitura, e essa lista muda. Quem decide se vale
-  // reler é `shouldReadWaAiDocIntakeAgain`, mais abaixo, com a lista na mão;
-  // aqui só entra o freio que o banco sabe aplicar sozinho.
+    .not('storage_path', 'is', null);
+
+  if (targetIds) {
+    q = q.in('id', targetIds).order('wa_timestamp', { ascending: true }).limit(targetIds.length);
+  } else if (retroClientId) {
+    // A varredura é por CLIENTE, não por conversa: o mesmo cliente pode ter
+    // falado por mais de um canal, e o pedido é dele, não do canal.
+    const { data: convs } = await admin.from('whatsapp_conversations').select('id').eq('client_id', retroClientId);
+    const conversationIds = ((convs || []) as any[]).map(c => c.id);
+    if (conversationIds.length === 0) {
+      return new Response(JSON.stringify({ ok: true, processed: 0, matched: 0, skipped: 0, noMatch: 0, errors: 0, details: [], residencia: [] }),
+        { headers: { 'Content-Type': 'application/json' } });
+    }
+    // Tudo o que não terminou casado volta a ser candidato — inclusive o
+    // `skipped` de quem mandou o documento antes de existir o que comparar.
+    // O dedupe por `original_paths` mais abaixo é o que impede ingerir duas
+    // vezes o arquivo que já entrou.
+    q = q.in('conversation_id', conversationIds)
+      .or('doc_intake_status.is.null,doc_intake_status.neq.matched')
+      .gte('wa_timestamp', new Date(Date.now() - RETRO_LOOKBACK_MS).toISOString())
+      .order('wa_timestamp', { ascending: false })
+      .limit(RETRO_MAX);
+  }
+  // `no_match`, `skipped` e `error` voltam à fila: os dois primeiros porque o
+  // veredito depende da LISTA de itens pendentes no instante da leitura, e essa
+  // lista muda; o `error` porque é falha, e falha se retenta. Quem decide se
+  // vale reler é `shouldReadWaAiDocIntakeAgain`, mais abaixo, com a lista na
+  // mão; aqui só entra o freio de tentativas que o banco sabe aplicar sozinho.
   else {
+    const revisaveis = WA_AI_DOC_INTAKE_RETRY_STATUS
+      .map(st => `and(doc_intake_status.eq.${st},doc_intake_attempts.lt.${WA_AI_DOC_INTAKE_MAX_ATTEMPTS})`)
+      .join(',');
     q = q
-      .or(`doc_intake_status.is.null,and(doc_intake_status.eq.no_match,doc_intake_attempts.lt.${WA_AI_DOC_INTAKE_MAX_ATTEMPTS})`)
-      .gte('wa_timestamp', new Date(Date.now() - LOOKBACK_MS).toISOString());
+      .or(`doc_intake_status.is.null,${revisaveis}`)
+      .gte('wa_timestamp', new Date(Date.now() - LOOKBACK_MS).toISOString())
+      .order('wa_timestamp', { ascending: true })
+      .limit(SCAN);
   }
 
-  const { data: msgs, error } = await q;
+  const { data: rows, error } = await q;
   if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  // A varredura busca do mais recente para trás (é o que cabe no limite), mas
+  // a leitura continua sendo a mais antiga primeiro: a ordem de chegada é o que
+  // conta quando dois arquivos disputam o mesmo item pedido.
+  const msgs = retroClientId ? [...((rows || []) as any[])].reverse() : (rows || []);
 
   let matched = 0, skipped = 0, noMatch = 0, errors = 0;
+  // O disparo alvo e a varredura por pedido novo já vêm limitados na consulta;
+  // o orçamento é do cron, que enxerga a fila inteira.
+  const forcado = Boolean(targetIds || retroClientId);
+  let orcamento = forcado ? (msgs as any[]).length : BATCH;
+  let adiados = 0;
   const details: any[] = [];
   // As conversas que ganharam fato novo neste ciclo. O confronto entre o
   // comprovante e a filiação do RG é feito no FIM, com tudo lido: os arquivos
   // chegam em qualquer ordem, e no caso real o RG foi o último dos três.
   const conversasTocadas = new Set<string>();
-  for (const m of (msgs || []) as any[]) {
+  for (const m of msgs as any[]) {
+    // Fim do orçamento: o resto da fila fica intocado e é o começo do próximo
+    // ciclo. Nada é carimbado aqui — um arquivo adiado não é um arquivo julgado.
+    if (orcamento <= 0) { adiados++; continue; }
     // O veredito passa a ser DATADO e CONTADO: sem isso não há como saber se a
     // lista de pendentes mudou depois dele nem como frear a releitura.
     const statusAnterior = String(m.doc_intake_status || '') || null;
@@ -147,7 +323,14 @@ Deno.serve(async (req) => {
     }).eq('id', m.id);
     try {
       const clientId = m.whatsapp_conversations?.client_id;
-      if (!clientId) { await mark('skipped'); skipped++; continue; }
+      // Conversa sem cliente vinculado não tem pedido para comparar. O carimbo
+      // só é escrito uma vez: reescrevê-lo a cada ciclo queimaria as três
+      // tentativas de um arquivo que pode ser vinculado a um cliente amanhã.
+      if (!clientId) {
+        if (statusAnterior !== 'skipped') { await mark('skipped'); skipped++; }
+        else details.push({ id: m.id, result: 'sem_cliente' });
+        continue;
+      }
 
       const { data: reqs } = await admin.from('document_requests')
         .select('id, created_at, document_request_items(id,label,status)')
@@ -155,15 +338,16 @@ Deno.serve(async (req) => {
       const items: { id: string; label: string }[] = [];
       for (const r of (reqs || []) as any[]) for (const it of (r.document_request_items || [])) if (it.status === 'pending') items.push({ id: it.id, label: it.label });
 
-      // Segunda chance de um `no_match`: só quando existe pedido ABERTO criado
-      // DEPOIS do veredito. Mesma lista, mesmo resultado — reler seria só custo.
-      // No disparo alvo (`message_ids`) esta porta fica aberta de propósito: é
-      // o botão de forçar, e quem o aperta sabe o que quer.
-      if (!targetIds && !shouldReadWaAiDocIntakeAgain(
+      // Segunda chance de um `no_match` ou de um `skipped`: só quando existe
+      // pedido ABERTO criado DEPOIS do veredito. Mesma lista, mesmo resultado —
+      // reler seria só custo. No disparo alvo (`message_ids`) e na varredura
+      // por pedido novo esta porta fica aberta de propósito: são os botões de
+      // forçar, e quem os aperta sabe o que quer.
+      if (!forcado && !shouldReadWaAiDocIntakeAgain(
         { status: statusAnterior, attempts: m.doc_intake_attempts, intakeAt: m.doc_intake_at },
         (reqs || []).map((r: any) => r?.created_at),
       )) {
-        details.push({ id: m.id, result: 'no_match_sem_lista_nova' });
+        details.push({ id: m.id, result: 'sem_lista_nova', veredito: statusAnterior });
         continue;
       }
       // ── Este arquivo já foi ingerido? ──
@@ -209,6 +393,21 @@ Deno.serve(async (req) => {
         await mark('skipped'); skipped++; continue;
       }
 
+      // Arquivo grande demais: a linha já diz o tamanho, então nem baixa. Antes
+      // isto só era descoberto DEPOIS do download, e com o `skipped` voltando à
+      // fila seriam 12 MB de egress por releitura para chegar à mesma conclusão.
+      if (Number(m.media_size || 0) > MAX_DOC_BYTES) {
+        if (statusAnterior !== 'skipped') {
+          await admin.from('whatsapp_internal_notes').insert({ conversation_id: m.conversation_id, author_id: null,
+            body: '🤖 Documento muito grande para análise automática — revise e dê baixa manualmente.' });
+          await mark('skipped'); skipped++;
+        }
+        details.push({ id: m.id, result: 'too_large', bytes: Number(m.media_size || 0) });
+        continue;
+      }
+
+      // Daqui para baixo custa egress e token de visão: é o que o lote limita.
+      orcamento--;
       const dl = await admin.storage.from(WA_BUCKET).download(m.storage_path);
       if (dl.error || !dl.data) { await mark('error'); errors++; continue; }
       const bytes = new Uint8Array(await dl.data.arrayBuffer());
@@ -216,8 +415,10 @@ Deno.serve(async (req) => {
       // Arquivo grande demais (ex.: processo inteiro): não gasta token de visão →
       // marca e avisa para revisão manual.
       if (bytes.length > MAX_DOC_BYTES) {
-        await admin.from('whatsapp_internal_notes').insert({ conversation_id: m.conversation_id, author_id: null,
-          body: '🤖 Documento muito grande para análise automática — revise e dê baixa manualmente.' });
+        if (statusAnterior !== 'skipped') {
+          await admin.from('whatsapp_internal_notes').insert({ conversation_id: m.conversation_id, author_id: null,
+            body: '🤖 Documento muito grande para análise automática — revise e dê baixa manualmente.' });
+        }
         await mark('skipped'); skipped++;
         details.push({ id: m.id, result: 'too_large', bytes: bytes.length });
         continue;
@@ -319,7 +520,11 @@ Deno.serve(async (req) => {
       await mark('matched'); matched++;
       details.push({ id: m.id, result: 'matched', item: item.label, autoApproved: auto, confidence: conf, upload_id: upRow.id });
     } catch (e) {
-      await admin.from('whatsapp_messages').update({ doc_intake_status: 'error' }).eq('id', m.id);
+      // `mark`, não um update cru: o `error` PRECISA datar e contar a tentativa,
+      // senão fica com `attempts` parado em 0 e o teto de três nunca fecha — foi
+      // assim que o BO do Hiago ficou preso, um `error` que a fila não relia e o
+      // contador não movia. Agora ele volta sozinho, até esgotar as tentativas.
+      await mark('error');
       errors++;
       details.push({ id: m.id, result: 'error', error: String((e as Error).message || e).slice(0, 300) });
     }
@@ -394,7 +599,14 @@ Deno.serve(async (req) => {
     }
   }
 
-  return new Response(JSON.stringify({ ok: true, processed: (msgs || []).length, matched, skipped, noMatch, errors, details, residencia }), {
+  // O aviso vem depois de tudo lido: é o ciclo que acabou de triar quem sabe
+  // que não sobrou arquivo por ler naquela conversa.
+  const avisos = await avisarArquivosRecebidos(admin).catch((e) => {
+    console.error('aviso de arquivos recebidos falhou', e);
+    return [{ result: 'erro', error: String((e as Error).message || e).slice(0, 200) }];
+  });
+
+  return new Response(JSON.stringify({ ok: true, modo: targetIds ? 'alvo' : retroClientId ? 'varredura' : 'cron', processed: (msgs as any[]).length, matched, skipped, noMatch, errors, adiados, details, residencia, avisos }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });

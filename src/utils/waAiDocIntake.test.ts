@@ -7,6 +7,8 @@ import {
   WA_AI_REQUEST_DESCRIPTION_PREFIX,
   isWaAiCreatedDocumentRequest,
   shouldReadWaAiDocIntakeAgain,
+  shouldSendWaAiDocStatus,
+  WA_DOC_INTAKE_ACK_TEXT,
   waAiDocIntakeMarkForNoMatch,
 } from './waAiDocIntake.ts';
 import { waAiAccountRouteDocument } from './waAiCompletion.ts';
@@ -79,14 +81,82 @@ test('veredito antigo, sem data gravada, ganha uma chance', () => {
   );
 });
 
-test('matched, skipped, error e ai_unavailable não voltam à fila', () => {
-  for (const status of ['matched', 'skipped', 'error', 'ai_unavailable']) {
+test('matched e ai_unavailable não voltam à fila', () => {
+  for (const status of ['matched', 'ai_unavailable']) {
     assert.equal(
       shouldReadWaAiDocIntakeAgain({ status, attempts: 0, intakeAt: JULGADO }, [PEDIDO_NOVO]),
       false,
       `${status} não pode voltar à fila`,
     );
   }
+});
+
+// ── O `error` é falha, e falha se retenta ────────────────────────────────────
+//
+// 18/08/2026, conversa 00696f63: duas fotos do Boletim de Ocorrência do Hiago
+// estouraram na leitura e ficaram `error`. O cron não relia `error`, o contador
+// não mexia, e o item seguiu zerado até um reprocessamento na mão. A regra agora
+// é: `error` volta à fila até o teto de tentativas, venha ou não pedido novo —
+// é falha transitória, não veredito sobre a lista.
+
+test('error volta à fila mesmo sem pedido novo, até o teto', () => {
+  assert.equal(
+    shouldReadWaAiDocIntakeAgain({ status: 'error', attempts: 0, intakeAt: JULGADO }, []),
+    true,
+  );
+  assert.equal(
+    shouldReadWaAiDocIntakeAgain({ status: 'error', attempts: WA_AI_DOC_INTAKE_MAX_ATTEMPTS - 1, intakeAt: JULGADO }, []),
+    true,
+  );
+});
+
+test('error para de voltar quando esgota as tentativas', () => {
+  assert.equal(
+    shouldReadWaAiDocIntakeAgain({ status: 'error', attempts: WA_AI_DOC_INTAKE_MAX_ATTEMPTS, intakeAt: JULGADO }, [PEDIDO_NOVO]),
+    false,
+  );
+});
+
+// ── O documento que chegou ANTES do pedido ──────────────────────────────────
+//
+// 18/08/2026, conversa 00696f63: o cliente mandou a reclamação do Procon às
+// 15:38:11 e o pedido de documentos foi montado às 15:38:52 — 41 segundos
+// depois. Sem esta regra, todo arquivo que a janela de graça alcança em
+// silêncio vira `skipped` e nunca mais é comparado com a lista que nasceu
+// depois dele: o cliente já mandou, e o checklist continua zerado.
+
+test('skipped volta à fila quando o pedido nasceu depois do veredito', () => {
+  assert.equal(
+    shouldReadWaAiDocIntakeAgain(
+      { status: 'skipped', attempts: 1, intakeAt: JULGADO },
+      [PEDIDO_VELHO, PEDIDO_NOVO],
+    ),
+    true,
+  );
+});
+
+test('skipped NÃO volta quando nenhum pedido é mais novo que o veredito', () => {
+  assert.equal(
+    shouldReadWaAiDocIntakeAgain(
+      { status: 'skipped', attempts: 1, intakeAt: JULGADO },
+      [PEDIDO_VELHO],
+    ),
+    false,
+  );
+  assert.equal(
+    shouldReadWaAiDocIntakeAgain({ status: 'skipped', attempts: 1, intakeAt: JULGADO }, []),
+    false,
+  );
+});
+
+test('o freio de três tentativas vale para o skipped também', () => {
+  assert.equal(
+    shouldReadWaAiDocIntakeAgain(
+      { status: 'skipped', attempts: WA_AI_DOC_INTAKE_MAX_ATTEMPTS, intakeAt: JULGADO },
+      [PEDIDO_NOVO],
+    ),
+    false,
+  );
 });
 
 // ── O redisparo por message_ids não pode desfazer o que já deu certo ────────
@@ -105,6 +175,79 @@ test('no_match é gravado normalmente nos demais estados', () => {
   assert.equal(waAiDocIntakeMarkForNoMatch(''), 'no_match');
   assert.equal(waAiDocIntakeMarkForNoMatch('no_match'), 'no_match');
   assert.equal(waAiDocIntakeMarkForNoMatch('error'), 'no_match');
+});
+
+// ── O aviso de "recebemos os seus arquivos" ────────────────────────────────
+//
+// 18/08/2026: cinco arquivos enviados, nenhuma linha de volta. A regra existia
+// desde 14/08 e não tinha chamador nenhum — só o assistente de IA falava, e a
+// conversa tocada por gente ficava muda.
+
+const ARQUIVO = Date.parse('2026-08-18T15:42:00.000Z');
+const SEIS_MINUTOS_DEPOIS = ARQUIVO + 6 * 60 * 1000;
+
+test('cala enquanto a rajada não termina', () => {
+  assert.equal(
+    shouldSendWaAiDocStatus(
+      { lastMediaAt: new Date(ARQUIVO).toISOString(), hasUntriaged: false },
+      ARQUIVO + 60 * 1000,
+    ),
+    false,
+  );
+});
+
+test('cala enquanto sobrar arquivo por ler', () => {
+  assert.equal(
+    shouldSendWaAiDocStatus(
+      { lastMediaAt: new Date(ARQUIVO).toISOString(), hasUntriaged: true },
+      SEIS_MINUTOS_DEPOIS,
+    ),
+    false,
+  );
+});
+
+test('fala uma vez quando o silêncio chega e tudo foi lido', () => {
+  assert.equal(
+    shouldSendWaAiDocStatus(
+      { lastMediaAt: new Date(ARQUIVO).toISOString(), hasUntriaged: false },
+      SEIS_MINUTOS_DEPOIS,
+    ),
+    true,
+  );
+});
+
+test('não repete o aviso enquanto não chega arquivo novo', () => {
+  assert.equal(
+    shouldSendWaAiDocStatus(
+      {
+        lastMediaAt: new Date(ARQUIVO).toISOString(),
+        hasUntriaged: false,
+        lastSentAt: new Date(ARQUIVO + 30 * 1000).toISOString(),
+      },
+      SEIS_MINUTOS_DEPOIS,
+    ),
+    false,
+  );
+});
+
+test('volta a falar quando chega arquivo depois do último aviso', () => {
+  const novoArquivo = ARQUIVO + 2 * 60 * 60 * 1000;
+  assert.equal(
+    shouldSendWaAiDocStatus(
+      {
+        lastMediaAt: new Date(novoArquivo).toISOString(),
+        hasUntriaged: false,
+        lastSentAt: new Date(ARQUIVO + 30 * 1000).toISOString(),
+      },
+      novoArquivo + 6 * 60 * 1000,
+    ),
+    true,
+  );
+});
+
+test('o aviso fala pelo escritório, no plural', () => {
+  assert.match(WA_DOC_INTAKE_ACK_TEXT, /^Recebemos/);
+  assert.ok(WA_DOC_INTAKE_ACK_TEXT.length <= 120);
 });
 
 // ── O que o "/clear" pode cancelar ──────────────────────────────────────────

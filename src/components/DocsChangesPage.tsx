@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.323': { name: 'Cafe Triagem Que Relê a Conversa', emoji: '[memo]' },
   '1.10.316': { name: 'Cafe Login Unico e Email Confirmado', emoji: '[shield]' },
   '1.10.315': { name: 'Cafe Orbita Estavel no Splash', emoji: '[art]' },
   '1.10.314': { name: 'Cafe Editor Blindado e Imagens Persistentes', emoji: '[memo]' },
@@ -962,6 +963,38 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.323',
+    date: '18/08/2026',
+    summary: 'A triagem de documentos deixou de olhar só para frente: quando a solicitação nasce, ela volta e relê a conversa recente atrás do que o cliente já tinha mandado. E o aviso automático de "recebemos os seus arquivos" parou de fazer a conversa se encerrar sozinha, porque robô avisando não é escritório atendendo.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix',
+            title: 'A solicitação que nasce manda reler o que o cliente já enviou',
+            description: 'O cliente mandava o PDF às 15:38 e, um minuto depois, o advogado montava o checklist pedindo aquele mesmo documento — o arquivo já estava na conversa, mas o item nascia zerado, porque a triagem só olhava para as mensagens seguintes. Agora, no instante em que a lista de documentos é criada (não importa se pelo modal do WhatsApp, pela IA, pela ficha do cliente ou pelo portal), o sistema volta e relê a conversa recente daquela pessoa atrás do que ela já tinha enviado, e marca sozinho o que encontrar.',
+          },
+          {
+            type: 'fix',
+            title: 'O "recebemos os seus arquivos" não encerra mais a conversa',
+            description: 'Quando o cliente mandava os documentos, o sistema respondia "recebemos, vamos analisar" — e essa resposta automática passava a valer como atendimento do escritório: quatro horas depois a conversa se encerrava sozinha com o documento ainda por analisar. Esse aviso agora entra na mesma regra do aviso de ausência e do prompt de reabertura: é o robô falando, não conta para o relógio do encerramento por inatividade. O caso continua visível até alguém de verdade responder.',
+          },
+          {
+            type: 'fix',
+            title: 'O kit de assinatura reencontra a conversa pelo telefone',
+            description: 'Quem preenchia o kit a partir de um pré-cadastro do WhatsApp — em que o único dado é o número — virava um segundo registro, e a conversa seguia apontando para o primeiro: o contrato nascia pendurado no cadastro novo e, na conversa, não acendia nada. O kit passa a reconhecer a pessoa também pelo telefone, testando o número com e sem o 9º dígito, e promove o pré-cadastro existente em vez de duplicar.',
+          },
+          {
+            type: 'improvement',
+            title: 'A barra da inbox separou filtros de vistas',
+            description: 'Todas / Não lidas / Minhas / Agendadas / Ligações disputavam a mesma barra e, sem largura para os cinco nomes, quatro viviam escondidos atrás de ícones. Mas essas cinco coisas não são iguais: "Todas", "Não lidas" e "Minhas" FILTRAM a lista de conversas; "Agendadas" e "Ligações" SUBSTITUEM a lista por outro conteúdo. Separados, cabem — os três filtros voltaram a ter o nome escrito por extenso, e as duas vistas foram para a ponta da linha, em ícone com o contador no canto. O nome de cada vista fica no title, para quem quiser conferir.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.322',
     date: '18/08/2026',

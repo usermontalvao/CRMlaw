@@ -66,6 +66,28 @@ export const DateDivider: React.FC<{ label: string }> = ({ label }) => (
   </div>
 );
 
+/**
+ * Divisor de CANAL da thread. O histórico do escritório funde numa conversa só a
+ * mesma pessoa que escreveu para números diferentes (Comercial, Atendimento…);
+ * sem uma marca, uma resposta enviada pelo Comercial e outra pelo Atendimento
+ * ficam lado a lado sem dizer por onde saíram. Este divisor abre cada trecho de
+ * um canal, com a bolinha de cor do próprio canal — a mesma do seletor no
+ * cabeçalho —, para o leitor saber de qual número partiu aquele pedaço.
+ *
+ * Ao contrário do `DateDivider`, NÃO é grudento: dois divisores grudentos
+ * disputariam o topo e se sobreporiam. Ele marca o ponto da troca e rola junto.
+ */
+export const ChannelDivider: React.FC<{ name: string; color: string }> = ({ name, color }) => (
+  <div className="flex items-center gap-2 my-3">
+    <span className="flex-1 h-px bg-black/[0.06]" />
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white text-[#54656f] text-[10.5px] font-semibold shadow-sm ring-1 ring-black/[0.04]">
+      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+      {name}
+    </span>
+    <span className="flex-1 h-px bg-black/[0.06]" />
+  </div>
+);
+
 // Item da lista de conversas (memoizado). Os sinais de SLA/transferência/abandono
 // são funções puras de `c` (mais a medição de tempo, que chega estável do
 // módulo), então o item os calcula sozinho; só `status`/`docStatus` (que

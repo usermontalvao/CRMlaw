@@ -31,6 +31,9 @@ import type { WaCall } from '../../services/wacalls/types';
  * segundo plano, ela é o que faz o telefone tocado chegar até quem está no
  * Word do outro lado da mesa.
  */
+/** Espera antes de avisar: o nome do contato chega por consulta assíncrona. */
+const ESPERA_PELO_NOME_MS = 700;
+
 function useSystemCallNotification(incoming: WaCall | null): void {
   const openRef = useRef<Notification | null>(null);
 
@@ -53,33 +56,65 @@ function useSystemCallNotification(incoming: WaCall | null): void {
     return soltar;
   }, []);
 
+  // O último retrato da chamada, para o aviso ser montado com o nome de AGORA
+  // sem que o efeito dependa do objeto (ver o comentário do efeito abaixo).
+  const atual = useRef<WaCall | null>(incoming);
+  atual.current = incoming;
+
+  // UMA ligação, UM aviso.
+  //
+  // Este efeito já dependeu de `incoming` inteiro, e a ligação recebida é
+  // remendada várias vezes enquanto o CRM descobre quem está do outro lado:
+  // chega o convite, resolve o telefone, resolve o contato. Cada remendo era um
+  // objeto novo, o efeito rodava de novo e construía OUTRA `Notification` — em
+  // 17/08/2026 uma única chamada da mesma cliente rendeu três avisos no Chrome
+  // ("Número não identificado", depois o telefone, depois o nome). A `tag` troca
+  // o aviso visível, mas o Windows guarda cada um no histórico.
+  //
+  // Agora o efeito só reage à IDENTIDADE da chamada, e espera um instante antes
+  // de avisar: é o tempo de a consulta do contato voltar, para o aviso já nascer
+  // com o nome de quem está ligando em vez do "não identificado" do começo.
   useEffect(() => {
     const close = () => {
       try { openRef.current?.close(); } catch { /* já fechada */ }
       openRef.current = null;
     };
-    if (!incoming) { close(); return; }
+    const callId = incoming?.callId;
+    if (!callId) { close(); return; }
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    if (typeof document !== 'undefined' && !document.hidden) return;
-    try {
-      const note = new Notification('Chamada de voz no WhatsApp', {
-        body: `${callDisplayName(incoming)} está chamando`,
-        // O mesmo ícone dos avisos de mensagem: numa pilha de notificações do
-        // sistema, é por ele que se reconhece que a ligação é do CRM.
-        icon: '/icon-192.png',
-        // `tag` fixo por chamada: um SSE que reentregue o convite não empilha
-        // duas notificações da mesma ligação.
-        tag: `wacall:${incoming.callId}`,
-        // `requireInteraction` mantém o aviso na tela enquanto o telefone
-        // toca, em vez de sumir em 5 segundos como um aviso de mensagem.
-        requireInteraction: true,
-        silent: true, // o toque é nosso (ver ringtone.ts); dois sons brigariam
-      });
-      note.onclick = () => { try { window.focus(); note.close(); } catch { /* nada a fazer */ } };
-      openRef.current = note;
-    } catch { /* notificação é um extra */ }
-    return close;
-  }, [incoming?.callId, incoming]);
+
+    const dispara = (chamada: WaCall) => {
+      try {
+        const note = new Notification('Chamada de voz no WhatsApp', {
+          body: `${callDisplayName(chamada)} está chamando`,
+          // O mesmo ícone dos avisos de mensagem: numa pilha de notificações do
+          // sistema, é por ele que se reconhece que a ligação é do CRM.
+          icon: '/icon-192.png',
+          // `tag` fixo por chamada: um SSE que reentregue o convite não empilha
+          // duas notificações da mesma ligação.
+          tag: `wacall:${chamada.callId}`,
+          // `requireInteraction` mantém o aviso na tela enquanto o telefone
+          // toca, em vez de sumir em 5 segundos como um aviso de mensagem.
+          requireInteraction: true,
+          silent: true, // o toque é nosso (ver ringtone.ts); dois sons brigariam
+        });
+        note.onclick = () => { try { window.focus(); note.close(); } catch { /* nada a fazer */ } };
+        openRef.current = note;
+      } catch { /* notificação é um extra */ }
+    };
+
+    const timer = setTimeout(() => {
+      const chamada = atual.current;
+      // Sumiu no meio da espera (atendida aqui, ou por outro operador): sem aviso.
+      if (!chamada || chamada.callId !== callId) return;
+      // Só com a aba escondida: com o CRM na frente, o cartão da chamada já está lá.
+      if (typeof document !== 'undefined' && !document.hidden) return;
+      dispara(chamada);
+    }, ESPERA_PELO_NOME_MS);
+
+    return () => { clearTimeout(timer); close(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.callId]);
 }
 
 /**

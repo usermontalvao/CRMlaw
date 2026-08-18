@@ -332,9 +332,25 @@ Deno.serve(async (req) => {
       processed_at:      new Date().toISOString(),
     }).eq('id', upload_id);
 
-    // 6. Item: aprovado (baixa) se auto-aprovado, senão aguarda revisão humana.
+    // 6. Item: três estados, não dois.
+    //
+    // `uploaded` quer dizer "o documento certo está aqui, falta um humano
+    // confirmar" — e o item sai da lista de pendentes por causa disso. Quando o
+    // segundo juiz diz que o arquivo NÃO é o que foi pedido, marcar `uploaded`
+    // ocupa o item com o arquivo errado e fecha a porta para o certo: em
+    // 18/08/2026 um print de conversa entrou como "Boletim de ocorrência"
+    // (a primeira análise casou a 90%), a segunda o recusou — "é uma captura de
+    // tela de conversa" — e as fotos do boletim de verdade, que chegaram 22
+    // minutos depois, foram julgadas contra uma lista que já não tinha esse
+    // item: `no_match`, com a IA escrevendo que "é um boletim de ocorrência,
+    // que não corresponde a nenhum dos itens solicitados".
+    //
+    // Recusado pela segunda análise, o item CONTINUA PENDENTE. O upload fica
+    // registrado com `review_status: 'pending'` e o motivo, para quem revisa
+    // discordar se for o caso.
+    const itemStatus = autoApprove ? 'approved' : verdict.matches === false ? 'pending' : 'uploaded';
     await supabase.from('document_request_items')
-      .update({ status: autoApprove ? 'approved' : 'uploaded' })
+      .update({ status: itemStatus })
       .eq('id', upload.request_item_id);
 
     // 7. Recalcula o status (rótulo) do pedido: 'complete' só quando todos os

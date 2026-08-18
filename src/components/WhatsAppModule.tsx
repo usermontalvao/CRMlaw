@@ -21,7 +21,7 @@ import {
 import { useStaffPush } from './whatsapp/hooks/useStaffPush';
 import { useWaCalls } from '../hooks/useWaCalls';
 import { CallHistoryList } from './whatsapp/CallHistoryList';
-import { InboxTabs } from './whatsapp/InboxTabs';
+import { InboxTabs, InboxViewSwitch } from './whatsapp/InboxTabs';
 import { useCallHistory } from './whatsapp/hooks/useCallHistory';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
 import { muteStore } from '../services/whatsapp/muteStore';
@@ -73,7 +73,7 @@ import { viewersLabel } from '../services/whatsapp/inboxPresenceState';
 import { imagesFromClipboard } from '../utils/clipboardImages';
 import { applyWaFormat, formatFromKey, type WaFormat } from './whatsapp/composerFormat';
 import {
-  ChannelSwitcher, ChannelDownBanner, ChannelDownAlert, ReconnectHoldSiren,
+  ChannelSwitcher, ChannelDownBanner, ChannelDownAlert, ReconnectHoldSiren, channelName,
 } from './whatsapp/channelSwitcher';
 import { GifPicker } from './whatsapp/gifPicker';
 import { giphyService } from '../services/giphy.service';
@@ -110,7 +110,7 @@ import { AiMemoryPanel } from './whatsapp/aiMemoryPanel';
 import { AiAgentBanner } from './whatsapp/aiAgentBanner';
 import { waAiListChip } from '../utils/waAiFollowupDisplay';
 import { AiHandoffSummaryCard, AiHandoffSummaryStrip, useAiHandoffSummary } from './whatsapp/aiHandoffSummary';
-import { PresenceText, DateDivider } from './whatsapp/conversationListItem';
+import { PresenceText, DateDivider, ChannelDivider } from './whatsapp/conversationListItem';
 import { DockedDetailsToggle } from './whatsapp/DockedDetailsToggle';
 import { ConversationList } from './whatsapp/conversationList';
 import { ThreadSkeleton } from './whatsapp/skeletons';
@@ -753,6 +753,40 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     scrolledUp, newBelow, scrollToBottom, jumpToMessage,
   } = useWaThread(selectedId, messages, pending, threadCalls);
 
+  // Onde a thread TROCA de canal. O histórico do escritório funde numa conversa
+  // só a mesma pessoa que escreveu para números diferentes (ver contactThreads):
+  // o atendente inicia pelo Comercial, o cliente responde no Atendimento, e as
+  // bolhas ficam lado a lado sem dizer por onde saíram. Aqui marca-se, por índice
+  // de unidade, o canal que ABRE cada trecho — e só quando a thread de fato reúne
+  // mais de um canal, para não poluir a conversa de canal único (a maioria).
+  // As ligações são ignoradas na comparação: elas não pertencem a um número do
+  // WhatsApp e não devem quebrar a corrida de bolhas de um mesmo canal.
+  const channelDividers = useMemo(() => {
+    const marks = new Map<number, { name: string; color: string }>();
+    const channelIdOf = (u: MessageUnit): string | null => {
+      if (u.kind === 'call') return null;
+      const m = u.kind === 'album' ? u.items[0] : u.m;
+      return conversationsById.get(m.conversation_id)?.instance_id ?? null;
+    };
+    const distinct = new Set<string>();
+    for (const u of messageUnits) {
+      const id = channelIdOf(u);
+      if (id) distinct.add(id);
+    }
+    if (distinct.size < 2) return marks;
+    let last: string | null = null;
+    for (let i = 0; i < messageUnits.length; i += 1) {
+      const id = channelIdOf(messageUnits[i]);
+      if (!id) continue; // ligação ou mensagem sem canal conhecido: não corta o trecho
+      if (id !== last) {
+        const ch = channelById.get(id);
+        marks.set(i, { name: ch ? channelName(ch) : 'Outro canal', color: ch?.color || '#94a3b8' });
+        last = id;
+      }
+    }
+    return marks;
+  }, [messageUnits, conversationsById, channelById]);
+
   // ── Ir até UMA mensagem da conversa ──────────────────────────────────
   // Quem clica numa agendada concluída não quer "a conversa": quer o ponto dela
   // — a mensagem que aquele agendamento virou. O alvo fica guardado até a
@@ -772,21 +806,31 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     if (!jumpTarget) return;
     // Trocar de conversa no meio do caminho cancela a viagem.
     if (jumpTarget.conversationId !== selectedId) { setJumpTarget(null); return; }
-    if (loadingMsgs) return;
-    // Um quadro de folga: a leva de mensagens que acabou de chegar ainda não
-    // virou DOM no instante em que este efeito roda.
-    const t = requestAnimationFrame(() => {
+    if (loadingMsgs || loadingMore) return;
+    // Quadros de folga: a leva de mensagens que acabou de chegar ainda não virou
+    // DOM no instante em que este efeito roda, e no clique que ABRE a conversa a
+    // thread inteira está montando. Insistir por alguns quadros antes de decidir
+    // é o que faz um clique só bastar — desistir no primeiro quadro deixava o
+    // alvo para o próximo clique, quando a conversa já estava na tela.
+    // Só a PRIMEIRA tentativa espera a thread montar; depois de paginar o DOM já
+    // existe e insistir dez quadros a cada bloco só atrasaria a viagem.
+    const maxTentativas = jumpPagesRef.current === 0 ? 10 : 2;
+    let quadro = 0;
+    let tentativas = 0;
+    const tentar = () => {
       if (jumpToMessage(jumpTarget.messageId)) { setJumpTarget(null); return; }
+      if (tentativas < maxTentativas) { tentativas += 1; quadro = requestAnimationFrame(tentar); return; }
       // Não está na janela carregada. Pagina para trás — com teto, para uma
       // mensagem apagada (ou de outra conversa) não varrer o histórico inteiro.
-      if (hasMoreMsgs && !loadingMore && jumpPagesRef.current < 12) {
+      if (hasMoreMsgs && jumpPagesRef.current < 12) {
         jumpPagesRef.current += 1;
         void loadMoreMsgs();
         return;
       }
-      if (!hasMoreMsgs || jumpPagesRef.current >= 12) setJumpTarget(null);
-    });
-    return () => cancelAnimationFrame(t);
+      setJumpTarget(null);
+    };
+    quadro = requestAnimationFrame(tentar);
+    return () => cancelAnimationFrame(quadro);
   }, [jumpTarget, selectedId, allMessages, loadingMsgs, loadingMore, hasMoreMsgs, loadMoreMsgs, jumpToMessage]);
 
   // Marca interna "saiu de um agendamento" das mensagens desta conversa.
@@ -2143,15 +2187,21 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           </div>
           )}
 
-          <InboxTabs
-            active={filter}
-            onChange={setFilter}
-            counts={tabCounts}
-            scheduledPending={myScheduledPending.length}
-            scheduledFailed={scheduledFailed}
-            callsUnseen={callsUnseen}
-            className={embedded ? 'mt-2' : 'mt-2.5'}
-          />
+          {/* Uma linha, dois grupos separados por um fio: à esquerda o que
+              FILTRA a lista (com o nome escrito), à direita o que TROCA a lista
+              por outra coisa. Ver o cabeçalho de `InboxTabs.tsx` — a mistura
+              dos dois numa fila só de ícones era o que impedia os nomes. */}
+          <div className={`flex items-center gap-2 ${embedded ? 'mt-2' : 'mt-2.5'}`}>
+            <InboxTabs active={filter} onChange={setFilter} counts={tabCounts} className="min-w-0 flex-1" />
+            <span aria-hidden className="w-px h-3.5 bg-[#e2ded4] shrink-0" />
+            <InboxViewSwitch
+              active={filter}
+              onChange={setFilter}
+              scheduledPending={myScheduledPending.length}
+              scheduledFailed={scheduledFailed}
+              callsUnseen={callsUnseen}
+            />
+          </div>
         </div>
 
         <div ref={setListEl} onScroll={onListScroll} className="flex-1 overflow-y-auto overscroll-contain min-h-0">
@@ -2563,6 +2613,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   // A ligação é uma unidade da thread, mas não é uma mensagem:
                   // nada do agrupamento visual (mesmo remetente, cinco minutos,
                   // resposta citada) se aplica a ela. Sai antes.
+                  // Divisor do canal que abre este trecho (só em thread multicanal).
+                  const chDivider = channelDividers.get(unitIndex);
+                  const withChannel = (node: React.ReactNode) => chDivider
+                    ? (<React.Fragment key={`ch-${unitIndex}`}>
+                        <ChannelDivider name={chDivider.name} color={chDivider.color} />
+                        {node}
+                      </React.Fragment>)
+                    : node;
                   if (u.kind === 'call') {
                     return (
                       <ThreadCallEntry
@@ -2598,7 +2656,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     ? (agentLabel(staffById.get(head.sender_user_id)) || staffByUser.get(head.sender_user_id) || null)
                     : null;
                   const key = u.kind === 'album' ? `album-${head._tempId || head.id}` : (head._tempId || head.id);
-                  return u.kind === 'album' ? (
+                  return withChannel(u.kind === 'album' ? (
                     <ImageAlbum key={key} items={u.items} out={head.direction === 'out'} senderName={senderName} groupStart={groupStart} onOpenImage={setLightbox}
                       scheduledAt={u.items.map(i => scheduledSentMarks.get(i.id)).find(Boolean) ?? null} />
                   ) : (
@@ -2618,7 +2676,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                       uploadProgress={u.m._tempId ? uploadProgress.get(u.m._tempId) : undefined}
                       {...bubbleHandlers}
                     />
-                  );
+                  ));
                 };
                 return (<>
                   {/* Botão de paginação: carrega bloco anterior de mensagens (Fase D) */}

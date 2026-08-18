@@ -88,6 +88,27 @@ const inferClientType = (cpfCnpjDigits: string | null) => {
   return digits.length > 11 ? 'pessoa_juridica' : 'pessoa_fisica';
 };
 
+/**
+ * Variantes do mesmo número brasileiro com e sem o 9º dígito de celular —
+ * espelha `phoneVariants` do módulo WhatsApp. A conversa ora foi aberta pelo
+ * número novo, ora pelo antigo; sem as duas formas, o kit não reencontra a
+ * thread de quem acabou de preencher.
+ */
+const phoneVariants = (input: string): string[] => {
+  let d = (input || '').replace(/\D/g, '');
+  if (!d) return [];
+  if (d.length === 10 || d.length === 11) d = `55${d}`;
+  if (d.length < 12 || d.length > 13) return [];
+  const out = new Set<string>([d]);
+  const m = d.match(/^55(\d{2})(\d+)$/);
+  if (m) {
+    const [, ddd, rest] = m;
+    if (rest.length === 9 && rest[0] === '9') out.add(`55${ddd}${rest.slice(1)}`);
+    else if (rest.length === 8) out.add(`55${ddd}9${rest}`);
+  }
+  return Array.from(out);
+};
+
 const getManausDateString = () => new Intl.DateTimeFormat('pt-BR', {
   timeZone: 'America/Manaus',
   day: '2-digit',
@@ -344,9 +365,28 @@ Deno.serve(async (req) => {
       updated_by: link.created_by,
     };
 
+    // Quem é essa pessoa no cadastro, da identidade mais forte para a mais fraca.
+    //
+    // O telefone entrou no meio da fila porque é o ÚNICO dado que o atendimento
+    // do WhatsApp tem quando abre o pré-cadastro: sem ele, quem preenchia o kit
+    // virava um SEGUNDO registro, e a conversa continuava apontando para o
+    // primeiro. O cliente assinava, o contrato nascia pendurado no registro
+    // novo, e na conversa não acendia nada — nem o acompanhamento, nem o aviso.
     let clientId: string | null = null;
     try {
       let existingClient: any = null;
+
+      const carregarCliente = async (id: string) => {
+        const { data } = await admin
+          .from('clients')
+          .select('*')
+          .eq('id', id)
+          .is('merged_into_client_id', null)
+          .maybeSingle();
+        return data ?? null;
+      };
+
+      // 1. CPF/CNPJ — identidade de verdade, vence qualquer outro sinal.
       if (clientPayload.cpf_cnpj) {
         const { data, error } = await admin
           .from('clients')
@@ -354,7 +394,29 @@ Deno.serve(async (req) => {
           .eq('cpf_cnpj', clientPayload.cpf_cnpj)
           .maybeSingle();
         if (!error && data) existingClient = data;
-      } else if (clientPayload.email) {
+      }
+
+      // 2. O cliente que o próprio link já carregava (kit disparado de dentro
+      //    da conversa, pelo atalho "/"): o vínculo veio de quem enviou.
+      if (!existingClient && link.client_id) {
+        existingClient = await carregarCliente(link.client_id);
+      }
+
+      // 3. Telefone — é assim que se acha o pré-cadastro aberto no atendimento.
+      //    A RPC compara as variantes com e sem o 9º dígito, a MESMA regra que a
+      //    conversa usa para vincular. Só aceitamos quando ela devolve um único
+      //    candidato: com dois cadastros no mesmo número, atar o contrato a um
+      //    palpite seria pior do que abrir um registro novo.
+      if (!existingClient && signerPhone) {
+        const { data, error } = await admin.rpc('whatsapp_match_client_by_phone', { p_phone: signerPhone });
+        const hits = Array.isArray(data) ? data : [];
+        if (!error && hits.length === 1 && hits[0]?.id) {
+          existingClient = await carregarCliente(hits[0].id);
+        }
+      }
+
+      // 4. E-mail informado no kit.
+      if (!existingClient && clientPayload.email) {
         const { data, error } = await admin
           .from('clients')
           .select('*')
@@ -376,9 +438,28 @@ Deno.serve(async (req) => {
           }
         }
 
+        // Preencheu a ficha inteira e vai assinar: deixou de ser "alguém que
+        // ligou". A marca sai do MESMO registro — compromissos, prazos e
+        // documentos já pendurados nele continuam exatamente onde estavam.
+        const promovendo = existingClient.is_pre_cadastro === true;
+        if (promovendo) updateData.is_pre_cadastro = false;
+
         const hasUpdates = Object.keys(updateData).length > 1;
         if (hasUpdates) {
           await admin.from('clients').update(updateData).eq('id', clientId);
+        }
+
+        if (promovendo) {
+          // Trilha do cadastro: a ficha mostra por que o pré-cadastro virou cliente.
+          await admin.from('client_change_history').insert({
+            client_id: clientId,
+            field: 'is_pre_cadastro',
+            old_value: 'true',
+            new_value: 'false',
+            source: 'assinatura',
+            source_label: 'Pré-cadastro promovido ao preencher o kit de assinatura',
+            changed_by: link.created_by ?? null,
+          });
         }
       } else {
         const { data: created, error: createError } = await admin
@@ -612,13 +693,64 @@ Deno.serve(async (req) => {
       console.warn('Erro ao processar signature_field_config:', e);
     }
 
+    // Devolve ao link o cliente e a conversa. É por esse vínculo que o módulo
+    // WhatsApp acompanha o kit — o painel "Assinaturas pendentes", o selo na
+    // lista de conversas e o lembrete automático leem tudo por `client_id`.
+    // Link colado à mão (gerado pelo link fixo) chegava aqui sem nada, e o
+    // acompanhamento simplesmente nunca começava.
+    const linkPatch: Record<string, any> = {
+      status: 'submitted',
+      submitted_at: new Date().toISOString(),
+      signature_request_id: request.id,
+    };
+    if (!link.client_id && clientId) linkPatch.client_id = clientId;
+
+    if (!link.conversation_id && clientId) {
+      try {
+        // Primeiro pela conversa que já aponta para esse cliente.
+        const { data: byClient } = await admin
+          .from('whatsapp_conversations')
+          .select('id')
+          .eq('client_id', clientId)
+          .order('last_message_at', { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (byClient?.id) {
+          linkPatch.conversation_id = byClient.id;
+        } else if (signerPhone) {
+          // Sem cliente na conversa: acha pelo número e aproveita para amarrar
+          // o cadastro nela — é a mesma pessoa, acabou de assinar o contrato.
+          const jids = phoneVariants(signerPhone).map((v) => `${v}@s.whatsapp.net`);
+          if (jids.length > 0) {
+            const { data: byPhone } = await admin
+              .from('whatsapp_conversations')
+              .select('id, client_id')
+              .in('remote_jid', jids)
+              .order('last_message_at', { ascending: false, nullsFirst: false })
+              .limit(1)
+              .maybeSingle();
+            if (byPhone?.id) {
+              linkPatch.conversation_id = byPhone.id;
+              if (!byPhone.client_id) {
+                await admin.from('whatsapp_conversations')
+                  .update({ client_id: clientId })
+                  .eq('id', byPhone.id)
+                  .is('client_id', null);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Vínculo é acompanhamento, não é o documento: nada aqui pode derrubar
+        // uma assinatura que já foi gerada.
+        console.warn('Falha ao vincular o kit à conversa do WhatsApp:', e);
+      }
+    }
+
     await admin
       .from('template_fill_links')
-      .update({
-        status: 'submitted',
-        submitted_at: new Date().toISOString(),
-        signature_request_id: request.id,
-      })
+      .update(linkPatch)
       .eq('id', link.id);
 
     const signerToken = createdSigner.public_token;

@@ -105,6 +105,20 @@ function instante(value: string | null | undefined): number | null {
  */
 export const WA_AI_DOC_STATUS_QUIET_MS = 5 * 60 * 1000;
 
+/**
+ * O aviso de que os arquivos chegaram — TEXTO DO ESCRITÓRIO, não da IA.
+ *
+ * `renderWaAiDocumentStatus` já dizia isto na primeira pessoa do singular
+ * ("Recebi seus arquivos"), porque quem falava era o assistente. Na conversa
+ * tocada por gente não havia quem falasse: em 18/08/2026 o cliente mandou cinco
+ * arquivos e não recebeu uma linha de volta — do lado dele, o envio some no
+ * silêncio e a dúvida ("chegou?") vira nova mensagem.
+ *
+ * Quem manda é o backend, uma vez só por rajada, e no plural: é o escritório.
+ */
+export const WA_DOC_INTAKE_ACK_TEXT =
+  'Recebemos os seus arquivos! Vamos analisar e retornamos em breve.';
+
 export interface WaAiDocStatusMoment {
   /** Instante do arquivo mais recente que o cliente mandou. */
   lastMediaAt?: string | null;
@@ -149,6 +163,37 @@ export interface WaAiDocIntakeCandidate {
 }
 
 /**
+ * Vereditos que a chegada de um pedido NOVO desfaz.
+ *
+ * Os dois dizem a mesma coisa com palavras diferentes, e as duas frases falam
+ * da LISTA, não do arquivo:
+ *   - `no_match`: "li e não bate com nada do que está pedido";
+ *   - `skipped`: "não havia nada pedido para comparar" — é o carimbo do
+ *     documento que o cliente mandou ANTES de alguém pedir, que é o caso
+ *     comum de quem já chega enviando o que tem em mãos.
+ * Quando nasce uma solicitação, a lista dos dois vereditos deixou de existir.
+ *
+ * `error` também sai daqui, mas por outro motivo: não é comparação com a lista,
+ * é FALHA de leitura. Ele volta à fila por outra porta, contada por TENTATIVA e
+ * não por lista (ver `WA_AI_DOC_INTAKE_RETRY_STATUS` e `shouldReadWaAiDocIntakeAgain`).
+ * `matched` e `ai_unavailable` ficam de fora de tudo, de propósito.
+ */
+export const WA_AI_DOC_INTAKE_REVISABLE_STATUS = ['no_match', 'skipped'];
+
+/**
+ * O que o cron re-enfileira sob o teto de tentativas: o conjunto revisável MAIS
+ * o `error`.
+ *
+ * Uma leitura que estourou no meio (download, visão, timeout) precisa poder
+ * voltar sozinha. Sem isto, um tropeço transitório derruba o documento da
+ * triagem automática PARA SEMPRE — o `error` não estava em fila nenhuma e só
+ * um redisparo manual o ressuscitava. Foi o que prendeu o Boletim de Ocorrência
+ * do Hiago em 18/08/2026: duas fotos de álbum estouraram na leitura, ficaram
+ * `error`, e o item seguiu zerado até alguém reprocessar na mão.
+ */
+export const WA_AI_DOC_INTAKE_RETRY_STATUS = [...WA_AI_DOC_INTAKE_REVISABLE_STATUS, 'error'];
+
+/**
  * Este arquivo entra (ou volta a entrar) na fila de leitura?
  *
  * `openRequestsCreatedAt` são as datas de criação das solicitações ABERTAS do
@@ -162,9 +207,11 @@ export function shouldReadWaAiDocIntakeAgain(
   const status = String(candidate?.status || '').trim();
   // Nunca lido: é o caso comum, e o cron sempre o pega.
   if (!status) return true;
-  // `matched`, `skipped`, `error` e `ai_unavailable` são decisões que a lista
-  // de pendentes não desfaz. Só o `no_match` depende dela.
-  if (status !== 'no_match') return false;
+  // `error` é FALHA, não veredito sobre a lista: repete até o teto, venha ou
+  // não pedido novo. É o que faz a foto que estourou no meio da leitura voltar
+  // sozinha à fila em vez de ficar presa esperando um redisparo manual.
+  if (status === 'error') return Number(candidate?.attempts || 0) < WA_AI_DOC_INTAKE_MAX_ATTEMPTS;
+  if (WA_AI_DOC_INTAKE_REVISABLE_STATUS.indexOf(status) < 0) return false;
 
   const attempts = Number(candidate?.attempts || 0);
   if (attempts >= WA_AI_DOC_INTAKE_MAX_ATTEMPTS) return false;
