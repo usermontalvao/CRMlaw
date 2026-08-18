@@ -289,6 +289,15 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: histórico de ligações + abas da inbox (?wacallhistorypreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('wacallhistorypreview')) {
+    const { default: WaCallHistoryPreview } = await import('./dev/WaCallHistoryPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WaCallHistoryPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: bancada das chamadas de voz do WhatsApp (?wacallspreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('wacallspreview')) {
     const { default: WaCallsPreview } = await import('./dev/WaCallsPreview');

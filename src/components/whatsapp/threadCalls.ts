@@ -32,10 +32,28 @@ export interface ThreadCallInput {
 /** Qual seta desenhar. `missed` é a seta quebrada, em vermelho. */
 export type ThreadCallIcon = 'incoming' | 'outgoing' | 'missed';
 
+/**
+ * A COR da linha — e três cores, não duas, porque três coisas diferentes
+ * acontecem e a tela estava dizendo todas do mesmo jeito.
+ *
+ *  · `perdida`  — vermelho. Alguém procurou o escritório e não foi atendido, ou
+ *    a chamada falhou. É dívida: enquanto ninguém retornar, aquilo está aberto.
+ *  · `sem-resposta` — VERDE. Nós ligamos e o contato não estava lá. Não é falha
+ *    de ninguém e não é pendência do cliente; é a nossa tentativa registrada,
+ *    esperando a próxima. Verde porque é a nossa cor na conversa — o mesmo
+ *    verde das mensagens que enviamos — e porque pintar de vermelho a ligação
+ *    que NÓS fizemos transformaria a inbox inteira num painel de alarme.
+ *  · `atendida` — neutro. A conversa aconteceu; o que interessa dela é o
+ *    conteúdo (duração, quem falou, a gravação), não o desfecho.
+ */
+export type ThreadCallTone = 'perdida' | 'sem-resposta' | 'atendida';
+
 export interface ThreadCallLabel {
   /** A frase da linha: "Chamada de voz perdida", "Sem resposta"… */
   title: string;
   icon: ThreadCallIcon;
+  /** A cor da linha. Ver `ThreadCallTone`. */
+  tone: ThreadCallTone;
   /** `true` pinta a linha de vermelho — algo ficou pendente de retorno. */
   attention: boolean;
   /** "6 min 12 s" quando houve conversa; `null` quando não houve. */
@@ -69,6 +87,7 @@ export function threadCallLabel(call: ThreadCallInput): ThreadCallLabel {
     return {
       title: recebida ? 'Chamada de voz recebida' : 'Chamada de voz',
       icon: recebida ? 'incoming' : 'outgoing',
+      tone: 'atendida',
       attention: false,
       duration,
     };
@@ -80,13 +99,16 @@ export function threadCallLabel(call: ThreadCallInput): ThreadCallLabel {
       // recusa do contato é "ele viu e não quis atender agora".
       title: recebida ? 'Chamada recusada' : 'Chamada recusada pelo contato',
       icon: recebida ? 'missed' : 'outgoing',
+      tone: recebida ? 'perdida' : 'sem-resposta',
       attention: recebida,
       duration: null,
     };
   }
 
   if (call.outcome === 'failed') {
-    return { title: 'A chamada falhou', icon: 'missed', attention: true, duration: null };
+    // Falha é vermelha nos dois sentidos: não houve tentativa de conversa, houve
+    // um defeito — e ele pede uma ação (tentar de novo agora), não uma espera.
+    return { title: 'A chamada falhou', icon: 'missed', tone: 'perdida', attention: true, duration: null };
   }
 
   // missed. A assimetria é real: uma chamada RECEBIDA que ninguém atendeu é
@@ -95,6 +117,7 @@ export function threadCallLabel(call: ThreadCallInput): ThreadCallLabel {
   return {
     title: recebida ? 'Chamada de voz perdida' : 'Sem resposta',
     icon: recebida ? 'missed' : 'outgoing',
+    tone: recebida ? 'perdida' : 'sem-resposta',
     attention: recebida,
     duration: null,
   };

@@ -281,6 +281,10 @@ async function archiveCall(call: WaCall, failed: boolean, recording: WaCallRecor
       sessionId: call.sessionId,
       direction: call.direction,
       phone: call.phone,
+      // O apelido vai junto e num campo só dele. Uma ligação que chegou anônima
+      // deixa de se perder: quando o CRM aprender este LID, `resolveLids`
+      // devolve telefone, conversa e cliente a ela — retroativamente.
+      peerLid: call.lid ?? null,
       clientId: call.contact?.clientId ?? null,
       conversationId: call.contact?.conversationId ?? null,
       startedAt: call.startedAt,
@@ -419,16 +423,30 @@ function inAnotherCall(exceptCallId: string): boolean {
  * existe), a decisão é TOCAR: perder uma ligação por causa de uma regra que não
  * pôde ser lida seria o pior desfecho possível.
  */
-async function resolveIncomingRoute(callId: string, phone: string, lid: string | null): Promise<void> {
+async function resolveIncomingRoute(
+  callId: string,
+  phone: string,
+  lid: string | null,
+  peerSessionId: string | null,
+): Promise<void> {
   let targetUserId: string | null = null;
   let source: CallRouteSource = 'everyone';
   let contactBlocked = false;
 
   // Convite endereçado por LID: o número não veio, e o LID NÃO é um número.
-  // A única saída honesta é consultar o mapeamento que o CRM registrou (ver
-  // `conversations#phoneByLid`). Não achando, a chamada segue sem telefone —
-  // toca, aparece e diz que o número não pôde ser identificado. Melhor uma
-  // ligação anônima do que um número inventado na tela e no histórico.
+  // Há duas formas honestas de descobrir de quem ele é, nesta ordem:
+  //
+  //  1. O MAPEAMENTO já registrado (`conversations#phoneByLid`). É o caminho
+  //     normal e o mais barato: uma consulta que responde na hora.
+  //  2. O CALLBACK (`conversations#phoneByCallback`). Ligamos para alguém,
+  //     desligamos, e a pessoa está ligando de volta — a mesma sessão discou
+  //     aquele número e mais nenhum outro na janela. É a evidência que fecha o
+  //     caso na PRIMEIRA vez que o apelido aparece, e sem ela a ligação de
+  //     volta do cliente que acabamos de procurar chegaria anônima.
+  //
+  // Nenhuma das duas achando, a chamada segue sem telefone — toca, aparece e
+  // diz que o número não pôde ser identificado. Melhor uma ligação anônima do
+  // que um número inventado na tela e no histórico.
   let numero = phone;
   if (!numero && lid) {
     const mapeado = await whatsappService.phoneByLid(lid).catch(() => null);
@@ -436,6 +454,22 @@ async function resolveIncomingRoute(callId: string, phone: string, lid: string |
       numero = mapeado.phone;
       patch(callId, { phone: mapeado.phone });
       waCallsLog('LID reconhecido pelo mapeamento', { callId });
+    } else {
+      const porCallback = await whatsappService
+        .phoneByCallback(lid, peerSessionId, Date.now())
+        .catch(() => null);
+      if (porCallback) {
+        numero = porCallback.phone;
+        patch(callId, { phone: porCallback.phone });
+        waCallsLog('LID reconhecido pelo callback', { callId });
+        // Aprendido: registra para a próxima ligação ser reconhecida de cara e
+        // devolve identidade às chamadas que já ficaram anônimas com este
+        // apelido. As duas coisas são ganho de histórico e falham em silêncio —
+        // nada aqui pode atrapalhar o convite que está tocando agora.
+        void whatsappService.linkLid(porCallback.phone, lid)
+          .then(() => callLogService.resolveLids(lid))
+          .catch(() => { /* ganho futuro, nunca um erro na tela */ });
+      }
     }
   }
   if (!numero) {
@@ -556,7 +590,7 @@ function handleEvent(event: WaCallsEvent): void {
         error: null,
       });
       waCallsLog('incoming call', { callId: event.id, byLid: !!lid });
-      void resolveIncomingRoute(event.id, phone, lid);
+      void resolveIncomingRoute(event.id, phone, lid, event.sessionId ?? sessionId ?? null);
       break;
     }
 
@@ -581,7 +615,12 @@ function handleEvent(event: WaCallsEvent): void {
         const { lid } = parseWaPeer(event.peer);
         if (lid && existing.lid !== lid) {
           patch(event.id, { lid });
-          void whatsappService.linkLid(existing.phone, lid).catch(() => { /* ganho futuro, nunca um erro na tela */ });
+          // Aprendeu: registra o mapeamento e, na sequência, devolve identidade
+          // às chamadas que já tinham chegado com este apelido e ficaram sem
+          // dono no histórico.
+          void whatsappService.linkLid(existing.phone, lid)
+            .then(() => callLogService.resolveLids(lid))
+            .catch(() => { /* ganho futuro, nunca um erro na tela */ });
         }
       }
       if (!existing) {

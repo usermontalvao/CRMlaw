@@ -45,7 +45,6 @@ import {
   Clock,
   MessageSquare,
   Mail,
-  FolderOpen,
 } from 'lucide-react';
 import OfflinePage from './components/OfflinePage';
 import SessionBootScreen from './components/SessionBootScreen';
@@ -129,7 +128,6 @@ import { formatCPF, formatDate, loadFormatterPrefs } from './utils/formatters';
 import { usePermissions } from './hooks/usePermissions';
 import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
-import { DocumentRequestsTracker } from './components/DocumentRequestsTracker';
 import { DISPLAY_APP_VERSION_LABEL } from './utils/appVersion';
 import { isEditorAppLocation } from './utils/editorAppRoute';
 import { settingsService, type ModulesConfig, FLOATING_WINDOW_MODULE_DEFAULTS } from './services/settings.service';
@@ -1460,8 +1458,6 @@ const MainApp: React.FC = () => {
     inModule: activeModule === 'whatsapp',
     onOpen: (conversationId) => navigateTo('whatsapp', { conversationId }),
   });
-  const [docRequestsOpen, setDocRequestsOpen] = useState(false);
-  const [docRequestsBadge, setDocRequestsBadge] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [clientSearchResults, setClientSearchResults] = useState<ClientSearchResult[]>([]);
   const [collaboratorSearchResults, setCollaboratorSearchResults] = useState<any[]>([]);
@@ -2723,25 +2719,6 @@ useEffect(() => {
                   ))
                 )}
 
-                {activeModule !== 'cloud' && (
-                <button
-                  onClick={() => setDocRequestsOpen(o => !o)}
-                  className={`relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
-                    docRequestsOpen
-                      ? 'text-[#f27a23] bg-[#fff3e8]'
-                      : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
-                  }`}
-                  title="Solicitações de documentos"
-                >
-                  <FolderOpen className="w-[18px] h-[18px]" />
-                  {docRequestsBadge > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 rounded-full bg-orange-500 px-1 text-[9px] font-bold text-white flex items-center justify-center leading-none">
-                      {docRequestsBadge > 99 ? '99+' : docRequestsBadge}
-                    </span>
-                  )}
-                </button>
-                )}
-
                 <NotificationBell
                   onNavigateToModule={(moduleKey: string, params?: any) => {
                     safeNavigateTo(moduleKey as any, params);
@@ -3054,13 +3031,6 @@ useEffect(() => {
             )}
           </Suspense>
         </main>
-
-        {/* Tracker de solicitações de documentos */}
-        <DocumentRequestsTracker
-          open={docRequestsOpen}
-          onClose={() => setDocRequestsOpen(false)}
-          onBadgeCountChange={setDocRequestsBadge}
-        />
 
         {!isStandaloneModule && activeModule !== 'chat' && activeModule !== 'whatsapp' && activeModule !== 'email' && activeModule !== 'nextcloud' && (
           <div className="px-3 sm:px-4 lg:px-6 xl:px-8 py-6">

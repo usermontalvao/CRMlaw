@@ -58,7 +58,17 @@ export const CALL_UNKNOWN_PEER = 'Número não identificado';
 export const callDisplayName = (call: WaCall): string =>
   call.contact?.name || (call.phone ? prettyPhone(call.phone) : CALL_UNKNOWN_PEER);
 
-/** Cronômetro vivo. Só corre depois que a chamada foi atendida. */
+/**
+ * Cronômetro vivo. Só EXISTE depois que a chamada foi atendida.
+ *
+ * A diferença entre "só corre" e "só existe" é a que a tela tinha errado: o
+ * relógio era desenhado desde o primeiro toque e ficava parado em `00:00`
+ * embaixo de "Chamando…". Um zero congelado num painel de ligação não informa
+ * nada e parece defeito — o tempo de uma chamada começa quando alguém atende,
+ * então antes disso não há tempo nenhum a mostrar. Devolvendo `null`, a linha
+ * some e o estado (chamando / tocando) fica sozinho, que é o que interessa
+ * enquanto ninguém atendeu.
+ */
 const CallTimer: React.FC<{ connectedAt: number | null }> = ({ connectedAt }) => {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -66,6 +76,7 @@ const CallTimer: React.FC<{ connectedAt: number | null }> = ({ connectedAt }) =>
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [connectedAt]);
+  if (!connectedAt) return null;
   return <span className="tabular-nums">{formatCallTimer(callElapsedSeconds(connectedAt, now))}</span>;
 };
 
@@ -501,9 +512,13 @@ export const ActiveCallWidget: React.FC<{
         <p className="mt-2.5 max-w-full truncate text-[15.5px] font-bold text-slate-800">{callDisplayName(call)}</p>
         {call.contact?.name && call.phone && <p className="text-[12px] text-slate-400">{prettyPhone(call.phone)}</p>}
         <p className={`mt-2 text-[13px] font-semibold ${finished ? 'text-slate-500' : 'text-emerald-600'}`}>{status}</p>
-        <p className="mt-0.5 text-[22px] font-bold tracking-tight text-slate-700">
-          <CallTimer connectedAt={call.connectedAt} />
-        </p>
+        {/* Sem `connectedAt` não há chamada em andamento e, portanto, não há
+            duração: a linha inteira sai da tela em vez de mostrar 00:00. */}
+        {call.connectedAt && (
+          <p className="mt-0.5 text-[22px] font-bold tracking-tight text-slate-700">
+            <CallTimer connectedAt={call.connectedAt} />
+          </p>
+        )}
         {/* Falar ao telefone e ler a conversa é a mesma tarefa: o histórico do
             contato está a um clique, sem precisar procurá-lo na inbox. */}
         {onOpenConversation && (

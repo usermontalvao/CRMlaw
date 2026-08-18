@@ -10,8 +10,8 @@ import {
   UserPlus, UserMinus, PenLine, HandCoins, ListTodo, FilePlus,
   Sparkles, Tag, Tags, Bot, Clapperboard,
   Shield, ShieldCheck, Eye, EyeOff, Timer, TimerOff,
-  BarChart2, TrendingUp, Users, AlertTriangle, Clock3, CheckCircle, Inbox,
-  Mail, MapPin, Play, Pause, Bell, BellOff, Info, MoreVertical, BellRing,
+  BarChart2, TrendingUp, Users, Clock3, CheckCircle, Inbox,
+  MapPin, Play, Pause, Bell, BellOff, Info, MoreVertical, BellRing,
   Target,
   LockKeyhole,
   GitBranch,
@@ -20,6 +20,9 @@ import {
 } from 'lucide-react';
 import { useStaffPush } from './whatsapp/hooks/useStaffPush';
 import { useWaCalls } from '../hooks/useWaCalls';
+import { CallHistoryList } from './whatsapp/CallHistoryList';
+import { InboxTabs } from './whatsapp/InboxTabs';
+import { useCallHistory } from './whatsapp/hooks/useCallHistory';
 import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
 import { muteStore } from '../services/whatsapp/muteStore';
 import { notifyScope } from '../services/whatsapp/notifyScope';
@@ -166,7 +169,7 @@ import {
  * módulo para um painel por vez em celulares.
  */
 
-type FilterTab = 'all' | 'unread' | 'mine' | 'scheduled';
+type FilterTab = 'all' | 'unread' | 'mine' | 'scheduled' | 'calls';
 
 
 // ── Confirmação leve (sem PIN) para ações reversíveis do módulo ──
@@ -341,6 +344,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     // a preferência persistida do módulo cheio (quem trabalha em "Todas" lá não
     // arrasta esse escopo para o widget).
     if (embedded) return 'mine';
+    // Só os três ESCOPOS de conversa voltam. "Agendadas" e "Ligações" são
+    // consultas — reabrir a inbox numa delas esconderia a fila de atendimento
+    // de quem só queria conferir uma coisa ontem e fechou a aba.
     const v = localStorage.getItem('wa_filter');
     return v === 'all' || v === 'unread' || v === 'mine' ? v : 'mine';
   });
@@ -1272,6 +1278,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // abas abaixo de propósito: não é um recorte da lista de conversas, é outra
   // consulta — e os filtros de fila (canal/setor/etiqueta/busca) não se aplicam.
   const { items: myScheduled, pending: myScheduledPending, failed: scheduledFailed, reload: reloadMyScheduled } = useMyScheduled(user?.id);
+  // O histórico de ligações. Carregado com a inbox, e não ao abrir a aba, para
+  // que o distintivo de perdidas sem retorno já esteja aceso quando a pessoa
+  // chega — um aviso que só aparece depois do clique não avisa ninguém.
+  const callHistory = useCallHistory();
+  const callsUnreturned = callHistory.unreturned.size;
 
   // Contadores das abas (Fase A): refletem exatamente o que a lista mostraria em
   // cada escopo, aplicando os MESMOS filtros de fila (status/canal/depto/etiqueta/
@@ -2085,39 +2096,38 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           </div>
           )}
 
-          {/* Abas de situação (restauradas): Todas / Não lidas / Minhas / Agendadas */}
-          <div className={`flex items-center gap-1 flex-wrap ${embedded ? 'mt-2' : 'mt-2.5'}`}>
-            {([
-              ['all', `Todas (${tabCounts.all})`],
-              ['unread', `Não lidas (${tabCounts.unread})`],
-              ['mine', `Minhas (${tabCounts.mine})`],
-            ] as [FilterTab, string][])
-              .map(([key, label]) => (
-                <button key={key} onClick={() => setFilter(key)}
-                  className={`px-3 py-1 rounded-full text-[12px] font-semibold transition ${filter === key ? 'bg-amber-600 text-white' : 'text-slate-500 hover:bg-[#f3f2ef]'}`}>
-                  {label}
-                </button>
-              ))}
-            {/* Uma agendada que falhou some de vista: ninguém volta na conversa
-                para conferir. Por isso a aba grita em vermelho enquanto houver
-                falha, mesmo que o atendente esteja em outra aba. */}
-            <button onClick={() => setFilter('scheduled')}
-              title={scheduledFailed > 0 ? `${scheduledFailed} não foram entregues` : undefined}
-              className={`px-3 py-1 rounded-full text-[12px] font-semibold transition inline-flex items-center gap-1.5 ${
-                filter === 'scheduled'
-                  ? (scheduledFailed > 0 ? 'bg-red-600 text-white' : 'bg-amber-600 text-white')
-                  : (scheduledFailed > 0 ? 'text-red-600 hover:bg-red-50' : 'text-slate-500 hover:bg-[#f3f2ef]')
-              }`}>
-              {scheduledFailed > 0 && <AlertTriangle size={12} />}
-              {/* O distintivo conta só a FILA: o histórico de enviadas mora na
-                  mesma aba, mas não é pendência de ninguém. */}
-              Agendadas{myScheduledPending.length ? ` (${myScheduledPending.length})` : ''}
-            </button>
-          </div>
+          <InboxTabs
+            active={filter}
+            onChange={setFilter}
+            counts={tabCounts}
+            scheduledPending={myScheduledPending.length}
+            scheduledFailed={scheduledFailed}
+            callsUnreturned={callsUnreturned}
+            className={embedded ? 'mt-2' : 'mt-2.5'}
+          />
         </div>
 
         <div ref={setListEl} onScroll={onListScroll} className="flex-1 overflow-y-auto overscroll-contain min-h-0">
-          {filter === 'scheduled' ? (
+          {filter === 'calls' ? (
+          <CallHistoryList
+            calls={callHistory.calls}
+            loading={callHistory.loading}
+            error={callHistory.error}
+            onReload={callHistory.reload}
+            unreturned={callHistory.unreturned}
+            privateMode={privateMode}
+            /* Abrir a conversa NÃO troca de aba, pelo mesmo motivo das
+               agendadas: quem está varrendo as ligações perderia o lugar a
+               cada clique. */
+            onOpenConversation={setSelectedId}
+            /* Ligar de novo pela MESMA porta de todas as outras ligações do
+               módulo: quem decide se aquilo é um número discável é
+               `resolveCallablePhone`, nunca a lista. */
+            onCall={(phone, name, conversationId) => {
+              void waCalls.placeCall(phone, { conversationId, clientId: null, name, avatarUrl: null });
+            }}
+          />
+          ) : filter === 'scheduled' ? (
           <MyScheduledList
             items={myScheduled}
             privateMode={privateMode}

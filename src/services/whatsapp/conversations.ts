@@ -533,6 +533,38 @@ export const conversationsApi = {
   },
 
   /**
+   * De quem é este LID, segundo o HISTÓRICO DE CHAMADAS.
+   *
+   * A segunda evidência, para quando o mapeamento ainda não conhece o apelido.
+   * Nós ligamos para alguém, desligamos, e a pessoa ligou de volta: o apelido
+   * que chegou é o daquele número — não porque as duas ligações estão perto no
+   * relógio, mas porque a MESMA sessão do WhatsApp discou aquele número e mais
+   * nenhum outro na janela. As travas contra o palpite (empate de destino,
+   * empate de apelido, sessão diferente, apelido já registrado) moram na
+   * `wa_lid_from_callback` e estão explicadas lá.
+   *
+   * Devolve `null` quando a evidência não é conclusiva — e "não conclusiva" é a
+   * resposta certa com muito mais frequência do que "provavelmente é fulano".
+   */
+  async phoneByCallback(
+    lid: string,
+    sessionId: string | null | undefined,
+    at: number | Date = Date.now(),
+  ): Promise<{ phone: string; name: string | null } | null> {
+    const digits = (lid || '').replace(/\D/g, '');
+    if (!digits || !sessionId) return null;
+    const { data, error } = await supabase.rpc('wa_lid_from_callback', {
+      p_lid: digits,
+      p_session_id: sessionId,
+      p_at: new Date(at).toISOString(),
+    });
+    if (error) return null;
+    const row = (data as Array<{ contact_phone: string; contact_name: string | null }> | null)?.[0];
+    if (!row?.contact_phone) return null;
+    return { phone: row.contact_phone, name: row.contact_name ?? null };
+  },
+
+  /**
    * Registra que este LID é deste telefone.
    *
    * A fonte é sempre EXATA. A principal: a chamada que nós mesmos discamos —

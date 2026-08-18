@@ -963,6 +963,53 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.320',
+    date: '18/08/2026',
+    summary: 'O WhatsApp ganhou uma aba de Ligações: quem ligou, quem ficou sem retorno, e o botão de ligar de volta na própria linha. Junto, as chamadas dentro da conversa deixaram de sair todas iguais e o CRM aprendeu a reconhecer quem liga de volta mesmo quando o WhatsApp esconde o número.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Aba de Ligações, com o que ficou sem retorno',
+            description: 'Não havia tela para responder "quem ligou?": a ficha do cliente só conhece as ligações daquele cliente e a conversa só as daquela conversa, então a chamada perdida de alguém que ninguém abriu depois não aparecia em lugar nenhum — o escritório descobria pelo celular, se descobrisse. A aba mostra o histórico com rosto e nome, agrupado por dia, e traz as duas ações na linha: ligar de novo e abrir a conversa. O distintivo vermelho conta as perdidas que ninguém retornou, e ele se apaga sozinho: uma chamada de saída para o mesmo número, depois dela, já é o retorno — ninguém marca nada a mão.',
+          },
+          {
+            type: 'improvement',
+            title: 'As abas viraram ícones para caber a quinta',
+            description: 'Cinco filtros escritos por extenso, cada um com o seu contador, não cabiam na coluna da lista: a barra quebrava em duas linhas e a segunda comia a altura das conversas. Agora cada aba é um ícone com o contador no canto, e o nome aparece só na aba em que você está. "Todas" perdeu o contador de propósito — o total de conversas é inventário, não pendência, e era justamente o número maior. Ele continua no toque prolongado.',
+          },
+          {
+            type: 'improvement',
+            title: 'As chamadas na conversa pararam de sair todas iguais',
+            description: 'Uma ligação de seis minutos gravada tinha a mesma aparência de uma tentativa que nem completou. Agora são três cores: a chamada perdida em vermelho (é dívida do escritório), a nossa tentativa sem resposta em verde (é tentativa, não alarme) e a atendida em neutro. A gravada ganhou distintivo e moldura própria — é o único conteúdo que sobra de uma chamada, e é a razão de alguém voltar naquela conversa semanas depois.',
+          },
+          {
+            type: 'fix',
+            title: 'O cronômetro só começa quando alguém atende',
+            description: 'O painel desenhava o relógio desde o primeiro toque e ele ficava parado em 00:00 embaixo de "Chamando…". O tempo de uma chamada começa quando alguém atende: antes disso a linha simplesmente não aparece.',
+          },
+          {
+            type: 'fix',
+            title: 'Quem liga de volta é reconhecido, mesmo sem o número',
+            description: 'O WhatsApp entrega algumas chamadas por um apelido interno, sem telefone dentro — foi o que fez uma ligação da cliente aparecer como um número da Somália. Corrigida a leitura, faltava o outro lado: sem o número, a ligação chegava anônima e ficava anônima para sempre. Agora o apelido é guardado, e o CRM descobre de quem é por duas evidências: o registro que ele já tem, ou o retorno de uma ligação que nós mesmos fizemos. Aprendendo um apelido, as chamadas antigas que estavam sem dono recuperam nome, conversa e ficha de uma vez.',
+          },
+        ],
+      },
+      {
+        moduleId: 'geral',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Sol. de Documentos sai da navegação',
+            description: 'O painel foi construído para um contexto que o sistema já não usa; o atalho saiu do cabeçalho.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.319',
     date: '17/08/2026',
     summary: 'O cartão de contato recebido virou o cartão do WhatsApp: clicar nele abre a conversa com aquela pessoa, e as ações ficam num rodapé discreto embaixo.',

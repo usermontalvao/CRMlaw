@@ -30,6 +30,12 @@ export interface CallLogInput {
   endedAt: number;
   endReason?: string | null;
   outcome: CallLogOutcome;
+  /**
+   * O apelido interno do WhatsApp (`<n>@lid`) do outro lado, quando a chamada
+   * chegou endereçada assim. Vai num campo SÓ DELE — nunca no `phone`. É o que
+   * permite reconhecer amanhã a ligação que hoje chegou anônima.
+   */
+  peerLid?: string | null;
   recordingPath?: string | null;
   recordingMime?: string | null;
   recordingBytes?: number | null;
@@ -41,6 +47,8 @@ export interface CallLogRow {
   callId: string;
   direction: 'inbound' | 'outbound';
   phone: string;
+  /** O LID do contato, quando a chamada veio endereçada por ele. Não é telefone. */
+  peerLid: string | null;
   clientId: string | null;
   conversationId: string | null;
   userId: string | null;
@@ -59,6 +67,10 @@ export interface CallLogRow {
   transcript: string | null;
   transcriptStatus: 'pending' | 'done' | 'failed' | null;
   transcriptAt: string | null;
+  /** Nome do contato, vindo da conversa. Só o histórico da inbox preenche. */
+  contactName?: string | null;
+  /** Caminho do avatar no bucket. Idem. */
+  contactAvatarPath?: string | null;
 }
 
 const iso = (ms: number | null | undefined): string | null =>
@@ -70,6 +82,7 @@ function mapRow(row: Record<string, any>): CallLogRow {
     callId: row.call_id,
     direction: row.direction,
     phone: row.phone ?? '',
+    peerLid: row.peer_lid ?? null,
     clientId: row.client_id ?? null,
     conversationId: row.conversation_id ?? null,
     userId: row.user_id ?? null,
@@ -100,6 +113,34 @@ async function withUserNames(rows: CallLogRow[]): Promise<CallLogRow[]> {
     if (p.user_id && p.name) byUser.set(p.user_id, p.name);
   }
   return rows.map(r => (r.userId ? { ...r, userName: byUser.get(r.userId) ?? null } : r));
+}
+
+/**
+ * Preenche o nome e o rosto do contato — uma consulta para a lista inteira.
+ *
+ * Entra pela CONVERSA, que é onde o WhatsApp guarda o nome e o avatar. Uma
+ * chamada sem conversa (número desconhecido, ou apelido interno que o CRM ainda
+ * não aprendeu) fica sem nome de propósito: a tela diz "número não
+ * identificado", que é a verdade, em vez de inventar um rótulo.
+ */
+async function withContacts(rows: CallLogRow[]): Promise<CallLogRow[]> {
+  const ids = Array.from(new Set(
+    rows.map(r => r.conversationId).filter((v): v is string => !!v),
+  ));
+  if (ids.length === 0) return rows;
+  const { data } = await supabase
+    .from('whatsapp_conversations')
+    .select('id, contact_name, contact_avatar_path')
+    .in('id', ids);
+  if (!data) return rows;
+  const byConv = new Map<string, { name: string | null; avatarPath: string | null }>();
+  for (const c of data as Array<{ id: string; contact_name: string | null; contact_avatar_path: string | null }>) {
+    byConv.set(c.id, { name: c.contact_name ?? null, avatarPath: c.contact_avatar_path ?? null });
+  }
+  return rows.map(r => {
+    const c = r.conversationId ? byConv.get(r.conversationId) : undefined;
+    return c ? { ...r, contactName: c.name, contactAvatarPath: c.avatarPath } : r;
+  });
 }
 
 export const callLogService = {
@@ -137,6 +178,7 @@ export const callLogService = {
       p_recording_path: input.recordingPath ?? null,
       p_recording_mime: input.recordingMime ?? null,
       p_recording_bytes: input.recordingBytes ?? null,
+      p_peer_lid: input.peerLid ?? null,
     });
     if (error) throw new Error(error.message);
     return (data as string) ?? null;
@@ -207,6 +249,33 @@ export const callLogService = {
   },
 
   /**
+   * O HISTÓRICO DE LIGAÇÕES do escritório — a aba de chamadas da inbox.
+   *
+   * A pergunta que ela responde é a que nenhuma outra tela respondia: "quem
+   * ligou e ninguém atendeu?". A ficha do cliente só sabe das ligações DAQUELE
+   * cliente e a thread só das daquela conversa; uma chamada perdida de alguém
+   * que ninguém abriu depois não aparecia em lugar nenhum — o escritório só
+   * descobria pelo WhatsApp do celular, se descobrisse.
+   *
+   * Traz o nome e o rosto junto porque uma lista de telefones não é histórico
+   * de ligação: são duas consultas (as chamadas, depois as conversas delas), e
+   * não um `join` no PostgREST, porque a política de leitura de
+   * `whatsapp_conversations` é por setor e um `join` esconderia a CHAMADA
+   * inteira de quem não enxerga a conversa. Aqui a chamada aparece sempre; o
+   * nome é que pode faltar.
+   */
+  async listRecent(limit = 80): Promise<CallLogRow[]> {
+    const { data, error } = await supabase
+      .from('whatsapp_call_logs')
+      .select('*')
+      .order('started_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []).map(mapRow);
+    return withContacts(await withUserNames(rows));
+  },
+
+  /**
    * Só as chamadas que deixaram gravação — a aba "Gravações".
    *
    * A mesma consulta da aba "Chamadas" com um filtro a mais. Vale a viagem
@@ -274,6 +343,24 @@ export const callLogService = {
     const { data, error } = await supabase.rpc('is_office_admin');
     if (error) return false;
     return data === true;
+  },
+
+  /**
+   * Devolve identidade às chamadas que ficaram registradas só com o apelido.
+   *
+   * Roda depois de o CRM APRENDER um LID (pela chamada de saída ou pelo
+   * callback). O que estava anônimo no histórico ganha telefone, conversa e
+   * cliente de uma vez — inclusive as ligações antigas da mesma pessoa.
+   *
+   * Falha em silêncio: é ganho retroativo, nunca um erro na cara de quem está
+   * no meio de uma chamada.
+   */
+  async resolveLids(lid?: string | null): Promise<number> {
+    const { data, error } = await supabase.rpc('wa_resolve_call_lids', {
+      p_lid: (lid || '').replace(/\D/g, '') || null,
+    });
+    if (error) return 0;
+    return Number(data) || 0;
   },
 
   /** URL assinada para ouvir/baixar a gravação. */
