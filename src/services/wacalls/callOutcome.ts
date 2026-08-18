@@ -33,6 +33,11 @@ export function endReasonMessage(
       return 'A chamada falhou.';
     case 'user_ended':
       return 'Chamada encerrada.';
+    case 'connection_lost':
+      // Não é o servidor que manda este: é o próprio CRM, quando a internet
+      // desta máquina cai com a linha aberta. Sem ele, o painel continuaria
+      // contando os minutos de uma conversa que não existe mais.
+      return 'A chamada caiu: esta máquina ficou sem conexão.';
     default:
       return options.answered ? 'Chamada encerrada.' : 'Chamada não atendida.';
   }
@@ -40,6 +45,9 @@ export function endReasonMessage(
 
 /** O desfecho merece toast de erro (vermelho) ou é só o fim normal? */
 export function endReasonIsFailure(reason: string | null, answered: boolean): boolean {
+  // Queda de rede é falha mesmo tendo conversado antes: o que interessa ao
+  // atendente é que a conversa foi interrompida e alguém precisa voltar a ligar.
+  if (reason === 'connection_lost') return true;
   if (answered) return false;
   return reason !== 'user_ended' && reason !== 'cancelled';
 }

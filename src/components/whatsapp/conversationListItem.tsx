@@ -140,11 +140,8 @@ export const ConversationListItem: React.FC<{
    */
   const autoClose = React.useMemo(() => {
     if (aiChip) return null;
-    // O expediente do canal não é conhecido aqui; a linha assume aberto e o
-    // pior caso é anunciar "encerrando" um pouco antes da varredura de fato
-    // encerrar. O cabeçalho da conversa, que sabe o expediente, corrige.
     const info = autoCloseClock(c, ch, Date.now());
-    if (info.key !== 'counting' && info.key !== 'due' && info.key !== 'waiting_hours') return null;
+    if (info.key !== 'counting' && info.key !== 'due') return null;
     // TODA conversa que está contando mostra o contador, e não só a que está
     // prestes a encerrar: acompanhar é ver o prazo andar. O que separa uma da
     // outra é a cor — cinza enquanto sobra tempo, âmbar na última hora.

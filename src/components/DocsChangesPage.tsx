@@ -963,6 +963,63 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.318',
+    date: '17/08/2026',
+    summary: 'O WhatsApp ganhou telefone: dá para ligar e atender pelo próprio CRM, a ligação entra na conversa junto das mensagens e a ficha do cliente passou a guardar o histórico e as gravações, com transcrição. Junto vieram o cartão de contato com rosto, a nova conversa em formato de agenda e o encerramento por inatividade fechando na hora certa.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Ligar e atender sem sair do CRM',
+            description: 'Um painel de chamada, que você arrasta para onde quiser, toca quando entra ligação e disca a partir da conversa ou da ficha. O telefone toca para quem está com a conversa, não para o escritório inteiro.',
+          },
+          {
+            type: 'feature',
+            title: 'A ligação aparece dentro da conversa',
+            description: 'Cada chamada vira uma entrada na thread, no horário em que aconteceu: recebida à esquerda, realizada à direita, com duração, quem atendeu e o botão de ouvir a gravação. Chamada perdida do cliente aparece em vermelho, com Ligar de volta; chamada não atendida nunca mostra duração.',
+          },
+          {
+            type: 'feature',
+            title: 'Cartão de contato com rosto',
+            description: 'O contato recebido mostra a foto do próprio WhatsApp e, quando o número não tem WhatsApp, diz isso na cara — em vez de deixar o atendente descobrir tentando. Enviar contato saiu do cartão e ficou no "+" do compositor, como "Contato salvo".',
+          },
+          {
+            type: 'feature',
+            title: 'Nova conversa virou agenda',
+            description: 'A abertura de conversa lista os contatos com foto e sinaliza quem não tem WhatsApp antes do primeiro envio.',
+          },
+          {
+            type: 'fix',
+            title: 'Encerramento por inatividade fecha na hora certa',
+            description: 'A conversa agora fecha quando o prazo vence, seja que horas for, e a despedida é que espera o expediente abrir para sair. Antes, tudo que vencia depois das 14h ficava aberto até o dia seguinte e ainda chegava com o motivo errado. Se o cliente voltar a escrever durante a espera, a despedida é cancelada sem ser enviada.',
+          },
+          {
+            type: 'fix',
+            title: 'Canal piscando não bloqueia mais o envio',
+            description: 'A oscilação momentânea da conexão deixou de ser lida como canal fora do ar, que marcava a conversa como "não vai enviar".',
+          },
+        ],
+      },
+      {
+        moduleId: 'clientes',
+        changes: [
+          {
+            type: 'feature',
+            title: 'Abas de Chamadas e Gravações na ficha',
+            description: 'O histórico de ligações do cliente, com data, sentido, duração e quem atendeu, e ao lado as que deixaram áudio: ouvir, baixar e transcrever. A transcrição é guardada, então da segunda vez em diante é só leitura.',
+          },
+          {
+            type: 'security',
+            title: 'Apagar gravação é de administrador',
+            description: 'A trava é do servidor, em dois lugares — a função do banco e a política do arquivo. Apagar remove o áudio e a transcrição; a ligação continua no histórico com horário, duração e desfecho.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.317',
     date: '07/08/2026',
     summary: 'A atualização ao vivo do e-mail e das petições passa a vir só pelo canal de avisos (broadcast), sem o segundo caminho que trafegava a linha inteira do banco. E ouvir esses avisos passou a exigir usuário interno ativo — o Portal do Cliente não os recebe mais.',

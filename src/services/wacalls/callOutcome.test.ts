@@ -53,3 +53,12 @@ test('quem atende não vê "Preparando" e sim "Conectando"', () => {
   assert.equal(phaseLabel('PREPARING', 'outbound'), 'Preparando…');
   assert.equal(phaseLabel('PREPARING', 'inbound'), 'Conectando…');
 });
+
+test('queda de internet é dita como queda — e conta como falha mesmo já atendida', () => {
+  assert.equal(
+    endReasonMessage('connection_lost', { answered: true, direction: 'outbound' }),
+    'A chamada caiu: esta máquina ficou sem conexão.',
+  );
+  assert.equal(endReasonIsFailure('connection_lost', true), true);
+  assert.equal(endReasonIsFailure('connection_lost', false), true);
+});

@@ -136,7 +136,7 @@ const WhatsAppShell: React.FC = () => {
         </Suspense>
       </div>
       <WhatsAppNotifyHost onOpen={openConversation} />
-      <WaCallsHost />
+      <WaCallsHost onOpenConversation={openConversation} />
     </div>
   );
 };

@@ -20,6 +20,8 @@ import type { Deadline } from '../types/deadline.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import { supabase } from '../config/supabase';
 import { DocumentRequestsAdmin } from './DocumentRequestsAdmin';
+import { ClientCallsPanel } from './ClientCallsPanel';
+import { ClientRecordingsPanel } from './ClientRecordingsPanel';
 import { signatureService } from '../services/signature.service';
 import { clientService } from '../services/client.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
@@ -42,7 +44,7 @@ import type { ChatRoom } from '../types/chat.types';
 // Assinaturas virou seção da aba Documentos (as duas liam a mesma
 // `signature_requests`) e Atendimento virou seção da aba Portal — eram dez abas
 // para o que cabe em sete.
-type Tab = 'data' | 'casos' | 'financial' | 'deadlines' | 'documents' | 'overview' | 'agenda' | 'portal';
+type Tab = 'data' | 'casos' | 'financial' | 'deadlines' | 'documents' | 'overview' | 'agenda' | 'portal' | 'calls' | 'recordings';
 
 interface ClientDetailsProps {
   client: Client;
@@ -1697,6 +1699,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     { id: 'financial', label: 'Financeiro', count: agreements.length, alert: installmentsLoaded && overdueAmount > 0 },
     { id: 'documents', label: 'Documentos', count: signatureRequests.length + clientPetitions.length, alert: pendingUploadsCount > 0 },
     { id: 'portal', label: 'Portal', count: portalNotifUnread && portalNotifUnread > 0 ? portalNotifUnread : undefined, alert: waitingChatRoom != null },
+    { id: 'calls', label: 'Chamadas' },
+    { id: 'recordings', label: 'Gravações' },
     { id: 'overview', label: 'Histórico' },
   ];
 
@@ -3797,6 +3801,26 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               </div>
             );
           })()}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              TAB: CHAMADAS — as ligações de voz do WhatsApp, com gravação.
+              O painel busca os próprios dados: a ficha carrega dez consultas ao
+              abrir, e as chamadas não podem entrar nesse pacote por uma aba que
+              quase nunca é a primeira a ser aberta.
+          ═══════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'calls' && (
+            <ClientCallsPanel clientId={client.id} phones={[client.mobile, client.phone]} />
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              TAB: GRAVAÇÕES — o áudio das ligações, com transcrição.
+              Separada de "Chamadas" porque responde outra pergunta: lá é
+              "quando falamos?", aqui é "o que foi dito?". Numa ficha com
+              dezenas de ligações, as poucas gravadas se perdiam no histórico.
+          ═══════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'recordings' && (
+            <ClientRecordingsPanel clientId={client.id} phones={[client.mobile, client.phone]} />
+          )}
 
           {/* ═══════════════════════════════════════════════════════════════════
               TAB: PORTAL — acesso, atendimento, conversas e notificações.

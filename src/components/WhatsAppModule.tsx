@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Search, Send, Loader2, MessageCircle, Phone, PhoneCall, User as UserIcon,
   CheckCheck, Check, AlertCircle, Link2, ArrowRightLeft, X,
-  Paperclip, Mic, FileText, Image as ImageIcon, CornerUpLeft,
+  Paperclip, Mic, FileText, Image as ImageIcon, CornerUpLeft, UserRound,
   Pencil, UserCheck, Unlink, IdCard, Scale, Calendar,
   Clock, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw, RefreshCw,
   StickyNote, Trash2, CalendarClock, MessageSquare, Filter, Maximize2,
@@ -43,6 +43,8 @@ import { stripAgentSignature } from './whatsapp/waRichText';
 import { ConversationSummaryModal, ConversationTimelineModal } from './whatsapp/infoModals';
 import { RequestDocumentModal } from './whatsapp/RequestDocumentModal';
 import { ClientPickerModal } from './whatsapp/clientPickerModals';
+import { parseContactMessage } from './whatsapp/contactCard';
+import { SendContactModal } from './whatsapp/sendContactModal';
 import { NewConversationPanel } from './whatsapp/newConversationPanel';
 import { CreateDeadlineFromMessageModal, CreateTaskFromMessageModal } from './whatsapp/createFromMessageModals';
 import {
@@ -120,6 +122,8 @@ import { useWaRealtime } from './whatsapp/hooks/useWaRealtime';
 import { useWaComposer } from './whatsapp/hooks/useWaComposer';
 import { useWaMessages } from './whatsapp/hooks/useWaMessages';
 import { useWaThread, type MessageUnit } from './whatsapp/hooks/useWaThread';
+import { useConversationCalls } from './whatsapp/hooks/useConversationCalls';
+import { ThreadCallEntry } from './whatsapp/threadCallEntry';
 import { useWaConversationActions } from './whatsapp/hooks/useWaConversationActions';
 import { useWaTemplates } from './whatsapp/hooks/useWaTemplates';
 import { useWaOperationalModals } from './whatsapp/hooks/useWaOperationalModals';
@@ -373,6 +377,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Encaminhar mensagem: origem escolhida no menu da bolha + envio em curso.
   const [forwardSource, setForwardSource] = useState<WhatsAppMessage | null>(null);
   const [forwarding, setForwarding] = useState(false);
+  // Número de um cartão de contato RECEBIDO indo para o cadastro de um cliente.
+  const [contactLinkTarget, setContactLinkTarget] = useState<{ phone: string; name: string } | null>(null);
+  const [contactLinking, setContactLinking] = useState(false);
+  // Enviar um contato da agenda do escritório como CARTÃO (vCard).
+  const [sendContactOpen, setSendContactOpen] = useState(false);
   // Fase I/360: estado dos modais operacionais + workspace → useWaOperationalModals (abaixo).
   // Fase M: filtro por etiqueta + resumo automático por IA
   const [labelFilter, setLabelFilter] = useState(
@@ -717,6 +726,17 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     messages, setMessages, setConversations, refreshMessages,
   });
 
+  // As LIGAÇÕES desta conversa. Elas entram na thread como qualquer outra
+  // unidade, no lugar do horário em que tocaram: a ligação é parte da mesma
+  // conversa, e lê-la fora dela deixava um buraco de horas no meio do
+  // atendimento — "mandei os documentos" … silêncio … "então ficou combinado".
+  // O telefone entra junto do id porque uma chamada só ganha `conversation_id`
+  // quando o CRM reconheceu o número enquanto ela tocava.
+  const threadCalls = useConversationCalls(
+    selectedId,
+    useMemo(() => [selected?.contact_phone], [selected?.contact_phone]),
+  );
+
   // Camada visual da thread: merge de mensagens reais + otimistas, agrupamento de
   // imagens em álbuns, galeria/lightbox e todo o auto-scroll. Consome `pending` do
   // compositor, por isso vive depois dele.
@@ -725,7 +745,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     lightbox, setLightbox, lightboxImages,
     threadContentRef, setThreadEl, onThreadScroll,
     scrolledUp, newBelow, scrollToBottom,
-  } = useWaThread(selectedId, messages, pending);
+  } = useWaThread(selectedId, messages, pending, threadCalls);
 
   // O campo de mensagem é NÃO CONTROLADO de propósito.
   //
@@ -1319,12 +1339,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // não é tocado.
   const handleCall = useCallback(() => {
     if (!selected) return;
-    void waCalls.placeCall(selected.contact_phone, {
-      conversationId: selected.id,
-      clientId: selected.client_id ?? null,
-      name: conversationName(selected),
-      avatarUrl: selected.contact_avatar_url ?? null,
-    });
+    void waCalls.placeCall(
+      selected.contact_phone,
+      {
+        conversationId: selected.id,
+        clientId: selected.client_id ?? null,
+        name: conversationName(selected),
+        avatarUrl: selected.contact_avatar_url ?? null,
+      },
+      // Reserva: o `remote_jid`. Numa conversa que nasceu por LID, o
+      // `contact_phone` guarda os dígitos do apelido interno — e o jid pode ser
+      // o `@s.whatsapp.net` com o número de verdade. Quem escolhe entre os dois
+      // (e recusa os dois quando nenhum é telefone) é `resolveCallablePhone`.
+      [{ source: 'jid', value: selected.remote_jid }],
+    );
   }, [selected, waCalls]);
 
   // IA da conversa selecionada: sugerir resposta, classificar assunto, extrair
@@ -1502,6 +1530,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     createDeadline: (m: WhatsAppMessage) => void; createTask: (m: WhatsAppMessage) => void;
     forward: (m: WhatsAppMessage) => void;
     remove: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => void;
+    /** Ações do cartão de contato recebido (ver `contactMessageCard.tsx`). */
+    callContactPhone: (phone: string, name: string) => void;
+    linkContactPhone: (phone: string, name: string) => void;
   }>(null!);
   bubbleImplRef.current = {
     reply: (m) => { setReplyTo(m); setEditing(null); },
@@ -1516,6 +1547,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     createTask: (m) => comCadastro('abrir uma tarefa', () => setTaskSource(m)),
     forward: (m) => setForwardSource(m),
     remove: (m, scope) => { void deleteMessage(m, scope); },
+    // Ligar para um número do cartão de contato. Vai pela MESMA porta da
+    // ligação do cabeçalho: quem decide se aquilo é um número discável é
+    // `resolveCallablePhone`, não a bolha.
+    callContactPhone: (phone, name) => {
+      void waCalls.placeCall(phone, {
+        conversationId: null, clientId: null, name, avatarUrl: null,
+      });
+    },
+    linkContactPhone: (phone, name) => setContactLinkTarget({ phone, name }),
   };
 
   /**
@@ -1575,7 +1615,18 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     // Texto que sai daqui já leva a assinatura do atendente; encaminhar sem
     // tirá-la colaria a assinatura antiga no meio da mensagem nova.
     const text = m.content ? (m.direction === 'out' ? stripAgentSignature(m.content) : m.content) : '';
+    // O cartão de contato segue como CARTÃO, não como texto com o número
+    // dentro: quem recebe salva na agenda com um toque em vez de copiar
+    // dígito por dígito. `parseContactMessage` lê de volta o mesmo texto que o
+    // webhook grava (ver `contactCard.ts`).
+    const contatosDoCartao = m.type === 'contact'
+      ? parseContactMessage(m.content).flatMap(e => e.phones.map(phone => ({ name: e.name, phone })))
+      : [];
     const results = await Promise.allSettled(targets.map(target => {
+      if (m.type === 'contact') {
+        if (contatosDoCartao.length === 0) return Promise.reject(new Error('o cartão veio sem número de telefone'));
+        return whatsappService.sendContact({ conversationId: target.id, contacts: contatosDoCartao });
+      }
       if (m.type === 'text') return whatsappService.sendText({ conversationId: target.id, text });
       if (!m.storage_path) return Promise.reject(new Error('arquivo indisponível'));
       return whatsappService.sendMedia({
@@ -1612,6 +1663,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     onCreateDeadline: (m: WhatsAppMessage) => bubbleImplRef.current.createDeadline(m),
     onCreateTask: (m: WhatsAppMessage) => bubbleImplRef.current.createTask(m),
     onDelete: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => bubbleImplRef.current.remove(m, scope),
+    onCallContactPhone: (phone: string, name: string) => bubbleImplRef.current.callContactPhone(phone, name),
+    onLinkContactPhone: (phone: string, name: string) => bubbleImplRef.current.linkContactPhone(phone, name),
   }), []);
 
   // Cluster de ações do cabeçalho da lista (status online + sino de notificações
@@ -1656,15 +1709,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
    * horas, e um contador de segundos re-renderizaria a thread inteira para
    * mudar um dígito que ninguém está olhando.
    *
-   * `outsideHours` entra porque canal configurado para "só dentro do
-   * expediente" não encerra de madrugada — o prazo vence e espera. Sem isso o
-   * painel mostraria "encerra em 0min" a noite toda.
+   * O expediente não entra: ele segura a despedida, não o encerramento — a
+   * conversa que vence às 22h fecha às 22h, e só o aviso ao cliente espera a
+   * abertura. O contador, portanto, vale igual a qualquer hora.
    */
   const autoCloseInfo = useMemo(
     () => (selected
-      ? autoCloseClock(selected, selectedChannel, queueTick, !!outsideHours)
+      ? autoCloseClock(selected, selectedChannel, queueTick)
       : { key: 'off' as const }),
-    [selected, selectedChannel, queueTick, outsideHours],
+    [selected, selectedChannel, queueTick],
   );
 
   /**
@@ -2413,14 +2466,32 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 // `messageUnits`: o agrupamento visual olha a unidade anterior e a
                 // seguinte, e essas vizinhas atravessam a fronteira das seções.
                 const renderUnit = (u: MessageUnit, unitIndex: number) => {
+                  // A ligação é uma unidade da thread, mas não é uma mensagem:
+                  // nada do agrupamento visual (mesmo remetente, cinco minutos,
+                  // resposta citada) se aplica a ela. Sai antes.
+                  if (u.kind === 'call') {
+                    return (
+                      <ThreadCallEntry
+                        key={`call-${u.call.id}`}
+                        call={u.call}
+                        privateMode={privateMode}
+                        onCallBack={waCalls.canCall && !waCalls.myCall ? handleCall : undefined}
+                      />
+                    );
+                  }
                   const head = u.kind === 'album' ? u.items[0] : u.m;
                   const tail = u.kind === 'album' ? u.items[u.items.length - 1] : u.m;
                   const previousUnit = unitIndex > 0 ? messageUnits[unitIndex - 1] : null;
                   const nextUnit = unitIndex < messageUnits.length - 1 ? messageUnits[unitIndex + 1] : null;
-                  const previousTail = previousUnit
+                  // Uma chamada no meio QUEBRA o grupo, e é o que se quer: duas
+                  // mensagens separadas por uma ligação de seis minutos não são
+                  // uma rajada, e desenhá-las coladas contaria a história errada.
+                  const previousTail = previousUnit && previousUnit.kind !== 'call'
                     ? (previousUnit.kind === 'album' ? previousUnit.items[previousUnit.items.length - 1] : previousUnit.m)
                     : null;
-                  const nextHead = nextUnit ? (nextUnit.kind === 'album' ? nextUnit.items[0] : nextUnit.m) : null;
+                  const nextHead = nextUnit && nextUnit.kind !== 'call'
+                    ? (nextUnit.kind === 'album' ? nextUnit.items[0] : nextUnit.m)
+                    : null;
                   const belongsToSameGroup = (left: WhatsAppMessage | null, right: WhatsAppMessage | null) => {
                     if (!left || !right) return false;
                     if (left.direction !== right.direction || (left.sender_user_id || null) !== (right.sender_user_id || null)) return false;
@@ -2658,6 +2729,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                             <button className={row} onClick={run(() => imgInputRef.current?.click())}><span className={`${dot} bg-amber-100 text-amber-700`}><ImageIcon size={17} /></span> Imagem ou vídeo</button>
                             <button className={row} onClick={run(() => docInputRef.current?.click())}><span className={`${dot} bg-amber-100 text-amber-700`}><Paperclip size={17} /></span> Documento</button>
                             <button className={row} onClick={run(() => setGifOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><Clapperboard size={17} /></span> GIF</button>
+                            {/* Contato salvo = a agenda dos clientes, enviada
+                                como CARTÃO e não como número no meio de uma
+                                frase: quem recebe salva com um toque, em vez de
+                                copiar dígito por dígito. É AQUI que mandar um
+                                contato mora — junto de imagem, documento e GIF
+                                —, e não pendurado num cartão recebido. */}
+                            <button className={row} onClick={run(() => setSendContactOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><UserRound size={17} /></span> Contato salvo</button>
                             <button className={row} onClick={run(() => setTemplateOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><MessageSquare size={17} /></span> Modelo de mensagem</button>
                             {perms.canSchedule && (
                               <button className={row} onClick={run(() => setScheduleOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><CalendarClock size={17} /></span> Agendar mensagem</button>
@@ -3272,6 +3350,50 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             void loadConversations();
             pendente?.seguir(clientId, clientName);
           }}
+        />
+      )}
+
+      {/* Número de um cartão de contato recebido → cadastro de um cliente.
+          O picker é o MESMO do vínculo da conversa, e é ele que já avisa quando
+          o número pertence a outra ficha antes de mexer em qualquer coisa. */}
+      {contactLinkTarget && (
+        <ClientPickerModal
+          phone={contactLinkTarget.phone}
+          onClose={() => { if (!contactLinking) setContactLinkTarget(null); }}
+          onPick={cliente => {
+            const alvo = contactLinkTarget;
+            if (!alvo) return;
+            setContactLinking(true);
+            void whatsappService.addPhoneToClient(cliente.id, alvo.phone)
+              .then(({ added, field, replaced }) => {
+                const campo = field === 'mobile' ? 'Celular' : 'Telefone';
+                if (added && replaced) {
+                  toast.success(`${campo} de ${cliente.full_name} atualizado.`,
+                    `${prettyPhone(replaced)} foi substituído e está no histórico da ficha.`);
+                } else if (added) {
+                  toast.success(`${prettyPhone(alvo.phone)} entrou no cadastro de ${cliente.full_name}.`,
+                    `Campo ${campo}.`);
+                } else {
+                  toast.info(`${cliente.full_name} já tinha este número.`);
+                }
+                setContactLinkTarget(null);
+                // A ficha mudou: a lista relê nome/vínculo das conversas.
+                loadConversations();
+              })
+              .catch((e: any) => toast.error('Falha ao vincular o número', e?.message))
+              .finally(() => setContactLinking(false));
+          }}
+        />
+      )}
+
+      {/* Enviar um contato da agenda como cartão (vCard). */}
+      {sendContactOpen && selected && (
+        <SendContactModal
+          conversationId={selected.id}
+          targetName={conversationName(selected)}
+          onClose={() => setSendContactOpen(false)}
+          onSent={() => { toast.success('Contato enviado.'); void refreshMessages(selected.id); }}
+          onError={message => toast.error('Contato não enviado', message)}
         />
       )}
 

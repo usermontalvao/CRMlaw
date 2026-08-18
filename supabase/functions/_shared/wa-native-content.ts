@@ -143,7 +143,12 @@ export function lerVcard(texto: string): ContatoVcard {
     if (sep < 0) continue;
     const cabeca = linha.slice(0, sep);
     const valor = linha.slice(sep + 1).trim();
-    const propriedade = cabeca.split(';')[0].trim().toUpperCase();
+    // Propriedade AGRUPADA (`item1.TEL`, `item2.EMAIL`): o pedaço antes do ponto
+    // é o grupo do vCard, não o nome da propriedade. iPhone e a maioria dos
+    // Androids escrevem o telefone assim — e, comparando o nome inteiro com
+    // 'TEL', o número era descartado calado. Medido em 17/08/2026: os 3 cartões
+    // que existiam no banco chegaram só com o nome, nenhum com telefone.
+    const propriedade = cabeca.split(';')[0].trim().toUpperCase().replace(/^.*\./, '');
 
     if (propriedade === 'FN' && valor) { nome = valor; continue; }
     // `N:` é o nome em partes (sobrenome;nome;...). Só serve de reserva quando
@@ -156,7 +161,12 @@ export function lerVcard(texto: string): ContatoVcard {
     if (propriedade === 'TEL') {
       const waid = cabeca.match(/waid=(\d+)/i);
       const numero = waid ? `+${waid[1]}` : valor;
-      if (numero && !telefones.includes(numero)) telefones.push(numero);
+      const digitos = numero.replace(/\D/g, '');
+      if (!digitos) continue;
+      // O mesmo número aparece duas vezes no cartão do WhatsApp — uma crua e
+      // outra com `waid=` e máscara. Comparar por dígito evita mostrar dois.
+      if (telefones.some(t => t.replace(/\D/g, '') === digitos)) continue;
+      telefones.push(numero);
     }
   }
   return { nome: nome || 'Contato sem nome', telefones };

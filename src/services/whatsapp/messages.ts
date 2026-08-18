@@ -79,6 +79,41 @@ export const messagesApi = {
     };
   },
 
+  /**
+   * Envia um CARTÃO DE CONTATO (vCard), não um texto com o número dentro.
+   *
+   * A diferença aparece do lado de lá: o cartão chega salvável na agenda com um
+   * toque, com botão de ligar e de abrir conversa. O texto "o telefone do
+   * perito é 65 9xxxx-xxxx" obriga a pessoa a copiar dígito por dígito — e é
+   * exatamente aí que o número chega trocado e a ligação vai para outro lugar.
+   *
+   * O endpoint da Evolution (`/message/sendContact`) já existia e não estava
+   * sendo usado por ninguém; ver `evolution-send`.
+   */
+  async sendContact(params: {
+    conversationId?: string;
+    phone?: string;
+    channelId?: string;
+    replyToId?: string;
+    /** Um ou mais contatos. `phone` em dígitos ou com máscara — o servidor limpa. */
+    contacts: Array<{ name: string; phone: string; organization?: string; email?: string }>;
+  }): Promise<SendResult> {
+    const data = await invokeFn('evolution-send', {
+      conversation_id: params.conversationId,
+      phone: params.phone,
+      channel_id: params.channelId,
+      type: 'contact',
+      reply_to_id: params.replyToId,
+      contacts: params.contacts,
+    });
+    return {
+      conversation_id: data.conversation_id,
+      message_id: data.message_id,
+      evolution_message_id: data.evolution_message_id ?? null,
+      reopened: data.reopened === true,
+    };
+  },
+
   /** Faz upload do arquivo para o bucket privado e devolve os metadados. */
   async uploadMedia(file: File | Blob, opts: { conversationId?: string; fileName?: string }): Promise<UploadedMedia> {
     const name = opts.fileName || (file as File).name || 'arquivo';

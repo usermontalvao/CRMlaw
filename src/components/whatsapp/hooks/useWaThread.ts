@@ -6,11 +6,23 @@
 // Vive DEPOIS de useWaComposer na ordem de hooks, pois consome `pending`.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { countNewBelow, emptySeenMark, markAllSeen, type SeenMark } from '../threadUnread';
+import type { ThreadCall } from '../threadCallEntry';
 import type { WhatsAppMessage } from '../../../types/whatsapp.types';
 
 export type MessageUnit =
   | { kind: 'album'; items: WhatsAppMessage[] }
-  | { kind: 'single'; m: WhatsAppMessage };
+  | { kind: 'single'; m: WhatsAppMessage }
+  // A ligação é uma unidade da thread como qualquer outra. Entrando aqui, ela
+  // herda de graça as duas coisas que fazem a leitura funcionar: a ordem no
+  // tempo e a seção do dia (com o divisor grudento). Fora daqui, seria preciso
+  // reimplementar as duas — e elas divergiriam no primeiro ajuste.
+  | { kind: 'call'; call: ThreadCall };
+
+/** O instante de uma unidade da thread, seja ela mensagem, álbum ou chamada. */
+export function unitTimestamp(u: MessageUnit): string {
+  if (u.kind === 'call') return u.call.startedAt;
+  return (u.kind === 'album' ? u.items[0] : u.m).wa_timestamp;
+}
 
 /** Uma faixa de `messageUnits` que pertence ao mesmo dia. `fim` é exclusivo. */
 export interface DiaDaThread {
@@ -57,6 +69,8 @@ export function useWaThread(
   selectedId: string | null,
   messages: WhatsAppMessage[],
   pending: WhatsAppMessage[],
+  /** Ligações desta conversa — desenhadas no meio das mensagens, pelo horário. */
+  calls: ThreadCall[] = [],
 ): WaThreadApi {
   const [lightbox, setLightbox] = useState<string | null>(null);
 
@@ -158,6 +172,36 @@ export function useWaThread(
     return units;
   }, [allMessages]);
 
+  /**
+   * As chamadas entram na linha do tempo, pelo horário em que tocaram.
+   *
+   * Depois do agrupamento de álbuns de propósito: uma ligação no meio de três
+   * fotos enviadas em rajada não pode quebrar o álbum — o álbum é uma coisa só
+   * que aconteceu num instante, e a chamada acontece antes ou depois dele.
+   *
+   * A mescla é estável: empatando no milissegundo, a mensagem vem primeiro. É a
+   * ordem em que os fatos acontecem — a ligação é registrada quando ACABA, e o
+   * que veio junto dela já estava na tela.
+   */
+  const unitsWithCalls = useMemo<MessageUnit[]>(() => {
+    if (calls.length === 0) return messageUnits;
+    const ordenadas = [...calls].sort(
+      (a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime(),
+    );
+    const saida: MessageUnit[] = [];
+    let c = 0;
+    for (const u of messageUnits) {
+      const quando = new Date(unitTimestamp(u)).getTime();
+      while (c < ordenadas.length && new Date(ordenadas[c].startedAt).getTime() < quando) {
+        saida.push({ kind: 'call', call: ordenadas[c] });
+        c += 1;
+      }
+      saida.push(u);
+    }
+    for (; c < ordenadas.length; c += 1) saida.push({ kind: 'call', call: ordenadas[c] });
+    return saida;
+  }, [messageUnits, calls]);
+
   // Fatias por dia. Existem por causa de um detalhe de CSS com consequência
   // visível: `position: sticky` só é empurrado pelo fim do PRÓPRIO pai. Com todos
   // os divisores de data soltos no mesmo contêiner, cada um grudava em `top` e o
@@ -168,16 +212,15 @@ export function useWaThread(
   // empurrado para fora quando o dia acaba, que é o comportamento do WhatsApp.
   const diasDaThread = useMemo<DiaDaThread[]>(() => {
     const dias: DiaDaThread[] = [];
-    for (let i = 0; i < messageUnits.length; i += 1) {
-      const u = messageUnits[i];
-      const cabeca = u.kind === 'album' ? u.items[0] : u.m;
-      const chave = new Date(cabeca.wa_timestamp).toDateString();
+    for (let i = 0; i < unitsWithCalls.length; i += 1) {
+      const ts = unitTimestamp(unitsWithCalls[i]);
+      const chave = new Date(ts).toDateString();
       const ultimo = dias[dias.length - 1];
       if (ultimo && ultimo.chave === chave) ultimo.fim = i + 1;
-      else dias.push({ chave, tsInicial: cabeca.wa_timestamp, inicio: i, fim: i + 1 });
+      else dias.push({ chave, tsInicial: ts, inicio: i, fim: i + 1 });
     }
     return dias;
-  }, [messageUnits]);
+  }, [unitsWithCalls]);
 
   // Galeria do lightbox: URLs das imagens da conversa, em ordem — permite navegar
   // (slider ‹ ›) entre todas as imagens ao ampliar uma. Sem repetição: a galeria
@@ -331,7 +374,7 @@ export function useWaThread(
   }, []);
 
   return {
-    allMessages, msgById, nextAudioId, messageUnits, diasDaThread,
+    allMessages, msgById, nextAudioId, messageUnits: unitsWithCalls, diasDaThread,
     lightbox, setLightbox, lightboxImages,
     threadContentRef, setThreadEl, onThreadScroll,
     scrolledUp, newBelow, scrollToBottom,

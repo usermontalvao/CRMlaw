@@ -58,9 +58,7 @@ export type AutoCloseClock =
   /** Contando: `minutesLeft` até o encerramento. */
   | { key: 'counting'; minutesLeft: number; idleMinutes: number; label: string; urgent: boolean }
   /** Prazo vencido, esperando a varredura do minuto seguinte. */
-  | { key: 'due'; idleMinutes: number; label: string; urgent: boolean }
-  /** Vencido, mas o canal só encerra dentro do expediente. */
-  | { key: 'waiting_hours'; idleMinutes: number; label: string; urgent: boolean };
+  | { key: 'due'; idleMinutes: number; label: string; urgent: boolean };
 
 /**
  * Mensagem automática (aviso de fora do horário / prompt de reabertura) não é
@@ -110,16 +108,15 @@ export const autoCloseIdleLabel = (minutes: number): string => {
  * sendo dele, quem está parado é o escritório, e inatividade de operador não
  * encerra atendimento nenhum.
  *
- * `outsideBusinessHours` é o estado do expediente do canal DA CONVERSA (o mesmo
- * que decide a faixa de aviso). Vencer fora do expediente não encerra: a
- * varredura só volta a olhar quando o canal abre, e o painel diz isso em vez de
- * mostrar um contador zerado que não acontece.
+ * O expediente do canal NÃO entra na conta. Ele segura a despedida, não o
+ * encerramento: vencendo de madrugada a conversa fecha de madrugada e só o
+ * aviso ao cliente espera a abertura. Por isso o contador pode ir até o fim em
+ * qualquer horário sem mentir.
  */
 export function autoCloseClock(
   conv: AutoCloseConversation,
   channel: AutoCloseChannel | null | undefined,
   now: number,
-  outsideBusinessHours = false,
 ): AutoCloseClock {
   if (!channel?.auto_close_enabled || !(channel.auto_close_minutes > 0)) return { key: 'off' };
   if (conv.status === 'closed' || conv.is_blocked || conv.awaiting_accept) return { key: 'off' };
@@ -150,9 +147,6 @@ export function autoCloseClock(
       label: `encerra em ${autoCloseLeftLabel(leftMinutes)}`,
       urgent: leftMinutes <= 60,
     };
-  }
-  if (outsideBusinessHours && channel.auto_close_business_hours_only) {
-    return { key: 'waiting_hours', idleMinutes, label: 'encerra ao abrir o expediente', urgent: true };
   }
   return { key: 'due', idleMinutes, label: 'encerrando por inatividade', urgent: true };
 }

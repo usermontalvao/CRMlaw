@@ -14,6 +14,7 @@ import { formatTime, typeLabel, maskSensitive, fmtAudioTime, formatBytes } from 
 import { WaRichText } from './WaRichTextView';
 import { waPlainText, stripAgentSignature } from './waRichText';
 import { WaPdfCard, isPdfMessage } from './pdfPreview';
+import { WaContactCard, type ContactCardActions } from './contactMessageCard';
 import { WaVideoLightbox } from './lightbox';
 import type { WhatsAppMessage, WhatsAppDeleteScope } from '../../types/whatsapp.types';
 
@@ -45,7 +46,14 @@ export const MessageBubble: React.FC<{
   onDelete?: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => void;
   /** Só para áudio: o áudio logo abaixo, que emenda quando este termina. */
   nextAudioId?: string | null;
-}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete, nextAudioId }) => {
+  /**
+   * O que o cartão de contato RECEBIDO sabe fazer: ligar para o número e
+   * vincular o número a um cadastro. Ausentes = o host não oferece o recurso.
+   * Encaminhar o cartão é do menu da bolha, como em qualquer outra mensagem.
+   */
+  onCallContactPhone?: (phone: string, name: string) => void;
+  onLinkContactPhone?: (phone: string, name: string) => void;
+}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete, nextAudioId, onCallContactPhone, onLinkContactPhone }) => {
   const out = m.direction === 'out';
   const failed = m._local === 'failed' || m.status === 'failed';
   const busy = m._local === 'uploading' || m._local === 'sending';
@@ -58,8 +66,12 @@ export const MessageBubble: React.FC<{
   // Encaminhar: precisa de algo para reenviar — texto escrito ou arquivo que já
   // está no storage (a mídia vai pelo caminho do storage, sem baixar e subir de
   // novo). Mensagem ainda em envio ou falhada não é encaminhável.
+  // O cartão de contato não tem arquivo no storage, e por isso ficava fora do
+  // encaminhamento: a única mensagem que o escritório mais quer repassar (o
+  // número do perito, do despachante) era justamente a que não dava. Ele vai
+  // pelo texto do cartão, que é reenviado como CARTÃO (ver `sendContact`).
   const canForward = !!onForward && !busy && !failed
-    && (m.type === 'text' ? !!m.content : !!m.storage_path);
+    && (m.type === 'text' || m.type === 'contact' ? !!m.content : !!m.storage_path);
 
   // ── Apagar ──
   const deleted = !!m.deleted_at;
@@ -235,9 +247,23 @@ export const MessageBubble: React.FC<{
 
         <MediaContent m={m} out={out} onOpenImage={onOpenImage} nextAudioId={nextAudioId} />
 
+        {/* Cartão de contato: o texto vira número clicável com ações. Ver
+            `contactMessageCard.tsx`. */}
+        {m.type === 'contact' && (
+          <WaContactCard
+            content={m.content}
+            out={out}
+            privateMode={privateMode}
+            actions={{
+              onCall: onCallContactPhone,
+              onLinkClient: onLinkContactPhone,
+            } satisfies ContactCardActions}
+          />
+        )}
+
         {/* `unsupported` já se explica na própria moldura — repetir o texto
             embaixo dela seria dizer a mesma coisa duas vezes. */}
-        {m.content && m.type !== 'text' && m.type !== 'unsupported' && (
+        {m.content && m.type !== 'text' && m.type !== 'unsupported' && m.type !== 'contact' && (
           <WaRichText text={privateMode ? maskSensitive(m.content) : m.content}
             className="block mt-1 whitespace-pre-wrap break-words" />
         )}

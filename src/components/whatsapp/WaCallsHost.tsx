@@ -2,22 +2,154 @@
 //
 // Mesmo papel do `WhatsAppNotifyHost`: mora na raiz do app — no CRM completo e
 // na janela /atendimento — para que uma chamada RECEBIDA apareça em qualquer
-// tela, não só com o módulo WhatsApp aberto. É também o único lugar que liga a
-// escuta de eventos (via `useWaCalls` → `waCallsStore.init`), o que garante uma
-// única conexão SSE por aba.
+// tela, não só com o módulo WhatsApp aberto. Como ele fica FORA da troca de
+// módulos, o painel da chamada nunca é desmontado ao navegar: dá para abrir o
+// processo, o prazo ou outra conversa com a ligação de pé.
+//
+// É também o único lugar que liga a escuta de eventos (via `useWaCalls` →
+// `waCallsStore.init`), o que garante uma única conexão SSE por aba.
 //
 // Nada de estado de chamada aqui dentro: o estado é do store, este componente
-// só desenha e traduz os avisos em toasts.
-import React, { useEffect } from 'react';
+// só desenha, toca os avisos sonoros e traduz os recados em toasts.
+import React, { useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useWaCalls } from '../../hooks/useWaCalls';
 import { waCallsStore } from '../../services/wacalls/callStore';
-import { ActiveCallModal, IncomingCallCard } from './callModals';
+import {
+  playCallConnectedTone, playCallEndedTone, startRing, stopRing,
+} from '../../services/wacalls/ringtone';
+import { ActiveCallWidget, IncomingCallCard, callDisplayName } from './callModals';
+import type { WaCall } from '../../services/wacalls/types';
 
-export const WaCallsHost: React.FC = () => {
+/**
+ * Aviso do sistema operacional para a chamada recebida.
+ *
+ * Só com a aba escondida — mesma regra dos avisos de mensagem: com o CRM à
+ * vista, o cartão no alto da tela já é mais informativo do que a notificação
+ * do sistema, e ver as duas coisas ao mesmo tempo é ruído. Com a aba em
+ * segundo plano, ela é o que faz o telefone tocado chegar até quem está no
+ * Word do outro lado da mesa.
+ */
+function useSystemCallNotification(incoming: WaCall | null): void {
+  const openRef = useRef<Notification | null>(null);
+
+  // A permissão é pedida no PRIMEIRO GESTO do usuário, não na montagem. O
+  // Chrome ignora (e em alguns casos bloqueia de vez) um `requestPermission`
+  // disparado no carregamento da página, sem interação nenhuma — o pedido
+  // simplesmente nunca aparecia, e a notificação que dependia dele também não.
+  useEffect(() => {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'default') return;
+    const pedir = () => {
+      soltar();
+      Notification.requestPermission().catch(() => { /* recusar é uma resposta */ });
+    };
+    const soltar = () => {
+      window.removeEventListener('pointerdown', pedir);
+      window.removeEventListener('keydown', pedir);
+    };
+    window.addEventListener('pointerdown', pedir, { once: true });
+    window.addEventListener('keydown', pedir, { once: true });
+    return soltar;
+  }, []);
+
+  useEffect(() => {
+    const close = () => {
+      try { openRef.current?.close(); } catch { /* já fechada */ }
+      openRef.current = null;
+    };
+    if (!incoming) { close(); return; }
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    if (typeof document !== 'undefined' && !document.hidden) return;
+    try {
+      const note = new Notification('Chamada de voz no WhatsApp', {
+        body: `${callDisplayName(incoming)} está chamando`,
+        // O mesmo ícone dos avisos de mensagem: numa pilha de notificações do
+        // sistema, é por ele que se reconhece que a ligação é do CRM.
+        icon: '/icon-192.png',
+        // `tag` fixo por chamada: um SSE que reentregue o convite não empilha
+        // duas notificações da mesma ligação.
+        tag: `wacall:${incoming.callId}`,
+        // `requireInteraction` mantém o aviso na tela enquanto o telefone
+        // toca, em vez de sumir em 5 segundos como um aviso de mensagem.
+        requireInteraction: true,
+        silent: true, // o toque é nosso (ver ringtone.ts); dois sons brigariam
+      });
+      note.onclick = () => { try { window.focus(); note.close(); } catch { /* nada a fazer */ } };
+      openRef.current = note;
+    } catch { /* notificação é um extra */ }
+    return close;
+  }, [incoming?.callId, incoming]);
+}
+
+/**
+ * Os toques: chamada recebida (rajada ascendente) e chamada discada (controle
+ * de chamada). Um som curto marca o atendimento e outro o fim — que é o único
+ * jeito de perceber que a linha caiu com o painel minimizado.
+ */
+function useCallRinging(myCall: WaCall | null, incoming: WaCall | null): void {
+  const lastPhase = useRef<string | null>(null);
+
+  useEffect(() => {
+    const phase = myCall?.phase ?? null;
+    const previous = lastPhase.current;
+    lastPhase.current = phase;
+
+    if (previous !== 'ACTIVE' && phase === 'ACTIVE') playCallConnectedTone();
+    if (previous && previous !== 'ENDED' && previous !== 'FAILED' && (phase === 'ENDED' || phase === 'FAILED')) {
+      playCallEndedTone();
+    }
+
+    // O convite recebido vence — mas só toca nesta mesa se a regra de
+    // roteamento disser que sim (ver `callRouting`): o cartão pode estar na
+    // tela de propósito, em silêncio, porque a chamada é de outro atendente.
+    if (incoming?.route?.ring) { startRing('incoming'); return; }
+    if (myCall?.direction === 'outbound' && (phase === 'CALLING' || phase === 'RINGING')) {
+      startRing('outgoing');
+      return;
+    }
+    stopRing();
+  }, [incoming, myCall?.phase, myCall?.direction, myCall]);
+
+  // A aba está indo embora (ou o usuário saiu): nada de toque órfão tocando.
+  useEffect(() => () => stopRing(), []);
+}
+
+/**
+ * Segura a saída da página com a chamada de pé.
+ *
+ * Recarregar a aba MATA a chamada: microfone, WebRTC e DataChannel são da
+ * página, não do servidor. Um F5 distraído derrubava o cliente na cara do
+ * atendente, sem aviso nenhum. O navegador só permite o diálogo padrão dele —
+ * não dá para escrever o texto —, mas o segundo de hesitação já resolve.
+ */
+function useConfirmLeaveDuringCall(myCall: WaCall | null): void {
+  const live = !!myCall && myCall.phase !== 'ENDED' && myCall.phase !== 'FAILED';
+  useEffect(() => {
+    if (!live) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Compatibilidade com navegadores antigos, que só respeitam o returnValue.
+      event.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [live]);
+}
+
+export const WaCallsHost: React.FC<{
+  /** Abre a conversa do contato na inbox (o app decide como navegar). */
+  onOpenConversation?: (conversationId: string) => void;
+}> = ({ onOpenConversation }) => {
   const toast = useToastContext();
-  const { myCall, incoming, acceptCall, rejectCall, hangUp, setMuted } = useWaCalls();
+  const {
+    myCall, incoming, linkDown, acceptCall, rejectCall, hangUp, setMuted, setRecording,
+  } = useWaCalls();
+
+  useCallRinging(myCall, incoming);
+  useSystemCallNotification(incoming);
+  useConfirmLeaveDuringCall(myCall);
 
   // A aba está indo embora: microfone, AudioContext e SSE liberados na saída.
   useEffect(() => () => waCallsStore.shutdown(), []);
@@ -43,11 +175,18 @@ export const WaCallsHost: React.FC = () => {
         )}
       </AnimatePresence>
       {myCall && (
-        <ActiveCallModal
+        <ActiveCallWidget
           key={myCall.callId}
           call={myCall}
+          linkDown={linkDown}
           onHangUp={() => { void hangUp(myCall.callId); }}
           onToggleMute={() => setMuted(myCall.callId, !myCall.muted)}
+          onToggleRecording={() => setRecording(myCall.callId, !myCall.recording)}
+          onOpenConversation={
+            myCall.contact?.conversationId && onOpenConversation
+              ? () => onOpenConversation(myCall.contact!.conversationId!)
+              : undefined
+          }
         />
       )}
     </>

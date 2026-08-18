@@ -6,7 +6,8 @@
 // contra o servidor configurado, e o resultado aparece na tela.
 import React, { useEffect, useState } from 'react';
 import { PhoneCall } from 'lucide-react';
-import { ActiveCallModal, IncomingCallCard } from '../components/whatsapp/callModals';
+import { ActiveCallWidget, IncomingCallCard } from '../components/whatsapp/callModals';
+import { playCallConnectedTone, playCallEndedTone, startRing, stopRing } from '../services/wacalls/ringtone';
 import { waCallsService } from '../services/wacalls.service';
 import { WACALLS_BASE_URL } from '../services/wacalls/config';
 import type { WaCall, WaCallPhase, WaCallsSession } from '../services/wacalls/types';
@@ -17,6 +18,7 @@ const chamada = (patch: Partial<WaCall>): WaCall => ({
   direction: 'outbound',
   phase: 'CALLING',
   phone: '5565984046375',
+  lid: null,
   contact: { conversationId: 'c1', clientId: null, name: 'Isabel Maria', avatarUrl: null },
   mine: true,
   startedAt: Date.now(),
@@ -24,6 +26,9 @@ const chamada = (patch: Partial<WaCall>): WaCall => ({
   endedAt: null,
   endReason: null,
   muted: false,
+  route: { ring: true, show: true, label: 'Sem responsável definido — tocando para todos' },
+  recording: false,
+  recorded: false,
   error: null,
   ...patch,
 });
@@ -33,7 +38,21 @@ const FASES: WaCallPhase[] = ['PREPARING', 'CALLING', 'RINGING', 'ACTIVE', 'ENDI
 const WaCallsPreview: React.FC = () => {
   const [fase, setFase] = useState<WaCallPhase>('CALLING');
   const [mudo, setMudo] = useState(false);
+  const [gravando, setGravando] = useState(false);
+  const [semRede, setSemRede] = useState(false);
+  // As três leituras possíveis do convite: minha, de outro atendente (calada) e
+  // escalada. É a regra do `callRouting` vista pelos olhos de quem está na mesa.
+  const [rota, setRota] = useState<0 | 1 | 2>(0);
+  const rotaDoConvite = [
+    { ring: true, show: true, label: 'Sem responsável definido — tocando para todos' },
+    { ring: false, show: true, label: 'Tocando para Bruno (responsável pela conversa)' },
+    { ring: true, show: true, label: 'Bruno não atendeu: a chamada foi liberada para todos' },
+  ][rota];
   const [recebida, setRecebida] = useState(true);
+  // Convite que chegou endereçado só por LID: o WhatsApp não mandou telefone
+  // nenhum, e o cartão precisa DIZER isso em vez de inventar um número. Foi o
+  // defeito de 17/08/2026 (ver `services/wacalls/phone.ts`).
+  const [semNumero, setSemNumero] = useState(false);
   const [sessoes, setSessoes] = useState<WaCallsSession[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [sse, setSse] = useState('conectando…');
@@ -51,6 +70,8 @@ const WaCallsPreview: React.FC = () => {
   const ativa = chamada({
     phase: fase,
     muted: mudo,
+    recording: gravando,
+    recorded: gravando,
     connectedAt: fase === 'ACTIVE' || fase === 'ENDING' || fase === 'ENDED' ? Date.now() - 63_000 : null,
     error: fase === 'FAILED' ? 'Não foi possível abrir o áudio da chamada.' : null,
   });
@@ -74,8 +95,7 @@ const WaCallsPreview: React.FC = () => {
         </ul>
       </section>
 
-      {/* Acima do scrim do modal: senão os controles da bancada ficam atrás dele. */}
-      <div className="relative z-[96] mt-5 flex max-w-md flex-wrap gap-2">
+      <div className="relative mt-5 flex max-w-md flex-wrap gap-2">
         {FASES.map(f => (
           <button key={f} onClick={() => setFase(f)}
             className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${f === fase ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 border border-[#e7e5df]'}`}>
@@ -86,12 +106,47 @@ const WaCallsPreview: React.FC = () => {
           className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">
           {recebida ? 'esconder' : 'mostrar'} chamada recebida
         </button>
+        <button onClick={() => setRota(r => ((r + 1) % 3) as 0 | 1 | 2)}
+          className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">
+          rota do convite ({rota + 1}/3)
+        </button>
+        <button onClick={() => setSemRede(v => !v)}
+          className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${semRede ? 'bg-amber-500 text-white' : 'border border-[#e7e5df] bg-white text-slate-600'}`}>
+          sem internet
+        </button>
+        <button onClick={() => setSemNumero(v => !v)}
+          title="O convite chegou endereçado por LID: o WhatsApp não mandou telefone nenhum"
+          className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${semNumero ? 'bg-amber-500 text-white' : 'border border-[#e7e5df] bg-white text-slate-600'}`}>
+          convite só com LID
+        </button>
       </div>
 
-      <ActiveCallModal call={ativa} onHangUp={() => setFase('ENDED')} onToggleMute={() => setMudo(v => !v)} />
+      {/* Toques: o painel não os dispara sozinho (quem faz isso é o WaCallsHost,
+          a partir da fase da chamada), então a bancada os aciona na mão. */}
+      <div className="mt-3 flex max-w-md flex-wrap gap-2">
+        <button onClick={() => startRing('incoming')} className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">tocar (recebida)</button>
+        <button onClick={() => startRing('outgoing')} className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">tocar (chamando)</button>
+        <button onClick={stopRing} className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">parar</button>
+        <button onClick={playCallConnectedTone} className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">atendeu</button>
+        <button onClick={playCallEndedTone} className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">desligou</button>
+      </div>
+
+      <ActiveCallWidget
+        call={ativa}
+        linkDown={semRede}
+        onHangUp={() => setFase('ENDED')}
+        onToggleMute={() => setMudo(v => !v)}
+        onToggleRecording={() => setGravando(v => !v)}
+        onOpenConversation={() => window.alert('abriria a conversa do contato')}
+      />
       {recebida && (
         <IncomingCallCard
-          call={chamada({ callId: 'call-in', direction: 'inbound', phase: 'RINGING', mine: false, contact: null, phone: '5565992216459' })}
+          call={chamada({
+            callId: 'call-in', direction: 'inbound', phase: 'RINGING', mine: false, contact: null,
+            phone: semNumero ? '' : '5565992216459',
+            lid: semNumero ? '252677908865131' : null,
+            route: rotaDoConvite,
+          })}
           onAccept={() => setRecebida(false)}
           onReject={() => setRecebida(false)}
         />

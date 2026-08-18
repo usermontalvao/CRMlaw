@@ -316,12 +316,48 @@ Deno.serve(async (req: Request) => {
   let mediaMime: string | null = body?.mime_type || null;
   let fileName: string | null = body?.file_name || null;
   let mediaSize: number | null = null;
+  /** Texto legível do cartão de contato enviado — vira o `content` da bolha. */
+  let contactText = '';
   const storagePath: string | null = body?.storage_path || null;
   const asGif: boolean = body?.as_gif === true;
 
   if (type === 'text') {
     endpoint = `${base}/message/sendText/${inst}`;
     reqBody = { number: sendTarget, text, ...(quoted ? { quoted } : {}) };
+  } else if (type === 'contact') {
+    // Cartão de contato (vCard). Sai pelo endpoint PRÓPRIO da Evolution, e não
+    // como um texto com o número dentro: o que chega do outro lado é um cartão
+    // de verdade — salvável na agenda com um toque, com botão de ligar e de
+    // abrir conversa. Mandar "o telefone do perito é 65 9xxxx" obriga a pessoa
+    // a copiar dígito por dígito, e é onde o número chega errado.
+    //
+    // `wuid` é o que o WhatsApp usa para reconhecer o contato como usuário do
+    // aplicativo; sem ele o cartão chega mudo, sem os botões.
+    const contatos = Array.isArray(body?.contacts) ? body.contacts : [];
+    const lista = contatos
+      .map((c: any) => {
+        const digits = String(c?.phone ?? '').replace(/\D/g, '');
+        const nome = String(c?.name ?? '').trim();
+        if (!digits || !nome) return null;
+        return {
+          fullName: nome,
+          wuid: digits,
+          phoneNumber: `+${digits}`,
+          ...(c?.organization ? { organization: String(c.organization) } : {}),
+          ...(c?.email ? { email: String(c.email) } : {}),
+        };
+      })
+      .filter(Boolean);
+    if (lista.length === 0) return json({ error: 'Informe ao menos um contato com nome e telefone.' }, 400);
+    endpoint = `${base}/message/sendContact/${inst}`;
+    reqBody = { number: sendTarget, contact: lista, ...(quoted ? { quoted } : {}) };
+    // O MESMO formato que o webhook grava para um cartão RECEBIDO (nome na
+    // primeira linha, telefones abaixo, cartões separados por linha em branco).
+    // É o que faz a bolha enviada e a recebida serem lidas pelo mesmo código —
+    // ver `components/whatsapp/contactCard.ts`.
+    contactText = lista
+      .map((c: any) => `${c.fullName}\n${c.phoneNumber}`)
+      .join('\n\n');
   } else {
     if (!storagePath) return json({ error: 'storage_path obrigatório para mídia' }, 400);
     const dl = await admin.storage.from(MEDIA_BUCKET).download(storagePath);
@@ -386,11 +422,13 @@ Deno.serve(async (req: Request) => {
     evolution_message_id: evoId,
     direction: 'out',
     type,
-    content: type === 'text' ? text : (text || null),
-    media_mime: type === 'text' ? null : mediaMime,
-    storage_path: type === 'text' ? null : storagePath,
-    media_size: type === 'text' ? null : mediaSize,
-    file_name: type === 'text' ? null : fileName,
+    // O cartão de contato não tem arquivo nenhum: o que ele deixa na thread é o
+    // texto do cartão, exatamente como o webhook grava um cartão recebido.
+    content: type === 'text' ? text : type === 'contact' ? contactText : (text || null),
+    media_mime: type === 'text' || type === 'contact' ? null : mediaMime,
+    storage_path: type === 'text' || type === 'contact' ? null : storagePath,
+    media_size: type === 'text' || type === 'contact' ? null : mediaSize,
+    file_name: type === 'text' || type === 'contact' ? null : fileName,
     status: 'sent',
     // Marca o que saiu como GIF para a NOSSA bolha também tocar em laço, mudo e
     // sem controles — igual ao que já fazemos com o GIF que chega.

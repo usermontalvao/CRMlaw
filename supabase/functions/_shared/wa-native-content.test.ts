@@ -261,3 +261,71 @@ test('template que por dentro e fluxo interativo nao vira rotulo generico', () =
     'Cupom não acumulativo.',
   ].join('\n'));
 });
+
+test('telefone em propriedade agrupada (item1.TEL) NÃO se perde — o cartão do iPhone', () => {
+  const cartao = [
+    'BEGIN:VCARD', 'VERSION:3.0', 'N:Eletricista;André;;;', 'FN:André Eletricista',
+    'item1.TEL:+556581121124', 'item1.X-ABLabel:Celular',
+    'item2.TEL;waid=556581121124:+55 65 8112-1124', 'item2.X-ABLabel:Celular',
+    'END:VCARD',
+  ].join('\n');
+  const lido = lerVcard(cartao);
+  assert.equal(lido.nome, 'André Eletricista');
+  assert.equal(lido.telefones.length, 1, 'os dois TEL são o MESMO número');
+  assert.equal(lido.telefones[0].replace(/\D/g, ''), '556581121124');
+});
+
+test('nome também sobrevive quando vem agrupado', () => {
+  const cartao = 'BEGIN:VCARD\nitem1.FN:Maria\nitem1.TEL:+5565988887777\nEND:VCARD';
+  assert.deepEqual(lerVcard(cartao), { nome: 'Maria', telefones: ['+5565988887777'] });
+});
+
+test('TODAS as formas do TEL do vCard dão o MESMO telefone', () => {
+  // As quatro formas que o WhatsApp e as agendas de celular realmente usam.
+  // A comparação é por dígito porque o valor guardado é o que veio escrito no
+  // cartão (com ou sem máscara) — o que não pode variar é o NÚMERO.
+  const formas = [
+    'TEL:+5565999999999',
+    'item1.TEL:+5565999999999',
+    'item2.TEL;waid=5565999999999:+55 65 99999-9999',
+    'TEL;TYPE=CELL:+5565999999999',
+    'TEL;TYPE=CELL;waid=5565999999999:+55 65 99999-9999',
+    'item3.TEL;type=CELL;type=VOICE;type=pref:+55 65 99999-9999',
+  ];
+  for (const linha of formas) {
+    const lido = lerVcard(`BEGIN:VCARD\nVERSION:3.0\nFN:Fulano\n${linha}\nEND:VCARD`);
+    assert.equal(lido.telefones.length, 1, `nenhum telefone lido em "${linha}"`);
+    assert.equal(
+      lido.telefones[0].replace(/\D/g, ''), '5565999999999',
+      `telefone errado em "${linha}"`,
+    );
+  }
+});
+
+test('o nome vem de FN, e de N só quando FN não veio', () => {
+  const comFn = lerVcard('BEGIN:VCARD\nN:Eletricista;André;;;\nFN:André Eletricista\nEND:VCARD');
+  assert.equal(comFn.nome, 'André Eletricista');
+  // `N` é sobrenome;nome;… — a leitura remonta na ordem que se lê em português.
+  const soN = lerVcard('BEGIN:VCARD\nN:Eletricista;André;;;\nEND:VCARD');
+  assert.equal(soN.nome, 'André Eletricista');
+  const soSobrenome = lerVcard('BEGIN:VCARD\nN:Silva;;;;\nEND:VCARD');
+  assert.equal(soSobrenome.nome, 'Silva');
+  assert.equal(lerVcard('BEGIN:VCARD\nEND:VCARD').nome, 'Contato sem nome');
+});
+
+test('a continuação de linha do vCard não parte o número ao meio', () => {
+  // RFC 2425: a linha seguinte começando com espaço é continuação da anterior.
+  const cartao = 'BEGIN:VCARD\nFN:Fulano\nitem1.TEL:+55659999\n 99999\nEND:VCARD';
+  assert.equal(lerVcard(cartao).telefones[0].replace(/\D/g, ''), '5565999999999');
+});
+
+test('vários TEL diferentes no mesmo cartão saem todos', () => {
+  const cartao = [
+    'BEGIN:VCARD', 'FN:Escritório',
+    'item1.TEL;waid=5565988887777:+55 65 98888-7777',
+    'item2.TEL;waid=556533334444:+55 65 3333-4444',
+    'END:VCARD',
+  ].join('\n');
+  const lido = lerVcard(cartao);
+  assert.deepEqual(lido.telefones.map(t => t.replace(/\D/g, '')), ['5565988887777', '556533334444']);
+});

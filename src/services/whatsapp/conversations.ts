@@ -511,6 +511,44 @@ export const conversationsApi = {
   },
 
   /**
+   * O telefone de verdade por trás de um LID.
+   *
+   * O LID (`252677908865131@lid`) é o apelido INTERNO do contato no WhatsApp:
+   * não é um número, não pode ser discado e não pode ser mostrado como
+   * telefone. Quando um convite de chamada chega endereçado assim, esta é a
+   * única forma honesta de descobrir quem está ligando — uma CONSULTA ao
+   * mapeamento que o CRM registrou, nunca uma conversão dos dígitos.
+   *
+   * Devolve `null` quando ninguém registrou aquele LID; quem chama trata como
+   * "não foi possível identificar o número" e não inventa nada.
+   */
+  async phoneByLid(lid: string): Promise<{ phone: string; name: string | null } | null> {
+    const digits = (lid || '').replace(/\D/g, '');
+    if (!digits) return null;
+    const { data, error } = await supabase.rpc('wa_phone_by_lid', { p_lid: digits });
+    if (error) return null;
+    const row = (data as Array<{ contact_phone: string; contact_name: string | null }> | null)?.[0];
+    if (!row?.contact_phone) return null;
+    return { phone: row.contact_phone, name: row.contact_name ?? null };
+  },
+
+  /**
+   * Registra que este LID é deste telefone.
+   *
+   * A fonte é sempre EXATA. A principal: a chamada que nós mesmos discamos —
+   * sabemos para qual número ela foi e o WaCalls devolve o `peer` dela; se o
+   * `peer` vier como LID, aquele LID é, por construção, o daquele número.
+   * Falha em silêncio de propósito: é um ganho de reconhecimento futuro, e
+   * nada nele pode atrapalhar a ligação que está acontecendo agora.
+   */
+  async linkLid(phone: string, lid: string): Promise<void> {
+    const p = (phone || '').replace(/\D/g, '');
+    const l = (lid || '').replace(/\D/g, '');
+    if (!p || !l) return;
+    await supabase.rpc('wa_link_lid', { p_phone: p, p_lid: l });
+  },
+
+  /**
    * Quem é o dono deste telefone? — a pergunta que uma chamada RECEBIDA faz.
    *
    * O WaCalls avisa que está tocando e só sabe o número; o operador precisa ver
@@ -525,18 +563,24 @@ export const conversationsApi = {
     clientId: string | null;
     name: string | null;
     avatarUrl: string | null;
+    /** Responsável atual — quem recebe a chamada de voz deste contato. */
+    assignedUserId: string | null;
+    /** Canal por onde a conversa corre (o padrão de atendimento sai dele). */
+    instanceId: string | null;
+    isBlocked: boolean;
   } | null> {
     const variants = phoneVariants(phone);
     if (variants.length === 0) return null;
     const jids = variants.map(v => `${v}@s.whatsapp.net`);
     const { data } = await supabase
       .from(CONV_TABLE)
-      .select('id, contact_name, contact_phone, contact_avatar_path, client_id, last_message_at')
+      .select('id, contact_name, contact_phone, contact_avatar_path, client_id, last_message_at, assigned_user_id, instance_id, is_blocked')
       .or(`contact_phone.in.(${variants.join(',')}),remote_jid.in.(${jids.join(',')})`)
       .order('last_message_at', { ascending: false, nullsFirst: false })
       .limit(1);
     const conv = (data || [])[0] as {
       id: string; contact_name: string | null; contact_avatar_path: string | null; client_id: string | null;
+      assigned_user_id: string | null; instance_id: string | null; is_blocked: boolean | null;
     } | undefined;
     if (!conv) return null;
 
@@ -550,7 +594,15 @@ export const conversationsApi = {
       if (fullName) name = fullName;
     }
     const avatarUrl = await resolveAvatarUrl(conv.contact_avatar_path).catch(() => null);
-    return { conversationId: conv.id, clientId: conv.client_id, name, avatarUrl };
+    return {
+      conversationId: conv.id,
+      clientId: conv.client_id,
+      name,
+      avatarUrl,
+      assignedUserId: conv.assigned_user_id ?? null,
+      instanceId: conv.instance_id ?? null,
+      isBlocked: conv.is_blocked === true,
+    };
   },
 
   // ── Governança (bloqueio) ────────────────────────────────────

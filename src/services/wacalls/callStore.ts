@@ -11,14 +11,35 @@
 import { waCallsService, WaCallsError } from '../wacalls.service';
 import { whatsappService } from '../whatsapp.service';
 import { getWaCallsClientId, waCallsLog } from './config';
-import { openCallAudio, openMicrophone, MicrophoneError, type WaCallAudioBridge } from './audioBridge';
-import { phoneFromWaCallsPeer, toWaCallsPhone } from './phone';
+import {
+  openCallAudio, openMicrophone, MicrophoneError,
+  type WaCallAudioBridge, type WaCallRecording,
+} from './audioBridge';
+import { callLogService, type CallLogOutcome } from '../callLog.service';
+import {
+  CALLABLE_PHONE_UNKNOWN, parseWaPeer, resolveCallablePhone,
+  type CallablePhoneCandidate,
+} from './phone';
 import { endReasonIsFailure, endReasonMessage, phaseFromStatus } from './callOutcome';
+import { decideCallRing, CALL_ESCALATION_MS, type CallRoute, type CallRouteSource } from './callRouting';
+import { supabase } from '../../config/supabase';
 import type { WaCall, WaCallContact, WaCallsEvent, WaCallsSession, WaCallsStatus } from './types';
 
 /** Quanto tempo o cartão de uma chamada encerrada fica na tela antes de sumir. */
 const ENDED_LINGER_MS = 2500;
 const FAILED_LINGER_MS = 4500;
+
+/**
+ * Quanto tempo a chamada sobrevive sem conexão antes de ser dada como perdida.
+ *
+ * Existe por causa da "chamada fantasma": a internet do escritório oscila, o
+ * áudio some dos dois lados, e o painel continua contando os minutos como se a
+ * conversa estivesse acontecendo — o operador fala sozinho e só descobre
+ * quando desliga. Doze segundos é o intervalo que engole uma troca de Wi-Fi
+ * para o 4G (que se recupera sozinha) sem deixar um cronômetro mentindo por
+ * meio minuto.
+ */
+const LINK_GRACE_MS = 12_000;
 
 /** Aviso para a UI mostrar como toast. O store não conhece o sistema de toasts. */
 export interface WaCallsNotice {
@@ -32,6 +53,14 @@ export interface WaCallsSnapshot {
   ready: boolean;
   /** O serviço respondeu na última tentativa. */
   available: boolean;
+  /** O navegador enxerga rede? (`navigator.onLine`) */
+  online: boolean;
+  /**
+   * A ligação com o mundo caiu — sem rede local OU sem o serviço de chamadas.
+   * Enquanto isto for verdade, NADA que o painel mostra sobre uma chamada em
+   * curso pode ser levado a sério: é o estado da "chamada fantasma".
+   */
+  linkDown: boolean;
   sessions: WaCallsSession[];
   /** `activeWaCallsSessionId` — a conta usada para ligar. */
   sessionId: string | null;
@@ -51,7 +80,17 @@ const calls = new Map<string, WaCall>();
  */
 const orphanStatus = new Map<string, WaCallsStatus>();
 const bridges = new Map<string, WaCallAudioBridge>();
+/**
+ * Gravação que o operador parou ANTES de a chamada acabar.
+ *
+ * Ela não sobe na hora de propósito: o registro da chamada só existe quando a
+ * chamada termina (é ele que sabe a duração e o desfecho), e uma linha
+ * incompleta escrita no meio viraria uma segunda versão da mesma ligação.
+ */
+const pendingRecordings = new Map<string, WaCallRecording>();
 const removalTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Escalada por chamada: quando o convite exclusivo passa a tocar para todos. */
+const escalationTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const listeners = new Set<() => void>();
 const noticeListeners = new Set<(notice: WaCallsNotice) => void>();
 
@@ -59,14 +98,24 @@ let sessions: WaCallsSession[] = [];
 let sessionId: string | null = null;
 let ready = false;
 let available = false;
+let online = typeof navigator === 'undefined' ? true : navigator.onLine !== false;
+let linkTimer: ReturnType<typeof setTimeout> | null = null;
+let linkListenersOn = false;
 let initializing: Promise<void> | null = null;
 let closeEvents: (() => void) | null = null;
-let snapshot: WaCallsSnapshot = { ready: false, available: false, sessions: [], sessionId: null, calls: [] };
+let snapshot: WaCallsSnapshot = {
+  ready: false, available: false, online: true, linkDown: false,
+  sessions: [], sessionId: null, calls: [],
+};
 
 function emit(): void {
   snapshot = {
     ready,
     available,
+    online,
+    // Antes do primeiro contato com o serviço, `available` é falso sem que nada
+    // esteja errado — daí o `ready` na conta.
+    linkDown: !online || (ready && !available),
     sessions,
     sessionId,
     calls: Array.from(calls.values()).sort((a, b) => b.startedAt - a.startedAt),
@@ -76,6 +125,52 @@ function emit(): void {
 
 function notify(notice: WaCallsNotice): void {
   noticeListeners.forEach(fn => fn(notice));
+}
+
+/** As chamadas desta aba que ainda estão de pé. */
+function liveMineCalls(): WaCall[] {
+  return Array.from(calls.values()).filter(
+    c => c.mine && c.phase !== 'ENDED' && c.phase !== 'FAILED',
+  );
+}
+
+function clearEscalation(callId: string): void {
+  const timer = escalationTimers.get(callId);
+  if (!timer) return;
+  clearTimeout(timer);
+  escalationTimers.delete(callId);
+}
+
+function clearLinkTimer(): void {
+  if (linkTimer) clearTimeout(linkTimer);
+  linkTimer = null;
+}
+
+/**
+ * A rede caiu ou voltou.
+ *
+ * Voltou dentro da carência: nada acontece, a chamada continua (o WebRTC se
+ * recupera de oscilações curtas sozinho). Não voltou: as chamadas desta aba
+ * são dadas como perdidas, com motivo próprio — é isso que impede o painel de
+ * seguir contando minutos de uma conversa que já acabou sem avisar.
+ */
+function onLinkChanged(): void {
+  emit();
+  if (online) { clearLinkTimer(); return; }
+  if (linkTimer) return;
+  linkTimer = setTimeout(() => {
+    linkTimer = null;
+    if (online) return;
+    for (const call of liveMineCalls()) finishCall(call.callId, 'connection_lost');
+  }, LINK_GRACE_MS);
+}
+
+/** Escuta a rede do navegador. Idempotente — os ouvintes são de módulo. */
+function watchLink(): void {
+  if (linkListenersOn || typeof window === 'undefined') return;
+  linkListenersOn = true;
+  window.addEventListener('online', () => { online = true; onLinkChanged(); });
+  window.addEventListener('offline', () => { online = false; onLinkChanged(); });
 }
 
 /**
@@ -140,22 +235,108 @@ function scheduleRemoval(callId: string, delay: number): void {
   if (previous) clearTimeout(previous);
   removalTimers.set(callId, setTimeout(() => {
     removalTimers.delete(callId);
+    clearEscalation(callId);
     calls.delete(callId);
     orphanStatus.delete(callId);
     emit();
   }, delay));
 }
 
+/** O desfecho da chamada como a ficha do cliente vai lê-lo. */
+function outcomeOf(call: WaCall, failed: boolean, endReason: string | null): CallLogOutcome {
+  if (call.connectedAt) return 'answered';
+  if (failed) return 'failed';
+  if (endReason === 'declined') return 'declined';
+  return 'missed';
+}
+
+/**
+ * O que sobra da ligação: a gravação sobe e a chamada vira uma linha na ficha
+ * do cliente.
+ *
+ * Roda depois do fim, fora do caminho de quem desligou — nada aqui pode
+ * atrasar o encerramento na tela. Falha de rede não vira erro na cara do
+ * operador quando não houve gravação: o registro é o histórico do escritório, e
+ * insistir num toast vermelho por causa dele atrapalharia a próxima chamada.
+ * Já a gravação perdida É avisada: quem gravou está contando com o arquivo.
+ */
+async function archiveCall(call: WaCall, failed: boolean, recording: WaCallRecording | null): Promise<void> {
+  let recordingPath: string | null = null;
+  if (recording) {
+    try {
+      recordingPath = await callLogService.uploadRecording(call.callId, recording.blob, recording.mime);
+    } catch (err) {
+      console.error('[WaCalls] falha ao subir a gravação', err);
+      notify({
+        kind: 'error',
+        message: 'Não foi possível salvar a gravação.',
+        description: 'A chamada foi registrada na ficha, mas sem o áudio.',
+      });
+    }
+  }
+
+  try {
+    await callLogService.logCall({
+      callId: call.callId,
+      sessionId: call.sessionId,
+      direction: call.direction,
+      phone: call.phone,
+      clientId: call.contact?.clientId ?? null,
+      conversationId: call.contact?.conversationId ?? null,
+      startedAt: call.startedAt,
+      answeredAt: call.connectedAt,
+      endedAt: call.endedAt ?? Date.now(),
+      endReason: call.endReason,
+      outcome: outcomeOf(call, failed, call.endReason),
+      recordingPath,
+      recordingMime: recordingPath ? recording?.mime ?? null : null,
+      recordingBytes: recordingPath ? recording?.blob.size ?? null : null,
+    });
+  } catch (err) {
+    console.error('[WaCalls] falha ao registrar a chamada', err);
+    return;
+  }
+
+  if (recordingPath) {
+    notify({
+      kind: 'success',
+      message: 'Gravação salva na ficha do cliente.',
+      description: call.contact?.name ? `Ficha de ${call.contact.name}, aba Chamadas.` : 'Aba Chamadas da ficha.',
+    });
+  }
+}
+
+/** Solta o áudio da chamada e manda o que sobrou dela para a ficha. */
+async function closeAndArchive(call: WaCall, failed: boolean): Promise<void> {
+  const bridge = bridges.get(call.callId);
+  bridges.delete(call.callId);
+  let recording = pendingRecordings.get(call.callId) ?? null;
+  pendingRecordings.delete(call.callId);
+  if (bridge) {
+    // Parar ANTES de fechar: o último pedaço do áudio só chega no `stop`, e um
+    // AudioContext fechado no meio levaria os segundos finais junto.
+    try { recording = (await bridge.stopRecording()) ?? recording; } catch { /* sem gravação */ }
+    bridge.close();
+  }
+  await archiveCall(call, failed, recording);
+}
+
 /** Encerramento local completo: áudio liberado, cartão em estado final. */
 function finishCall(callId: string, endReason: string | null, failed = false): void {
-  closeBridge(callId);
+  clearEscalation(callId);
   const call = calls.get(callId);
-  if (!call) return;
+  if (!call) { closeBridge(callId); return; }
+  // Uma chamada termina DUAS vezes: quem desligou encerra o lado de cá e o
+  // `call-ended` chega logo depois pelo SSE. Sem esta guarda, o operador via o
+  // mesmo aviso duas vezes — e agora a gravação subiria e o registro seria
+  // escrito em duplicidade.
+  if (call.phase === 'ENDED' || call.phase === 'FAILED') return;
   const answered = call.connectedAt !== null;
   const updated = patch(callId, {
     phase: failed ? 'FAILED' : 'ENDED',
     endedAt: Date.now(),
     endReason,
+    recording: false,
     error: failed ? call.error : null,
   });
   if (!updated) return;
@@ -165,6 +346,7 @@ function finishCall(callId: string, endReason: string | null, failed = false): v
     notify({ kind: endReasonIsFailure(endReason, answered) ? 'error' : 'info', message });
   }
   scheduleRemoval(callId, failed ? FAILED_LINGER_MS : ENDED_LINGER_MS);
+  void closeAndArchive(updated, failed);
 }
 
 /** Descobre quem é o número — sem travar a chamada se a consulta demorar. */
@@ -180,6 +362,147 @@ async function resolveContact(phone: string): Promise<WaCallContact | null> {
     };
   } catch {
     return null;
+  }
+}
+
+/** O usuário logado nesta aba. Guardado depois da primeira consulta. */
+let cachedUserId: string | null | undefined;
+async function currentUserId(): Promise<string | null> {
+  if (cachedUserId !== undefined) return cachedUserId;
+  try {
+    const { data } = await supabase.auth.getUser();
+    cachedUserId = data.user?.id ?? null;
+  } catch {
+    cachedUserId = null;
+  }
+  return cachedUserId;
+}
+
+/** Nome de quem deveria atender — o cartão explica para quem está tocando. */
+const nameCache = new Map<string, string | null>();
+async function profileName(userId: string): Promise<string | null> {
+  const cached = nameCache.get(userId);
+  if (cached !== undefined) return cached;
+  try {
+    const { data } = await supabase.from('profiles').select('name').eq('user_id', userId).maybeSingle();
+    const name = (data as { name: string | null } | null)?.name ?? null;
+    nameCache.set(userId, name);
+    return name;
+  } catch {
+    return null;
+  }
+}
+
+/** Padrão de atendimento do canal (`whatsapp_instances.default_assignee_id`). */
+async function channelDefaultAssignee(instanceId: string): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from('whatsapp_instances').select('default_assignee_id').eq('id', instanceId).maybeSingle();
+    return (data as { default_assignee_id: string | null } | null)?.default_assignee_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Estou em outra chamada agora? (o toque não pode interromper uma conversa) */
+function inAnotherCall(exceptCallId: string): boolean {
+  return Array.from(calls.values()).some(
+    c => c.callId !== exceptCallId && c.mine && c.phase !== 'ENDED' && c.phase !== 'FAILED',
+  );
+}
+
+/**
+ * Decide para quem esta chamada toca e agenda a escalada.
+ *
+ * Só o navegador decide: o WaCalls manda o convite para todo mundo e não sabe
+ * o que é "responsável". Falhando a consulta (rede ruim, RLS, conversa que não
+ * existe), a decisão é TOCAR: perder uma ligação por causa de uma regra que não
+ * pôde ser lida seria o pior desfecho possível.
+ */
+async function resolveIncomingRoute(callId: string, phone: string, lid: string | null): Promise<void> {
+  let targetUserId: string | null = null;
+  let source: CallRouteSource = 'everyone';
+  let contactBlocked = false;
+
+  // Convite endereçado por LID: o número não veio, e o LID NÃO é um número.
+  // A única saída honesta é consultar o mapeamento que o CRM registrou (ver
+  // `conversations#phoneByLid`). Não achando, a chamada segue sem telefone —
+  // toca, aparece e diz que o número não pôde ser identificado. Melhor uma
+  // ligação anônima do que um número inventado na tela e no histórico.
+  let numero = phone;
+  if (!numero && lid) {
+    const mapeado = await whatsappService.phoneByLid(lid).catch(() => null);
+    if (mapeado) {
+      numero = mapeado.phone;
+      patch(callId, { phone: mapeado.phone });
+      waCallsLog('LID reconhecido pelo mapeamento', { callId });
+    }
+  }
+  if (!numero) {
+    // Sem número não há conversa, responsável nem canal a consultar: toca para
+    // todos, como qualquer chamada sem dono.
+    const me = await currentUserId();
+    patch(callId, {
+      route: decideCallRing({
+        me, targetUserId: null, source: 'everyone', contactBlocked: false,
+        imBusy: inAnotherCall(callId), escalated: false,
+      }),
+    });
+    return;
+  }
+
+  try {
+    const found = await whatsappService.findConversationByPhone(numero);
+    if (found) {
+      patch(callId, {
+        contact: {
+          conversationId: found.conversationId,
+          clientId: found.clientId,
+          name: found.name,
+          avatarUrl: found.avatarUrl,
+        },
+      });
+      contactBlocked = found.isBlocked;
+      if (found.assignedUserId) {
+        targetUserId = found.assignedUserId;
+        source = 'assigned';
+      } else if (found.instanceId) {
+        const padrao = await channelDefaultAssignee(found.instanceId);
+        if (padrao) { targetUserId = padrao; source = 'channel'; }
+      }
+    }
+  } catch {
+    // Sem dados, sem exclusividade: toca para todos.
+  }
+
+  const [me, targetName] = await Promise.all([
+    currentUserId(),
+    targetUserId ? profileName(targetUserId) : Promise.resolve(null),
+  ]);
+
+  const apply = (escalated: boolean) => {
+    const call = calls.get(callId);
+    if (!call || call.phase !== 'RINGING' || call.mine) return;
+    const route = decideCallRing({
+      me, targetUserId, source, targetName, contactBlocked,
+      imBusy: inAnotherCall(callId),
+      escalated,
+    });
+    patch(callId, { route });
+    return route;
+  };
+
+  const route = apply(false);
+  waCallsLog('rota da chamada recebida', { callId, source, targetUserId, ring: route?.ring });
+
+  // Escalada: o dono não é a mesa dele. Passados alguns segundos sem ninguém
+  // atender, o convite deixa de ser exclusivo.
+  if (route && !route.ring && route.show) {
+    const timer = setTimeout(() => {
+      escalationTimers.delete(callId);
+      apply(true);
+    }, CALL_ESCALATION_MS);
+    escalationTimers.set(callId, timer);
   }
 }
 
@@ -205,13 +528,19 @@ function handleEvent(event: WaCallsEvent): void {
       // mesmo WaCalls não deve tocar aqui.
       if (sessionId && event.sessionId !== sessionId) return;
       if (calls.has(event.id)) return;
-      const phone = phoneFromWaCallsPeer(event.peer);
+      // O `peer` chega de duas formas, e a diferença entre elas é a diferença
+      // entre reconhecer o cliente e discar para a Somália: `5565...@s.whatsapp.net`
+      // é telefone, `252677908865131@lid` é o apelido INTERNO do contato. O
+      // segundo NUNCA vira número — quando é só isso que veio, a chamada nasce
+      // sem telefone e `resolveIncomingRoute` vai PROCURAR o mapeamento.
+      const { phone, lid } = parseWaPeer(event.peer);
       upsert({
         callId: event.id,
         sessionId: event.sessionId,
         direction: 'inbound',
         phase: 'RINGING',
         phone,
+        lid,
         contact: null,
         mine: false,
         startedAt: event.offeredAt || Date.now(),
@@ -219,16 +548,22 @@ function handleEvent(event: WaCallsEvent): void {
         endedAt: null,
         endReason: null,
         muted: false,
+        // A rota nasce nula: o cartão aparece calado e o som entra quando o CRM
+        // descobre de quem é a conversa (ver `resolveIncomingRoute`).
+        route: null,
+        recording: false,
+        recorded: false,
         error: null,
       });
-      waCallsLog('incoming call', { callId: event.id });
-      void resolveContact(phone).then(contact => { if (contact) patch(event.id, { contact }); });
+      waCallsLog('incoming call', { callId: event.id, byLid: !!lid });
+      void resolveIncomingRoute(event.id, phone, lid);
       break;
     }
 
     case 'incoming-claimed':
       // Outro operador atendeu antes: o convite some daqui sem alarde.
       if (event.owner !== me && calls.get(event.id)?.mine === false) {
+        clearEscalation(event.id);
         calls.delete(event.id);
         emit();
       }
@@ -237,6 +572,18 @@ function handleEvent(event: WaCallsEvent): void {
     case 'call-status': {
       const existing = calls.get(event.id);
       const mine = event.owner === me;
+      // APRENDER o LID. Numa chamada de SAÍDA nós sabemos exatamente para qual
+      // número discamos; se o servidor devolve o `peer` dela como `<n>@lid`,
+      // aquele LID é, por construção, o daquele número. É a fonte mais confiável
+      // que existe do mapeamento — e é justamente o que faltava para reconhecer
+      // a ligação de VOLTA do mesmo cliente, que chega só com o LID.
+      if (existing?.direction === 'outbound' && existing.phone) {
+        const { lid } = parseWaPeer(event.peer);
+        if (lid && existing.lid !== lid) {
+          patch(event.id, { lid });
+          void whatsappService.linkLid(existing.phone, lid).catch(() => { /* ganho futuro, nunca um erro na tela */ });
+        }
+      }
       if (!existing) {
         // Chamada de outro operador no mesmo número: nada a fazer aqui — o
         // áudio e o cartão são da aba dona dela. Sendo nossa, o status espera
@@ -284,6 +631,7 @@ export const waCallsStore = {
    */
   async init(): Promise<void> {
     if (initializing) return initializing;
+    watchLink();
     initializing = (async () => {
       try {
         applySessions(await waCallsService.getSessions());
@@ -325,8 +673,27 @@ export const waCallsStore = {
    * microfone vem ANTES de criar a chamada de propósito: descobrir a permissão
    * bloqueada depois que o telefone do cliente já tocou seria pior.
    */
-  async placeCall(params: { phone: string; contact?: WaCallContact | null }): Promise<string | null> {
+  async placeCall(params: {
+    /** O que a tela tem em mãos: telefone, JID — ou, sem querer, um LID. */
+    phone: string;
+    contact?: WaCallContact | null;
+    /**
+     * Outros lugares onde o número pode estar, em ordem de prioridade DEPOIS do
+     * `phone`. Quem chama passa o que souber (o telefone do cartão de contato, o
+     * do cadastro do cliente); a escolha é de `resolveCallablePhone`, nunca da
+     * tela.
+     */
+    fallbacks?: readonly CallablePhoneCandidate[];
+  }): Promise<string | null> {
     await this.init();
+    if (!online) {
+      notify({
+        kind: 'error',
+        message: 'Sem conexão com a internet.',
+        description: 'A chamada sairia muda dos dois lados. Reconecte e tente de novo.',
+      });
+      return null;
+    }
     if (!available) {
       notify({ kind: 'error', message: 'Serviço de chamadas indisponível.', description: 'Tente novamente em instantes.' });
       return null;
@@ -336,9 +703,26 @@ export const waCallsStore = {
       notify({ kind: 'error', message: 'Nenhum WhatsApp disponível para chamadas.', description: 'Nenhuma conta pareada e conectada no serviço de chamadas.' });
       return null;
     }
-    const phone = toWaCallsPhone(params.phone);
+    // A ÚNICA porta de entrada de um número numa ligação de saída. Antes cada
+    // tela mandava o que tinha e o store aceitava — foi assim que o apelido
+    // interno de um contato (`@lid`) chegou ao discador. Ver `phone.ts`.
+    const alvo = resolveCallablePhone([
+      { source: 'conversation', value: params.phone },
+      ...(params.fallbacks ?? []),
+    ]);
+    const phone = alvo.phone;
     if (!phone) {
-      notify({ kind: 'error', message: 'Número inválido para chamada.' });
+      // LID sem mapeamento é o caso que merece o recado inteiro: o operador
+      // está olhando para um contato que ele conhece e precisa entender por que
+      // o CRM se recusa a ligar — e por que insistir não vai ajudar.
+      notify(alvo.failure === 'lid-only'
+        ? {
+          kind: 'error',
+          message: CALLABLE_PHONE_UNKNOWN,
+          description: 'O WhatsApp entregou este contato por um identificador interno, sem o telefone. '
+            + 'Abra a conversa com ele ou vincule o cadastro do cliente para o número aparecer.',
+        }
+        : { kind: 'error', message: 'Número inválido para chamada.' });
       return null;
     }
     if (Array.from(calls.values()).some(c => c.mine && c.phase !== 'ENDED' && c.phase !== 'FAILED')) {
@@ -376,6 +760,9 @@ export const waCallsStore = {
       direction: 'outbound',
       phase: 'PREPARING',
       phone,
+      // Saída sempre nasce por telefone; o LID, se houver, aparece no `peer` que
+      // o servidor devolve — e é ali que ele é APRENDIDO (ver `call-status`).
+      lid: null,
       contact: params.contact ?? null,
       mine: true,
       startedAt: Date.now(),
@@ -383,6 +770,10 @@ export const waCallsStore = {
       endedAt: null,
       endReason: null,
       muted: false,
+      // Chamada que sai daqui é minha por definição: nada a rotear.
+      route: { ring: false, show: true, label: '' },
+      recording: false,
+      recorded: false,
       error: null,
     });
     if (!params.contact) {
@@ -471,8 +862,12 @@ export const waCallsStore = {
   async rejectCall(callId: string): Promise<void> {
     const call = calls.get(callId);
     if (!call) return;
+    clearEscalation(callId);
     calls.delete(callId);
     emit();
+    // Recusar é informação: a ficha do cliente precisa mostrar que ele ligou e
+    // que alguém do escritório optou por não atender naquele momento.
+    void archiveCall({ ...call, endedAt: Date.now(), endReason: 'declined' }, false, null);
     try {
       await waCallsService.rejectCall(call.sessionId, callId);
     } catch {
@@ -506,14 +901,73 @@ export const waCallsStore = {
   },
 
   /**
+   * Liga/desliga a gravação dos DOIS lados da conversa.
+   *
+   * UMA gravação por chamada, e sem volta: parar encerra o arquivo. Permitir
+   * recomeçar pareceria inofensivo e não é — o arquivo tem o nome da chamada,
+   * então a segunda gravação apagaria a primeira sem avisar ninguém. Quem
+   * precisa de tudo, deixa gravando até desligar.
+   *
+   * O upload não acontece aqui: o arquivo espera o fim da chamada, que é quando
+   * o registro da ficha nasce (ver `archiveCall`).
+   */
+  setRecording(callId: string, on: boolean): void {
+    const call = calls.get(callId);
+    if (!call) return;
+    const bridge = bridges.get(callId);
+    if (!bridge) {
+      notify({
+        kind: 'error',
+        message: 'A gravação começa depois que o áudio conecta.',
+        description: 'Aguarde a chamada ser atendida e tente de novo.',
+      });
+      return;
+    }
+    if (!on) {
+      patch(callId, { recording: false });
+      void bridge.stopRecording().then(rec => { if (rec) pendingRecordings.set(callId, rec); });
+      return;
+    }
+    if (call.recorded) {
+      notify({
+        kind: 'info',
+        message: 'Esta chamada já foi gravada.',
+        description: 'O arquivo vai para a ficha do cliente quando a chamada terminar.',
+      });
+      return;
+    }
+    if (!bridge.startRecording()) {
+      notify({
+        kind: 'error',
+        message: 'Este navegador não grava chamadas.',
+        description: 'A gravação funciona no Chrome, no Edge e no Firefox.',
+      });
+      return;
+    }
+    patch(callId, { recording: true, recorded: true });
+    notify({
+      kind: 'info',
+      message: 'Gravando a chamada.',
+      description: 'O áudio entra na ficha do cliente quando a chamada terminar.',
+    });
+  },
+
+  /**
    * Solta tudo: pontes de áudio, timers e a escuta de eventos. Chamado quando
    * o host global desmonta (a aba está indo embora) — o microfone não pode
    * ficar aberto porque a página trocou.
    */
   shutdown(): void {
+    // Gravação em curso numa aba que está fechando não tem como ser enviada
+    // (não há await no descarregamento da página); o áudio da chamada é
+    // liberado do mesmo jeito.
+    pendingRecordings.clear();
     for (const callId of Array.from(bridges.keys())) closeBridge(callId);
     for (const timer of removalTimers.values()) clearTimeout(timer);
     removalTimers.clear();
+    for (const timer of escalationTimers.values()) clearTimeout(timer);
+    escalationTimers.clear();
+    clearLinkTimer();
     closeEvents?.();
     closeEvents = null;
     initializing = null;

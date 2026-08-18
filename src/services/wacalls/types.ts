@@ -1,6 +1,7 @@
 // Tipos do WaCalls — espelham o que o servidor Go publica em /api e no SSE.
 // Nomes e formas vêm de `cmd/server/broker.go` e `cmd/server/httpapi.go` do
 // repositório JotaDev66/WaCalls; mudar aqui sem mudar lá quebra em silêncio.
+import type { CallRoute } from './callRouting';
 
 /** Estado da conexão da conta WhatsApp no WaCalls. */
 export type WaCallsSessionState = 'connecting' | 'qr' | 'open' | 'logged_out';
@@ -69,8 +70,18 @@ export interface WaCall {
   sessionId: string;
   direction: 'outbound' | 'inbound';
   phase: WaCallPhase;
-  /** Telefone em dígitos (55 + DDD + número). */
+  /**
+   * Telefone em dígitos (55 + DDD + número). Fica VAZIO quando o convite chegou
+   * endereçado só por LID e o CRM não tem mapeamento para o número real — é
+   * assim que a tela sabe que não deve mostrar (nem discar) coisa nenhuma.
+   */
   phone: string;
+  /**
+   * O apelido interno do WhatsApp (`<n>@lid`) desta chamada, quando ela chegou
+   * por ele. NUNCA é telefone: existe para procurar o mapeamento, para o
+   * diagnóstico e para o cartão explicar por que o número não apareceu.
+   */
+  lid: string | null;
   /** Quem é do lado de lá, quando o CRM reconheceu o número. */
   contact: WaCallContact | null;
   /** `true` quando esta aba é a dona do áudio (ver clientId em config.ts). */
@@ -82,6 +93,16 @@ export interface WaCall {
   endedAt: number | null;
   endReason: string | null;
   muted: boolean;
+  /**
+   * Para quem esta chamada toca (ver `callRouting`). `null` enquanto o CRM
+   * ainda está descobrindo de quem é a conversa — nesse intervalo o cartão
+   * aparece calado, e o som entra assim que a decisão chega.
+   */
+  route: CallRoute | null;
+  /** Gravando AGORA (o operador ligou a gravação). */
+  recording: boolean;
+  /** Esta chamada já produziu uma gravação — só uma por chamada. */
+  recorded: boolean;
   /** Mensagem amigável quando a chamada falhou. */
   error: string | null;
 }

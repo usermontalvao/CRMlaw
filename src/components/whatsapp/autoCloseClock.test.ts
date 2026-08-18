@@ -78,15 +78,20 @@ test('resposta de gente logo depois do aviso automático volta a contar', () => 
 });
 
 test('conversa parada além do prazo encerra na próxima varredura', () => {
-  const c = autoCloseClock(conversa({ last_message_at: iso(-500) }), canal, AGORA, false);
+  const c = autoCloseClock(conversa({ last_message_at: iso(-500) }), canal, AGORA);
   assert.equal(c.key, 'due');
   if (c.key !== 'due') return;
   assert.equal(Math.round(c.idleMinutes), 500);
 });
 
-test('vencido fora do expediente espera o canal abrir em vez de zerar', () => {
-  const c = autoCloseClock(conversa({ last_message_at: iso(-500) }), canal, AGORA, true);
-  assert.equal(c.key, 'waiting_hours');
+test('vencer fora do expediente encerra do mesmo jeito', () => {
+  // O que espera a abertura é a DESPEDIDA, não o encerramento. O canal marcado
+  // como "só no horário comercial" não muda o contador: o caso real de 17/08
+  // (última mensagem 15h32, prazo de 4h, vencendo 19h32 com o escritório
+  // fechado) ficava a noite inteira aberto no painel.
+  const c = autoCloseClock(conversa({ last_message_at: iso(-500) }),
+    { ...canal, auto_close_business_hours_only: true }, AGORA);
+  assert.equal(c.key, 'due');
 });
 
 test('a última hora é a que fica em âmbar', () => {

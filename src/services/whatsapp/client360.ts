@@ -2,6 +2,7 @@
 import { supabase } from '../../config/supabase';
 import { normalizePhone, samePhone, openResilientChannel, attachAvatarUrls, invokeFn } from './shared';
 import { chaveDeConsulta, criarCompartilhadorDeConsultas } from '../realtime/inFlight';
+import { planPhoneLink } from '../../components/whatsapp/contactLink';
 import { clientChangeHistoryService } from '../clientChangeHistory.service';
 import { deadlineService } from '../deadline.service';
 import { requirementService } from '../requirement.service';
@@ -247,9 +248,7 @@ export const client360Api = {
     field: 'mobile' | 'phone' | null;
     replaced: string | null;
   }> {
-    const norm = normalizePhone(phone);
     const unchanged = { added: false, field: null, replaced: null } as const;
-    if (!norm) return unchanged;
     const { data } = await supabase
       .from('clients')
       .select('mobile, phone')
@@ -257,25 +256,27 @@ export const client360Api = {
       .single();
     const cur = data as { mobile: string | null; phone: string | null } | null;
     if (!cur) return unchanged;
-    // Casa pelas variantes com/sem o 9º dígito: `556592216459` no WhatsApp e
-    // `65992216459` na ficha são o mesmo número, não há o que gravar.
-    if (samePhone(cur.mobile, norm) || samePhone(cur.phone, norm)) return unchanged;
 
-    const field: 'mobile' | 'phone' = !cur.mobile ? 'mobile' : !cur.phone ? 'phone' : 'mobile';
-    const replaced = field === 'mobile' && cur.mobile ? cur.mobile : null;
+    // A decisão ("entra? em qual campo? por cima de quê?") mora num módulo puro
+    // e testado — `components/whatsapp/contactLink.ts`. Ela é a mesma para o
+    // vínculo da conversa e para o número de um cartão de contato recebido, e
+    // é ela que sabe que `556592216459` e `5565992216459` são a MESMA pessoa.
+    const plano = planPhoneLink(cur, phone);
+    if (plano.action === 'none' || !plano.field) return unchanged;
+    const { field, value } = plano;
 
-    const { error } = await supabase.from('clients').update({ [field]: norm }).eq('id', clientId);
+    const { error } = await supabase.from('clients').update({ [field]: value }).eq('id', clientId);
     if (error) throw new Error(error.message);
 
     // Trilha do cadastro. Nunca derruba a operação: o número já foi gravado.
     await clientChangeHistoryService.record(clientId, 'whatsapp', [{
       field,
       oldValue: cur[field],
-      newValue: norm,
+      newValue: value,
       sourceLabel: 'Número informado pela conversa do WhatsApp',
     }]);
 
-    return { added: true, field, replaced };
+    return { added: true, field, replaced: plano.replaced };
   },
 
   /**

@@ -223,7 +223,7 @@ Deno.serve(async (req: Request) => {
 
   const inatividade = await encerrarPorInatividade(admin).catch((e) => {
     console.error('encerramento por inatividade falhou', e);
-    return { encerrados: 0, avisados: 0, adiados: 0, perdidos: 0 };
+    return { encerrados: 0, avisados: 0, reservados: 0, descartados: 0, adiados: 0, perdidos: 0 };
   });
 
   return new Response(JSON.stringify({ ok: true, processed: (due || []).length, sent, failed, skipped, ia, inatividade }), {
@@ -245,11 +245,20 @@ Deno.serve(async (req: Request) => {
  * tem de ser um só. Aqui só sobram duas decisões: o expediente (que depende do
  * fuso de cada canal) e o envio da despedida.
  *
- * O relógio conta desde que o CLIENTE passou a dever resposta, e o aviso de
- * ausência não é resposta (ver `wa_auto_close_owed_since`). Sem isso, mensagem
- * que chega às 22h vira conversa encerrada 24h depois sem ninguém ter atendido:
- * o robô responde, o relógio zera na resposta do robô, e o encerramento apaga
- * do painel justamente o caso que o escritório deixou passar.
+ * O relógio conta desde a última mensagem NOSSA, quando é a última da conversa,
+ * e o aviso de ausência não é resposta (ver `wa_auto_close_idle_since`). Sem
+ * isso, mensagem que chega às 22h vira conversa encerrada 24h depois sem
+ * ninguém ter atendido: o robô responde, o relógio zera na resposta do robô, e
+ * o encerramento apaga do painel justamente o caso que o escritório deixou
+ * passar.
+ *
+ * O EXPEDIENTE SEGURA A DESPEDIDA, NÃO O ENCERRAMENTO. O prazo vence a qualquer
+ * hora e a conversa fecha na hora em que venceu — do contrário, com prazo de 4h
+ * e expediente até as 18h, toda conversa falada depois das 14h passaria a noite
+ * aberta no painel para encerrar às 08h com um "16h sem retorno" que ninguém
+ * reconhece. O que espera a abertura é a única parte que o cliente vê: a
+ * despedida fica RESERVADA na conversa (`auto_close_farewell_due_at`) e sai na
+ * primeira varredura de expediente aberto.
  *
  * A ORDEM é encerrar-e-depois-avisar, ao contrário do encerramento manual. O
  * `wa_auto_close_claim` fecha e reserva no mesmo UPDATE, então duas varreduras
@@ -258,13 +267,7 @@ Deno.serve(async (req: Request) => {
  * cliente não recebeu nada, e é isso que o log registra.
  */
 async function encerrarPorInatividade(admin: any) {
-  let encerrados = 0, avisados = 0, adiados = 0, perdidos = 0;
-
-  const { data: vencidas, error } = await admin.rpc('wa_auto_close_due', { p_limit: 40 });
-  if (error) {
-    console.error('wa_auto_close_due falhou', error);
-    return { encerrados, avisados, adiados, perdidos };
-  }
+  let encerrados = 0, avisados = 0, reservados = 0, descartados = 0, adiados = 0, perdidos = 0;
 
   // Uma consulta de agenda por CANAL, não por conversa: um canal com trinta
   // conversas paradas é o caso comum, e trinta consultas idênticas seriam um
@@ -280,22 +283,72 @@ async function encerrarPorInatividade(admin: any) {
     return rows;
   };
 
+  /** O canal pode falar com o cliente agora? Sem a trava, sempre pode. */
+  const podeFalarAgora = async (linha: any) => {
+    if (!linha.business_hours_only) return true;
+    const agenda = await carregarAgenda(String(linha.channel_id));
+    return isWithinBusinessHours(agenda, localTimeInTz(String(linha.channel_timezone || 'America/Cuiaba')));
+  };
+
+  const mandarDespedida = async (convId: string, texto: string): Promise<boolean> => {
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/evolution-send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_ROLE}` },
+        body: JSON.stringify({ conversation_id: convId, text: texto }),
+      });
+      const j = await resp.json().catch(() => ({}));
+      if (!resp.ok || j?.error) throw new Error(j?.error || `HTTP ${resp.status}`);
+      return true;
+    } catch (e) {
+      // A conversa já está encerrada — refazer o envio depois mandaria uma
+      // despedida solta numa conversa que ninguém está mais acompanhando.
+      console.error('despedida de inatividade não saiu', convId, String((e as Error).message || e));
+      return false;
+    }
+  };
+
+  // ── 1. As despedidas que ficaram reservadas fora do expediente ────────────
+  // Vêm ANTES dos encerramentos novos de propósito: são dívida do dia anterior,
+  // e o limite de 40 por varredura não pode ser gasto todo com conversa nova.
+  const { data: reservas, error: reservaErr } = await admin.rpc('wa_auto_close_farewells_due', { p_limit: 40 });
+  if (reservaErr) console.error('wa_auto_close_farewells_due falhou', reservaErr);
+
+  for (const reserva of (reservas || []) as any[]) {
+    const convId = String(reserva.conversation_id);
+    if (!(await podeFalarAgora(reserva))) { adiados++; continue; }
+
+    const { data: aindaEncerrada, error: claimErr } = await admin.rpc('wa_auto_close_farewell_claim', {
+      p_conversation_id: convId,
+    });
+    if (claimErr) { console.error('wa_auto_close_farewell_claim falhou', convId, claimErr); perdidos++; continue; }
+    // FALSE = o cliente voltou a escrever durante a espera. Despedir-se de quem
+    // acabou de chegar é pior do que não se despedir. NULL = outra varredura levou.
+    if (aindaEncerrada !== true) { descartados++; continue; }
+
+    const texto = String(reserva.farewell || '').trim();
+    if (!texto) continue;
+    if (await mandarDespedida(convId, texto)) avisados++; else perdidos++;
+  }
+
+  // ── 2. Os encerramentos vencidos ──────────────────────────────────────────
+  const { data: vencidas, error } = await admin.rpc('wa_auto_close_due', { p_limit: 40 });
+  if (error) {
+    console.error('wa_auto_close_due falhou', error);
+    return { encerrados, avisados, reservados, descartados, adiados, perdidos };
+  }
+
   for (const linha of (vencidas || []) as any[]) {
     const convId = String(linha.conversation_id);
-
-    if (linha.business_hours_only) {
-      const agenda = await carregarAgenda(String(linha.channel_id));
-      const agora = localTimeInTz(String(linha.channel_timezone || 'America/Cuiaba'));
-      // Fora do expediente a conversa só espera: continua vencida e volta a
-      // aparecer na primeira varredura depois da abertura. Nada é gravado, para
-      // que uma conversa que receba mensagem durante a noite simplesmente saia
-      // da lista sozinha.
-      if (!isWithinBusinessHours(agenda, agora)) { adiados++; continue; }
-    }
+    const despedida = String(linha.farewell || '').trim();
+    // Fora do expediente a conversa encerra assim mesmo; o que espera a abertura
+    // é o aviso. Sem despedida configurada não há nada a reservar.
+    const noHorario = await podeFalarAgora(linha);
+    const guardarDespedida = !noHorario && !!despedida;
 
     // O silêncio REAL (desde que a bola passou para o cliente), não o prazo do
-    // canal: os dois divergem sempre que a varredura fica adiada esperando o
-    // expediente abrir, e o motivo que fica registrado é lido por gente.
+    // canal: os dois divergem sempre que a varredura fica adiada, e o motivo que
+    // fica registrado é lido por gente.
     const horas = Math.round((Number(linha.silent_minutes ?? linha.idle_minutes) / 60) * 10) / 10;
     const motivo = `Encerrado automaticamente: ${horas}h sem retorno do cliente.`;
 
@@ -303,33 +356,19 @@ async function encerrarPorInatividade(admin: any) {
       p_conversation_id: convId,
       p_idle_minutes: Number(linha.idle_minutes),
       p_reason: motivo,
+      p_hold_farewell: guardarDespedida,
     });
     if (claimErr) { console.error('wa_auto_close_claim falhou', convId, claimErr); perdidos++; continue; }
     // NULL = o cliente escreveu no meio do caminho, ou outra varredura chegou antes.
     if (!fechou) { adiados++; continue; }
     encerrados++;
 
-    const despedida = String(linha.farewell || '').trim();
     if (!despedida) continue;
-
-    try {
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/evolution-send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_ROLE}` },
-        body: JSON.stringify({ conversation_id: convId, text: despedida }),
-      });
-      const j = await resp.json().catch(() => ({}));
-      if (!resp.ok || j?.error) throw new Error(j?.error || `HTTP ${resp.status}`);
-      avisados++;
-    } catch (e) {
-      // A conversa já está encerrada — refazer o envio depois mandaria uma
-      // despedida solta numa conversa que ninguém está mais acompanhando.
-      console.error('despedida de inatividade não saiu', convId, String((e as Error).message || e));
-      perdidos++;
-    }
+    if (guardarDespedida) { reservados++; continue; }
+    if (await mandarDespedida(convId, despedida)) avisados++; else perdidos++;
   }
 
-  return { encerrados, avisados, adiados, perdidos };
+  return { encerrados, avisados, reservados, descartados, adiados, perdidos };
 }
 
 // ── Acompanhamentos do assistente de IA ─────────────────────────────────────

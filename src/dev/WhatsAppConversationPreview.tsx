@@ -13,6 +13,7 @@ import { ContactIdentity, AttendanceSummary } from '../components/whatsapp/detai
 import { ConversationStageSelect } from '../components/whatsapp/conversationLabels';
 import { QuickActions } from '../components/whatsapp/quickActions';
 import { ForwardMessageModal } from '../components/whatsapp/forwardMessageModal';
+import { ThreadCallEntry, type ThreadCall } from '../components/whatsapp/threadCallEntry';
 import { PreCadastroModal } from '../components/whatsapp/preCadastroModal';
 import { AiHandoffSummaryCard, AiHandoffSummaryStrip, useAiHandoffSummary } from '../components/whatsapp/aiHandoffSummary';
 import { ToastProvider } from '../contexts/ToastContext';
@@ -98,6 +99,33 @@ const CONTATO_MSG = message({
   wa_timestamp: '2026-08-04T15:20:00.000Z',
   content: 'Dra. Helena Prado\n+5565999887766\n\nCartório 2º Ofício\n+556533334444',
 });
+
+// ── Chamadas de voz na thread ──
+// Os quatro desfechos que mudam o que o atendente faz em seguida. A perdida
+// recebida é a única vermelha: é dívida do escritório.
+const CHAMADAS: ThreadCall[] = [
+  {
+    id: 'call-1', direction: 'outbound', outcome: 'answered',
+    startedAt: '2026-08-04T15:22:00.000Z', durationSeconds: 372,
+    userName: 'Dr. Pedro', recordingPath: 'call-recordings/demo.webm', transcript: null,
+  },
+  {
+    id: 'call-2', direction: 'inbound', outcome: 'missed',
+    startedAt: '2026-08-04T15:24:00.000Z', durationSeconds: 0,
+    userName: null, recordingPath: null, transcript: null,
+  },
+  {
+    id: 'call-3', direction: 'outbound', outcome: 'missed',
+    startedAt: '2026-08-04T15:25:00.000Z', durationSeconds: 0,
+    userName: null, recordingPath: null, transcript: null,
+  },
+  {
+    id: 'call-4', direction: 'inbound', outcome: 'answered',
+    startedAt: '2026-08-04T15:26:00.000Z', durationSeconds: 48,
+    userName: 'Ana (recepção)', recordingPath: null,
+    transcript: 'Cliente confirmou a perícia de quinta às 14h e vai levar o comprovante de residência.',
+  },
+];
 
 const LOCALIZACAO_MSG = message({
   id: 'local',
@@ -509,7 +537,13 @@ function PreviewBench() {
             <MessageBubble m={AUDIO_TRANSCRITO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
 
             {/* Os tipos nativos que viravam bolha branca. */}
-            <MessageBubble m={CONTATO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            {CHAMADAS.map(c => (
+              <ThreadCallEntry key={c.id} call={c} onCallBack={() => window.alert('ligaria de volta')} />
+            ))}
+            <MessageBubble m={CONTATO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions}
+              onForward={setForwardSource}
+              onCallContactPhone={(phone, name) => console.log('ligar', phone, name)}
+              onLinkContactPhone={(phone, name) => console.log('vincular', phone, name)} />
             <MessageBubble m={LOCALIZACAO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
             <MessageBubble m={ENQUETE_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
             <MessageBubble m={NAO_SUPORTADA_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />

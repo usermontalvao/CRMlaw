@@ -1050,11 +1050,17 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                         continua sendo pendência do escritório.
                       </p>
 
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={autoClose.businessHoursOnly}
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', marginBottom: '4px', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={autoClose.businessHoursOnly} style={{ marginTop: '2px' }}
                           onChange={e => setAutoClose(a => ({ ...a, businessHoursOnly: e.target.checked }))} />
-                        <span style={{ fontSize: '12px', color: '#374151' }}>Só encerrar dentro do horário comercial deste canal</span>
+                        <span style={{ fontSize: '12px', color: '#374151' }}>Só falar com o cliente dentro do horário comercial deste canal</span>
                       </label>
+                      <p style={{ margin: '0 1px 10px 22px', fontSize: '10.5px', lineHeight: 1.4, color: '#8a94a6' }}>
+                        O encerramento acontece na hora em que o prazo vence, seja que horas for — o que
+                        espera a abertura é a despedida abaixo, que fica reservada e sai na primeira
+                        varredura do expediente seguinte. Desmarcado, a despedida sai na mesma hora,
+                        inclusive de madrugada.
+                      </p>
 
                       <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#6b7280', marginBottom: '4px' }}>
                         Mensagem de despedida (opcional)

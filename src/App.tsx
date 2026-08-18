@@ -3110,7 +3110,7 @@ useEffect(() => {
 
       {/* Chamadas de voz (WaCalls): o convite de chamada recebida precisa
           aparecer em QUALQUER tela do CRM, não só na inbox. */}
-      <WaCallsHost />
+      <WaCallsHost onOpenConversation={(conversationId) => navigateTo('whatsapp', { conversationId })} />
 
       {/* #9 "” Modal de busca global ⌘K */}
       <GlobalSearchModal

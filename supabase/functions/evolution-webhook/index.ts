@@ -33,7 +33,7 @@ import { triggerWaAiAfterTranscription } from '../_shared/wa-ai-transcription.ts
 import { desembrulharMensagem, lerConteudoNativo } from '../_shared/wa-native-content.ts';
 import { classificarReabertura } from '../_shared/wa-reopen.ts';
 import { applyChannelState } from '../_shared/wa-channel-state.ts';
-import { ehTelefoneReal, patchIdentidade, stanzaIdCitado } from '../_shared/wa-identity.ts';
+import { patchIdentidade } from '../_shared/wa-identity.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
@@ -176,6 +176,12 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   const altJid: string = key?.remoteJidAlt || '';
   const realJid = altJid && altJid.includes('@s.whatsapp.net') ? altJid : remoteJid;
   const phone = realJid.split('@')[0];
+  // O LID visto nesta mensagem — o apelido INTERNO do contato no WhatsApp.
+  // Guardá-lo é o que permite reconhecer quem está ligando quando o convite de
+  // voz chega endereçado por LID em vez de por número (ver a migration
+  // `20260818010000_whatsapp_lid_map.sql`). Ele NUNCA vale como telefone.
+  const lidVisto = [remoteJid, altJid]
+    .find(j => j.endsWith('@lid'))?.split('@')[0].replace(/\D/g, '') || null;
   // ATENÇÃO: `pushName` só representa o nome do CONTATO quando a mensagem é
   // RECEBIDA (!fromMe). Em mensagens próprias (fromMe) ele é o nome do dono da
   // conta conectada — nunca deve virar `contact_name` (ver guarda mais abaixo).
@@ -279,17 +285,23 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   // 1) por remote_jid exato; 2) se @lid com telefone real conhecido, por
   // contact_phone (variantes do 9º dígito) — pega a thread que o agente já criou
   // via <telefone>@s.whatsapp.net; 3) cria nova pela chave original.
-  let conv: { id: string; contact_avatar_path: string | null; is_blocked: boolean; status: string; department_id: string | null } | null = null;
+  type ConvRow = {
+    id: string; contact_avatar_path: string | null; is_blocked: boolean; status: string;
+    department_id: string | null; contact_phone: string | null; contact_name: string | null;
+    contact_lid: string | null;
+  };
+  const CONV_COLS = 'id, contact_avatar_path, is_blocked, status, department_id, contact_phone, contact_name, contact_lid';
+  let conv: ConvRow | null = null;
   {
     const { data } = await admin.from('whatsapp_conversations')
-      .select('id, contact_avatar_path, is_blocked, status, department_id')
+      .select(CONV_COLS)
       .eq('instance_id', instanceId).eq('remote_jid', remoteJid).maybeSingle();
     conv = data || null;
   }
   if (!conv && remoteJid.includes('@lid') && /^\d{12,13}$/.test(phone)) {
     const variants = phoneVariants(phone);
     const { data } = await admin.from('whatsapp_conversations')
-      .select('id, contact_avatar_path, is_blocked, status, department_id')
+      .select(CONV_COLS)
       .eq('instance_id', instanceId)
       .in('contact_phone', variants)
       .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -303,8 +315,9 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
       instance_id: instanceId,
       remote_jid: remoteJid,
       contact_phone: phone,
+      contact_lid: lidVisto,
       department_id: defaultDepartmentId,
-    }, { onConflict: 'instance_id,remote_jid' }).select('id, contact_avatar_path, is_blocked, status, department_id').single();
+    }, { onConflict: 'instance_id,remote_jid' }).select(CONV_COLS).single();
     conv = data || null;
   } else if (conv.department_id == null) {
     // Conversa legada sem setor: faz o backfill uma única vez (não em toda mensagem).
@@ -375,13 +388,28 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   // própria (fromMe) o pushName é o nome do dono da conta conectada — aplicá-lo
   // batizava todo contato novo com o nome do atendente (ex.: a saudação automática
   // disparada ao abrir a conversa gravava "pedro" como contact_name).
-  const patch: Record<string, unknown> = {};
-  if (pushName && !fromMe) patch.contact_name = pushName;
-  if (phone) patch.contact_phone = phone;
+  //
+  // A decisão em si mora em `_shared/wa-identity.ts#patchIdentidade`, e vale a
+  // pena dizer por quê: o que estava aqui era um `patch` cru guardado por um
+  // filtro `.or(...)` no UPDATE. Ele tinha DOIS defeitos. O primeiro é que
+  // `contact_phone.like.%@lid%` nunca casa — o `@lid` já sai no `split('@')`
+  // acima, então o campo guarda os dígitos do LID, sem o sufixo. O segundo é
+  // pior: bastando `contact_name` estar nulo, a condição passava e os dígitos
+  // do LID SOBRESCREVIAM um telefone real já conhecido. (E `or` dentro de
+  // UPDATE é, por si só, terreno onde o PostgREST já nos devolveu 42703.)
+  //
+  // A regra correta é a de sempre: telefone só SOBE de LID para número real,
+  // nunca desce.
+  const patch: Record<string, string> = patchIdentidade(
+    { contact_phone: conv.contact_phone, contact_name: conv.contact_name },
+    { phone, pushName, fromMe },
+  );
+  // O LID é informação NOVA, não substituição: ele não disputa espaço com o
+  // telefone, mora na sua própria coluna e só é escrito quando muda.
+  if (lidVisto && conv.contact_lid !== lidVisto) patch.contact_lid = lidVisto;
   if (Object.keys(patch).length) {
-    await admin.from('whatsapp_conversations').update(patch)
-      .eq('id', conv.id)
-      .or('contact_name.is.null,contact_phone.like.%@lid%,contact_phone.eq.' + phone);
+    await admin.from('whatsapp_conversations').update(patch).eq('id', conv.id);
+    conv = { ...conv, ...patch } as typeof conv;
   }
 
   // Idempotência: se já existe a mensagem, não reprocessa mídia.
