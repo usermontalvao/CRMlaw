@@ -15,9 +15,9 @@
 //     defeito que fez o CRM mostrar "+252677908865131" no lugar de uma cliente
 //     de Cuiabá. Ver `services/wacalls/phone.ts`.
 //
-//  2. O QUE AINDA ESTÁ EM ABERTO? Uma chamada perdida deixa de ser pendência
-//     quando alguém liga de volta. Ninguém marca isso a mão — e não deveria: o
-//     próprio histórico já sabe. Ver `unreturnedMissedIds`.
+//  2. O QUE EU AINDA NÃO VI? Não "o que falta fazer" — essa pergunta o CRM não
+//     tem como responder sem chutar, e chutar aqui custa caro. Ver o comentário
+//     de `unseenMissedCount`, que conta o erro que essa distinção corrigiu.
 //
 // PURO DE PROPÓSITO: nenhum import de runtime (ver o cabeçalho de
 // `attendanceRouting.ts`). É o que permite testar com `node --test`.
@@ -82,46 +82,69 @@ export function callHistoryIdentity(call: CallHistoryInput): CallHistoryIdentity
 }
 
 /**
- * Quais chamadas perdidas ainda estão em aberto.
+ * Quantas perdidas o operador ainda NÃO viu.
  *
- * Uma perdida deixa de ser pendência quando alguém liga de volta — e "ligar de
- * volta" é um fato que já está no próprio histórico: uma chamada de SAÍDA para
- * o mesmo número, DEPOIS dela. Ninguém precisa marcar nada.
+ * É o distintivo da aba, e ele funciona como o do WhatsApp — nem poderia ser
+ * diferente, porque quem trabalha na inbox tem o aplicativo aberto no celular
+ * ao lado e lê os dois com o mesmo reflexo.
  *
- * Três decisões que valem a explicação:
+ * A PRIMEIRA VERSÃO DISTO ESTAVA ERRADA e vale registrar o erro. Ela contava
+ * "perdidas que ninguém retornou", inferindo o retorno de uma ligação nossa
+ * posterior para o mesmo número. Duas consequências, as duas ruins:
  *
- *  · SÓ AS RECEBIDAS contam. "Sem resposta" de uma ligação nossa é uma
- *    tentativa registrada, não uma dívida — se fosse pendência, cada número que
- *    não atendeu ficaria pendurado no distintivo para sempre.
- *  · A SAÍDA VALE MESMO SE NÃO ATENDERAM. O retorno é o ato de tentar; o
- *    escritório fez a parte dele. Exigir que a pessoa atendesse deixaria a
- *    pendência de pé por algo que não está na nossa mão.
- *  · SEM TELEFONE, CONTINUA EM ABERTO. Uma chamada que chegou só com o apelido
- *    não pode ser casada com retorno nenhum — e é justamente a que mais precisa
- *    de olho, porque ninguém consegue nem discar de volta.
+ *  · O NÚMERO NUNCA ZERAVA. Olhar não mudava nada, e um vermelho permanente no
+ *    menu é um vermelho que se aprende a ignorar — aí a perdida de verdade
+ *    passa batido, que é exatamente o contrário do que o aviso existe para
+ *    fazer.
+ *  · ELE MENTIA. A recepção retorna a chamada perdida por MENSAGEM na maioria
+ *    das vezes, não ligando de volta. O CRM não via aquilo como retorno e
+ *    marcava como pendente um atendimento que já tinha acontecido.
+ *
+ * O conserto não foi melhorar o palpite: foi parar de dar palpite. Uma chamada
+ * perdida é um FATO do histórico, não uma tarefa com dono e prazo — ela fica
+ * vermelha na lista para sempre, como no celular. O que o distintivo conta é
+ * outra coisa, e é a única que o CRM sabe de verdade: quantas chegaram depois
+ * da última vez que alguém abriu a aba.
+ *
+ * ATENDIDA NUNCA CONTA. Alguém falou com a pessoa; não há o que avisar.
+ *
+ * RECUSADA TAMBÉM NÃO. Recusar é um ato: quem recusou viu a chamada. Ela
+ * continua vermelha no histórico (o contato não foi atendido), mas não é
+ * novidade para ninguém.
  */
-export function unreturnedMissedIds(calls: readonly CallHistoryInput[]): Set<string> {
-  const naoAtendida = (c: CallHistoryInput) => c.outcome !== 'answered';
-  // Para cada número, quando saiu a última ligação NOSSA.
-  const ultimoRetorno = new Map<string, number>();
+export function unseenMissedCount(
+  calls: readonly CallHistoryInput[],
+  seenUntil: string | null | undefined,
+): number {
+  const marca = seenUntil ? Date.parse(seenUntil) : NaN;
+  let total = 0;
   for (const c of calls) {
-    if (c.direction !== 'outbound') continue;
-    const d = (c.phone || '').replace(/\D/g, '');
-    if (!d) continue;
+    if (c.direction !== 'inbound') continue;
+    if (c.outcome === 'answered' || c.outcome === 'declined') continue;
+    // Sem marca (primeira vez que a inbox abre neste navegador), tudo que está
+    // na lista é novidade — é o comportamento do celular recém-instalado.
+    if (!Number.isFinite(marca)) { total += 1; continue; }
+    const t = Date.parse(c.startedAt);
+    if (Number.isFinite(t) && t > marca) total += 1;
+  }
+  return total;
+}
+
+/**
+ * A marca de "já vi até aqui" — o instante da chamada mais recente da lista.
+ *
+ * É esse valor que o `unseenMissedCount` compara, e ele vem da LISTA, não do
+ * relógio. Usar `Date.now()` no clique perderia uma chamada que chegou ao
+ * servidor enquanto a consulta voltava: ela nasceria com horário anterior à
+ * marca e nunca seria contada.
+ */
+export function newestCallAt(calls: readonly CallHistoryInput[]): string | null {
+  let melhor: number = NaN;
+  let iso: string | null = null;
+  for (const c of calls) {
     const t = Date.parse(c.startedAt);
     if (!Number.isFinite(t)) continue;
-    const atual = ultimoRetorno.get(d);
-    if (atual == null || t > atual) ultimoRetorno.set(d, t);
+    if (!Number.isFinite(melhor) || t > melhor) { melhor = t; iso = c.startedAt; }
   }
-
-  const abertas = new Set<string>();
-  for (const c of calls) {
-    if (c.direction !== 'inbound' || !naoAtendida(c)) continue;
-    const d = (c.phone || '').replace(/\D/g, '');
-    if (!d) { abertas.add(c.id); continue; }
-    const t = Date.parse(c.startedAt);
-    const retorno = ultimoRetorno.get(d);
-    if (retorno == null || !Number.isFinite(t) || retorno < t) abertas.add(c.id);
-  }
-  return abertas;
+  return iso;
 }

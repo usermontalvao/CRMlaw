@@ -8,11 +8,12 @@
 //
 // TRÊS COISAS ORIENTAM O DESENHO:
 //
-//  1. AS PERDIDAS PRIMEIRO, mas sem quebrar o tempo. Elas ficam na ordem
-//     cronológica junto com o resto (é assim que um histórico de ligações se
-//     lê), e o que as separa é a cor e o distintivo "em aberto" — quem varre a
-//     lista de cima acha as pendências sem perder a noção de quando cada coisa
-//     aconteceu.
+//  1. É HISTÓRICO, NÃO LISTA DE TAREFAS. Tudo em ordem de tempo, agrupado por
+//     dia, e a chamada perdida em vermelho — como no celular. Ela fica vermelha
+//     para sempre: é o registro de um fato, não uma pendência que alguém dá
+//     baixa. A primeira versão desta tela marcava "em aberto" as perdidas que
+//     ninguém tinha ligado de volta, e isso mentia (a recepção retorna por
+//     MENSAGEM na maioria das vezes) e nunca zerava. Ver `callHistory.ts`.
 //  2. AS DUAS AÇÕES ESTÃO NA LINHA. Ligar de novo e abrir a conversa são o que
 //     alguém quer fazer olhando para uma ligação; escondê-las atrás de um menu
 //     transformaria a tela num relatório.
@@ -86,15 +87,13 @@ export const CallHistoryList: React.FC<{
   loading: boolean;
   error: string | null;
   onReload: () => void;
-  /** Ids das perdidas que ninguém retornou (ver `callHistory.ts`). */
-  unreturned: Set<string>;
   /** Modo privado: sem nome, sem número, sem rosto. */
   privateMode?: boolean;
   /** Abrir a conversa daquela ligação. Ausente quando não há conversa. */
   onOpenConversation?: (conversationId: string) => void;
   /** Ligar de novo. Ausente = chamadas indisponíveis neste host. */
   onCall?: (phone: string, name: string | null, conversationId: string | null) => void;
-}> = ({ calls, loading, error: erro, onReload, unreturned: abertas, privateMode, onOpenConversation, onCall }) => {
+}> = ({ calls, loading, error: erro, onReload, privateMode, onOpenConversation, onCall }) => {
   // Agrupado por dia, como qualquer histórico de ligações — "hoje" e "ontem"
   // localizam a chamada melhor do que a data cheia.
   const porDia = useMemo(() => {
@@ -142,12 +141,9 @@ export const CallHistoryList: React.FC<{
 
   return (
     <div className="pb-3">
-      <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
-          {abertas.size > 0
-            ? `${abertas.size} perdida${abertas.size > 1 ? 's' : ''} sem retorno`
-            : 'Tudo retornado'}
-        </p>
+      {/* Sem faixa de resumo: a tela é o histórico, e um contador no alto dela
+          reintroduziria a ideia de fila que este arquivo acabou de tirar. */}
+      <div className="flex items-center justify-end px-3 pt-2 pb-0.5">
         <button onClick={onReload} title="Atualizar"
           className="rounded-lg p-1 text-slate-400 transition hover:bg-[#f3f2ef] hover:text-slate-600">
           <RefreshCw size={13} />
@@ -173,7 +169,6 @@ export const CallHistoryList: React.FC<{
               startedAt: call.startedAt,
               conversationId: call.conversationId,
             });
-            const emAberto = abertas.has(call.id);
             const nome = privateMode ? 'Contato' : identidade.title;
             const podeLigar = !!onCall && identidade.callable && !privateMode;
             const podeAbrir = !!onOpenConversation && !!call.conversationId;
@@ -183,7 +178,7 @@ export const CallHistoryList: React.FC<{
                 onClick={podeAbrir ? () => onOpenConversation!(call.conversationId!) : undefined}
                 className={`flex items-center gap-2.5 px-3 py-2 transition ${tone.row} ${
                   podeAbrir ? 'cursor-pointer' : ''
-                } ${emAberto ? 'bg-rose-50/50' : ''}`}>
+                }`}>
                 {privateMode
                   ? <span className="h-10 w-10 shrink-0 rounded-full bg-[#e7e5df]" />
                   : <CallAvatar path={call.contactAvatarPath} name={identidade.unknown ? '' : identidade.title} phone={call.phone} />}
@@ -211,11 +206,6 @@ export const CallHistoryList: React.FC<{
                         <AudioLines size={8} /> Gravada
                       </span>
                     )}
-                    {emAberto && (
-                      <span className="inline-flex shrink-0 items-center rounded-full bg-rose-600 px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-wide text-white">
-                        Em aberto
-                      </span>
-                    )}
                   </p>
                   {/* O número embaixo do nome só quando o nome não É o número. */}
                   {!privateMode && !identidade.unknown && call.contactName && call.phone && (
@@ -235,9 +225,9 @@ export const CallHistoryList: React.FC<{
                   {podeLigar && (
                     <button type="button" title={`Ligar para ${identidade.title}`}
                       onClick={(e) => { e.stopPropagation(); onCall!(call.phone, call.contactName ?? null, call.conversationId ?? null); }}
-                      className={`rounded-lg p-1.5 text-white transition ${
-                        emAberto ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                      }`}>
+                      /* Verde sempre, como o botão de ligar do WhatsApp: ele é
+                         a ação de ligar, não o alarme de uma pendência. */
+                      className="rounded-lg bg-emerald-600 p-1.5 text-white transition hover:bg-emerald-700">
                       <Phone size={15} />
                     </button>
                   )}

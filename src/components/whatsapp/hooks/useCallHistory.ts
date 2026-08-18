@@ -3,7 +3,8 @@
 // Dois lugares precisam da mesma lista, e por motivos diferentes:
 //
 //  · a ABA de ligações, que a desenha;
-//  · o DISTINTIVO da aba, que só quer saber quantas perdidas ninguém retornou.
+//  · o DISTINTIVO da aba, que só quer saber quantas perdidas ainda não foram
+//    vistas.
 //
 // O distintivo é a razão de o carregamento morar aqui e não dentro da lista. Um
 // aviso que só aparece depois que a pessoa abre a aba não avisa nada: quem não
@@ -19,7 +20,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { callLogService, type CallLogRow } from '../../../services/callLog.service';
 import { waCallsStore } from '../../../services/wacalls/callStore';
-import { unreturnedMissedIds } from '../callHistory';
+import { newestCallAt, unseenMissedCount } from '../callHistory';
 
 /** Quanto esperar depois do fim da chamada para o registro já estar gravado. */
 const RELOAD_DELAY_MS = 1200;
@@ -31,17 +32,41 @@ const RELOAD_DELAY_MS = 1200;
  */
 const BACKGROUND_MS = 5 * 60_000;
 
+/**
+ * Onde a marca de "já vi as ligações até aqui" fica guardada.
+ *
+ * No navegador, e não no banco, de propósito: "eu já vi" é do OPERADOR e da
+ * mesa dele, não do escritório. A recepcionista abrir a aba não pode apagar o
+ * aviso do advogado que ainda não olhou — foi para essa pessoa que o aviso
+ * existia. É a mesma escolha que o WhatsApp faz entre um aparelho e outro.
+ */
+const SEEN_KEY = 'wa:callsSeenUntil';
+
+const lerMarca = (): string | null => {
+  try { return localStorage.getItem(SEEN_KEY); } catch { return null; }
+};
+const gravarMarca = (iso: string): void => {
+  try { localStorage.setItem(SEEN_KEY, iso); } catch { /* aba privada: o aviso volta, e tudo bem */ }
+};
+
 export interface CallHistory {
   calls: CallLogRow[];
   loading: boolean;
   error: string | null;
   reload: () => void;
-  /** Ids das perdidas que ninguém retornou — ver `callHistory#unreturnedMissedIds`. */
-  unreturned: Set<string>;
+  /** Perdidas que chegaram depois da última vez que alguém abriu a aba. */
+  unseen: number;
+  /**
+   * "Eu vi." Chamada quando a aba de ligações é aberta — e enquanto ela fica
+   * aberta, a cada releitura, como no celular: quem está olhando a lista não
+   * precisa de aviso do que está na frente dele.
+   */
+  markSeen: () => void;
 }
 
 export function useCallHistory(enabled = true): CallHistory {
   const [calls, setCalls] = useState<CallLogRow[]>([]);
+  const [seenUntil, setSeenUntil] = useState<string | null>(lerMarca);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -80,7 +105,17 @@ export function useCallHistory(enabled = true): CallHistory {
     };
   }, [enabled, reload]);
 
-  const unreturned = useMemo(() => unreturnedMissedIds(calls), [calls]);
+  const unseen = useMemo(() => unseenMissedCount(calls, seenUntil), [calls, seenUntil]);
 
-  return { calls, loading, error, reload, unreturned };
+  const markSeen = useCallback(() => {
+    // A marca é o horário da chamada MAIS RECENTE da lista, não `Date.now()`:
+    // uma chamada que chegou ao servidor enquanto a consulta voltava nasceria
+    // com horário anterior ao relógio e nunca mais seria contada.
+    const marca = newestCallAt(calls);
+    if (!marca || marca === seenUntil) return;
+    gravarMarca(marca);
+    setSeenUntil(marca);
+  }, [calls, seenUntil]);
+
+  return { calls, loading, error, reload, unseen, markSeen };
 }

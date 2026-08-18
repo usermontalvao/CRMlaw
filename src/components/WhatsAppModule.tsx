@@ -1279,10 +1279,18 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // consulta — e os filtros de fila (canal/setor/etiqueta/busca) não se aplicam.
   const { items: myScheduled, pending: myScheduledPending, failed: scheduledFailed, reload: reloadMyScheduled } = useMyScheduled(user?.id);
   // O histórico de ligações. Carregado com a inbox, e não ao abrir a aba, para
-  // que o distintivo de perdidas sem retorno já esteja aceso quando a pessoa
-  // chega — um aviso que só aparece depois do clique não avisa ninguém.
+  // que o distintivo de perdidas já esteja aceso quando a pessoa chega — um
+  // aviso que só aparece depois do clique não avisa ninguém.
   const callHistory = useCallHistory();
-  const callsUnreturned = callHistory.unreturned.size;
+  const callsUnseen = callHistory.unseen;
+  // Abrir a aba É ter visto, como no celular: o distintivo zera na hora. Roda
+  // também a cada releitura enquanto a aba fica aberta — uma chamada que chega
+  // com a lista à vista não precisa de aviso do que já está na frente da
+  // pessoa. Sair da aba congela a marca, e a próxima perdida volta a avisar.
+  const { markSeen: markCallsSeen } = callHistory;
+  useEffect(() => {
+    if (filter === 'calls') markCallsSeen();
+  }, [filter, markCallsSeen]);
 
   // Contadores das abas (Fase A): refletem exatamente o que a lista mostraria em
   // cada escopo, aplicando os MESMOS filtros de fila (status/canal/depto/etiqueta/
@@ -2102,7 +2110,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             counts={tabCounts}
             scheduledPending={myScheduledPending.length}
             scheduledFailed={scheduledFailed}
-            callsUnreturned={callsUnreturned}
+            callsUnseen={callsUnseen}
             className={embedded ? 'mt-2' : 'mt-2.5'}
           />
         </div>
@@ -2114,7 +2122,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             loading={callHistory.loading}
             error={callHistory.error}
             onReload={callHistory.reload}
-            unreturned={callHistory.unreturned}
             privateMode={privateMode}
             /* Abrir a conversa NÃO troca de aba, pelo mesmo motivo das
                agendadas: quem está varrendo as ligações perderia o lugar a

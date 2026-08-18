@@ -4,7 +4,8 @@ import {
   CALL_HISTORY_UNKNOWN,
   callHistoryIdentity,
   formatCallPhone,
-  unreturnedMissedIds,
+  newestCallAt,
+  unseenMissedCount,
   type CallHistoryInput,
 } from './callHistory.ts';
 
@@ -51,58 +52,54 @@ test('LID NUNCA vira telefone na tela nem no botão de discar', () => {
   assert.equal(i.callable, false, 'sem telefone não existe "ligar de novo"');
 });
 
-test('perdida sem retorno fica em aberto; com retorno depois, não', () => {
-  const abertas = unreturnedMissedIds([
-    chamada({ id: 'perdida', startedAt: '2026-08-18T09:00:00Z' }),
-    chamada({ id: 'retorno', direction: 'outbound', outcome: 'missed', startedAt: '2026-08-18T09:30:00Z' }),
-    chamada({ id: 'outra', phone: '5565999990000', startedAt: '2026-08-18T10:00:00Z' }),
-  ]);
-  assert.equal(abertas.has('perdida'), false, 'ligamos de volta — está resolvida');
-  assert.equal(abertas.has('outra'), true, 'ninguém retornou este número');
+test('o distintivo conta só o que ainda não foi visto', () => {
+  const lista = [
+    chamada({ id: 'nova', startedAt: '2026-08-18T15:00:00Z' }),
+    chamada({ id: 'velha', startedAt: '2026-08-18T09:00:00Z' }),
+  ];
+  assert.equal(unseenMissedCount(lista, null), 2, 'sem marca, tudo é novidade');
+  assert.equal(unseenMissedCount(lista, '2026-08-18T12:00:00Z'), 1);
+  assert.equal(unseenMissedCount(lista, '2026-08-18T15:00:00Z'), 0, 'abriu a aba: zerou');
 });
 
-test('retorno ANTES da perdida não conta — a dívida é a de agora', () => {
-  const abertas = unreturnedMissedIds([
-    chamada({ id: 'retorno-velho', direction: 'outbound', startedAt: '2026-08-18T08:00:00Z' }),
-    chamada({ id: 'perdida', startedAt: '2026-08-18T09:00:00Z' }),
-  ]);
-  assert.equal(abertas.has('perdida'), true);
+test('ATENDIDA nunca acende o distintivo — alguém falou com a pessoa', () => {
+  // Era o incômodo relatado: a ligação tinha sido recebida e atendida, e o
+  // vermelho continuava aceso no menu.
+  assert.equal(unseenMissedCount([chamada({ id: 'a', outcome: 'answered' })], null), 0);
 });
 
-test('tentar já é retornar, mesmo que o contato não atenda', () => {
-  const abertas = unreturnedMissedIds([
-    chamada({ id: 'perdida', startedAt: '2026-08-18T09:00:00Z' }),
-    chamada({ id: 'tentativa', direction: 'outbound', outcome: 'missed', startedAt: '2026-08-18T09:10:00Z' }),
-  ]);
-  assert.equal(abertas.has('perdida'), false, 'o escritório fez a parte dele');
+test('recusada não é novidade: quem recusou viu a chamada', () => {
+  assert.equal(unseenMissedCount([chamada({ id: 'a', outcome: 'declined' })], null), 0);
+  // Falhada, sim: ninguém escolheu aquilo e ninguém falou com a pessoa.
+  assert.equal(unseenMissedCount([chamada({ id: 'b', outcome: 'failed' })], null), 1);
 });
 
-test('chamada ATENDIDA não é pendência de ninguém', () => {
-  const abertas = unreturnedMissedIds([chamada({ id: 'falada', outcome: 'answered' })]);
-  assert.equal(abertas.size, 0);
-});
-
-test('a nossa ligação sem resposta não vira dívida', () => {
-  // Se virasse, todo número que não atendeu ficaria preso no distintivo.
-  const abertas = unreturnedMissedIds([
+test('a nossa ligação não atendida não acende nada', () => {
+  assert.equal(unseenMissedCount([
     chamada({ id: 'nossa', direction: 'outbound', outcome: 'missed' }),
-  ]);
-  assert.equal(abertas.size, 0);
+  ], null), 0);
 });
 
-test('perdida SEM telefone continua em aberto — é a que mais precisa de olho', () => {
-  const abertas = unreturnedMissedIds([
-    chamada({ id: 'anonima', phone: '', peerLid: '252677908865131' }),
-    // Uma saída para outro número não resolve o que não dá nem para discar.
-    chamada({ id: 'saida', direction: 'outbound', startedAt: '2026-08-18T13:00:00Z' }),
-  ]);
-  assert.equal(abertas.has('anonima'), true);
+test('LIGAR DE VOLTA NÃO APAGA A PERDIDA do histórico', () => {
+  // O erro que esta versão corrigiu: a tela inferia "retornada" de uma ligação
+  // nossa posterior e marcava/desmarcava pendência sozinha. Não existe mais
+  // esse conceito — a perdida é um fato, e só ter sido VISTA muda o distintivo.
+  const lista = [
+    chamada({ id: 'perdida', startedAt: '2026-08-18T09:00:00Z' }),
+    chamada({ id: 'retorno', direction: 'outbound', outcome: 'answered', startedAt: '2026-08-18T09:30:00Z' }),
+  ];
+  assert.equal(unseenMissedCount(lista, null), 1, 'a perdida continua sendo novidade até ser vista');
+  assert.equal(unseenMissedCount(lista, '2026-08-18T09:30:00Z'), 0);
 });
 
-test('recusada e falhada também são perdidas quando vieram de fora', () => {
-  const abertas = unreturnedMissedIds([
-    chamada({ id: 'recusada', outcome: 'declined', phone: '5565999991111' }),
-    chamada({ id: 'falhou', outcome: 'failed', phone: '5565999992222' }),
-  ]);
-  assert.equal(abertas.size, 2);
+test('a marca é a chamada mais recente, não o relógio', () => {
+  // Com `Date.now()`, uma chamada gravada no servidor enquanto a consulta
+  // voltava nasceria com horário anterior à marca e nunca seria contada.
+  assert.equal(newestCallAt([
+    chamada({ id: 'a', startedAt: '2026-08-18T09:00:00Z' }),
+    chamada({ id: 'b', startedAt: '2026-08-18T15:00:00Z' }),
+    chamada({ id: 'c', startedAt: '2026-08-18T11:00:00Z' }),
+  ]), '2026-08-18T15:00:00Z');
+  assert.equal(newestCallAt([]), null);
+  assert.equal(newestCallAt([chamada({ id: 'x', startedAt: 'data inválida' })]), null);
 });

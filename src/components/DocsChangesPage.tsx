@@ -963,22 +963,44 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.321',
+    date: '18/08/2026',
+    summary: 'O aviso de ligações passou a funcionar como o do WhatsApp: ele conta as chamadas perdidas que você ainda não viu e zera quando você abre a aba. Chamada atendida nunca acende nada.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix',
+            title: 'O aviso de ligações zera quando você olha',
+            description: 'O número vermelho da aba contava "perdidas que ninguém retornou" e ficava aceso mesmo depois de a pessoa abrir a aba e ver tudo. Dois problemas: um vermelho que nunca apaga vira paisagem, e aí a ligação perdida de verdade passa batido; e ele mentia, porque a recepção retorna a chamada por mensagem na maioria das vezes e o CRM só enxergava ligação de saída como retorno — um atendimento já feito continuava marcado como pendente. Agora o aviso conta o que o sistema realmente sabe: quantas perdidas chegaram depois da última vez que você abriu a aba. Abriu, zerou. Chamada atendida nunca conta, e chamada recusada também não — quem recusou viu.',
+          },
+          {
+            type: 'improvement',
+            title: 'A ligação perdida é histórico, não tarefa',
+            description: 'Saiu o selo "Em aberto" e a ideia de dar baixa numa chamada. A perdida fica vermelha na lista para sempre, como no celular: ela é o registro de um fato, e o que aconteceu depois já está na conversa. O botão de ligar de volta continua em toda linha com número, sempre verde — ele é a ação de ligar, não um alarme.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.320',
     date: '18/08/2026',
-    summary: 'O WhatsApp ganhou uma aba de Ligações: quem ligou, quem ficou sem retorno, e o botão de ligar de volta na própria linha. Junto, as chamadas dentro da conversa deixaram de sair todas iguais e o CRM aprendeu a reconhecer quem liga de volta mesmo quando o WhatsApp esconde o número.',
+    summary: 'O WhatsApp ganhou uma aba de Ligações: quem ligou, quando, e o botão de ligar de volta na própria linha. Junto, as chamadas dentro da conversa deixaram de sair todas iguais e o CRM aprendeu a reconhecer quem liga de volta mesmo quando o WhatsApp esconde o número.',
     modules: [
       {
         moduleId: 'whatsapp',
         changes: [
           {
             type: 'feature',
-            title: 'Aba de Ligações, com o que ficou sem retorno',
-            description: 'Não havia tela para responder "quem ligou?": a ficha do cliente só conhece as ligações daquele cliente e a conversa só as daquela conversa, então a chamada perdida de alguém que ninguém abriu depois não aparecia em lugar nenhum — o escritório descobria pelo celular, se descobrisse. A aba mostra o histórico com rosto e nome, agrupado por dia, e traz as duas ações na linha: ligar de novo e abrir a conversa. O distintivo vermelho conta as perdidas que ninguém retornou, e ele se apaga sozinho: uma chamada de saída para o mesmo número, depois dela, já é o retorno — ninguém marca nada a mão.',
+            title: 'Aba de Ligações',
+            description: 'Não havia tela para responder "quem ligou?": a ficha do cliente só conhece as ligações daquele cliente e a conversa só as daquela conversa, então a chamada perdida de alguém que ninguém abriu depois não aparecia em lugar nenhum — o escritório descobria pelo celular, se descobrisse. A aba mostra o histórico com rosto e nome, agrupado por dia, e traz as duas ações na linha: ligar de novo e abrir a conversa.',
           },
           {
             type: 'improvement',
             title: 'As abas viraram ícones para caber a quinta',
-            description: 'Cinco filtros escritos por extenso, cada um com o seu contador, não cabiam na coluna da lista: a barra quebrava em duas linhas e a segunda comia a altura das conversas. Agora cada aba é um ícone com o contador no canto, e o nome aparece só na aba em que você está. "Todas" perdeu o contador de propósito — o total de conversas é inventário, não pendência, e era justamente o número maior. Ele continua no toque prolongado.',
+            description: 'Cinco filtros escritos por extenso, cada um com o seu contador, não cabiam na coluna da lista: a barra quebrava em duas linhas e a segunda comia a altura das conversas. Agora cada aba é um ícone com o contador no canto, e o nome aparece só na aba em que você está. "Todas" perdeu o contador de propósito — o total de conversas é inventário, não pendência, e era justamente o número maior. Ele continua ao passar o mouse.',
           },
           {
             type: 'improvement',

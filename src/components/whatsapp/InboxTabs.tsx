@@ -22,11 +22,15 @@
 // onde os números que pedem ação precisam ser vistos. O total continua no
 // `title` da aba, para quem quiser conferir.
 //
-// O VERMELHO É PENDÊNCIA, e só ele. Duas abas podem gritar: "Agendadas" quando
-// uma mensagem falhou na entrega (ninguém volta na conversa para conferir), e
-// "Ligações" quando existe uma chamada perdida que ninguém retornou. As duas
-// gritam mesmo com o atendente parado em outra aba — é o único jeito de a
-// pendência ser vista por quem não estava procurando por ela.
+// O VERMELHO É NOVIDADE QUE NINGUÉM VIU, e ele SOME quando a aba é aberta.
+// Duas abas podem gritar: "Agendadas" quando uma mensagem falhou na entrega
+// (ninguém volta na conversa para conferir) e "Ligações" quando chegou chamada
+// perdida depois da última olhada. As duas gritam com o atendente parado em
+// outra aba — é o único jeito de a novidade alcançar quem não a procurava.
+//
+// Zerar ao abrir não é detalhe: um vermelho que fica aceso mesmo depois de a
+// pessoa olhar vira paisagem, e paisagem não avisa nada. Foi o defeito da
+// primeira versão da aba de ligações, contado em `callHistory.ts`.
 import React from 'react';
 import {
   AlertTriangle, CalendarClock, Inbox, Mail, PhoneCall, PhoneMissed, UserRound,
@@ -42,13 +46,13 @@ export interface InboxTabsProps {
   scheduledPending: number;
   /** Agendadas que não foram entregues — o vermelho da aba. */
   scheduledFailed: number;
-  /** Perdidas que ninguém retornou (ver `callHistory#unreturnedMissedIds`). */
-  callsUnreturned: number;
+  /** Perdidas ainda não vistas (ver `callHistory#unseenMissedCount`). */
+  callsUnseen: number;
   className?: string;
 }
 
 export const InboxTabs: React.FC<InboxTabsProps> = ({
-  active, onChange, counts, scheduledPending, scheduledFailed, callsUnreturned, className = '',
+  active, onChange, counts, scheduledPending, scheduledFailed, callsUnseen, className = '',
 }) => {
   const abas: Array<[InboxTab, string, React.ElementType, number, boolean]> = [
     // `0` no lugar do total: o contador de "Todas" não é desenhado (ver o
@@ -57,7 +61,7 @@ export const InboxTabs: React.FC<InboxTabsProps> = ({
     ['unread', 'Não lidas', Mail, counts.unread, false],
     ['mine', 'Minhas', UserRound, counts.mine, false],
     ['scheduled', 'Agendadas', scheduledFailed > 0 ? AlertTriangle : CalendarClock, scheduledPending, scheduledFailed > 0],
-    ['calls', 'Ligações', callsUnreturned > 0 ? PhoneMissed : PhoneCall, callsUnreturned, callsUnreturned > 0],
+    ['calls', 'Ligações', callsUnseen > 0 ? PhoneMissed : PhoneCall, callsUnseen, callsUnseen > 0],
   ];
 
   return (
