@@ -102,7 +102,7 @@ import { QueuePanel } from './whatsapp/queuePanel';
 import { isOptOutMessage, DO_NOT_DISTURB_LABEL } from './whatsapp/campaign';
 import ChannelAccessManager from './whatsapp/ChannelAccessManager';
 import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
-import { ThreadScheduledGhosts, ScheduledMessagesPanel, MyScheduledList, useMyScheduled } from './whatsapp/scheduledMessages';
+import { ThreadScheduledGhosts, ScheduledMessagesPanel, MyScheduledList, useMyScheduled, useScheduledSentMarks } from './whatsapp/scheduledMessages';
 import { AiApprovalBanner } from './whatsapp/aiApprovalBanner';
 import { AttendanceDashboard } from './whatsapp/attendanceDashboard';
 import { ClientFillLinksPanel } from './whatsapp/clientFillLinksPanel';
@@ -750,8 +750,47 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     allMessages, msgById, nextAudioId, messageUnits, diasDaThread,
     lightbox, setLightbox, lightboxImages,
     threadContentRef, setThreadEl, onThreadScroll,
-    scrolledUp, newBelow, scrollToBottom,
+    scrolledUp, newBelow, scrollToBottom, jumpToMessage,
   } = useWaThread(selectedId, messages, pending, threadCalls);
+
+  // ── Ir até UMA mensagem da conversa ──────────────────────────────────
+  // Quem clica numa agendada concluída não quer "a conversa": quer o ponto dela
+  // — a mensagem que aquele agendamento virou. O alvo fica guardado até a
+  // thread carregar; se ele estiver acima da janela inicial, o histórico é
+  // paginado para trás até aparecer.
+  const [jumpTarget, setJumpTarget] = useState<{ conversationId: string; messageId: string } | null>(null);
+  const jumpPagesRef = useRef(0);
+
+  /** Abre a conversa e, quando há mensagem alvo, para nela em vez de no fim. */
+  const openConversationAt = useCallback((conversationId: string, messageId?: string | null) => {
+    setSelectedId(conversationId);
+    jumpPagesRef.current = 0;
+    setJumpTarget(messageId ? { conversationId, messageId } : null);
+  }, []);
+
+  useEffect(() => {
+    if (!jumpTarget) return;
+    // Trocar de conversa no meio do caminho cancela a viagem.
+    if (jumpTarget.conversationId !== selectedId) { setJumpTarget(null); return; }
+    if (loadingMsgs) return;
+    // Um quadro de folga: a leva de mensagens que acabou de chegar ainda não
+    // virou DOM no instante em que este efeito roda.
+    const t = requestAnimationFrame(() => {
+      if (jumpToMessage(jumpTarget.messageId)) { setJumpTarget(null); return; }
+      // Não está na janela carregada. Pagina para trás — com teto, para uma
+      // mensagem apagada (ou de outra conversa) não varrer o histórico inteiro.
+      if (hasMoreMsgs && !loadingMore && jumpPagesRef.current < 12) {
+        jumpPagesRef.current += 1;
+        void loadMoreMsgs();
+        return;
+      }
+      if (!hasMoreMsgs || jumpPagesRef.current >= 12) setJumpTarget(null);
+    });
+    return () => cancelAnimationFrame(t);
+  }, [jumpTarget, selectedId, allMessages, loadingMsgs, loadingMore, hasMoreMsgs, loadMoreMsgs, jumpToMessage]);
+
+  // Marca interna "saiu de um agendamento" das mensagens desta conversa.
+  const scheduledSentMarks = useScheduledSentMarks(selectedId);
 
   // O campo de mensagem é NÃO CONTROLADO de propósito.
   //
@@ -2144,8 +2183,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                de agendadas pela lista inteira e quem estava conferindo os
                agendamentos perdia o lugar a cada clique. `selected` sai de
                `conversations` (sem filtro), então a thread abre do mesmo jeito
-               com a aba de agendadas de pé. */
-            onOpenConversation={setSelectedId}
+               com a aba de agendadas de pé.
+               Uma concluída leva ao PONTO da conversa em que a mensagem saiu —
+               é a pergunta que essa metade da lista faz. */
+            onOpenConversation={openConversationAt}
           />
           ) : (
           <ConversationList
@@ -2558,7 +2599,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     : null;
                   const key = u.kind === 'album' ? `album-${head._tempId || head.id}` : (head._tempId || head.id);
                   return u.kind === 'album' ? (
-                    <ImageAlbum key={key} items={u.items} out={head.direction === 'out'} senderName={senderName} groupStart={groupStart} onOpenImage={setLightbox} />
+                    <ImageAlbum key={key} items={u.items} out={head.direction === 'out'} senderName={senderName} groupStart={groupStart} onOpenImage={setLightbox}
+                      scheduledAt={u.items.map(i => scheduledSentMarks.get(i.id)).find(Boolean) ?? null} />
                   ) : (
                     <MessageBubble
                       key={key}
@@ -2572,6 +2614,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                       canCreateFollowups
                       onOpenImage={setLightbox}
                       nextAudioId={u.m.type === 'audio' ? nextAudioId.get(u.m.id) ?? null : null}
+                      scheduledAt={scheduledSentMarks.get(u.m.id) ?? null}
                       uploadProgress={u.m._tempId ? uploadProgress.get(u.m._tempId) : undefined}
                       {...bubbleHandlers}
                     />

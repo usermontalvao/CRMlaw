@@ -164,8 +164,19 @@ Deno.serve(async (req: Request) => {
         if (j?.reconnect_pending === true) err.reconnectPending = true;
         throw err;
       }
+      // Guarda QUAL mensagem da thread este agendamento virou. É o que permite
+      // ao histórico de agendadas levar o atendente ao ponto exato da conversa
+      // em que a mensagem saiu, em vez de despejá-lo no fim dela. Marca interna:
+      // nada disso viaja para o aparelho do contato.
       await admin.from('whatsapp_scheduled_messages')
-        .update({ status: 'sent', sent_at: new Date().toISOString(), error: null, hold_reason: null, hold_since: null })
+        .update({
+          status: 'sent',
+          sent_at: new Date().toISOString(),
+          sent_message_id: j?.message_id ?? null,
+          error: null,
+          hold_reason: null,
+          hold_since: null,
+        })
         .eq('id', m.id);
       sent++;
     } catch (e) {

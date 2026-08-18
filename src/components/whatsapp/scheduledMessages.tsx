@@ -1,11 +1,13 @@
 // Mensagens agendadas: bolhas-fantasma na thread + painel de gestão no aside.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { CalendarClock, Pencil, X, Loader2, Check, RotateCcw, Trash2, Wifi, AlertTriangle } from 'lucide-react';
 import { whatsappService } from '../../services/whatsapp.service';
+import { HISTORICO_AGENDADAS_DIAS } from '../../services/whatsapp/automation';
 import { useToastContext } from '../../contexts/ToastContext';
 import { conversationName, maskName, maskSensitive } from './format';
 import { Avatar } from './avatar';
 import { WaRichText } from './WaRichTextView';
+import { waPlainText, stripAgentSignature } from './waRichText';
 import type { ConfirmFn } from './types';
 import type { WhatsAppScheduledMessage, WhatsAppScheduledWithContact } from '../../types/whatsapp.types';
 
@@ -114,6 +116,31 @@ export const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMo
     </div>
   );
 };
+
+/**
+ * Mensagens desta conversa que saíram de um agendamento: id da mensagem → o
+ * horário para o qual ela estava marcada.
+ *
+ * Pega carona na MESMA fonte compartilhada das bolhas-fantasma e do painel
+ * lateral (um canal e uma consulta por conversa), então a marca interna na
+ * thread não custa nem mais uma assinatura nem mais uma ida ao banco.
+ */
+export function useScheduledSentMarks(conversationId: string | null): Map<string, string> {
+  const [items, setItems] = useState<WhatsAppScheduledMessage[] | null>(null);
+  useEffect(() => {
+    setItems(null);
+    if (!conversationId) return;
+    return whatsappService.subscribeScheduled(conversationId, setItems);
+  }, [conversationId]);
+
+  return useMemo(() => {
+    const marcas = new Map<string, string>();
+    for (const s of items || []) {
+      if (s.status === 'sent' && s.sent_message_id) marcas.set(s.sent_message_id, s.scheduled_at);
+    }
+    return marcas;
+  }, [items]);
+}
 
 // ── Painel de mensagens agendadas no aside (Fase 8.1) ──
 const SCHED_STATUS: Record<string, { label: string; cls: string }> = {
@@ -318,7 +345,11 @@ export const MyScheduledList: React.FC<{
   privateMode: boolean;
   confirm: ConfirmFn;
   onReload: () => void;
-  onOpenConversation: (conversationId: string) => void;
+  /**
+   * Abre a conversa. `messageId` (quando existe) é a mensagem que o
+   * agendamento virou: a thread deve parar NELA, não no fim da conversa.
+   */
+  onOpenConversation: (conversationId: string, messageId?: string | null) => void;
 }> = ({ items, privateMode, confirm, onReload, onOpenConversation }) => {
   const toast = useToastContext();
   const [busy, setBusy] = useState<string | null>(null);
@@ -404,7 +435,7 @@ export const MyScheduledList: React.FC<{
           <p className="text-[11.5px] text-slate-300">
             {abaEfetiva === 'pendentes'
               ? 'Tudo que você agendou já saiu ou foi cancelado.'
-              : 'Aqui fica o histórico do que já foi enviado ou cancelado.'}
+              : `Aqui fica o que foi enviado ou cancelado nos últimos ${HISTORICO_AGENDADAS_DIAS} dias.`}
           </p>
         </div>
       )}
@@ -418,34 +449,48 @@ export const MyScheduledList: React.FC<{
           const name = privateMode ? maskName(fullName) : fullName;
           return (
             <div key={s.id} className={`flex gap-3 px-4 py-3 ${failed ? 'bg-red-50/40' : ''}`}>
+              {/* A LINHA INTEIRA abre a conversa — só os ícones de ação ficam
+                  de fora. Antes só a foto e o nome levavam para lá, e o alvo
+                  útil de uma lista de conferência é a linha, não dois pedaços
+                  dela. Quando a mensagem já saiu e sabemos qual ela é, a thread
+                  para exatamente nela (ver `sent_message_id`); sem esse elo, o
+                  clique continua fazendo o que sempre fez: abrir a conversa. */}
               <button
-                onClick={() => onOpenConversation(s.conversation_id)}
-                title="Abrir a conversa"
-                className="flex-shrink-0 rounded-full transition hover:ring-2 hover:ring-amber-300">
-                <Avatar url={privateMode ? null : s.contact_avatar_url} name={name} phone={s.contact_phone} size={36} />
+                onClick={() => onOpenConversation(s.conversation_id, s.sent_message_id ?? null)}
+                title={s.sent_message_id ? 'Ir até a mensagem na conversa' : 'Abrir a conversa'}
+                className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left transition hover:bg-amber-50/60">
+                <span className="flex-shrink-0">
+                  <Avatar url={privateMode ? null : s.contact_avatar_url} name={name} phone={s.contact_phone} size={36} />
+                </span>
+
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[13px] font-semibold text-slate-800 truncate">{name}</span>
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.cls}`}>
+                      {isReconnectHold(s) && <Wifi size={10} className="opacity-70" />}{st.label}
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      {new Date(s.scheduled_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </span>
+
+                  {/* Prévia de UMA LINHA, em texto puro: as marcas do WhatsApp
+                      viram ruído numa linha truncada, e um link de verdade não
+                      pode existir aqui dentro — a linha inteira já é um botão,
+                      e âncora dentro de botão é HTML inválido. */}
+                  {s.body && (
+                    <span className="mt-0.5 block truncate text-[11.5px] text-slate-500">
+                      {waPlainText(stripAgentSignature(privateMode ? maskSensitive(s.body) : s.body))}
+                    </span>
+                  )}
+                  {isReconnectHold(s) && (
+                    <span className="mt-0.5 block text-[11px] text-sky-600">Retida porque o canal está fora. Sai sozinha quando reconectar.</span>
+                  )}
+                  {failed && (
+                    <span className="mt-0.5 block text-[11px] text-red-600">{s.error || 'O envio falhou. Nenhuma nova tentativa automática.'}</span>
+                  )}
+                </span>
               </button>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button onClick={() => onOpenConversation(s.conversation_id)}
-                    className="text-[13px] font-semibold text-slate-800 hover:text-amber-700 truncate transition">
-                    {name}
-                  </button>
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.cls}`}>
-                    {isReconnectHold(s) && <Wifi size={10} className="opacity-70" />}{st.label}
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    {new Date(s.scheduled_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-
-                {isReconnectHold(s) && (
-                  <p className="mt-0.5 text-[11px] text-sky-600">Retida porque o canal está fora. Sai sozinha quando reconectar.</p>
-                )}
-                {failed && (
-                  <p className="mt-0.5 text-[11px] text-red-600">{s.error || 'O envio falhou. Nenhuma nova tentativa automática.'}</p>
-                )}
-              </div>
 
               <div className="flex items-start gap-0.5 flex-shrink-0">
                 {failed && (
@@ -467,6 +512,15 @@ export const MyScheduledList: React.FC<{
           );
         })}
       </div>
+
+      {/* O histórico é uma janela, não um arquivo. Dizer isso em uma linha evita
+          a leitura errada de que uma agendada antiga "sumiu": ela continua no
+          banco — é a lista que só olha para trás até onde ainda é útil. */}
+      {abaEfetiva === 'concluidas' && concluidas.length > 0 && (
+        <p className="px-4 py-3 text-center text-[11px] text-slate-400">
+          Histórico dos últimos {HISTORICO_AGENDADAS_DIAS} dias.
+        </p>
+      )}
     </div>
   );
 };

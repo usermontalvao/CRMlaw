@@ -58,7 +58,16 @@ export interface WaThreadApi {
   newBelow: number;
   /** Volta ao fim da conversa e zera a contagem de novas. */
   scrollToBottom: () => void;
+  /**
+   * Leva a thread até uma mensagem específica e a acende por um instante.
+   * Devolve `false` quando ela não está na janela carregada — quem chamou
+   * decide se pagina para trás e tenta de novo.
+   */
+  jumpToMessage: (messageId: string) => boolean;
 }
+
+/** Quanto tempo a mensagem alvo fica acesa depois do salto. */
+const REALCE_MS = 2600;
 
 /**
  * Deriva a thread renderizável (merge otimista + álbuns + galeria) e administra
@@ -333,6 +342,45 @@ export function useWaThread(
     setScrolledUp(false);
   }, [allMessages]);
 
+  // ── Salto até uma mensagem do meio da conversa ───────────────────────
+  // Quem chega por aqui veio do histórico de agendadas: quer ver ONDE aquela
+  // mensagem caiu, não o fim da thread. Por isso o salto DESLIGA o grude no
+  // fim — sem isso, o auto-scroll (e o ResizeObserver que persegue o fim
+  // enquanto mídia carrega) desfaria a rolagem no quadro seguinte.
+  const realceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const jumpToMessage = useCallback((messageId: string): boolean => {
+    const el = threadRef.current;
+    if (!el || !messageId) return false;
+    const alvo = el.querySelector<HTMLElement>(`[data-msg-id="${CSS.escape(messageId)}"]`);
+    if (!alvo) return false;
+
+    stickBottomRef.current = false;
+    atBottomRef.current = false;
+    // A conversa já tem um fim fixado: sem isto, o efeito de auto-scroll
+    // trataria a próxima leva de mensagens como "primeira" e saltaria ao fim.
+    didInitialScrollRef.current = true;
+
+    // Centraliza pela diferença de retângulos, e não com `scrollIntoView`: este
+    // último rola TAMBÉM os ancestrais, e a thread mora dentro do módulo (que
+    // pode estar numa janela flutuante sobre o CRM) — a página inteira pulava.
+    const caixa = el.getBoundingClientRect();
+    const linha = alvo.getBoundingClientRect();
+    const destino = el.scrollTop + (linha.top - caixa.top) - (el.clientHeight - linha.height) / 2;
+    el.scrollTo({ top: Math.max(0, destino), behavior: 'smooth' });
+    lastScrollTopRef.current = Math.max(0, destino);
+    setScrolledUp(true);
+
+    // Acende a bolha por um instante: no meio de uma conversa longa, chegar
+    // "mais ou menos ali" não responde qual das mensagens é a procurada.
+    if (realceTimerRef.current) clearTimeout(realceTimerRef.current);
+    el.querySelectorAll('.wa-msg-focus').forEach(n => n.classList.remove('wa-msg-focus'));
+    alvo.classList.add('wa-msg-focus');
+    realceTimerRef.current = setTimeout(() => alvo.classList.remove('wa-msg-focus'), REALCE_MS);
+    return true;
+  }, []);
+
+  useEffect(() => () => { if (realceTimerRef.current) clearTimeout(realceTimerRef.current); }, []);
+
   // Mantém o fim "grudado" enquanto o conteúdo cresce depois de renderizado —
   // imagens/áudio têm altura desconhecida no 1º paint e esticam a thread depois,
   // o que empurrava a última mensagem pra fora de vista ao abrir a conversa.
@@ -377,6 +425,6 @@ export function useWaThread(
     allMessages, msgById, nextAudioId, messageUnits: unitsWithCalls, diasDaThread,
     lightbox, setLightbox, lightboxImages,
     threadContentRef, setThreadEl, onThreadScroll,
-    scrolledUp, newBelow, scrollToBottom,
+    scrolledUp, newBelow, scrollToBottom, jumpToMessage,
   };
 }

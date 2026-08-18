@@ -963,6 +963,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.322',
+    date: '18/08/2026',
+    summary: 'A mensagem agendada que já saiu leva você ao ponto exato da conversa em que ela foi enviada — e a conversa passa a dizer, só para a equipe, que aquela mensagem veio de um agendamento.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Clicar numa agendada concluída abre a conversa NA mensagem',
+            description: 'Antes o clique abria a conversa no fim, e conferir o que o cliente recebeu virava caça pela data, rolando para cima. Agora a conversa abre parada na própria mensagem que aquele agendamento virou, acesa por um instante para você não ter dúvida de qual é — mesmo que ela esteja lá atrás no histórico. A linha inteira da lista virou o alvo do clique, não só a foto e o nome. Para agendamentos antigos, anteriores a esta versão, o clique continua abrindo a conversa como antes.',
+          },
+          {
+            type: 'feature',
+            title: 'A conversa mostra o que saiu por agendamento',
+            description: 'Na thread, a mensagem enviada pela fila agora traz um selo com a hora para a qual estava marcada. É uma marca INTERNA, só da tela do escritório: para quem recebeu, a mensagem chegou como qualquer outra, sem qualquer sinal de que estava agendada.',
+          },
+          {
+            type: 'improvement',
+            title: 'O histórico de agendadas guarda os últimos 15 dias',
+            description: 'A aba "Concluídas" ia acumulando tudo o que já tinha sido enviado ou cancelado e, em poucos meses, mil linhas antigas enterrariam as recentes. Ela passa a mostrar os últimos 15 dias — nada é apagado, é só a lista que para de olhar tão para trás. A aba "Pendentes" continua sem prazo nenhum: uma mensagem que falhou há três meses ainda é uma falha e precisa aparecer.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.321',
     date: '18/08/2026',
     summary: 'O aviso de ligações passou a funcionar como o do WhatsApp: ele conta as chamadas perdidas que você ainda não viu e zera quando você abre a aba. Chamada atendida nunca acende nada.',

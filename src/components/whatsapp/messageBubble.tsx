@@ -8,7 +8,7 @@ import {
   Pencil, RotateCcw, Calendar, ListTodo, CornerUpLeft, Loader2, AlertCircle,
   CheckCheck, Check, X, Pause, Play, FileText, Download, ChevronDown, Forward,
   Image as ImageIcon, Video as VideoIcon, Trash2, Ban,
-  UserRound, MapPin, BarChart3, Smile, HelpCircle, MousePointerClick, Images,
+  UserRound, MapPin, BarChart3, Smile, HelpCircle, MousePointerClick, Images, CalendarClock,
 } from 'lucide-react';
 import { formatTime, typeLabel, maskSensitive, fmtAudioTime, formatBytes } from './format';
 import { WaRichText } from './WaRichTextView';
@@ -20,6 +20,10 @@ import type { WhatsAppMessage, WhatsAppDeleteScope } from '../../types/whatsapp.
 
 const WA_MESSAGE_MENU_EVENT = 'wa-message-menu-open';
 const WA_MESSAGE_MENU_WIDTH = 192;
+
+/** Dia e hora do agendamento, curtos — cabem na linha da marca interna. */
+const formatScheduleStamp = (iso: string): string =>
+  new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 export const MessageBubble: React.FC<{
   m: WhatsAppMessage;
@@ -47,6 +51,12 @@ export const MessageBubble: React.FC<{
   /** Só para áudio: o áudio logo abaixo, que emenda quando este termina. */
   nextAudioId?: string | null;
   /**
+   * Quando esta mensagem saiu de um AGENDAMENTO, o horário para o qual ela
+   * estava marcada. Vira uma marca INTERNA na bolha — o contato recebeu uma
+   * mensagem comum, sem qualquer sinal de que ela estava na fila.
+   */
+  scheduledAt?: string | null;
+  /**
    * O que o cartão de contato RECEBIDO sabe fazer: ligar para o número e
    * vincular o número a um cadastro. Ausentes = o host não oferece o recurso.
    * Encaminhar o cartão é do menu da bolha, como em qualquer outra mensagem.
@@ -54,7 +64,7 @@ export const MessageBubble: React.FC<{
   onOpenContactChat?: (phone: string, name: string) => void;
   onCallContactPhone?: (phone: string, name: string) => void;
   onLinkContactPhone?: (phone: string, name: string) => void;
-}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete, nextAudioId, onOpenContactChat, onCallContactPhone, onLinkContactPhone }) => {
+}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete, nextAudioId, scheduledAt, onOpenContactChat, onCallContactPhone, onLinkContactPhone }) => {
   const out = m.direction === 'out';
   const failed = m._local === 'failed' || m.status === 'failed';
   const busy = m._local === 'uploading' || m._local === 'sending';
@@ -163,7 +173,7 @@ export const MessageBubble: React.FC<{
   // conteúdo, não o fato de ter havido uma mensagem ali.
   if (deleted) {
     return (
-      <div className={`wa-message-row group flex items-end ${groupStart ? 'mt-2' : 'mt-[2px]'} ${out ? 'justify-end' : 'justify-start'}`}>
+      <div data-msg-id={m.id} className={`wa-message-row group flex items-end ${groupStart ? 'mt-2' : 'mt-[2px]'} ${out ? 'justify-end' : 'justify-start'}`}>
         <div className={`wa-bubble-in wa-bubble ${out ? 'wa-bubble-out origin-bottom-right' : 'wa-bubble-incoming origin-bottom-left'} ${groupStart ? (out ? 'wa-bubble-tail-out' : 'wa-bubble-tail-in') : ''} ${groupEnd ? '' : 'wa-bubble-continued'} wa-bubble-content relative px-[9px] pt-[6px] pb-[5px] text-[14px] leading-[1.36]`}>
           <span className="flex items-center gap-1.5 italic text-[13.5px] text-[#8696a0]">
             <Ban size={14} className="shrink-0" />
@@ -184,7 +194,10 @@ export const MessageBubble: React.FC<{
   // por exemplo) ela parece grudada no player. Por isso pede um respiro próprio,
   // dos dois lados, em vez dos 2px do agrupamento normal.
   return (
-    <div className={`wa-message-row group flex items-end ${stickerOnly ? 'my-2.5' : groupStart ? 'mt-2' : 'mt-[2px]'} ${out ? 'justify-end' : 'justify-start'}`}>
+    // `data-msg-id`: é por ele que a thread encontra uma mensagem para saltar
+    // até ela (ver `jumpToMessage`). Fica na LINHA, e não na bolha, para o
+    // realce cobrir o balão inteiro.
+    <div data-msg-id={m.id} className={`wa-message-row group flex items-end ${stickerOnly ? 'my-2.5' : groupStart ? 'mt-2' : 'mt-[2px]'} ${out ? 'justify-end' : 'justify-start'}`}>
       <div className={`wa-bubble-in ${stickerOnly ? 'wa-sticker-bubble' : `wa-bubble ${out ? 'wa-bubble-out origin-bottom-right' : 'wa-bubble-incoming origin-bottom-left'} ${groupStart ? (out ? 'wa-bubble-tail-out' : 'wa-bubble-tail-in') : ''}`} ${out ? 'origin-bottom-right' : 'origin-bottom-left'} ${groupEnd ? '' : 'wa-bubble-continued'} relative text-[14px] leading-[1.36] text-slate-800 ${mediaOnly ? `wa-bubble-media max-w-[300px] p-0 ${stickerOnly ? '' : 'wa-bubble-media-surface'}` : 'wa-bubble-content px-[9px] pt-[6px] pb-[5px]'}`}>
         {!busy && (
           <button ref={menuTriggerRef} type="button" title="Ações da mensagem" aria-label="Ações da mensagem" aria-expanded={menuOpen}
@@ -227,6 +240,22 @@ export const MessageBubble: React.FC<{
             </div>
           </>,
           document.body,
+        )}
+
+        {/* Marca INTERNA de agendamento. Fica dentro da bolha, colada na
+            mensagem, porque a pergunta que ela responde ("isto foi eu na hora
+            ou foi a fila?") só faz sentido ao lado do texto. O contato não vê
+            nada disso: o que saiu para o aparelho dele é uma mensagem comum —
+            este selo existe só na tela do escritório. */}
+        {scheduledAt && (
+          <span
+            title={`Marca interna: esta mensagem saiu de um agendamento para ${formatScheduleStamp(scheduledAt)}. O contato não vê este aviso.`}
+            className={mediaOnly
+              ? 'absolute top-1.5 left-1.5 z-[2] flex items-center gap-1 rounded-md bg-black/45 px-1.5 py-0.5 text-[10px] font-semibold text-white'
+              : 'mb-0.5 flex items-center gap-1 pr-6 text-[10.5px] font-semibold leading-4 text-amber-700'}>
+            <CalendarClock size={11} className="shrink-0" />
+            <span className="truncate">Enviada por agendamento · {formatScheduleStamp(scheduledAt)}</span>
+          </span>
         )}
 
         {senderName && (
@@ -745,7 +774,12 @@ const WaVideo: React.FC<{ src: string; cacheKey: string; autoLoop?: boolean; nam
 // ── Álbum de imagens (estilo WhatsApp) — agrupa imagens enviadas juntas ──
 // Mostra até 4 miniaturas num grid; "+N" no excedente. Legenda da 1ª imagem e
 // hora/status da última, como no WhatsApp. Cada célula abre o lightbox.
-export const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; senderName: string | null; groupStart?: boolean; onOpenImage: (url: string) => void }> = React.memo(({ items, out, senderName, groupStart = true, onOpenImage }) => {
+export const ImageAlbum: React.FC<{
+  items: WhatsAppMessage[]; out: boolean; senderName: string | null; groupStart?: boolean;
+  onOpenImage: (url: string) => void;
+  /** Horário do agendamento, quando alguma das imagens do álbum saiu da fila. */
+  scheduledAt?: string | null;
+}> = React.memo(({ items, out, senderName, groupStart = true, onOpenImage, scheduledAt }) => {
   const shown = items.slice(0, 4);
   const extra = items.length - shown.length;
   const last = items[items.length - 1];
@@ -763,7 +797,7 @@ export const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; send
           {shown.map((m, i) => {
             const overlay = i === shown.length - 1 && extra > 0;
             return (
-              <button key={m._tempId || m.id} onClick={() => m.media_url && onOpenImage(m.media_url)}
+              <button key={m._tempId || m.id} data-msg-id={m.id} onClick={() => m.media_url && onOpenImage(m.media_url)}
                 className="relative aspect-square overflow-hidden bg-black/10">
                 {m.media_url
                   ? <AlbumImage key={m.media_url} src={m.media_url} alt={m.content || 'imagem'} />
@@ -774,6 +808,14 @@ export const ImageAlbum: React.FC<{ items: WhatsAppMessage[]; out: boolean; send
           })}
           {senderName && (
             <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/45 text-white text-[10px] font-bold">{senderName}</span>
+          )}
+          {/* Mesma marca interna da bolha (ver `scheduledAt` em MessageBubble):
+              sobre a grade, e abaixo do nome quando os dois aparecem. */}
+          {scheduledAt && (
+            <span title="Marca interna: este envio saiu de um agendamento. O contato não vê este aviso."
+              className={`absolute ${senderName ? 'top-7' : 'top-1.5'} left-1.5 z-[2] flex items-center gap-1 rounded-md bg-black/45 px-1.5 py-0.5 text-[10px] font-semibold text-white`}>
+              <CalendarClock size={10} className="shrink-0" /> Agendada · {formatScheduleStamp(scheduledAt)}
+            </span>
           )}
           <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/45 text-white text-[10px]">
             {busy && <Loader2 size={11} className="animate-spin" />}

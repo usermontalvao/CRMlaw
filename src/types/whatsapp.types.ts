@@ -349,6 +349,14 @@ export interface WhatsAppScheduledMessage {
   created_by: string | null;
   created_at: string;
   sent_at: string | null;
+  /**
+   * Mensagem da thread que este agendamento virou (NULL enquanto não saiu).
+   *
+   * É o elo que leva do histórico de agendadas ao ponto exato da conversa. Vive
+   * do lado do agendamento, e não da mensagem, porque a marca é INTERNA: o que
+   * o contato recebeu é uma mensagem como qualquer outra.
+   */
+  sent_message_id?: string | null;
 }
 
 /**

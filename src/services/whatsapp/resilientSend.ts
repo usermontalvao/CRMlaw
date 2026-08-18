@@ -84,17 +84,21 @@ export async function sendReconnectHoldsThroughChannel(input: {
 
   for (const hold of holds) {
     try {
+      // O id da mensagem criada segue junto para o registro do agendamento: é
+      // por ele que o histórico de agendadas leva ao ponto da conversa.
+      let sentMessageId: string | null = null;
       if (hold.type === 'text') {
         const text = hold.body?.trim();
         if (!text) throw new Error('A mensagem retida está sem texto.');
-        await whatsappService.sendText({
+        const enviada = await whatsappService.sendText({
           conversationId: input.targetConversationId,
           channelId: input.targetChannelId,
           text,
         });
+        sentMessageId = enviada?.message_id ?? null;
       } else {
         if (!hold.storage_path) throw new Error('O arquivo da mensagem retida não está mais disponível.');
-        await whatsappService.sendMedia({
+        const enviada = await whatsappService.sendMedia({
           conversationId: input.targetConversationId,
           channelId: input.targetChannelId,
           type: hold.type,
@@ -103,8 +107,9 @@ export async function sendReconnectHoldsThroughChannel(input: {
           mimeType: hold.mime_type || 'application/octet-stream',
           fileName: hold.file_name || undefined,
         });
+        sentMessageId = enviada?.message_id ?? null;
       }
-      await whatsappService.completeReroutedReconnectHold(hold.id);
+      await whatsappService.completeReroutedReconnectHold(hold.id, sentMessageId);
       sent += 1;
     } catch (error) {
       const message = String((error as Error)?.message || error || 'Falha ao reenviar pelo canal escolhido.');

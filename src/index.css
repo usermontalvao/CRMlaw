@@ -3664,6 +3664,18 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+/* Mensagem alcançada por um salto (histórico de agendadas → ponto da conversa).
+   Acende e apaga sozinha: no meio de uma thread longa, parar "mais ou menos
+   ali" não diz qual das bolhas é a procurada. O realce é um halo em volta da
+   linha inteira, não uma troca de cor da bolha — a cor da bolha é informação
+   (nossa/dela) e não pode ser emprestada para outra coisa. */
+.wa-msg-focus { animation: wa-msg-focus 2.6s ease-out both; border-radius: 12px; }
+@keyframes wa-msg-focus {
+  0%   { background-color: rgba(245, 158, 11, 0.26); box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.16); }
+  70%  { background-color: rgba(245, 158, 11, 0.16); box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.10); }
+  100% { background-color: transparent;              box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+}
+
 .wa-busy-dot { animation: wa-busy-pulse 2.4s ease-in-out infinite; }
 @keyframes wa-busy-pulse {
   0%, 100% { opacity: 1; }
@@ -3941,6 +3953,10 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   .wa-send-ready, .wa-empty-float, .wa-drop-pulse,
   .wa-skel::after, .wa-skel-row, .wa-jump,
   .wa-collision, .wa-busy-dot { animation: none !important; }
+  /* O realce do salto perde a animação, não o realce: sem ele, quem pediu para
+     ir até uma mensagem chegaria lá sem saber qual é. Fica estático enquanto a
+     classe existir (ver `jumpToMessage`). */
+  .wa-msg-focus { animation: none !important; background-color: rgba(245, 158, 11, 0.2); }
   .wa-jump:hover, .wa-avatar-hero:hover > div, .wa-chip:hover { transform: none !important; }
   .wa-conv::before, .wa-conv-archived { transition: none !important; }
   .wa-msg-actions button:hover, .group:hover .wa-bubble { transform: none !important; }

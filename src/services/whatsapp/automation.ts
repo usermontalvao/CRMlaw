@@ -10,6 +10,17 @@ import { criarRegistroCompartilhado } from '../realtime/sharedResource';
 
 const AI_SESSIONS_TABLE = 'whatsapp_ai_sessions';
 
+/**
+ * Até quando o histórico de agendadas ("Concluídas") olha para trás.
+ *
+ * Não é limpeza: nada é apagado, e a linha continua no banco para auditoria. É
+ * recorte de leitura. A pergunta que essa metade responde — "aquilo que eu
+ * agendei chegou a sair?" — tem prazo de validade curto; passados uns dias,
+ * cada enviada vira ruído, e num escritório movimentado a lista passaria de mil
+ * linhas em poucos meses, enterrando as recentes.
+ */
+export const HISTORICO_AGENDADAS_DIAS = 15;
+
 /** Recarrega a lista de uma conversa aberta. Preenchido no `abrir` abaixo. */
 const recarregadores = new Map<string, () => void>();
 
@@ -158,13 +169,20 @@ export const automationApi = {
       .sort((a, b) => a.created_at.localeCompare(b.created_at));
   },
 
-  /** Confirma que uma retenção acabou sendo entregue pelo canal alternativo. */
-  async completeReroutedReconnectHold(id: string): Promise<void> {
+  /**
+   * Confirma que uma retenção acabou sendo entregue pelo canal alternativo.
+   *
+   * `sentMessageId` é a mensagem que ela virou na thread — o mesmo elo que o
+   * cron grava. Sem ele, a agendada reenviada por aqui viraria a única
+   * "concluída" que não sabe levar de volta ao ponto da conversa.
+   */
+  async completeReroutedReconnectHold(id: string, sentMessageId?: string | null): Promise<void> {
     const { error } = await supabase
       .from(SCHEDULED_TABLE)
       .update({
         status: 'sent',
         sent_at: new Date().toISOString(),
+        sent_message_id: sentMessageId ?? null,
         error: null,
         hold_reason: null,
         hold_since: null,
@@ -310,6 +328,10 @@ export const automationApi = {
    * "aquela mensagem de ontem chegou a sair?" não tinha onde olhar — a agendada
    * enviada simplesmente sumia da lista no instante em que saía.
    *
+   * O histórico tem PRAZO (HISTORICO_AGENDADAS_DIAS); a fila não tem. O que já
+   * aconteceu perde utilidade rápido e só faria volume; o que ainda vai
+   * acontecer — sobretudo uma falha — não pode sumir por idade.
+   *
    * SÃO DUAS CONSULTAS, e não uma com teto. A fila e o histórico competem pelo
    * mesmo limite, mas só o histórico pode ser cortado: uma falha de três meses
    * atrás continua sendo uma falha, e num teto único ela seria empurrada para
@@ -332,9 +354,13 @@ export const automationApi = {
       .select('*, whatsapp_conversations(contact_name, contact_phone, contact_avatar_path, clients(full_name))')
       .eq('created_by', auth.user!.id);
 
+    // O histórico olha só os últimos dias (ver HISTORICO_AGENDADAS_DIAS): o teto
+    // sozinho não bastava — com 100 linhas de folga, um dia movimentado ainda
+    // empurrava a lista para meses atrás e a aba virava arquivo morto.
+    const desde = new Date(Date.now() - HISTORICO_AGENDADAS_DIAS * 24 * 60 * 60_000).toISOString();
     const [fila, historico] = await Promise.all([
       daPessoa().in('status', ['pending', 'failed']).order('scheduled_at', { ascending: true }).limit(200),
-      daPessoa().in('status', ['sent', 'canceled']).order('scheduled_at', { ascending: false }).limit(100),
+      daPessoa().in('status', ['sent', 'canceled']).gte('scheduled_at', desde).order('scheduled_at', { ascending: false }).limit(100),
     ]);
     if (fila.error) throw new Error(fila.error.message);
     if (historico.error) throw new Error(historico.error.message);

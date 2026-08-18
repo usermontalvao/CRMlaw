@@ -557,6 +557,14 @@ function PreviewBench() {
             <MessageBubble m={{ ...PDF_MSG, media_url: pdfUrl, storage_path: pdfUrl ? 'preview/contrato.pdf' : null }} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} onForward={setForwardSource} />
             {/* O mesmo PDF saindo do escritório: o cartão tem que vestir bem a bolha verde também. */}
             <MessageBubble m={{ ...PDF_MSG, id: 'pdf-out', direction: 'out', sender_user_id: 'pedro', media_url: pdfUrl, storage_path: pdfUrl ? 'preview/contrato.pdf' : null, content: 'Segue o contrato para conferência.' }} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...bubbleActions} />
+            {/* Mensagem que SAIU DE UM AGENDAMENTO: a marca é interna — existe
+                nesta tela e não no aparelho do contato. Fica na bancada porque
+                é ela que revela se o selo cabe na bolha sem empurrar o texto. */}
+            <MessageBubble
+              m={{ ...OK, id: 'agendada-out', direction: 'out', sender_user_id: 'pedro',
+                   content: 'Bom dia! Passando para lembrar da audiência de amanhã, às 14h.' }}
+              repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd
+              scheduledAt={new Date(Date.now() - 3 * 60 * 60_000).toISOString()} {...bubbleActions} />
             <MessageBubble m={AUDIO_TRANSCRITO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
 
             {/* Os tipos nativos que viravam bolha branca. */}
