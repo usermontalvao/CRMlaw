@@ -51,9 +51,10 @@ export const MessageBubble: React.FC<{
    * vincular o número a um cadastro. Ausentes = o host não oferece o recurso.
    * Encaminhar o cartão é do menu da bolha, como em qualquer outra mensagem.
    */
+  onOpenContactChat?: (phone: string, name: string) => void;
   onCallContactPhone?: (phone: string, name: string) => void;
   onLinkContactPhone?: (phone: string, name: string) => void;
-}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete, nextAudioId, onCallContactPhone, onLinkContactPhone }) => {
+}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete, nextAudioId, onOpenContactChat, onCallContactPhone, onLinkContactPhone }) => {
   const out = m.direction === 'out';
   const failed = m._local === 'failed' || m.status === 'failed';
   const busy = m._local === 'uploading' || m._local === 'sending';
@@ -255,6 +256,7 @@ export const MessageBubble: React.FC<{
             out={out}
             privateMode={privateMode}
             actions={{
+              onOpenChat: onOpenContactChat,
               onCall: onCallContactPhone,
               onLinkClient: onLinkContactPhone,
             } satisfies ContactCardActions}

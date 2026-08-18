@@ -963,6 +963,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.319',
+    date: '17/08/2026',
+    summary: 'O cartão de contato recebido virou o cartão do WhatsApp: clicar nele abre a conversa com aquela pessoa, e as ações ficam num rodapé discreto embaixo.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'improvement',
+            title: 'Clicar no contato abre a conversa',
+            description: 'O cartão inteiro é o botão, como no WhatsApp: o cliente manda o número do perito e falar com o perito passou a ser um clique, sem copiar o número e procurar em "Nova conversa". Se já existe conversa com aquele número, ela é reaproveitada — ninguém duplica thread por clicar no cartão. A conversa abre pelo mesmo canal em que o contato chegou. Embaixo, um rodapé com Conversar, Ligar e Vincular.',
+          },
+          {
+            type: 'fix',
+            title: 'Número sem WhatsApp não promete conversa',
+            description: 'Quando a consulta já respondeu que o número não tem WhatsApp, Conversar e Ligar ficam apagados — os dois passam pelo WhatsApp. Vincular a cliente continua valendo, que é o que ainda faz sentido com um fixo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.318',
     date: '17/08/2026',
     summary: 'O WhatsApp ganhou telefone: dá para ligar e atender pelo próprio CRM, a ligação entra na conversa junto das mensagens e a ficha do cliente passou a guardar o histórico e as gravações, com transcrição. Junto vieram o cartão de contato com rosto, a nova conversa em formato de agenda e o encerramento por inatividade fechando na hora certa.',

@@ -53,6 +53,24 @@ function pedir(phone: string) {
 }
 
 /**
+ * Semeia respostas prontas — só para a bancada visual (`?waconversationpreview=1`).
+ *
+ * A bancada roda sem sessão, então a sondagem de verdade volta vazia e todo
+ * cartão fica nas iniciais: é impossível ver ali a diferença entre "tem foto",
+ * "não tem foto" e "não tem WhatsApp", que são justamente os três desenhos que
+ * o cartão precisa acertar. Semear marca os números como já perguntados, então
+ * nem sequer nasce uma ida à rede.
+ */
+export function seedContactProbes(rows: WhatsAppContactProbe[]): void {
+  for (const r of rows) {
+    const norm = normalizePhone(r.phone);
+    if (!norm) continue;
+    respostas.set(norm, { ...r, phone: norm });
+    perguntados.add(norm);
+  }
+}
+
+/**
  * O que já se sabe sobre estes números, perguntando o que ainda falta.
  *
  * Devolve um mapa por telefone NORMALIZADO. Enquanto a resposta não chega o

@@ -14,6 +14,7 @@ import { ConversationStageSelect } from '../components/whatsapp/conversationLabe
 import { QuickActions } from '../components/whatsapp/quickActions';
 import { ForwardMessageModal } from '../components/whatsapp/forwardMessageModal';
 import { ThreadCallEntry, type ThreadCall } from '../components/whatsapp/threadCallEntry';
+import { seedContactProbes } from '../components/whatsapp/contactProbes';
 import { PreCadastroModal } from '../components/whatsapp/preCadastroModal';
 import { AiHandoffSummaryCard, AiHandoffSummaryStrip, useAiHandoffSummary } from '../components/whatsapp/aiHandoffSummary';
 import { ToastProvider } from '../contexts/ToastContext';
@@ -98,6 +99,17 @@ const CONTATO_MSG = message({
   type: 'contact',
   wa_timestamp: '2026-08-04T15:20:00.000Z',
   content: 'Dra. Helena Prado\n+5565999887766\n\nCartório 2º Ofício\n+556533334444',
+});
+
+// Contato de UM número — o formato do WhatsApp: cartão clicável e rodapé de
+// ações. É o caso comum, e o que a bancada precisa mostrar ao lado do de cima
+// (dois números por pessoa muda o desenho: cada linha ganha as próprias ações).
+const CONTATO_UM_MSG = message({
+  id: 'contato-um',
+  direction: 'in',
+  type: 'contact',
+  wa_timestamp: '2026-08-04T15:21:00.000Z',
+  content: 'André Eletricista\n+556581121124',
 });
 
 // ── Chamadas de voz na thread ──
@@ -361,6 +373,17 @@ const CONTACT_PHOTO = `data:image/svg+xml,${encodeURIComponent(`
   </svg>
 `)}`;
 
+// A sondagem de contato, semeada: a bancada não tem sessão para perguntar de
+// verdade, e sem isto os três cartões ficariam iguais nas iniciais. Aqui a Dra.
+// Helena tem foto, o André tem WhatsApp e não tem foto (o caso real que motivou
+// a pergunta "por que não puxa a foto?" — a Evolution devolve `null`), e o
+// cartório não tem WhatsApp.
+seedContactProbes([
+  { phone: '5565999887766', hasWhatsApp: true, avatarUrl: CONTACT_PHOTO },
+  { phone: '556581121124', hasWhatsApp: true, avatarUrl: null },
+  { phone: '556533334444', hasWhatsApp: false, avatarUrl: null },
+]);
+
 const PREVIEW_CONVERSATION: WhatsAppConversation = {
   id: 'preview-conversation', instance_id: 'canal', remote_jid: 'preview@s.whatsapp.net',
   contact_phone: '5565984046375', contact_name: 'Lisliandra Inocêncio',
@@ -542,6 +565,12 @@ function PreviewBench() {
             ))}
             <MessageBubble m={CONTATO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions}
               onForward={setForwardSource}
+              onOpenContactChat={(phone, name) => console.log('conversar', phone, name)}
+              onCallContactPhone={(phone, name) => console.log('ligar', phone, name)}
+              onLinkContactPhone={(phone, name) => console.log('vincular', phone, name)} />
+            <MessageBubble m={CONTATO_UM_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions}
+              onForward={setForwardSource}
+              onOpenContactChat={(phone, name) => console.log('conversar', phone, name)}
               onCallContactPhone={(phone, name) => console.log('ligar', phone, name)}
               onLinkContactPhone={(phone, name) => console.log('vincular', phone, name)} />
             <MessageBubble m={LOCALIZACAO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />

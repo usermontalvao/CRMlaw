@@ -1476,6 +1476,39 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   }, [selected, channelById, channelRoutingById, handleConversationOpened, loadReconnectAlerts, toast]);
 
   /**
+   * "Conversar" do cartão de contato — abre a thread daquele número.
+   *
+   * É o clique do cartão inteiro, e é o que se espera de um contato recebido:
+   * o cliente manda o número do perito, e falar com o perito não pode custar
+   * copiar o número, abrir "Nova conversa" e colar. `openConversation` é
+   * idempotente — quem já tem thread com aquele número cai nela, ninguém
+   * duplica conversa por clicar num cartão.
+   *
+   * O CANAL é o desta conversa, não uma escolha nova: o contato chegou por
+   * aqui, e é por aqui que o escritório responde. Só quando o cartão é aberto
+   * fora de uma conversa (a bolha existe no workspace 360) é que cai no
+   * primeiro canal conectado.
+   */
+  const openContactChat = useCallback(async (phone: string, name: string) => {
+    const channelId = selected?.instance_id || connectedChannels[0]?.id;
+    if (!channelId) {
+      toast.warning('Sem canal conectado', 'Conecte um canal para abrir a conversa.');
+      return;
+    }
+    try {
+      const { conversation_id } = await whatsappService.openConversation({
+        phone,
+        channelId,
+        contactName: name || null,
+        departmentId: channelRoutingById.get(channelId)?.default_department_id || null,
+      });
+      await handleConversationOpened(conversation_id);
+    } catch (e: any) {
+      toast.error('Não foi possível abrir a conversa', e?.message);
+    }
+  }, [selected?.instance_id, connectedChannels, channelRoutingById, handleConversationOpened, toast]);
+
+  /**
    * "Ver e resolver" da sirene — leva ao lugar onde a pendência TEM botão.
    *
    * Antes isto só selecionava a conversa, e a mensagem retida não mora na
@@ -1531,6 +1564,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     forward: (m: WhatsAppMessage) => void;
     remove: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => void;
     /** Ações do cartão de contato recebido (ver `contactMessageCard.tsx`). */
+    openContactChat: (phone: string, name: string) => void;
     callContactPhone: (phone: string, name: string) => void;
     linkContactPhone: (phone: string, name: string) => void;
   }>(null!);
@@ -1550,6 +1584,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     // Ligar para um número do cartão de contato. Vai pela MESMA porta da
     // ligação do cabeçalho: quem decide se aquilo é um número discável é
     // `resolveCallablePhone`, não a bolha.
+    openContactChat: (phone, name) => { void openContactChat(phone, name); },
     callContactPhone: (phone, name) => {
       void waCalls.placeCall(phone, {
         conversationId: null, clientId: null, name, avatarUrl: null,
@@ -1663,6 +1698,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     onCreateDeadline: (m: WhatsAppMessage) => bubbleImplRef.current.createDeadline(m),
     onCreateTask: (m: WhatsAppMessage) => bubbleImplRef.current.createTask(m),
     onDelete: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => bubbleImplRef.current.remove(m, scope),
+    onOpenContactChat: (phone: string, name: string) => bubbleImplRef.current.openContactChat(phone, name),
     onCallContactPhone: (phone: string, name: string) => bubbleImplRef.current.callContactPhone(phone, name),
     onLinkContactPhone: (phone: string, name: string) => bubbleImplRef.current.linkContactPhone(phone, name),
   }), []);
