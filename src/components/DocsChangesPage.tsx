@@ -47,6 +47,7 @@ import { matchesNormalizedSearch } from '../utils/search';
    ============================================================================ */
 
 const VERSION_CODENAMES: Record<string, { name: string; emoji: string }> = {
+  '1.10.326': { name: 'Cafe Microfone Certo na Ligacao', emoji: '[phone]' },
   '1.10.325': { name: 'Cafe Chamada Perdida na Tela', emoji: '[phone]' },
   '1.10.324': { name: 'Cafe Etapa e Documento Lado a Lado', emoji: '[memo]' },
   '1.10.323': { name: 'Cafe Triagem Que Relê a Conversa', emoji: '[memo]' },
@@ -965,6 +966,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 };
 
 const releases: ReleaseNote[] = [
+  {
+    version: '1.10.326',
+    date: '18/08/2026',
+    summary: 'Dá para escolher em qual microfone se fala e em qual alto-falante o telefone toca — no cabeçalho do módulo e dentro da própria ligação.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Escolher o microfone e o alto-falante das ligações',
+            description: 'Quem atende por voz raramente tem um dispositivo só: há o headset USB, o microfone da webcam e o alto-falante do monitor, e o navegador escolhia sozinho pelo padrão do sistema. O defeito que isso produzia não era falar baixo — era o TOQUE da chamada sair no alto-falante do monitor desligado enquanto o headset estava na cabeça: o telefone tocava e ninguém ouvia. Agora a escolha fica no cabeçalho do módulo e também dentro do painel da chamada em curso, porque o driver errado só se descobre no meio de uma ligação, e sair do módulo para procurar um ajuste nesse momento é o mesmo que desistir da chamada. Um botão toca um ciclo do toque para conferir antes.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A preferência é da máquina, não da pessoa',
+            description: 'A escolha fica guardada no navegador e não no cadastro do usuário: dispositivo é da máquina em que se está sentado. Quem entra de outro computador escolhe de novo — e deve mesmo, porque os dispositivos de lá são outros. Se o aparelho escolhido sumir (headset desconectado), o som volta para o padrão do sistema em vez de sair em lugar nenhum.',
+          },
+        ],
+      },
+    ],
+  },
   {
     version: '1.10.325',
     date: '18/08/2026',

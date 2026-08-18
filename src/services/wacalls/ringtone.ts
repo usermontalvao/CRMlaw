@@ -132,6 +132,20 @@ export function stopRing(): void {
   try { navigator.vibrate?.(0); } catch { /* sem vibração */ }
 }
 
+/**
+ * Toca UM ciclo do toque de chamada recebida, para conferir o alto-falante.
+ *
+ * Ignora o silenciamento de propósito: quem apertou "tocar um teste" pediu o
+ * som agora — e a preferência de mudo é sobre chamadas que chegam sozinhas, não
+ * sobre um teste deliberado. Devolve `false` quando o navegador ainda não
+ * liberou o áudio nesta aba, para o painel poder dizer isso.
+ */
+export function playRingTest(): boolean {
+  const ac = getContextoTocavel();
+  if (!ac) return false;
+  try { scheduleRingCycle(ac, ac.destination, 'incoming'); return true; } catch { return false; }
+}
+
 /** Duas notas subindo: a chamada foi atendida e o áudio está de pé. */
 export function playCallConnectedTone(): void {
   const ac = getContextoTocavel();

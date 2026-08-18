@@ -117,6 +117,7 @@ import { ConversationList } from './whatsapp/conversationList';
 import { ThreadSkeleton } from './whatsapp/skeletons';
 import { resolveInboxKey, isTypingTarget } from './whatsapp/inboxKeyboard';
 import { WaLightbox } from './whatsapp/lightbox';
+import { WaAudioDeviceButton } from './whatsapp/audioDeviceSettings';
 import { WaNotifyBell } from './whatsapp/notifyBell';
 import { useWaIsMobile, useWaIsPanelDocked, utcOffsetMinutesOf } from './whatsapp/hooks';
 import { useResizableLayout } from './whatsapp/hooks/useResizableLayout';
@@ -2120,6 +2121,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         </span>
       )}
       <WaNotifyBell pushState={pushState} onTogglePush={toggleStaffPush} />
+      {/* Microfone e alto-falante ficam AQUI, à vista, e não em Configurações:
+          o driver errado só se descobre no meio de uma ligação, e nesse momento
+          sair do módulo para procurar um ajuste é o mesmo que desistir. */}
+      <WaAudioDeviceButton />
       {/* "Próximo da fila" fica sempre à mão: é ação de atendimento, feita
           dezenas de vezes por dia, não configuração. */}
       {!embedded && nextUp && (
