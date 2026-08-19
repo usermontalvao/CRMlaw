@@ -968,7 +968,7 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
-    version: '1.10.331',
+    version: '1.10.332',
     date: '19/08/2026',
     summary: 'A chamada de vídeo saiu da caixinha: agora ela ocupa a tela, como no celular — e a sua imagem chega em pé do outro lado.',
     modules: [
@@ -988,7 +988,7 @@ const releases: ReleaseNote[] = [
           {
             type: 'fix' as const,
             title: 'Você aparece em pé no celular do cliente',
-            description: 'A webcam da mesa entrega um quadro deitado e o aparelho do contato desenhava você de lado — e, em alguns casos, de cabeça para baixo. Avisar o outro lado da rotação não resolvia (o aplicativo dele não obedecia), então agora a imagem é girada AQUI, antes de ser enviada: o que sai já sai em pé. O botão "Girar" dá um quarto de volta por clique e a miniatura da sua câmera mostra na hora exatamente o que o cliente está vendo — acertou uma vez, fica acertado para as próximas chamadas neste computador.',
+            description: 'A webcam da mesa entrega um quadro deitado, o celular do contato acrescenta um giro por conta própria, e o resultado era você aparecendo de lado na tela do cliente. Avisar o outro lado da rotação não resolvia — o aplicativo dele não obedecia. Agora a imagem é girada AQUI, nos pixels, antes de ser enviada, e já sai compensando o giro que o aparelho aplica: você aparece em pé desde a primeira chamada, sem configurar nada. O botão "Girar" continua ali para o aparelho que se comporte diferente — um quarto de volta por clique, com efeito imediato no meio da ligação —, e a miniatura da sua câmera mostra o que o cliente está vendo, não o que sai daqui: se ela está em pé, ele está te vendo em pé.',
           },
         ],
       },

@@ -19,6 +19,7 @@ import {
   CameraError, DEFAULT_FPS, openCallVideo, openCamera, videoSupported,
   type WaCallVideoBridge,
 } from './videoBridge';
+import { DEFAULT_CAMERA_TURN } from './videoTurn';
 import { callLogService, type CallLogOutcome } from '../callLog.service';
 import {
   CALLABLE_PHONE_UNKNOWN, parseWaPeer, resolveCallablePhone,
@@ -134,9 +135,11 @@ const ORIENTACAO_KEY = 'wacalls.video.turn';
 const cameraAoAtender = new Map<string, MediaStream>();
 
 function orientacaoGuardada(): number {
-  if (typeof localStorage === 'undefined') return 0;
+  // Sem escolha guardada vale o padrão de FÁBRICA, não o zero: a webcam da mesa
+  // sem giro nenhum chega deitada no celular do contato (ver `videoTurn`).
+  if (typeof localStorage === 'undefined') return DEFAULT_CAMERA_TURN;
   const bruto = Number(localStorage.getItem(ORIENTACAO_KEY));
-  return Number.isInteger(bruto) && bruto >= 0 && bruto <= 3 ? bruto : 0;
+  return Number.isInteger(bruto) && bruto >= 0 && bruto <= 3 ? bruto : DEFAULT_CAMERA_TURN;
 }
 /**
  * Gravação que o operador parou ANTES de a chamada acabar.

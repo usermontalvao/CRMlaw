@@ -35,6 +35,7 @@ import {
   type CallWidgetBox,
   type CallWidgetPoint,
 } from './callWidgetPlacement';
+import { DEFAULT_CAMERA_TURN, selfViewTurn } from '../../services/wacalls/videoTurn';
 import type { WaCall } from '../../services/wacalls/types';
 
 /** Acima dos avisos de mensagem nova (2147483000): uma linha aberta vem antes. */
@@ -457,11 +458,11 @@ const MinimizedCallPill: React.FC<{
 const CallVideoStage: React.FC<{
   call: WaCall;
   streams: () => { local: MediaStream | null; remote: MediaStream | null } | null;
-  /** Quartos de volta da NOSSA imagem, para a miniatura mostrar o que sai daqui. */
+  /** Quartos de volta da NOSSA imagem; a miniatura desenha o que o contato vê. */
   orientation?: number;
   /** Abre a tela cheia (ver `callVideoScreen`). */
   onExpand?: () => void;
-}> = ({ call, streams, orientation = 0, onExpand }) => {
+}> = ({ call, streams, orientation = DEFAULT_CAMERA_TURN, onExpand }) => {
   const remoteRef = useRef<HTMLVideoElement>(null);
   const localRef = useRef<HTMLVideoElement>(null);
   const [temImagem, setTemImagem] = useState(false);
@@ -524,7 +525,10 @@ const CallVideoStage: React.FC<{
         // girando só o elemento, a imagem aparecia cortada nas laterais.
         <div
           className="wa-call-selfview absolute bottom-2 right-2 z-10 overflow-hidden rounded-lg border border-white/20 shadow-lg"
-          style={{ width: orientation % 2 === 1 ? 72 : 96, height: orientation % 2 === 1 ? 96 : 72 }}
+          style={{
+            width: selfViewTurn(orientation) % 2 === 1 ? 72 : 96,
+            height: selfViewTurn(orientation) % 2 === 1 ? 96 : 72,
+          }}
         >
           <video
             ref={localRef}
@@ -535,7 +539,7 @@ const CallVideoStage: React.FC<{
             style={{
               width: 96,
               height: 72,
-              transform: `translate(-50%, -50%) rotate(${(orientation % 4) * 90}deg) scaleX(-1)`,
+              transform: `translate(-50%, -50%) rotate(${selfViewTurn(orientation) * 90}deg) scaleX(-1)`,
             }}
           />
         </div>
@@ -598,7 +602,8 @@ export const ActiveCallWidget: React.FC<{
   onOpenConversation?: () => void;
 }> = ({
   call, linkDown = false, onHangUp, onToggleMute, onToggleRecording, onOpenConversation,
-  onToggleVideo, videoSupported = false, videoStreams, onRotateVideo, videoOrientation = 0,
+  onToggleVideo, videoSupported = false, videoStreams, onRotateVideo,
+  videoOrientation = DEFAULT_CAMERA_TURN,
   onExpandVideo,
   guests = [], operators = [], me = null, onInviteGuest, onRemoveGuest,
 }) => {
@@ -824,11 +829,12 @@ export const ActiveCallWidget: React.FC<{
               <span className="text-[11px] font-semibold text-slate-500">Vídeo</span>
             </button>
           )}
-          {/* GIRAR. A webcam da mesa entrega um quadro deitado e o aparelho do
-              contato desenha girado — e quem enxerga os dois lados ao mesmo
-              tempo é quem está aqui. Um quarto de volta por clique, e a escolha
-              fica guardada: a câmera não sai do lugar, então acertar uma vez
-              acerta para sempre. Só aparece com a nossa câmera no ar. */}
+          {/* GIRAR. O aparelho do contato acrescenta um giro por conta própria
+              (ver `services/wacalls/videoTurn`), e o padrão de fábrica já sai
+              daqui compensando isso — este botão existe para o aparelho que se
+              comporte diferente. Um quarto de volta por clique, a escolha fica
+              guardada, e a miniatura mostra o resultado do lado de lá na hora.
+              Só aparece com a nossa câmera no ar. */}
           {onRotateVideo && call.videoOn && (
             <button
               onClick={onRotateVideo}

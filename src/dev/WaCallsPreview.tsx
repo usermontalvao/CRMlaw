@@ -8,6 +8,7 @@ import React, { useEffect, useState } from 'react';
 import { PhoneCall } from 'lucide-react';
 import { ActiveCallWidget, IncomingCallCard } from '../components/whatsapp/callModals';
 import { CallVideoScreen } from '../components/whatsapp/callVideoScreen';
+import { DEFAULT_CAMERA_TURN } from '../services/wacalls/videoTurn';
 import { MissedCallWidget } from '../components/whatsapp/MissedCallWidget';
 import type { MissedCall } from '../services/wacalls/missedCalls';
 import { playCallConnectedTone, playCallEndedTone, startRing, stopRing } from '../services/wacalls/ringtone';
@@ -180,7 +181,9 @@ const WaCallsPreview: React.FC = () => {
   // entre a tela cheia e o painel flutuante.
   const [videoNos, setVideoNos] = useState(false);
   const [videoDele, setVideoDele] = useState(false);
-  const [giro, setGiro] = useState(0);
+  // Começa no padrão de fábrica, como o store faz: assim a bancada mostra a
+  // miniatura EM PÉ, que é como o contato vê o operador sem ninguém configurar.
+  const [giro, setGiro] = useState(DEFAULT_CAMERA_TURN);
   const [telaCheia, setTelaCheia] = useState(true);
   const streamsDeMentira = usarImagemDeMentira(videoNos || videoDele);
   const [recebida, setRecebida] = useState(true);

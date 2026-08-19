@@ -19,6 +19,7 @@
 // para dar, e a câmera está aqui de qualquer forma.
 import { waCallsLog } from './config';
 import { callSocket, KIND_VIDEO } from './socket';
+import { DEFAULT_CAMERA_TURN, normalizeTurn } from './videoTurn';
 
 /** O perfil que o WhatsApp usa: Constrained Baseline, nível 3.1. */
 const H264_CODEC = 'avc1.42E01F';
@@ -63,17 +64,6 @@ export function videoSupported(): boolean {
   return typeof VideoEncoder !== 'undefined'
     && typeof VideoDecoder !== 'undefined'
     && typeof VideoFrame !== 'undefined';
-}
-
-/**
- * Quartos de volta, sempre dentro de 0..3.
- *
- * Aceita negativo e valor guardado de outra versão sem quebrar: o giro é lido
- * do `localStorage`, e um valor estranho ali não pode derrubar a câmera.
- */
-export function normalizeQuarters(quarters: number): number {
-  if (!Number.isFinite(quarters)) return 0;
-  return ((Math.round(quarters) % 4) + 4) % 4;
 }
 
 /** Erro de câmera já traduzido para o operador. */
@@ -141,7 +131,7 @@ export async function openCallVideo(params: {
   cameraStream: MediaStream;
   fps?: number;
   bitrate?: number;
-  /** Quartos de volta a aplicar na nossa imagem (ver `setOrientation`). */
+  /** Quartos de volta a aplicar na nossa imagem. Omitido = o padrão de fábrica. */
   orientation?: number;
   /** Avisado quando o encoder ou o decoder morre no meio da chamada. */
   onFailure?: (motivo: string) => void;
@@ -183,7 +173,7 @@ export async function openCallVideo(params: {
    * no encoder em pé. O preço é uma cópia por quadro num canvas, que a 15 fps
    * em 640x480 não se nota.
    */
-  let giro = normalizeQuarters(params.orientation ?? 0);
+  let giro = normalizeTurn(params.orientation ?? DEFAULT_CAMERA_TURN);
 
   /**
    * Um quarto de volta TROCA largura por altura — e a medida vai no
@@ -461,7 +451,7 @@ export async function openCallVideo(params: {
     receivedFrames: () => quadrosRecebidos,
     orientation: () => giro,
     setOrientation: (quarters: number) => {
-      const proximo = normalizeQuarters(quarters);
+      const proximo = normalizeTurn(quarters);
       if (closed || proximo === giro) return;
       giro = proximo;
       // A medida do encoder mudou (um quarto de volta troca largura por

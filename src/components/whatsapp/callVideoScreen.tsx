@@ -26,6 +26,7 @@ import { WaAudioDeviceButton } from './audioDeviceSettings';
 import { CallTimer, callDisplayName, callStatusText, useDraggablePosition } from './callModals';
 import { prettyPhone } from './format';
 import { selfViewPosition } from './callWidgetPlacement';
+import { DEFAULT_CAMERA_TURN, selfViewTurn } from '../../services/wacalls/videoTurn';
 import type { WaCall } from '../../services/wacalls/types';
 
 /** Acima do painel flutuante (2147483100) e abaixo da chamada recebida (…200). */
@@ -52,9 +53,9 @@ export const CallVideoScreen: React.FC<{
   /** As imagens da chamada, buscadas na hora de plugar o <video>. */
   streams: () => { local: MediaStream | null; remote: MediaStream | null } | null;
   /**
-   * Quartos de volta que a NOSSA imagem leva antes de sair daqui. A
-   * auto-visualização gira junto — é o único jeito de o operador conferir, sem
-   * perguntar ao cliente, se a imagem saiu em pé.
+   * Quartos de volta que a NOSSA imagem leva antes de sair daqui. A miniatura
+   * NÃO desenha este número: ela desenha o que o contato vê (`selfViewTurn`),
+   * que é este giro mais o que o aparelho dele acrescenta sozinho.
    */
   selfOrientation?: number;
   /** Rede local ou serviço de chamadas fora do ar. */
@@ -69,7 +70,7 @@ export const CallVideoScreen: React.FC<{
   onRotateVideo?: () => void;
   onOpenConversation?: () => void;
 }> = ({
-  call, streams, selfOrientation = 0, linkDown = false, videoSupported = false,
+  call, streams, selfOrientation = DEFAULT_CAMERA_TURN, linkDown = false, videoSupported = false,
   onMinimize, onHangUp, onToggleMute, onToggleRecording, onToggleVideo, onRotateVideo,
   onOpenConversation,
 }) => {
@@ -83,7 +84,10 @@ export const CallVideoScreen: React.FC<{
   const [telaCheia, setTelaCheia] = useState(false);
 
   const finished = call.phase === 'ENDED' || call.phase === 'FAILED';
-  const girado = selfOrientation % 2 === 1;
+  // O ângulo da miniatura é o do CELULAR DO CONTATO, não o nosso — é a única
+  // leitura útil: o operador quer saber como ele está aparecendo lá.
+  const giroVisto = selfViewTurn(selfOrientation);
+  const girado = giroVisto % 2 === 1;
   const mostrandoRemoto = temRemoto && call.peerVideo;
 
   const { pos: selfPos, dragging: arrastandoSelf, handlers: selfHandlers } = useDraggablePosition(
@@ -330,7 +334,7 @@ export const CallVideoScreen: React.FC<{
               // que todo aplicativo de vídeo faz) é aplicado na imagem da
               // câmera, e o giro vem por cima — assim a miniatura mostra
               // exatamente a inclinação que sai daqui.
-              transform: `translate(-50%, -50%) rotate(${(selfOrientation % 4) * 90}deg) scaleX(-1)`,
+              transform: `translate(-50%, -50%) rotate(${giroVisto * 90}deg) scaleX(-1)`,
             }}
           />
         </div>
@@ -365,11 +369,12 @@ export const CallVideoScreen: React.FC<{
             </RoundControl>
           )}
 
-          {/* GIRAR. A webcam da mesa fica onde está, mas o aparelho do contato
-              desenha a nossa imagem deitada. Quem enxerga os dois lados ao mesmo
-              tempo é quem está aqui — um quarto de volta por clique, e a escolha
-              fica guardada para as próximas chamadas. A miniatura ao lado mostra
-              o resultado na hora. */}
+          {/* GIRAR. O aparelho do contato acrescenta um giro por conta própria
+              (medido em 19/08/2026 — ver `services/wacalls/videoTurn`), e o que
+              sai daqui já nasce compensando. O botão fica para o aparelho que
+              se comporte diferente: um quarto de volta por clique, guardado
+              para as próximas chamadas, com a miniatura mostrando na hora como
+              o contato passa a ver. */}
           {onRotateVideo && call.videoOn && (
             <RoundControl
               label="Girar a sua imagem um quarto de volta"
