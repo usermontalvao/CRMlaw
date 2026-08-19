@@ -968,6 +968,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.331',
+    date: '19/08/2026',
+    summary: 'A chamada de vídeo saiu da caixinha: agora ela ocupa a tela, como no celular — e a sua imagem chega em pé do outro lado.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'A chamada de vídeo agora ocupa a tela',
+            description: 'A imagem do cliente cabia numa faixa dentro do painelzinho da ligação: dava para ver que a câmera tinha ligado, não para conversar. Documento na mão, expressão, o ambiente atrás da pessoa — nada disso se lê num selo. Quando entra vídeo (o seu ou o dele), a chamada passa a ocupar a tela inteira, com o rosto grande, a sua câmera numa miniatura que você arrasta para o canto que quiser, o nome e o cronômetro por cima e os botões numa barra que some sozinha e volta ao primeiro movimento do mouse. Sair de lá é um clique (ou Esc): a mesma ligação volta para a janelinha flutuante e o CRM fica clicável de novo — e o botão de ampliar leva de volta ao rosto grande.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Na janelinha, o vídeo passou a ser o assunto',
+            description: 'Mesmo recolhida, a ligação de vídeo era desenhada como uma ligação de voz: o retrato, o nome, o cronômetro e os botões ocupavam mais espaço branco do que a imagem da pessoa. Agora o vídeo é a maior parte da janelinha, com o nome e o tempo escritos por cima dele, e o atalho da conversa virou botão na fileira.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Você aparece em pé no celular do cliente',
+            description: 'A webcam da mesa entrega um quadro deitado e o aparelho do contato desenhava você de lado — e, em alguns casos, de cabeça para baixo. Avisar o outro lado da rotação não resolvia (o aplicativo dele não obedecia), então agora a imagem é girada AQUI, antes de ser enviada: o que sai já sai em pé. O botão "Girar" dá um quarto de volta por clique e a miniatura da sua câmera mostra na hora exatamente o que o cliente está vendo — acertou uma vez, fica acertado para as próximas chamadas neste computador.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.330',
     date: '19/08/2026',
     summary: 'A lista de conversas passou a dizer o que realmente aconteceu por último — inclusive quando o último foi uma ligação.',

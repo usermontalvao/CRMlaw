@@ -65,6 +65,17 @@ export function videoSupported(): boolean {
     && typeof VideoFrame !== 'undefined';
 }
 
+/**
+ * Quartos de volta, sempre dentro de 0..3.
+ *
+ * Aceita negativo e valor guardado de outra versão sem quebrar: o giro é lido
+ * do `localStorage`, e um valor estranho ali não pode derrubar a câmera.
+ */
+export function normalizeQuarters(quarters: number): number {
+  if (!Number.isFinite(quarters)) return 0;
+  return ((Math.round(quarters) % 4) + 4) % 4;
+}
+
 /** Erro de câmera já traduzido para o operador. */
 export class CameraError extends Error {
   constructor(message: string, readonly cause: unknown) {
@@ -108,6 +119,10 @@ export interface WaCallVideoBridge {
   remoteStream: () => MediaStream | null;
   /** Corta/religa o ENVIO da câmera sem derrubar o vídeo que chega. */
   setCameraEnabled: (on: boolean) => void;
+  /** Quartos de volta aplicados na nossa imagem ANTES de codificar. */
+  orientation: () => number;
+  /** Gira a nossa imagem (0..3 quartos de volta). Vale do próximo quadro. */
+  setOrientation: (quarters: number) => void;
   /** Quantos quadros do outro lado já foram desenhados. */
   receivedFrames: () => number;
   close: () => void;
@@ -126,6 +141,8 @@ export async function openCallVideo(params: {
   cameraStream: MediaStream;
   fps?: number;
   bitrate?: number;
+  /** Quartos de volta a aplicar na nossa imagem (ver `setOrientation`). */
+  orientation?: number;
   /** Avisado quando o encoder ou o decoder morre no meio da chamada. */
   onFailure?: (motivo: string) => void;
 }): Promise<WaCallVideoBridge> {
@@ -154,10 +171,29 @@ export async function openCallVideo(params: {
   const largura = ajustes.width ?? DEFAULT_WIDTH;
   const altura = ajustes.height ?? DEFAULT_HEIGHT;
 
-  const configuracao: VideoEncoderConfig = {
+  /**
+   * Quartos de volta que a NOSSA imagem leva ANTES de virar H.264.
+   *
+   * O giro é em PIXEL, e não um aviso ao outro lado. Já foi um aviso — a
+   * chamada `set_video_orientation` do Jurius Call, que pede à biblioteca para
+   * anunciar a rotação do nosso "aparelho" — e o celular do contato continuou
+   * desenhando o operador deitado: ou o campo não chega como o aplicativo
+   * espera, ou ele já aplica uma rotação própria por conta. Girando os pixels
+   * aqui não há o que o outro lado precise honrar: sai da câmera torto e entra
+   * no encoder em pé. O preço é uma cópia por quadro num canvas, que a 15 fps
+   * em 640x480 não se nota.
+   */
+  let giro = normalizeQuarters(params.orientation ?? 0);
+
+  /**
+   * Um quarto de volta TROCA largura por altura — e a medida vai no
+   * `configure()`. Por isso girar no meio da chamada exige reconfigurar o
+   * encoder (ver `setOrientation`), e não só desenhar diferente.
+   */
+  const configuracaoPara = (quartos: number): VideoEncoderConfig => ({
     codec: H264_CODEC,
-    width: largura,
-    height: altura,
+    width: quartos % 2 === 1 ? altura : largura,
+    height: quartos % 2 === 1 ? largura : altura,
     bitrate,
     framerate: fps,
     // Sem lookahead: numa ligação, meio segundo de atraso para ganhar
@@ -166,7 +202,9 @@ export async function openCallVideo(params: {
     // Annex-B é o que o whatsapp-rust transporta. Sem isto o Chrome entrega
     // AVCC e o outro lado não decodifica nada.
     avc: { format: 'annexb' },
-  };
+  });
+
+  const configuracao = configuracaoPara(giro);
 
   // Perguntar ANTES de configurar. `configure()` com um perfil sem suporte não
   // lança: ele cai no callback de erro, assíncrono, DEPOIS de a chamada já ter
@@ -183,7 +221,7 @@ export async function openCallVideo(params: {
   if (!suporte.supported) {
     cameraStream.getTracks().forEach(t => t.stop());
     throw new CameraError(
-      `Este navegador não codifica H.264 em ${largura}x${altura}.`,
+      `Este navegador não codifica H.264 em ${configuracao.width}x${configuracao.height}.`,
       suporte,
     );
   }
@@ -202,6 +240,45 @@ export async function openCallVideo(params: {
   });
   encoder.configure(configuracao);
 
+  /**
+   * A mesa de giro: um canvas só, reaproveitado quadro a quadro.
+   *
+   * Criar um canvas por quadro a 15 fps seria lixo para o coletor a cada 66 ms.
+   * `desynchronized` porque ninguém lê estes pixels de volta na tela — eles vão
+   * direto para o encoder.
+   */
+  const palco = document.createElement('canvas');
+  const palcoCtx = palco.getContext('2d', { alpha: false, desynchronized: true });
+
+  const girarQuadro = (frame: VideoFrame): VideoFrame | null => {
+    if (!palcoCtx) return null;
+    const fw = frame.displayWidth;
+    const fh = frame.displayHeight;
+    const saidaW = giro % 2 === 1 ? fh : fw;
+    const saidaH = giro % 2 === 1 ? fw : fh;
+    if (palco.width !== saidaW || palco.height !== saidaH) {
+      palco.width = saidaW;
+      palco.height = saidaH;
+    }
+    palcoCtx.save();
+    palcoCtx.translate(saidaW / 2, saidaH / 2);
+    palcoCtx.rotate((giro * Math.PI) / 2);
+    palcoCtx.drawImage(frame, -fw / 2, -fh / 2, fw, fh);
+    palcoCtx.restore();
+    try {
+      // O carimbo é o do quadro original: é ele que dá a cadência do RTP lá no
+      // servidor. Um carimbo novo aqui faria o vídeo correr ou arrastar.
+      return new VideoFrame(palco, {
+        timestamp: frame.timestamp ?? Math.round(performance.now() * 1000),
+        duration: frame.duration ?? undefined,
+        alpha: 'discard',
+      });
+    } catch (err) {
+      waCallsLog('não foi possível girar o quadro', err);
+      return null;
+    }
+  };
+
   const codificar = (frame: VideoFrame) => {
     if (closed || !enviando || encoder.state !== 'configured') {
       frame.close();
@@ -213,14 +290,23 @@ export async function openCallVideo(params: {
       frame.close();
       return;
     }
+    // Girado, o quadro que vai ao encoder é OUTRO objeto — e os dois precisam
+    // ser fechados, ou o WebCodecs para de entregar quadros novos por falta de
+    // buffer (o sintoma é a câmera "congelar" depois de alguns segundos).
+    const paraEncoder = giro === 0 ? frame : girarQuadro(frame);
+    if (!paraEncoder) {
+      frame.close();
+      return;
+    }
     const agora = Date.now();
     const chave = agora - ultimoKeyframe >= KEYFRAME_MS;
     if (chave) ultimoKeyframe = agora;
     try {
-      encoder.encode(frame, { keyFrame: chave });
+      encoder.encode(paraEncoder, { keyFrame: chave });
     } catch (err) {
       waCallsLog('quadro descartado pelo encoder', err);
     }
+    if (paraEncoder !== frame) paraEncoder.close();
     frame.close();
   };
 
@@ -349,7 +435,7 @@ export async function openCallVideo(params: {
     }
   });
 
-  waCallsLog('vídeo ligado', { callId, largura, altura, fps });
+  waCallsLog('vídeo ligado', { callId, largura, altura, fps, giro });
 
   const close = () => {
     if (closed) return;
@@ -373,6 +459,28 @@ export async function openCallVideo(params: {
     localStream: () => (closed ? null : cameraStream),
     remoteStream: () => (closed ? null : remoto),
     receivedFrames: () => quadrosRecebidos,
+    orientation: () => giro,
+    setOrientation: (quarters: number) => {
+      const proximo = normalizeQuarters(quarters);
+      if (closed || proximo === giro) return;
+      giro = proximo;
+      // A medida do encoder mudou (um quarto de volta troca largura por
+      // altura): sem reconfigurar, o Chrome esticaria o quadro girado dentro da
+      // moldura antiga e o contato veria a imagem achatada. E o outro lado
+      // precisa de um quadro-chave para começar de novo na medida nova — daí
+      // zerar o relógio do keyframe.
+      if (encoder.state === 'configured') {
+        try {
+          encoder.configure(configuracaoPara(giro));
+          ultimoKeyframe = 0;
+        } catch (err) {
+          console.error('[Chamadas] não foi possível girar a câmera', err);
+          params.onFailure?.('encoder');
+          return;
+        }
+      }
+      waCallsLog('câmera girada', { callId, giro });
+    },
     setCameraEnabled: (on: boolean) => {
       enviando = on;
       // Desligar a track também faz a luz da câmera apagar — o operador precisa

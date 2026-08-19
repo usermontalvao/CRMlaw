@@ -107,8 +107,16 @@ const videoBridges = new Map<string, WaCallVideoBridge>();
  * A webcam da mesa fica onde está: o mesmo giro que acertou a imagem hoje é o
  * que acerta amanhã. Descobrir isso de novo a cada ligação, na frente do
  * cliente, é o que este `localStorage` evita.
+ *
+ * A CHAVE MUDOU DE NOME de propósito (era `wacalls.video.orientation`). O
+ * número mudou de significado: antes era a rotação ANUNCIADA ao outro lado,
+ * agora é o quanto giramos os nossos próprios pixels antes de codificar. Quem
+ * tivesse clicado em "Girar" tentando consertar a imagem no aparelho do
+ * contato carregaria aquele palpite para dentro da regra nova — e apareceria
+ * de cabeça para baixo sem ter pedido. Chave nova, todo mundo começa do zero:
+ * a câmera como ela é, e o giro é escolha de quem está vendo a miniatura.
  */
-const ORIENTACAO_KEY = 'wacalls.video.orientation';
+const ORIENTACAO_KEY = 'wacalls.video.turn';
 /**
  * Câmeras já autorizadas esperando a chamada ser ATENDIDA.
  *
@@ -376,6 +384,10 @@ async function attachVideoBridge(callId: string, cameraStream: MediaStream): Pro
       callId,
       cameraStream,
       fps: DEFAULT_FPS,
+      // O giro escolhido antes vale desde o PRIMEIRO quadro. Aplicá-lo depois
+      // faria o contato ver a imagem deitada e ela endireitar sozinha na cara
+      // dele, no meio da conversa.
+      orientation: orientacaoGuardada(),
       onFailure: motivo => {
         waCallsLog('a ponte de vídeo falhou', { callId, motivo });
         void waCallsStore.stopVideo(callId);
@@ -400,13 +412,7 @@ async function attachVideoBridge(callId: string, cameraStream: MediaStream): Pro
   }
   videoBridges.set(callId, video);
   patch(callId, { videoOn: true });
-  // O giro escolhido antes vale desde o primeiro quadro: anunciar depois faria
-  // o contato ver a imagem deitada e ela endireitar sozinha na cara dele.
-  const giro = orientacaoGuardada();
-  if (giro) {
-    void waCallsService.setVideoOrientation(callId, giro).catch(() => { /* a imagem segue, torta */ });
-  }
-  waCallsLog('câmera ligada na chamada', { callId, giro });
+  waCallsLog('câmera ligada na chamada', { callId, giro: video.orientation() });
   return true;
 }
 
@@ -1696,26 +1702,21 @@ export const waCallsStore = {
   /**
    * Gira a nossa câmera mais um quarto de volta e guarda a escolha.
    *
-   * Devolve o novo valor. Sem chamada de vídeo no ar não há a quem anunciar,
-   * mas a escolha continua valendo para a próxima — girar antes de ligar é
+   * Devolve o novo valor. Sem chamada de vídeo no ar não há imagem a girar, mas
+   * a escolha continua valendo para a próxima — girar antes de ligar é
    * exatamente o que alguém faz depois de ver a imagem torta uma vez.
+   *
+   * O giro acontece nos PIXELS, dentro do `videoBridge`, e não como aviso ao
+   * outro lado: ver a explicação em `videoBridge.openCallVideo`. Por isso não
+   * há nada a esperar do servidor aqui — o quadro seguinte já sai em pé.
    */
   async rotateVideo(callId?: string): Promise<number> {
     const proximo = (orientacaoGuardada() + 1) % 4;
     if (typeof localStorage !== 'undefined') {
       try { localStorage.setItem(ORIENTACAO_KEY, String(proximo)); } catch { /* aba privada */ }
     }
+    videoBridges.get(callId ?? '')?.setOrientation(proximo);
     emit();
-    if (callId && videoBridges.has(callId)) {
-      try {
-        await waCallsService.setVideoOrientation(callId, proximo);
-      } catch (err) {
-        notify({
-          kind: 'error',
-          message: err instanceof WaCallsError ? err.message : 'Não foi possível girar a câmera.',
-        });
-      }
-    }
     return proximo;
   },
 

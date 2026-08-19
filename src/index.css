@@ -1052,6 +1052,30 @@ div[class*="fixed"] [class*="bg-slate-900"] {
   background: transparent !important;
 }
 
+/* ===== CHAMADA DE VÍDEO — imunidade à correção global acima =====
+   Mesma história do bloco de aniversário logo abaixo: a "correção global dos
+   modais" casa por SUBSTRING de classe (`fixed`+`inset-0`, e qualquer
+   `bg-black…` dentro de um `fixed`) e usa !important. A tela cheia da chamada
+   é uma tela, não um modal com scrim: sem estas linhas ela virava um vidro
+   fosco de 60% por onde o CRM aparecia atrás do rosto do cliente, e a barra
+   de botões ficava sem fundo nenhum (ícones brancos soltos sobre a imagem).
+
+   A classe repetida cinco vezes é o que empata com o seletor global — ver a
+   explicação no bloco de aniversário. */
+.wa-call-stage.wa-call-stage.wa-call-stage.wa-call-stage.wa-call-stage {
+  background: #0b141a !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.wa-call-controls.wa-call-controls.wa-call-controls.wa-call-controls.wa-call-controls {
+  background: rgba(0, 0, 0, 0.45) !important;
+}
+
+.wa-call-selfview.wa-call-selfview.wa-call-selfview.wa-call-selfview.wa-call-selfview {
+  background: rgba(0, 0, 0, 0.6) !important;
+}
+
 /* ===== EXPERIÊNCIA DE ANIVERSÁRIO — imunidade à correção global acima =====
    Aquelas regras casam por SUBSTRING de classe e usam !important, então
    apagam coisas legítimas da experiência de aniversário: as tarjas pretas do

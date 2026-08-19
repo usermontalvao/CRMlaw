@@ -15,7 +15,7 @@
 //
 // Nada de estado de chamada aqui dentro: o estado é do store, este componente
 // só desenha, toca os avisos sonoros e traduz os recados em toasts.
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useCallBridge, useOnlineOperators } from '../../hooks/useCallBridge';
@@ -26,6 +26,7 @@ import {
   playCallConnectedTone, playCallEndedTone, startRing, stopRing,
 } from '../../services/wacalls/ringtone';
 import { ActiveCallWidget, IncomingCallCard, callDisplayName } from './callModals';
+import { CallVideoScreen } from './callVideoScreen';
 import { CallInviteCard, GuestCallBar } from './callGuestPanel';
 import { MissedCallWidget } from './MissedCallWidget';
 import type { WaCall } from '../../services/wacalls/types';
@@ -192,7 +193,7 @@ export const WaCallsHost: React.FC<{
   const toast = useToastContext();
   const {
     myCall, incoming, linkDown, canCall, placeCall, acceptCall, rejectCall, hangUp, setMuted, setRecording,
-    videoSupported, startVideo, stopVideo, videoStreams, rotateVideo,
+    videoSupported, startVideo, stopVideo, videoStreams, rotateVideo, videoOrientation,
   } = useWaCalls();
   const { calls: missed, dismiss: dismissMissed, dismissAll: dismissAllMissed } = useMissedCalls();
   const {
@@ -201,6 +202,28 @@ export const WaCallsHost: React.FC<{
     setGuestMuted, convidar, removeGuest,
   } = useCallBridge();
   const operators = useOnlineOperators();
+
+  // Vídeo no ar (nosso ou dele) manda a chamada para a TELA CHEIA — é o que o
+  // telefone faz, e conversar por vídeo numa faixa de 440px não é conversar.
+  // Sair de lá (o botão de recolher ou Esc) devolve a ligação ao painel
+  // flutuante, com a mesma chamada de pé, e o CRM volta a ficar clicável.
+  const comVideo = !!myCall
+    && myCall.phase !== 'ENDED'
+    && myCall.phase !== 'FAILED'
+    && (myCall.videoOn || myCall.peerVideo);
+  const [telaDeVideo, setTelaDeVideo] = useState(false);
+  const tinhaVideo = useRef(false);
+  useEffect(() => {
+    // Só a SUBIDA do vídeo abre a tela: assim quem recolheu de propósito não é
+    // jogado de volta para lá a cada repintura da chamada.
+    if (comVideo && !tinhaVideo.current) setTelaDeVideo(true);
+    if (!comVideo) setTelaDeVideo(false);
+    tinhaVideo.current = comVideo;
+  }, [comVideo]);
+  const streamsDaChamada = useMemo(
+    () => (myCall ? () => videoStreams(myCall.callId) : () => null),
+    [videoStreams, myCall?.callId], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   useCallRinging(myCall, incoming);
   useSystemCallNotification(incoming);
@@ -271,7 +294,31 @@ export const WaCallsHost: React.FC<{
           onDismissAll={dismissAllMissed}
         />
       )}
-      {myCall && (
+      {myCall && comVideo && telaDeVideo && (
+        <CallVideoScreen
+          key={`tela-${myCall.callId}`}
+          call={myCall}
+          streams={streamsDaChamada}
+          selfOrientation={videoOrientation}
+          linkDown={linkDown}
+          videoSupported={videoSupported}
+          onMinimize={() => setTelaDeVideo(false)}
+          onHangUp={() => { void hangUp(myCall.callId); }}
+          onToggleMute={() => setMuted(myCall.callId, !myCall.muted)}
+          onToggleRecording={() => setRecording(myCall.callId, !myCall.recording)}
+          onToggleVideo={() => {
+            if (myCall.videoOn) void stopVideo(myCall.callId);
+            else void startVideo(myCall.callId);
+          }}
+          onRotateVideo={() => { void rotateVideo(myCall.callId); }}
+          onOpenConversation={
+            myCall.contact?.conversationId && onOpenConversation
+              ? () => onOpenConversation(myCall.contact!.conversationId!)
+              : undefined
+          }
+        />
+      )}
+      {myCall && !(comVideo && telaDeVideo) && (
         <ActiveCallWidget
           key={myCall.callId}
           call={myCall}
@@ -294,7 +341,9 @@ export const WaCallsHost: React.FC<{
           onToggleMute={() => setMuted(myCall.callId, !myCall.muted)}
           onToggleRecording={() => setRecording(myCall.callId, !myCall.recording)}
           videoSupported={videoSupported}
-          videoStreams={() => videoStreams(myCall.callId)}
+          videoStreams={streamsDaChamada}
+          videoOrientation={videoOrientation}
+          onExpandVideo={() => setTelaDeVideo(true)}
           onToggleVideo={() => {
             if (myCall.videoOn) void stopVideo(myCall.callId);
             else void startVideo(myCall.callId);

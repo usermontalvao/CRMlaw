@@ -16,8 +16,8 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import {
-  Bell, BellOff, ChevronDown, ChevronUp, Circle, GripVertical, MessageSquare, Mic, MicOff,
-  Phone, PhoneOff, RotateCw, Square, Video, VideoOff, WifiOff,
+  Bell, BellOff, ChevronDown, ChevronUp, Circle, GripVertical, Maximize2, MessageSquare, Mic,
+  MicOff, Phone, PhoneOff, RotateCw, Square, Video, VideoOff, WifiOff,
 } from 'lucide-react';
 import { Avatar } from './avatar';
 import { AnchorNotice, CallGuestsSection } from './callGuestPanel';
@@ -73,7 +73,7 @@ export const callDisplayName = (call: WaCall): string =>
  * some e o estado (chamando / tocando) fica sozinho, que é o que interessa
  * enquanto ninguém atendeu.
  */
-const CallTimer: React.FC<{ connectedAt: number | null; endedAt?: number | null }> = ({ connectedAt, endedAt }) => {
+export const CallTimer: React.FC<{ connectedAt: number | null; endedAt?: number | null }> = ({ connectedAt, endedAt }) => {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     // Chamada encerrada tem duração FIXA. Deixar o relógio correndo depois do
@@ -337,7 +337,7 @@ export function useDraggablePosition(
  * servia igualmente para a que o contato atendeu e para a que ele recusou, que
  * é justamente a que muda o próximo passo do atendente.
  */
-function callStatusText(call: WaCall, finished: boolean): string {
+export function callStatusText(call: WaCall, finished: boolean): string {
   if (call.error && call.phase === 'FAILED') return call.error;
   if (!finished) return phaseLabel(call.phase, call.direction);
   return endedCallLabel(call.endReason, {
@@ -457,7 +457,11 @@ const MinimizedCallPill: React.FC<{
 const CallVideoStage: React.FC<{
   call: WaCall;
   streams: () => { local: MediaStream | null; remote: MediaStream | null } | null;
-}> = ({ call, streams }) => {
+  /** Quartos de volta da NOSSA imagem, para a miniatura mostrar o que sai daqui. */
+  orientation?: number;
+  /** Abre a tela cheia (ver `callVideoScreen`). */
+  onExpand?: () => void;
+}> = ({ call, streams, orientation = 0, onExpand }) => {
   const remoteRef = useRef<HTMLVideoElement>(null);
   const localRef = useRef<HTMLVideoElement>(null);
   const [temImagem, setTemImagem] = useState(false);
@@ -482,7 +486,12 @@ const CallVideoStage: React.FC<{
   const aguardandoNos = call.peerVideo && !call.videoOn;
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden border-b border-[#f1f0ec] bg-slate-900">
+    // 4:3 e não 16:9. Numa janela de 440px o palco 16:9 tinha 247px de altura e
+    // o bloco branco embaixo (rosto, nome, cronômetro, botões) tinha mais que
+    // isso: a ligação de VÍDEO era desenhada como uma ligação de voz com uma
+    // faixa de imagem em cima. Aqui o vídeo é o assunto — o nome e o tempo vêm
+    // POR CIMA dele, como no telefone, e o bloco branco sai da tela.
+    <div className="relative aspect-[4/3] w-full overflow-hidden border-b border-[#f1f0ec] bg-slate-900">
       <video
         ref={remoteRef}
         autoPlay
@@ -511,13 +520,49 @@ const CallVideoStage: React.FC<{
         </div>
       )}
       {call.videoOn && (
-        <video
-          ref={localRef}
-          autoPlay
-          playsInline
-          muted
-          className="absolute bottom-2 right-2 h-[72px] w-[96px] rounded-lg border border-white/20 object-cover shadow-lg"
-        />
+        // A moldura vira com o giro (o <video> por dentro é sempre deitado):
+        // girando só o elemento, a imagem aparecia cortada nas laterais.
+        <div
+          className="wa-call-selfview absolute bottom-2 right-2 z-10 overflow-hidden rounded-lg border border-white/20 shadow-lg"
+          style={{ width: orientation % 2 === 1 ? 72 : 96, height: orientation % 2 === 1 ? 96 : 72 }}
+        >
+          <video
+            ref={localRef}
+            autoPlay
+            playsInline
+            muted
+            className="absolute left-1/2 top-1/2 object-cover"
+            style={{
+              width: 96,
+              height: 72,
+              transform: `translate(-50%, -50%) rotate(${(orientation % 4) * 90}deg) scaleX(-1)`,
+            }}
+          />
+        </div>
+      )}
+      {/* Quem está na linha e há quanto tempo, sem roubar altura do vídeo. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-2 bg-gradient-to-t from-black/75 to-transparent px-3 pb-2 pt-8">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13.5px] font-bold leading-tight text-white">{callDisplayName(call)}</p>
+          <p className="truncate text-[11.5px] font-semibold text-white/70">
+            {call.connectedAt
+              ? <CallTimer connectedAt={call.connectedAt} endedAt={call.endedAt} />
+              : callStatusText(call, false)}
+          </p>
+        </div>
+      </div>
+      {/* Voltar para a tela cheia. O caminho de ida é automático (a câmera
+          acendeu, a tela abre); este é o caminho de volta para quem recolheu o
+          painel para mexer no CRM e agora quer o rosto grande outra vez. */}
+      {onExpand && (
+        <button
+          onClick={onExpand}
+          title="Ver em tela cheia"
+          aria-label="Ver a chamada em tela cheia"
+          className="wa-call-controls absolute left-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full text-white/90 transition hover:brightness-150"
+        >
+          <Maximize2 size={15} />
+        </button>
       )}
     </div>
   );
@@ -543,13 +588,18 @@ export const ActiveCallWidget: React.FC<{
   videoSupported?: boolean;
   /** Gira a NOSSA imagem para o outro lado. Ausente = sem botão de girar. */
   onRotateVideo?: () => void;
+  /** Quartos de volta que a nossa imagem já está levando (0..3). */
+  videoOrientation?: number;
+  /** Abre a tela cheia da chamada de vídeo. Ausente = sem o botão de ampliar. */
+  onExpandVideo?: () => void;
   /** As imagens da chamada, buscadas na hora de renderizar (ver `CallVideoStage`). */
   videoStreams?: () => { local: MediaStream | null; remote: MediaStream | null } | null;
   /** Abre a conversa deste contato na inbox. Ausente para número sem conversa. */
   onOpenConversation?: () => void;
 }> = ({
   call, linkDown = false, onHangUp, onToggleMute, onToggleRecording, onOpenConversation,
-  onToggleVideo, videoSupported = false, videoStreams, onRotateVideo,
+  onToggleVideo, videoSupported = false, videoStreams, onRotateVideo, videoOrientation = 0,
+  onExpandVideo,
   guests = [], operators = [], me = null, onInviteGuest, onRemoveGuest,
 }) => {
   const [minimized, setMinimized] = useState(false);
@@ -657,8 +707,20 @@ export const ActiveCallWidget: React.FC<{
 
       {/* O palco só aparece quando há vídeo de verdade em alguma direção: uma
           moldura preta numa chamada de voz seria ruído. */}
-      {comVideo && videoStreams && <CallVideoStage call={call} streams={videoStreams} />}
+      {comVideo && videoStreams && (
+        <CallVideoStage
+          call={call}
+          streams={videoStreams}
+          orientation={videoOrientation}
+          onExpand={onExpandVideo}
+        />
+      )}
 
+      {/* O retrato grande, o nome e o cronômetro só existem SEM vídeo. Com a
+          imagem no ar eles já estão escritos por cima dela (ver
+          `CallVideoStage`), e repeti-los aqui era o que fazia o branco ocupar
+          mais espaço que a pessoa com quem se está falando. */}
+      {!comVideo && (
       <div className="flex flex-col items-center gap-1 px-6 pb-5 pt-6 text-center">
         <div className="relative">
           {ringing && <span className="absolute -inset-1.5 animate-ping rounded-full bg-emerald-500/15" />}
@@ -692,6 +754,7 @@ export const ActiveCallWidget: React.FC<{
           </button>
         )}
       </div>
+      )}
 
       {/* Chamar um colega para a ligação ou passá-la adiante. Só com o áudio de
           pé: convidar alguém para uma chamada que ainda está chamando é
@@ -776,6 +839,17 @@ export const ActiveCallWidget: React.FC<{
                 <RotateCw size={20} />
               </span>
               <span className="text-[11px] font-semibold text-slate-500">Girar</span>
+            </button>
+          )}
+          {/* Falar ao telefone e ler a conversa é a mesma tarefa. Sem vídeo o
+              atalho mora no bloco branco, ali em cima; com vídeo, o bloco não
+              existe e ele vem para a fileira. */}
+          {comVideo && onOpenConversation && (
+            <button onClick={onOpenConversation} className="group flex flex-col items-center gap-1.5" title="Abrir a conversa deste contato">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#f3f2ef] text-slate-600 transition hover:bg-slate-200">
+                <MessageSquare size={19} />
+              </span>
+              <span className="text-[11px] font-semibold text-slate-500">Conversa</span>
             </button>
           )}
           <button onClick={onHangUp} className="group flex flex-col items-center gap-1.5" disabled={call.phase === 'ENDING'}>

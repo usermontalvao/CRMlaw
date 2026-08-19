@@ -221,20 +221,10 @@ export const waCallsService = {
     });
   },
 
-  /**
-   * Gira a NOSSA câmera para o outro lado, em quartos de volta (0..3).
-   *
-   * A webcam do escritório entrega um quadro deitado e o aparelho do contato
-   * desenha girado. Quem sabe qual é o certo é quem está olhando para os dois
-   * lados ao mesmo tempo — por isso é um botão na tela, e a escolha fica
-   * guardada para as próximas chamadas.
-   */
-  async setVideoOrientation(callId: string, orientation: number): Promise<void> {
-    await request(`/api/calls/${encodeURIComponent(callId)}/video/orientation`, {
-      method: 'POST',
-      body: JSON.stringify({ orientation }),
-    });
-  },
+  // NÃO existe aqui um `setVideoOrientation`. O endpoint
+  // `/api/calls/:id/video/orientation` continua no Jurius Call, mas ANUNCIAR a
+  // rotação não endireitou a imagem no celular do contato (19/08/2026): quem
+  // gira a nossa imagem hoje é o `videoBridge`, em pixel, antes de codificar.
 
   /** Desliga a nossa câmera. O outro lado pode continuar mandando a dele. */
   async disableVideo(callId: string): Promise<void> {

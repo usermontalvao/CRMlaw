@@ -74,6 +74,27 @@ export function topCenterPosition(viewport: CallWidgetBox, size: CallWidgetBox):
   );
 }
 
+/**
+ * Onde a NOSSA imagem (a miniatura) nasce dentro da tela cheia da chamada.
+ *
+ * Canto inferior direito, mas com folga para a barra de controles: nascendo
+ * colada embaixo, a miniatura tapava o botão de encerrar — e é justamente o
+ * botão que a pessoa procura com pressa. Quem arrastar a miniatura para outro
+ * lugar manda; isto é só o ponto de partida.
+ */
+export const CALL_CONTROLS_CLEARANCE = 132;
+
+export function selfViewPosition(viewport: CallWidgetBox, size: CallWidgetBox): CallWidgetPoint {
+  return clampCallWidgetPosition(
+    {
+      x: viewport.width - size.width - CALL_WIDGET_MARGIN,
+      y: viewport.height - size.height - CALL_CONTROLS_CLEARANCE,
+    },
+    viewport,
+    size,
+  );
+}
+
 /** Lê a posição guardada. Devolve `null` para qualquer coisa suspeita. */
 export function parseStoredPosition(raw: string | null): CallWidgetPoint | null {
   if (!raw) return null;

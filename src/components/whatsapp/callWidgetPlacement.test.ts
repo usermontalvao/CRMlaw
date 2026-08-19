@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CALL_CONTROLS_CLEARANCE,
   CALL_WIDGET_MARGIN,
   clampCallWidgetPosition,
   defaultCallWidgetPosition,
   parseStoredPosition,
+  selfViewPosition,
   topCenterPosition,
 } from './callWidgetPlacement.ts';
 
@@ -56,4 +58,19 @@ test('o aviso de chamada perdida nasce onde o convite nasce — alto e ao centro
   const p = topCenterPosition(VIEWPORT, { width: 352, height: 260 });
   assert.equal(p.x, (1440 - 352) / 2);
   assert.equal(p.y, CALL_WIDGET_MARGIN);
+});
+
+test('a nossa imagem na tela cheia não nasce em cima dos controles', () => {
+  const mini = { width: 176, height: 132 };
+  const p = selfViewPosition(VIEWPORT, mini);
+  assert.equal(p.x, VIEWPORT.width - mini.width - CALL_WIDGET_MARGIN);
+  assert.equal(p.y, VIEWPORT.height - mini.height - CALL_CONTROLS_CLEARANCE);
+  assert.ok(p.y + mini.height < VIEWPORT.height - 60, 'sobra faixa para a barra de botões');
+});
+
+test('numa janela baixa a miniatura ainda cabe na tela', () => {
+  const mini = { width: 176, height: 132 };
+  const p = selfViewPosition({ width: 420, height: 200 }, mini);
+  assert.ok(p.y >= CALL_WIDGET_MARGIN);
+  assert.ok(p.x >= CALL_WIDGET_MARGIN);
 });

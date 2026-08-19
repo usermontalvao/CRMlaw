@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { PhoneCall } from 'lucide-react';
 import { ActiveCallWidget, IncomingCallCard } from '../components/whatsapp/callModals';
+import { CallVideoScreen } from '../components/whatsapp/callVideoScreen';
 import { MissedCallWidget } from '../components/whatsapp/MissedCallWidget';
 import type { MissedCall } from '../services/wacalls/missedCalls';
 import { playCallConnectedTone, playCallEndedTone, startRing, stopRing } from '../services/wacalls/ringtone';
@@ -78,6 +79,72 @@ const PERDIDAS: MissedCall[] = [
   },
 ];
 
+/**
+ * Imagem de mentira, desenhada num canvas.
+ *
+ * A bancada roda sem câmera e sem ligação, e mesmo assim precisa mostrar a tela
+ * cheia como ela fica de verdade: o outro lado EM PÉ (é o celular do cliente,
+ * a origem das duas tarjas pretas e do fundo borrado) e a nossa câmera DEITADA,
+ * com uma seta para cima — é a seta que denuncia se o giro está certo.
+ */
+function usarImagemDeMentira(ligada: boolean): () => { local: MediaStream | null; remote: MediaStream | null } | null {
+  const refs = React.useRef<{ local: MediaStream; remote: MediaStream } | null>(null);
+  const [, forcar] = useState(0);
+
+  useEffect(() => {
+    if (!ligada) return;
+    const pintar = (
+      largura: number,
+      altura: number,
+      titulo: string,
+      cor: string,
+      seta: boolean,
+    ) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = largura;
+      canvas.height = altura;
+      const ctx = canvas.getContext('2d')!;
+      const stream = canvas.captureStream(10);
+      let t = 0;
+      const timer = window.setInterval(() => {
+        t += 1;
+        ctx.fillStyle = cor;
+        ctx.fillRect(0, 0, largura, altura);
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.font = 'bold 34px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(titulo, largura / 2, altura / 2 - 10);
+        ctx.font = '20px sans-serif';
+        ctx.fillText(`${largura}x${altura} · ${t}`, largura / 2, altura / 2 + 26);
+        if (seta) {
+          // Seta para o topo do quadro: girada, ela aponta para o lado — que é
+          // exatamente o defeito que o botão "Girar" conserta.
+          ctx.beginPath();
+          ctx.moveTo(largura / 2, 24);
+          ctx.lineTo(largura / 2 - 26, 78);
+          ctx.lineTo(largura / 2 + 26, 78);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }, 100);
+      return { stream, timer };
+    };
+    const remoto = pintar(480, 640, 'CONTATO', '#123f34', false);
+    const local = pintar(640, 480, 'VOCÊ', '#3f2a12', true);
+    refs.current = { local: local.stream, remote: remoto.stream };
+    forcar(n => n + 1);
+    return () => {
+      window.clearInterval(remoto.timer);
+      window.clearInterval(local.timer);
+      remoto.stream.getTracks().forEach(t => t.stop());
+      local.stream.getTracks().forEach(t => t.stop());
+      refs.current = null;
+    };
+  }, [ligada]);
+
+  return () => (ligada && refs.current ? refs.current : null);
+}
+
 const WaCallsPreview: React.FC = () => {
   const [fase, setFase] = useState<WaCallPhase>('CALLING');
   const [mudo, setMudo] = useState(false);
@@ -109,6 +176,13 @@ const WaCallsPreview: React.FC = () => {
     const t = setTimeout(() => setConvidados(atual => atual.map(g => ({ ...g, status: 'live' }))), 1200);
     return () => clearTimeout(t);
   }, [convidados]);
+  // A chamada de VÍDEO: as duas câmeras, o giro da nossa imagem e a escolha
+  // entre a tela cheia e o painel flutuante.
+  const [videoNos, setVideoNos] = useState(false);
+  const [videoDele, setVideoDele] = useState(false);
+  const [giro, setGiro] = useState(0);
+  const [telaCheia, setTelaCheia] = useState(true);
+  const streamsDeMentira = usarImagemDeMentira(videoNos || videoDele);
   const [recebida, setRecebida] = useState(true);
   // Convite que chegou endereçado só por LID: o WhatsApp não mandou telefone
   // nenhum, e o cartão precisa DIZER isso em vez de inventar um número. Foi o
@@ -134,6 +208,9 @@ const WaCallsPreview: React.FC = () => {
     muted: mudo,
     recording: gravando,
     recorded: gravando,
+    videoOn: videoNos,
+    peerVideo: videoDele,
+    wasVideo: videoNos || videoDele,
     connectedAt: fase === 'ACTIVE' || fase === 'ENDING' || fase === 'ENDED' ? Date.now() - 63_000 : null,
     error: fase === 'FAILED' ? 'Não foi possível abrir o áudio da chamada.' : null,
   });
@@ -181,6 +258,18 @@ const WaCallsPreview: React.FC = () => {
           className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">
           repor perdidas
         </button>
+        <button onClick={() => setVideoNos(v => !v)}
+          className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${videoNos ? 'bg-sky-600 text-white' : 'border border-[#e7e5df] bg-white text-slate-600'}`}>
+          nossa câmera
+        </button>
+        <button onClick={() => setVideoDele(v => !v)}
+          className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${videoDele ? 'bg-sky-600 text-white' : 'border border-[#e7e5df] bg-white text-slate-600'}`}>
+          câmera do contato
+        </button>
+        <button onClick={() => setTelaCheia(v => !v)}
+          className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${telaCheia ? 'bg-slate-800 text-white' : 'border border-[#e7e5df] bg-white text-slate-600'}`}>
+          {telaCheia ? 'tela cheia' : 'painel flutuante'}
+        </button>
         <button onClick={() => setSemNumero(v => !v)}
           title="O convite chegou endereçado por LID: o WhatsApp não mandou telefone nenhum"
           className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${semNumero ? 'bg-amber-500 text-white' : 'border border-[#e7e5df] bg-white text-slate-600'}`}>
@@ -198,9 +287,33 @@ const WaCallsPreview: React.FC = () => {
         <button onClick={playCallEndedTone} className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-600">desligou</button>
       </div>
 
+      {(videoNos || videoDele) && telaCheia && (
+        <CallVideoScreen
+          call={ativa}
+          streams={streamsDeMentira}
+          selfOrientation={giro}
+          linkDown={semRede}
+          videoSupported
+          onMinimize={() => setTelaCheia(false)}
+          onHangUp={() => { setVideoNos(false); setVideoDele(false); setFase('ENDED'); }}
+          onToggleMute={() => setMudo(v => !v)}
+          onToggleRecording={() => setGravando(v => !v)}
+          onToggleVideo={() => setVideoNos(v => !v)}
+          onRotateVideo={() => setGiro(g => (g + 1) % 4)}
+          onOpenConversation={() => window.alert('abriria a conversa do contato')}
+        />
+      )}
+      {/* Um OU outro, como no `WaCallsHost`: a tela cheia substitui o painel. */}
+      {!((videoNos || videoDele) && telaCheia) && (
       <ActiveCallWidget
         call={ativa}
         linkDown={semRede}
+        videoSupported
+        videoStreams={videoNos || videoDele ? streamsDeMentira : undefined}
+        videoOrientation={giro}
+        onExpandVideo={() => setTelaCheia(true)}
+        onToggleVideo={() => setVideoNos(v => !v)}
+        onRotateVideo={() => setGiro(g => (g + 1) % 4)}
         guests={convidados}
         operators={EQUIPE_DEMO}
         me="eu"
@@ -211,6 +324,7 @@ const WaCallsPreview: React.FC = () => {
         onToggleRecording={() => setGravando(v => !v)}
         onOpenConversation={() => window.alert('abriria a conversa do contato')}
       />
+      )}
       {/* O aviso de chamada perdida: aqui ele é alimentado à mão, sem o store —
           a bancada confere o desenho e as ações, não a persistência. */}
       <MissedCallWidget
