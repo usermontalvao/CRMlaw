@@ -106,6 +106,7 @@ import { usePresence } from './hooks/usePresence';
 import { useWhatsAppNotifications } from './hooks/useWhatsAppNotifications';
 import { WhatsAppNotifyHost } from './components/whatsapp/WhatsAppNotifyHost';
 import { WaCallsHost } from './components/whatsapp/WaCallsHost';
+import { DialerLauncher } from './components/whatsapp/DialerLauncher';
 import { useAuth } from './contexts/AuthContext';
 import {
   events,
@@ -2672,18 +2673,26 @@ useEffect(() => {
                 })()}
               </div>
 
-              {/* CENTER: search */}
+              {/* CENTER: pesquisa — e, depois de um fio, o discador.
+                  Os dois atravessam o CRM inteiro e começam pela mesma
+                  pergunta ("quem?"); por isso dividem a mesma pill em vez de o
+                  telefone virar o quinto ícone do grupo de ações à direita.
+                  Ver o cabeçalho de `DialerLauncher`. */}
               <div className="hidden md:flex flex-1 justify-center">
-                <button
-                  type="button"
-                  onClick={() => setGlobalSearchOpen(true)}
-                  className="flex w-full max-w-[420px] items-center gap-3 rounded-xl border border-[#e7e5df] bg-[#f7f6f3] px-4 py-2.5 text-[13px] text-slate-400 shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition hover:border-[#d4d2cc] hover:bg-[#f2f1ee] hover:text-slate-600"
-                  title="Pesquisa global (⌘K)"
-                >
-                  <Search className="h-4 w-4 flex-shrink-0 text-slate-400" />
-                  <span className="flex-1 text-left">Pesquisa global...</span>
-                  <span className="rounded-md border border-[#e0ddd8] bg-white px-1.5 py-0.5 text-[11px] text-slate-400 shadow-sm">⌘K</span>
-                </button>
+                <div className="group flex w-full max-w-[420px] items-center rounded-xl border border-[#e7e5df] bg-[#f7f6f3] pl-4 pr-1.5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition focus-within:border-[#d4d2cc] hover:border-[#d4d2cc] hover:bg-[#f2f1ee]">
+                  <button
+                    type="button"
+                    onClick={() => setGlobalSearchOpen(true)}
+                    className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-[13px] text-slate-400 transition group-hover:text-slate-600"
+                    title="Pesquisa global (⌘K)"
+                  >
+                    <Search className="h-4 w-4 flex-shrink-0 text-slate-400" />
+                    <span className="flex-1 truncate text-left">Pesquisa global...</span>
+                    <span className="rounded-md border border-[#e0ddd8] bg-white px-1.5 py-0.5 text-[11px] text-slate-400 shadow-sm">⌘K</span>
+                  </button>
+                  <span aria-hidden className="mx-1.5 h-4 w-px flex-shrink-0 bg-[#e0ddd8]" />
+                  <DialerLauncher />
+                </div>
               </div>
 
               {/* RIGHT: ações */}
@@ -2695,6 +2704,12 @@ useEffect(() => {
                 >
                   <Search className="w-4 h-4" />
                 </button>
+
+                {/* No celular não há pill para o discador morar dentro: ele fica
+                    ao lado da lupa, que é a outra ferramenta que atravessa o CRM. */}
+                <span className="flex md:hidden">
+                  <DialerLauncher standalone />
+                </span>
 
                 {activeModule !== 'cloud' && (
                   permissionsLoading ? (

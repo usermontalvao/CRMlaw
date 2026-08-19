@@ -14,6 +14,12 @@ export interface WaCallsSession {
   id: string;
   name: string;
   jid: string;
+  /**
+   * O telefone da conta, quando o serviço informa. É por ELE que a conta de voz
+   * encontra o canal do CRM (ver `callLine.ts`) — os dois mundos não têm id em
+   * comum. Nulo quando o serviço não soube dizer; aí o JID é a fonte.
+   */
+  phone: string | null;
   state: WaCallsSessionState;
   paired: boolean;
 }

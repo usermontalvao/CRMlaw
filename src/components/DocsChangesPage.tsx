@@ -968,6 +968,38 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.334',
+    date: '19/08/2026',
+    summary: 'Ligar deixou de exigir uma conversa aberta: o telefone agora fica na barra de pesquisa e disca de qualquer tela do CRM.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Um discador que abre de qualquer lugar do CRM',
+            description: 'Para ligar, era preciso ter a conversa na tela: o número saía da thread, do cartão de contato ou do histórico. Quem tinha o telefone no papel, no e-mail ou na capa do processo simplesmente não tinha por onde discar. Agora há um telefone dentro da barra de pesquisa, e ele abre uma janela de discagem com o processo, o prazo ou a agenda ainda na tela. É janela e não caixa de diálogo de propósito: o CRM continua clicável atrás dela, ela arrasta para onde você quiser, minimiza para uma barra fina e sobrevive à troca de módulo — consultar o processo enquanto se liga é o caso comum, não a exceção. O campo aceita as duas coisas que você pode ter em mãos: um número, que disca direto, ou um nome, que busca entre os contatos.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Escolha por qual número do escritório a ligação sai',
+            description: 'Quando o escritório tem mais de um canal de WhatsApp, a ligação passa a dizer por qual deles sai — é esse número que aparece no celular do cliente e é nessa conversa que ela deixa rastro. A linha usada com mais frequência ganha uma estrela e passa a ser a primeira escolha nas próximas ligações, sem precisar reconfigurar.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Só quem trabalha com atendimento enxerga o telefone',
+            description: 'Como o discador atravessa o CRM inteiro, ele acabava aparecendo para qualquer pessoa que conseguisse entrar no sistema — inclusive para quem nem tem a inbox no menu. Uma ligação daqui sai pelo WhatsApp do escritório: é falar em nome dele. Agora valem dois degraus. Quem pode ver o módulo WhatsApp pode ligar (e quem não pode, não vê o botão). E, no segundo degrau, cada linha tem dono: administrador fala por qualquer uma, canal aberto é do escritório inteiro, e canal restrito só para quem está na lista de membros dele. Receber uma conversa transferida continua não bastando para sair discando com o número do escritório — são direitos diferentes.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O aviso de linha indisponível volta ao normal sozinho',
+            description: 'O ponto ao lado do telefone diz se dá para ligar agora. Ele ficava amarelo e assim permanecia até alguém recarregar a página, mesmo depois de o serviço de chamadas ter voltado: a volta automática vigiava uma única causa e ignorava as demais. Agora ela vigia o sintoma — "não dá para discar" — e tenta de novo por conta própria, seja qual for o motivo. Na prática, o telefone deixa de passar a manhã inteira amarelo sem ninguém saber por quê.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.333',
     date: '19/08/2026',
     summary: 'A ligação parou de ficar para trás: a voz do cliente chega na hora, e não com meio segundo de atraso que só piorava.',

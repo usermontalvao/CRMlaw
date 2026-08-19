@@ -23,6 +23,8 @@ import { cloudService } from '../services/cloud.service';
 import { signatureService } from '../services/signature.service';
 import { nextcloudService } from '../services/nextcloud.service';
 import { whatsappService, samePhone } from '../services/whatsapp.service';
+import { waCallsStore } from '../services/wacalls/callStore';
+import { useCanDial } from '../hooks/useCanDial';
 import { conversationName, prettyPhone } from './whatsapp/format';
 import { WhatsAppIcon } from './icons/WhatsAppIcon';
 import { events, SYSTEM_EVENTS } from '../utils/events';
@@ -420,6 +422,9 @@ const SIDEBAR_MODULES: Array<{ key: ResultType | 'all'; label: string; icon: Rea
 export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onClose, onNavigate }) => {
   const { user } = useAuth();
   const { canView, isAdmin, loading: permissionsLoading } = usePermissions();
+  // A MESMA resposta que o `placeCall` usa para barrar — ver `dialPermission.ts`.
+  // Aqui ela só decide se o botão de telefone aparece no cartão de prévia.
+  const podeDiscar = useCanDial();
 
   // Verifica permissão: admins veem tudo; outros respeitam canView().
   // Se as permissões ainda estão carregando, libera tudo (será re-filtrado ao carregar).
@@ -2547,13 +2552,40 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                                   >
                                     <MessageCircle style={{ width: 12, height: 12, color: '#22c55e' }} />
                                   </a>
-                                  <a
-                                    href={`tel:+55${phoneDigits}`}
-                                    onClick={e => e.stopPropagation()}
-                                    className="preview-field-action-btn" title="Ligar"
+                                  {/* "Ligar" aqui é a ligação DO CRM, não o
+                                      `tel:` do sistema operacional: a chamada
+                                      sai pelo WhatsApp do escritório, entra no
+                                      histórico, na ficha do cliente e pode ser
+                                      gravada — nada disso acontece quando o
+                                      telefone do atendente disca por fora.
+                                      Passa pela MESMA porta de todas as outras
+                                      (`placeCall` → `resolveCallablePhone`) —
+                                      inclusive pela trava de permissão, que é
+                                      quem esconde o botão aqui. O link do
+                                      WhatsApp acima continua para todos: ele é
+                                      do aparelho de quem clicou, não do
+                                      escritório. */}
+                                  {podeDiscar && (
+                                  <button
+                                    type="button"
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      void waCallsStore.placeCall({
+                                        phone: phoneDigits,
+                                        contact: {
+                                          conversationId: null,
+                                          clientId: null,
+                                          name: previewItem.title,
+                                          avatarUrl: null,
+                                        },
+                                      });
+                                      onClose();
+                                    }}
+                                    className="preview-field-action-btn" title="Ligar pelo CRM"
                                   >
                                     <Phone style={{ width: 12, height: 12 }} />
-                                  </a>
+                                  </button>
+                                  )}
                                 </>
                               )}
                               {isEmail && (

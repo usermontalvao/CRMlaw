@@ -33,6 +33,16 @@ import { decideCallRing, CALL_ESCALATION_MS, type CallDegree, type CallRoute } f
 import { buildLadderFor, conversationRouting } from './routingData';
 import { operatorPresence } from './operatorPresence';
 import { callBridge } from './callBridge';
+import {
+  DIAL_DENIED_DETAIL, DIAL_DENIED_MESSAGE, DIAL_UNKNOWN_DETAIL, DIAL_UNKNOWN_MESSAGE,
+} from './dialPermission';
+import { ensureDialPermission, resetDialPermission } from './dialPermissionData';
+import { LINE_DENIED_MESSAGE, defaultLine, lineDeniedDetail, type CallLine } from './callLine';
+import { resetCallLines, resolveLines } from './callLinesData';
+import { readPreferredLine, writePreferredLine } from './linePreference';
+import {
+  canDial as canDialLine, retryDelay, shouldRetry, type RetryState,
+} from './retryPolicy';
 import { supabase } from '../../config/supabase';
 import type { WaCall, WaCallContact, WaCallsEvent, WaCallsSession, WaCallsStatus } from './types';
 
@@ -73,6 +83,21 @@ export interface WaCallsSnapshot {
    */
   linkDown: boolean;
   sessions: WaCallsSession[];
+  /**
+   * As contas pareadas vestidas de LINHA: com o nome do canal do CRM, o número
+   * e o direito desta pessoa de falar por ela. É o que o discador mostra e o
+   * que ele oferece para trocar. Ver `callLine.ts`.
+   */
+  lines: CallLine[];
+  /** A linha marcada com a estrela (chave da linha), quando há uma. */
+  preferredLine: string | null;
+  /** Uma nova tentativa de alcançar a linha está em curso agora. */
+  retrying: boolean;
+  /**
+   * As linhas já são conhecidas? Enquanto for falso, a tela diz que está
+   * verificando — e nunca que não há canal, porque ela ainda não sabe.
+   */
+  linesReady: boolean;
   /** `activeWaCallsSessionId` — a conta usada para ligar. */
   sessionId: string | null;
   /** Todas as chamadas conhecidas, da mais recente para a mais antiga. */
@@ -158,6 +183,10 @@ const noticeListeners = new Set<(notice: WaCallsNotice) => void>();
 const missedListeners = new Set<(call: WaCall) => void>();
 
 let sessions: WaCallsSession[] = [];
+let lines: CallLine[] = [];
+/** As linhas já foram resolvidas ao menos uma vez com sessão de verdade. */
+let linesReady = false;
+let preferredLine: string | null = readPreferredLine();
 let sessionId: string | null = null;
 let ready = false;
 let available = false;
@@ -178,7 +207,8 @@ let placing = false;
 let closeEvents: (() => void) | null = null;
 let snapshot: WaCallsSnapshot = {
   ready: false, available: false, online: true, linkDown: false,
-  sessions: [], sessionId: null, calls: [], dialing: false,
+  sessions: [], lines: [], preferredLine: null, retrying: false, linesReady: false,
+  sessionId: null, calls: [], dialing: false,
 };
 
 function emit(): void {
@@ -190,6 +220,10 @@ function emit(): void {
     // esteja errado — daí o `ready` na conta.
     linkDown: !online || (ready && !available),
     sessions,
+    lines,
+    preferredLine,
+    retrying,
+    linesReady,
     sessionId,
     calls: Array.from(calls.values()).sort((a, b) => b.startedAt - a.startedAt),
     dialing: placing,
@@ -199,6 +233,9 @@ function emit(): void {
   // por cima de uma conversa. `setBusy` ignora repetição, então cabe aqui.
   operatorPresence.setBusy(liveMineCalls().length > 0);
   listeners.forEach(fn => fn());
+  // O vigia do amarelo. Depois dos ouvintes de propósito: a tela pinta primeiro,
+  // a sala de espera é assunto de segundo plano.
+  reviewHealth();
 }
 
 function notify(notice: WaCallsNotice): void {
@@ -276,23 +313,88 @@ function watchLink(): void {
   window.addEventListener('offline', () => { online = false; onLinkChanged(); });
 }
 
+/** A bancada armou as linhas: o serviço de voz real não manda mais aqui. */
+let previewLines = false;
+
 /**
- * A conta que pode ligar: pareada e com a conexão aberta.
+ * A conta que pode ligar: pareada, com a conexão aberta E autorizada para esta
+ * pessoa.
  *
- * Havendo uma só, ela é usada sem perguntar nada. Havendo mais, a primeira
- * serve de padrão e a lista fica no snapshot — é o gancho para, no futuro, o
- * operador escolher por qual número ligar (`setSessionId`).
+ * A AUTORIZAÇÃO ENTRA AQUI, e não só na hora de discar, porque é ela que decide
+ * qual linha o discador usa quando ninguém escolheu nada: oferecer como padrão
+ * uma linha que a pessoa não pode usar seria montar a armadilha de um botão
+ * verde que só sabe responder com um erro. Ver `callLine.ts` para a regra.
+ *
+ * Enquanto as linhas não foram resolvidas (a resposta vem do banco e demora um
+ * instante), vale o que o serviço disse — a lista `lines` nasce vazia e a
+ * primeira conta de pé serve de padrão. O `placeCall` confere de novo, agora
+ * com a resposta em mãos, e é lá que uma linha proibida é barrada de verdade.
  */
 function callableSessions(list: WaCallsSession[]): WaCallsSession[] {
   return list.filter(s => s.paired && s.state === 'open');
 }
 
+/** A linha atendida por esta conta de voz, se as linhas já foram resolvidas. */
+function lineOf(id: string | null): CallLine | null {
+  return (id && lines.find(l => l.sessionId === id)) || null;
+}
+
+/** Dá para ligar por esta sessão AGORA? Sem linhas resolvidas, não se opõe. */
+function sessionAllowed(id: string | null): boolean {
+  const linha = lineOf(id);
+  return linha ? linha.authorized : true;
+}
+
+function chooseSession(): void {
+  const callable = callableSessions(sessions);
+  // Mantém a escolha atual enquanto ela continuar válida E permitida.
+  if (sessionId && callable.some(s => s.id === sessionId) && sessionAllowed(sessionId)) return;
+  // Com as linhas resolvidas, quem decide é a ESTRELA (e, sem ela, a primeira
+  // usável). Antes disso vale o que o serviço ofereceu.
+  const preferida = lines.length > 0 ? defaultLine(lines, preferredLine) : null;
+  if (preferida?.sessionId && callable.some(s => s.id === preferida.sessionId)) {
+    sessionId = preferida.sessionId;
+    return;
+  }
+  sessionId = callable.find(s => sessionAllowed(s.id))?.id ?? null;
+}
+
 function applySessions(list: WaCallsSession[]): void {
+  if (previewLines) return;
   sessions = list;
-  const callable = callableSessions(list);
-  // Mantém a escolha atual enquanto ela continuar válida.
-  if (sessionId && callable.some(s => s.id === sessionId)) return;
-  sessionId = callable[0]?.id ?? null;
+  chooseSession();
+  // As linhas custam duas consultas e chegam depois; quando chegarem, a escolha
+  // é refeita com a autorização na mão.
+  void refreshLines();
+}
+
+/**
+ * Reconstrói as linhas a partir das contas pareadas.
+ *
+ * Falha em silêncio de propósito: sem as linhas o discador continua discando
+ * pelo que o serviço ofereceu (é `placeCall` quem tem a última palavra), e um
+ * erro de consulta não pode aparecer como "você não pode ligar".
+ */
+async function refreshLines(): Promise<void> {
+  if (previewLines) return;
+  const alvo = sessions;
+  try {
+    const resolvidas = await resolveLines(alvo);
+    // Chegou tarde: as contas já são outras. Descarta.
+    if (alvo !== sessions) return;
+    lines = resolvidas;
+    linesReady = true;
+    chooseSession();
+    emit();
+  } catch (err) {
+    // `LinesNotReady` = a pergunta ainda não podia ser feita (sessão do Supabase
+    // não restaurada, consulta de canais barrada pela RLS). NÃO se apaga o que
+    // já se sabia: uma resposta vazia dessas trocaria a linha de trabalho por
+    // "Nenhum canal disponível" e só voltaria ao normal recarregando a página.
+    // Marca para tentar de novo e segue com as linhas de antes.
+    waCallsLog('linhas não resolvidas agora', err);
+    if (!linesReady) scheduleRetry();
+  }
 }
 
 function upsert(call: WaCall): void {
@@ -1143,6 +1245,162 @@ function handleEvent(event: WaCallsEvent): void {
   }
 }
 
+/**
+ * A VOLTA AUTOMÁTICA DO SERVIÇO.
+ *
+ * Duas quedas parecem iguais na tela e não são: a que acontece com a aba aberta
+ * é resolvida pelo socket, que se reconecta sozinho com degraus curtos (ver
+ * `socket.ts`); a que já existia QUANDO A ABA ABRIU não tem socket nenhum para
+ * se reconectar — `connectEvents` só é chamado depois de o primeiro
+ * `/api/status` responder. Era esse o caso sem saída: telefone morto até
+ * recarregar a página.
+ *
+ * QUANDO insistir e com que espera é regra pura e testada — ver `retryPolicy.ts`.
+ * Aqui ficam só os relógios e a ida ao servidor.
+ */
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryAttempt = 0;
+let retrying = false;
+let wakeListenersOn = false;
+
+/**
+ * O PONTO VERDE, em forma de pergunta: dá para discar agora?
+ *
+ * É de propósito a MESMA conta que a tela mostra (`canCall` em `useWaCalls`).
+ * A primeira versão da volta automática olhava só o serviço estar fora, e o
+ * amarelo tem mais de uma causa: a conta de WhatsApp pode estar pareada sem a
+ * conexão aberta, e a pessoa pode ainda não ser membro do canal. Nesses dois
+ * casos o socket está de pé e nada se move sozinho — o telefone ficava amarelo
+ * para sempre. Vigiar o SINTOMA cobre as causas todas, inclusive as que eu não
+ * previ.
+ */
+function canDialNow(): boolean {
+  return canDialLine({ online, available, hasLine: !!sessionId });
+}
+
+/** O retrato do momento, do jeito que a regra da sala de espera pede. */
+function retryState(): RetryState {
+  return {
+    ready,
+    online,
+    available,
+    // Linhas ainda desconhecidas contam como "sem linha": é uma pendência que
+    // se resolve com nova tentativa, e é exatamente a que ficava para sempre.
+    hasLine: !!sessionId && linesReady,
+    busy: retrying || retryTimer !== null,
+    hidden: typeof document !== 'undefined' && document.visibilityState === 'hidden',
+    inCall: liveMineCalls().length > 0,
+    preview: previewLines,
+  };
+}
+
+function clearRetry(): void {
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
+  retryAttempt = 0;
+}
+
+function scheduleRetry(): void {
+  watchWake();
+  if (!shouldRetry(retryState())) return;
+  const espera = retryDelay(retryAttempt);
+  retryAttempt += 1;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void tryAgain();
+  }, espera);
+}
+
+async function tryAgain(): Promise<void> {
+  if (canDialNow()) { clearRetry(); return; }
+  // Ligação de pé não é hora de refazer nada: o amarelo, se houver, é de outra
+  // coisa, e a conversa em curso vale mais do que o acerto do indicador.
+  if (liveMineCalls().length > 0) { scheduleRetry(); return; }
+  waCallsLog('nova tentativa: a linha está indisponível');
+  retrying = true;
+  emit();
+  try {
+    initializing = null;
+    await waCallsStore.init();
+    // Relê canal e membro também: o amarelo pode ser "você ainda não é membro
+    // deste canal", e é assim que o discador acende sozinho quando o admin
+    // acabou de incluir a pessoa — sem ela recarregar nada.
+    resetCallLines();
+    await refreshLines();
+  } finally {
+    retrying = false;
+    emit();
+  }
+  if (canDialNow()) clearRetry();
+  else scheduleRetry();
+}
+
+/**
+ * O vigia do amarelo. Roda a cada mudança de estado (é barato: só compara
+ * bandeiras) e é o que liga a sala de espera assim que o ponto deixa de ser
+ * verde — não importa por qual das causas.
+ */
+function reviewHealth(): void {
+  if (!ready) return;
+  if (canDialNow()) { clearRetry(); return; }
+  scheduleRetry();
+}
+
+/**
+ * Os dois momentos em que vale tentar ANTES do próximo degrau, porque algo
+ * mudou no mundo: a rede voltou, ou a pessoa voltou para a aba. Quem deixou o
+ * CRM aberto no outro monitor a manhã inteira encontra o telefone de pé ao
+ * voltar, em vez de esperar o próximo degrau de dois minutos.
+ */
+/**
+ * A SESSÃO DO SUPABASE CHEGANDO DEPOIS.
+ *
+ * O host das chamadas monta junto com o app, e a sessão do Supabase é
+ * restaurada do armazenamento de forma assíncrona: existe um instante em que o
+ * CRM está na tela e `auth.uid()` ainda é nulo. Toda consulta de canal é
+ * ancorada nele pela RLS, então nesse instante o banco responde "nenhum canal"
+ * — sem erro. Ficar esperando o próximo degrau da sala de espera para descobrir
+ * isso é lento; o próprio Supabase avisa quando a sessão entra, e é esse aviso
+ * que se escuta aqui.
+ */
+let authWatchOn = false;
+
+function watchAuth(): void {
+  if (authWatchOn) return;
+  authWatchOn = true;
+  try {
+    supabase.auth.onAuthStateChange(event => {
+      if (event === 'SIGNED_OUT') {
+        // Outra pessoa pode sentar na mesma aba: nada do que era dela fica.
+        resetDialPermission();
+        resetCallLines();
+        lines = [];
+        linesReady = false;
+        emit();
+        return;
+      }
+      if (!linesReady) {
+        resetCallLines();
+        void refreshLines();
+      }
+    });
+  } catch {
+    // Sem o ouvinte, a sala de espera resolve — só demora um degrau a mais.
+  }
+}
+
+function watchWake(): void {
+  if (wakeListenersOn || typeof window === 'undefined') return;
+  wakeListenersOn = true;
+  const acordar = () => {
+    if (canDialNow() || document.visibilityState !== 'visible') return;
+    clearRetry();
+    void tryAgain();
+  };
+  window.addEventListener('online', acordar);
+  document.addEventListener('visibilitychange', acordar);
+}
+
 export const waCallsStore = {
   subscribe(fn: () => void): () => void {
     listeners.add(fn);
@@ -1199,6 +1457,7 @@ export const waCallsStore = {
       };
     });
     callBridge.init();
+    watchAuth();
     initializing = (async () => {
       try {
         applySessions(await waCallsService.getSessions());
@@ -1207,6 +1466,14 @@ export const waCallsStore = {
       } catch {
         available = false;
         waCallsLog('serviço de chamadas indisponível');
+        // Sem contas pareadas, as linhas ainda existem: são os canais do CRM,
+        // e é assim que o discador consegue dizer QUAL canal está sem voz em
+        // vez de mostrar um rótulo genérico.
+        void refreshLines();
+        // A nova tentativa é marcada pelo vigia do amarelo, no `emit` logo
+        // abaixo. Sem ela, a aba que abriu com o serviço fora ficava sem
+        // telefone até alguém recarregar a página: não há socket para se
+        // reconectar sozinho quando ele nem chegou a abrir.
       } finally {
         ready = true;
         emit();
@@ -1214,7 +1481,7 @@ export const waCallsStore = {
       if (!available || closeEvents) return;
       closeEvents = waCallsService.connectEvents({
         onEvent: handleEvent,
-        onOpen: () => { available = true; emit(); },
+        onOpen: () => { available = true; clearRetry(); emit(); },
         onError: () => { available = false; emit(); },
       });
     })();
@@ -1227,14 +1494,106 @@ export const waCallsStore = {
     await this.init();
   },
 
-  /** Escolha manual da conta — pronto para quando houver mais de um número. */
-  setSessionId(id: string | null): void {
+  /**
+   * Escolha manual da linha — por qual número a próxima ligação sai.
+   *
+   * Uma linha que a pessoa não pode usar é recusada aqui mesmo, e não na hora
+   * de discar: a lista do discador não oferece linha proibida, e um `setSessionId`
+   * vindo de outro caminho não pode furar a fila da regra.
+   */
+  setSessionId(id: string | null): boolean {
+    if (id && !sessionAllowed(id)) {
+      const linha = lineOf(id);
+      notify({
+        kind: 'error',
+        message: LINE_DENIED_MESSAGE,
+        description: lineDeniedDetail(linha?.label || 'escolhida'),
+      });
+      return false;
+    }
     sessionId = id;
+    emit();
+    return true;
+  },
+
+  /**
+   * DEV-ONLY: injeta linhas prontas, para a bancada do discador. Sem isto, as
+   * três situações que importam olhar (uma linha, duas, nenhuma autorizada)
+   * dependeriam de parear contas de verdade no serviço de voz.
+   */
+  primeLinesForPreview(list: CallLine[]): void {
+    previewLines = true;
+    lines = list;
+    linesReady = true;
+    sessions = list
+      .filter((l): l is CallLine & { sessionId: string } => !!l.sessionId)
+      .map(l => ({
+        id: l.sessionId, name: l.label, jid: `${l.phone}@s.whatsapp.net`,
+        phone: l.phone, state: l.online ? 'open' : 'connecting', paired: true,
+      }));
+    ready = true;
+    available = true;
+    sessionId = null;
+    chooseSession();
     emit();
   },
 
   /**
-   * Porta única de saída — e a trava contra o clique repetido.
+   * A estrela: por qual canal o discador abre quando há mais de um.
+   *
+   * Marcar não é o mesmo que escolher — por isso a preferida também passa a
+   * valer AGORA, se der: ninguém marca uma estrela para que ela só funcione na
+   * próxima vez que abrir o CRM.
+   */
+  setPreferredLine(key: string | null): void {
+    preferredLine = key;
+    writePreferredLine(key);
+    const preferida = key ? lines.find(l => l.key === key) : null;
+    if (preferida?.sessionId && sessionAllowed(preferida.sessionId)) sessionId = preferida.sessionId;
+    emit();
+  },
+
+  /** Relê canais e membros (o admin acabou de mexer no cadastro). */
+  async reloadLines(): Promise<void> {
+    resetCallLines();
+    await refreshLines();
+  },
+
+  /**
+   * "Atualizar": refaz a pergunta inteira — serviço de voz, canais e membros.
+   *
+   * É o botão do discador, e é também o que os gatilhos automáticos chamam. Uma
+   * aba aberta desde as 8h da manhã acumula duas defasagens diferentes: o
+   * serviço pode ter caído e voltado (e, se ele estava fora quando a aba
+   * abriu, nem socket existe para reconectar sozinho), e o cadastro de canal e
+   * de membro pode ter mudado no meio do dia.
+   */
+  async retryNow(): Promise<void> {
+    // O clique zera a escada: quem pediu agora não deve esperar o degrau de
+    // dois minutos que a espera automática já tinha alcançado.
+    clearRetry();
+    retrying = true;
+    emit();
+    try {
+      resetCallLines();
+      initializing = null;
+      await this.init();
+      await refreshLines();
+    } finally {
+      retrying = false;
+      emit();
+    }
+  },
+
+  /**
+   * Porta única de saída — a trava de permissão e a trava contra o clique
+   * repetido.
+   *
+   * A PERMISSÃO É CONFERIDA AQUI, e não nos botões, porque são cinco entradas
+   * para a mesma ligação: a barra do topo, o atalho ⌘⇧L, a pesquisa global, os
+   * botões da inbox e o cartão de chamada perdida. Esconder um botão é desenho,
+   * não defesa — quem tem o atalho decorado passaria por baixo de todos eles.
+   * Ver `dialPermission.ts` para a regra.
    *
    * Discar leva um tempo visível (permissão do microfone, POST no WaCalls) e
    * nesse intervalo o botão continua na tela. Sem esta trava, cada clique virava
@@ -1251,6 +1610,16 @@ export const waCallsStore = {
   }): Promise<string | null> {
     if (placing) {
       waCallsLog('placeCall ignorado: já existe uma discagem em andamento');
+      return null;
+    }
+    // A pergunta é feita ANTES de a porta ser trancada: uma tentativa negada
+    // não pode deixar `placing` de pé e travar a próxima ligação de quem pode.
+    const permissao = await ensureDialPermission();
+    if (permissao !== 'allowed') {
+      waCallsLog('placeCall negado', { permissao });
+      notify(permissao === 'denied'
+        ? { kind: 'error', message: DIAL_DENIED_MESSAGE, description: DIAL_DENIED_DETAIL }
+        : { kind: 'error', message: DIAL_UNKNOWN_MESSAGE, description: DIAL_UNKNOWN_DETAIL });
       return null;
     }
     placing = true;
@@ -1302,7 +1671,36 @@ export const waCallsStore = {
     }
     const sid = sessionId;
     if (!sid) {
-      notify({ kind: 'error', message: 'Nenhum WhatsApp disponível para chamadas.', description: 'Nenhuma conta pareada e conectada no serviço de chamadas.' });
+      // Duas situações diferentes com a mesma cara: não há conta pareada, ou há
+      // e nenhuma delas é desta pessoa. Quem não pode usar NENHUMA linha precisa
+      // ouvir isso, não "o serviço está fora" — é a diferença entre esperar e
+      // pedir acesso.
+      const proibidas = lines.filter(l => l.online && !l.authorized);
+      notify(proibidas.length > 0
+        ? {
+          kind: 'error',
+          message: LINE_DENIED_MESSAGE,
+          description: lineDeniedDetail(proibidas.map(l => l.label).join(', ')),
+        }
+        : {
+          kind: 'error',
+          message: 'Nenhum WhatsApp disponível para chamadas.',
+          description: 'Nenhuma conta pareada e conectada no serviço de chamadas.',
+        });
+      return null;
+    }
+    // As linhas ainda não são conhecidas? Pergunta AGORA, antes de decidir. São
+    // duas consultas e alguns milissegundos; sem isso existiria uma janela, logo
+    // depois de a aba abrir, em que o degrau do canal simplesmente não opina.
+    if (!linesReady) await refreshLines();
+    // A linha escolhida continua sendo desta pessoa? (O cadastro pode ter mudado
+    // com a aba aberta — e a escolha manual é anterior à resposta do banco.)
+    if (!sessionAllowed(sid)) {
+      notify({
+        kind: 'error',
+        message: LINE_DENIED_MESSAGE,
+        description: lineDeniedDetail(lineOf(sid)?.label || 'escolhida'),
+      });
       return null;
     }
     // A ÚNICA porta de entrada de um número numa ligação de saída. Antes cada
@@ -1804,6 +2202,7 @@ export const waCallsStore = {
     escalationTimers.clear();
     transportLost.clear();
     clearLinkTimer();
+    clearRetry();
     closeEvents?.();
     closeEvents = null;
     initializing = null;

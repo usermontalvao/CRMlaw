@@ -40,6 +40,19 @@ export interface UseWaCalls extends WaCallsSnapshot {
     contact?: WaCallContact | null,
     fallbacks?: readonly CallablePhoneCandidate[],
   ) => Promise<string | null>;
+  /**
+   * Troca a linha de saída — por qual número a próxima ligação sai. Devolve
+   * `false` quando a linha não é desta pessoa (a lista do discador não oferece
+   * linha proibida, mas a regra não depende da tela para valer).
+   */
+  setLine: (sessionId: string) => boolean;
+  /** Marca (ou desmarca) a linha preferida — a estrela do discador. */
+  setPreferredLine: (key: string | null) => void;
+  /**
+   * "Atualizar": refaz a pergunta ao serviço de voz e ao cadastro de canais.
+   * É o botão do discador; os gatilhos automáticos vivem no store.
+   */
+  retry: () => Promise<void>;
   acceptCall: (callId: string) => Promise<void>;
   rejectCall: (callId: string) => Promise<void>;
   hangUp: (callId: string) => Promise<void>;
@@ -94,6 +107,9 @@ export function useWaCalls(): UseWaCalls {
       waCallsStore.placeCall({ phone, contact, fallbacks, video: true }),
     [],
   );
+  const setLine = useCallback((id: string) => waCallsStore.setSessionId(id), []);
+  const setPreferredLine = useCallback((key: string | null) => waCallsStore.setPreferredLine(key), []);
+  const retry = useCallback(() => waCallsStore.retryNow(), []);
   const acceptCall = useCallback((callId: string) => waCallsStore.acceptCall(callId), []);
   const rejectCall = useCallback((callId: string) => waCallsStore.rejectCall(callId), []);
   const hangUp = useCallback((callId: string) => waCallsStore.hangUp(callId), []);
@@ -111,6 +127,9 @@ export function useWaCalls(): UseWaCalls {
     incoming,
     placeCall,
     placeVideoCall,
+    setLine,
+    setPreferredLine,
+    retry,
     acceptCall,
     rejectCall,
     hangUp,

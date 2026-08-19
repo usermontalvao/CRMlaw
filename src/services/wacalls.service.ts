@@ -141,6 +141,9 @@ function sessionFrom(status: CallServiceStatus): WaCallsSession {
     id: SESSION_ID,
     name: status.pushName || 'Jurius',
     jid: status.jid || '',
+    // O número da conta pareada — é a chave que liga esta sessão ao canal do
+    // CRM, e é por isso que ele não pode ser descartado aqui.
+    phone: status.phone || null,
     state: status.connected ? 'open' : 'connecting',
     paired: !!status.jid,
   };

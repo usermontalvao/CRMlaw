@@ -4034,9 +4034,18 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   50%      { transform: scale(1.012); opacity: 0.92; }
 }
 
+/* O ponto do discador quando a LINHA CONECTA: um pulso, uma vez só.
+   Em laço ele viraria paisagem e deixaria de avisar (ver `DialerLauncher`). */
+.wa-dialer-dot-pulse { animation: wa-dialer-dot 0.9s cubic-bezier(0.2, 1.4, 0.4, 1) 1; }
+@keyframes wa-dialer-dot {
+  0%   { transform: scale(1);    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+  45%  { transform: scale(1.55); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);  }
+  100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);    }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wa-typing > span, .wa-msg-in, .wa-bubble-in, .wa-badge-pop, .wa-badge-glow,
-  .wa-send-ready, .wa-empty-float, .wa-drop-pulse,
+  .wa-send-ready, .wa-empty-float, .wa-drop-pulse, .wa-dialer-dot-pulse,
   .wa-skel::after, .wa-skel-row, .wa-jump,
   .wa-collision, .wa-busy-dot { animation: none !important; }
   /* O realce do salto perde a animação, não o realce: sem ele, quem pediu para

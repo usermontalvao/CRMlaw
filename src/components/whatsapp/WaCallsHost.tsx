@@ -21,6 +21,7 @@ import { useToastContext } from '../../contexts/ToastContext';
 import { useCallBridge, useOnlineOperators } from '../../hooks/useCallBridge';
 import { useMissedCalls } from '../../hooks/useMissedCalls';
 import { useWaCalls } from '../../hooks/useWaCalls';
+import { useCanDial } from '../../hooks/useCanDial';
 import { waCallsStore } from '../../services/wacalls/callStore';
 import {
   playCallConnectedTone, playCallEndedTone, startRing, stopRing,
@@ -29,6 +30,8 @@ import { ActiveCallWidget, IncomingCallCard, callDisplayName } from './callModal
 import { CallVideoScreen } from './callVideoScreen';
 import { CallInviteCard, GuestCallBar } from './callGuestPanel';
 import { MissedCallWidget } from './MissedCallWidget';
+import { DialerWindow } from './DialerWindow';
+import { dialerStore } from '../../services/wacalls/dialerStore';
 import type { WaCall } from '../../services/wacalls/types';
 
 /**
@@ -167,12 +170,17 @@ function useCallRinging(myCall: WaCall | null, incoming: WaCall | null): void {
  * atendente, sem aviso nenhum. O navegador só permite o diálogo padrão dele —
  * não dá para escrever o texto —, mas o segundo de hesitação já resolve.
  */
-function useConfirmLeaveDuringCall(myCall: WaCall | null, bridging = false): void {
+function useConfirmLeaveDuringCall(myCall: WaCall | null, bridging = false, dialing = false): void {
   // `bridging` é a mesa que está segurando o áudio de um segundo atendente: a
   // janela dela não é só a dela. Fechá-la derruba a ligação para os dois lados
   // (ver `services/wacalls/callBridge`), e é o único caso em que o aviso do
   // navegador aparece sem esta pessoa estar, ela própria, ao telefone.
-  const live = bridging || (!!myCall && myCall.phase !== 'ENDED' && myCall.phase !== 'FAILED');
+  // `dialing` fecha a única fresta que sobrava: entre o clique em "Ligar" e a
+  // chamada existir no mapa passam o pedido do microfone e o POST no serviço.
+  // Um F5 nesse intervalo derrubava a discagem sem aviso nenhum, e do outro
+  // lado o telefone chegava a tocar.
+  const live = bridging || dialing
+    || (!!myCall && myCall.phase !== 'ENDED' && myCall.phase !== 'FAILED');
   useEffect(() => {
     if (!live) return;
     const handler = (event: BeforeUnloadEvent) => {
@@ -186,13 +194,47 @@ function useConfirmLeaveDuringCall(myCall: WaCall | null, bridging = false): voi
   }, [live]);
 }
 
+/**
+ * O atalho que abre o discador de qualquer tela — ⌘⇧L (Ctrl+Shift+L no Windows).
+ *
+ * Mora aqui pelo mesmo motivo do resto deste arquivo: é a única peça montada em
+ * todas as telas do CRM e da janela /atendimento. Prendê-lo ao módulo WhatsApp
+ * faria o atalho existir justamente onde ele é menos necessário.
+ *
+ * O ⇧ não é enfeite: ⌘L é a barra de endereços do navegador em todos eles, e um
+ * atalho que rouba a barra de endereços é um atalho que a pessoa desativa.
+ *
+ * Sem permissão de discar, o atalho não existe: ele é a única entrada do
+ * discador que não tem botão para esconder, e abrir uma janela que só sabe
+ * responder "você não pode" seria pior do que não abrir nada.
+ */
+function useDialerHotkey(podeDiscar: boolean): void {
+  useEffect(() => {
+    if (!podeDiscar) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey) return;
+      // `event.code` em vez de `key`: com ⇧ pressionado o `key` chega como 'L'
+      // em uns teclados e como caractere morto em outros (ABNT2 incluído).
+      if (event.code !== 'KeyL') return;
+      event.preventDefault();
+      dialerStore.toggle();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [podeDiscar]);
+}
+
 export const WaCallsHost: React.FC<{
   /** Abre a conversa do contato na inbox (o app decide como navegar). */
   onOpenConversation?: (conversationId: string) => void;
 }> = ({ onOpenConversation }) => {
   const toast = useToastContext();
+  // Só a SAÍDA depende de permissão. A chamada RECEBIDA continua chegando a
+  // quem a escada mandar: quem não pode discar ainda pode atender o telefone
+  // que toca na mesa dela. Ver `dialPermission.ts` e `callRouting.ts`.
+  const podeDiscar = useCanDial();
   const {
-    myCall, incoming, linkDown, canCall, placeCall, acceptCall, rejectCall, hangUp, setMuted, setRecording,
+    myCall, incoming, linkDown, canCall, dialing, placeCall, acceptCall, rejectCall, hangUp, setMuted, setRecording,
     videoSupported, startVideo, stopVideo, videoStreams, rotateVideo, videoOrientation,
   } = useWaCalls();
   const { calls: missed, dismiss: dismissMissed, dismissAll: dismissAllMissed } = useMissedCalls();
@@ -227,7 +269,8 @@ export const WaCallsHost: React.FC<{
 
   useCallRinging(myCall, incoming);
   useSystemCallNotification(incoming);
-  useConfirmLeaveDuringCall(myCall, anchoring);
+  useConfirmLeaveDuringCall(myCall, anchoring, dialing);
+  useDialerHotkey(podeDiscar);
 
   // A aba está indo embora: microfone, AudioContext e SSE liberados na saída.
   useEffect(() => () => waCallsStore.shutdown(), []);
@@ -278,9 +321,11 @@ export const WaCallsHost: React.FC<{
           aberta: o que interessa nesse instante é a chamada de agora. Ele volta
           sozinho assim que a tela fica livre — nada é perdido no caminho. */}
       {!incoming && !myCall && (
+        // O aviso de que alguém ligou é para todo mundo que a escada escolheu;
+        // o "ligar de volta" é que é só para quem pode discar.
         <MissedCallWidget
           calls={missed}
-          canCall={canCall}
+          canCall={canCall && podeDiscar}
           onCallBack={(call) => {
             void placeCall(call.phone, {
               conversationId: call.conversationId,
@@ -356,6 +401,14 @@ export const WaCallsHost: React.FC<{
           }
         />
       )}
+
+      {/* O discador. Aqui dentro pelo mesmo motivo de todo o resto: fora da
+          troca de módulos, para que a janela sobreviva à navegação e o atalho
+          funcione com qualquer tela aberta. Ele se esconde sozinho enquanto
+          houver chamada minha — o canto passa a ser do painel da chamada.
+          Sem permissão de discar ele nem é montado: nenhuma das entradas dele
+          existe, então a janela não teria como ser aberta. */}
+      {podeDiscar && <DialerWindow />}
     </>
   );
 };
