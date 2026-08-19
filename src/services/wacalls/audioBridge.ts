@@ -67,16 +67,43 @@ class CaptureProcessor extends AudioWorkletProcessor {
 registerProcessor('capture-processor', CaptureProcessor);
 `;
 
-// Worklet de reprodução: buffer circular de 2 s. O PCM chega em rajadas pelo
-// WebSocket e a placa de som pede blocos de tamanho fixo; sem o anel, cada
-// atraso de rede viraria um estalo.
+// Worklet de reprodução: um buffer de jitter de verdade, não um anel solto.
+//
+// O PCM chega em RAJADAS. O transporte é um WebSocket sobre TCP (e, hoje, por
+// dentro de um túnel do Cloudflare): um pacote perdido em qualquer trecho
+// segura a fila inteira até a retransmissão, e o que se recebe depois é um
+// monte de quadros de uma vez. Um anel que só empilha e toca na velocidade da
+// placa transforma cada rajada em atraso PERMANENTE — o buffer sobe e nunca
+// mais desce. Foi assim que a ligação virou "os dois falando por cima".
+//
+// Três regras consertam isso, e as três precisam existir juntas:
+//
+//   1. ALVO: só começa a tocar com ALVO amostras guardadas (dois quadros de
+//      60 ms). Menos que isso é picote garantido no primeiro soluço da rede.
+//   2. TETO: acima do teto, o buffer ENCOLHE — duas amostras de entrada viram
+//      uma de saída, então o atraso cai ao dobro da velocidade real até voltar
+//      ao alvo. Sem emenda, sem estalo: é uma média, não um corte.
+//   3. FURO: sem áudio, decai do último valor em vez de escrever zero seco. O
+//      corte em zero é uma descontinuidade na forma de onda — é literalmente
+//      um clique. Depois de um furo, reprime: volta a esperar o alvo antes de
+//      tocar de novo, senão cada furo vira uma metralhadora de furos.
+//
+// O resultado é um atraso que fica entre 120 e 240 ms e SE CORRIGE, no lugar
+// de um que subia até 2 s e ficava lá.
 const PLAYBACK_WORKLET_SRC = `
 const RING_SIZE = ${SAMPLE_RATE * 2};
+const ALVO = ${Math.round(SAMPLE_RATE * 0.12)};
+const TETO = ${Math.round(SAMPLE_RATE * 0.24)};
 class PlaybackProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.ring = new Float32Array(RING_SIZE);
     this.read = 0; this.write = 0; this.available = 0;
+    this.last = 0;
+    this.primed = false;
+    this.furos = 0;
+    this.encolhidas = 0;
+    this.blocos = 0;
     this.port.onmessage = (e) => {
       const data = e.data;
       for (let i = 0; i < data.length; i += 1) {
@@ -87,15 +114,47 @@ class PlaybackProcessor extends AudioWorkletProcessor {
       }
     };
   }
+  take() {
+    const sample = this.ring[this.read];
+    this.read = (this.read + 1) % RING_SIZE;
+    this.available -= 1;
+    return sample;
+  }
   process(_inputs, outputs) {
     const out = outputs[0][0];
     if (!out) return true;
+    // Um relatório por segundo (o bloco é de 128 amostras = 8 ms a 16 kHz).
+    // É ele que separa "atraso do transporte" de "atraso que nós criamos".
+    this.blocos += 1;
+    if (this.blocos >= 125) {
+      this.blocos = 0;
+      this.port.postMessage({
+        atrasoMs: Math.round((this.available / ${SAMPLE_RATE}) * 1000),
+        furos: this.furos,
+        encolhidas: this.encolhidas,
+      });
+      this.furos = 0;
+      this.encolhidas = 0;
+    }
+    if (!this.primed) {
+      if (this.available < ALVO) { out.fill(0); return true; }
+      this.primed = true;
+    }
+    const encolher = this.available > TETO;
+    if (encolher) this.encolhidas += 1;
     for (let i = 0; i < out.length; i += 1) {
-      if (this.available > 0) {
-        out[i] = this.ring[this.read];
-        this.read = (this.read + 1) % RING_SIZE;
-        this.available -= 1;
-      } else out[i] = 0;
+      if (this.available <= 0) {
+        // Furo: desce até o silêncio em vez de cair nele.
+        this.last *= 0.85;
+        out[i] = this.last;
+        this.primed = false;
+        this.furos += 1;
+        continue;
+      }
+      let sample = this.take();
+      if (encolher && this.available > 0) sample = (sample + this.take()) * 0.5;
+      this.last = sample;
+      out[i] = sample;
     }
     return true;
   }
@@ -208,6 +267,17 @@ export interface WaCallAudioBridge {
    * cabeça, e foi assim que a primeira ligação de verdade virou um mistério.
    */
   receivedAudioBytes: () => number;
+  /**
+   * Quanto áudio já recebido ainda está na fila esperando para tocar.
+   *
+   * É a metade do atraso que dá para medir daqui, e a única que é NOSSA: um
+   * número que fica em 120–240 ms é o buffer de jitter fazendo o trabalho dele;
+   * um que só sobe é a rede entregando em rajada mais rápido do que o buffer
+   * consegue encolher.
+   */
+  playoutDelayMs: () => number;
+  /** Quadros de microfone descartados por congestionamento na subida. */
+  droppedUplinkFrames: () => number;
   /** Em que alto-falante a voz do cliente está tocando — e por que, se não é o escolhido. */
   outputRouting: () => OutputRouting | null;
   /** Libera tudo: DataChannel, PeerConnection, microfone, AudioContext e o <audio>. */
@@ -303,6 +373,10 @@ export async function openCallAudio(params: {
   let recordingStartedAt = 0;
   /** Bytes de voz recebidos do serviço. Ver `receivedAudioBytes`. */
   let receivedBytes = 0;
+  /** Quanto áudio está represado esperando para tocar. Ver `playoutDelayMs`. */
+  let atrasoDeSaidaMs = 0;
+  /** Quadros que o navegador DESCARTOU por congestionamento na subida. */
+  let descartadosNaSubida = 0;
   /** Onde a voz do cliente está saindo, depois de aplicado o alto-falante. */
   let routing: OutputRouting | null = null;
   /** Solta a escuta da troca de alto-falante feita no meio da chamada. */
@@ -364,7 +438,10 @@ export async function openCallAudio(params: {
       // (ver `waCallsService.setMuted`), para o motor emitir conforto em vez de
       // um silêncio que o outro lado leria como queda.
       if (muted || !callSocket.isOpen()) return;
-      callSocket.sendAudio(float32ToInt16LE(event.data));
+      // `sendAudio` devolve `false` quando a subida está congestionada e o
+      // quadro foi descartado em vez de entrar numa fila que só cresce. Ver
+      // `wacalls/socket`: em voz, um quadro atrasado vale menos que um perdido.
+      if (!callSocket.sendAudio(float32ToInt16LE(event.data))) descartadosNaSubida += 1;
     };
     micSource.connect(captureNode);
     // O worklet de captura não escreve na saída (silêncio); a ligação com o
@@ -375,6 +452,21 @@ export async function openCallAudio(params: {
     const playbackNode = new AudioWorkletNode(context, 'playback-processor');
     const streamDestination = context.createMediaStreamDestination();
     playbackNode.connect(streamDestination);
+    // O worklet devolve, uma vez por segundo, o tamanho da fila de saída. Sem
+    // este número, "está atrasado" é opinião: ele diz se o atraso está no
+    // transporte (fila curta, mas a voz demora a chegar) ou represado aqui
+    // (fila crescendo). Só fala quando há o que dizer.
+    playbackNode.port.onmessage = (event: MessageEvent<{
+      atrasoMs: number; furos: number; encolhidas: number;
+    }>) => {
+      const { atrasoMs, furos, encolhidas } = event.data;
+      atrasoDeSaidaMs = atrasoMs;
+      if (furos > 0 || encolhidas > 0 || atrasoMs > 400) {
+        waCallsLog('qualidade do áudio', {
+          callId, atrasoMs, furos, encolhidas, descartadosNaSubida,
+        });
+      }
+    };
     soltar.push(callSocket.onMedia(frame => {
       // O socket entrega áudio e vídeo pela mesma porta; o vídeo é de quem o
       // pediu (ver `videoBridge`), não desta ponte.
@@ -548,6 +640,8 @@ export async function openCallAudio(params: {
     stopRecording,
     isRecording: () => recorder !== null,
     receivedAudioBytes: () => receivedBytes,
+    playoutDelayMs: () => atrasoDeSaidaMs,
+    droppedUplinkFrames: () => descartadosNaSubida,
     outputRouting: () => routing,
     setMuted: (next: boolean) => {
       muted = next;

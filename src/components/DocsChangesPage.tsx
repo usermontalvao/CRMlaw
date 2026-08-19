@@ -968,6 +968,28 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.333',
+    date: '19/08/2026',
+    summary: 'A ligação parou de ficar para trás: a voz do cliente chega na hora, e não com meio segundo de atraso que só piorava.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A voz deixou de acumular atraso durante a conversa',
+            description: 'A ligação começava aceitável e ia ficando pior: no meio da conversa, os dois já falavam por cima um do outro, porque a voz que chegava era a de meio segundo atrás — e esse atraso, uma vez criado, nunca mais voltava sozinho. A causa não era a internet do escritório propriamente: quando a rede engasga por um instante, o áudio represado chega todo de uma vez depois, e o CRM guardava essa enxurrada numa fila que só crescia. Agora a fila tem tamanho: ela segura o mínimo necessário para aguentar um soluço da rede e, quando passa disso, se recupera sozinha ao longo da própria conversa, sem estalo e sem cortar palavra. A mesma trava passou a valer na saída, para o cliente não ouvir o que você disse um segundo atrás. O atraso deixou de crescer e passou a se corrigir.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Os cortes e estalos ficaram mais discretos',
+            description: 'Quando faltava áudio por um instante, o som era cortado em seco — e um corte em seco é literalmente um clique no fone. Agora a voz desce até o silêncio em vez de cair nele, e só volta a tocar quando há folga suficiente para não engasgar de novo em seguida.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.332',
     date: '19/08/2026',
     summary: 'A chamada de vídeo saiu da caixinha: agora ela ocupa a tela, como no celular — e a sua imagem chega em pé do outro lado.',

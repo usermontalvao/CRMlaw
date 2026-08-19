@@ -42,6 +42,15 @@ let desired = false;
 let attachedCall: string | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let attempt = 0;
+/**
+ * Quanto de voz pode estar esperando na fila de saída antes de o próximo
+ * quadro ser descartado. Seis quadros de 60 ms ≈ 360 ms — o suficiente para
+ * absorver um soluço da rede, curto o bastante para o outro lado não ouvir uma
+ * conversa que já passou.
+ */
+const LIMITE_SUBIDA = 6 * (HEADER + 1920);
+/** Tamanho da última unidade de vídeo enviada. Ver `sendVideo`. */
+let ultimoVideoBytes = 0;
 
 const eventListeners = new Set<EventListener>();
 const mediaListeners = new Set<MediaListener>();
@@ -169,18 +178,36 @@ export const callSocket = {
     return attachedCall;
   },
 
-  /** Um quadro de microfone: PCM Int16 LE, exatamente 960 amostras. */
-  sendAudio(pcm: ArrayBuffer): void {
-    if (socket?.readyState !== WebSocket.OPEN) return;
+  /**
+   * Um quadro de microfone: PCM Int16 LE, exatamente 960 amostras.
+   *
+   * Devolve `false` quando o quadro foi DESCARTADO porque a subida está
+   * congestionada — ver `LIMITE_SUBIDA`. Quem chama conta os descartes; eles
+   * são o sintoma de rede ruim, não a doença.
+   */
+  sendAudio(pcm: ArrayBuffer): boolean {
+    if (socket?.readyState !== WebSocket.OPEN) return false;
+    // A fila de saída do navegador é ILIMITADA. Sem esta trava, uma subida
+    // congestionada empilha voz nela e o cliente passa a ouvir o que foi dito
+    // há um segundo — e o atraso nunca mais volta, porque nada na fila expira.
+    // Em voz, um quadro atrasado vale menos que um quadro perdido: é a mesma
+    // regra que o servidor já aplica na direção contrária (`state.rs`).
+    if (socket.bufferedAmount > LIMITE_SUBIDA + 2 * ultimoVideoBytes) return false;
     const quadro = new Uint8Array(HEADER + pcm.byteLength);
     quadro[0] = KIND_AUDIO;
     quadro.set(new Uint8Array(pcm), HEADER);
     socket.send(quadro);
+    return true;
   },
 
   /** Uma unidade de acesso H.264 Annex-B completa, já codificada pela câmera. */
   sendVideo(au: Uint8Array, keyframe: boolean): void {
     if (socket?.readyState !== WebSocket.OPEN) return;
+    // O vídeo divide o socket com a voz, e uma unidade de acesso é ordens de
+    // grandeza maior que um quadro de PCM. Guardar o tamanho dela é o que
+    // impede a trava de subida de confundir "a câmera acabou de mandar um
+    // keyframe" (transitório, normal) com "a subida não dá conta" (o defeito).
+    ultimoVideoBytes = au.byteLength;
     const quadro = new Uint8Array(HEADER + au.byteLength);
     quadro[0] = KIND_VIDEO;
     quadro[1] = keyframe ? FLAG_KEYFRAME : 0;
