@@ -198,7 +198,7 @@ export const MissedCallWidget: React.FC<{
                       <button
                         onClick={() => { onCallBack(call); onDismiss(callIds); }}
                         disabled={!canCall}
-                        title={canCall ? 'Ligar de volta' : 'O serviço de chamadas está indisponível'}
+                        title={canCall ? 'Ligar de volta' : 'Chamadas indisponíveis no momento'}
                         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700 disabled:opacity-40"
                       >
                         <Phone size={15} />

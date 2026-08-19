@@ -179,17 +179,40 @@ export async function revealDeviceLabels(): Promise<boolean> {
 
 type ComSink = { setSinkId?: (id: string) => Promise<void> };
 
+/** Onde o áudio de um elemento foi parar, e por que não foi para o escolhido. */
+export interface OutputRouting {
+  /** `true` só quando o som está saindo no alto-falante ESCOLHIDO. */
+  applied: boolean;
+  /** O dispositivo pedido, ou `null` quando não há preferência salva. */
+  deviceId: string | null;
+  /** O motivo, quando a preferência não valeu. */
+  reason: 'sem-preferencia' | 'sem-suporte' | 'dispositivo-sumiu' | null;
+}
+
 /**
  * Manda o áudio de um `<audio>`/`<video>` para o alto-falante escolhido.
- * Silenciosa por definição: onde a API não existe, o som continua saindo no
- * padrão do sistema, que é exatamente o comportamento de antes.
+ *
+ * Onde a API não existe, o som continua saindo no padrão do sistema — o
+ * comportamento de sempre. O que ela NÃO faz mais é engolir a falha: quem
+ * chama recebe de volta onde o som foi parar, porque "não escuto nada" e "o
+ * som está saindo no monitor desligado" são o mesmo sintoma para quem ouve.
  */
-export async function applyOutputToElement(el: HTMLMediaElement): Promise<void> {
+export async function applyOutputToElement(el: HTMLMediaElement): Promise<OutputRouting> {
   const deviceId = getPreferredOutputId();
-  if (!deviceId) return;
+  if (!deviceId) return { applied: false, deviceId: null, reason: 'sem-preferencia' };
   const alvo = el as HTMLMediaElement & ComSink;
-  if (typeof alvo.setSinkId !== 'function') return;
-  try { await alvo.setSinkId(deviceId); } catch { /* dispositivo sumiu — volta ao padrão */ }
+  if (typeof alvo.setSinkId !== 'function') return { applied: false, deviceId, reason: 'sem-suporte' };
+  try {
+    await alvo.setSinkId(deviceId);
+    return { applied: true, deviceId, reason: null };
+  } catch {
+    // O dispositivo sumiu entre a escolha e a chamada. Voltar EXPLICITAMENTE ao
+    // padrão do sistema: um `setSinkId` recusado no meio pode deixar o elemento
+    // apontado para um alto-falante que não existe mais, e aí não sai som em
+    // canto nenhum — que é pior do que sair no lugar errado.
+    try { await alvo.setSinkId(''); } catch { /* já está no padrão */ }
+    return { applied: false, deviceId, reason: 'dispositivo-sumiu' };
+  }
 }
 
 // ── O contexto compartilhado ────────────────────────────────────────────────

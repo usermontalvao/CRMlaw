@@ -47,6 +47,16 @@ export interface WhatsAppConversation {
   last_message_at: string | null;
   last_message_preview: string | null;
   last_message_direction: WhatsAppDirection | null;
+  // A última CHAMADA, num lugar só dela. Fica fora de `last_message_*` de
+  // propósito: aqueles campos são o relógio do SLA, do encerramento automático
+  // e da 1ª resposta, e ligação não é mensagem. Quem junta as duas para
+  // desenhar a linha da lista é `conversationPreview` (em `threadCalls.ts`).
+  last_call_at: string | null;
+  last_call_direction: 'inbound' | 'outbound' | null;
+  last_call_outcome: 'answered' | 'missed' | 'declined' | 'failed' | null;
+  last_call_duration_seconds: number | null;
+  /** A última chamada foi de vídeo — a prévia da lista diz "Chamada de vídeo". */
+  last_call_is_video?: boolean | null;
   presence: WhatsAppPresence;            // último sinal de presença (oportunista)
   presence_updated_at: string | null;    // quando esse sinal chegou
   last_seen_at: string | null;           // "visto por último" quando o WhatsApp fornecer

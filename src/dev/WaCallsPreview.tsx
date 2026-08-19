@@ -1,9 +1,9 @@
 // DEV-ONLY: bancada das chamadas de voz (?wacallspreview=1).
 //
 // Serve para duas coisas que a inbox real não permite conferir sem uma linha
-// tocando: (1) a aparência de cada estado da chamada, e (2) se o WaCalls
-// responde a ESTA origem — a listagem de sessões e o SSE são feitos de verdade
-// contra o servidor configurado, e o resultado aparece na tela.
+// tocando: (1) a aparência de cada estado da chamada, e (2) se o serviço de
+// chamadas responde a ESTA origem — o status e o WebSocket são feitos de
+// verdade contra o servidor configurado, e o resultado aparece na tela.
 import React, { useEffect, useState } from 'react';
 import { PhoneCall } from 'lucide-react';
 import { ActiveCallWidget, IncomingCallCard } from '../components/whatsapp/callModals';
@@ -39,6 +39,9 @@ const chamada = (patch: Partial<WaCall>): WaCall => ({
   endReason: null,
   muted: false,
   route: { ring: true, show: true, source: 'assigned', targetUserIds: [], hasNextStep: false, label: 'Sem responsável definido — tocando para todos' },
+  videoOn: false,
+  peerVideo: false,
+  wasVideo: false,
   recording: false,
   recorded: false,
   error: null,

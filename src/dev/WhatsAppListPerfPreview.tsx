@@ -10,6 +10,7 @@ import { Gauge } from 'lucide-react';
 import { ConversationListItem } from '../components/whatsapp/conversationListItem';
 import { ConversationList } from '../components/whatsapp/conversationList';
 import { waAiListChip } from '../utils/waAiFollowupDisplay';
+import { WA_SWEEP_MS, type WaSweepKind } from '../components/whatsapp/conversationSweep';
 import type { WhatsAppChannel, WhatsAppConversation, WhatsAppDepartment } from '../types/whatsapp.types';
 
 const DEPT_BY_ID = new Map<string, WhatsAppDepartment>();
@@ -46,8 +47,30 @@ const seed = (n: number): WhatsAppConversation[] => Array.from({ length: n }, (_
   assigned_user_id: null, department_id: null, status: 'open' as const,
   unread_count: i % 7 === 0 ? 2 : 0,
   last_message_at: new Date(Date.now() - i * 60000).toISOString(),
-  last_message_preview: 'Bom dia, doutor, tudo bem? Preciso de uma orientação.',
+  // Figurinha e foto com legenda entram na amostra porque eram justamente as
+  // que a lista não sabia dizer: a figurinha virava "—" e a legenda da foto
+  // era jogada fora.
+  last_message_preview: i % 11 === 0 ? '🖼️ Figurinha'
+    : i % 13 === 0 ? '📷 Olha o comprovante que o banco mandou'
+    : 'Bom dia, doutor, tudo bem? Preciso de uma orientação.',
   last_message_direction: 'in' as const,
+  // Uma a cada cinco teve LIGAÇÃO depois da última mensagem: é a linha em que a
+  // prévia tem de trocar o texto pela chamada (ver `conversationPreview`), e as
+  // quatro variantes deixam à vista que a perdida recebida é a única em
+  // vermelho.
+  ...(i % 5 === 0 ? {
+    last_call_at: new Date(Date.now() - i * 60000 + 30000).toISOString(),
+    last_call_direction: (i % 10 === 0 ? 'inbound' : 'outbound') as 'inbound' | 'outbound',
+    last_call_outcome: (['answered', 'missed', 'declined', 'answered'][(i / 5) % 4]) as 'answered' | 'missed' | 'declined',
+    last_call_duration_seconds: i % 10 === 0 ? 372 : 41,
+    // Metade das ligações da bancada é de VÍDEO: a frase da linha tem de dizer
+    // o meio nos SEIS desfechos, e é aqui que se vê "sem resposta" de voz e de
+    // vídeo lado a lado.
+    last_call_is_video: i % 15 === 0 || i % 20 === 0,
+  } : {
+    last_call_at: null, last_call_direction: null, last_call_outcome: null,
+    last_call_duration_seconds: null, last_call_is_video: false,
+  }),
   presence: null, presence_updated_at: null, last_seen_at: null,
   is_blocked: false, blocked_at: null, blocked_by: null, blocked_reason: null,
   closed_at: null, closed_by: null, closure_reason: null, reopened_at: null,
@@ -101,8 +124,23 @@ const WhatsAppListPerfPreview: React.FC = () => {
   const [resultado, setResultado] = useState<string[]>([]);
   const t0 = useRef(0);
 
-  const conversas = useMemo(() => comArquivo(seed(total)), [total]);
+  const semeadas = useMemo(() => comArquivo(seed(total)), [total]);
+
+  // Varredura de saída: a bancada repete o que o módulo faz de verdade — a
+  // faixa passa e SÓ ENTÃO a conversa sai da lista (ver `useWaOperationalModals`).
+  const [sweeping, setSweeping] = useState<ReadonlyMap<string, WaSweepKind>>(new Map());
+  const [saiu, setSaiu] = useState<ReadonlySet<string>>(new Set());
+  const conversas = useMemo(() => semeadas.filter(c => !saiu.has(c.id)), [semeadas, saiu]);
   const selectedId = conversas[0]?.id ?? null;
+  const varrer = useCallback((id: string | null, kind: WaSweepKind) => {
+    if (!id) return;
+    setSweeping(prev => new Map(prev).set(id, kind));
+    window.setTimeout(() => {
+      setSweeping(prev => { const n = new Map(prev); n.delete(id); return n; });
+      // Transferida FICA (o destino depende do filtro em uso); encerrada sai.
+      if (kind === 'closed') setSaiu(prev => new Set(prev).add(id));
+    }, WA_SWEEP_MS);
+  }, []);
 
   // Espelha o módulo: o mapa é recriado quando o rascunho é gravado.
   const draftMap = useMemo<Record<string, string>>(
@@ -183,6 +221,12 @@ const WhatsAppListPerfPreview: React.FC = () => {
             className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Simular tecla</button>
           <button data-test="rascunho" onClick={() => medir(`rascunho · ${memoizada ? 'memo' : 'antigo'}`, () => setDraftEpoch(e => e + 1))}
             className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white">Simular gravação de rascunho</button>
+          <button data-test="encerrar" onClick={() => varrer(selectedId, 'closed')}
+            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">Encerrar a 1ª (varredura)</button>
+          <button data-test="transferir" onClick={() => varrer(conversas[1]?.id ?? null, 'transferred')}
+            className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white">Transferir a 2ª (varredura)</button>
+          <button data-test="repor" onClick={() => setSaiu(new Set())}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">Repor encerradas</button>
         </div>
 
         <pre data-test="resultado" className="mb-4 min-h-[92px] overflow-x-auto rounded-xl border border-slate-200 bg-white p-3 text-[12px] leading-relaxed text-slate-700">
@@ -210,6 +254,7 @@ const WhatsAppListPerfPreview: React.FC = () => {
               archivedIds={ARQUIVADAS}
               showChannelName
               busyConversationIds={OCUPADAS}
+              sweeping={sweeping}
               funnelLabelsForChannel={funnelPorCanal}
               aiChipFor={chipDeIa}
               conversationStatus={statusDaConversa}
@@ -238,6 +283,7 @@ const WhatsAppListPerfPreview: React.FC = () => {
                 archived={ARQUIVADAS.has(c.id)}
                 showChannelName
                 busy={OCUPADAS.has(c.id)}
+                sweep={sweeping.get(c.id) ?? null}
                 funnelLabels={FUNNEL}
                 onSelect={onSelect}
               />

@@ -6,8 +6,7 @@
 // o canal (com o estado dele) no cabeçalho e poder pular para outro conectado —
 // sem procurar a outra conversa na inbox — é o que evita a espera silenciosa.
 import React, { useState } from 'react';
-import { createPortal } from 'react-dom';
-import { BellRing, Check, Loader2, Smartphone, AlertTriangle, WifiOff } from 'lucide-react';
+import { BellRing, Check, Loader2, Smartphone, AlertTriangle } from 'lucide-react';
 import { conversationName, maskName, prettyPhone } from './format';
 import type {
   WhatsAppChannel, WhatsAppConversation, WhatsAppInstanceStatus, WhatsAppScheduledMessage,
@@ -98,90 +97,14 @@ export const ChannelSwitcher: React.FC<{
 };
 
 /**
- * Alerta em tela cheia ao abrir uma conversa cujo canal está fora do ar.
- *
- * Escrever para um cliente e a mensagem não sair é o pior defeito silencioso da
- * inbox — quem digitou acha que respondeu. Uma faixa fina não segura ninguém:
- * o olho vai direto ao compositor. Então escurece tudo e obriga uma decisão —
- * falar por um canal conectado, ou assumir que o que for escrito fica retido.
- */
-export const ChannelDownAlert: React.FC<{
-  channel: WhatsAppChannel;
-  alternatives: WhatsAppChannel[];
-  busyId?: string | null;
-  onSwitch: (channelId: string) => void;
-  onDismiss: () => void;
-}> = ({ channel, alternatives, busyId, onSwitch, onDismiss }) => createPortal(
-  // Portal para o body: escurece a tela inteira, sem depender de qual contêiner
-  // do CRM está por volta (o módulo também roda embutido em widget).
-  <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-[3px]"
-    role="alertdialog" aria-modal="true" aria-label="Canal fora do ar">
-    <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl overflow-hidden">
-      <div className="flex items-start gap-3 px-5 pt-5 pb-3">
-        <span className="flex-shrink-0 w-11 h-11 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
-          <AlertTriangle size={22} strokeWidth={2.4} />
-        </span>
-        <div className="min-w-0">
-          <h2 className="text-[16px] font-bold text-slate-900">Esta conversa não vai enviar</h2>
-          <p className="mt-1 text-[13px] leading-snug text-slate-600">
-            O canal <strong>{channelName(channel)}</strong>
-            {channel.phone_number ? ` (${prettyPhone(channel.phone_number)})` : ''} está{' '}
-            <span className={`font-semibold ${CHANNEL_STATUS_META[channel.status].text}`}>
-              {CHANNEL_STATUS_META[channel.status].label.toLowerCase()}
-            </span>. Tudo que você escrever aqui fica <strong>retido</strong> até ele reconectar — o cliente não recebe.
-          </p>
-        </div>
-      </div>
-
-      <div className="px-5 pb-4">
-        {alternatives.length > 0 ? (
-          <>
-            <p className="text-[10.5px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Falar por um canal conectado</p>
-            <div className="space-y-1.5">
-              {alternatives.map(c => (
-                <button key={c.id} onClick={() => onSwitch(c.id)} disabled={busyId === c.id}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-[#00a884] bg-[#00a884]/10 hover:bg-[#00a884]/20 transition text-left disabled:opacity-50">
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: c.color || '#00a884' }} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13.5px] font-bold text-slate-800 truncate">{channelName(c)}</span>
-                    <span className="block text-[11px] text-slate-500">
-                      {c.phone_number ? prettyPhone(c.phone_number) : 'sem número'} · conectado
-                    </span>
-                  </span>
-                  {busyId === c.id
-                    ? <Loader2 size={16} className="flex-shrink-0 animate-spin text-[#017561]" />
-                    : <Smartphone size={16} className="flex-shrink-0 text-[#017561]" />}
-                </button>
-              ))}
-            </div>
-            <p className="mt-2 text-[11px] leading-snug text-emerald-700">
-              Ao trocar, suas mensagens que já estão retidas nesta conversa serão enviadas automaticamente pelo canal escolhido.
-            </p>
-          </>
-        ) : (
-          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-            <WifiOff size={15} className="flex-shrink-0 mt-0.5 text-amber-600" />
-            <p className="text-[12.5px] leading-snug text-amber-900">
-              Nenhum outro canal está conectado. Revalide o número em <strong>Configurações → Integrações → WhatsApp</strong>.
-            </p>
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[#f1f0ec] bg-[#faf9f6]">
-        <button onClick={onDismiss}
-          className="px-3 py-1.5 rounded-lg text-[12.5px] font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition">
-          Continuar aqui mesmo assim
-        </button>
-      </div>
-    </div>
-  </div>,
-  document.body,
-);
-
-/**
  * Faixa acima do compositor quando o canal da conversa não está conectado.
- * Fica de lembrete depois que o alerta é dispensado — o risco continua lá.
+ *
+ * Já foi um modal em tela cheia: escurecia tudo e exigia uma decisão antes de
+ * deixar mexer no módulo. Segurava bem a atenção e atrapalhava todo o resto —
+ * ler outra conversa, procurar um contato, qualquer coisa passava por dispensar
+ * um aviso. Agora o peso está aqui: a faixa NÃO se dispensa, fica de pé
+ * enquanto o canal estiver fora e mora colada ao compositor, que é exatamente
+ * para onde o olho vai antes de digitar.
  */
 export const ChannelDownBanner: React.FC<{
   channel: WhatsAppChannel;
@@ -189,16 +112,24 @@ export const ChannelDownBanner: React.FC<{
   busyId?: string | null;
   onSwitch: (channelId: string) => void;
 }> = ({ channel, alternatives, busyId, onSwitch }) => (
-  <div className="px-4 py-2 border-t border-amber-200 bg-amber-50 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: CHANNEL_STATUS_META[channel.status].dot }} />
-    <p className="flex-1 min-w-[220px] text-[12px] text-amber-900">
-      O canal <strong>{channelName(channel)}</strong> está {CHANNEL_STATUS_META[channel.status].label.toLowerCase()}.
-      {' '}O que você enviar fica retido até reconectar.
+  <div role="alert"
+    className="px-4 py-2.5 border-t border-red-200 bg-red-50 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+    <span className="flex-shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-red-100 text-red-600">
+      <AlertTriangle size={15} strokeWidth={2.4} />
+    </span>
+    <p className="flex-1 min-w-[240px] text-[12px] leading-snug text-red-900">
+      O canal <strong>{channelName(channel)}</strong>
+      {channel.phone_number ? ` (${prettyPhone(channel.phone_number)})` : ''} está{' '}
+      {CHANNEL_STATUS_META[channel.status].label.toLowerCase()}. Tudo que você escrever aqui fica{' '}
+      <strong>retido</strong> até ele reconectar — o cliente não recebe.
+      {alternatives.length === 0 && (
+        <> Nenhum outro canal está conectado: revalide o número em <strong>Configurações → Integrações → WhatsApp</strong>.</>
+      )}
     </p>
     {alternatives.map(c => (
       <button key={c.id} onClick={() => onSwitch(c.id)} disabled={busyId === c.id}
         title="Trocar e enviar automaticamente as mensagens retidas"
-        className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-amber-800 text-[12px] font-semibold hover:bg-amber-100 transition disabled:opacity-50">
+        className="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-[#00a884] text-[#017561] text-[12px] font-bold hover:bg-[#00a884]/10 transition disabled:opacity-50">
         {busyId === c.id ? <Loader2 size={12} className="animate-spin" /> : <Smartphone size={12} />}
         Falar pelo {channelName(c)}
       </button>
@@ -209,7 +140,7 @@ export const ChannelDownBanner: React.FC<{
 /**
  * Alerta global das mensagens que ESTE atendente tentou enviar e não chegaram.
  *
- * Diferente do modal preventivo da conversa, esta sirene representa um fato já
+ * Diferente da faixa preventiva da conversa, esta sirene representa um fato já
  * ocorrido. Por isso não tem botão de dispensar: sai apenas quando o scheduler
  * confirma o envio, quando o autor cancela, ou quando a pendência é resolvida.
  */

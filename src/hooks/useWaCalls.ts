@@ -1,4 +1,4 @@
-// Acesso da UI ao estado das chamadas de voz (WaCalls).
+// Acesso da UI ao estado das chamadas de voz e vídeo (Jurius Call).
 //
 // O estado real vive no `waCallsStore` (fora do React) para sobreviver a
 // desmontagens: o modal de chamada pode fechar, o módulo pode trocar de tela, e
@@ -10,7 +10,11 @@ import type { CallablePhoneCandidate } from '../services/wacalls/phone';
 import type { WaCall, WaCallContact } from '../services/wacalls/types';
 
 export interface UseWaCalls extends WaCallsSnapshot {
-  /** Dá para discar agora? (rede de pé, serviço no ar e conta pareada e conectada) */
+  /**
+   * Dá para discar agora? (rede de pé, serviço no ar, conta pareada e conectada
+   * — e nenhuma discagem já a caminho, para o clique repetido não virar duas
+   * ligações).
+   */
   canCall: boolean;
   /** A chamada cujo áudio é DESTA aba. Uma por operador, por ora. */
   myCall: WaCall | null;
@@ -26,12 +30,38 @@ export interface UseWaCalls extends WaCallsSnapshot {
     contact?: WaCallContact | null,
     fallbacks?: readonly CallablePhoneCandidate[],
   ) => Promise<string | null>;
+  /**
+   * Liga JÁ com a câmera. É uma porta separada de `placeCall` porque a decisão
+   * é do operador no instante do clique: o botão de vídeo pede a câmera antes
+   * de o telefone do contato tocar.
+   */
+  placeVideoCall: (
+    phone: string,
+    contact?: WaCallContact | null,
+    fallbacks?: readonly CallablePhoneCandidate[],
+  ) => Promise<string | null>;
   acceptCall: (callId: string) => Promise<void>;
   rejectCall: (callId: string) => Promise<void>;
   hangUp: (callId: string) => Promise<void>;
   setMuted: (callId: string, muted: boolean) => void;
   /** Liga/desliga a gravação da chamada (uma por chamada). */
   setRecording: (callId: string, on: boolean) => void;
+  /** Este navegador sabe fazer vídeo? (WebCodecs com H.264.) */
+  videoSupported: boolean;
+  /** Liga a câmera na chamada. Devolve `false` quando não deu. */
+  startVideo: (callId: string) => Promise<boolean>;
+  /** Desliga a nossa câmera; o outro lado pode continuar mandando a dele. */
+  stopVideo: (callId: string) => Promise<void>;
+  /** Quartos de volta que a nossa câmera está girando (a escolha fica guardada). */
+  videoOrientation: number;
+  /** Gira a nossa câmera mais um quarto de volta, para o outro lado. */
+  rotateVideo: (callId?: string) => Promise<number>;
+  /**
+   * As imagens da chamada. Fora do snapshot de propósito: `MediaStream` nunca é
+   * igual a si mesmo numa comparação, e no estado faria a tela repintar sem
+   * parar. A tela pede na hora de montar o <video>.
+   */
+  videoStreams: (callId: string) => { local: MediaStream | null; remote: MediaStream | null } | null;
 }
 
 export function useWaCalls(): UseWaCalls {
@@ -59,22 +89,38 @@ export function useWaCalls(): UseWaCalls {
       waCallsStore.placeCall({ phone, contact, fallbacks }),
     [],
   );
+  const placeVideoCall = useCallback(
+    (phone: string, contact?: WaCallContact | null, fallbacks?: readonly CallablePhoneCandidate[]) =>
+      waCallsStore.placeCall({ phone, contact, fallbacks, video: true }),
+    [],
+  );
   const acceptCall = useCallback((callId: string) => waCallsStore.acceptCall(callId), []);
   const rejectCall = useCallback((callId: string) => waCallsStore.rejectCall(callId), []);
   const hangUp = useCallback((callId: string) => waCallsStore.hangUp(callId), []);
   const setMuted = useCallback((callId: string, muted: boolean) => waCallsStore.setMuted(callId, muted), []);
   const setRecording = useCallback((callId: string, on: boolean) => waCallsStore.setRecording(callId, on), []);
+  const startVideo = useCallback((callId: string) => waCallsStore.startVideo(callId), []);
+  const stopVideo = useCallback((callId: string) => waCallsStore.stopVideo(callId), []);
+  const rotateVideo = useCallback((callId?: string) => waCallsStore.rotateVideo(callId), []);
+  const videoStreams = useCallback((callId: string) => waCallsStore.videoStreams(callId), []);
 
   return {
     ...snapshot,
-    canCall: snapshot.online && snapshot.available && !!snapshot.sessionId,
+    canCall: snapshot.online && snapshot.available && !!snapshot.sessionId && !snapshot.dialing,
     myCall,
     incoming,
     placeCall,
+    placeVideoCall,
     acceptCall,
     rejectCall,
     hangUp,
     setMuted,
     setRecording,
+    videoSupported: waCallsStore.videoSupported(),
+    startVideo,
+    stopVideo,
+    videoOrientation: waCallsStore.videoOrientation(),
+    rotateVideo,
+    videoStreams,
   };
 }

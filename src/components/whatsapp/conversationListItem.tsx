@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Clock, Pencil, Ban, BellOff, AlertTriangle, Users, Timer, FileText,
+  Clock, Pencil, Ban, BellOff, AlertTriangle, Users, Timer, FileText, CheckCircle2, ArrowRightLeft,
 } from 'lucide-react';
 import type {
   WhatsAppConversation, WhatsAppChannel, WhatsAppDepartment, WhatsAppPresence,
@@ -14,7 +14,9 @@ import { autoCloseClock, autoCloseIdleLabel } from './autoCloseClock';
 import type { ElapsedMinutes } from './businessTime';
 import { waPlainText } from './waRichText';
 import { inferFunnelStage } from './funnel';
+import { conversationPreview } from './threadCalls';
 import { Avatar } from './avatar';
+import { WA_SWEEP_META, type WaSweepKind } from './conversationSweep';
 
 /**
  * Linha de presença do cabeçalho (online/digitando/visto por último). Possui o
@@ -141,13 +143,38 @@ export const ConversationListItem: React.FC<{
   showChannelName?: boolean;
   /** Outro atendente está com esta conversa aberta agora. */
   busy?: boolean;
+  /**
+   * A conversa acabou de sair da fila: a faixa de varredura passa por cima da
+   * linha dizendo o que aconteceu (ver `conversationSweep`). Enquanto vale, a
+   * linha não recebe clique — ela já não é mais trabalho de ninguém.
+   */
+  sweep?: WaSweepKind | null;
   onSelect: (id: string) => void;
   onDismissTracking?: () => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, aiChip = null, elapsedMinutes, failedSends = 0, archived = false, showChannelName = false, busy = false, onSelect, onDismissTracking }) => {
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, aiChip = null, elapsedMinutes, failedSends = 0, archived = false, showChannelName = false, busy = false, sweep = null, onSelect, onDismissTracking }) => {
   // Com a IA conduzindo, os sinais de espera humana saem de cena — inclusive o
   // relógio vermelho do canto, que contava uma demora que não está havendo.
   const sla = aiChip ? null : slaSignal(c, elapsedMinutes);
   const stage = inferFunnelStage(c.labels, funnelLabels);
+  /**
+   * O que aconteceu por último NESTA conversa — e a hora em que aconteceu.
+   *
+   * Não é o mesmo que a última mensagem: a ligação também é a conversa (ver
+   * `conversationPreview`). Sem isto, uma chamada de 6 minutos deixava a linha
+   * repetindo o texto de horas antes, com a hora antiga no canto.
+   */
+  const previa = React.useMemo(() => conversationPreview({
+    messagePreview: c.last_message_preview,
+    messageAt: c.last_message_at,
+    messageDirection: c.last_message_direction,
+    callAt: c.last_call_at,
+    callDirection: c.last_call_direction,
+    callOutcome: c.last_call_outcome,
+    callDurationSeconds: c.last_call_duration_seconds,
+    callIsVideo: c.last_call_is_video,
+  }), [c.last_message_preview, c.last_message_at, c.last_message_direction,
+    c.last_call_at, c.last_call_direction, c.last_call_outcome, c.last_call_duration_seconds,
+    c.last_call_is_video]);
   /**
    * Aviso de encerramento iminente.
    *
@@ -180,7 +207,18 @@ export const ConversationListItem: React.FC<{
     <button onClick={() => onSelect(c.id)}
       // Identifica a linha para o teclado da inbox trazê-la ao campo de visão.
       data-conv-id={c.id}
-      className={`wa-conv w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'wa-conv-active bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''} ${archived ? 'wa-conv-archived' : ''}`}>
+      className={`wa-conv w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'wa-conv-active bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''} ${archived ? 'wa-conv-archived' : ''} ${sweep === 'closed' ? 'wa-conv-saindo' : ''} ${sweep === 'transferred' ? 'wa-conv-transferindo' : ''}`}>
+      {/* A faixa só existe no meio segundo em que passa: a inbox de um
+          escritório grande tem centenas de linhas, e nenhuma delas precisa
+          carregar este elemento à toa. */}
+      {sweep && (
+        <span className="wa-conv-varredura" style={{ background: WA_SWEEP_META[sweep].bg }} aria-hidden="true">
+          <span style={{ color: WA_SWEEP_META[sweep].fg }}>
+            {sweep === 'closed' ? <CheckCircle2 size={16} /> : <ArrowRightLeft size={16} />}
+            {WA_SWEEP_META[sweep].label}
+          </span>
+        </span>
+      )}
       <div className="relative flex-shrink-0">
         <Avatar url={c.contact_avatar_url} name={conversationName(c)} phone={c.contact_phone} size={40} />
         {ch && <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ background: ch.color || '#ea6c00' }} title={ch.name || ch.instance_name} />}
@@ -206,7 +244,7 @@ export const ConversationListItem: React.FC<{
               ? <span className="inline-flex items-center gap-0.5 text-[9.5px] font-bold" style={{ color: sla.color }}>
                   <Clock size={9} />{sla.label}
                 </span>
-              : <span className="text-[10.5px] text-slate-400">{formatTime(c.last_message_at)}</span>}
+              : <span className="text-[10.5px] text-slate-400">{formatTime(previa.at)}</span>}
           </span>
         </div>
         <div className="flex items-center justify-between gap-2 mt-0.5">
@@ -217,10 +255,17 @@ export const ConversationListItem: React.FC<{
               <span className="truncate text-slate-500">{privateMode ? '••••••••' : draftPreview}</span>
             </span>
           ) : (
-            <span className="text-[12px] text-slate-500 truncate">
-              {/* Prévia de uma linha: as marcas do WhatsApp saem do caminho. */}
-              {c.last_message_direction === 'out' ? 'Você: ' : ''}
-              {privateMode ? '••••••••' : (waPlainText(c.last_message_preview || '') || '—')}
+            <span className={`text-[12px] truncate ${previa.attention ? 'text-red-600 font-semibold' : 'text-slate-500'}`}>
+              {/* Prévia de uma linha: as marcas do WhatsApp saem do caminho.
+                  A chamada não passa por `waPlainText` — a frase é nossa, não
+                  tem asterisco de negrito para limpar. O modo privado esconde o
+                  TEXTO da mensagem, mas não a chamada: "chamada perdida" não
+                  revela nada de ninguém, e escondê-la tiraria da tela o único
+                  aviso de que alguém ficou sem retorno. */}
+              {previa.prefix}
+              {previa.kind === 'call'
+                ? previa.text
+                : (privateMode ? '••••••••' : (waPlainText(previa.text) || '—'))}
             </span>
           )}
           {!c.is_blocked && c.unread_count > 0 && (

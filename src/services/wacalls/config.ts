@@ -1,14 +1,35 @@
-// Configuração de acesso ao WaCalls: onde ele está e como nos identificamos.
+// Configuração de acesso ao serviço de chamadas: onde ele está e como nos
+// identificamos.
 //
 // PONTO ÚNICO. A URL não aparece em componente nenhum, e o dia em que a API
-// deixar de ser aberta (hoje `/api/*` é livre por decisão de infraestrutura)
-// basta `authHeaders()` passar a devolver o `Authorization` — nem o serviço nem
-// a UI mudam.
+// deixar de ser aberta basta `authHeaders()` passar a devolver o
+// `Authorization` — nem o serviço nem a UI mudam.
+//
+// O motor por trás desta URL é o **Jurius Call** (Rust, sobre a biblioteca
+// whatsapp-rust). O WaCalls saiu: o nome dos arquivos ficou para não mexer nos
+// ~30 pontos que importam este módulo, mas nada aqui fala mais com ele.
 
-/** Base do WaCalls, sem barra no fim. Configurável por `VITE_WACALLS_URL`. */
-export const WACALLS_BASE_URL = String(
-  import.meta.env.VITE_WACALLS_URL || 'https://call.jurius-api.com',
+/**
+ * Base do serviço de chamadas, sem barra no fim.
+ *
+ * `VITE_JURIUS_CALL_URL` é o nome novo; `VITE_WACALLS_URL` continua sendo lido
+ * porque é o que está configurado no Netlify hoje — trocar o serviço não pode
+ * exigir trocar a variável no mesmo instante.
+ */
+export const CALL_BASE_URL = String(
+  import.meta.env.VITE_JURIUS_CALL_URL
+    || import.meta.env.VITE_WACALLS_URL
+    || 'https://call.jurius-api.com',
 ).replace(/\/+$/, '');
+
+/** Nome antigo, mantido para quem ainda importa por ele. */
+export const WACALLS_BASE_URL = CALL_BASE_URL;
+
+/**
+ * Token opcional do serviço (`JURIUS_CALL_TOKEN` do lado do servidor). Vazio =
+ * API aberta, que é como ela nasceu.
+ */
+export const CALL_TOKEN = String(import.meta.env.VITE_JURIUS_CALL_TOKEN || '').trim();
 
 const CLIENT_ID_KEY = 'wacalls.clientId';
 
@@ -36,18 +57,19 @@ export function getWaCallsClientId(): string {
 }
 
 /**
- * Cabeçalhos extras de autenticação. Hoje vazio — a instância está aberta.
- * Quando houver token, ele entra AQUI e em nenhum outro lugar.
+ * Cabeçalhos extras de autenticação. Vazio enquanto não houver token; com
+ * `VITE_JURIUS_CALL_TOKEN` definido, o `Authorization` sai daqui e de nenhum
+ * outro lugar.
  */
 export function authHeaders(): Record<string, string> {
-  return {};
+  return CALL_TOKEN ? { Authorization: `Bearer ${CALL_TOKEN}` } : {};
 }
 
 /** Só em desenvolvimento: rastro do ciclo de vida da chamada, sem dado sensível. */
 export function waCallsLog(message: string, extra?: unknown): void {
   if (!import.meta.env.DEV) return;
-  if (extra === undefined) console.log(`[WaCalls] ${message}`);
-  else console.log(`[WaCalls] ${message}`, extra);
+  if (extra === undefined) console.log(`[Chamadas] ${message}`);
+  else console.log(`[Chamadas] ${message}`, extra);
 }
 
 /**

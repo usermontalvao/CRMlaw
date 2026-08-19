@@ -31,6 +31,7 @@ const conv = (patch: Partial<WhatsAppConversation> & { id: string }): WhatsAppCo
   client_id: null, client_name: null,
   assigned_user_id: null, department_id: null, status: 'open', unread_count: 0,
   last_message_at: '2026-08-04T09:41:00Z', last_message_preview: null, last_message_direction: 'in',
+  last_call_at: null, last_call_direction: null, last_call_outcome: null, last_call_duration_seconds: null,
   presence: null, presence_updated_at: null, last_seen_at: null,
   is_blocked: false, blocked_at: null, blocked_by: null, blocked_reason: null,
   closed_at: null, closed_by: null, closure_reason: null, reopened_at: null,

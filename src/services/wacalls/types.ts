@@ -1,9 +1,13 @@
-// Tipos do WaCalls — espelham o que o servidor Go publica em /api e no SSE.
-// Nomes e formas vêm de `cmd/server/broker.go` e `cmd/server/httpapi.go` do
-// repositório JotaDev66/WaCalls; mudar aqui sem mudar lá quebra em silêncio.
+// Tipos do subsistema de chamadas do CRM.
+//
+// Estas formas são as que o `callStore` fala. Elas NÃO são mais o que o
+// servidor publica: o motor virou o Jurius Call (Rust/whatsapp-rust), e a
+// tradução do que ele manda para o que está aqui acontece em
+// `wacalls.service.ts` — um lugar só, para o store não ter de saber de dois
+// vocabulários.
 import type { CallDegree, CallRoute } from './callRouting';
 
-/** Estado da conexão da conta WhatsApp no WaCalls. */
+/** Estado da conexão da conta WhatsApp no serviço de chamadas. */
 export type WaCallsSessionState = 'connecting' | 'qr' | 'open' | 'logged_out';
 
 export interface WaCallsSession {
@@ -26,7 +30,7 @@ export interface WaCallsHistoryRow {
   endReason: string | null;
 }
 
-/** Eventos do SSE (`GET /api/events`), todos no evento `message` padrão. */
+/** Eventos que o store consome (traduzidos do WebSocket em `wacalls.service`). */
 export type WaCallsEvent =
   | { type: 'session-list'; sessions: WaCallsSession[] }
   | { type: 'session-qr'; sessionId: string; qr: string }
@@ -38,7 +42,13 @@ export type WaCallsEvent =
     }
   | { type: 'call-ended'; sessionId: string; id: string; owner: string | null; reason: string; endedAt: number }
   | { type: 'incoming'; sessionId: string; id: string; peer: string; offeredAt: number }
-  | { type: 'incoming-claimed'; sessionId: string; id: string; owner: string };
+  | { type: 'incoming-claimed'; sessionId: string; id: string; owner: string }
+  /**
+   * Estado do vídeo da chamada. Separado do `call-status` porque as duas coisas
+   * mudam em ritmos diferentes: a câmera vai e volta várias vezes dentro de uma
+   * chamada que continua no mesmo estado.
+   */
+  | { type: 'call-video'; sessionId: string; id: string; videoOn: boolean; peerVideo: boolean };
 
 export interface WaCallsCallRow {
   sessionId: string;
@@ -105,6 +115,22 @@ export interface WaCall {
    * depois que o telefone já parou de tocar.
    */
   ladder?: CallDegree[];
+  /**
+   * A NOSSA câmera está no ar. Ela entra por dois caminhos: a chamada NASCE em
+   * vídeo (o botão de câmera; o vídeo vai na própria oferta e o telefone do
+   * contato toca como vídeo) ou uma chamada de voz em curso é promovida no
+   * meio (o upgrade). Ver `callStore.startVideo`.
+   */
+  videoOn: boolean;
+  /** O outro lado está mandando vídeo. */
+  peerVideo: boolean;
+  /**
+   * Esta chamada foi de VÍDEO em algum momento. Pegajosa: a câmera pode entrar
+   * e sair, e o registro (que só nasce quando a chamada acaba) precisa saber o
+   * que ela foi — senão a ligação de vídeo vira "Chamada de voz" na conversa e
+   * na ficha do cliente.
+   */
+  wasVideo: boolean;
   /** Gravando AGORA (o operador ligou a gravação). */
   recording: boolean;
   /** Esta chamada já produziu uma gravação — só uma por chamada. */

@@ -36,6 +36,8 @@ export interface CallLogInput {
    * permite reconhecer amanhã a ligação que hoje chegou anônima.
    */
   peerLid?: string | null;
+  /** A ligação teve câmera em algum momento. Ver `WaCall.wasVideo`. */
+  video?: boolean;
   recordingPath?: string | null;
   recordingMime?: string | null;
   recordingBytes?: number | null;
@@ -60,6 +62,8 @@ export interface CallLogRow {
   durationSeconds: number;
   endReason: string | null;
   outcome: CallLogOutcome;
+  /** Foi chamada de VÍDEO. É o que separa as duas frases na conversa e na ficha. */
+  isVideo: boolean;
   recordingPath: string | null;
   recordingMime: string | null;
   recordingBytes: number | null;
@@ -93,6 +97,7 @@ function mapRow(row: Record<string, any>): CallLogRow {
     durationSeconds: row.duration_seconds ?? 0,
     endReason: row.end_reason ?? null,
     outcome: row.outcome,
+    isVideo: row.is_video === true,
     recordingPath: row.recording_path ?? null,
     recordingMime: row.recording_mime ?? null,
     recordingBytes: row.recording_bytes ?? null,
@@ -179,6 +184,7 @@ export const callLogService = {
       p_recording_mime: input.recordingMime ?? null,
       p_recording_bytes: input.recordingBytes ?? null,
       p_peer_lid: input.peerLid ?? null,
+      p_video: input.video ?? false,
     });
     if (error) throw new Error(error.message);
     return (data as string) ?? null;

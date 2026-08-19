@@ -1,0 +1,42 @@
+# Jurius Call — o serviço de voz e vídeo do escritório.
+#
+# Camada NOSSA sobre a biblioteca `whatsapp-rust`: nada aqui altera o upstream.
+# A biblioteca entra como dependência de caminho para o clone que o container já
+# mantém em /opt/whatsapp-rust (é o mesmo código que o antigo voip-cli compilava),
+# de modo que o serviço acompanha a versão que está no servidor sem um segundo
+# checkout.
+[package]
+name = "jurius-call"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+async-channel = "2"
+axum = { version = "0.8", features = ["ws"] }
+bytes = "1"
+env_logger = "0.11"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors"] }
+
+wacore = { path = "/opt/whatsapp-rust/wacore", features = ["voip"] }
+whatsapp-rust = { path = "/opt/whatsapp-rust", features = [
+    "sqlite-storage",
+    "tokio-transport",
+    "ureq-client",
+    "tokio-native",
+    "voip-mlow",
+] }
+
+[features]
+default = ["opus-fallback"]
+# O outro lado às vezes embute um pacote Opus padrão dentro do perfil MLOW. Sem
+# um decodificador esses quadros chegam e não viram som — e o defeito fica
+# idêntico a "o alto-falante está errado". Ligado por padrão; desligável para
+# quem compila num ambiente sem libopus.
+opus-fallback = ["whatsapp-rust/voip-libopus"]

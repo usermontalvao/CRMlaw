@@ -47,6 +47,7 @@ const linha = (patch: Partial<CallLogRow> & { id: string }): CallLogRow => ({
   durationSeconds: 0,
   endReason: 'user_ended',
   outcome: 'missed',
+  isVideo: false,
   recordingPath: null,
   recordingMime: null,
   recordingBytes: null,

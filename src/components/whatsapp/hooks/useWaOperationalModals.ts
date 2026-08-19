@@ -10,6 +10,7 @@ import { resolveStageTarget } from '../funnel';
 import type { FunnelLabel } from '../../../services/settings.service';
 import type { WaModal } from '../../WaWorkspace';
 import type { WhatsAppConversation } from '../../../types/whatsapp.types';
+import { waSweepDelay, type WaSweepKind } from '../conversationSweep';
 
 interface WaOperationalModalsArgs {
   selected: WhatsAppConversation | null;
@@ -41,6 +42,11 @@ export interface WaOperationalModalsApi {
   workspace: WaModal | null;
   openWa: (modal: WaModal) => void;
   closeWa: () => void;
+  /**
+   * Conversas com a faixa de varredura passando agora (ver `conversationSweep`).
+   * O módulo repassa para a lista; nada mais precisa saber disso.
+   */
+  sweeping: ReadonlyMap<string, WaSweepKind>;
   // Ações de conclusão dos fluxos.
   handleConversationOpened: (conversationId: string) => Promise<void>;
   onTransferDone: () => Promise<void>;
@@ -70,6 +76,32 @@ export function useWaOperationalModals({
   const [blockOpen, setBlockOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
 
+  /**
+   * A faixa de varredura que anuncia a saída da conversa da fila.
+   *
+   * `varrer` devolve a promessa que resolve quando a faixa terminou: quem
+   * chamou usa esse instante para só então mexer na lista (ver `onCloseDone`).
+   * Sem isso, cada chamador teria o próprio `setTimeout` com o próprio número, e
+   * o dia em que a animação mudasse de duração um deles ficaria para trás.
+   */
+  const [sweeping, setSweeping] = useState<ReadonlyMap<string, WaSweepKind>>(new Map());
+  const varrer = useCallback((conversationId: string, kind: WaSweepKind): Promise<void> => {
+    const espera = waSweepDelay();
+    if (espera === 0) return Promise.resolve();
+    setSweeping(prev => new Map(prev).set(conversationId, kind));
+    return new Promise<void>(resolve => {
+      window.setTimeout(() => {
+        setSweeping(prev => {
+          if (!prev.has(conversationId)) return prev;
+          const next = new Map(prev);
+          next.delete(conversationId);
+          return next;
+        });
+        resolve();
+      }, espera);
+    });
+  }, []);
+
   // Move uma conversa para uma ETAPA do funil (etapa única: remove etiquetas de
   // funil anteriores, mantém tags livres). Usado por automações como "ao pedir
   // documento → Aguardando Documentos". No-op se a etapa não existe no funil.
@@ -97,12 +129,21 @@ export function useWaOperationalModals({
     setSelectedId(conversationId);
   }, [loadConversations, setSelectedId]);
 
-  // Transferir conversa → some da fila atual; limpa seleção e recarrega a lista.
+  /**
+   * Transferir conversa → limpa seleção e recarrega a lista.
+   *
+   * A transferência é a única ação do módulo que não avisava NADA quando dava
+   * certo: o modal fechava, a conversa aberta sumia e a linha podia continuar
+   * ali (transferir para outro setor não a tira do filtro "todas"). A faixa
+   * violeta passa por cima da linha antes da recarga — é o recibo que faltava.
+   */
   const onTransferDone = useCallback(async () => {
+    const conv = selected;
     setTransferOpen(false);
     setSelectedId(null);
+    if (conv) varrer(conv.id, 'transferred');
     await loadConversations();
-  }, [setSelectedId, loadConversations]);
+  }, [selected, setSelectedId, loadConversations, varrer]);
 
   // Bloquear contato → marca a conversa como bloqueada (otimista).
   const onBlockDone = useCallback((reason: string) => {
@@ -126,7 +167,16 @@ export function useWaOperationalModals({
     const conv = selected;
     setCloseOpen(false);
     classifyOnClose().catch(() => { /* best-effort */ });
-    if (conv) {
+    setSelectedId(null);
+    if (!conv) {
+      void task.catch(() => { /* já sinalizado */ }).then(() => loadConversations());
+      return;
+    }
+    // A linha continua na fila enquanto a faixa passa: é o `status` que a tira
+    // da lista, e mudá-lo agora faria a conversa desaparecer no mesmo quadro —
+    // sem despedida nenhuma, que era exatamente o comportamento antigo.
+    const varredura = varrer(conv.id, 'closed');
+    void varredura.then(() => {
       setConversations(prev => prev.map(c => c.id === conv.id
         ? {
           ...c,
@@ -137,12 +187,15 @@ export function useWaOperationalModals({
           auto_close_suppressed: false,
         }
         : c));
-    }
-    setSelectedId(null);
+    });
     // Falha já foi avisada por toast no modal; recarregar mesmo assim devolve a
-    // conversa ao estado real (aberta) em vez de deixar a lista mentindo.
-    void task.catch(() => { /* já sinalizado */ }).then(() => loadConversations());
-  }, [selected, classifyOnClose, setConversations, setSelectedId, loadConversations]);
+    // conversa ao estado real (aberta) em vez de deixar a lista mentindo. A
+    // recarga espera a faixa: chegando antes, ela troca a lista inteira e
+    // arranca a linha do meio da animação.
+    void task.catch(() => { /* já sinalizado */ })
+      .then(() => varredura)
+      .then(() => loadConversations());
+  }, [selected, classifyOnClose, setConversations, setSelectedId, loadConversations, varrer]);
 
   // Solicitou documento → recarrega overview e posiciona a conversa em
   // "Aguardando Documentos".
@@ -163,6 +216,7 @@ export function useWaOperationalModals({
   }, [selected, setOverview, closeWa]);
 
   return {
+    sweeping,
     transferOpen, setTransferOpen,
     newConvOpen, setNewConvOpen,
     blockOpen, setBlockOpen,

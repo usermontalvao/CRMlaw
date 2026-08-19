@@ -17,13 +17,13 @@ import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import {
   Bell, BellOff, ChevronDown, ChevronUp, Circle, GripVertical, MessageSquare, Mic, MicOff,
-  Phone, PhoneOff, Square, WifiOff,
+  Phone, PhoneOff, RotateCw, Square, Video, VideoOff, WifiOff,
 } from 'lucide-react';
 import { Avatar } from './avatar';
 import { AnchorNotice, CallGuestsSection } from './callGuestPanel';
 import { WaAudioDeviceButton } from './audioDeviceSettings';
 import { prettyPhone } from './format';
-import { callElapsedSeconds, formatCallTimer, phaseLabel } from '../../services/wacalls/callOutcome';
+import { callElapsedSeconds, endedCallLabel, formatCallTimer, phaseLabel } from '../../services/wacalls/callOutcome';
 import { isCallRingMuted, setCallRingMuted, stopRing } from '../../services/wacalls/ringtone';
 import type { CallInviteMode, InvitableOperator } from '../../services/wacalls/callGuests';
 import type { CallGuest } from '../../services/wacalls/callBridge';
@@ -73,15 +73,19 @@ export const callDisplayName = (call: WaCall): string =>
  * some e o estado (chamando / tocando) fica sozinho, que é o que interessa
  * enquanto ninguém atendeu.
  */
-const CallTimer: React.FC<{ connectedAt: number | null }> = ({ connectedAt }) => {
+const CallTimer: React.FC<{ connectedAt: number | null; endedAt?: number | null }> = ({ connectedAt, endedAt }) => {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!connectedAt) return;
+    // Chamada encerrada tem duração FIXA. Deixar o relógio correndo depois do
+    // fim mostrava, nos segundos em que o cartão ainda está na tela, uma
+    // conversa que continua acontecendo — e era esse número, e não o registro,
+    // que o operador anotava.
+    if (!connectedAt || endedAt) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [connectedAt]);
+  }, [connectedAt, endedAt]);
   if (!connectedAt) return null;
-  return <span className="tabular-nums">{formatCallTimer(callElapsedSeconds(connectedAt, now))}</span>;
+  return <span className="tabular-nums">{formatCallTimer(callElapsedSeconds(connectedAt, endedAt || now))}</span>;
 };
 
 /** Botãozinho que silencia o TOQUE (não o microfone) e guarda a preferência. */
@@ -150,7 +154,12 @@ export const IncomingCallCard: React.FC<{
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
         </span>
-        <p className="flex-1 select-none text-[12px] font-bold uppercase tracking-wide">Chamada de voz · WhatsApp</p>
+        {/* Voz e vídeo se anunciam diferente: quem atende um convite de vídeo
+            achando que é voz aparece na tela do cliente sem ter escolhido isso.
+            (Atender ainda entra só com a voz — a câmera é um clique depois.) */}
+        <p className="flex-1 select-none text-[12px] font-bold uppercase tracking-wide">
+          {call.peerVideo ? 'Chamada de vídeo · WhatsApp' : 'Chamada de voz · WhatsApp'}
+        </p>
         <RingMuteButton className="text-white/85 hover:bg-white/15 hover:text-white" />
       </div>
       <div className="flex items-center gap-3.5 px-4 py-4">
@@ -274,6 +283,23 @@ export function useDraggablePosition(
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // A PEÇA também muda de tamanho: ligar a câmera alarga o cartão. Sem observar
+  // isso, o limite continuaria calculado sobre a medida antiga e a janela de
+  // vídeo nasceria com um pedaço fora da tela — a medida só seria refeita se
+  // alguém por acaso redimensionasse o navegador.
+  useEffect(() => {
+    const el = nodeRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      const medida = { width: el.offsetWidth, height: el.offsetHeight };
+      if (!medida.width || !medida.height) return;
+      sizeRef.current = medida;
+      setPos(p => clampCallWidgetPosition(p, viewportBox(), medida));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [nodeRef]);
+
   useEffect(() => {
     if (!dragging) return;
     const onMove = (event: PointerEvent) => {
@@ -303,11 +329,28 @@ export function useDraggablePosition(
   return { pos, dragging, handlers: { onPointerDown } };
 }
 
+/**
+ * O que a chamada diz de si, em uma linha.
+ *
+ * Enquanto ela corre, é a fase ("Chamando…", "Em chamada"). Depois que acaba,
+ * é o DESFECHO — e essa era a informação que faltava: "Chamada encerrada"
+ * servia igualmente para a que o contato atendeu e para a que ele recusou, que
+ * é justamente a que muda o próximo passo do atendente.
+ */
+function callStatusText(call: WaCall, finished: boolean): string {
+  if (call.error && call.phase === 'FAILED') return call.error;
+  if (!finished) return phaseLabel(call.phase, call.direction);
+  return endedCallLabel(call.endReason, {
+    answered: call.connectedAt !== null,
+    direction: call.direction,
+  });
+}
+
 /** A linha de status que aparece nos dois formatos: fase ou cronômetro. */
 const CallStatusLine: React.FC<{ call: WaCall; finished: boolean }> = ({ call, finished }) => {
-  const status = call.error && call.phase === 'FAILED' ? call.error : phaseLabel(call.phase, call.direction);
+  const status = callStatusText(call, finished);
   return call.connectedAt
-    ? <CallTimer connectedAt={call.connectedAt} />
+    ? <CallTimer connectedAt={call.connectedAt} endedAt={call.endedAt} />
     : <span className={finished ? 'text-slate-500' : 'text-emerald-600'}>{status}</span>;
 };
 
@@ -403,6 +446,83 @@ const MinimizedCallPill: React.FC<{
  * do CRM segue navegável durante a ligação — e como o host mora na raiz do
  * app, trocar de módulo não desmonta nem o painel nem a chamada.
  */
+/**
+ * O palco de vídeo da chamada: a imagem do outro lado grande e a nossa câmera
+ * numa miniatura por cima.
+ *
+ * Os `MediaStream` NÃO vêm por prop nem pelo estado do store — eles nunca são
+ * iguais a si mesmos numa comparação, e a tela repintaria sem parar. Vêm de uma
+ * função que o palco chama na hora de plugar o <video>.
+ */
+const CallVideoStage: React.FC<{
+  call: WaCall;
+  streams: () => { local: MediaStream | null; remote: MediaStream | null } | null;
+}> = ({ call, streams }) => {
+  const remoteRef = useRef<HTMLVideoElement>(null);
+  const localRef = useRef<HTMLVideoElement>(null);
+  const [temImagem, setTemImagem] = useState(false);
+
+  useEffect(() => {
+    const atual = streams();
+    // Reatribuir o MESMO stream reinicia o <video> no Chrome — e a imagem
+    // pisca a cada repintura do cartão, que acontece a cada segundo por causa
+    // do cronômetro. Só troca quando realmente mudou.
+    const aplicar = (el: HTMLVideoElement | null, stream: MediaStream | null) => {
+      if (!el || el.srcObject === stream) return;
+      el.srcObject = stream;
+    };
+    aplicar(remoteRef.current, atual?.remote ?? null);
+    aplicar(localRef.current, atual?.local ?? null);
+    setTemImagem(!!atual?.remote);
+  }, [streams, call.videoOn, call.peerVideo]);
+
+  // O outro lado pediu vídeo e nós ainda não ligamos a câmera. Sem esta
+  // mensagem o operador via um retângulo preto sem explicação: o vídeo dele só
+  // começa a chegar depois que este lado aceita o upgrade.
+  const aguardandoNos = call.peerVideo && !call.videoOn;
+
+  return (
+    <div className="relative aspect-video w-full overflow-hidden border-b border-[#f1f0ec] bg-slate-900">
+      <video
+        ref={remoteRef}
+        autoPlay
+        playsInline
+        // Sem `muted` o navegador barraria o autoplay; o som da chamada não vem
+        // por aqui de qualquer forma — ele sai pelo alto-falante escolhido no
+        // painel de áudio, que é o mesmo caminho da chamada só de voz.
+        muted
+        className={`h-full w-full object-cover ${temImagem && call.peerVideo ? '' : 'opacity-0'}`}
+      />
+      {!(temImagem && call.peerVideo) && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-5 text-center">
+          <VideoOff size={22} className="text-slate-500" />
+          <p className="text-[11.5px] font-semibold leading-snug text-slate-300">
+            {aguardandoNos
+              ? 'O outro lado ligou a câmera.'
+              : call.videoOn
+                ? 'A câmera do outro lado está desligada'
+                : 'Sem vídeo'}
+          </p>
+          {aguardandoNos && (
+            <p className="text-[11px] leading-snug text-slate-500">
+              Toque em Vídeo para ver e aparecer.
+            </p>
+          )}
+        </div>
+      )}
+      {call.videoOn && (
+        <video
+          ref={localRef}
+          autoPlay
+          playsInline
+          muted
+          className="absolute bottom-2 right-2 h-[72px] w-[96px] rounded-lg border border-white/20 object-cover shadow-lg"
+        />
+      )}
+    </div>
+  );
+};
+
 export const ActiveCallWidget: React.FC<{
   call: WaCall;
   /** Quem foi chamado para esta ligação (ver `callBridge`). */
@@ -417,10 +537,19 @@ export const ActiveCallWidget: React.FC<{
   onHangUp: () => void;
   onToggleMute: () => void;
   onToggleRecording: () => void;
+  /** Liga/desliga a nossa câmera. Ausente = sem botão de vídeo. */
+  onToggleVideo?: () => void;
+  /** `false` quando o navegador não sabe codificar H.264 (ver `videoBridge`). */
+  videoSupported?: boolean;
+  /** Gira a NOSSA imagem para o outro lado. Ausente = sem botão de girar. */
+  onRotateVideo?: () => void;
+  /** As imagens da chamada, buscadas na hora de renderizar (ver `CallVideoStage`). */
+  videoStreams?: () => { local: MediaStream | null; remote: MediaStream | null } | null;
   /** Abre a conversa deste contato na inbox. Ausente para número sem conversa. */
   onOpenConversation?: () => void;
 }> = ({
   call, linkDown = false, onHangUp, onToggleMute, onToggleRecording, onOpenConversation,
+  onToggleVideo, videoSupported = false, videoStreams, onRotateVideo,
   guests = [], operators = [], me = null, onInviteGuest, onRemoveGuest,
 }) => {
   const [minimized, setMinimized] = useState(false);
@@ -429,8 +558,14 @@ export const ActiveCallWidget: React.FC<{
     storageKey: POSITION_KEY, fallbackSize: CARD_SIZE, place: defaultCallWidgetPosition,
   });
   const finished = call.phase === 'ENDED' || call.phase === 'FAILED';
-  const status = call.error && call.phase === 'FAILED' ? call.error : phaseLabel(call.phase, call.direction);
+  const status = callStatusText(call, finished);
   const ringing = call.phase === 'CALLING' || call.phase === 'RINGING';
+  // Com vídeo no ar o cartão alarga: 268px é largura de cartão de voz, e uma
+  // imagem de rosto ali dentro não serve para conversar. 440px é o que faz um
+  // rosto caber em tamanho de conversa sem o cartão virar uma janela que tapa o
+  // CRM — e ele continua arrastável, então a escolha é do operador. O
+  // `useDraggablePosition` observa a mudança e reajusta o limite da tela.
+  const comVideo = !finished && !!videoStreams && (call.videoOn || call.peerVideo);
 
   // Uma chamada que termina enquanto está encolhida volta a aparecer: o
   // desfecho ("Chamada recusada", "não completada") é a única informação que o
@@ -461,7 +596,9 @@ export const ActiveCallWidget: React.FC<{
       transition={{ type: 'spring', stiffness: 300, damping: 26 }}
       role="dialog"
       aria-label="Chamada em andamento"
-      className="fixed w-[268px] overflow-hidden rounded-2xl border border-[#e7e5df] bg-white shadow-[0_20px_50px_-16px_rgba(15,23,42,0.5)]"
+      className={`fixed overflow-hidden rounded-2xl border border-[#e7e5df] bg-white shadow-[0_20px_50px_-16px_rgba(15,23,42,0.5)] transition-[width] duration-200 ${
+        comVideo ? 'w-[min(92vw,440px)]' : 'w-[268px]'
+      }`}
       style={{ left: pos.x, top: pos.y, zIndex: Z_WIDGET }}
     >
       {/* Punho: a barra inteira arrasta; os botões dentro dela não (stopPropagation
@@ -518,6 +655,10 @@ export const ActiveCallWidget: React.FC<{
         </div>
       )}
 
+      {/* O palco só aparece quando há vídeo de verdade em alguma direção: uma
+          moldura preta numa chamada de voz seria ruído. */}
+      {comVideo && videoStreams && <CallVideoStage call={call} streams={videoStreams} />}
+
       <div className="flex flex-col items-center gap-1 px-6 pb-5 pt-6 text-center">
         <div className="relative">
           {ringing && <span className="absolute -inset-1.5 animate-ping rounded-full bg-emerald-500/15" />}
@@ -537,7 +678,7 @@ export const ActiveCallWidget: React.FC<{
             duração: a linha inteira sai da tela em vez de mostrar 00:00. */}
         {call.connectedAt && (
           <p className="mt-0.5 text-[22px] font-bold tracking-tight text-slate-700">
-            <CallTimer connectedAt={call.connectedAt} />
+            <CallTimer connectedAt={call.connectedAt} endedAt={call.endedAt} />
           </p>
         )}
         {/* Falar ao telefone e ler a conversa é a mesma tarefa: o histórico do
@@ -568,7 +709,7 @@ export const ActiveCallWidget: React.FC<{
       {guests.some(g => g.status === 'live' || g.status === 'joining') && <AnchorNotice />}
 
       {!finished && (
-        <div className="flex items-start justify-center gap-6 border-t border-[#f1f0ec] px-4 py-4">
+        <div className="flex flex-wrap items-start justify-center gap-x-4 gap-y-3 border-t border-[#f1f0ec] px-3 py-4">
           <button onClick={onToggleMute} className="group flex flex-col items-center gap-1.5" aria-pressed={call.muted}>
             <span className={`flex h-12 w-12 items-center justify-center rounded-full transition ${
               call.muted ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-600 hover:bg-slate-200'
@@ -597,6 +738,46 @@ export const ActiveCallWidget: React.FC<{
               {call.recording ? 'Parar' : call.recorded ? 'Gravada' : 'Gravar'}
             </span>
           </button>
+          {/* A câmera é sempre um UPGRADE: a chamada nasce em voz e o vídeo
+              entra depois. Por isso o botão só vale com o áudio de pé. */}
+          {onToggleVideo && (
+            <button
+              onClick={onToggleVideo}
+              className="group flex flex-col items-center gap-1.5 disabled:opacity-45"
+              aria-pressed={call.videoOn}
+              disabled={call.phase !== 'ACTIVE' || !videoSupported}
+              title={videoSupported
+                ? (call.videoOn ? 'Desligar a câmera' : 'Ligar a câmera')
+                : 'Este navegador não faz chamada de vídeo'}
+            >
+              <span className={`flex h-12 w-12 items-center justify-center rounded-full transition ${
+                call.videoOn ? 'bg-sky-100 text-sky-700 hover:bg-sky-200' : 'bg-[#f3f2ef] text-slate-600 hover:bg-slate-200'
+              }`}>
+                {call.videoOn ? <Video size={20} /> : <VideoOff size={20} />}
+              </span>
+              {/* O rótulo não muda com o estado: a cor e o ícone já dizem se a
+                  câmera está no ar, e um texto que troca de largura empurraria
+                  os outros botões da fileira a cada clique. */}
+              <span className="text-[11px] font-semibold text-slate-500">Vídeo</span>
+            </button>
+          )}
+          {/* GIRAR. A webcam da mesa entrega um quadro deitado e o aparelho do
+              contato desenha girado — e quem enxerga os dois lados ao mesmo
+              tempo é quem está aqui. Um quarto de volta por clique, e a escolha
+              fica guardada: a câmera não sai do lugar, então acertar uma vez
+              acerta para sempre. Só aparece com a nossa câmera no ar. */}
+          {onRotateVideo && call.videoOn && (
+            <button
+              onClick={onRotateVideo}
+              className="group flex flex-col items-center gap-1.5"
+              title="Girar a sua imagem um quarto de volta para o outro lado"
+            >
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#f3f2ef] text-slate-600 transition hover:bg-slate-200">
+                <RotateCw size={20} />
+              </span>
+              <span className="text-[11px] font-semibold text-slate-500">Girar</span>
+            </button>
+          )}
           <button onClick={onHangUp} className="group flex flex-col items-center gap-1.5" disabled={call.phase === 'ENDING'}>
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600 text-white shadow-sm transition hover:bg-red-700 group-disabled:opacity-60">
               <PhoneOff size={20} />

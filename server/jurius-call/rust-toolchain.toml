@@ -1,0 +1,5 @@
+# A MESMA versão que /opt/whatsapp-rust fixa. A biblioteca é edition 2024 e usa
+# recursos de nightly; compilar este serviço com outro toolchain quebraria nela,
+# não aqui.
+[toolchain]
+channel = "nightly-2026-06-16"

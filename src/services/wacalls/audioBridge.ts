@@ -1,37 +1,66 @@
-// A ponte de áudio com o WaCalls.
+// A ponte de áudio com o Jurius Call.
 //
-// ISTO NÃO É UMA CHAMADA WebRTC COMUM. Não existe `addTrack`, não existe track
-// de áudio remoto, não existe codec negociado. O caminho é:
+// NÃO HÁ WebRTC AQUI. Não existe `RTCPeerConnection`, não existe ICE, não
+// existe DataChannel. O caminho é:
 //
-//   microfone → AudioWorklet (16 kHz) → PCM Int16 LE → DataChannel "pcm"
-//     → WaCalls (Go) → MLow → SRTP → WhatsApp
+//   microfone → AudioWorklet (16 kHz) → PCM Int16 LE em quadros de 960
+//     → WebSocket (o mesmo de `wacalls/socket`) → Jurius Call (Rust)
+//     → whatsapp-rust → MLOW → SRTP → WhatsApp
 //
-// e o inverso na volta. O WebRTC aqui serve só de transporte do DataChannel.
-// A implementação é a do cliente oficial (`client/src/lib/webrtc.ts` e os dois
-// worklets em `client/public/worklets/` do repositório JotaDev66/WaCalls),
-// portada com três diferenças deliberadas:
+// e o inverso na volta. Foi essa troca que matou a ligação muda: o WaCalls
+// anunciava o IP interno do Docker como candidato ICE e o navegador nunca
+// chegava nele. Um WebSocket sobre a mesma URL HTTPS que o Cloudflare já
+// publica não tem esse problema — não há endereço a descobrir.
+//
+// Três decisões continuam valendo do desenho anterior:
 //
 //   1. os worklets são embutidos como Blob (não há arquivo em /public para o
 //      service worker do CRM cachear ou servir errado nos apps /atendimento);
 //   2. o mudo corta o ENVIO dos quadros PCM — desligar a track não bastaria,
-//      porque quem manda áudio é o worklet, não o WebRTC;
+//      porque quem manda áudio é o worklet, não a track;
 //   3. o áudio remoto toca num <audio> criado aqui, e não num elemento da
 //      árvore React: a chamada não pode emudecer porque um modal desmontou.
-import { applyOutputToElement, microphoneConstraints } from '../../utils/audioDevices';
+//
+// O quadro tem de ter EXATAMENTE 960 amostras (60 ms a 16 kHz): o motor do
+// whatsapp-rust descarta qualquer outro tamanho, sem erro e sem áudio. É por
+// isso que o worklet de captura acumula em vez de mandar os blocos de 128 que
+// a placa entrega.
+import {
+  applyOutputToElement, microphoneConstraints, onAudioDeviceChange,
+  type OutputRouting,
+} from '../../utils/audioDevices';
 import { waCallsLog } from './config';
 import { float32ToInt16LE, int16LEToFloat32 } from './pcm';
+import { callSocket, KIND_AUDIO } from './socket';
 
-/** Taxa de amostragem que o WaCalls fala. Não é negociável. */
+/** Taxa de amostragem da chamada. Não é negociável. */
 const SAMPLE_RATE = 16000;
-/** Rótulo do DataChannel. O servidor ignora canais com outro nome. */
-const PCM_CHANNEL_LABEL = 'pcm';
+/** 60 ms a 16 kHz — o tamanho exato de quadro que o motor aceita. */
+const FRAME_SAMPLES = 960;
 
-// Worklet de captura: entrega ao thread principal cada bloco do microfone.
+// Worklet de captura: acumula os blocos de 128 amostras que a placa entrega e
+// só entrega ao thread principal quando fecha um quadro de 60 ms. Acumular AQUI
+// (e não no thread principal) custa uma mensagem a cada 60 ms em vez de uma a
+// cada 8 ms.
 const CAPTURE_WORKLET_SRC = `
+const FRAME = ${FRAME_SAMPLES};
 class CaptureProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.frame = new Float32Array(FRAME);
+    this.filled = 0;
+  }
   process(inputs) {
     const channel = inputs[0] && inputs[0][0];
-    if (channel && channel.length) this.port.postMessage(channel.slice(0));
+    if (!channel || !channel.length) return true;
+    for (let i = 0; i < channel.length; i += 1) {
+      this.frame[this.filled] = channel[i];
+      this.filled += 1;
+      if (this.filled === FRAME) {
+        this.port.postMessage(this.frame.slice(0));
+        this.filled = 0;
+      }
+    }
     return true;
   }
 }
@@ -39,7 +68,7 @@ registerProcessor('capture-processor', CaptureProcessor);
 `;
 
 // Worklet de reprodução: buffer circular de 2 s. O PCM chega em rajadas pelo
-// DataChannel e a placa de som pede blocos de tamanho fixo; sem o anel, cada
+// WebSocket e a placa de som pede blocos de tamanho fixo; sem o anel, cada
 // atraso de rede viraria um estalo.
 const PLAYBACK_WORKLET_SRC = `
 const RING_SIZE = ${SAMPLE_RATE * 2};
@@ -169,6 +198,18 @@ export interface WaCallAudioBridge {
   attachGuest: (stream: MediaStream) => void;
   /** Tira o convidado do áudio, sem tocar na chamada. */
   detachGuest: () => void;
+  /**
+   * Quantos bytes de voz do OUTRO LADO já chegaram pelo DataChannel.
+   *
+   * Zero com a chamada já atendida quer dizer uma coisa só: o serviço de
+   * chamadas não mandou som nenhum. É o número que separa "não escuto porque
+   * nada chega" de "não escuto porque está tocando no alto-falante errado" —
+   * sem ele, os dois defeitos são idênticos para quem está com o fone na
+   * cabeça, e foi assim que a primeira ligação de verdade virou um mistério.
+   */
+  receivedAudioBytes: () => number;
+  /** Em que alto-falante a voz do cliente está tocando — e por que, se não é o escolhido. */
+  outputRouting: () => OutputRouting | null;
   /** Libera tudo: DataChannel, PeerConnection, microfone, AudioContext e o <audio>. */
   close: () => void;
 }
@@ -197,20 +238,54 @@ function pickRecordingMime(): string | null {
 }
 
 /**
- * Sobe a ponte de áudio de uma chamada já criada no WaCalls.
+ * Por que o transporte caiu. A diferença importa para o operador: "a internet
+ * oscilou no meio da conversa" e "a ligação nasceu sem caminho de áudio" pedem
+ * reações diferentes de quem está com o cliente na linha.
+ */
+export type TransportFailure =
+  /** O canal caiu no meio e não voltou dentro da carência. */
+  | 'conexao-perdida'
+  /** O canal nunca abriu — a ligação seria muda dos dois lados. */
+  | 'sem-transporte';
+
+/**
+ * Quanto tempo uma queda do canal tem para se recertar antes de virar o fim da
+ * chamada.
  *
- * `negotiate` recebe a oferta SDP e devolve a resposta — quem fala HTTP é o
- * `waCallsService`, este módulo só cuida da mídia.
+ * O socket reconecta sozinho (ver `wacalls/socket`), e uma oscilação de Wi-Fi
+ * de dois segundos não pode derrubar a ligação dos dois lados. Só vira fim quem
+ * não voltou dentro da carência.
+ */
+const RECONEXAO_MS = 8000;
+
+/**
+ * Prazo para o canal de mídia abrir.
+ *
+ * Num caminho saudável ele já está aberto (o socket sobe junto com o CRM).
+ * Esperar mais do que isto não é paciência, é deixar o operador falando
+ * sozinho: sem o canal, o PCM não sobe nem desce e a chamada está muda dos DOIS
+ * lados desde o primeiro instante.
+ */
+const TRANSPORTE_MS = 10000;
+
+/**
+ * Sobe a ponte de áudio de uma chamada já criada no Jurius Call.
+ *
+ * Não há negociação: o socket já está de pé, e acoplar a chamada é uma linha —
+ * é o servidor que decide para quem a mídia dela vai.
  */
 export async function openCallAudio(params: {
   callId: string;
   /** Microfone já aberto por `openMicrophone`. A ponte passa a ser dona dele. */
   micStream: MediaStream;
-  negotiate: (sdpOffer: string) => Promise<string>;
-  /** Avisado quando o transporte cai sozinho (rede do operador, por exemplo). */
-  onDisconnected?: () => void;
+  /**
+   * Avisado quando o transporte cai — e por quê. Só é chamado depois de
+   * esgotada a carência de reconexão: uma oscilação que se resolve sozinha
+   * nunca chega aqui.
+   */
+  onDisconnected?: (motivo: TransportFailure) => void;
 }): Promise<WaCallAudioBridge> {
-  const { callId, micStream, negotiate } = params;
+  const { callId, micStream } = params;
 
   let closed = false;
   let muted = false;
@@ -226,26 +301,44 @@ export async function openCallAudio(params: {
   let recorder: MediaRecorder | null = null;
   let recordingChunks: Blob[] = [];
   let recordingStartedAt = 0;
+  /** Bytes de voz recebidos do serviço. Ver `receivedAudioBytes`. */
+  let receivedBytes = 0;
+  /** Onde a voz do cliente está saindo, depois de aplicado o alto-falante. */
+  let routing: OutputRouting | null = null;
+  /** Solta a escuta da troca de alto-falante feita no meio da chamada. */
+  let stopDeviceWatch: (() => void) | null = null;
+  /** A carência de uma queda do canal que ainda pode voltar. */
+  let reconexao: ReturnType<typeof setTimeout> | null = null;
+  /** O prazo do canal de mídia para abrir. */
+  let transporteTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Já avisamos que o transporte morreu? O aviso é um só. */
+  let transporteMorto = false;
   const revoke: string[] = [];
 
-  const peer = new RTCPeerConnection({ iceServers: [] });
-  const channel = peer.createDataChannel(PCM_CHANNEL_LABEL, { ordered: true });
-  channel.binaryType = 'arraybuffer';
+  /** Solta as escutas do socket quando a chamada acaba. */
+  const soltar: Array<() => void> = [];
 
   const close = () => {
     if (closed) return;
     closed = true;
+    if (reconexao !== null) { clearTimeout(reconexao); reconexao = null; }
+    if (transporteTimer !== null) { clearTimeout(transporteTimer); transporteTimer = null; }
     // Quem grava deve chamar `stopRecording()` ANTES (é ele quem devolve o
     // arquivo); aqui só sobra o descarte de uma gravação abandonada.
     try { if (recorder && recorder.state !== 'inactive') recorder.stop(); } catch { /* já parado */ }
     recorder = null;
     recordingChunks = [];
+    stopDeviceWatch?.();
+    stopDeviceWatch = null;
     try { guestSource?.disconnect(); } catch { /* já solto */ }
     guestSource = null;
-    try { channel.close(); } catch { /* já fechado */ }
+    for (const parar of soltar) { try { parar(); } catch { /* já solto */ } }
+    soltar.length = 0;
+    // Solta a mídia no servidor, mas NÃO fecha o socket: a sinalização das
+    // outras chamadas (e o próximo convite) continua chegando por ele.
+    callSocket.detach(callId);
     try { micStream.getTracks().forEach(track => track.stop()); } catch { /* idem */ }
     try { void context?.close(); } catch { /* idem */ }
-    try { peer.close(); } catch { /* idem */ }
     if (audioEl) {
       try { audioEl.pause(); audioEl.srcObject = null; audioEl.remove(); } catch { /* idem */ }
       audioEl = null;
@@ -263,25 +356,32 @@ export async function openCallAudio(params: {
     await context.audioWorklet.addModule(playbackUrl);
     await context.resume();
 
-    // Captura: microfone → worklet → PCM Int16 → DataChannel.
+    // Captura: microfone → worklet → PCM Int16 (960 amostras) → WebSocket.
     const micSource = context.createMediaStreamSource(micStream);
     const captureNode = new AudioWorkletNode(context, 'capture-processor');
     captureNode.port.onmessage = (event: MessageEvent<Float32Array>) => {
-      if (muted || channel.readyState !== 'open') return;
-      channel.send(float32ToInt16LE(event.data));
+      // O mudo corta AQUI, no envio. É também o que o servidor precisa saber
+      // (ver `waCallsService.setMuted`), para o motor emitir conforto em vez de
+      // um silêncio que o outro lado leria como queda.
+      if (muted || !callSocket.isOpen()) return;
+      callSocket.sendAudio(float32ToInt16LE(event.data));
     };
     micSource.connect(captureNode);
     // O worklet de captura não escreve na saída (silêncio); a ligação com o
     // destino existe só para o grafo ser processado.
     captureNode.connect(context.destination);
 
-    // Reprodução: DataChannel → worklet → MediaStream → <audio>.
+    // Reprodução: WebSocket → worklet → MediaStream → <audio>.
     const playbackNode = new AudioWorkletNode(context, 'playback-processor');
     const streamDestination = context.createMediaStreamDestination();
     playbackNode.connect(streamDestination);
-    channel.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-      playbackNode.port.postMessage(int16LEToFloat32(event.data));
-    };
+    soltar.push(callSocket.onMedia(frame => {
+      // O socket entrega áudio e vídeo pela mesma porta; o vídeo é de quem o
+      // pediu (ver `videoBridge`), não desta ponte.
+      if (frame.kind !== KIND_AUDIO) return;
+      receivedBytes += frame.body.byteLength;
+      playbackNode.port.postMessage(int16LEToFloat32(frame.body));
+    }));
 
     // Barramento da gravação: minha voz e a voz do outro lado no MESMO destino.
     // O microfone entra pela fonte (e não pelo worklet de captura, que não
@@ -305,38 +405,65 @@ export async function openCallAudio(params: {
     audioEl.style.display = 'none';
     document.body.appendChild(audioEl);
     // A voz do cliente vai para o alto-falante escolhido no painel de áudio.
-    // Assíncrono e sem `await`: se o dispositivo tiver sumido, o áudio sai no
-    // padrão do sistema — nunca em lugar nenhum.
-    void applyOutputToElement(audioEl);
+    //
+    // COM `await`, e ANTES do `play()`: disparados juntos, `setSinkId` e
+    // `play()` disputam o mesmo elemento, e o Chrome reinicia a saída quando o
+    // sink troca com a reprodução já em curso — o começo da fala do cliente se
+    // perde. Esperar aqui custa milissegundos e o áudio já nasce no lugar
+    // certo. Se o dispositivo escolhido tiver sumido, o elemento volta ao
+    // padrão do sistema em vez de ficar apontado para o que não existe mais.
+    const elemento = audioEl;
+    routing = await applyOutputToElement(elemento);
+    if (routing.reason === 'dispositivo-sumiu') {
+      waCallsLog('alto-falante escolhido sumiu — voz no padrão do sistema', { callId });
+    }
+    // Trocar de fone NO MEIO da ligação tem de valer na hora: é exatamente
+    // quando se descobre que o som está saindo no lugar errado.
+    stopDeviceWatch = onAudioDeviceChange(() => {
+      void applyOutputToElement(elemento).then(next => { routing = next; });
+    });
     // O gesto do operador (o clique em Ligar/Atender) já libera o autoplay; se
     // ainda assim o navegador recusar, não há o que fazer além de seguir.
-    void audioEl.play().catch(() => {});
+    void elemento.play().catch(() => {});
 
-    peer.onconnectionstatechange = () => {
-      if (peer.connectionState === 'connected') waCallsLog('WebRTC connected', { callId });
-      if (peer.connectionState === 'failed' || peer.connectionState === 'disconnected') {
-        params.onDisconnected?.();
-      }
+    // O fim do transporte passa por UMA porta só, e uma vez só.
+    const derrubar = (motivo: TransportFailure) => {
+      if (closed || transporteMorto) return;
+      transporteMorto = true;
+      waCallsLog('transporte perdido', { callId, motivo, recebidos: receivedBytes });
+      params.onDisconnected?.(motivo);
     };
 
-    const offer = await peer.createOffer();
-    await peer.setLocalDescription(offer);
-    // Sem trickle ICE: o servidor responde uma única vez, então esperamos o
-    // navegador terminar de juntar os candidatos antes de mandar a oferta.
-    await new Promise<void>(resolve => {
-      if (peer.iceGatheringState === 'complete') { resolve(); return; }
-      const onChange = () => {
-        if (peer.iceGatheringState === 'complete') {
-          peer.removeEventListener('icegatheringstatechange', onChange);
-          resolve();
-        }
-      };
-      peer.addEventListener('icegatheringstatechange', onChange);
-    });
+    // Acopla a chamada: daqui em diante o servidor manda a mídia DELA para este
+    // socket, e o que subir daqui entra nela. Não há SDP, não há candidato, não
+    // há espera de ICE — o canal já está de pé.
+    callSocket.attach(callId);
 
-    const answer = await negotiate(peer.localDescription!.sdp);
-    await peer.setRemoteDescription({ type: 'answer', sdp: answer });
-    waCallsLog('ponte de áudio pronta', { callId });
+    // Uma queda do socket NÃO derruba a chamada na hora: ele reconecta sozinho
+    // e reacopla. Só vira fim quem não voltou dentro da carência.
+    soltar.push(callSocket.onClose(() => {
+      if (closed || reconexao !== null) return;
+      waCallsLog('canal oscilou — aguardando voltar', { callId, ms: RECONEXAO_MS });
+      reconexao = setTimeout(() => {
+        reconexao = null;
+        if (closed || callSocket.isOpen()) return;
+        derrubar('conexao-perdida');
+      }, RECONEXAO_MS);
+    }));
+    soltar.push(callSocket.onOpen(() => {
+      if (reconexao !== null) { clearTimeout(reconexao); reconexao = null; }
+      waCallsLog('canal de volta', { callId });
+    }));
+
+    // Sem canal aberto o PCM não sobe nem desce, e a chamada está muda dos dois
+    // lados desde o primeiro instante. Este prazo troca esse silêncio por uma
+    // explicação.
+    transporteTimer = setTimeout(() => {
+      transporteTimer = null;
+      if (closed || callSocket.isOpen()) return;
+      waCallsLog('o canal de mídia não abriu no prazo', { callId });
+      derrubar('sem-transporte');
+    }, TRANSPORTE_MS);
   } catch (err) {
     close();
     throw err;
@@ -420,6 +547,8 @@ export async function openCallAudio(params: {
     startRecording,
     stopRecording,
     isRecording: () => recorder !== null,
+    receivedAudioBytes: () => receivedBytes,
+    outputRouting: () => routing,
     setMuted: (next: boolean) => {
       muted = next;
       // O corte real é no envio (acima). Desligar a track também é feito para

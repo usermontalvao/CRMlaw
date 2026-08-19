@@ -48,3 +48,9 @@ graphify-out/
 # Scratch/local (análise, backups manuais)
 tmp/
 backups/
+
+# Jurius Call: artefatos de deploy com segredo dentro.
+# O compose é GERADO (scripts/build-jurius-call-stack.mjs) e carrega o
+# JURIUS_CALL_TOKEN; o token vive só na máquina de quem faz o deploy.
+server/jurius-call/deploy/*.yml
+server/jurius-call/deploy/token.secret

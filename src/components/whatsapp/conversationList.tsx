@@ -20,6 +20,7 @@ import type {
   WhatsAppChannel, WhatsAppConversation, WhatsAppDepartment,
 } from '../../types/whatsapp.types';
 import type { ElapsedMinutes } from './businessTime';
+import type { WaSweepKind } from './conversationSweep';
 
 export interface ConversationListProps {
   conversations: WhatsAppConversation[];
@@ -43,6 +44,13 @@ export interface ConversationListProps {
   showChannelName: boolean;
   /** Conversas com outro atendente dentro agora (presença da equipe). */
   busyConversationIds: ReadonlySet<string>;
+  /**
+   * Conversas que ACABARAM de sair da fila e ainda estão com a faixa de
+   * varredura passando (ver `conversationSweep`). Mapa em vez de conjunto
+   * porque a faixa diz o QUE aconteceu — encerrada e transferida não são a
+   * mesma despedida.
+   */
+  sweeping?: ReadonlyMap<string, WaSweepKind>;
   funnelLabelsForChannel: (channelId: string | null | undefined) => FunnelLabel[];
   /** Etiqueta da IA da linha: substitui os sinais humanos enquanto o agente atende. */
   aiChipFor?: (conversationId: string) => { label: string; title: string } | null;
@@ -58,7 +66,7 @@ export interface ConversationListProps {
 
 const ConversationListInner: React.FC<ConversationListProps> = ({
   conversations, selectedId, loading, privateMode, emptyMessage,
-  channelById, deptById, drafts, mutedIds, failedSends, archivedIds, showChannelName, busyConversationIds,
+  channelById, deptById, drafts, mutedIds, failedSends, archivedIds, showChannelName, busyConversationIds, sweeping,
   funnelLabelsForChannel, aiChipFor, elapsedMinutes,
   conversationStatus, docStatusFor, trackedSignatureFor,
   onSelect, onStopSignatureTracking, onStopTemplateFillTracking,
@@ -104,6 +112,7 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
             archived={arquivada}
             showChannelName={showChannelName}
             busy={busyConversationIds.has(c.id)}
+            sweep={sweeping?.get(c.id) ?? null}
             c={c}
             active={c.id === selectedId}
             channel={c.instance_id ? (channelById.get(c.instance_id) ?? null) : null}

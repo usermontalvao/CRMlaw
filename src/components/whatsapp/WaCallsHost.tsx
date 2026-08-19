@@ -192,6 +192,7 @@ export const WaCallsHost: React.FC<{
   const toast = useToastContext();
   const {
     myCall, incoming, linkDown, canCall, placeCall, acceptCall, rejectCall, hangUp, setMuted, setRecording,
+    videoSupported, startVideo, stopVideo, videoStreams, rotateVideo,
   } = useWaCalls();
   const { calls: missed, dismiss: dismissMissed, dismissAll: dismissAllMissed } = useMissedCalls();
   const {
@@ -292,6 +293,13 @@ export const WaCallsHost: React.FC<{
           onHangUp={() => { void hangUp(myCall.callId); }}
           onToggleMute={() => setMuted(myCall.callId, !myCall.muted)}
           onToggleRecording={() => setRecording(myCall.callId, !myCall.recording)}
+          videoSupported={videoSupported}
+          videoStreams={() => videoStreams(myCall.callId)}
+          onToggleVideo={() => {
+            if (myCall.videoOn) void stopVideo(myCall.callId);
+            else void startVideo(myCall.callId);
+          }}
+          onRotateVideo={() => { void rotateVideo(myCall.callId); }}
           onOpenConversation={
             myCall.contact?.conversationId && onOpenConversation
               ? () => onOpenConversation(myCall.contact!.conversationId!)

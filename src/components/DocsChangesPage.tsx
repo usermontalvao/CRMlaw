@@ -968,6 +968,92 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.330',
+    date: '19/08/2026',
+    summary: 'A lista de conversas passou a dizer o que realmente aconteceu por último — inclusive quando o último foi uma ligação.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A ligação aparece na lista de conversas',
+            description: 'A coluna da esquerda só sabia falar de mensagem. Quem ligava para um cliente às 4h da manhã via a linha continuar exibindo o texto das 3h, com a hora antiga no canto e a conversa parada no meio da fila — a última coisa que aconteceu ficava invisível justamente na tela onde se decide o que abrir. Agora a linha diz "Chamada de voz recebida · 6 min 12 s", "Chamada de voz perdida", "Chamada de vídeo sem resposta", "Chamada de voz recusada", nas mesmas palavras que a conversa já usa por dentro, com a hora da ligação e a conversa subindo para o topo. A chamada recebida que ninguém atendeu vem em vermelho: ela é a única que fica devendo um retorno.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Toda ligação diz se foi de voz ou de vídeo',
+            description: 'As frases das chamadas não atendidas eram as do celular — "Sem resposta", "Chamada recusada", "A chamada falhou" — e nenhuma delas dizia o que a pessoa tinha tentado. No aparelho isso funciona porque o ícone ao lado mostra a câmera; na linha da inbox, lida de relance, não havia como saber se o cliente ficou sem uma ligação ou sem uma chamada de vídeo, que pedem retornos diferentes. Agora os seis desfechos dizem o meio, na thread, na lista e na ficha do cliente: "Chamada de vídeo sem resposta", "Chamada de voz recusada pelo contato", "A chamada de vídeo falhou".',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Figurinha deixou de virar um travessão',
+            description: 'Quem mandava só uma figurinha desaparecia da lista: a prévia ficava vazia e a linha escrevia "—", como se a conversa não tivesse última mensagem. Figurinha, localização, contato compartilhado e enquete agora se dizem pelo nome. As conversas antigas foram corrigidas junto, sem precisar de mensagem nova.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A legenda da foto vale mais que a palavra "Imagem"',
+            description: 'Três fotos seguidas na lista viravam três linhas idênticas "📷 Imagem", e nenhuma delas dizia qual era o RG. Agora a prévia mostra a legenda quando existe — e, no documento sem legenda, o nome do arquivo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.329',
+    date: '18/08/2026',
+    summary: 'A conversa que sai da fila se despede: uma faixa atravessa a linha dizendo se foi encerrada ou transferida, em vez de a linha simplesmente sumir.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'A conversa encerrada sai da lista dizendo que encerrou',
+            description: 'Encerrar um atendimento tirava a linha da fila no mesmo instante, sem nada dizer. Numa inbox cheia, uma linha que some é indistinguível da lista ter apenas se mexido — e quem encerrou a conversa errada só descobria depois, procurando. Agora uma faixa verde atravessa a linha da esquerda para a direita com "Atendimento encerrado" e leva a linha junto, no mesmo gesto de riscar um item concluído. Leva seis décimos de segundo; para quem configurou o sistema com menos movimento, nada muda em relação a antes.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A transferência deixou de ser silenciosa',
+            description: 'Transferir era a única ação do módulo que não avisava nada quando dava certo: o modal fechava, a conversa aberta sumia da tela e a linha muitas vezes continuava ali — transferir para outro setor não tira a conversa do filtro "todas". Agora a mesma faixa passa em violeta com "Conversa transferida" e devolve a linha como estava. A cor separa as duas despedidas: verde é fim de atendimento, violeta é mudança de mãos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    version: '1.10.328',
+    date: '18/08/2026',
+    summary: 'O aviso de canal fora do ar deixou de trancar o módulo, e a tela não fica mais quebrada quando sai versão nova com o CRM aberto.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'O canal caído avisa sem trancar o atendimento',
+            description: 'O aviso de canal fora do ar era um modal em tela cheia: escurecia tudo e exigia uma decisão antes de deixar mexer em qualquer coisa — ler outra conversa, procurar um contato, tudo passava por dispensar o aviso primeiro. Agora o alerta é a faixa vermelha colada ao compositor, que é para onde o olho vai antes de digitar, e ela NÃO se dispensa: fica de pé enquanto o canal não voltar. Os botões para falar por um canal conectado continuam ali, e quando nenhum outro canal está de pé a faixa diz onde revalidar o número.',
+          },
+        ],
+      },
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Tela quebrada depois de sair versão nova',
+            description: 'Com o CRM aberto durante um deploy, abrir uma parte ainda não carregada (o Nextcloud, por exemplo) dava tela quebrada e só voltava com F5 na mão: a aba pedia um arquivo que aquela versão do site não tem mais. O recarregamento automático já existia, mas não pegava o caso mais comum — o erro vindo de dentro de uma tela carregada sob demanda chega ao navegador por outro caminho, e passava batido. Agora os dois caminhos recarregam sozinhos, no máximo uma vez por minuto.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Console limpo do aviso de vibração',
+            description: 'Toda vez que o módulo de chamadas montava, o navegador registrava uma advertência de vibração — o cancelamento do toque era pedido mesmo sem nada tendo vibrado. Sem efeito para quem usa, mas enchia o console e escondia erro de verdade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.327',
     date: '18/08/2026',
     summary: 'A ligação que chega passou a ter dono: toca primeiro para quem é responsável, desce sozinha quando ninguém atende e a chamada perdida avisa quem devia ter atendido. E dá para chamar um colega para a ligação ou passá-la para ele sem desligar.',

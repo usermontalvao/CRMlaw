@@ -36,6 +36,7 @@ const conversa = (patch: Partial<WhatsAppConversation> & Pick<WhatsAppConversati
   last_message_at: '2026-08-04T13:40:00.000Z',
   last_message_preview: null,
   last_message_direction: 'in',
+  last_call_at: null, last_call_direction: null, last_call_outcome: null, last_call_duration_seconds: null,
   presence: null,
   presence_updated_at: null,
   last_seen_at: null,

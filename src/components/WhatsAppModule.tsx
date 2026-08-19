@@ -1,7 +1,7 @@
 import React, { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Search, Send, Loader2, MessageCircle, Phone, PhoneCall, User as UserIcon,
+  Search, Send, Loader2, MessageCircle, Phone, PhoneCall, Video, User as UserIcon,
   CheckCheck, Check, AlertCircle, Link2, ArrowRightLeft, X,
   Paperclip, Mic, FileText, Image as ImageIcon, CornerUpLeft, UserRound,
   Pencil, UserCheck, Unlink, IdCard, Scale, Calendar,
@@ -73,7 +73,7 @@ import { viewersLabel } from '../services/whatsapp/inboxPresenceState';
 import { imagesFromClipboard } from '../utils/clipboardImages';
 import { applyWaFormat, formatFromKey, type WaFormat } from './whatsapp/composerFormat';
 import {
-  ChannelSwitcher, ChannelDownBanner, ChannelDownAlert, ReconnectHoldSiren, channelName,
+  ChannelSwitcher, ChannelDownBanner, ReconnectHoldSiren, channelName,
 } from './whatsapp/channelSwitcher';
 import { GifPicker } from './whatsapp/gifPicker';
 import { giphyService } from '../services/giphy.service';
@@ -128,6 +128,7 @@ import { useWaComposer } from './whatsapp/hooks/useWaComposer';
 import { useWaMessages } from './whatsapp/hooks/useWaMessages';
 import { useWaThread, type MessageUnit } from './whatsapp/hooks/useWaThread';
 import { useConversationCalls } from './whatsapp/hooks/useConversationCalls';
+import { conversationActivityAt } from './whatsapp/threadCalls';
 import { ThreadCallEntry } from './whatsapp/threadCallEntry';
 import { useWaConversationActions } from './whatsapp/hooks/useWaConversationActions';
 import { useWaTemplates } from './whatsapp/hooks/useWaTemplates';
@@ -1209,7 +1210,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         // Fase 0: conversa sem nenhuma mensagem (last_message_at nulo) é rascunho de
         // "Nova conversa" aberta mas sem primeiro envio — não polui a inbox. Fica
         // visível apenas enquanto está aberta na thread; ao sair sem enviar, some.
-        if (!c.last_message_at && c.id !== selectedId) return false;
+        if (!c.last_message_at && !c.last_call_at && c.id !== selectedId) return false;
         if (filter === 'unread' && c.unread_count === 0) return false;
         if (filter === 'mine' && c.assigned_user_id !== user?.id) return false;
         // A dimensão de status (e a concessão que a busca faz nela) mora em
@@ -1226,16 +1227,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         if (!q) return true;
         return matchesConversationSearch(c, q);
       })
-      // Ordem igual ao WhatsApp: mensagem mais recente sempre no topo, sem
+      // Ordem igual ao WhatsApp: atividade mais recente sempre no topo, sem
       // reordenar por status/urgência (a triagem fica nos filtros e badges de SLA).
+      // ATIVIDADE, não mensagem: a ligação que você acabou de fazer sobe a
+      // conversa, como no celular — antes ela ficava parada no meio da lista
+      // com a hora do último texto.
       // A única exceção é a encerrada que a busca trouxe do arquivo: ela desce
       // para o fim, para o resultado não empurrar a fila de hoje tela abaixo.
       .sort((a, b) => {
         const ra = searchRank({ closed: a.status === 'closed', searching });
         const rb = searchRank({ closed: b.status === 'closed', searching });
         if (ra !== rb) return ra - rb;
-        const ta = a.last_message_at || a.created_at;
-        const tb = b.last_message_at || b.created_at;
+        const ta = conversationActivityAt(a);
+        const tb = conversationActivityAt(b);
         return tb < ta ? -1 : tb > ta ? 1 : 0;
       });
     // Uma linha por PESSOA — na FILA. O mesmo contato em dois números do
@@ -1630,6 +1634,23 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     );
   }, [selected, waCalls]);
 
+  // O mesmo destino, com a câmera desde o começo. Porta separada de propósito:
+  // a permissão da câmera é pedida ANTES de o telefone do contato tocar, e quem
+  // clicou em vídeo não pode cair numa chamada de voz sem perceber.
+  const handleVideoCall = useCallback(() => {
+    if (!selected) return;
+    void waCalls.placeVideoCall(
+      selected.contact_phone,
+      {
+        conversationId: selected.id,
+        clientId: selected.client_id ?? null,
+        name: conversationName(selected),
+        avatarUrl: selected.contact_avatar_url ?? null,
+      },
+      [{ source: 'jid', value: selected.remote_jid }],
+    );
+  }, [selected, waCalls]);
+
   // IA da conversa selecionada: sugerir resposta, classificar assunto, extrair
   // dados — e exportar o histórico. Fonte de handleAiClassify (injetado abaixo
   // no useWaOperationalModals ao encerrar a conversa).
@@ -1651,6 +1672,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     closeOpen, setCloseOpen,
     docRequestOpen, setDocRequestOpen,
     workspace, openWa, closeWa,
+    sweeping,
     handleConversationOpened,
     onTransferDone, onBlockDone, onCloseDone, onRequestDocCreated, onWorkspaceSaved,
   } = useWaOperationalModals({
@@ -1694,11 +1716,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // existente ou cria a que faltava, e a thread aberta passa a ser aquela.
   const [switchingChannelId, setSwitchingChannelId] = useState<string | null>(null);
   const selectedChannel = selected?.instance_id ? channelById.get(selected.instance_id) ?? null : null;
-  // O alerta de canal fora reaparece a cada conversa aberta: dispensar vale para
-  // aquela conversa, não para o problema (que continua até o canal voltar).
-  const [channelAlertOk, setChannelAlertOk] = useState<Set<string>>(new Set());
   const channelDown = !!selectedChannel && selectedChannel.status !== 'connected' && !selected?.is_blocked;
-  const showChannelAlert = channelDown && !!selected && !channelAlertOk.has(selected.id);
   const channelAlternatives = useMemo(
     () => connectedChannels.filter(c => c.id !== selectedChannel?.id),
     [connectedChannels, selectedChannel?.id],
@@ -2436,6 +2454,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             archivedIds={archivedIds}
             showChannelName={channels.length > 1}
             busyConversationIds={busyConversationIds}
+            sweeping={sweeping}
             funnelLabelsForChannel={funnelLabelsForChannel}
             elapsedMinutes={elapsedMinutes}
             conversationStatus={effectiveConversationStatus}
@@ -2565,20 +2584,53 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 {!selected.is_blocked && (
                   <button
                     onClick={handleCall}
-                    disabled={!!waCalls.myCall}
+                    /* `dialing` é o intervalo entre o clique e a chamada existir
+                       (microfone + POST). Sem ele o botão só apagava quando a
+                       chamada aparecia — e cada clique nesse meio-tempo fazia o
+                       telefone do contato tocar de novo. */
+                    disabled={!!waCalls.myCall || waCalls.dialing}
                     title={waCalls.myCall
                       ? 'Você já está em uma chamada'
-                      : (waCalls.ready && !waCalls.canCall
-                        ? 'Chamadas de voz indisponíveis no momento'
-                        : `Ligar para ${conversationName(selected)}`)}
+                      : waCalls.dialing
+                        ? 'Chamando…'
+                        : (waCalls.ready && !waCalls.canCall
+                          ? 'Chamadas de voz indisponíveis no momento'
+                          : `Ligar para ${conversationName(selected)}`)}
                     aria-label="Ligar por voz"
                     className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                      waCalls.ready && !waCalls.canCall
+                      waCalls.ready && !waCalls.canCall && !waCalls.dialing
                         ? 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200'
                         : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                     }`}
                   >
                     <PhoneCall size={16} />
+                  </button>
+                )}
+                {/* Chamada de VÍDEO. Fica ao lado da de voz porque é o mesmo
+                    gesto com outra intenção; o navegador que não codifica H.264
+                    mostra o botão desabilitado com o motivo, em vez de escondê-lo
+                    e deixar o atendente procurando. */}
+                {!selected.is_blocked && (
+                  <button
+                    onClick={handleVideoCall}
+                    disabled={!!waCalls.myCall || waCalls.dialing || !waCalls.videoSupported}
+                    title={!waCalls.videoSupported
+                      ? 'Este navegador não faz chamada de vídeo'
+                      : waCalls.myCall
+                        ? 'Você já está em uma chamada'
+                        : waCalls.dialing
+                          ? 'Chamando…'
+                          : (waCalls.ready && !waCalls.canCall
+                            ? 'Chamadas indisponíveis no momento'
+                            : `Chamada de vídeo com ${conversationName(selected)}`)}
+                    aria-label="Ligar por vídeo"
+                    className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      waCalls.ready && !waCalls.canCall && !waCalls.dialing
+                        ? 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200'
+                        : 'bg-sky-50 text-sky-700 hover:bg-sky-100'
+                    }`}
+                  >
+                    <Video size={16} />
                   </button>
                 )}
                 {selected.awaiting_accept && (selected.assigned_user_id === user?.id || !selected.assigned_user_id) && (
@@ -2972,14 +3024,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               </div>
             )}
 
-            {/* Canal fora do ar: o alerta escurece a tela ao abrir a conversa; a
-                faixa fica de lembrete depois de dispensado. Mensagem que não sai
-                sem ninguém perceber é o defeito que não pode acontecer. */}
-            {showChannelAlert && selectedChannel && (
-              <ChannelDownAlert channel={selectedChannel} alternatives={channelAlternatives}
-                busyId={switchingChannelId} onSwitch={switchConversationChannel}
-                onDismiss={() => setChannelAlertOk(prev => new Set(prev).add(selected.id))} />
-            )}
+            {/* Canal fora do ar: faixa colada ao compositor, sem dispensar,
+                enquanto o canal não voltar. Mensagem que não sai sem ninguém
+                perceber é o defeito que não pode acontecer — mas o aviso avisa,
+                não tranca: o resto do módulo continua utilizável. */}
             {channelDown && selectedChannel && (
               <ChannelDownBanner channel={selectedChannel} alternatives={channelAlternatives}
                 busyId={switchingChannelId} onSwitch={switchConversationChannel} />

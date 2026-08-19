@@ -13,14 +13,21 @@ import { whatsappService } from '../whatsapp.service';
 import { getWaCallsClientId, waCallsLog } from './config';
 import {
   openCallAudio, openMicrophone, MicrophoneError,
-  type WaCallAudioBridge, type WaCallRecording,
+  type WaCallAudioBridge, type WaCallRecording, type TransportFailure,
 } from './audioBridge';
+import {
+  CameraError, DEFAULT_FPS, openCallVideo, openCamera, videoSupported,
+  type WaCallVideoBridge,
+} from './videoBridge';
 import { callLogService, type CallLogOutcome } from '../callLog.service';
 import {
   CALLABLE_PHONE_UNKNOWN, parseWaPeer, resolveCallablePhone,
   type CallablePhoneCandidate,
 } from './phone';
-import { endReasonIsFailure, endReasonMessage, phaseFromStatus } from './callOutcome';
+import {
+  endReasonIsFailure, endReasonMeansNeverAnswered, endReasonMessage, phaseFromStatus,
+  resolveCallOutcome,
+} from './callOutcome';
 import { decideCallRing, CALL_ESCALATION_MS, type CallDegree, type CallRoute } from './callRouting';
 import { buildLadderFor, conversationRouting } from './routingData';
 import { operatorPresence } from './operatorPresence';
@@ -69,6 +76,12 @@ export interface WaCallsSnapshot {
   sessionId: string | null;
   /** Todas as chamadas conhecidas, da mais recente para a mais antiga. */
   calls: WaCall[];
+  /**
+   * Uma discagem está a caminho e ainda não virou chamada no mapa (microfone e
+   * POST no WaCalls levam um tempo visível). É o que deixa o botão "Ligar"
+   * apagar no PRIMEIRO clique, em vez de só quando a chamada aparece.
+   */
+  dialing: boolean;
 }
 
 const calls = new Map<string, WaCall>();
@@ -83,6 +96,40 @@ const calls = new Map<string, WaCall>();
  */
 const orphanStatus = new Map<string, WaCallsStatus>();
 const bridges = new Map<string, WaCallAudioBridge>();
+/**
+ * As pontes de VÍDEO, separadas das de áudio de propósito: o vídeo entra e sai
+ * várias vezes dentro de uma chamada cujo áudio nunca parou.
+ */
+const videoBridges = new Map<string, WaCallVideoBridge>();
+/**
+ * O giro da NOSSA câmera, em quartos de volta, guardado entre chamadas.
+ *
+ * A webcam da mesa fica onde está: o mesmo giro que acertou a imagem hoje é o
+ * que acerta amanhã. Descobrir isso de novo a cada ligação, na frente do
+ * cliente, é o que este `localStorage` evita.
+ */
+const ORIENTACAO_KEY = 'wacalls.video.orientation';
+/**
+ * Câmeras já autorizadas esperando a chamada ser ATENDIDA.
+ *
+ * O teste de 19/08/2026 fechou a conta: com o `<video>` na oferta o telefone do
+ * contato não toca (variante B x D), e o upgrade no meio da chamada só é aceito
+ * quando a oferta anunciou a capability de vídeo. Então a ligação sai por voz,
+ * a câmera fica guardada aqui — permissão pedida ANTES de o telefone tocar — e
+ * o vídeo sobe sozinho no instante do atendimento. O operador não clica em
+ * nada: quem pediu vídeo pediu uma vez.
+ *
+ * Só o FIM da chamada solta esta câmera. Um `call-video` com `videoOn: false`
+ * NÃO a solta — foi assim que ela era descartada durante o toque, e o upgrade
+ * não achava mais câmera nenhuma quando o contato atendia.
+ */
+const cameraAoAtender = new Map<string, MediaStream>();
+
+function orientacaoGuardada(): number {
+  if (typeof localStorage === 'undefined') return 0;
+  const bruto = Number(localStorage.getItem(ORIENTACAO_KEY));
+  return Number.isInteger(bruto) && bruto >= 0 && bruto <= 3 ? bruto : 0;
+}
 /**
  * Gravação que o operador parou ANTES de a chamada acabar.
  *
@@ -107,10 +154,20 @@ let online = typeof navigator === 'undefined' ? true : navigator.onLine !== fals
 let linkTimer: ReturnType<typeof setTimeout> | null = null;
 let linkListenersOn = false;
 let initializing: Promise<void> | null = null;
+/**
+ * Trava de reentrada do discador.
+ *
+ * A checagem de "já estou em uma chamada" lê o mapa `calls` — e a chamada só
+ * entra nele DEPOIS do microfone e do POST, dois `await`. Nesse intervalo o
+ * segundo clique passava pela checagem e o telefone do contato tocava duas
+ * vezes. Esta bandeira é síncrona: fecha a porta no primeiro clique e só reabre
+ * quando a chamada já está no mapa (ou quando a tentativa falhou).
+ */
+let placing = false;
 let closeEvents: (() => void) | null = null;
 let snapshot: WaCallsSnapshot = {
   ready: false, available: false, online: true, linkDown: false,
-  sessions: [], sessionId: null, calls: [],
+  sessions: [], sessionId: null, calls: [], dialing: false,
 };
 
 function emit(): void {
@@ -124,6 +181,7 @@ function emit(): void {
     sessions,
     sessionId,
     calls: Array.from(calls.values()).sort((a, b) => b.startedAt - a.startedAt),
+    dialing: placing,
   };
   // Os colegas precisam saber que esta mesa está em ligação: é o que impede a
   // transferência para quem já está falando e o que o cartão lê para não tocar
@@ -152,8 +210,12 @@ function notify(notice: WaCallsNotice): void {
 function isMissedInboundCall(call: WaCall, failed: boolean): boolean {
   return call.direction === 'inbound'
     && !failed
-    && call.connectedAt === null
-    && call.endReason !== 'declined'
+    // Uma pergunta só, e a mesma que a ficha do cliente responde: o desfecho
+    // desta chamada foi `missed`? Enquanto isto era uma lista de exceções
+    // escrita à mão aqui, cada motivo novo do WhatsApp entrava como perdida —
+    // `accepted_elsewhere` (atendida no celular do escritório) e `rejected`
+    // (recusada) acendiam o cartão de retorno pendente na tela de todo mundo.
+    && resolveCallOutcome(call.endReason, { connected: call.connectedAt !== null, failed }) === 'missed'
     && call.route?.show !== false;
 }
 
@@ -241,23 +303,187 @@ function applyStatus(callId: string, status: WaCallsStatus): void {
   const connectedAt = phase === 'ACTIVE' && !current.connectedAt ? Date.now() : current.connectedAt;
   if (phase === 'ACTIVE' && !current.connectedAt) waCallsLog('call ACTIVE', { callId });
   patch(callId, { phase, connectedAt });
+  // Atendida: a partir daqui o silêncio deixa de ser normal.
+  if (phase === 'ACTIVE') watchIncomingAudio(callId);
+  // E é ESTE o instante em que o upgrade de vídeo passa a ser aceito pelo outro
+  // lado. Quem discou pedindo vídeo recebe a câmera aqui, sem clicar em nada.
+  if (phase === 'ACTIVE' && cameraAoAtender.has(callId)) {
+    const camera = cameraAoAtender.get(callId)!;
+    cameraAoAtender.delete(callId);
+    waCallsLog('atendida: subindo o vídeo pedido na discagem', { callId });
+    void waCallsStore.startVideo(callId, camera);
+  }
 }
 
 function patch(callId: string, changes: Partial<WaCall>): WaCall | null {
   const current = calls.get(callId);
   if (!current) return null;
   const next = { ...current, ...changes };
+  // `wasVideo` é derivada e PEGAJOSA (ver o tipo): quem liga a câmera — daqui ou
+  // do outro lado — não precisa lembrar de marcá-la, e ninguém consegue apagá-la
+  // desligando o vídeo no meio da conversa.
+  if (next.videoOn || next.peerVideo) next.wasVideo = true;
   calls.set(callId, next);
   emit();
   return next;
 }
 
+/** Solta a câmera que esperava o atendimento, se ainda houver uma. */
+function descartarCameraPendente(callId: string): void {
+  const camera = cameraAoAtender.get(callId);
+  if (!camera) return;
+  cameraAoAtender.delete(callId);
+  try { camera.getTracks().forEach(t => t.stop()); } catch { /* já parada */ }
+  waCallsLog('câmera liberada sem chegar a transmitir', { callId });
+}
+
 /** Fecha a ponte de áudio e solta os recursos daquela chamada — e só dela. */
 function closeBridge(callId: string): void {
+  clearAudioWatchdog(callId);
+  descartarCameraPendente(callId);
+  closeVideoBridge(callId);
   const bridge = bridges.get(callId);
   if (!bridge) return;
   bridges.delete(callId);
   bridge.close();
+}
+
+/** Desliga a câmera daquela chamada — e só dela. */
+function closeVideoBridge(callId: string): void {
+  const video = videoBridges.get(callId);
+  if (!video) return;
+  videoBridges.delete(callId);
+  video.close();
+}
+
+/**
+ * Sobe o encoder da nossa câmera nesta chamada.
+ *
+ * Só a parte LOCAL: quem negociou o vídeo com o outro lado é quem chama — a
+ * oferta inicial, na chamada que já nasce em vídeo, ou o `enable_video`, no
+ * upgrade de uma chamada de voz em curso. Misturar as duas coisas aqui foi
+ * exatamente o que fazia o botão de vídeo discar em áudio e depois pedir um
+ * upgrade que o outro lado recusava.
+ */
+async function attachVideoBridge(callId: string, cameraStream: MediaStream): Promise<boolean> {
+  if (videoBridges.has(callId)) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    return true;
+  }
+  let video: WaCallVideoBridge;
+  try {
+    video = await openCallVideo({
+      callId,
+      cameraStream,
+      fps: DEFAULT_FPS,
+      onFailure: motivo => {
+        waCallsLog('a ponte de vídeo falhou', { callId, motivo });
+        void waCallsStore.stopVideo(callId);
+        notify({ kind: 'error', message: 'O vídeo caiu. A voz continua.' });
+      },
+    });
+  } catch (err) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    notify({
+      kind: 'error',
+      message: err instanceof CameraError ? err.message : 'Não foi possível codificar o vídeo.',
+    });
+    return false;
+  }
+  // O encoder leva alguns quadros para subir; nesse intervalo a chamada pode ter
+  // acabado (recusa, cancelamento). Guardar a ponte agora deixaria a câmera
+  // acesa iluminando ninguém.
+  const viva = calls.get(callId);
+  if (!viva || viva.phase === 'ENDED' || viva.phase === 'FAILED') {
+    video.close();
+    return false;
+  }
+  videoBridges.set(callId, video);
+  patch(callId, { videoOn: true });
+  // O giro escolhido antes vale desde o primeiro quadro: anunciar depois faria
+  // o contato ver a imagem deitada e ela endireitar sozinha na cara dele.
+  const giro = orientacaoGuardada();
+  if (giro) {
+    void waCallsService.setVideoOrientation(callId, giro).catch(() => { /* a imagem segue, torta */ });
+  }
+  waCallsLog('câmera ligada na chamada', { callId, giro });
+  return true;
+}
+
+/**
+ * O vigia da voz que não chega.
+ *
+ * Atendida a chamada, o WaCalls tem de começar a mandar PCM pelo DataChannel.
+ * Quando não manda, o operador fica ouvindo silêncio sem ter como saber de quem
+ * é a culpa — e é aí que ele mexe no fone, troca de alto-falante e desliga
+ * achando que o problema é dele. Este aviso fecha essa dúvida com o único dado
+ * que o navegador tem certeza: quantos bytes chegaram.
+ *
+ * A carência existe porque o canal abre antes de o cliente atender; contar
+ * silêncio durante o toque acusaria defeito em toda ligação normal.
+ */
+const audioWatchdogs = new Map<string, ReturnType<typeof setTimeout>>();
+const SEM_AUDIO_MS = 6000;
+
+function watchIncomingAudio(callId: string): void {
+  if (audioWatchdogs.has(callId)) return;
+  audioWatchdogs.set(callId, setTimeout(() => {
+    audioWatchdogs.delete(callId);
+    const bridge = bridges.get(callId);
+    const call = calls.get(callId);
+    if (!bridge || !call || call.phase !== 'ACTIVE') return;
+    if (bridge.receivedAudioBytes() > 0) return;
+    waCallsLog('nenhum áudio recebido depois de atendida', { callId });
+    notify({
+      kind: 'error',
+      message: 'A voz do outro lado não está chegando.',
+      description: 'A chamada foi atendida, mas o serviço de chamadas não enviou áudio nenhum. '
+        + 'Não é o seu alto-falante nem o seu fone: nada chegou até o navegador.',
+    });
+  }, SEM_AUDIO_MS));
+}
+
+/**
+ * Traduz a queda do transporte para quem está com o cliente na linha.
+ *
+ * Sem isto a chamada simplesmente sumia da tela depois de alguns segundos de
+ * silêncio, e a leitura natural do operador era "o CRM desligou na cara do
+ * cliente". Cada motivo pede uma reação diferente — ligar de novo resolve uma
+ * oscilação e não resolve um servidor sem caminho de áudio.
+ */
+/**
+ * Chamadas que ESTE navegador desligou por falta de caminho de áudio.
+ *
+ * O desligamento é um DELETE nosso, e o servidor o registra como `user_ended` —
+ * indistinguível de alguém clicando em encerrar. Sem esta marca, a ligação que
+ * o CRM matou sozinho ia para a ficha como PERDIDA, e uma perdida fabricada
+ * acende o cartão de aviso na tela de todo o escritório.
+ */
+const transportLost = new Set<string>();
+
+function avisarTransporte(motivo: TransportFailure): void {
+  if (motivo === 'sem-transporte') {
+    notify({
+      kind: 'error',
+      message: 'A ligação caiu: o áudio nunca chegou a se conectar.',
+      description: 'A chamada foi criada, mas o canal de voz com o serviço de chamadas não abriu — '
+        + 'ela ficaria muda dos dois lados. Não é o seu microfone.',
+    });
+    return;
+  }
+  notify({
+    kind: 'error',
+    message: 'A ligação caiu: a conexão de voz se perdeu.',
+    description: 'O canal com o serviço de chamadas caiu e não voltou. '
+      + 'Verifique a internet e ligue de novo.',
+  });
+}
+
+function clearAudioWatchdog(callId: string): void {
+  const timer = audioWatchdogs.get(callId);
+  if (!timer) return;
+  clearTimeout(timer);
+  audioWatchdogs.delete(callId);
 }
 
 function scheduleRemoval(callId: string, delay: number): void {
@@ -274,10 +500,10 @@ function scheduleRemoval(callId: string, delay: number): void {
 
 /** O desfecho da chamada como a ficha do cliente vai lê-lo. */
 function outcomeOf(call: WaCall, failed: boolean, endReason: string | null): CallLogOutcome {
-  if (call.connectedAt) return 'answered';
-  if (failed) return 'failed';
-  if (endReason === 'declined') return 'declined';
-  return 'missed';
+  // A regra inteira mora em `callOutcome`, onde os testes a alcançam — e lá o
+  // MOTIVO vence o cronômetro: uma ligação recusada não vira "atendida" só
+  // porque a mídia subiu antes de o contato olhar para o telefone.
+  return resolveCallOutcome(endReason, { connected: call.connectedAt !== null, failed });
 }
 
 /**
@@ -305,6 +531,11 @@ async function archiveCall(call: WaCall, failed: boolean, recording: WaCallRecor
     }
   }
 
+  // O desfecho é calculado UMA vez e manda em tudo o que vai para a ficha: o
+  // `answeredAt` de uma chamada que não foi atendida é o que fazia a ficha
+  // exibir duração de uma conversa que não houve.
+  const outcome = outcomeOf(call, failed, call.endReason);
+
   try {
     await callLogService.logCall({
       callId: call.callId,
@@ -318,10 +549,11 @@ async function archiveCall(call: WaCall, failed: boolean, recording: WaCallRecor
       clientId: call.contact?.clientId ?? null,
       conversationId: call.contact?.conversationId ?? null,
       startedAt: call.startedAt,
-      answeredAt: call.connectedAt,
+      answeredAt: outcome === 'answered' ? call.connectedAt : null,
       endedAt: call.endedAt ?? Date.now(),
       endReason: call.endReason,
-      outcome: outcomeOf(call, failed, call.endReason),
+      outcome,
+      video: call.wasVideo,
       recordingPath,
       recordingMime: recordingPath ? recording?.mime ?? null : null,
       recordingBytes: recordingPath ? recording?.blob.size ?? null : null,
@@ -342,6 +574,8 @@ async function archiveCall(call: WaCall, failed: boolean, recording: WaCallRecor
 
 /** Solta o áudio da chamada e manda o que sobrou dela para a ficha. */
 async function closeAndArchive(call: WaCall, failed: boolean): Promise<void> {
+  descartarCameraPendente(call.callId);
+  closeVideoBridge(call.callId);
   const bridge = bridges.get(call.callId);
   bridges.delete(call.callId);
   let recording = pendingRecordings.get(call.callId) ?? null;
@@ -360,22 +594,39 @@ function finishCall(callId: string, endReason: string | null, failed = false): v
   clearEscalation(callId);
   const call = calls.get(callId);
   if (!call) { closeBridge(callId); return; }
+  // A verdade sobre o fim é nossa, não do servidor: ele só viu o DELETE. Quem
+  // perdeu o transporte encerra como `connection_lost` — que `outcomeFromEndReason`
+  // lê como falha, e não como perdida.
+  const transporte = transportLost.delete(callId);
+  if (transporte) endReason = 'connection_lost';
   // Uma chamada termina DUAS vezes: quem desligou encerra o lado de cá e o
   // `call-ended` chega logo depois pelo SSE. Sem esta guarda, o operador via o
   // mesmo aviso duas vezes — e agora a gravação subiria e o registro seria
   // escrito em duplicidade.
   if (call.phase === 'ENDED' || call.phase === 'FAILED') return;
-  const answered = call.connectedAt !== null;
+  // O motivo do fim pode DESMENTIR o cronômetro. Numa ligação de saída o
+  // serviço anuncia a mídia menos de um segundo depois de discar, e o painel
+  // já mostrava "Em chamada 00:07" com o telefone do contato apenas tocando;
+  // quando o fim chega dizendo `rejected` ou `timeout`, o WhatsApp está
+  // afirmando que ninguém atendeu — e essa afirmação vale mais. Zerar o
+  // `connectedAt` aqui é o que faz o cartão, o aviso, a ficha e a conversa
+  // contarem a MESMA história, sem cada um refazer a conta do seu jeito.
+  const neverAnswered = endReasonMeansNeverAnswered(endReason);
+  const answered = call.connectedAt !== null && !neverAnswered;
   const updated = patch(callId, {
     phase: failed ? 'FAILED' : 'ENDED',
     endedAt: Date.now(),
     endReason,
+    connectedAt: neverAnswered ? null : call.connectedAt,
     recording: false,
     error: failed ? call.error : null,
   });
   if (!updated) return;
   waCallsLog('call ended', { callId, endReason });
-  if (!failed) {
+  // `avisarTransporte` já disse o que houve, com o motivo exato; o recado
+  // genérico de queda por cima dele seria o segundo toast do mesmo fato — e o
+  // errado dos dois, porque nem sempre a conexão que faltou é a desta máquina.
+  if (!failed && !transporte) {
     const message = endReasonMessage(endReason, { answered, direction: call.direction });
     notify({ kind: endReasonIsFailure(endReason, answered) ? 'error' : 'info', message });
   }
@@ -811,6 +1062,9 @@ function handleEvent(event: WaCallsEvent): void {
         // A rota nasce nula: o cartão aparece calado e o som entra quando o CRM
         // descobre de quem é a conversa (ver `resolveIncomingRoute`).
         route: null,
+        videoOn: false,
+        peerVideo: false,
+        wasVideo: false,
         recording: false,
         recorded: false,
         error: null,
@@ -858,6 +1112,15 @@ function handleEvent(event: WaCallsEvent): void {
       }
       if (mine && !existing.mine) patch(event.id, { mine: true });
       applyStatus(event.id, event.status);
+      break;
+    }
+
+    case 'call-video': {
+      if (!calls.has(event.id)) return;
+      // Se a nossa câmera caiu do lado do servidor, a ponte local não pode
+      // continuar gastando CPU codificando para ninguém.
+      if (!event.videoOn) closeVideoBridge(event.id);
+      patch(event.id, { videoOn: event.videoOn, peerVideo: event.peerVideo });
       break;
     }
 
@@ -962,13 +1225,46 @@ export const waCallsStore = {
   },
 
   /**
-   * Liga para um número a partir da conversa.
+   * Porta única de saída — e a trava contra o clique repetido.
+   *
+   * Discar leva um tempo visível (permissão do microfone, POST no WaCalls) e
+   * nesse intervalo o botão continua na tela. Sem esta trava, cada clique virava
+   * uma ligação: o telefone do contato tocava duas, três vezes e sobravam
+   * chamadas órfãs no servidor. O segundo clique é ignorado em silêncio, porque
+   * para quem clicou aquilo foi um clique só.
+   */
+  async placeCall(params: {
+    phone: string;
+    contact?: WaCallContact | null;
+    fallbacks?: readonly CallablePhoneCandidate[];
+    /** Nasce com a câmera ligada. A permissão é pedida ANTES de o telefone tocar. */
+    video?: boolean;
+  }): Promise<string | null> {
+    if (placing) {
+      waCallsLog('placeCall ignorado: já existe uma discagem em andamento');
+      return null;
+    }
+    placing = true;
+    emit();
+    try {
+      // Ao sair daqui a chamada já está no mapa `calls` — é ele que barra a
+      // próxima tentativa, com o recado "Você já está em uma chamada".
+      return await this.placeCallUnguarded(params);
+    } finally {
+      placing = false;
+      emit();
+    }
+  },
+
+  /**
+   * Liga para um número a partir da conversa. NÃO chame direto: a porta é
+   * `placeCall`, que é quem segura o clique repetido.
    *
    * Ordem: sessão → microfone → chamada no WaCalls → negociação → ponte. O
    * microfone vem ANTES de criar a chamada de propósito: descobrir a permissão
    * bloqueada depois que o telefone do cliente já tocou seria pior.
    */
-  async placeCall(params: {
+  async placeCallUnguarded(params: {
     /** O que a tela tem em mãos: telefone, JID — ou, sem querer, um LID. */
     phone: string;
     contact?: WaCallContact | null;
@@ -979,6 +1275,8 @@ export const waCallsStore = {
      * tela.
      */
     fallbacks?: readonly CallablePhoneCandidate[];
+    /** Nasce com a câmera ligada (ver `placeCall`). */
+    video?: boolean;
   }): Promise<string | null> {
     await this.init();
     if (!online) {
@@ -1036,14 +1334,52 @@ export const waCallsStore = {
       return null;
     }
 
+    // A câmera vem ANTES do POST, pelo mesmo motivo do microfone: descobrir a
+    // permissão negada depois que o telefone do contato já tocou é pior. Uma
+    // recusa aqui cancela a ligação inteira — quem pediu vídeo não quer cair
+    // numa chamada de voz sem perceber.
+    let cameraStream: MediaStream | null = null;
+    if (params.video) {
+      if (!videoSupported()) {
+        micStream.getTracks().forEach(t => t.stop());
+        notify({
+          kind: 'error',
+          message: 'Este navegador não faz chamada de vídeo.',
+          description: 'A câmera exige WebCodecs com H.264 — use o Chrome ou o Edge atualizados.',
+        });
+        return null;
+      }
+      try {
+        cameraStream = await openCamera(DEFAULT_FPS);
+      } catch (err) {
+        micStream.getTracks().forEach(t => t.stop());
+        notify({
+          kind: 'error',
+          message: err instanceof CameraError ? err.message : 'Não foi possível abrir a câmera.',
+        });
+        return null;
+      }
+    }
+
     // Cartão provisório: o operador vê "Preparando…" enquanto o servidor
     // responde. A chave definitiva só existe depois do POST.
     let callId: string;
     try {
-      callId = await waCallsService.startCall(sid, phone);
-      waCallsLog('outgoing call created', { callId });
+      // SEM vídeo no plano de mídia, de propósito, e a razão é medida:
+      //
+      //   · oferta COM `<video>`: o telefone do contato não toca. Três
+      //     tentativas seguidas, nenhuma stanza de volta — nem `preaccept`.
+      //   · oferta SEM `<video>`: toca, e o upgrade no meio da chamada é aceito.
+      //
+      // Então a ligação nasce por voz e o vídeo entra no atendimento (ver
+      // `cameraAoAtender`). Pedir `video: true` aqui subiria o plano de vídeo no
+      // servidor e o `enable_video` do upgrade viraria um no-op — a câmera
+      // ficaria acesa deste lado sem nunca ser anunciada ao outro.
+      callId = await waCallsService.startCall(sid, phone, { video: false });
+      waCallsLog('outgoing call created', { callId, video: !!cameraStream });
     } catch (err) {
       micStream.getTracks().forEach(t => t.stop());
+      cameraStream?.getTracks().forEach(t => t.stop());
       const message = err instanceof WaCallsError ? err.message : 'Não foi possível iniciar a chamada.';
       notify({ kind: 'error', message });
       return null;
@@ -1067,6 +1403,11 @@ export const waCallsStore = {
       muted: false,
       // Chamada que sai daqui é minha por definição: nada a rotear.
       route: { ring: false, show: true, label: '', source: 'assigned', targetUserIds: [], hasNextStep: false },
+      videoOn: false,
+      peerVideo: false,
+      // A oferta saiu com vídeo: a ligação É de vídeo, mesmo que o encoder daqui
+      // caia no segundo seguinte.
+      wasVideo: !!cameraStream,
       recording: false,
       recorded: false,
       error: null,
@@ -1076,6 +1417,20 @@ export const waCallsStore = {
     }
 
     await this.attachAudio(sid, callId, micStream);
+
+    // A câmera fica ESPERANDO o atendimento. Subir vídeo antes disso não chega a
+    // lugar nenhum: o outro lado só passa a aceitar o upgrade depois de atender.
+    if (cameraStream) {
+      const viva = calls.get(callId);
+      if (!viva || viva.phase === 'ENDED' || viva.phase === 'FAILED') {
+        // O áudio falhou e já derrubou a chamada: nada de deixar a câmera
+        // acesa iluminando ninguém.
+        cameraStream.getTracks().forEach(t => t.stop());
+      } else {
+        cameraAoAtender.set(callId, cameraStream);
+        waCallsLog('câmera pronta, aguardando o atendimento', { callId });
+      }
+    }
     return callId;
   },
 
@@ -1097,10 +1452,28 @@ export const waCallsStore = {
       notify({ kind: 'error', message });
       return;
     }
+    // Convite de VÍDEO é atendido COM vídeo, no próprio aceite. O outro lado já
+    // está com a câmera ligada desde a oferta; entrar só com voz e ligar a
+    // câmera depois é upgrade — e upgrade em chamada que nasceu de vídeo é o
+    // que o WhatsApp devolve como `UpgradeReject`. Câmera negada não custa a
+    // chamada: entra por voz, que é melhor do que não atender.
+    let cameraStream: MediaStream | null = null;
+    if (call.peerVideo && videoSupported()) {
+      try {
+        cameraStream = await openCamera(DEFAULT_FPS);
+      } catch (err) {
+        notify({
+          kind: 'error',
+          message: err instanceof CameraError ? err.message : 'Não foi possível abrir a câmera.',
+          description: 'A chamada de vídeo vai ser atendida só com a sua voz.',
+        });
+      }
+    }
     patch(callId, { phase: 'PREPARING', mine: true });
     try {
-      await waCallsService.acceptCall(call.sessionId, callId);
+      await waCallsService.acceptCall(call.sessionId, callId, { video: !!cameraStream });
     } catch (err) {
+      cameraStream?.getTracks().forEach(t => t.stop());
       micStream.getTracks().forEach(t => t.stop());
       if (err instanceof WaCallsError && err.status === 409) {
         // Outro operador chegou primeiro. Sem erro na cara de ninguém.
@@ -1114,20 +1487,36 @@ export const waCallsStore = {
     }
     void assumirAtendimento(call);
     await this.attachAudio(call.sessionId, callId, micStream);
+
+    // O plano de vídeo saiu no próprio `accept`: falta só o encoder daqui.
+    if (cameraStream) {
+      const viva = calls.get(callId);
+      if (!viva || viva.phase === 'ENDED' || viva.phase === 'FAILED') {
+        cameraStream.getTracks().forEach(t => t.stop());
+      } else {
+        await attachVideoBridge(callId, cameraStream);
+      }
+    }
   },
 
   /**
-   * Sobe a ponte WebRTC/DataChannel de uma chamada que já existe no servidor.
-   * Falhando aqui, a chamada é derrubada também no servidor — deixá-la de pé
-   * faria o telefone do cliente tocar sem ninguém do outro lado.
+   * Acopla o áudio de uma chamada que já existe no servidor.
+   *
+   * Não há mais negociação: o canal (um WebSocket) já está de pé desde o início
+   * da sessão, e acoplar é dizer ao servidor de qual chamada esta aba quer a
+   * mídia. Falhando aqui, a chamada é derrubada também no servidor — deixá-la
+   * de pé faria o telefone do cliente tocar sem ninguém do outro lado.
    */
   async attachAudio(sid: string, callId: string, micStream: MediaStream): Promise<void> {
     try {
       const bridge = await openCallAudio({
         callId,
         micStream,
-        negotiate: sdpOffer => waCallsService.negotiateWebRTC(sid, callId, sdpOffer),
-        onDisconnected: () => { void this.hangUp(callId); },
+        onDisconnected: motivo => {
+          transportLost.add(callId);
+          avisarTransporte(motivo);
+          void this.hangUp(callId);
+        },
       });
       bridges.set(callId, bridge);
       const current = calls.get(callId);
@@ -1146,7 +1535,13 @@ export const waCallsStore = {
       }
     } catch (err) {
       micStream.getTracks().forEach(t => t.stop());
+      // O `detail` é o CORPO da resposta do servidor, e num 500 é lá que está o
+      // motivo real (`{"error": "..."}`). Sem imprimi-lo, o console mostrava só
+      // a nossa frase genérica e a causa ficava do outro lado da rede, invisível.
       console.error('[WaCalls] falha ao abrir o áudio da chamada', err);
+      if (err instanceof WaCallsError && err.detail) {
+        console.error('[WaCalls] o servidor respondeu', { status: err.status, corpo: err.detail });
+      }
       patch(callId, { error: 'Não foi possível abrir o áudio da chamada.' });
       notify({ kind: 'error', message: 'Não foi possível abrir o áudio da chamada.', description: 'A chamada foi encerrada.' });
       try { await waCallsService.endCall(sid, callId); } catch { /* já pode ter caído */ }
@@ -1194,6 +1589,145 @@ export const waCallsStore = {
   setMuted(callId: string, muted: boolean): void {
     bridges.get(callId)?.setMuted(muted);
     patch(callId, { muted });
+    // O corte local para de mandar quadro; o servidor precisa saber para o
+    // motor emitir conforto (DTX) no lugar. Uma linha que emudece de vez faz o
+    // outro lado achar que a ligação caiu.
+    void waCallsService.setMuted(callId, muted).catch(() => {
+      // Falhar aqui não desfaz o mudo de cá — o operador já não está sendo
+      // ouvido, que é o que ele pediu.
+    });
+  },
+
+  /** Este navegador sabe fazer vídeo? (WebCodecs com H.264.) */
+  videoSupported(): boolean {
+    return videoSupported();
+  },
+
+  /**
+   * As imagens desta chamada: a nossa câmera e a do outro lado.
+   *
+   * Ficam FORA do snapshot de propósito — `MediaStream` não é dado serializável
+   * e colocá-lo no estado faria o React comparar objetos que nunca são iguais.
+   * A tela pede quando vai renderizar o <video>.
+   */
+  videoStreams(callId: string): { local: MediaStream | null; remote: MediaStream | null } | null {
+    const video = videoBridges.get(callId);
+    if (!video) return null;
+    return { local: video.localStream(), remote: video.remoteStream() };
+  },
+
+  /**
+   * UPGRADE: liga a câmera numa chamada de VOZ que já está em curso.
+   *
+   * Este é o único lugar que fala `enable_video` — a chamada que nasce em vídeo
+   * declara isso na própria oferta (ver `placeCallUnguarded`) e não passa por
+   * aqui. Por isso a exigência de `ACTIVE`: upgrade só existe depois que o
+   * outro lado atendeu; pedido antes disso volta como `UpgradeReject`.
+   *
+   * A ordem importa: câmera → servidor → encoder. A permissão vem primeiro para
+   * uma recusa não deixar o outro lado com um pedido de vídeo pendurado; o
+   * servidor vem antes do encoder para o PRIMEIRO quadro (que é sempre um
+   * keyframe) já encontrar o plano de vídeo de pé — invertendo, o outro lado
+   * ficaria até três segundos na tela preta esperando o keyframe seguinte.
+   */
+  async startVideo(callId: string, cameraPronta?: MediaStream): Promise<boolean> {
+    const call = calls.get(callId);
+    if (!call || !call.mine || call.phase !== 'ACTIVE') {
+      cameraPronta?.getTracks().forEach(t => t.stop());
+      return false;
+    }
+    if (videoBridges.has(callId)) {
+      cameraPronta?.getTracks().forEach(t => t.stop());
+      return true;
+    }
+    if (!videoSupported()) {
+      cameraPronta?.getTracks().forEach(t => t.stop());
+      notify({
+        kind: 'error',
+        message: 'Este navegador não faz chamada de vídeo.',
+        description: 'A câmera exige WebCodecs com H.264 — use o Chrome ou o Edge atualizados.',
+      });
+      return false;
+    }
+
+    // A câmera pode vir pronta de quem discou pedindo vídeo: a permissão foi
+    // pedida antes de o telefone tocar, e reaproveitá-la evita um segundo
+    // pedido do navegador no meio da conversa.
+    let cameraStream: MediaStream;
+    if (cameraPronta) {
+      cameraStream = cameraPronta;
+    } else {
+      try {
+        cameraStream = await openCamera(DEFAULT_FPS);
+      } catch (err) {
+        notify({
+          kind: 'error',
+          message: err instanceof CameraError ? err.message : 'Não foi possível abrir a câmera.',
+        });
+        return false;
+      }
+    }
+
+    try {
+      await waCallsService.enableVideo(callId, DEFAULT_FPS);
+    } catch (err) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      notify({
+        kind: 'error',
+        message: err instanceof WaCallsError ? err.message : 'Não foi possível ligar a câmera.',
+      });
+      return false;
+    }
+
+    const ok = await attachVideoBridge(callId, cameraStream);
+    // O upgrade foi negociado e o encoder não subiu: desfazer no servidor, senão
+    // o outro lado fica esperando uma imagem que nunca vem.
+    if (!ok) {
+      try { await waCallsService.disableVideo(callId); } catch { /* já pode ter caído */ }
+    }
+    return ok;
+  },
+
+  /** Quantos quartos de volta a nossa câmera está girando hoje. */
+  videoOrientation(): number {
+    return orientacaoGuardada();
+  },
+
+  /**
+   * Gira a nossa câmera mais um quarto de volta e guarda a escolha.
+   *
+   * Devolve o novo valor. Sem chamada de vídeo no ar não há a quem anunciar,
+   * mas a escolha continua valendo para a próxima — girar antes de ligar é
+   * exatamente o que alguém faz depois de ver a imagem torta uma vez.
+   */
+  async rotateVideo(callId?: string): Promise<number> {
+    const proximo = (orientacaoGuardada() + 1) % 4;
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem(ORIENTACAO_KEY, String(proximo)); } catch { /* aba privada */ }
+    }
+    emit();
+    if (callId && videoBridges.has(callId)) {
+      try {
+        await waCallsService.setVideoOrientation(callId, proximo);
+      } catch (err) {
+        notify({
+          kind: 'error',
+          message: err instanceof WaCallsError ? err.message : 'Não foi possível girar a câmera.',
+        });
+      }
+    }
+    return proximo;
+  },
+
+  /** Desliga a nossa câmera. O outro lado pode continuar mandando a dele. */
+  async stopVideo(callId: string): Promise<void> {
+    closeVideoBridge(callId);
+    patch(callId, { videoOn: false });
+    try {
+      await waCallsService.disableVideo(callId);
+    } catch {
+      // A câmera daqui já parou, que é o que o operador pediu.
+    }
   },
 
   /**
@@ -1258,11 +1792,13 @@ export const waCallsStore = {
     // (não há await no descarregamento da página); o áudio da chamada é
     // liberado do mesmo jeito.
     pendingRecordings.clear();
+    for (const callId of Array.from(audioWatchdogs.keys())) clearAudioWatchdog(callId);
     for (const callId of Array.from(bridges.keys())) closeBridge(callId);
     for (const timer of removalTimers.values()) clearTimeout(timer);
     removalTimers.clear();
     for (const timer of escalationTimers.values()) clearTimeout(timer);
     escalationTimers.clear();
+    transportLost.clear();
     clearLinkTimer();
     closeEvents?.();
     closeEvents = null;

@@ -3707,6 +3707,68 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 /* Selecionada volta a ter cor: a conversa aberta é o foco, arquivo ou não. */
 .wa-conv-archived.wa-conv-active { filter: grayscale(0); opacity: 1; }
 
+/* ── Varredura: a conversa saiu da fila ────────────────────────────────
+   Encerrar ou transferir tirava a linha da lista no mesmo quadro: ela sumia
+   sem nada dizer para onde foi, e num escritório com a inbox cheia isso é
+   indistinguível de a lista ter simplesmente se mexido. A varredura cobre a
+   linha da esquerda para a direita, escreve o que aconteceu e leva a linha
+   junto — o mesmo gesto de riscar um item concluído.
+
+   Só `transform` e `opacity`, como todo o resto do módulo. A faixa cresce em
+   `scaleX` a partir da esquerda e o texto só aparece depois que ela chegou ao
+   fim (senão apareceria espremido junto com ela). */
+.wa-conv-varredura {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: left center;
+  animation: wa-varredura 0.6s cubic-bezier(0.3, 0.8, 0.4, 1) both;
+}
+.wa-conv-varredura > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  animation: wa-varredura-texto 0.6s ease both;
+}
+@keyframes wa-varredura {
+  0%        { opacity: 1; transform: scaleX(0); }
+  35%, 75%  { opacity: 1; transform: scaleX(1); }
+  100%      { opacity: 0; transform: scaleX(1); }
+}
+/* O texto entra QUANDO a faixa termina de crescer (35%) e fica visível até o
+   fim. Entrar antes disso o mostraria espremido junto com ela; entrar depois
+   deixaria a frase legível por um piscar — e uma frase que não dá tempo de ler
+   é o mesmo que faixa nenhuma. */
+@keyframes wa-varredura-texto {
+  0%, 20%    { opacity: 0; }
+  35%, 100%  { opacity: 1; }
+}
+/* Encerrada: verde de concluído, e a linha vai embora junto com a faixa.
+   `content-visibility: visible` pela mesma razão das arquivadas — animar dentro
+   de uma caixa cuja renderização o navegador pode pular pisca. */
+.wa-conv-saindo {
+  content-visibility: visible;
+  pointer-events: none;
+  animation: wa-conv-saindo 0.6s ease both;
+}
+@keyframes wa-conv-saindo {
+  0%, 60% { opacity: 1; }
+  100%    { opacity: 0; }
+}
+/* Transferida: violeta, e a linha FICA. O destino dela depende do filtro em uso
+   (transferir para outro setor não a tira de "Todas"), então a faixa passa,
+   informa e devolve a linha como estava — prometer a saída e não cumprir seria
+   pior que não animar. */
+.wa-conv-transferindo {
+  content-visibility: visible;
+  pointer-events: none;
+}
+
 /* Esqueletos de carregamento (lista e conversa). Um brilho que atravessa o
    bloco, e não um pulsar de opacidade: pulsar pisca a tela inteira em uníssono
    e cansa; o brilho tem direção e dá a sensação de que algo está vindo. Cada
@@ -3959,6 +4021,10 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   .wa-msg-focus { animation: none !important; background-color: rgba(245, 158, 11, 0.2); }
   .wa-jump:hover, .wa-avatar-hero:hover > div, .wa-chip:hover { transform: none !important; }
   .wa-conv::before, .wa-conv-archived { transition: none !important; }
+  /* Sem movimento: a faixa não chega a aparecer (o JS também zera a espera,
+     então a linha sai no mesmo quadro, como era antes). */
+  .wa-conv-varredura { display: none; }
+  .wa-conv-saindo { animation: none !important; }
   .wa-msg-actions button:hover, .group:hover .wa-bubble { transform: none !important; }
 }
 
