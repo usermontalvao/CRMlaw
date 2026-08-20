@@ -86,6 +86,20 @@ export const SYSTEM_EVENTS = {
   // widget nem é montado.
   // Payload: { conversationId: string }
   CHAT_WIDGET_OPEN_WHATSAPP: 'chat_widget_open_whatsapp',
+  // "Conversar no WhatsApp" a partir de QUALQUER tela do CRM (ficha do cliente,
+  // lista, lead, requerimento, assinatura, agenda, busca global, nuvem). Antes
+  // cada um desses botões era um link para `wa.me` — a conversa acontecia fora,
+  // sem thread na inbox e sem vínculo com o cadastro.
+  //
+  // Quem escuta é o `WhatsAppChatOpener` (montado no App): ele abre/reabre a
+  // conversa pelo canal conectado e entrega o id a quem sabe mostrá-la — o
+  // widget flutuante, ou o próprio módulo quando já se está nele.
+  // Payload: { phone, clientId?, contactName?, text?, fallbackUrl }
+  WHATSAPP_OPEN_CHAT: 'whatsapp_open_chat',
+  // Não deu para abrir por dentro (sem canal conectado, erro no banco) e o
+  // clique caiu no `wa.me`. Só existe para o widget tirar da tela o esqueleto
+  // de "abrindo conversa" — sem isto ele ficaria prometendo o que não vem.
+  WHATSAPP_OPEN_CHAT_FAILED: 'whatsapp_open_chat_failed',
   // Admin alterou quais módulos aparecem no menu lateral
   MODULES_CONFIG_UPDATED: 'modules_config_updated',
 };

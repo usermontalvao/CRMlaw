@@ -3,6 +3,8 @@ import { X, Calendar, DollarSign, User } from 'lucide-react';
 import { financialService } from '../services/financial.service';
 import type { Agreement } from '../types/financial.types';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { LAYER } from '../styles/layers';
+import { useModalLayer } from '../styles/modalLayer';
 
 interface FinancialModalProps {
   agreementId: string;
@@ -10,6 +12,15 @@ interface FinancialModalProps {
 }
 
 export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
+  // Esta caixa quase sempre abre DE DENTRO de outra (a ficha do cliente, a
+  // conversa): ela ficara em `z-50`, abaixo da faixa dos modais, e por isso
+  // sumia atrás de quem a abriu.
+  //
+  // A classe `z-50` FICA: `index.css` tem um bloco antigo de "correção global de
+  // modais" que casa por substring (`fixed`+`z-50`) e é dele que vêm o scrim, o
+  // fundo do painel, os títulos e os campos daqui. Quem manda na camada é o
+  // `style` — inline ganha da classe, e aquele bloco não define `z-index`.
+  const camada = useModalLayer(LAYER.MODAL_NESTED);
   const [agreement, setAgreement] = useState<Agreement | null>(null);
   const [loading, setLoading] = useState(true);
   const statusLabel = (status?: Agreement['status'] | null) => {
@@ -38,7 +49,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4">
+      <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4" style={{ zIndex: camada }}>
         <div className="aero-modal w-full max-w-md rounded-t-[24px] p-6 sm:rounded-2xl">
           <p className="text-center text-slate-700 dark:text-slate-300">Carregando...</p>
         </div>
@@ -48,7 +59,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
 
   if (!agreement) {
     return (
-      <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4">
+      <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4" style={{ zIndex: camada }}>
         <div className="aero-modal w-full max-w-md rounded-t-[24px] p-6 sm:rounded-2xl">
           <p className="text-center text-slate-700 dark:text-slate-300">Lançamento não encontrado</p>
           <button
@@ -63,7 +74,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center px-0 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center px-0 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4" style={{ zIndex: camada }}>
       <div className="aero-modal flex h-[100dvh] max-h-[100dvh] w-[calc(100vw-12px)] flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:w-full sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl">
         {/* Header */}
         <div className="sticky top-0 z-10 aero-modal-inner flex items-start justify-between gap-3 border-b border-white/30 px-4 py-4 dark:border-white/10 sm:px-6">

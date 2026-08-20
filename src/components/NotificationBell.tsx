@@ -26,6 +26,7 @@ import { supabase } from '../config/supabase';
 import { pushNotifications } from '../utils/pushNotifications';
 import { getContextoTocavel } from '../utils/notificationSound';
 import type { UserNotification } from '../types/user-notification.types';
+import { zc, zcStack } from '../styles/layers';
 
 interface NotificationBellProps {
   onNavigateToModule?: (moduleKey: string, params?: any) => void;
@@ -254,7 +255,7 @@ interface PopupContainerProps {
 }
 
 const PopupContainer: React.FC<PopupContainerProps> = (props) => (
-  <div className="fixed bottom-5 right-5 z-[2147483647] flex flex-col-reverse items-end gap-2.5 pointer-events-none">
+  <div className={`fixed bottom-5 right-5 ${zc.NOTICE} flex flex-col-reverse items-end gap-2.5 pointer-events-none`}>
     <style>{`
       @keyframes slideInRight {
         from { transform: translateX(calc(100% + 24px)); opacity: 0; }
@@ -819,10 +820,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       {isOpen && (
         <>
           {/* Backdrop móvel para fechar ao clicar fora */}
-          <div className="fixed inset-0 z-[90] sm:hidden bg-black/20 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
+          <div className={`fixed inset-0 ${zcStack[0]} sm:hidden bg-black/20 backdrop-blur-sm`} onClick={() => setIsOpen(false)} />
           
           {/* Container Mobile (Fixed) */}
-          <div className="fixed left-4 right-4 top-[70px] z-[100] bg-white rounded-xl shadow-2xl border border-[#e7e5df] overflow-hidden sm:hidden flex flex-col max-h-[calc(100vh-100px)] animate-in fade-in zoom-in-95 duration-200">
+          <div className={`fixed left-4 right-4 top-[70px] ${zc.POPOVER} bg-white rounded-xl shadow-2xl border border-[#e7e5df] overflow-hidden sm:hidden flex flex-col max-h-[calc(100vh-100px)] animate-in fade-in zoom-in-95 duration-200`}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50 flex-shrink-0">
               <h3 className="text-base font-semibold text-slate-900">Notificações</h3>
               <div className="flex items-center gap-2">

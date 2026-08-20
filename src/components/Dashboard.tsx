@@ -95,7 +95,7 @@ const ClientQuickViewModal: React.FC<{ clientId: string; onClose: () => void; on
   const ClientDetailsComp = React.lazy(() => import('./ClientDetails'));
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex items-start justify-center px-3 sm:px-6 py-6 overflow-y-auto">
+    <div className={`fixed inset-0 ${zcStack[0]} flex items-start justify-center px-3 sm:px-6 py-6 overflow-y-auto`}>
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-5xl bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden my-auto">
         <div className="h-1.5 w-full bg-gradient-to-r from-orange-500 to-amber-400" />
@@ -124,6 +124,7 @@ const ClientQuickViewModal: React.FC<{ clientId: string; onClose: () => void; on
 // ─────────────────────────────────────────────────────────────────────────────
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { usePermissions } from '../hooks/usePermissions';
+import { zc, zcStack } from '../styles/layers';
 
 interface DashboardProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
@@ -1890,7 +1891,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
         const agmMatch = ev.description?.match(/\[agreement_id:([^\]]+)\]/);
         const instMatch = ev.description?.match(/\[installment:(\d+)\]/);
         return (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 py-4">
+          <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center px-3 py-4`}>
             <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedEvent(null)} />
             <div className="relative w-full max-w-md bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden max-h-[90vh]">
               <div className={`h-1.5 w-full ${accentBar[ev.type] ?? accentBar.other}`} />
@@ -1959,7 +1960,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
 
       {/* Modal de Detalhes da Intimação */}
       {selectedIntimacao && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-2 sm:px-4 py-4">
+        <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center px-2 sm:px-4 py-4`}>
           <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedIntimacao(null)} aria-hidden="true" />
           <div className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[92vh] bg-[#f8f7f5] rounded-xl sm:rounded-2xl shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
             <div className="h-1.5 sm:h-2 w-full bg-orange-500" />

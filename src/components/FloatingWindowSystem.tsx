@@ -1,4 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { LAYER } from '../styles/layers';
 import {
   Calendar, Clock, Layers, Newspaper, Users, Scale, Briefcase,
   FileText, PiggyBank, Bell, Library, PenTool, Cloud, MessageCircle,
@@ -58,8 +59,17 @@ export const MAX_WINDOWS = 5;
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 // Janelas ficam entre z-45 e z-65 — abaixo dos popovers/modais internos (z-70+)
-const Z_MIN = 45;
-const Z_MAX = 65;
+/**
+ * A faixa das janelas flutuantes, dentro da camada FLOATING (ver
+ * `styles/layers`). Elas se revezam entre si — quem foi clicado por último sobe
+ * até `Z_MAX` — mas a faixa inteira fica abaixo dos modais e acima do conteúdo.
+ * A BARRA que as lista mora um degrau acima de todas (`Z_TASKBAR`): ela é o que
+ * devolve uma janela minimizada, e uma janela encostada no rodapé não pode
+ * cobri-la.
+ */
+const Z_MIN = LAYER.FLOATING;
+const Z_MAX = LAYER.FLOATING + 15;
+const Z_TASKBAR = LAYER.FLOATING + 16;
 
 const STORAGE_KEY = 'fw:windows';
 
@@ -368,8 +378,13 @@ function Taskbar({ windows, onRestore, onClose, onFocus, onUpdate, maxZ }: {
   return (
     <div
       data-app-taskbar="1"
-      className="fixed bottom-0 left-0 right-0 z-[9999] flex items-center gap-1 px-2"
-      style={{ height: TASKBAR_H, background: '#1f1f1f', borderTop: '1px solid rgba(255,255,255,0.08)' }}
+      className="fixed bottom-0 left-0 right-0 flex items-center gap-1 px-2"
+      // Um fio acima das janelas: a barra que as lista precisa ficar clicável
+      // mesmo com uma delas encostada no rodapé.
+      style={{
+        zIndex: Z_TASKBAR,
+        height: TASKBAR_H, background: '#1f1f1f', borderTop: '1px solid rgba(255,255,255,0.08)',
+      }}
     >
       {/* Botão organizador */}
       <button

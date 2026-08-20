@@ -67,6 +67,7 @@ import { useClientPhotos } from '../hooks/useClientPhotos';
 import { useMinLoading } from '../hooks/useMinLoading';
 import { useFormLayout } from '../hooks/useFormLayout';
 import { useSyncTick } from '../lib/syncBus';
+import { LAYER, zcStack } from '../styles/layers';
 
 const STATUS_OPTIONS: { key: ProcessStatus; label: string; badge: string }[] = [
   { key: 'nao_protocolado', label: 'Não Protocolado', badge: 'bg-slate-100 text-slate-700' },
@@ -2768,7 +2769,7 @@ Regras:
       title={selectedProcess ? 'Editar Processo' : 'Novo Processo'}
       eyebrow="Processos"
       size="2xl"
-      zIndex={80}
+      zIndex={LAYER.MODAL_NESTED}
       footer={
         <div className="flex items-center justify-end gap-3">
           <button
@@ -3087,7 +3088,7 @@ Regras:
         eyebrow="Processo"
         icon={<FileText className="w-5 h-5" />}
         size="xl"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex flex-wrap gap-3">
             {selectedProcessForView.process_code && (
@@ -4598,7 +4599,7 @@ Regras:
 
       {/* Timeline Modal */}
       {showTimelineModal && timelineProcessCode && createPortal(
-        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4 py-6">
+        <div className={`fixed inset-0 ${zcStack[0]} flex items-center justify-center px-4 py-6`}>
           <div
             className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
             onClick={() => {

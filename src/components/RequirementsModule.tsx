@@ -61,6 +61,7 @@ import { signatureService } from '../services/signature.service';
 import { requirementDocumentService } from '../services/requirementDocument.service';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { openDocInEditorWindow } from '../utils/openEditorWindow';
+import { openWhatsAppChat } from '../utils/whatsappChat';
 import { subscribeEditorDocSourceSaved } from '../utils/editorDocSourceEvents';
 import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { useAuth } from '../contexts/AuthContext';
@@ -85,6 +86,7 @@ import type { DocumentTemplate, CreateDocumentTemplateDTO } from '../types/docum
 import { Modal, ModalBody, ModalFooter, ModuleSkeleton } from './ui';
 import { useFormLayout } from '../hooks/useFormLayout';
 import { useSyncTick } from '../lib/syncBus';
+import { LAYER, zcStack } from '../styles/layers';
 
 const STATUS_OPTIONS: {
   key: RequirementStatus;
@@ -3015,11 +3017,26 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     }
   };
 
-  const handleWhatsApp = (phone?: string | null) => {
+  /**
+   * "WhatsApp" do requerimento — a conversa com o beneficiário.
+   *
+   * Abre no widget, sobre a própria lista de requerimentos, e já vinculada ao
+   * cadastro quando o requerimento tem cliente. Era um `wa.me` em aba nova: a
+   * conversa sobre a exigência acontecia fora, e a inbox nunca soube que ela
+   * existiu — justamente a conversa que outro atendente precisa encontrar
+   * quando o cliente responde três dias depois.
+   *
+   * `openWhatsAppChat` devolve `false` quando não há por onde abrir aqui
+   * dentro (sem permissão, sem canal conectado): aí o link de fora continua
+   * sendo aberto, como sempre foi.
+   */
+  const handleWhatsApp = (req?: Requirement | null) => {
+    const phone = req?.phone;
     if (!phone) {
       alert('Telefone não informado para este requerimento.');
       return;
     }
+    if (openWhatsAppChat({ phone, clientId: req?.client_id ?? null, contactName: req?.beneficiary ?? null })) return;
     const cleaned = phone.replace(/\D/g, '');
     window.open(`https://wa.me/55${cleaned}`, '_blank');
   };
@@ -3032,9 +3049,21 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     setWhatsappTemplateReq(req);
   };
 
+  /**
+   * Modelo de mensagem escolhido: o texto montado já entra ESCRITO no
+   * compositor da conversa, do mesmo jeito que chegava pronto no WhatsApp Web
+   * pelo `?text=`. Trocar o link pela conversa interna não pode custar ao
+   * atendente redigitar o que o sistema acabou de montar.
+   */
   const handleSendWATemplate = (text: string, req: Requirement) => {
-    const cleaned = (req.phone ?? '').replace(/\D/g, '');
     const built = buildWAText(text, req);
+    if (openWhatsAppChat({
+      phone: req.phone ?? '',
+      clientId: req.client_id ?? null,
+      contactName: req.beneficiary ?? null,
+      text: built,
+    })) { setWhatsappTemplateReq(null); return; }
+    const cleaned = (req.phone ?? '').replace(/\D/g, '');
     window.open(`https://wa.me/55${cleaned}?text=${encodeURIComponent(built)}`, '_blank');
     setWhatsappTemplateReq(null);
   };
@@ -3315,7 +3344,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   };
 
   const createClientModal = isClientFormModalOpen && createPortal(
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+    <div className={`fixed inset-0 ${zcStack[1]} flex items-center justify-center p-4`}>
       <div
         className="absolute inset-0 bg-slate-50/80 backdrop-blur-md"
         onClick={() => {
@@ -3388,7 +3417,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       title={selectedRequirement ? 'Editar Requerimento' : 'Novo Requerimento'}
       eyebrow={selectedRequirement ? 'Editar' : 'Novo'}
       size="2xl"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
       footer={
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-400 dark:text-zinc-500">* Campos obrigatórios</p>
@@ -3644,7 +3673,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   );
 
   const exigencyDeadlineModal = exigencyModal && (
-    <div className="pericia-light-modal fixed inset-0 z-[95] flex items-center justify-center p-4">
+    <div className={`pericia-light-modal fixed inset-0 ${zcStack[2]} flex items-center justify-center p-4`}>
       <div className="absolute inset-0" onClick={handleCloseExigencyModal} aria-hidden="true" />
       <div className="pericia-light-modal__panel relative w-full max-w-lg overflow-hidden rounded-2xl shadow-2xl bg-[#f8f7f5] dark:bg-zinc-900">
         <div className="h-2 w-full bg-orange-500" />
@@ -3804,7 +3833,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       subtitle={[periciaModal?.beneficiaryName && `Beneficiário: ${periciaModal.beneficiaryName}`, periciaModal?.benefitTypeLabel && `Benefício: ${periciaModal.benefitTypeLabel}`].filter(Boolean).join(' · ') || undefined}
       icon={<Stethoscope className="w-5 h-5" />}
       size="md"
-      zIndex={95}
+      zIndex={LAYER.MODAL_NESTED}
     >
       <ModalBody className="px-5 py-4">
           <div className="flex items-center justify-between gap-3">
@@ -3978,7 +4007,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         eyebrow="Detalhes do Requerimento"
         subtitle={selectedRequirementForView.protocol ?? undefined}
         size="xl"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         headerActions={
           <div className="flex items-center gap-2">
             {statusUpdatingId === selectedRequirementForView.id ? (
@@ -4029,7 +4058,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               Excluir
             </button>
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => handleWhatsApp(selectedRequirementForView.phone)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition">
+              <button type="button" onClick={() => handleWhatsApp(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition">
                 <MessageSquare className="w-4 h-4" />
                 WhatsApp
               </button>
@@ -4130,7 +4159,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                           {selectedRequirementForView.phone && (
                             <button
                               type="button"
-                              onClick={() => handleWhatsApp(selectedRequirementForView.phone)}
+                              onClick={() => handleWhatsApp(selectedRequirementForView)}
                               title="Abrir no WhatsApp"
                               className="p-1 rounded text-slate-400 hover:text-green-600 hover:bg-green-50 transition-colors"
                             >
@@ -5570,7 +5599,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       {createClientModal}
 
       {msTemplateModalOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div className={`fixed inset-0 ${zcStack[0]} flex items-center justify-center px-3 sm:px-6 py-4`}>
           <div className="absolute inset-0 bg-slate-900/55 backdrop-blur-sm" onClick={handleCloseMsTemplateModal} />
           <div className="relative w-full max-w-2xl max-h-[90vh] min-h-[70vh] !bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col">
             <div className="h-1 bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600" />
@@ -5733,7 +5762,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       )}
 
       {msSelectTemplateModalOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div className={`fixed inset-0 ${zcStack[0]} flex items-center justify-center px-3 sm:px-6 py-4`}>
           <div className="absolute inset-0 bg-slate-900/55 backdrop-blur-sm" onClick={() => setMsSelectTemplateModalOpen(false)} />
           <div className="relative w-full max-w-md !bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden flex flex-col">
             <div className="h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600" />
@@ -5849,7 +5878,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
       {/* ── Indeferido — Confirmar com péricias em aberto ───────────────── */}
       {indeferidoConfirm && (
-        <div className="fixed inset-0 z-[95] flex items-center justify-center px-4">
+        <div className={`fixed inset-0 ${zcStack[2]} flex items-center justify-center px-4`}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIndeferidoConfirm(null)} />
           <div className="relative w-full max-w-sm bg-[#f8f7f5] dark:bg-zinc-900 rounded-2xl shadow-2xl ring-1 ring-black/10 overflow-hidden">
             {/* Barra de atenção */}
@@ -5929,7 +5958,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         const initials = (whatsappTemplateReq.beneficiary ?? '?')
           .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase();
         return (
-          <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center sm:px-4 sm:py-6">
+          <div className={`fixed inset-0 ${zcStack[1]} flex items-end sm:items-center justify-center sm:px-4 sm:py-6`}>
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setWhatsappTemplateReq(null)} />
 
             {/* Card */}
@@ -6001,7 +6030,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   <div className="border-t border-slate-100 px-3 py-3 flex-shrink-0">
                     <button
                       type="button"
-                      onClick={() => handleWhatsApp(whatsappTemplateReq.phone)}
+                      onClick={() => handleWhatsApp(whatsappTemplateReq)}
                       className="w-full text-[10px] font-semibold text-slate-400 hover:text-slate-600 transition flex items-center justify-center gap-1.5"
                     >
                       <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current flex-shrink-0" xmlns="http://www.w3.org/2000/svg">

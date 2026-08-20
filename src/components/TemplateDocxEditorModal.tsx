@@ -5,6 +5,7 @@ import { saveAs } from 'file-saver';
 import PetitionRibbon from './PetitionRibbon';
 import SyncfusionEditor, { SyncfusionEditorRef } from './SyncfusionEditor';
 import { usePetitionEditorTheme } from '../hooks/usePetitionEditorTheme';
+import { zcStack } from '../styles/layers';
 
 interface TemplateDocxEditorModalProps {
   isOpen: boolean;
@@ -467,7 +468,7 @@ const TemplateDocxEditorModal: React.FC<TemplateDocxEditorModalProps> = ({
   return createPortal(
     <div
       id="template-docx-editor-shell"
-      className={`fixed inset-0 z-[90] flex flex-col ${darkMode ? 'bg-[#1b1b1b]' : 'bg-[#f8f7f5]'}`}
+      className={`fixed inset-0 ${zcStack[0]} flex flex-col ${darkMode ? 'bg-[#1b1b1b]' : 'bg-[#f8f7f5]'}`}
     >
       <input
         ref={fileInputRef}

@@ -28,9 +28,10 @@ import { prettyPhone } from './format';
 import { selfViewPosition } from './callWidgetPlacement';
 import { DEFAULT_CAMERA_TURN, selfViewTurn } from '../../services/wacalls/videoTurn';
 import type { WaCall } from '../../services/wacalls/types';
+import { LAYER } from '../../styles/layers';
 
 /** Acima do painel flutuante (2147483100) e abaixo da chamada recebida (…200). */
-const Z_VIDEO_SCREEN = 2147483150;
+const Z_VIDEO_SCREEN = LAYER.CALL;
 
 /** Onde a miniatura da nossa câmera foi largada da última vez. */
 const SELF_VIEW_KEY = 'wa:callSelfViewPos';

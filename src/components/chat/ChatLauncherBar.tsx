@@ -47,7 +47,8 @@
 // daqui vem por `style`, de propósito.
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ChevronDown, FileText, MessageCircle } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileText, MessageCircle } from 'lucide-react';
+import { coresDoNome } from './avatarColors';
 
 /** Laranja da casa — o mesmo dos badges da barra lateral (`App.tsx`). */
 const BRAND = '#f27a23';
@@ -76,6 +77,16 @@ export interface ChatLauncherBarProps {
   /** O Editor de Petições está minimizado nesta aba? Então ele mora aqui. */
   editorMinimized?: boolean;
   editorHasUnsavedChanges?: boolean;
+  /**
+   * A conversa que ficou aberta quando o painel foi MINIMIZADO.
+   *
+   * É o que separa minimizar de fechar: sem um lugar visível para voltar,
+   * minimizar seria fechar com outro nome. O bloco é o mesmo do Editor
+   * minimizado — mesmo fio, mesma altura —, porque as duas coisas que a barra
+   * guarda merecem o mesmo gesto.
+   */
+  guardedName?: string | null;
+  guardedAvatarUrl?: string | null;
   onToggle: () => void;
   onOpenEditor: () => void;
 }
@@ -90,14 +101,19 @@ const ChatLauncherBar: React.FC<ChatLauncherBarProps> = ({
   open = false,
   editorMinimized = false,
   editorHasUnsavedChanges = false,
+  guardedName = null,
+  guardedAvatarUrl = null,
   onToggle,
   onOpenEditor,
 }) => {
   const semMovimento = useReducedMotion();
   const temPendencia = badgeCount > 0;
+  // O painel está minimizado COM alguém dentro.
+  const guardando = !open && !!guardedName;
   // Com o painel aberto o rosto some: quem escreveu já está na lista, a um
-  // palmo dali, com o nome inteiro.
-  const mostraRosto = temPendencia && !open && !!(peerName || peerAvatarUrl);
+  // palmo dali, com o nome inteiro. Guardando também some — o rosto da conversa
+  // minimizada já está na barra, e dois avatares lado a lado viram enfeite.
+  const mostraRosto = temPendencia && !open && !guardando && !!(peerName || peerAvatarUrl);
 
   /** Uma mola só, usada em tudo — é o que dá liga entre as partes. */
   const mola = semMovimento
@@ -247,6 +263,49 @@ const ChatLauncherBar: React.FC<ChatLauncherBarProps> = ({
           </AnimatePresence>
           <AnimatePresence mode="popLayout">{temPendencia && badge()}</AnimatePresence>
         </motion.div>
+
+        {/* A CONVERSA GUARDADA — o painel minimizou, ela ficou aqui.
+            Vem antes do Editor de propósito: entre as duas coisas que a barra
+            segura, é a que tem gente do outro lado esperando. */}
+        <AnimatePresence mode="popLayout">
+          {guardando && (
+            <motion.div
+              key="guardado"
+              layout
+              initial={semMovimento ? false : { opacity: 0, width: 0 }}
+              animate={{ opacity: 1, width: 'auto' }}
+              exit={semMovimento ? { opacity: 0 } : { opacity: 0, width: 0 }}
+              transition={mola}
+              className="flex items-stretch overflow-hidden"
+            >
+              <div className="my-2.5 w-px shrink-0" style={{ background: 'rgba(15,23,42,.10)' }} aria-hidden />
+              <div
+                className="flex items-center gap-2 px-3.5 h-11 whitespace-nowrap text-slate-600"
+                title={`Voltar para ${guardedName}`}
+              >
+                {guardedAvatarUrl ? (
+                  <img
+                    src={guardedAvatarUrl}
+                    alt=""
+                    className="w-[22px] h-[22px] rounded-full object-cover shrink-0"
+                    style={{ boxShadow: '0 0 0 1px rgba(15,23,42,.10)' }}
+                  />
+                ) : (
+                  // Sem foto, a cor sai do NOME — a mesma paleta da lista, para
+                  // que a pessoa tenha um só rosto em todo o sistema.
+                  <div
+                    className="w-[22px] h-[22px] rounded-full shrink-0 flex items-center justify-center text-[10px] font-semibold"
+                    style={{ background: coresDoNome(guardedName).bg, color: coresDoNome(guardedName).fg }}
+                  >
+                    {(guardedName || '?').trim().charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="text-[13px] font-medium max-w-[132px] truncate">{guardedName}</span>
+                <ChevronUp className="w-[14px] h-[14px] text-slate-400 shrink-0" strokeWidth={2} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <AnimatePresence mode="popLayout">
           {editorMinimized && (

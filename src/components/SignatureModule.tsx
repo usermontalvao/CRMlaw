@@ -22,6 +22,7 @@ import { nextcloudService } from '../services/nextcloud.service';
 import { joinPath, nextAvailableName } from '../utils/nextcloudNames';
 import { NextcloudFolderPicker } from './nextcloud/NextcloudFolderPicker';
 import { supabase } from '../config/supabase';
+import { openWhatsAppChat } from '../utils/whatsappChat';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { signatureFieldsService } from '../services/signatureFields.service';
@@ -49,6 +50,7 @@ import type { SignatureExplorerFolder, SignatureExplorerItem } from '../types/si
 import type { ProcessPracticeArea } from '../types/process.types';
 import type { Client } from '../types/client.types';
 import { Modal, ModalBody, SignatureSkeleton } from './ui';
+import { LAYER, zc, zcStack } from '../styles/layers';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -3717,10 +3719,20 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           href={getWhatsappLink(selectedClientPhone) || '#'}
                           target="_blank"
                           rel="noreferrer"
+                          title="Conversar no WhatsApp"
                           className="inline-flex items-center rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-emerald-700 transition"
-                          onClick={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            // A conversa abre no widget, sem tirar ninguém do
+                            // meio da solicitação. Ver `utils/whatsappChat`.
+                            if (openWhatsAppChat({
+                              phone: selectedClientPhone,
+                              clientId: selectedClientId,
+                              contactName: selectedClientName,
+                            })) event.preventDefault();
+                          }}
                         >
-                          WA.me
+                          Falar
                         </a>
                       ) : null}
                     </span>
@@ -5457,7 +5469,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         eyebrow="Explorer"
         subtitle={deleteFolderTarget?.name}
         size="sm"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex justify-end gap-3">
             <button
@@ -5512,7 +5524,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         eyebrow="Explorer"
         subtitle={createFolderParentId ? `Em: ${folderPathLabelById.get(createFolderParentId) || '—'}` : undefined}
         size="sm"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex justify-end gap-3">
             <button
@@ -5551,7 +5563,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
       {contextMenu && (
         <div
-          className="fixed z-[80]"
+          className={`fixed ${zcStack[0]}`}
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
@@ -5580,7 +5592,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         title="Mover item"
         eyebrow="Explorer"
         size="md"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex items-center justify-between gap-3">
             <div className="text-[11px] text-slate-500 truncate">
@@ -5666,7 +5678,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         subtitle={deleteModalTarget?.name}
         icon={<Trash2 className="w-5 h-5" />}
         size="sm"
-        zIndex={60}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex gap-2">
             <button
@@ -5720,7 +5732,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         subtitle={`${archivedList.length} ${archivedList.length === 1 ? 'documento' : 'documentos'} na lixeira`}
         icon={<Trash2 className="w-5 h-5" />}
         size="lg"
-        zIndex={50}
+        zIndex={LAYER.MODAL}
         headerActions={
           <button
             onClick={() => void loadArchived()}
@@ -5947,7 +5959,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           detailsRequest.process_number,
         ].filter(Boolean).join(' · ') : undefined}
         size="lg"
-        zIndex={50}
+        zIndex={LAYER.MODAL}
         headerActions={detailsRequest ? (
           <div className="flex items-center gap-2">
             {detailsRequest.signers.every(s => s.status === 'signed') ? (
@@ -6776,6 +6788,18 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                                         type="button"
                                         onClick={() => {
                                           const phone = signer.phone!.replace(/\D/g, '');
+                                          // O convite de assinatura sai pela
+                                          // conversa do CRM — com a mensagem já
+                                          // escrita no compositor, para ser
+                                          // revista antes de enviar. Sem canal
+                                          // ou sem permissão, volta a ser o
+                                          // `wa.me` de sempre.
+                                          if (openWhatsAppChat({
+                                            phone,
+                                            clientId: detailsRequest.client_id ?? null,
+                                            contactName: signer.name,
+                                            text: currentMsg,
+                                          })) return;
                                           const msg = encodeURIComponent(currentMsg);
                                           window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
                                         }}
@@ -6958,7 +6982,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         title={signingSigner?.name ?? ''}
         eyebrow="Assinar documento"
         size="md"
-        zIndex={60}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex items-center justify-between gap-3">
             <button
@@ -7046,7 +7070,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
         onClose={() => setZoomImageUrl(null)}
         title="Visualização"
         size="xl"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
       >
         <ModalBody className="bg-slate-50 flex items-center justify-center">
           {zoomImageUrl && (
@@ -7063,7 +7087,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
       {/* Modal: Relatório / Certificado de Assinatura */}
       {reportTarget && (
-        <div className="fixed inset-0 z-[200] overflow-y-auto" style={{ background: 'rgba(15,23,42,0.6)' }}>
+        <div className={`fixed inset-0 ${zc.MODAL_NESTED} overflow-y-auto`} style={{ background: 'rgba(15,23,42,0.6)' }}>
           <SignatureReport
             request={reportTarget.request}
             signer={reportTarget.signer}
@@ -7075,7 +7099,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
       {/* Modal: Dossiê Probatório (relatório forense completo do envelope) */}
       {dossierTarget && (
-        <div className="fixed inset-0 z-[200] overflow-y-auto" style={{ background: 'rgba(15,23,42,0.6)' }}>
+        <div className={`fixed inset-0 ${zc.MODAL_NESTED} overflow-y-auto`} style={{ background: 'rgba(15,23,42,0.6)' }}>
           <ForensicDossier
             requestId={dossierTarget.requestId}
             documentName={dossierTarget.documentName}

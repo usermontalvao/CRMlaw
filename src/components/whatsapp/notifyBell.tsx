@@ -9,6 +9,8 @@ import {
 import { isWaActionSoundMuted, setWaActionSoundMuted, playWaActionSound } from '../../utils/waActionSounds';
 import { useToastContext } from '../../contexts/ToastContext';
 import type { StaffPushState } from './hooks/useStaffPush';
+import { LAYER } from '../../styles/layers';
+import { useModalLayer } from '../../styles/modalLayer';
 
 /**
  * Sino unificado de notificações do cabeçalho: agrupa "som das notificações"
@@ -23,6 +25,8 @@ export const WaNotifyBell: React.FC<{
   pushState: StaffPushState;
   onTogglePush: () => void;
 }> = ({ pushState, onTogglePush }) => {
+  // O menu sai em portal para o `body` — dentro do widget precisa da faixa dele.
+  const camada = useModalLayer(LAYER.MODAL);
   const toast = useToastContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const [soundMuted, setSoundMuted] = useState(() => isNotifySoundMuted());
@@ -82,14 +86,23 @@ export const WaNotifyBell: React.FC<{
         onClick={() => setMenuOpen(o => !o)}
         title="Notificações"
         aria-haspopup="menu" aria-expanded={menuOpen}
-        className={`flex items-center justify-center w-7 h-7 rounded-full transition ${active ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-400 hover:bg-slate-200'}`}>
-        <Icon size={15} />
+        /* O destaque mudou de lado. "Som ligado" e a barra inteira em amarelo
+           era a cor de aviso gasta no estado NORMAL — o sino ficava aceso o dia
+           todo sem nada a dizer. Agora o botão neutro e o âmbar guardado para o
+           SILÊNCIO, que é o estado que custa uma mensagem perdida. */
+        className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${active ? 'text-slate-500 hover:bg-[#f1f0ec] hover:text-slate-700' : 'bg-[#fdf1e0] text-[#a15c07] hover:bg-[#fbe6cc]'}`}>
+        <Icon size={16} />
       </button>
       {menuOpen && createPortal(
         <>
-          <div className="fixed inset-0 z-[70]" onClick={() => setMenuOpen(false)} />
-          <div role="menu" style={{ position: 'fixed', top: menuTop, right: menuRight }}
-            className="z-[71] w-[min(17rem,calc(100vw-1rem))] rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden">
+          {/* `<button>` e não `<div>`: a correção global de modais do
+              `index.css` casa `div`+`fixed`+`inset-0` e pintaria este
+              pega-cliques de preto desfocado por cima do CRM. */}
+          <button type="button" aria-label="Fechar avisos"
+            className="fixed inset-0 cursor-default bg-transparent"
+            style={{ zIndex: camada }} onClick={() => setMenuOpen(false)} />
+          <div role="menu" style={{ position: 'fixed', top: menuTop, right: menuRight, zIndex: camada + 1 }}
+            className="w-[min(17rem,calc(100vw-1rem))] rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden">
             <p className="px-3 pt-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Notificações</p>
             <button className={row} onClick={toggleSound}>
               {soundOn ? <Bell size={16} className="text-amber-500 shrink-0" /> : <BellOff size={16} className="text-slate-400 shrink-0" />}

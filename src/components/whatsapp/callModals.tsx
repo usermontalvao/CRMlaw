@@ -37,10 +37,11 @@ import {
 } from './callWidgetPlacement';
 import { DEFAULT_CAMERA_TURN, selfViewTurn } from '../../services/wacalls/videoTurn';
 import type { WaCall } from '../../services/wacalls/types';
+import { LAYER } from '../../styles/layers';
 
 /** Acima dos avisos de mensagem nova (2147483000): uma linha aberta vem antes. */
-const Z_WIDGET = 2147483100;
-const Z_INCOMING = 2147483200;
+const Z_WIDGET = LAYER.CALL;
+const Z_INCOMING = LAYER.CALL + 1;
 
 /** Onde a última posição arrastada de cada peça fica guardada (por navegador). */
 const POSITION_KEY = 'wa:callWidgetPos';

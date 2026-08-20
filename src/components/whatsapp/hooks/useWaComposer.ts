@@ -14,6 +14,7 @@ import { agentLabel, conversationPreviewLabel } from '../format';
 import { createSendQueue, type SendQueue } from '../sendQueue';
 import { isReconnectPendingError, enqueueReconnectHold } from '../../../services/whatsapp/resilientSend';
 import { playWaActionSound } from '../../../utils/waActionSounds';
+import { giphyService, type GiphyItem } from '../../../services/giphy.service';
 import { openPreferredMicrophone } from '../../../utils/audioDevices';
 import { useToastContext } from '../../../contexts/ToastContext';
 import type {
@@ -73,7 +74,7 @@ export interface WaComposerApi {
   confirmStagedSend: (caption: string, files: File[]) => void;
   /** Desiste do anexo: a legenda escrita volta a ser o texto do compositor. */
   cancelStagedSend: (caption: string) => void;
-  sendGif: (file: File) => Promise<void>;
+  sendGif: (item: GiphyItem) => Promise<void>;
 }
 
 /**
@@ -123,7 +124,11 @@ export function useWaComposer({
   // Descritores para "tentar de novo": guardam o necessário para reenviar uma
   // mensagem que falhou (texto, ou mídia com o File original). Limpos no sucesso.
   const retryRef = useRef<Map<string, { kind: 'text'; text: string; replyId?: string }
-    | { kind: 'media'; file: File; mediaKind: 'image' | 'video' | 'audio' | 'document'; caption: string; replyId?: string }>>(new Map());
+    | { kind: 'media'; file: File; mediaKind: 'image' | 'video' | 'audio' | 'document'; caption: string; replyId?: string }
+    // GIF guarda o ITEM da grade, não o arquivo: quando o envio falha antes do
+    // download, arquivo é o que ainda não existe — e é justamente esse o caso
+    // em que "tentar de novo" precisa funcionar.
+    | { kind: 'gif'; item: GiphyItem }>>(new Map());
   // Mapa de progresso de upload (0-100) por tempId; alimentado por timer simulado.
   const [uploadProgress, setUploadProgress] = useState<Map<string, number>>(new Map());
   const cancelledUploads = useRef<Set<string>>(new Set());
@@ -580,41 +585,55 @@ export function useWaComposer({
     }
   };
 
-  // Envia um GIF escolhido no seletor. Vai como vídeo marcado `asGif`: o
-  // WhatsApp converte GIF para mp4 de qualquer jeito, e sem a marca a conversa
-  // recebe um vídeo com play parado em vez da animação em laço.
+  // Envia um GIF escolhido no seletor. Vai como FIGURINHA ANIMADA, e não como
+  // vídeo: a Evolution 2.3.7 descarta o `gifPlayback` de todo vídeo, e era por
+  // isso que o GIF chegava parado, com botão de play, do lado do contato. A
+  // figurinha é o caminho que ela tem para animação em laço (ver
+  // `evolution-send`). Na nossa bolha ela também aparece animada — o arquivo
+  // guardado é o próprio `.gif`.
   //
   // Não passa pelo preview com legenda: escolher o GIF na grade JÁ é a escolha,
   // e uma segunda confirmação só atrasaria o que se espera ser instantâneo.
-  const sendGif = useCallback(async (file: File) => {
-    if (!selected) return;
+  //
+  // A BOLHA NASCE NO CLIQUE. Recebe o ITEM da grade, não um arquivo: baixar o
+  // GIF antes de mostrar qualquer coisa deixava a conversa parada por segundos
+  // depois do toque — o seletor fechava e nada acontecia, que é exatamente a
+  // sensação de travado. Agora a bolha aparece com a MESMA URL que a grade
+  // acabou de exibir (o navegador a tem em cache, então ela pinta na hora) e o
+  // download/upload corre por baixo, com a barrinha de progresso de sempre.
+  const sendGif = useCallback(async (item: GiphyItem) => {
+    if (!selected || !item.gifUrl) return;
     const conversationId = selected.id;
     const sentAt = new Date().toISOString();
     const tempId = newTempId();
-    const previewUrl = URL.createObjectURL(file);
     const optimistic = buildOptimistic(conversationId, tempId, sentAt, {
-      type: 'video', is_animated: true,
-      media_url: previewUrl, media_mime: file.type, media_size: file.size, file_name: file.name,
+      type: 'sticker', is_animated: true,
+      media_url: item.gifUrl, media_mime: 'image/gif', file_name: `gif-${item.id}.gif`,
       _local: 'uploading',
     });
+    retryRef.current.set(tempId, { kind: 'gif', item });
     setPending(prev => [...prev, optimistic]);
-    bumpConversationPreview(conversationId, conversationPreviewLabel('video'), sentAt);
+    bumpConversationPreview(conversationId, conversationPreviewLabel('sticker'), sentAt);
+    // O som acompanha o gesto, como no envio de texto — e não a confirmação do
+    // servidor, que chega quando a pessoa já está em outra coisa.
+    playWaActionSound('send');
     const turn = sendQueue.take();
     try {
+      const file = await giphyService.baixar(item);
       const up = await whatsappService.uploadMedia(file, { conversationId });
       setPending(prev => prev.map(p => p._tempId === tempId ? { ...p, _local: 'sending' } : p));
       await turn.wait;
       settleSend(conversationId, tempId, await whatsappService.sendMedia({
-        conversationId, type: 'video', storagePath: up.storagePath,
-        mimeType: up.mimeType, fileName: up.fileName, asGif: true,
+        conversationId, type: 'sticker', storagePath: up.storagePath,
+        mimeType: up.mimeType, fileName: up.fileName, mediaSize: up.size, asGif: true,
       }));
+      retryRef.current.delete(tempId);
       void refreshMessages(conversationId);
     } catch (err: any) {
       markPendingFailed(tempId);
       toast.error('GIF não enviado', err?.message || 'Falha ao enviar pelo WhatsApp.');
     } finally {
       turn.release();
-      setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
     }
   }, [selected, sendQueue, bumpConversationPreview, settleSend, markPendingFailed, refreshMessages, toast]);
 
@@ -627,6 +646,7 @@ export function useWaComposer({
     retryRef.current.delete(tempId);
     setPending(prev => prev.filter(p => p._tempId !== tempId)); // remove o item falho
     if (desc.kind === 'text') void resendText(desc.text, desc.replyId);
+    else if (desc.kind === 'gif') void sendGif(desc.item);
     else void sendFile(desc.file, desc.mediaKind, desc.caption);
   };
 

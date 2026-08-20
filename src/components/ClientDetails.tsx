@@ -9,6 +9,8 @@ import {
   Bell, ShieldCheck, BellOff, Edit,
 } from 'lucide-react';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { openWhatsAppChat } from '../utils/whatsappChat';
+import { openDialer } from '../utils/phoneDial';
 import { useNavigation } from '../contexts/NavigationContext';
 import { formatDate as fmtDateG, formatDateTime as fmtDateTimeG, formatCurrency as fmtCurrencyG } from '../utils/formatters';
 import type { Client } from '../types/client.types';
@@ -40,6 +42,7 @@ import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import type { SavedPetition } from '../types/petitionEditor.types';
 import type { CloudFolder } from '../types/cloud.types';
 import type { ChatRoom } from '../types/chat.types';
+import { zc, zcStack } from '../styles/layers';
 
 // Assinaturas virou seção da aba Documentos (as duas liam a mesma
 // `signature_requests`) e Atendimento virou seção da aba Portal — eram dez abas
@@ -1644,6 +1647,17 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   // O wa.me exige o número com DDI. O link da aba Dados ia sem o 55 e não abria
   // a conversa — agora os dois pontos usam o mesmo helper.
   const whatsappLink = primaryPhone ? buildWhatsappLink(primaryPhone) : null;
+
+  /**
+   * Falar com o cliente é DENTRO do CRM — ver `utils/whatsappChat` e
+   * `utils/phoneDial`. Os dois devolvem `false` quando não há como assumir o
+   * clique aqui dentro (sem permissão, sem canal, sem discador na tela); aí o
+   * `href` externo, que continua no lugar, segue seu caminho.
+   */
+  const abrirConversa = (phone: string) =>
+    openWhatsAppChat({ phone, clientId: client.id, contactName: client.full_name });
+  const abrirDiscador = (phone: string) =>
+    openDialer({ phone, label: client.full_name });
   const rawCpfCnpj = client.cpf_cnpj || '';
   const formattedDoc = client.client_type === 'pessoa_fisica' ? formatCpf(rawCpfCnpj) : formatCnpj(rawCpfCnpj);
 
@@ -1853,14 +1867,20 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               {primaryPhone ? (
                 <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-600">
                   <Phone className="h-3.5 w-3.5 flex-shrink-0 text-slate-300" />
-                  <a href={`tel:${primaryPhone}`} className="tabular-nums transition hover:text-orange-600">{formattedPhone}</a>
+                  <a
+                    href={`tel:${primaryPhone}`}
+                    onClick={(e) => { if (abrirDiscador(primaryPhone)) e.preventDefault(); }}
+                    title="Ligar pelo discador do CRM"
+                    className="tabular-nums transition hover:text-orange-600"
+                  >{formattedPhone}</a>
                   {whatsappLink && (
                     <a
                       href={whatsappLink}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={(e) => { if (abrirConversa(primaryPhone)) e.preventDefault(); }}
                       className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 transition hover:bg-emerald-100"
-                      title="Abrir no WhatsApp"
+                      title="Conversar no WhatsApp"
                     >
                       <MessageCircle className="h-3 w-3" />
                     </a>
@@ -2114,7 +2134,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
 
       {/* ── Preview modal (full-size) ── */}
       {previewSelfie && createPortal(
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/90" onClick={() => setPreviewSelfie(null)}>
+        <div className={`fixed inset-0 ${zcStack[0]} flex items-center justify-center bg-black/90`} onClick={() => setPreviewSelfie(null)}>
           <div className="relative" style={{ maxHeight: '90vh', maxWidth: '380px', width: '100%', margin: '0 16px' }} onClick={(e) => e.stopPropagation()}>
 
             {/* Fechar */}
@@ -2180,7 +2200,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         };
 
         return createPortal(
-          <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4" onClick={() => setSelfiePickerOpen(false)}>
+          <div className={`fixed inset-0 ${zcStack[0]} flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4`} onClick={() => setSelfiePickerOpen(false)}>
             <div className="bg-[#f8f7f5] w-full sm:max-w-lg flex flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl shadow-2xl" style={{ maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
 
               {/* Handle bar (mobile) */}
@@ -2286,7 +2306,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       {/* ── Trilha de autorização da foto (uso judicial) ── */}
       {consentTrail && createPortal(
         <div
-          className="fixed inset-0 z-[210] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
+          className={`fixed inset-0 ${zc.MODAL_NESTED} flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4`}
           onClick={() => setConsentTrail(null)}
         >
           <div
@@ -2537,14 +2557,46 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                         ? <a href={`mailto:${client.email}`} className="break-all text-orange-600 hover:underline">{client.email}</a>
                         : undefined}
                     />
-                    <Field label="Telefone" value={client.phone ? formatPhone(client.phone) : undefined} mono />
-                    <Field label="Celular" value={client.mobile ? formatPhone(client.mobile) : undefined} mono />
+                    <Field
+                      label="Telefone"
+                      value={client.phone
+                        ? (
+                          <a
+                            href={`tel:${client.phone}`}
+                            onClick={(e) => { if (abrirDiscador(client.phone!)) e.preventDefault(); }}
+                            title="Ligar pelo discador do CRM"
+                            className="transition hover:text-orange-600"
+                          >{formatPhone(client.phone)}</a>
+                        )
+                        : undefined}
+                      mono
+                    />
+                    <Field
+                      label="Celular"
+                      value={client.mobile
+                        ? (
+                          <a
+                            href={`tel:${client.mobile}`}
+                            onClick={(e) => { if (abrirDiscador(client.mobile!)) e.preventDefault(); }}
+                            title="Ligar pelo discador do CRM"
+                            className="transition hover:text-orange-600"
+                          >{formatPhone(client.mobile)}</a>
+                        )
+                        : undefined}
+                      mono
+                    />
                     <Field
                       span
                       label="WhatsApp"
                       value={whatsappLink
                         ? (
-                          <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-emerald-600 hover:underline">
+                          <a
+                            href={whatsappLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => { if (abrirConversa(primaryPhone)) e.preventDefault(); }}
+                            className="inline-flex items-center gap-1.5 font-semibold text-emerald-600 hover:underline"
+                          >
                             <MessageCircle className="h-3.5 w-3.5" /> Abrir conversa
                           </a>
                         )

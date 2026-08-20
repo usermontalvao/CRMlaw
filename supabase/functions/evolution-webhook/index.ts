@@ -34,6 +34,7 @@ import { desembrulharMensagem, lerConteudoNativo } from '../_shared/wa-native-co
 import { classificarReabertura } from '../_shared/wa-reopen.ts';
 import { applyChannelState } from '../_shared/wa-channel-state.ts';
 import { patchIdentidade } from '../_shared/wa-identity.ts';
+import { ACTOR_CONTATO, ACTOR_ESCRITORIO, aplicarReacao, type WaReacao } from '../_shared/wa-reactions.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
@@ -224,6 +225,48 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
         }
       }
     }
+    return;
+  }
+
+  // ── Reação ("👍" numa mensagem que já está na thread) ──
+  // Como a revogação acima, isto não é conteúdo: é uma marca SOBRE outra
+  // mensagem. Tratada antes da leitura de tipo porque, seguindo adiante, viraria
+  // uma bolha solta escrita "Reação 👍" no meio da conversa — que foi como ela
+  // aparecia até aqui. A reação não bagunça o resto: não muda a prévia da lista,
+  // não conta como não lida e não reabre atendimento. No aplicativo ela também
+  // não faz nada disso.
+  const reagida = msg?.reactionMessage;
+  if (reagida?.key?.id) {
+    // Texto vazio é como o WhatsApp diz "tirei minha reação".
+    const emoji = (reagida.text ?? '').toString().trim();
+    const alvoId: string = reagida.key.id;
+    const { data: alvo } = await admin.from('whatsapp_messages')
+      .select('id, reactions')
+      .eq('evolution_message_id', alvoId)
+      .maybeSingle();
+    // Reação a uma mensagem que este CRM não tem (anterior à conexão do canal,
+    // ou já purgada): não há bolha para marcar, e inventar uma seria pior.
+    if (!alvo) return;
+
+    const atuais = (Array.isArray(alvo.reactions) ? alvo.reactions : []) as WaReacao[];
+    // Quem reagiu. Do lado de cá é o NÚMERO do escritório, não a pessoa: o
+    // WhatsApp guarda uma reação por conta, então dois atendentes reagindo pelo
+    // mesmo canal são uma reação só — a mesma conta que `evolution-send` grava.
+    const actor = fromMe ? ACTOR_ESCRITORIO : ACTOR_CONTATO;
+    // Eco do que o próprio CRM acabou de enviar: a linha já está lá, e com o
+    // nome de quem clicou. Regravar aqui só apagaria esse nome.
+    if (fromMe && atuais.some(r => r.actor === actor && r.emoji === emoji)) return;
+
+    const reactions = aplicarReacao(atuais, {
+      emoji,
+      from: fromMe ? 'out' : 'in',
+      actor,
+      name: fromMe ? null : (pushName || null),
+      at: m?.messageTimestamp
+        ? new Date(Number(m.messageTimestamp) * 1000).toISOString()
+        : new Date().toISOString(),
+    });
+    await admin.from('whatsapp_messages').update({ reactions }).eq('id', alvo.id);
     return;
   }
 

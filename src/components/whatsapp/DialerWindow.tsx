@@ -54,12 +54,18 @@ import { useDraggablePosition } from './callModals';
 import { defaultCallWidgetPosition } from './callWidgetPlacement';
 import { callHistoryIdentity } from './callHistory';
 import { initials } from './format';
+import { LAYER } from '../../styles/layers';
+import { setDialerReady } from '../../utils/phoneDial';
 
 /** Onde a janela guarda a posição — chave própria, separada da do painel da chamada. */
 const POSITION_KEY = 'wa-dialer-position';
 const CARD_SIZE = { width: 340, height: 470 };
-/** Acima do painel da chamada não: quem está falando tem prioridade na tela. */
-const Z_DIALER = 60;
+/**
+ * Acima dos modais de módulo — é o que faz dele uma janela e não um diálogo:
+ * consultar o processo ENQUANTO se liga é o caso comum. Acima do painel da
+ * chamada não: quem está falando tem prioridade na tela. Ver `styles/layers`.
+ */
+const Z_DIALER = LAYER.DIALER;
 
 /** Quantas linhas de resultado cabem sem a janela virar uma lista de rolagem infinita. */
 const MAX_RESULTOS = 6;
@@ -140,6 +146,16 @@ const Rosto: React.FC<{ alvo: Alvo; foto: string | null }> = ({ alvo, foto }) =>
 
 export const DialerWindow: React.FC = () => {
   const { open, minimized, draft, label } = useDialer();
+
+  // "Existe discador nesta tela?" — a resposta que os botões de telefone
+  // espalhados pelo CRM consultam ANTES de deixar o clique virar `tel:`.
+  // Ela mora aqui porque esta janela só é montada quem tem permissão de discar
+  // (ver `WaCallsHost`): estar na tela já é a permissão respondida.
+  useEffect(() => {
+    setDialerReady(true);
+    return () => setDialerReady(false);
+  }, []);
+
   const waCalls = useWaCalls();
   const cardRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);

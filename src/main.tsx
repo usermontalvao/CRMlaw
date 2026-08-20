@@ -179,11 +179,38 @@ if (currentPath !== '/' && !keepPath) {
 async function renderRoot() {
   let rootElement: React.ReactNode;
 
+  // DEV-ONLY: bancada do painel de conversas (?wainboxpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('wainboxpreview')) {
+    const { default: WhatsAppInboxPreview } = await import('./dev/WhatsAppInboxPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppInboxPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: bancada da abertura de conversa (?waopeningpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('waopeningpreview')) {
+    const { default: WhatsAppOpeningPreview } = await import('./dev/WhatsAppOpeningPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppOpeningPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: bancada da barra de mensagens (?chatlauncherpreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('chatlauncherpreview')) {
     const { default: ChatLauncherPreview } = await import('./dev/ChatLauncherPreview');
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <ChatLauncherPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: bancada do trilho de canais do painel (?chatrailpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('chatrailpreview')) {
+    const { default: ChatChannelRailPreview } = await import('./dev/ChatChannelRailPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <ChatChannelRailPreview />,
     );
     return;
   }

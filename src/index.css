@@ -3824,9 +3824,11 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   to   { opacity: 1; }
 }
 .wa-conv::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-  background: linear-gradient(to bottom, #f59e0b, #d97706);
-  border-radius: 0 2px 2px 0;
+  /* Pílula curta, e não uma tarja de ponta a ponta: a linha agora é um cartão
+     de cantos arredondados, e uma barra colada na borda entraria pelo canto. */
+  content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px;
+  background: #f27a23;
+  border-radius: 999px;
   transform: scaleY(0); transform-origin: center;
   transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -3843,6 +3845,88 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 }
 /* Superfície da conversa inspirada no WhatsApp: bege quente e textura quase
    imperceptível, para não competir com texto, alertas jurídicos ou mídia. */
+/* Chão liso da conversa embutida no widget (ver WhatsAppModule, `embedded`).
+   Mesmo creme do chat da equipe, para o painel flutuante ter UMA superfície só.
+   Os esqueletos de carregamento herdam o mesmo tratamento do bege. */
+.wa-thread-bg-liso { background-color: #faf9f7; }
+.wa-thread-bg-liso .wa-skel { background: rgba(255, 255, 255, 0.9); }
+.wa-thread-bg-liso .wa-skel-out { background: #fdeadb; }
+
+/* ── A conversa do widget é cartão, não cópia do aplicativo ────────────────
+   Trocado o chão, tudo que foi afinado PARA o bege sai de tom: o verde
+   #d9fdd3, o branco puro e o cinza da mídia foram escolhidos contra um fundo
+   texturizado que aqui não existe mais — e o rabinho é justamente o traço que
+   faz o painel parecer o WhatsApp colado dentro do CRM.
+
+   Então, dentro do widget e só dentro dele (o módulo cheio continua idêntico
+   ao aplicativo): o balão vira cartão de canto 14, o canto do lado de quem
+   falou é o que fecha o grupo — no lugar do rabinho —, e o enviado assume o
+   laranja da casa em TINTA CLARA. Clara, e não laranja cheio: o corpo do balão
+   está inteiro escrito em cinza-ardósia, e texto branco obrigaria a repintar
+   legenda, citação, player de áudio, marcas de entrega e reações, uma a uma.
+
+   Tudo aqui pende de `.wa-thread-bg-liso`, que só existe no modo embutido: uma
+   regra a mais aqui não tem como vazar para a tela cheia. */
+.wa-thread-bg-liso {
+  --wa-accent: #f27a23;
+  --wa-accent-forte: #b4530f;
+  --wa-audio-fill: #f27a23;
+}
+.wa-thread-bg-liso .wa-bubble {
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+.wa-thread-bg-liso .wa-bubble-out {
+  background: #fdeadb;
+  --wa-tail: #fdeadb;
+  box-shadow: 0 1px 2px rgba(159, 79, 15, 0.10);
+}
+.wa-thread-bg-liso .wa-bubble-incoming {
+  background: #fff;
+  --wa-tail: #fff;
+  /* O fio é sombra, e não `outline`: `outline` com raio ainda sai quadrado em
+     Safari antigo, e o iPhone do escritório é público daqui. */
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+/* Depois das duas variantes, como no bloco do bege: mesma especificidade, ganha
+   quem vem por último. O tom é o mesmo `rgba(0,0,0,.05)` de sempre, agora
+   resolvido sobre o creme #faf9f7 em vez do bege. */
+.wa-thread-bg-liso .wa-bubble-media-surface { background: #edecea; --wa-tail: #edecea; }
+.wa-thread-bg-liso .wa-media-frame { border-radius: 12px; }
+/* O canto que fecha. A classe do rabinho já marca exatamente o primeiro balão
+   de cada rajada, então o canto vem de graça — e o rabinho em si sai de cena. */
+.wa-thread-bg-liso .wa-bubble-tail-out { border-top-right-radius: 5px; }
+.wa-thread-bg-liso .wa-bubble-tail-in { border-top-left-radius: 5px; }
+.wa-thread-bg-liso .wa-bubble-tail-out::before,
+.wa-thread-bg-liso .wa-bubble-tail-in::before { content: none; }
+/* O realce de passagem TEM de repetir o fio do balão recebido: a regra genérica
+   `.group:hover .wa-bubble` reescreve o `box-shadow` inteiro, e sem estas duas
+   linhas o contorno do balão branco piscava fora a cada passada do mouse. */
+.wa-thread-bg-liso .group:hover .wa-bubble-incoming {
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.09);
+}
+.wa-thread-bg-liso .group:hover .wa-bubble-out {
+  box-shadow: 0 1px 2px rgba(159, 79, 15, 0.10), 0 2px 6px rgba(159, 79, 15, 0.14);
+}
+/* Divisor de data: o cinza-azulado do aplicativo fica esverdeado sobre creme.
+   Branco sobre o creme já é degrau suficiente. */
+.wa-thread-bg-liso .wa-date-chip {
+  background: #fff;
+  color: #6b7280;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+/* Os verdes de dentro do balão (citação, nome de quem enviou, player de áudio)
+   seguem o mesmo caminho do fundo. */
+.wa-thread-bg-liso .wa-quote { border-left-color: var(--wa-accent); }
+.wa-thread-bg-liso .wa-quote-name,
+.wa-thread-bg-liso .wa-sender-name { color: var(--wa-accent-forte); }
+.wa-thread-bg-liso .wa-audio-play { background: var(--wa-accent); }
+.wa-thread-bg-liso .wa-audio-play:hover { background: #e06b1f; }
+/* A ligação dentro da thread desenha o próprio balão (ela não é uma mensagem),
+   e o verde de "nossa" mora numa classe do Tailwind. Só o fundo é trocado aqui:
+   sombra e anel continuam sendo os dela. */
+.wa-thread-bg-liso .wa-call-bubble { background: #fdeadb; }
+
 .wa-thread-bg {
   background-color: #efeae2;
   background-image:
@@ -3911,6 +3995,26 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
    tamanho e no lugar deste botão.
    O que o desfoque desfocaria é o fundo CHAPADO do próprio balão (#fff ou
    #d9fdd3), então tirá-lo não muda nada a olho nu. */
+/* ── Pastilha de reação ───────────────────────────────────────────────────
+   Ela sai FORA da bolha, mordendo a borda de baixo, como no aplicativo — por
+   isso a margem negativa e o fundo próprio: sem fundo, a pastilha ficaria
+   metade sobre o balão e metade sobre o chão da conversa.
+
+   A cor de "esta é a nossa" vem de `--wa-accent`, e não do verde escrito à mão:
+   é a mesma variável que o widget troca para o laranja da casa, então a
+   pastilha acompanha as duas superfícies sem uma regra a mais (ver
+   `widget-superficie-propria-whatsapp`). O realce é um fio, e não um fundo
+   colorido: o emoji já é colorido, e tinta atrás dele vira sujeira. */
+.wa-reaction-chip {
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.10);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.wa-reaction-chip-acionavel:hover { transform: scale(1.08); }
+.wa-reaction-chip-minha {
+  box-shadow: 0 0 0 1.5px var(--wa-accent, #00a884), 0 1px 3px rgba(15, 23, 42, 0.10);
+}
+
 .wa-bubble-menu-trigger {
   background: rgba(255, 255, 255, 0.78);
   box-shadow: 0 1px 4px rgba(11, 20, 26, 0.08);
@@ -3955,6 +4059,14 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 @keyframes wa-send-ready {
   0%, 100% { box-shadow: 0 0 0 0 rgba(0, 168, 132, 0); }
   50%      { box-shadow: 0 0 0 5px rgba(0, 168, 132, 0.15); }
+}
+/* O mesmo pulso na cor da casa, para o botão de enviar do widget (ver
+   `btnEnviarCor` no WhatsAppModule): um halo verde em volta de um botão laranja
+   era o único lugar onde as duas paletas se encostavam. */
+.wa-send-ready-casa { animation-name: wa-send-ready-casa; }
+@keyframes wa-send-ready-casa {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(242, 122, 35, 0); }
+  50%      { box-shadow: 0 0 0 5px rgba(242, 122, 35, 0.18); }
 }
 
 /* ── Topo do painel de detalhes ──────────────────────────────────────

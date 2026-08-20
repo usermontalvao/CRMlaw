@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
+import { openWhatsAppChat } from '../utils/whatsappChat';
 import { processService } from '../services/process.service';
 import { clientService } from '../services/client.service';
 import { djenLocalService } from '../services/djenLocal.service';
@@ -2547,8 +2548,24 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
                                   <a
                                     href={`https://wa.me/55${phoneDigits}`}
                                     target="_blank" rel="noopener noreferrer"
-                                    onClick={e => e.stopPropagation()}
-                                    className="preview-field-action-btn" title="WhatsApp"
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      // A conversa abre no widget, sobre a tela
+                                      // em que a pessoa estava — a busca global
+                                      // atravessa o CRM inteiro e não deve
+                                      // levar ninguém para outra aba. Vínculo
+                                      // com o cadastro só quando o que está em
+                                      // prévia É um cliente.
+                                      if (openWhatsAppChat({
+                                        phone: phoneDigits,
+                                        clientId: previewItem.type === 'cliente' ? previewItem.id : null,
+                                        contactName: previewItem.title,
+                                      })) {
+                                        e.preventDefault();
+                                        onClose();
+                                      }
+                                    }}
+                                    className="preview-field-action-btn" title="Conversar no WhatsApp"
                                   >
                                     <MessageCircle style={{ width: 12, height: 12, color: '#22c55e' }} />
                                   </a>

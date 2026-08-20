@@ -64,7 +64,7 @@ PresenceText.displayName = 'PresenceText';
  */
 export const DateDivider: React.FC<{ label: string }> = ({ label }) => (
   <div className="sticky top-2 z-[2] flex justify-center my-3 pointer-events-none">
-    <span className="px-3 py-1.5 rounded-lg bg-[#f2f5f6] text-[#54656f] text-[10.5px] font-medium uppercase tracking-[0.03em] shadow-sm ring-1 ring-black/[0.03]">{label}</span>
+    <span className="wa-date-chip px-3 py-1.5 rounded-lg bg-[#f2f5f6] text-[#54656f] text-[10.5px] font-medium uppercase tracking-[0.03em] shadow-sm ring-1 ring-black/[0.03]">{label}</span>
   </div>
 );
 
@@ -89,6 +89,16 @@ export const ChannelDivider: React.FC<{ name: string; color: string }> = ({ name
     <span className="flex-1 h-px bg-black/[0.06]" />
   </div>
 );
+
+/**
+ * UMA forma para todas as etiquetas da linha.
+ *
+ * Antes cada uma tinha o seu tamanho, o seu raio e o seu peso — 9,5px em negrito
+ * aqui, 9,5px em semibold ali, `rounded` numa e fundo cheio na outra —, e três
+ * delas lado a lado pareciam três sistemas diferentes empilhados na mesma linha.
+ * Altura fixa é o que faz a fileira ficar reta quando quebra em duas linhas.
+ */
+const CHIP = 'inline-flex items-center gap-1 h-[18px] px-1.5 rounded-md text-[10px] font-semibold leading-none';
 
 // Item da lista de conversas (memoizado). Os sinais de SLA/transferência/abandono
 // são funções puras de `c` (mais a medição de tempo, que chega estável do
@@ -157,6 +167,16 @@ export const ConversationListItem: React.FC<{
   const sla = aiChip ? null : slaSignal(c, elapsedMinutes);
   const stage = inferFunnelStage(c.labels, funnelLabels);
   /**
+   * A ETAPA INICIAL NÃO É NOTÍCIA.
+   *
+   * Toda conversa nasce em "Novo" (ou no que o canal definir como etapa
+   * inicial), e a lista mostrava esse chip em TODAS as linhas: uma etiqueta
+   * repetida do topo ao fim da inbox, que não distingue nada de nada — só
+   * ocupa a fileira e empurra as etiquetas que importam para a segunda linha.
+   * A etapa só aparece depois que alguém a MOVE.
+   */
+  const etapaVisivel = stage && stage.stageKey !== (ch?.funnel_initial_stage || 'novo') ? stage : null;
+  /**
    * O que aconteceu por último NESTA conversa — e a hora em que aconteceu.
    *
    * Não é o mesmo que a última mensagem: a ligação também é a conversa (ver
@@ -200,14 +220,23 @@ export const ConversationListItem: React.FC<{
       title: `Sem nenhuma mensagem há ${autoCloseIdleLabel(info.idleMinutes)}.`,
     };
   }, [c, ch, aiChip]);
-  const urgentBorder = sla?.color === '#dc2626' ? 'border-l-[3px] border-l-red-400'
-    : sla?.color === '#d97706' ? 'border-l-[3px] border-l-amber-400'
-    : '';
+  /** Não lida pesa mais: nome em negrito, prévia mais escura, hora em âmbar. */
+  const naoLida = !c.is_blocked && c.unread_count > 0;
+  /**
+   * O SLA deixou de ser TARJA na borda da linha.
+   *
+   * Numa inbox real quase toda conversa tem alguma espera, e o resultado era
+   * uma coluna listrada de vermelho e âmbar de cima a baixo — o alarme ligado
+   * o tempo todo, que é o mesmo que alarme nenhum, e a única cor forte da tela
+   * gasta no que é rotina. A espera continua escrita, na fileira de etiquetas,
+   * com a mesma forma das outras: relógio, cor e o tempo por extenso. A barra
+   * da esquerda passou a significar UMA coisa só — a conversa aberta.
+   */
   return (
     <button onClick={() => onSelect(c.id)}
       // Identifica a linha para o teclado da inbox trazê-la ao campo de visão.
       data-conv-id={c.id}
-      className={`wa-conv w-full flex items-center gap-3 px-4 py-3 text-left border-b border-[#f1f0ec] transition ${urgentBorder} ${active ? 'wa-conv-active bg-amber-50' : 'hover:bg-[#f9f8f6]'} ${c.is_blocked ? 'opacity-60' : ''} ${archived ? 'wa-conv-archived' : ''} ${sweep === 'closed' ? 'wa-conv-saindo' : ''} ${sweep === 'transferred' ? 'wa-conv-transferindo' : ''}`}>
+      className={`wa-conv w-[calc(100%-12px)] mx-1.5 rounded-xl flex items-start gap-3 pl-3 pr-2.5 py-2.5 text-left transition-colors duration-150 ${active ? 'wa-conv-active bg-[#fff3e6]' : 'hover:bg-[#f5f4f1]'} ${c.is_blocked ? 'opacity-60' : ''} ${archived ? 'wa-conv-archived' : ''} ${sweep === 'closed' ? 'wa-conv-saindo' : ''} ${sweep === 'transferred' ? 'wa-conv-transferindo' : ''}`}>
       {/* A faixa só existe no meio segundo em que passa: a inbox de um
           escritório grande tem centenas de linhas, e nenhuma delas precisa
           carregar este elemento à toa. */}
@@ -219,13 +248,15 @@ export const ConversationListItem: React.FC<{
           </span>
         </span>
       )}
-      <div className="relative flex-shrink-0">
+      <div className="relative flex-shrink-0 mt-0.5">
         <Avatar url={c.contact_avatar_url} name={conversationName(c)} phone={c.contact_phone} size={40} />
-        {ch && <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ background: ch.color || '#ea6c00' }} title={ch.name || ch.instance_name} />}
+        {/* Com UM canal só, a bolinha era a mesma cor em todas as linhas: um
+            ponto laranja por conversa, sem nada a distinguir. */}
+        {ch && showChannelName && <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={{ background: ch.color || '#ea6c00' }} title={ch.name || ch.instance_name} />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[13.5px] font-semibold text-slate-800 truncate flex items-center gap-1">
+          <span className={`text-[13.5px] truncate flex items-center gap-1 tracking-[-0.006em] ${naoLida ? 'font-bold text-[#16181c]' : 'font-semibold text-[#1f2328]'}`}>
             {c.is_blocked && <Ban size={12} className="text-red-500 flex-shrink-0" />}
             <span className="truncate">{privateMode ? maskName(conversationName(c)) : conversationName(c)}</span>
           </span>
@@ -240,11 +271,7 @@ export const ConversationListItem: React.FC<{
               </span>
             )}
             {muted && <BellOff size={11} className="text-slate-400 flex-shrink-0" />}
-            {sla
-              ? <span className="inline-flex items-center gap-0.5 text-[9.5px] font-bold" style={{ color: sla.color }}>
-                  <Clock size={9} />{sla.label}
-                </span>
-              : <span className="text-[10.5px] text-slate-400">{formatTime(previa.at)}</span>}
+            <span className={`text-[11px] tabular-nums ${naoLida ? 'font-semibold text-[#b45309]' : 'text-[#9aa0a6]'}`}>{formatTime(previa.at)}</span>
           </span>
         </div>
         <div className="flex items-center justify-between gap-2 mt-0.5">
@@ -255,7 +282,7 @@ export const ConversationListItem: React.FC<{
               <span className="truncate text-slate-500">{privateMode ? '••••••••' : draftPreview}</span>
             </span>
           ) : (
-            <span className={`text-[12px] truncate ${previa.attention ? 'text-red-600 font-semibold' : 'text-slate-500'}`}>
+            <span className={`text-[12.5px] truncate ${previa.attention ? 'text-[#c5221f] font-semibold' : naoLida ? 'text-[#3c4043] font-medium' : 'text-[#5f6368]'}`}>
               {/* Prévia de uma linha: as marcas do WhatsApp saem do caminho.
                   A chamada não passa por `waPlainText` — a frase é nossa, não
                   tem asterisco de negrito para limpar. O modo privado esconde o
@@ -269,17 +296,31 @@ export const ConversationListItem: React.FC<{
             </span>
           )}
           {!c.is_blocked && c.unread_count > 0 && (
-            <span className="wa-badge-pop wa-badge-glow flex-shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center">{c.unread_count}</span>
+            <span className="wa-badge-pop wa-badge-glow flex-shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-[#f27a23] text-white text-[10px] font-bold tabular-nums flex items-center justify-center">{c.unread_count}</span>
           )}
         </div>
-        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+        <div className="flex items-center gap-1 mt-1.5 flex-wrap empty:mt-0">
+          {/* Primeiro da fileira depois do erro de envio: é o relógio da
+              pessoa que está esperando. */}
+          {sla && (
+            <span
+              className={CHIP}
+              style={{ background: `${sla.color}14`, color: sla.color }}
+              title={`Esperando resposta: ${sla.label.replace('parada há ', '')} (contado em horário útil)`}
+            >
+              {/* Só o tempo: "parada há" é a mesma palavra em toda linha que
+                  tem o chip, e a fileira precisa caber numa linha só. A frase
+                  inteira continua na dica do mouse. */}
+              <Clock size={10} />{sla.label.replace('parada há ', '')}
+            </span>
+          )}
           {/* Primeiro de todos os badges, e o único em vermelho cheio: uma
               mensagem que não saiu é a coisa mais urgente que esta linha pode
               ter a dizer. */}
           {failedSends > 0 && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-red-600 text-white"
+            <span className={`${CHIP} bg-[#d93025] text-white`}
               title="Toque na conversa para tentar de novo ou descartar">
-              <AlertTriangle size={9} />
+              <AlertTriangle size={10} />
               {failedSends === 1 ? 'Não enviada' : `${failedSends} não enviadas`}
             </span>
           )}
@@ -287,14 +328,14 @@ export const ConversationListItem: React.FC<{
               arrasto no quadro, pela etiqueta ou por automação, e é sempre uma
               decisão de gente. O ponto colorido é a marca da etapa: é o que a
               distingue, a olho nu, do chip de documentos ao lado. */}
-          {stage && (
+          {etapaVisivel && (
             <span
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold"
-              style={{ background: `${stage.color}22`, color: stage.color }}
-              title={`Etapa do funil: ${stage.stageLabel}`}
+              className={CHIP}
+              style={{ background: `${etapaVisivel.color}16`, color: etapaVisivel.color }}
+              title={`Etapa do funil: ${etapaVisivel.stageLabel}`}
             >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: stage.color }} />
-              {stage.stageLabel}
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: etapaVisivel.color }} />
+              {etapaVisivel.stageLabel}
             </span>
           )}
           {/* ESTADO da solicitação de documentos — fato, lido de
@@ -308,14 +349,14 @@ export const ConversationListItem: React.FC<{
               etapa. */}
           {ds && (
             <span
-              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${
-                ds === 'awaiting' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+              className={`${CHIP} ${
+                ds === 'awaiting' ? 'bg-[#fdf1e0] text-[#a15c07]' : 'bg-[#e7f5ec] text-[#137333]'
               }`}
               title={ds === 'awaiting'
                 ? 'Há solicitação de documentos pendente para este cliente'
                 : 'Os documentos solicitados já chegaram — a etapa do funil continua onde estava'}
             >
-              <FileText size={9} /> {ds === 'awaiting' ? 'Docs pendentes' : 'Docs prontos'}
+              <FileText size={10} /> {ds === 'awaiting' ? 'Docs pendentes' : 'Docs prontos'}
             </span>
           )}
           {/* Quanto falta para esta conversa encerrar sozinha. Fica na lista
@@ -325,12 +366,12 @@ export const ConversationListItem: React.FC<{
               de responder ou de tirar a conversa da regra. */}
           {autoClose && (
             <span
-              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] font-semibold ${
-                autoClose.urgent ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'
+              className={`${CHIP} ${
+                autoClose.urgent ? 'bg-[#fdf1e0] text-[#a15c07]' : 'bg-[#f1f0ec] text-[#5f6368]'
               }`}
               title={autoClose.title}
             >
-              <Timer size={9} />
+              <Timer size={10} />
               {autoClose.label}
             </span>
           )}

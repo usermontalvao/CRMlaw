@@ -3,10 +3,15 @@
  *
  * action 'send' (padrão): { conversation_id?, phone?, channel_id?, type?, text?,
  *   storage_path?, mime_type?, file_name?, reply_to_id?, as_gif? }
+ *   — type 'sticker' é o caminho do GIF: vira figurinha ANIMADA, porque a
+ *   Evolution 2.3.7 não deixa passar `gifPlayback` em vídeo.
  * action 'edit':  { action:'edit', message_id, text }
  * action 'delete': { action:'delete', message_id, scope:'me'|'everyone' }
  *   — 'me' apaga só do CRM (soft delete); 'everyone' revoga também no aparelho
  *   do contato via /chat/deleteMessageForEveryone e só então marca aqui.
+ * action 'react': { action:'react', message_id, emoji }
+ *   — emoji vazio DESFAZ a reação. Sai para o aparelho do contato pelo
+ *   /message/sendReaction e só então entra na coluna `reactions`.
  * action 'block' | 'unblock': { action, conversation_id, reason }
  *   — bloqueia no WhatsApp via /chat/updateBlockStatus pelo remote_jid, marca a
  *   conversa, registra auditoria + resposta da Evolution (wa_response) e devolve
@@ -17,6 +22,7 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { slimWaRaw } from '../_shared/wa-raw.ts';
+import { ACTOR_ESCRITORIO, aplicarReacao, type WaReacao } from '../_shared/wa-reactions.ts';
 import {
   CHANNEL_FLAP_GRACE_MS,
   applyChannelState,
@@ -232,6 +238,10 @@ Deno.serve(async (req: Request) => {
     if (!user) return json({ error: 'Não autenticado' }, 401);
     return await handleDelete(admin, base, apikey, user, body);
   }
+  if (body?.action === 'react') {
+    if (!user) return json({ error: 'Não autenticado' }, 401);
+    return await handleReact(admin, base, apikey, user, body);
+  }
   if (body?.action === 'block' || body?.action === 'unblock') {
     if (!user) return json({ error: 'Não autenticado' }, 401);
     return await handleBlock(admin, base, apikey, user, body);
@@ -250,9 +260,13 @@ Deno.serve(async (req: Request) => {
   let wasClosed = false;
   let hadOwner = false;
 
+  // Conversa em que o contato JÁ escreveu: o `remote_jid` dela veio do próprio
+  // WhatsApp, e é isso que dispensa a consulta de existência lá embaixo.
+  let destinoJaProvado = false;
+
   if (conversationId) {
     const { data: conv } = await admin.from('whatsapp_conversations')
-      .select('contact_phone, instance_id, remote_jid, is_blocked, status, assigned_user_id')
+      .select('contact_phone, instance_id, remote_jid, is_blocked, status, assigned_user_id, last_customer_message_at')
       .eq('id', conversationId).maybeSingle();
     if (!conv) return json({ error: 'Conversa não encontrada' }, 404);
     if (conv.is_blocked) return json({ error: 'Contato bloqueado. Desbloqueie para enviar mensagens.' }, 409);
@@ -260,6 +274,7 @@ Deno.serve(async (req: Request) => {
     instanceId = conv.instance_id;
     wasClosed = conv.status === 'closed';
     hadOwner = !!conv.assigned_user_id;
+    destinoJaProvado = !!conv.remote_jid && !!conv.last_customer_message_at;
   } else {
     const phone = (body?.phone || '').toString().replace(/\D/g, '');
     if (!phone) return json({ error: 'Informe conversation_id ou phone' }, 400);
@@ -288,7 +303,15 @@ Deno.serve(async (req: Request) => {
 
   // Resolve o JID correto pela Evolution (corrige 9º dígito; confirma existência).
   // Crucial em nova conversa por telefone digitado — onde o número vai cru.
-  const resolved = await resolveSendJid(base, apikey, channel.instance_name, sendTarget);
+  //
+  // E DISPENSÁVEL quando o contato já escreveu nesta conversa: o `remote_jid`
+  // dali foi entregue pelo próprio WhatsApp, então perguntar "esse número
+  // existe?" é uma viagem de ida e volta até o servidor da Evolution (e dali até
+  // o WhatsApp) para confirmar o que já está provado. Era isso em TODA mensagem
+  // enviada — texto, áudio, figurinha —, somando no relógio de quem clicou.
+  const resolved = destinoJaProvado
+    ? { jid: sendTarget, exists: true }
+    : await resolveSendJid(base, apikey, channel.instance_name, sendTarget);
   if (!resolved.exists) {
     return json({ error: `O número ${prettyTarget(sendTarget)} não possui WhatsApp ativo. Confira se está correto.` }, 422);
   }
@@ -358,6 +381,42 @@ Deno.serve(async (req: Request) => {
     contactText = lista
       .map((c: any) => `${c.fullName}\n${c.phoneNumber}`)
       .join('\n\n');
+  } else if (type === 'sticker') {
+    // ── GIF: figurinha animada, e não vídeo ──────────────────────────────
+    //
+    // O caminho natural seria `sendMedia` com `mediatype:'video'` e
+    // `gifPlayback:true`, que é o que o próprio WhatsApp manda. A Evolution
+    // 2.3.7 não deixa: em `prepareMediaMessage` ela escreve
+    // `gifPlayback = false` para TODO vídeo, e o campo nem existe no DTO. Era
+    // por isso que o GIF chegava parado, com botão de play — a marca era
+    // descartada no servidor, sem erro nenhum.
+    //
+    // O que sobra na versão dela é a figurinha: `/message/sendSticker`
+    // converte para webp ANIMADO e ainda liga o `gifPlayback` do lado de lá.
+    // Do outro lado a animação roda em laço, muda e sem controles — que é o
+    // que se espera de um GIF.
+    //
+    // Duas exigências, e as duas são silenciosas quando faltam:
+    //  · tem de ser URL, não base64. A Evolution decide se anima olhando o
+    //    NOME do arquivo (`.gif`), e base64 não tem nome — viraria figurinha
+    //    de um quadro só.
+    //  · a URL assinada é curta de vida, mas só precisa durar o download que
+    //    a Evolution faz agora; ela reencoda e sobe o arquivo dela.
+    //  · e o arquivo NÃO passa por aqui. Como quem baixa é a Evolution, este
+    //    ramo não lê o objeto do storage nem o converte para base64 — era um
+    //    megabyte subindo e descendo dentro da função só para ser descartado no
+    //    fim, e no relógio de quem clicou isso é o GIF demorando a sair. O
+    //    tamanho vem do cliente, que acabou de subir o arquivo.
+    if (!storagePath) return json({ error: 'storage_path obrigatório para mídia' }, 400);
+    const assinada = await admin.storage.from(MEDIA_BUCKET)
+      .createSignedUrl(storagePath, 300);
+    const url = assinada?.data?.signedUrl;
+    if (!url) return json({ error: 'Não foi possível preparar o GIF para envio.' }, 500);
+    const tamanhoInformado = Number(body?.media_size);
+    mediaSize = Number.isFinite(tamanhoInformado) && tamanhoInformado > 0 ? tamanhoInformado : null;
+    if (!mediaMime) mediaMime = 'image/gif';
+    endpoint = `${base}/message/sendSticker/${inst}`;
+    reqBody = { number: sendTarget, sticker: url, ...(quoted ? { quoted } : {}) };
   } else {
     if (!storagePath) return json({ error: 'storage_path obrigatório para mídia' }, 400);
     const dl = await admin.storage.from(MEDIA_BUCKET).download(storagePath);
@@ -432,7 +491,7 @@ Deno.serve(async (req: Request) => {
     status: 'sent',
     // Marca o que saiu como GIF para a NOSSA bolha também tocar em laço, mudo e
     // sem controles — igual ao que já fazemos com o GIF que chega.
-    is_animated: asGif && type === 'video',
+    is_animated: asGif && (type === 'video' || type === 'sticker'),
     sender_user_id: user?.id ?? (body?.sender_user_id ?? null),
     reply_to_id: replyToId,
     raw: evoRaw,
@@ -577,6 +636,87 @@ async function refreshConversationPreview(admin: any, conversationId: string) {
   await admin.from('whatsapp_conversations')
     .update({ last_message_preview: 'Mensagem apagada' })
     .eq('id', conversationId);
+}
+
+/**
+ * Reage a uma mensagem — ou desfaz a reação, quando `emoji` vem vazio.
+ *
+ * Duas coisas moram aqui, e a ordem entre elas importa:
+ *
+ * 1. A reação SAI. Não é uma marca interna do CRM: no aplicativo o contato vê
+ *    o coração aparecer na mensagem dele. Por isso a Evolution vem primeiro, e
+ *    a coluna só é escrita depois que ela aceitou — reação que aparece na tela
+ *    do escritório sem ter chegado no aparelho é a mesma mentira do "apagar
+ *    para todos" que não revogou.
+ *
+ * 2. Quem grava é a MESMA regra que o webhook usa (`aplicarReacao`): uma reação
+ *    por ator, e emoji vazio remove. O ator daqui é o ESCRITÓRIO, não a pessoa
+ *    (ver `ACTOR_ESCRITORIO`): o WhatsApp guarda uma reação por conta, e quem
+ *    clicou fica registrado em `name`.
+ */
+async function handleReact(admin: any, base: string, apikey: string, user: any, body: any) {
+  const messageId: string | null = body?.message_id || null;
+  const emoji = (body?.emoji ?? '').toString().trim();
+  if (!messageId) return json({ error: 'message_id obrigatório' }, 400);
+  // Um emoji é curto por natureza; o limite existe para o campo não virar porta
+  // de entrada de texto arbitrário na coluna.
+  if (emoji.length > 16) return json({ error: 'Reação inválida' }, 400);
+
+  const { data: msg } = await admin.from('whatsapp_messages')
+    .select('id, raw, reactions, conversation_id, deleted_at, evolution_message_id, direction')
+    .eq('id', messageId).maybeSingle();
+  if (!msg) return json({ error: 'Mensagem não encontrada' }, 404);
+  if (msg.deleted_at) return json({ error: 'Não dá para reagir a uma mensagem apagada.' }, 400);
+
+  const { data: conv } = await admin.from('whatsapp_conversations')
+    .select('remote_jid, instance_id, is_blocked').eq('id', msg.conversation_id).maybeSingle();
+  if (conv?.is_blocked) return json({ error: 'Contato bloqueado.' }, 409);
+  const { data: channel } = await admin.from('whatsapp_instances')
+    .select('instance_name').eq('id', conv?.instance_id).maybeSingle();
+  if (!channel?.instance_name) return json({ error: 'Canal não encontrado' }, 400);
+
+  // A chave sai do `raw` quando ele está lá; quando não está, é REMONTADA.
+  // Os três campos que o WhatsApp precisa já existem em colunas próprias, e é
+  // isso que salva as mensagens antigas: a rotina de enxugar o `raw` apaga o
+  // payload de conversas velhas, e sem esta reconstrução reagir a uma mensagem
+  // de um mês atrás seria um erro de "mensagem sem chave" sem conserto possível.
+  const rkey = msg.raw?.key?.id
+    ? msg.raw.key
+    : msg.evolution_message_id
+      ? { id: msg.evolution_message_id, remoteJid: conv?.remote_jid, fromMe: msg.direction === 'out' }
+      : null;
+  if (!rkey?.id) return json({ error: 'Mensagem sem chave da Evolution — não é possível reagir.' }, 400);
+
+  const remoteJid = rkey.remoteJid || conv?.remote_jid;
+  try {
+    const res = await fetch(`${base}/message/sendReaction/${encodeURIComponent(channel.instance_name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey },
+      body: JSON.stringify({
+        key: { id: rkey.id, remoteJid, fromMe: rkey.fromMe === true },
+        // String vazia é como o WhatsApp representa "tirei minha reação".
+        reaction: emoji,
+      }),
+      signal: AbortSignal.timeout(EVO_TIMEOUT_MS),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) return json({ error: evoError(out, `Evolution retornou ${res.status}`) }, 502);
+  } catch (err) {
+    return json({ error: evoNetworkError(err) }, 502);
+  }
+
+  const { data: nome } = await admin.from('profiles')
+    .select('name').eq('id', user.id).maybeSingle();
+  const reactions: WaReacao[] = aplicarReacao(msg.reactions as WaReacao[] | null, {
+    emoji,
+    from: 'out',
+    actor: ACTOR_ESCRITORIO,
+    name: nome?.name || null,
+    at: new Date().toISOString(),
+  });
+  await admin.from('whatsapp_messages').update({ reactions }).eq('id', messageId);
+
+  return json({ ok: true, message_id: messageId, reactions });
 }
 
 async function handleEdit(admin: any, base: string, apikey: string, body: any) {

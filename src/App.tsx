@@ -105,6 +105,7 @@ const ChatFloatingWidget = lazy(() => import('./components/ChatFloatingWidget'))
 import { usePresence } from './hooks/usePresence';
 import { useWhatsAppNotifications } from './hooks/useWhatsAppNotifications';
 import { WhatsAppNotifyHost } from './components/whatsapp/WhatsAppNotifyHost';
+import { WhatsAppChatOpener } from './components/whatsapp/WhatsAppChatOpener';
 import { WaCallsHost } from './components/whatsapp/WaCallsHost';
 import { DialerLauncher } from './components/whatsapp/DialerLauncher';
 import { useAuth } from './contexts/AuthContext';
@@ -134,6 +135,7 @@ import { isEditorAppLocation } from './utils/editorAppRoute';
 import { settingsService, type ModulesConfig, FLOATING_WINDOW_MODULE_DEFAULTS } from './services/settings.service';
 import { useToastContext } from './contexts/ToastContext';
 import { clearBirthdayCelebrationSession } from './utils/birthday';
+import { LAYER, zc } from './styles/layers';
 
 type ClientSearchResult = Awaited<ReturnType<typeof clientService.searchClients>>[number];
 type CloudHeaderActionDetail = {
@@ -610,7 +612,7 @@ const AccessDeniedScreen: React.FC<{
 
     {/* â”€â”€ Modal de solicitação â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
     {showModal && (
-      <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
+      <div className={`fixed inset-0 ${zc.MODAL_NESTED} flex items-center justify-center p-4`} onClick={() => setShowModal(false)}>
         <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-md" />
         <div
           className="relative bg-[#f8f7f5] rounded-3xl shadow-2xl w-full max-w-[400px] overflow-hidden"
@@ -2020,7 +2022,7 @@ useEffect(() => {
   // "abrindo documento". Fica no ar até o documento terminar de carregar.
   const editorDocLoader = (
     <div
-      className="fixed inset-0 z-[10050] flex flex-col items-center justify-center overflow-hidden"
+      className={`fixed inset-0 ${zc.MODAL_NESTED} flex flex-col items-center justify-center overflow-hidden`}
       style={{ background: 'radial-gradient(ellipse at center, #14110d 0%, #0a0806 72%)' }}
     >
       <style>{`
@@ -2219,7 +2221,7 @@ useEffect(() => {
       <div className="min-h-screen overflow-x-hidden bg-gray-100 dark:bg-black transition-colors duration-300">
         {/* Overlay de LOGIN "” Epic Animation (o logout tem o seu próprio, abaixo) */}
         {loggingIn && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-black">
+          <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center overflow-hidden bg-black`}>
             {/* Animated gradient background */}
             <div className="absolute inset-0">
               <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(251,146,60,0.12)_0%,transparent_70%)]" />
@@ -3007,6 +3009,7 @@ useEffect(() => {
               <div className="min-h-0 flex-col" style={{ display: activeModule === 'whatsapp' ? 'flex' : 'none', height: '100%' }}>
                 <WhatsAppModule
                   openConversationId={moduleParams['whatsapp'] ? JSON.parse(moduleParams['whatsapp']).conversationId : undefined}
+                  openConversationDraft={moduleParams['whatsapp'] ? JSON.parse(moduleParams['whatsapp']).draft : undefined}
                   onParamConsumed={() => clearModuleParams('whatsapp')}
                   onConvertLead={handleConvertLead}
                 />
@@ -3110,6 +3113,27 @@ useEffect(() => {
         }}
       />
 
+      {/* "Conversar no WhatsApp" clicado em qualquer módulo: a conversa abre
+          AQUI DENTRO, na mesma lógica de tela do aviso acima — dentro do
+          WhatsApp (e do Chat) navega, no resto sobe o widget por cima. O que
+          esses botões faziam antes era mandar para o wa.me, e a conversa
+          acontecia fora do CRM. */}
+      {/* Em janela de módulo (standalone) o widget existe mas não aparece — quem
+          assumisse o clique ali abriria a conversa numa tela invisível. Sem o
+          opener montado, `canOpenWhatsAppChat()` responde não e os botões
+          seguem pelo `wa.me`, que é o que sempre fizeram. */}
+      {!isStandaloneModule && (
+      <WhatsAppChatOpener
+        onOpen={(conversationId, draft) => {
+          if (activeModule === 'whatsapp' || activeModule === 'chat') {
+            navigateTo('whatsapp', draft ? { conversationId, draft } : { conversationId });
+            return;
+          }
+          events.emit(SYSTEM_EVENTS.CHAT_WIDGET_OPEN_WHATSAPP, { conversationId, draft });
+        }}
+      />
+      )}
+
       {/* Chamadas de voz (WaCalls): o convite de chamada recebida precisa
           aparecer em QUALQUER tela do CRM, não só na inbox. */}
       <WaCallsHost onOpenConversation={(conversationId) => navigateTo('whatsapp', { conversationId })} />
@@ -3124,7 +3148,7 @@ useEffect(() => {
       {/* Context menu — abrir o módulo como janela ou em nova guia */}
       {sidebarCtx && (
         <div
-          style={{ position: 'fixed', top: sidebarCtx.y, left: sidebarCtx.x, zIndex: 99999 }}
+          style={{ position: 'fixed', top: sidebarCtx.y, left: sidebarCtx.x, zIndex: LAYER.POPOVER }}
           className="min-w-[180px] overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
           onMouseDown={(e) => e.stopPropagation()}
         >

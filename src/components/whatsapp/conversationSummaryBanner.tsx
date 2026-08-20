@@ -10,6 +10,8 @@ import { dueInfo, lastSeenLabel, fmtDateTime } from './format';
 import { PROC_STATUS, PROC_AREA, REQ_STATUS_BADGE, REQ_STATUS_LABEL } from './clientPanels';
 import type { WaOpenWorkspaceFn } from './types';
 import type { Requirement } from '../../types/requirement.types';
+import { LAYER } from '../../styles/layers';
+import { useModalLayer } from '../../styles/modalLayer';
 
 const HD_WIDTH_PX: Record<string, number> = { 'w-72': 288, 'w-80': 320, 'w-96': 384 };
 
@@ -18,6 +20,9 @@ const HD_WIDTH_PX: Record<string, number> = { 'w-72': 288, 'w-80': 320, 'w-96': 
 // do widget flutuante (abria "abaixo do widget"); ele se ancora ao gatilho,
 // fixa a largura ao viewport e inverte para cima quando não há espaço abaixo.
 const HoverDetail: React.FC<{ trigger: React.ReactNode; width?: string; children: React.ReactNode }> = ({ trigger, width = 'w-72', children }) => {
+  // Sai em portal para o `body`, então precisa da faixa do widget quando a
+  // conversa está dentro dele. Ver `styles/modalLayer`.
+  const camada = useModalLayer(LAYER.POPOVER);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const closeTimer = useRef<number | null>(null);
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; maxH: number } | null>(null);
@@ -56,8 +61,8 @@ const HoverDetail: React.FC<{ trigger: React.ReactNode; width?: string; children
       {trigger}
       {pos && createPortal(
         <span onMouseEnter={cancelClose} onMouseLeave={scheduleClose}
-          className={`fixed z-[10000] ${width} max-w-[calc(100vw-16px)] text-[12px]`}
-          style={{ left: pos.left, top: pos.top, bottom: pos.bottom }}>
+          className={`fixed ${width} max-w-[calc(100vw-16px)] text-[12px]`}
+          style={{ left: pos.left, top: pos.top, bottom: pos.bottom, zIndex: camada }}>
           <span className="block rounded-xl border border-[#e7e5df] bg-white p-3 shadow-xl text-slate-600 normal-case tracking-normal font-normal overflow-auto"
             style={{ maxHeight: pos.maxH }}>
             {children}

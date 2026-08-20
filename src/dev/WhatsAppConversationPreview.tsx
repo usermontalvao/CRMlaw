@@ -3,6 +3,7 @@
 // sem depender de autenticação ou de dados de clientes.
 import React, { useEffect, useState } from 'react';
 import { MessageBubble } from '../components/whatsapp/messageBubble';
+import { EmojiPicker } from '../components/whatsapp/emojiPicker';
 import { DateDivider } from '../components/whatsapp/conversationListItem';
 import { DockedDetailsToggle } from '../components/whatsapp/DockedDetailsToggle';
 import { useResizableLayout } from '../components/whatsapp/hooks/useResizableLayout';
@@ -20,7 +21,7 @@ import { AiHandoffSummaryCard, AiHandoffSummaryStrip, useAiHandoffSummary } from
 import { ToastProvider } from '../contexts/ToastContext';
 import type { FunnelLabel } from '../services/settings.service';
 import type { WhatsAppAiConversationState, WhatsAppConversation, WhatsAppMessage } from '../types/whatsapp.types';
-import { ArrowRightLeft, Download, History, MessageSquare, Mic, MoreVertical, Phone, Plus, Search, Sparkles, Video } from 'lucide-react';
+import { ArrowRightLeft, Download, History, MessageSquare, Mic, MoreVertical, Phone, Plus, Search, Smile, Sparkles, Video } from 'lucide-react';
 
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 const PREVIEW_IMAGE = `data:image/svg+xml,${encodeURIComponent(`
@@ -80,6 +81,9 @@ const SECOND_OUT = message({
   wa_timestamp: '2026-08-04T15:10:00.000Z',
   content: 'Depois do almoço vou acessar novamente e lhe aviso por aqui.',
   sender_user_id: 'pedro',
+  // Reação do CONTATO na nossa mensagem: a pastilha tem de caber na bolha
+  // verde sem empurrar a hora nem a marca de entrega.
+  reactions: [{ emoji: '👍', from: 'in', actor: 'contact', at: '2026-08-04T15:10:20.000Z' }],
 });
 
 const OK = message({
@@ -88,6 +92,12 @@ const OK = message({
   type: 'text',
   wa_timestamp: '2026-08-04T15:10:30.000Z',
   content: 'Ok, doutor. Obrigada!',
+  // Duas pastilhas na mesma bolha, uma delas NOSSA (fio na cor da casa): é o
+  // caso em que a linha de reações precisa quebrar bem em tela estreita.
+  reactions: [
+    { emoji: '❤️', from: 'out', actor: 'office', name: 'Dr. Pedro', at: '2026-08-04T15:11:00.000Z' },
+    { emoji: '🙏', from: 'in', actor: 'contact', at: '2026-08-04T15:11:10.000Z' },
+  ],
 });
 
 // ── Tipos nativos do WhatsApp que o painel só recebe ──
@@ -468,6 +478,9 @@ const bubbleActions = {
   onCancel: noop,
   onCreateDeadline: noop,
   onCreateTask: noop,
+  // Como o resto da bancada, a reação aqui não vai a lugar nenhum: o que se
+  // confere neste arquivo é o desenho (pastilha, barra rápida, catálogo).
+  onReact: noop,
 };
 
 /** O Provider precisa envolver ESTE componente: o resumo da IA é lido por um
@@ -482,6 +495,15 @@ export default function WhatsAppConversationPreview() {
 
 function PreviewBench() {
   const [detailsCollapsed, setDetailsCollapsed] = useState(false);
+  const [emojiAberto, setEmojiAberto] = useState(false);
+  const campoRef = React.useRef<HTMLTextAreaElement>(null);
+  // Bancada das DUAS superfícies. O módulo cheio segue no bege com rabiscos; o
+  // widget usa o creme liso do painel. São os mesmos componentes de verdade nos
+  // dois casos — o que muda é a classe do chão, e é exatamente aí que moram as
+  // regras de balão, rabinho e divisor do modo embutido.
+  const [superficie, setSuperficie] = useState<'modulo' | 'widget'>('widget');
+  // Espelha `molduraBg` do WhatsAppModule: a moldura acompanha o chão.
+  const molduraBg = superficie === 'widget' ? 'bg-[#fdfcfb]' : 'bg-[#f0f2f5]';
   const { panelWidth, startPanelResize } = useResizableLayout();
   const [previewImageReady, setPreviewImageReady] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -515,9 +537,19 @@ function PreviewBench() {
 
   return (
     <div className="min-h-screen bg-slate-200 p-4 lg:p-8">
+      <div className="mx-auto mb-3 flex max-w-[1180px] items-center gap-2">
+        {(['widget', 'modulo'] as const).map(op => (
+          <button key={op} onClick={() => setSuperficie(op)}
+            className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
+              superficie === op ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'
+            }`}>
+            {op === 'widget' ? 'Widget (creme liso)' : 'Módulo cheio (bege do app)'}
+          </button>
+        ))}
+      </div>
       <div className="relative mx-auto flex h-[calc(100vh-2rem)] max-w-[1180px] overflow-hidden rounded-xl bg-white shadow-2xl lg:h-[calc(100vh-4rem)]">
         <section data-preview-thread className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-black/[0.06] bg-[#f0f2f5] px-4 py-2.5">
+        <header className={`flex items-center gap-3 border-b border-black/[0.06] ${molduraBg} px-4 py-2.5`}>
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#d9fdd3] text-sm font-bold text-[#008069]">LI</div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-[14px] font-semibold text-[#111b21]">Lisliandra Inocêncio</p>
@@ -532,7 +564,7 @@ function PreviewBench() {
 
         <AiHandoffSummaryStrip data={handoffSummary} onOpenPanel={() => undefined} />
 
-        <main className="wa-thread-bg flex-1 overflow-y-auto overscroll-contain">
+        <main className={`${superficie === 'widget' ? 'wa-thread-bg-liso' : 'wa-thread-bg'} flex-1 overflow-y-auto overscroll-contain`}>
           <div className="mx-auto w-full max-w-[1050px] px-5 py-4">
             {/* UMA SEÇÃO POR DIA, como na thread de verdade. O <div> em volta é
                 o que impede os divisores grudentos de pararem um em cima do
@@ -599,9 +631,21 @@ function PreviewBench() {
           </div>
         </main>
 
-        <footer className="flex items-end gap-2 border-t border-black/[0.06] bg-[#f0f2f5] px-3 py-2">
+        {/* Réplica da barra de envio. O seletor de emoji aqui é o COMPONENTE
+            real, no mesmo lugar em que ele fica no módulo: é o que permite
+            conferir que o painel cabe acima da barra nas duas superfícies. */}
+        <footer className={`relative flex items-end gap-2 border-t border-black/[0.06] ${molduraBg} px-3 py-2`}>
+          {emojiAberto && (
+            <EmojiPicker className="absolute bottom-full left-3 z-30 mb-2 w-[320px] max-w-[calc(100%-1.5rem)]"
+              onPick={emoji => { const el = campoRef.current; if (el) { el.value += emoji; el.focus(); } }}
+              onClose={() => setEmojiAberto(false)} />
+          )}
           <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#54656f] hover:bg-black/[0.06]"><Plus size={22} /></button>
-          <textarea rows={1} placeholder="Digite uma mensagem…"
+          <button onClick={() => setEmojiAberto(v => !v)} aria-label="Emojis" aria-expanded={emojiAberto}
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-black/[0.06] ${emojiAberto ? 'text-[#00a884]' : 'text-[#54656f]'}`}>
+            <Smile size={21} />
+          </button>
+          <textarea ref={campoRef} rows={1} placeholder="Digite uma mensagem…"
             className="min-h-10 flex-1 resize-none rounded-xl border border-transparent bg-white px-3.5 py-2.5 text-[14px] leading-5 outline-none focus:border-[#00a884]/35" />
           <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#54656f] hover:bg-black/[0.06] hover:text-[#00a884]"><Mic size={19} /></button>
         </footer>

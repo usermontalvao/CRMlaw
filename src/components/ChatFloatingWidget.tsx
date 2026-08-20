@@ -1,7 +1,7 @@
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Maximize2, Minimize2, MessageCircle, Mic, Paperclip, Plus, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { ArrowLeft, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Mic, Paperclip, Plus, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { usePermissions } from '../hooks/usePermissions';
@@ -15,11 +15,24 @@ import WhatsAppModule from './WhatsAppModule';
 import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
 import { applyOutputToElement, openPreferredMicrophone } from '../utils/audioDevices';
 import ChatLauncherBar from './chat/ChatLauncherBar';
+import ChatChannelRail from './chat/ChatChannelRail';
+import { animacaoDoPainel, animacaoDoCorpo } from './chat/panelMotion';
+import { ConversationListSkeleton } from './whatsapp/skeletons';
+import { lidoDaMemoriaWa } from '../services/whatsapp/sessionCache';
+import { Avatar } from './chat/ChatAvatar';
+import { VerifiedBadge, getVerifiedVariant } from './chat/VerifiedBadge';
 import { whatsappService } from '../services/whatsapp.service';
 import { criarControleDePresenca } from '../services/realtime/presenceTrack';
+import { zc } from '../styles/layers';
+import { ModalLayerProvider } from '../styles/modalLayer';
 
 // Tamanho padrão do widget (usado no reset e quando não há preferência salva).
-const WIDGET_DEFAULT_W = 384;
+//
+// A largura cresceu 56px junto com o trilho de canais: o trilho ocupa exatamente
+// isso à esquerda, e sem a compensação toda conversa ficaria uma linha mais
+// estreita do que era antes dele. O que sobra para a conversa continua sendo os
+// mesmos 384px de sempre.
+const WIDGET_DEFAULT_W = 440;
 const WIDGET_DEFAULT_H = 590;
 const WIDGET_MIN_W = 320;
 const WIDGET_MAX_W = 720;
@@ -85,36 +98,6 @@ const AttachmentSignedLink: React.FC<{ attachment: ChatAttachmentPayload; onReso
       <span>Abrir</span>
       <ExternalLink className="w-3.5 h-3.5" />
     </a>
-  );
-};
-
-type VerifiedVariant = 'admin' | 'lawyer';
-
-const getVerifiedVariant = (profile: Pick<Profile, 'role' | 'oab'> | null | undefined): VerifiedVariant | null => {
-  if (!profile) return null;
-  const role = String(profile.role || '').toLowerCase();
-  const oab = (profile.oab ?? '').trim();
-
-  if (role.includes('admin') || role.includes('administrador')) return 'admin';
-  if (role.includes('advog') || role.includes('advogado') || !!oab) return 'lawyer';
-  return null;
-};
-
-const VerifiedBadge: React.FC<{ variant: VerifiedVariant }> = ({ variant }) => {
-  const isAdmin = variant === 'admin';
-  const title = isAdmin ? 'Administrador verificado' : 'Advogado verificado';
-  const cls = isAdmin
-    ? 'bg-amber-400 text-amber-950 ring-1 ring-amber-200/40'
-    : 'bg-sky-500 text-white ring-1 ring-sky-300/40';
-
-  return (
-    <span
-      title={title}
-      className={`inline-flex items-center justify-center h-[18px] w-[18px] rounded-full ${cls} shrink-0`}
-      aria-label={title}
-    >
-      <BadgeCheck className="w-3.5 h-3.5" />
-    </span>
   );
 };
 
@@ -351,7 +334,7 @@ const AttachmentSignedMedia: React.FC<{
         {/* Viewer em portal para escapar do backdrop-filter stacking context do widget */}
         {viewerOpen && createPortal(
           <div
-            className="fixed inset-0 z-[99999] bg-black/85 flex items-center justify-center p-4"
+            className={`fixed inset-0 ${zc.WIDGET_NESTED} bg-black/85 flex items-center justify-center p-4`}
             style={{ backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
             onClick={() => setViewerOpen(false)}
           >
@@ -467,50 +450,6 @@ const formatLastSeen = (value: string) => {
   if (diffDays === 1) return 'Online ontem';
   if (diffDays < 7) return `Online há ${diffDays} dias`;
   return `Online em ${date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
-};
-
-const Avatar: React.FC<{ src?: string | null; name: string; online?: boolean; size?: 'sm' | 'md' | 'lg' }> = ({ src, name, online, size = 'md' }) => {
-  const initials = useMemo(() => {
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .filter((n) => n.length > 0)
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  }, [name]);
-
-  const dim = size === 'sm' ? 'h-9 w-9' : size === 'lg' ? 'h-12 w-12' : 'h-10 w-10';
-  const dotSize = size === 'sm' ? 'h-2.5 w-2.5' : size === 'lg' ? 'h-3 w-3' : 'h-2.5 w-2.5';
-
-  return (
-    <div className="relative shrink-0">
-      {src ? (
-        <img
-          src={src}
-          alt={name}
-          className={`${dim} rounded-full object-cover ring-1 ring-white/10 shadow-[0_4px_12px_rgba(0,0,0,0.3)]`}
-        />
-      ) : (
-        <div
-          className={`${dim} rounded-full bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 flex items-center justify-center text-white text-xs font-bold ring-1 ring-white/10 shadow-[0_4px_12px_rgba(0,0,0,0.3)]`}
-        >
-          {initials}
-        </div>
-      )}
-      {typeof online === 'boolean' && (
-        <span className="absolute bottom-0 right-0 flex items-center justify-center">
-          {online && (
-            <span className={`absolute ${dotSize} rounded-full bg-emerald-400/60 animate-ping`} />
-          )}
-          <span
-            className={`relative block ${dotSize} rounded-full ring-[2.5px] ring-[#0a0f1c] ${online ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-slate-500'}`}
-          />
-        </span>
-      )}
-    </div>
-  );
 };
 
 const formatDateSeparator = (dateStr: string): string => {
@@ -631,6 +570,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   // Aba WhatsApp (modo lite): o WhatsAppModule embutido é dono da seleção; aqui
   // só guardamos a conversa ativa (deep-link ao maximizar).
   const [waActiveConvId, setWaActiveConvId] = useState<string | null>(null);
+  /**
+   * Rosto e nome da conversa do WhatsApp que está aberta.
+   *
+   * Vem junto com o id porque, minimizado, o painel está DESMONTADO: quem
+   * poderia dizer de quem é a conversa guardada — o módulo — não existe mais
+   * nessa hora. Guardar a identidade no momento em que ela ainda estava na
+   * tela é mais barato (e mais fiel) do que ir buscá-la depois.
+   */
+  const [waGuardado, setWaGuardado] = useState<{ nome: string; avatarUrl: string | null } | null>(null);
   /**
    * Conversa que o widget deve ABRIR (deep-link vindo do cartão de aviso).
    *
@@ -2067,8 +2015,93 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     [messages],
   );
 
+  /**
+   * A CONVERSA GUARDADA — o que a barra segura enquanto o painel está minimizado.
+   *
+   * É o que separa minimizar de fechar. Sem um lugar para voltar, minimizar
+   * seria fechar com outro nome: o painel some, a conversa se perde, e reabrir
+   * cai na lista, na estaca zero. Aqui a barra fica com ela no bolso — e o
+   * bloco que a mostra é o MESMO que o Editor de Petições minimizado já usa,
+   * de propósito: um gesto só para as duas coisas que se guardam ali.
+   *
+   * Só existe com o painel FECHADO: aberto, a conversa está à vista, e um
+   * segundo lugar dizendo o nome dela seria eco.
+   */
+  /* ── A ABERTURA ────────────────────────────────────────────────────────────
+     O painel é `{open && …}`: clicar não revela uma janela pronta, MONTA uma.
+     E o corpo dela, na aba WhatsApp, é o módulo inteiro — alguns milhares de
+     linhas de componente. React monta tudo isso de uma vez, antes de o
+     navegador pintar qualquer coisa: por isso o clique parecia não fazer nada
+     por um instante e a janela aparecia já no lugar, sem a animação que existe
+     há tempos no código.
+
+     Agora são dois tempos. A MOLDURA (trilho, cabeçalho, superfície) monta na
+     hora e é ela que entra na tela, animada. O corpo entra logo atrás, numa
+     passada que o React pode interromper (`startTransition`) — o que garante
+     que ele nunca segure o primeiro quadro.
+
+     Uma coisa que este truque NÃO faz é buscar dado mais rápido; quem resolveu
+     isso foi a memória de aba (`sessionCache`), que evita as onze idas ao banco
+     que o módulo fazia a cada abertura. Os dois juntos é que dão "abriu". */
+  const painelRef = useRef<HTMLDivElement | null>(null);
+  const [corpoPronto, setCorpoPronto] = useState(false);
+  useEffect(() => {
+    if (open) { startTransition(() => setCorpoPronto(true)); return; }
+    // Ao FECHAR, o corpo tem de continuar de pé até a saída terminar: desmontar
+    // na hora faz o painel encolher vazio, e uma janela que se esvazia antes de
+    // sumir parece defeito, não animação. 220ms é a saída (120ms) com folga.
+    const t = window.setTimeout(() => setCorpoPronto(false), 220);
+    return () => window.clearTimeout(t);
+  }, [open]);
+
+  /** Já houve uma abertura nesta aba? Então não há o que esqueletar. */
+  const temInboxGuardada = lidoDaMemoriaWa(user?.id, 'conversations') !== undefined;
+
+  const semMovimento = useReducedMotion();
+
+  const conversaGuardada = useMemo(() => {
+    if (open) return null;
+    if (chatTab === 'whatsapp') {
+      return waActiveConvId && waGuardado
+        ? { nome: waGuardado.nome, avatarUrl: waGuardado.avatarUrl }
+        : null;
+    }
+    if (!selectedRoomId) return null;
+    const sala = rooms.find((r) => r.id === selectedRoomId);
+    if (!sala) return null;
+    const outro = getOtherUserForRoom(sala);
+    return { nome: outro?.name || sala.name, avatarUrl: outro?.avatar_url ?? null };
+  }, [open, chatTab, waActiveConvId, waGuardado, selectedRoomId, rooms, getOtherUserForRoom]);
+
+  /**
+   * O relato do módulo embutido sobre qual conversa está aberta.
+   *
+   * Estável (`useCallback` sem dependências) porque ele é DEPENDÊNCIA de um
+   * efeito lá dentro: uma função recriada a cada render faria o efeito rodar a
+   * cada render, e como ele devolve um objeto novo toda vez, o par
+   * módulo↔widget entraria em renderização infinita. A comparação campo a
+   * campo abaixo é o segundo cinto: mesma pessoa, mesmo objeto, nada re-renderiza.
+   */
+  const handleWaActiveConversation = useCallback(
+    (id: string | null, contato?: { nome: string; avatarUrl: string | null } | null) => {
+      setWaActiveConvId(id);
+      setWaGuardado((antes) => {
+        const agora = contato ?? null;
+        if (antes?.nome === agora?.nome && antes?.avatarUrl === agora?.avatarUrl) return antes;
+        return agora;
+      });
+    },
+    [],
+  );
+
   // Oculto no módulo de chat interno e no WhatsApp (lá o widget cobriria o
   // campo de digitação da conversa, sobrepondo o botão de enviar).
+  //
+  // ATENÇÃO: este é o PRIMEIRO early return do componente — daqui para baixo
+  // não pode nascer nenhum hook. Entrar no módulo de chat/WhatsApp faz o
+  // widget renderizar com menos hooks do que na volta, e o React derruba a
+  // árvore inteira com "Rendered fewer hooks than expected". Hook novo entra
+  // ACIMA desta linha, sempre.
   const visible = !!user && currentModule !== 'chat' && currentModule !== 'whatsapp';
   if (!visible) return null;
 
@@ -2102,6 +2135,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
           : null,
       ].filter(Boolean).join(' · ');
   const topUnreadUser = topUnreadRoom ? getOtherUserForRoom(topUnreadRoom) : null;
+
 
   const showToast = !!toast && (!open || !selectedRoomId || toast.roomId !== selectedRoomId);
   const headerVerified = getVerifiedVariant(otherUser);
@@ -2159,9 +2193,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
   if (hidden) return null;
 
+  // `zc.WIDGET`, não `zc.FLOATING`: quase todo clique que traz uma conversa
+  // para cá parte de um modal ABERTO (a ficha do cliente, o lead, o
+  // requerimento). Na faixa das janelas flutuantes o painel subia ATRÁS desse
+  // modal — a conversa abria de verdade, ninguém via, e o botão verde parecia
+  // não fazer nada. Ver `styles/layers`.
   return createPortal(
+    <ModalLayerProvider>
     <ChatImagesContext.Provider value={imageFilePaths}>
-    <div className="fixed bottom-5 right-4 sm:bottom-5 sm:right-5 z-[9999] flex flex-col items-end" style={{ isolation: 'isolate' }}>
+    <div className={`fixed bottom-5 right-4 sm:bottom-5 sm:right-5 ${zc.WIDGET} flex flex-col items-end`} style={{ isolation: 'isolate' }}>
       <style>{`
         @keyframes chatShake{0%{transform:translate(0,0) rotate(0) scale(1)}4%{transform:translate(-9px,5px) rotate(-3deg) scale(1.02)}8%{transform:translate(9px,-5px) rotate(3deg) scale(1.02)}12%{transform:translate(-9px,-5px) rotate(-3deg) scale(1.02)}16%{transform:translate(9px,5px) rotate(3deg) scale(1.02)}20%{transform:translate(-8px,-4px) rotate(-2.5deg) scale(1.01)}24%{transform:translate(8px,4px) rotate(2.5deg) scale(1.01)}28%{transform:translate(-7px,-3px) rotate(-2deg)}32%{transform:translate(7px,3px) rotate(2deg)}38%{transform:translate(-5px,-2px) rotate(-1.5deg)}44%{transform:translate(5px,2px) rotate(1.5deg)}52%{transform:translate(-3px,-1px) rotate(-1deg)}62%{transform:translate(3px,1px) rotate(0.5deg)}74%{transform:translate(-1px,0) rotate(0)}86%{transform:translate(1px,0)}100%{transform:translate(0,0) rotate(0) scale(1)}}
         @keyframes chatShakeGlow{0%,100%{box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.06),inset 0 1px 0 rgba(255,255,255,.08)}8%{box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(251,146,60,.5),0 0 40px 12px rgba(251,146,60,.35),inset 0 1px 0 rgba(255,255,255,.08)}22%{box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(251,146,60,.4),0 0 28px 8px rgba(251,146,60,.25),inset 0 1px 0 rgba(255,255,255,.08)}40%{box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(251,146,60,.25),0 0 16px 4px rgba(251,146,60,.15),inset 0 1px 0 rgba(255,255,255,.08)}65%{box-shadow:0 40px 80px -20px rgba(0,0,0,.65),0 0 0 1px rgba(251,146,60,.12),0 0 8px 2px rgba(251,146,60,.08),inset 0 1px 0 rgba(255,255,255,.08)}}
@@ -2222,11 +2262,17 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       {open && (
         <motion.div
           className="relative mb-3"
-          style={{ transformOrigin: 'bottom right' }}
-          initial={{ opacity: 0, y: 14, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 10, scale: 0.97 }}
-          transition={{ type: 'spring', stiffness: 460, damping: 36, mass: 0.8 }}
+          /* Os números do movimento moram em `panelMotion` — a bancada usa os
+             MESMOS, e é isso que a impede de mentir sobre a abertura. */
+          style={{ transformOrigin: 'bottom right', willChange: 'transform, opacity' }}
+          {...animacaoDoPainel(semMovimento)}
+          onAnimationComplete={() => {
+            // `will-change` é uma promessa cara: mantida depois do movimento,
+            // segura uma camada de composição do tamanho do painel pelo resto
+            // da sessão.
+            if (painelRef.current) painelRef.current.style.willChange = 'auto';
+          }}
+          ref={painelRef}
         >
           {/* Anéis de pulso — expandem para fora do painel durante o shake */}
           {shaking && <>
@@ -2245,12 +2291,48 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               ? { animation: 'chatShake 1s cubic-bezier(.36,.07,.19,.97) both, chatShakeGlow 1s ease-out both' }
               : {}),
             background: '#ffffff',
+            // O trilho de canais é ABSOLUTO na borda esquerda, e o painel abre
+            // esta faixa para ele. Sai mais barato — e sobretudo mais seguro —
+            // do que embrulhar as novecentas linhas de cabeçalho e conversa numa
+            // coluna nova: aqui é uma constante em dois lugares, ali seria uma
+            // reindentação do arquivo inteiro. Se um dia o trilho mudar de
+            // largura, os dois 56 mudam juntos.
+            paddingLeft: hasWhatsAppAccess ? 56 : undefined,
             // Sem o anel branco de 6px que envolvia o painel: ele imitava uma
             // moldura de foto e brigava com a borda real do card.
             boxShadow:
               '0 24px 56px -20px rgba(15,23,42,.28), 0 8px 20px -12px rgba(15,23,42,.16), 0 0 0 1px rgba(15,23,42,.07)',
           }}
         >
+          {/* O TRILHO DE CANAIS — a faixa que o paddingLeft acima reservou.
+              Fica de pé o tempo todo, inclusive dentro de uma conversa: é dele
+              que se lê em qual canal você está falando, e trocar de canal deixa
+              de ser voltar-e-trocar-de-aba para ser um clique. */}
+          {hasWhatsAppAccess && (
+            <div className="absolute left-0 top-0 bottom-0 z-30 flex">
+              <ChatChannelRail
+                items={[
+                  { key: 'whatsapp' as const, label: 'WhatsApp', icon: MessageCircle, count: waUnread, title: 'Conversas do WhatsApp' },
+                  { key: 'equipe' as const, label: 'Equipe', icon: Users, count: totalUnreadFromRooms, title: 'Chat interno da equipe' },
+                ]}
+                value={chatTab}
+                onChange={(canal) => {
+                  // Trocar de canal fecha o que estava aberto DENTRO do canal
+                  // anterior: voltar depois e reencontrar a conversa do outro
+                  // lado meio aberta é o tipo de fantasma que faz responder a
+                  // pessoa errada.
+                  setChatTab(canal);
+                  setSelectedRoomId(null);
+                  setShowNewChatModal(false);
+                }}
+                onNew={chatTab === 'equipe' && !showNewChatModal
+                  ? () => { setSelectedRoomId(null); setShowNewChatModal(true); }
+                  : undefined}
+                onDragHandlePointerDown={startPanelDrag('move')}
+              />
+            </div>
+          )}
+
           {/* Pega de redimensionamento (largura) na borda esquerda */}
           <div
             onPointerDown={startPanelDrag('w')}
@@ -2298,7 +2380,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               <Zap className="w-3.5 h-3.5" style={{ filter: 'drop-shadow(0 0 4px rgba(255,255,255,.6))' }} />
             </div>
           )}
-          <div onPointerDown={startPanelDrag('move')} className="relative px-3 py-2 flex items-center justify-between shrink-0 border-b border-white/[0.06] cursor-grab active:cursor-grabbing select-none touch-none">
+          <div
+            onPointerDown={startPanelDrag('move')}
+            /* Dois cliques devolvem o tamanho padrão. É o gesto de janela que
+               todo mundo já tem no dedo, e ele libera o quarto botão que vivia
+               aparecendo e sumindo do cabeçalho conforme você redimensionava. */
+            onDoubleClick={() => { if (isCustomSize) resetWidgetSize(); }}
+            title={isCustomSize ? 'Arraste para mover · dois cliques para voltar ao tamanho padrão' : undefined}
+            className="relative px-3 py-2 flex items-center justify-between shrink-0 border-b border-white/[0.06] cursor-grab active:cursor-grabbing select-none touch-none"
+          >
             <div className={`flex items-center min-w-0 ${!selectedRoomId && !showNewChatModal ? 'gap-2 shrink-0' : 'gap-2.5 flex-1'}`}>
               {selectedRoomId ? (
                 <>
@@ -2353,63 +2443,20 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 </>
               ) : (
                 <>
-                  {/* Com as abas à mostra, o ícone é enfeite: "WhatsApp" e
-                      "Equipe" já dizem o que o painel é, e cada pixel do topo
-                      está disputado por três barras de ferramentas. Sem abas
-                      (usuário sem WhatsApp) o painel precisa se apresentar. */}
+                  {/* Com o trilho ao lado, o cabeçalho tem UMA coisa para dizer:
+                      em qual canal você está. O ícone fica com o trilho —
+                      repeti-lo aqui seria dizer duas vezes a mesma coisa. Sem
+                      trilho (usuário sem acesso ao WhatsApp) não há canal a
+                      nomear, e aí o painel se apresenta como sempre fez. */}
                   {!hasWhatsAppAccess && (
-                    <>
-                      <MessageCircle className="w-[18px] h-[18px] text-slate-400 shrink-0" strokeWidth={1.9} />
-                      <span className="text-[14px] font-semibold tracking-tight text-slate-800">Mensagens</span>
-                    </>
+                    <MessageCircle className="w-[18px] h-[18px] text-slate-400 shrink-0" strokeWidth={1.9} />
                   )}
+                  <span className="text-[14px] font-semibold tracking-tight text-slate-800 truncate">
+                    {!hasWhatsAppAccess ? 'Mensagens' : chatTab === 'whatsapp' ? 'WhatsApp' : 'Equipe'}
+                  </span>
                 </>
               )}
             </div>
-            {/* Abas EQUIPE | WHATSAPP — embutidas na própria linha do título (topo enxuto) */}
-            {!selectedRoomId && !showNewChatModal && hasWhatsAppAccess && (
-              /* Controle segmentado, não duas palavras em caixa alta com um
-                 traço laranja embaixo. A pastilha diz sozinha o que está
-                 selecionado e o que é clicável — e o contador de cada aba fica
-                 do lado do nome dela, que é onde a pessoa procura. */
-              <nav
-                /* Largura de CONTROLE, não de barra de título: esticado de
-                   ponta a ponta, o par de abas virava o próprio cabeçalho e
-                   empurrava os botões da janela para o canto. */
-                className="flex items-center gap-0.5 min-w-0 mr-2 p-0.5 rounded-lg bg-slate-900/[0.05] w-full max-w-[230px]"
-                role="tablist"
-              >
-                {(['whatsapp', 'equipe'] as const).map(tab => {
-                  const ativa = chatTab === tab;
-                  const pendencias = tab === 'whatsapp' ? waUnread : totalUnreadFromRooms;
-                  return (
-                    <button
-                      key={tab}
-                      type="button"
-                      role="tab"
-                      aria-selected={ativa}
-                      onClick={() => setChatTab(tab)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 h-[26px] rounded-[7px] text-[12px] font-medium transition-colors ${
-                        ativa
-                          ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,.12)]'
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      {tab === 'equipe' ? 'Equipe' : 'WhatsApp'}
-                      {pendencias > 0 && (
-                        <span
-                          className={`inline-flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-semibold leading-none tabular-nums ${
-                            ativa ? 'bg-orange-500 text-white' : 'bg-slate-900/10 text-slate-600'
-                          }`}
-                        >
-                          {pendencias > 99 ? '99+' : pendencias}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </nav>
-            )}
             <div className="flex items-center gap-1">
               {/* Botões de ação — salas ticket */}
               {selectedRoomId && selectedRoom?.portal_client_id && (
@@ -2457,16 +2504,16 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   </button>
                 </>
               )}
-              {isCustomSize && (
-                <button
-                  type="button"
-                  onClick={resetWidgetSize}
-                  className="h-8 w-8 rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
-                  title="Voltar ao tamanho padrão"
-                >
-                  <Minimize2 className="w-4 h-4" />
-                </button>
-              )}
+              {/* ── OS TRÊS BOTÕES DA JANELA ──────────────────────────────
+                  Eram três ícones que diziam outra coisa: o de "minimizar"
+                  devolvia o tamanho padrão, o de "maximizar" TIRAVA você do
+                  widget, e o X apagava a conversa aberta junto. Agora cada um
+                  faz o que o desenho promete, e o tamanho padrão virou dois
+                  cliques no cabeçalho — como em qualquer janela. */}
+
+              {/* Abrir no módulo: é NAVEGAÇÃO, não janela. A seta que sai da
+                  caixa diz "vou embora daqui"; o quadrado que cresce dizia
+                  "esta janela vai aumentar", e não era isso que acontecia. */}
               <button
                 type="button"
                 onClick={() => {
@@ -2480,15 +2527,32 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   }
                 }}
                 className="h-8 w-8 rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
-                title={chatTab === 'whatsapp' ? 'Abrir WhatsApp' : 'Abrir Chat'}
+                title={chatTab === 'whatsapp' ? 'Abrir o módulo WhatsApp em tela cheia' : 'Abrir o Chat em tela cheia'}
               >
-                <Maximize2 className="w-4 h-4" />
+                <ExternalLink className="w-4 h-4" />
               </button>
+
+              {/* Minimizar: sai da frente e NÃO esquece nada — a conversa, o
+                  tamanho e a posição continuam de pé, guardados na barra. O
+                  chevron é o mesmo que a barra mostra com o painel aberto:
+                  duas peças, um gesto só. */}
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="h-8 w-8 rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
+                title="Minimizar — a conversa fica guardada na barra"
+              >
+                <ChevronDown className="w-[18px] h-[18px]" strokeWidth={2.1} />
+              </button>
+
+              {/* Fechar: encerra mesmo. Reabrir cai na lista. */}
               <button
                 type="button"
                 onClick={() => {
                   setOpen(false);
                   setSelectedRoomId(null);
+                  setWaActiveConvId(null);
+                  setWaGuardado(null);
                 }}
                 className="h-8 w-8 rounded-lg hover:bg-white/10 active:scale-95 transition-all duration-150 flex items-center justify-center text-white/70 hover:text-white"
                 title="Fechar"
@@ -2498,9 +2562,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             </div>
           </div>
 
-          {/* FAB "+" — nova conversa da Equipe. Fica na área da lista (não no
-              header), com hierarquia clara; oculto no WhatsApp/conversa/modal. */}
-          {!selectedRoomId && !showNewChatModal && chatTab === 'equipe' && (
+          {/* FAB "+" — nova conversa da Equipe, para quem NÃO tem o trilho.
+              Com o trilho, este botão vive no pé dele: solto sobre a lista, era
+              um segundo círculo laranja na mesma diagonal da barra "Fechar". */}
+          {!hasWhatsAppAccess && !selectedRoomId && !showNewChatModal && chatTab === 'equipe' && (
             <button
               type="button"
               onClick={() => setShowNewChatModal(true)}
@@ -2573,16 +2638,36 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               {chatTab === 'whatsapp' && hasWhatsAppAccess ? (
                 // Modo lite: o WhatsAppModule real, embutido — herda todos os
                 // recursos (reply, áudio, mídia/preview, transferência, lightbox…).
-                <div className="flex-1 min-h-0 overflow-hidden">
-                  <WhatsAppModule
-                    variant="embedded"
-                    openConversationId={waOpenConvId ?? undefined}
-                    onParamConsumed={() => setWaOpenConvId(null)}
-                    onActiveConversationChange={setWaActiveConvId}
-                  />
-                </div>
+                <motion.div
+                  key="corpo-whatsapp"
+                  /* O corpo entra por dentro da moldura, não junto com ela: é o
+                     que transforma o "pop" do conteúdo (que chega um quadro
+                     depois) numa chegada. Vale também na troca de canal. */
+                  {...animacaoDoCorpo(semMovimento)}
+                  className="flex-1 min-h-0 overflow-hidden"
+                >
+                  {corpoPronto ? (
+                    <WhatsAppModule
+                      variant="embedded"
+                      openConversationId={waOpenConvId ?? undefined}
+                      onParamConsumed={() => setWaOpenConvId(null)}
+                      onActiveConversationChange={handleWaActiveConversation}
+                    />
+                  ) : temInboxGuardada ? (
+                    // Com a inbox na memória o corpo chega em um quadro: pôr um
+                    // esqueleto aqui seria piscar cinza por 16ms sobre conteúdo
+                    // que já existe. O vazio de um quadro ninguém vê.
+                    <div className="flex-1" />
+                  ) : (
+                    <ConversationListSkeleton />
+                  )}
+                </motion.div>
               ) : (
-              <div className="flex-1 overflow-y-auto chat-scrollbar py-1">
+              <motion.div
+                key="corpo-equipe"
+                {...animacaoDoCorpo(semMovimento)}
+                className="flex-1 overflow-y-auto chat-scrollbar py-1"
+              >
                 {loadingRooms && rooms.length === 0 ? (
                   <div className="flex items-center justify-center gap-2 py-8 text-sm text-white/50">
                     <div className="w-4 h-4 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin" />
@@ -2701,7 +2786,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   );
                 })
                 )}
-              </div>
+              </motion.div>
               )}
               </>
             )
@@ -3324,6 +3409,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         peerAvatarUrl={topUnreadUser?.avatar_url || lastUnreadImageSender?.avatarUrl || null}
         editorMinimized={petitionEditorMinimized}
         editorHasUnsavedChanges={petitionEditorHasUnsavedChanges}
+        guardedName={conversaGuardada?.nome ?? null}
+        guardedAvatarUrl={conversaGuardada?.avatarUrl ?? null}
         onOpenEditor={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_MAXIMIZE)}
         onToggle={() => {
           setOpen((prev) => {
@@ -3333,16 +3420,28 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               setToast(null);
               setLastUnreadImageSender(null);
               ensureAudioContext();
-              if (topUnreadRoom) setSelectedRoomId(topUnreadRoom.id);
+              // Voltar é voltar para ONDE VOCÊ ESTAVA. A conversa guardada ganha
+              // do topo da fila: quem minimizou no meio de uma conversa não quer
+              // reabrir noutra, por mais urgente que a outra pareça.
+              if (chatTab === 'whatsapp') {
+                if (waActiveConvId) setWaOpenConvId(waActiveConvId);
+              } else if (!selectedRoomId && topUnreadRoom) {
+                setSelectedRoomId(topUnreadRoom.id);
+              }
             } else {
+              // A barra aberta é o botão de FECHAR do painel — e fechar limpa.
+              // Minimizar, que guarda, é o chevron do cabeçalho.
               setSelectedRoomId(null);
+              setWaActiveConvId(null);
+              setWaGuardado(null);
             }
             return next;
           });
         }}
       />
     </div>
-    </ChatImagesContext.Provider>,
+    </ChatImagesContext.Provider>
+    </ModalLayerProvider>,
     document.body
   );
 };

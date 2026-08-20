@@ -1,3 +1,9 @@
+// Tipos do módulo WhatsApp. A regra pura das reações mora em `utils/waReactions.ts`
+// (espelhada nas Edge Functions), e o tipo dela é reexportado aqui para os
+// consumidores continuarem importando tudo de um lugar só.
+import type { WaReacao } from '../utils/waReactions';
+export type { WaReacao };
+
 export type WhatsAppDirection = 'in' | 'out';
 /**
  * Os seis primeiros são os que o escritório envia e recebe o dia inteiro. Os
@@ -144,6 +150,17 @@ export interface WhatsAppMessage {
   deleted_by?: string | null;
   /** 'me' = sumiu só no CRM; 'everyone' = revogada também no aparelho do contato. */
   deleted_scope?: WhatsAppDeleteScope | null;
+  /**
+   * Reações à mensagem — as do contato e as da equipe, na mesma lista.
+   *
+   * Coluna `jsonb` e não tabela própria de propósito: a reação só existe colada
+   * na mensagem, é lida junto com ela e some junto com ela. Uma tabela nova
+   * significaria mais uma consulta por thread aberta e mais uma linha na
+   * publicação do realtime — e o custo do realtime aqui é catálogo, não escrita
+   * (ver `realtime-custo-walrus`). A regra de quem pode ter quantas mora em
+   * `utils/waReactions.ts`.
+   */
+  reactions?: WaReacao[] | null;
   /** Apenas UI — não vem do banco. */
   _local?: WhatsAppLocalState;
   _tempId?: string;
@@ -154,16 +171,25 @@ export interface SendMediaInput {
   conversationId?: string;
   phone?: string;
   channelId?: string;
-  type: 'image' | 'audio' | 'video' | 'document';
+  type: 'image' | 'audio' | 'video' | 'document' | 'sticker';
   text?: string;            // legenda
   storagePath: string;
   mimeType: string;
   fileName?: string;
+  /**
+   * Tamanho em bytes, quando o cliente já o conhece (ele acabou de subir o
+   * arquivo). Serve à figurinha: ali o servidor NÃO baixa o objeto de volta —
+   * ele só manda a URL para a Evolution —, e sem este campo a linha ficaria
+   * sem tamanho.
+   */
+  mediaSize?: number;
   replyToId?: string;
   /**
-   * Vídeo que na verdade é um GIF (seletor do Giphy). Faz o WhatsApp usar
-   * `gifPlayback` e marca `is_animated` na linha: toca em laço, mudo e sem
-   * controles, dos dois lados da conversa.
+   * O arquivo é um GIF do seletor. Vai como `sticker` — figurinha ANIMADA —,
+   * que é o único jeito de a Evolution 2.3.7 entregar animação de verdade (ela
+   * descarta o `gifPlayback` do vídeo; ver `evolution-send`). A marca também
+   * grava `is_animated` na linha: toca em laço, muda e sem controles, dos dois
+   * lados da conversa.
    */
   asGif?: boolean;
 }

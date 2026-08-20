@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { LAYER } from '../../styles/layers';
+import { useModalLayer } from '../../styles/modalLayer';
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -18,6 +20,15 @@ interface ModalProps {
   headerActions?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  /**
+   * A camada. O padrão é `LAYER.MODAL`, que é onde vive todo modal de módulo;
+   * um modal aberto DE DENTRO de outro passa `LAYER.MODAL_NESTED`. Números
+   * soltos aqui foram o começo da corrida que `styles/layers` encerrou.
+   *
+   * Dentro do widget flutuante de conversas o valor é traduzido para a faixa
+   * dele (ver `styles/modalLayer`): o mesmo modal, aberto de lá de dentro,
+   * precisa ficar acima do widget que o abriu.
+   */
   zIndex?: number;
   accentBarClassName?: string;
   iconContainerClassName?: string;
@@ -42,10 +53,11 @@ export const Modal: React.FC<ModalProps> = ({
   headerActions,
   children,
   footer,
-  zIndex = 80,
+  zIndex: zIndexProp,
   accentBarClassName = 'bg-amber-500',
   iconContainerClassName = 'bg-amber-500 text-white',
 }) => {
+  const zIndex = useModalLayer(zIndexProp ?? LAYER.MODAL);
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const shouldReduceMotion = useReducedMotion();

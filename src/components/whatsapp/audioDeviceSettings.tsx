@@ -18,11 +18,12 @@ import {
 } from '../../utils/audioDevices';
 import { playRingTest } from '../../services/wacalls/ringtone';
 import { WaDialog, WaDialogBody, WaField, WaFieldStack, waBtnGhost, waSelect, waSelectStyle } from './ui';
+import { LAYER } from '../../styles/layers';
 
 const LISTA_VAZIA: AudioDeviceList = { inputs: [], outputs: [], labelsHidden: false };
 
 /** Acima do widget da chamada — o painel é aberto POR ele. */
-const Z_ACIMA_DA_CHAMADA = 2147483300;
+const Z_ACIMA_DA_CHAMADA = LAYER.CALL_NESTED;
 
 /**
  * O medidor do microfone.
@@ -232,7 +233,7 @@ export const WaAudioDeviceButton: React.FC<{
       onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       title="Microfone e alto-falante das ligações"
       aria-label="Microfone e alto-falante das ligações"
-      className={className || 'flex items-center justify-center w-7 h-7 rounded-full bg-[#f3f2ef] text-slate-600 transition hover:bg-slate-200'}
+      className={className || 'flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 transition-colors hover:bg-[#f1f0ec] hover:text-slate-700'}
     >
       <Headphones size={size} />
     </button>
@@ -242,7 +243,7 @@ export const WaAudioDeviceButton: React.FC<{
         subtitle="Vale para as ligações, o toque da chamada e os avisos. Fica salvo neste computador."
         icon={<Volume2 size={18} />}
         size="sm"
-        zIndex={sobreAChamada ? Z_ACIMA_DA_CHAMADA : 50}
+        zIndex={sobreAChamada ? Z_ACIMA_DA_CHAMADA : LAYER.MODAL}
         onClose={() => setOpen(false)}
       >
         <WaDialogBody>

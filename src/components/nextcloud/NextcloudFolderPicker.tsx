@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Folder, ChevronRight, Home, Loader2, RefreshCw, X, Check, Search } from 'lucide-react';
 import { nextcloudService, type NextcloudEntry } from '../../services/nextcloud.service';
+import { zcStack } from '../../styles/layers';
 
 /** Diretório-pai de um caminho ("a/b/c" -> "a/b"; "a" -> raiz). */
 function parentOf(path: string): string {
@@ -122,7 +123,7 @@ export function NextcloudFolderPicker({
   const isSearchActive = search.trim().length > 0;
 
   return (
-    <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]" onClick={onClose}>
+    <div className={`fixed inset-0 ${zcStack[0]} flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]`} onClick={onClose}>
       <div
         className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-[0_32px_90px_rgba(15,23,42,0.35)] ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/10"
         onClick={(e) => e.stopPropagation()}

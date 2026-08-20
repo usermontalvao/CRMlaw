@@ -7,6 +7,8 @@ import { createPortal } from 'react-dom';
 import { Download, ExternalLink, FileText, Loader2, X } from 'lucide-react';
 import { formatBytes } from './format';
 import type { WhatsAppMessage } from '../../types/whatsapp.types';
+import { LAYER } from '../../styles/layers';
+import { useModalLayer } from '../../styles/modalLayer';
 
 const WaPdfDocumentView = React.lazy(() => import('./pdfDocumentView'));
 
@@ -152,6 +154,9 @@ export const WaPdfCard: React.FC<{ m: WhatsAppMessage; out: boolean }> = ({ m, o
  * um `fixed` dentro da thread.
  */
 export const WaPdfViewer: React.FC<{ url: string; name: string; onClose: () => void }> = ({ url, name, onClose }) => {
+  // Portal para o `body`: dentro do widget precisa da faixa dele, senão o PDF
+  // abre atrás da conversa que o abriu. Ver `styles/modalLayer`.
+  const camada = useModalLayer(LAYER.MODAL_NESTED);
   const [pages, setPages] = useState(0);
   const [current, setCurrent] = useState(1);
   const [failed, setFailed] = useState(false);
@@ -163,7 +168,7 @@ export const WaPdfViewer: React.FC<{ url: string; name: string; onClose: () => v
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[100000] flex flex-col bg-black/85" style={{ backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
+    <div className="fixed inset-0 flex flex-col bg-black/85" style={{ zIndex: camada, backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
       onClick={onClose}>
       <div className="flex flex-shrink-0 items-center gap-3 px-4 py-2.5 text-white" onClick={e => e.stopPropagation()}>
         <FileText size={18} className="flex-shrink-0 text-white/70" />

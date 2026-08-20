@@ -74,7 +74,7 @@ const TONES: Record<ThreadCallTone, { bubble: string; ring: string; chip: string
     // O mesmo verde das mensagens enviadas, com o anel e o disco puxados para o
     // esmeralda: continua sendo "nossa" na leitura de lado, mas não se confunde
     // com a chamada que foi atendida.
-    bubble: 'bg-[#d9fdd3]',
+    bubble: 'wa-call-bubble bg-[#d9fdd3]',
     ring: 'ring-emerald-300',
     chip: 'bg-emerald-100 text-emerald-700',
     title: 'text-emerald-800',
@@ -110,7 +110,7 @@ export const ThreadCallEntry: React.FC<{
 
   // O desfecho neutro cai na bolha padrão da conversa (verde do nosso lado,
   // branca do lado de lá); os outros dois trazem a própria cor.
-  const fundo = tone.bubble || (out ? 'bg-[#d9fdd3]' : 'bg-white');
+  const fundo = tone.bubble || (out ? 'wa-call-bubble bg-[#d9fdd3]' : 'bg-white');
   const anel = tone.ring || (out ? 'ring-black/[0.04]' : 'ring-black/[0.05]');
 
   return (

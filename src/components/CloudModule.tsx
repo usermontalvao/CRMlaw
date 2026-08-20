@@ -66,6 +66,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { supabase } from '../config/supabase';
+import { openWhatsAppChat } from '../utils/whatsappChat';
 import { cloudService } from '../services/cloud.service';
 import { clientService } from '../services/client.service';
 import { useToastContext } from '../contexts/ToastContext';
@@ -74,6 +75,7 @@ import SyncfusionEditor, { type SyncfusionEditorRef } from './SyncfusionEditor';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import type { Client } from '../types/client.types';
 import type { CloudActivityLog, CloudFile, CloudFolder, CloudFolderShare } from '../types/cloud.types';
+import { zc, zcStack } from '../styles/layers';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -4743,9 +4745,20 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
                       href={headerClientWhatsappLink}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(e) => {
+                        // A conversa abre no widget, sobre a nuvem — quem está
+                        // olhando a pasta do cliente continua nela. Ver
+                        // `utils/whatsappChat`.
+                        if (openWhatsAppChat({
+                          phone: headerClientPhone,
+                          clientId: headerClient?.id ?? null,
+                          contactName: headerClient?.full_name ?? null,
+                        })) e.preventDefault();
+                      }}
+                      title="Conversar no WhatsApp"
                       className="inline-flex shrink-0 items-center rounded-full bg-emerald-600 px-1 py-0.5 text-[8px] font-semibold text-white hover:bg-emerald-700 transition"
                     >
-                      WA.me
+                      Falar
                     </a>
                   ) : null}
                 </span>
@@ -6428,7 +6441,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       </AnimatePresence>
   
       {folderModalOpen && (
-        <div className="fixed inset-0 z-[120] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className={`fixed inset-0 ${zc.MODAL} bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4`}>
           <div className="w-full max-w-3xl rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
             <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
@@ -6553,7 +6566,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       )}
 
       {moveModalOpen && selectedFileToMove && (
-        <div className="fixed inset-0 z-[120] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className={`fixed inset-0 ${zc.MODAL} bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4`}>
           <div className="w-full max-w-xl rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
             <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
@@ -6586,7 +6599,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       )}
 
       {shareModalOpen && selectedFolderForShare && (
-        <div className="fixed inset-0 z-[120] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className={`fixed inset-0 ${zc.MODAL} bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4`}>
           <div className="w-full max-w-xl rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
             <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
@@ -6652,7 +6665,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       )}
 
       {previewFile && (
-        <div className={`fixed inset-0 z-[130] bg-slate-900/25 backdrop-blur-sm flex justify-center ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'items-center p-3 sm:p-4' : 'items-center p-4'}`}>
+        <div className={`fixed inset-0 ${zcStack[1]} bg-slate-900/25 backdrop-blur-sm flex justify-center ${isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'items-center p-3 sm:p-4' : 'items-center p-4'}`}>
           <div className={`w-full ${isDocxFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[98vw] h-[94vh]' : isPdfFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[94vh]' : isVideoFile(previewFile.mime_type, previewFile.original_name) ? 'max-w-[96vw] h-[92vh]' : 'max-w-6xl h-[88vh]'} rounded-2xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden flex flex-col`}>
             <div className="border-b border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 sm:px-4">
               <div className="flex items-center gap-1.5 sm:gap-2">
@@ -6882,7 +6895,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       {contextMenu && selectedContextFolder && (
         <div
           ref={contextMenuRef}
-          className="fixed z-[140] transition-opacity duration-75"
+          className={`fixed ${zcStack[3]} transition-opacity duration-75`}
           style={{ left: contextMenuPos?.x ?? contextMenu.x, top: contextMenuPos?.y ?? contextMenu.y, opacity: contextMenuPos ? 1 : 0 }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
@@ -7148,7 +7161,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       )}
 
       {folderIssueQuickModalOpen && folderIssueQuickTarget ? (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-[2px]">
+        <div className={`fixed inset-0 ${zcStack[4]} flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-[2px]`}>
           <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
             <div className={`h-2 w-full ${folderIssueQuickLevel === 'alerta' ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-amber-500 to-amber-600'}`} />
             <div className="space-y-4 bg-[#f8f7f5] p-5 sm:p-6">
@@ -7210,7 +7223,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       {contextMenu && contextMenu.type === 'blank' && (
         <div
           ref={contextMenuRef}
-          className="fixed z-[140] transition-opacity duration-75"
+          className={`fixed ${zcStack[3]} transition-opacity duration-75`}
           style={{ left: contextMenuPos?.x ?? contextMenu.x, top: contextMenuPos?.y ?? contextMenu.y, opacity: contextMenuPos ? 1 : 0 }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
@@ -7320,7 +7333,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       {contextMenu && selectedContextFile && (
         <div
           ref={contextMenuRef}
-          className="fixed z-[140] transition-opacity duration-75"
+          className={`fixed ${zcStack[3]} transition-opacity duration-75`}
           style={{ left: contextMenuPos?.x ?? contextMenu.x, top: contextMenuPos?.y ?? contextMenu.y, opacity: contextMenuPos ? 1 : 0 }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
@@ -7605,7 +7618,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
               animate={{ y: 0, opacity: 1, scale: 1 }}
               exit={{ y: 72, opacity: 0, scale: 0.96 }}
               transition={{ type: 'spring', stiffness: 500, damping: 38 }}
-              className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[120] flex items-center gap-0.5 px-1.5 py-1.5 rounded-2xl bg-[#111113]/95 backdrop-blur-xl text-white shadow-[0_20px_60px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.07)] select-none max-w-[calc(100vw-24px)] overflow-x-auto"
+              className={`fixed bottom-5 left-1/2 -translate-x-1/2 ${zc.MODAL} flex items-center gap-0.5 px-1.5 py-1.5 rounded-2xl bg-[#111113]/95 backdrop-blur-xl text-white shadow-[0_20px_60px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.07)] select-none max-w-[calc(100vw-24px)] overflow-x-auto`}
             >
               {/* Badge de contagem */}
               <span className="flex items-center gap-1.5 bg-orange-500/20 text-orange-300 px-2.5 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 mr-0.5">
@@ -7723,7 +7736,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       </AnimatePresence>
 
       {renameModalOpen && renameTarget && (
-        <div className="fixed inset-0 z-[135] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className={`fixed inset-0 ${zcStack[2]} bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4`}>
           <div className="w-full max-w-md rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
             <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
@@ -7781,7 +7794,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       )}
 
       {bulkRenameModalOpen && (
-        <div className="fixed inset-0 z-[135] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className={`fixed inset-0 ${zcStack[2]} bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4`}>
           <div className="w-full max-w-xl rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
             <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
@@ -7811,7 +7824,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       )}
 
       {bulkMoveModalOpen && (
-        <div className="fixed inset-0 z-[125] bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className={`fixed inset-0 ${zcStack[0]} bg-slate-900/25 backdrop-blur-sm flex items-center justify-center p-4`}>
           <div className="w-full max-w-xl rounded-3xl bg-[#f8f7f5] shadow-[0_24px_70px_rgba(15,23,42,0.18)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
             <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
@@ -7850,7 +7863,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[150] bg-slate-100/80 backdrop-blur-sm flex items-center justify-center p-4"
+            className={`fixed inset-0 ${zcStack[4]} bg-slate-100/80 backdrop-blur-sm flex items-center justify-center p-4`}
           >
             <motion.div
               initial={{ scale: 0.96, y: 18, opacity: 0 }}
@@ -7961,7 +7974,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[151] bg-white/72 backdrop-blur-md flex items-center justify-center p-4"
+            className={`fixed inset-0 ${zcStack[5]} bg-white/72 backdrop-blur-md flex items-center justify-center p-4`}
             style={{ backgroundColor: 'rgba(255,255,255,0.72)' }}
           >
             <motion.div
@@ -8055,7 +8068,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       </AnimatePresence>
 
       {imagePdfModalOpen && (
-        <div className="fixed inset-0 z-[140] bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className={`fixed inset-0 ${zcStack[3]} bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4`}>
           <div className="w-full max-w-4xl rounded-3xl bg-[#f8f7f5] text-slate-900 shadow-[0_25px_60px_rgba(15,23,42,0.22)] border border-[#e7e5df] overflow-hidden">
             <div className="h-2 w-full bg-gradient-to-r from-orange-500 to-orange-600" />
             <div className="p-5 sm:p-6 space-y-5 bg-[#f8f7f5]">
@@ -8210,7 +8223,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
         );
 
         return (
-        <div className="fixed inset-0 z-[135] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div className={`fixed inset-0 ${zcStack[2]} bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4`}>
           <motion.div
             initial={{ opacity: 0, y: 40, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}

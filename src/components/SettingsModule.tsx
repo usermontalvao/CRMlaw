@@ -78,6 +78,7 @@ import { accessRequestService } from '../services/accessRequest.service';
 import { aiService } from '../services/ai.service';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { events, SYSTEM_EVENTS } from '../utils/events';
+import { LAYER, zcStack } from '../styles/layers';
 import {
   settingsService,
   type AuditLogEntry,
@@ -6153,7 +6154,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         title={ruleModal.rule ? 'Editar Regra' : 'Nova Regra'}
         eyebrow="Notificações"
         size="md"
-        zIndex={100}
+        zIndex={LAYER.MODAL_NESTED}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '12px 24px' }}>
             <button className="settings-btn-ghost" onClick={() => setRuleModal({ open: false, rule: null })}>Cancelar</button>
@@ -6254,7 +6255,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         title={selectedUser ? 'Editar usuário' : 'Novo usuário'}
         eyebrow="Formulário"
         size="lg"
-        zIndex={100}
+        zIndex={LAYER.MODAL_NESTED}
         footer={
           <div className="flex justify-end gap-3">
             <button className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500" onClick={() => setUserModalOpen(false)}>Cancelar</button>
@@ -6378,7 +6379,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         onClose={() => setDeleteTarget(null)}
         title="Remover usuário"
         size="sm"
-        zIndex={100}
+        zIndex={LAYER.MODAL_NESTED}
         footer={
           <div className="flex justify-end gap-3">
             <button className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-500" onClick={() => setDeleteTarget(null)}>Cancelar</button>
@@ -6708,7 +6709,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         <>
           <style>{cssStyles}</style>
           <div
-            className="fixed inset-0 z-[90] flex items-center justify-center"
+            className={`fixed inset-0 ${zcStack[0]} flex items-center justify-center`}
             style={{ padding: '24px', background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
             onClick={onClose}
           >

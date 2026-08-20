@@ -9,6 +9,7 @@
 // azul-marinho só aparecia sobre o fundo real.
 import React, { useState } from 'react';
 import ChatLauncherBar from '../components/chat/ChatLauncherBar';
+import { zc } from '../styles/layers';
 
 const AVATAR =
   'data:image/svg+xml;utf8,' +
@@ -60,6 +61,34 @@ const ESTADOS: Estado[] = [
       badgeCount: 214, title: '198 conversas da equipe · 16 contatos no WhatsApp',
       peerName: 'Pedro Rodrigues Montalvão Neto', peerAvatarUrl: AVATAR,
       onToggle: nada, onOpenEditor: nada,
+    },
+  },
+  {
+    titulo: 'Painel minimizado',
+    nota: 'O bloco da direita é o que separa minimizar de fechar: a conversa ficou guardada, com foto e nome, e a barra é o caminho de volta.',
+    props: {
+      badgeCount: 48, title: '2 conversas da equipe · 46 contatos no WhatsApp',
+      guardedName: 'Roberta Aguiar', guardedAvatarUrl: AVATAR,
+      peerName: 'Michele', peerAvatarUrl: AVATAR,
+      onToggle: nada, onOpenEditor: nada,
+    },
+  },
+  {
+    titulo: 'Minimizado, sem foto',
+    nota: 'Sem retrato, a inicial na cor do nome — a mesma paleta da lista, para a pessoa ter um rosto só em todo o sistema.',
+    props: {
+      badgeCount: 3, title: '3 conversas da equipe',
+      guardedName: 'Jeanderson Santana da Silva',
+      onToggle: nada, onOpenEditor: nada,
+    },
+  },
+  {
+    titulo: 'Minimizado, com o Editor',
+    nota: 'As duas coisas que a barra guarda, lado a lado: a conversa primeiro — é ela que tem gente esperando.',
+    props: {
+      badgeCount: 12, title: '12 contatos no WhatsApp',
+      guardedName: 'Cleuza Ferreira dos Santos', editorMinimized: true,
+      editorHasUnsavedChanges: true, onToggle: nada, onOpenEditor: nada,
     },
   },
   {
@@ -173,7 +202,7 @@ export default function ChatLauncherPreview() {
         </div>
       </div>
 
-      <div className="fixed bottom-24 right-5 flex flex-col items-end z-[60]">
+      <div className={`fixed bottom-24 right-5 flex flex-col items-end ${zc.MODAL}`}>
         <ChatLauncherBar
           badgeCount={pendencias}
           title={pendencias ? `${pendencias} conversas da equipe` : 'Mensagens'}

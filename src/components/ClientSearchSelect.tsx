@@ -4,6 +4,7 @@ import { Plus, X } from 'lucide-react';
 import { clientService } from '../services/client.service';
 import ClientForm from './ClientForm';
 import type { CreateClientDTO } from '../types/client.types';
+import { LAYER, zcStack } from '../styles/layers';
 
 interface ClientSearchSelectProps {
   value?: string;
@@ -131,7 +132,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
         top,
         left: rect.left,
         width: rect.width,
-        zIndex: 10000,
+        zIndex: LAYER.POPOVER,
       });
     };
 
@@ -255,7 +256,7 @@ export const ClientSearchSelect: React.FC<ClientSearchSelectProps> = ({
 
       {isClientFormModalOpen &&
         createPortal(
-          <div className="fixed inset-0 z-[90] flex items-end justify-center px-0 py-0 sm:items-center sm:p-4">
+          <div className={`fixed inset-0 ${zcStack[0]} flex items-end justify-center px-0 py-0 sm:items-center sm:p-4`}>
             <div
               className="absolute inset-0 bg-slate-50/80 backdrop-blur-md"
               onClick={() => {

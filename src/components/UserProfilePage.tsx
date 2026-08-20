@@ -66,6 +66,7 @@ import { supabase } from '../config/supabase';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { formatCurrency as fmtCurrencyG } from '../utils/formatters';
 import { getLocalDateKey, validateBirthDate } from '../utils/birthday';
+import { LAYER } from '../styles/layers';
 
 // Banner padrão jurídico (usado quando usuário não selecionou nenhum)
 const DEFAULT_BANNER = 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=1200&h=400&fit=crop';
@@ -2832,7 +2833,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                     {/* Modal de curtidas */}
                     {interactionModal.open && interactionModal.type === 'likes' && (
-                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" style={{ zIndex: LAYER.MODAL_NESTED }}>
                         <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
                           <div className="flex items-center justify-between p-4 border-b border-[#e7e5df]">
                             <h3 className="font-bold text-slate-900">
@@ -2875,7 +2876,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
                     {/* Modal de galeria de imagens */}
                     {imageGalleryModal.open && (
-                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-100/95 p-4">
+                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-100/95 p-4" style={{ zIndex: LAYER.MODAL_NESTED }}>
                         <div className="bg-white rounded-2xl shadow-xl max-w-5xl w-full max-h-[90vh] flex flex-col">
                           <div className="flex items-center justify-between p-4 border-b border-[#e7e5df]">
                             <h3 className="font-bold text-slate-900">
@@ -3483,7 +3484,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
       {/* Modal de Seleção de Capa */}
       {showCoverModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" style={{ zIndex: LAYER.MODAL }}>
           <div className="bg-[#f8f7f5] dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-6 border-b border-[#e7e5df] dark:border-slate-800">
               <div>

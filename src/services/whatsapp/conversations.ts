@@ -68,7 +68,10 @@ export const conversationsApi = {
   },
 
   async markRead(conversationId: string): Promise<void> {
-    await supabase.from(CONV_TABLE).update({ unread_count: 0 }).eq('id', conversationId);
+    const { error } = await supabase.rpc('wa_mark_contact_read', {
+      p_conversation_id: conversationId,
+    });
+    if (error) throw new Error(error.message);
   },
 
   /**
@@ -86,8 +89,9 @@ export const conversationsApi = {
    * "desleu" seria inventar precisão — ele leu todas, e escolheu voltar depois.
    */
   async markUnread(conversationId: string): Promise<void> {
-    const { error } = await supabase.from(CONV_TABLE)
-      .update({ unread_count: 1 }).eq('id', conversationId);
+    const { error } = await supabase.rpc('wa_mark_contact_unread', {
+      p_conversation_id: conversationId,
+    });
     if (error) throw new Error(error.message);
   },
 
@@ -190,43 +194,16 @@ export const conversationsApi = {
     note?: string;
   }): Promise<void> {
     const { conversationId, toUserId, toDepartmentId, note } = params;
-    const { data: conv } = await supabase
-      .from(CONV_TABLE)
-      .select('assigned_user_id, department_id, awaiting_accept, transfer_pending_since')
-      .eq('id', conversationId)
-      .maybeSingle();
-
-    // Transferir coloca a conversa em "aguardando aceite": o destino precisa
-    // assumir explicitamente (ou a operação vê o alerta de tempo parado).
-    const update: Record<string, unknown> = {
-      awaiting_accept: true,
-      transfer_pending_since: new Date().toISOString(),
-    };
-    if (toUserId !== undefined) update.assigned_user_id = toUserId;
-    if (toDepartmentId !== undefined) update.department_id = toDepartmentId;
-    const { error: upErr } = await supabase.from(CONV_TABLE).update(update).eq('id', conversationId);
-    if (upErr) throw new Error(upErr.message);
-
-    const { data: auth } = await supabase.auth.getUser();
-    const { error: logErr } = await supabase.from(TRANSFER_TABLE).insert({
-      conversation_id: conversationId,
-      from_user_id: conv?.assigned_user_id ?? null,
-      to_user_id: toUserId ?? null,
-      from_department_id: conv?.department_id ?? null,
-      to_department_id: toDepartmentId ?? null,
-      note: note || null,
-      performed_by: auth?.user?.id ?? null,
+    // Responsabilidade é do ATENDIMENTO, não do número pelo qual a pessoa falou.
+    // A RPC trava e transfere todas as linhas irmãs numa transação, além de
+    // registrar uma linha de histórico por canal antes de mudar o estado.
+    const { error } = await supabase.rpc('wa_transfer_contact_attendance', {
+      p_conversation_id: conversationId,
+      p_to_user_id: toUserId ?? null,
+      p_to_department_id: toDepartmentId ?? null,
+      p_note: note || null,
     });
-    if (logErr) {
-      // Evita deixar a conversa em estado pendente sem trilha de auditoria.
-      await supabase.from(CONV_TABLE).update({
-        assigned_user_id: conv?.assigned_user_id ?? null,
-        department_id: conv?.department_id ?? null,
-        awaiting_accept: conv?.awaiting_accept ?? false,
-        transfer_pending_since: conv?.transfer_pending_since ?? null,
-      }).eq('id', conversationId);
-      throw new Error(logErr.message);
-    }
+    if (error) throw new Error(error.message);
   },
 
   /**
@@ -236,56 +213,10 @@ export const conversationsApi = {
    * quando não há pessoa-alvo) pode aceitar — evita "roubo" por terceiros.
    */
   async acceptTransfer(conversationId: string): Promise<void> {
-    const { data: auth } = await supabase.auth.getUser();
-    const uid = auth?.user?.id ?? null;
-    if (!uid) throw new Error('Sessão inválida.');
-
-    // Recupera a transferência pendente mais recente para validar destinatário.
-    const { data: transfer } = await supabase
-      .from(TRANSFER_TABLE)
-      .select('id, to_user_id, to_department_id')
-      .eq('conversation_id', conversationId)
-      .is('accepted_at', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (transfer) {
-      if (transfer.to_user_id) {
-        // Transferência direta: só o usuário-alvo aceita.
-        if (transfer.to_user_id !== uid) {
-          throw new Error('Esta transferência é destinada a outro atendente.');
-        }
-      } else if (transfer.to_department_id) {
-        // Transferência por setor: o usuário deve ser membro do setor.
-        const { data: membership } = await supabase
-          .from('whatsapp_department_members')
-          .select('user_id')
-          .eq('department_id', transfer.to_department_id)
-          .eq('user_id', uid)
-          .maybeSingle();
-        if (!membership) {
-          throw new Error('Você não pertence ao setor de destino desta transferência.');
-        }
-      }
-    }
-
-    const { data: conv } = await supabase
-      .from(CONV_TABLE)
-      .select('assigned_user_id')
-      .eq('id', conversationId)
-      .maybeSingle();
-
-    const patch: Record<string, unknown> = { awaiting_accept: false, transfer_pending_since: null };
-    if (!conv?.assigned_user_id) patch.assigned_user_id = uid; // setor sem dono → quem aceita assume
-    const { error } = await supabase.from(CONV_TABLE).update(patch).eq('id', conversationId);
+    const { error } = await supabase.rpc('wa_accept_contact_transfer', {
+      p_conversation_id: conversationId,
+    });
     if (error) throw new Error(error.message);
-
-    if (transfer?.id) {
-      await supabase.from(TRANSFER_TABLE)
-        .update({ accepted_at: new Date().toISOString(), accepted_by: uid })
-        .eq('id', transfer.id);
-    }
   },
 
   /**
@@ -294,14 +225,9 @@ export const conversationsApi = {
    * transferência. Reabre a conversa se estiver encerrada (voltou a atender).
    */
   async assumeConversation(conversationId: string): Promise<void> {
-    const { data: auth } = await supabase.auth.getUser();
-    const uid = auth?.user?.id ?? null;
-    if (!uid) throw new Error('Sessão inválida.');
-    const { error } = await supabase.from(CONV_TABLE).update({
-      assigned_user_id: uid,
-      awaiting_accept: false,
-      transfer_pending_since: null,
-    }).eq('id', conversationId);
+    const { error } = await supabase.rpc('wa_assume_contact_attendance', {
+      p_conversation_id: conversationId,
+    });
     if (error) throw new Error(error.message);
   },
 
@@ -316,34 +242,12 @@ export const conversationsApi = {
    * o responsável já entra valendo, e a trilha registra quem distribuiu.
    */
   async assignConversation(conversationId: string, toUserId: string, note?: string): Promise<void> {
-    const { data: conv } = await supabase
-      .from(CONV_TABLE)
-      .select('assigned_user_id, department_id')
-      .eq('id', conversationId)
-      .maybeSingle();
-
-    const { error } = await supabase.from(CONV_TABLE).update({
-      assigned_user_id: toUserId,
-      awaiting_accept: false,
-      transfer_pending_since: null,
-    }).eq('id', conversationId);
-    if (error) throw new Error(error.message);
-
-    const { data: auth } = await supabase.auth.getUser();
-    const now = new Date().toISOString();
-    // Auditoria best-effort: a atribuição já valeu; perder a linha de histórico
-    // não pode desfazer a distribuição e deixar a conversa órfã de novo.
-    await supabase.from(TRANSFER_TABLE).insert({
-      conversation_id: conversationId,
-      from_user_id: conv?.assigned_user_id ?? null,
-      to_user_id: toUserId,
-      from_department_id: conv?.department_id ?? null,
-      to_department_id: null,
-      note: note || 'Distribuição da fila',
-      performed_by: auth?.user?.id ?? null,
-      accepted_at: now,
-      accepted_by: toUserId,
+    const { error } = await supabase.rpc('wa_assign_contact_attendance', {
+      p_conversation_id: conversationId,
+      p_to_user_id: toUserId,
+      p_note: note || null,
     });
+    if (error) throw new Error(error.message);
   },
 
   /**
@@ -351,11 +255,9 @@ export const conversationsApi = {
    * status. Volta a ficar disponível para quem for assumir no destino.
    */
   async releaseToQueue(conversationId: string): Promise<void> {
-    const { error } = await supabase.from(CONV_TABLE).update({
-      assigned_user_id: null,
-      awaiting_accept: false,
-      transfer_pending_since: null,
-    }).eq('id', conversationId);
+    const { error } = await supabase.rpc('wa_release_contact_attendance', {
+      p_conversation_id: conversationId,
+    });
     if (error) throw new Error(error.message);
   },
 
@@ -377,18 +279,10 @@ export const conversationsApi = {
     const note = reason.trim();
     // Motivo é opcional (interno): se vazio, encerra sem registrar motivo.
     const farewell = options?.farewell?.trim();
-    const { data: auth } = await supabase.auth.getUser();
-    const { error } = await supabase.from(CONV_TABLE).update({
-      status: 'closed',
-      closed_at: new Date().toISOString(),
-      closed_by: auth?.user?.id ?? null,
-      closure_reason: note || null,
-      // Encerrar zera as pausas de conversa: voltam ao normal no próximo contato.
-      absence_suppressed: false,
-      auto_close_suppressed: false,
-      // `absence_sent_at` é preservado: fechar/reabrir a conversa não pode apagar
-      // o cooldown e repetir o mesmo aviso para o cliente poucos minutos depois.
-    }).eq('id', conversationId);
+    const { error } = await supabase.rpc('wa_close_contact_attendance', {
+      p_conversation_id: conversationId,
+      p_reason: note || null,
+    });
     if (error) throw new Error(error.message);
     // Despedida depois do fechamento: falhar aqui não desfaz o encerramento.
     if (farewell) {
@@ -399,9 +293,9 @@ export const conversationsApi = {
 
   /** Reabre manualmente uma conversa encerrada (volta para a fila). */
   async reopenConversation(conversationId: string): Promise<void> {
-    const { error } = await supabase.from(CONV_TABLE).update({
-      status: 'open', reopened_at: new Date().toISOString(),
-    }).eq('id', conversationId);
+    const { error } = await supabase.rpc('wa_reopen_contact_attendance', {
+      p_conversation_id: conversationId,
+    });
     if (error) throw new Error(error.message);
   },
 

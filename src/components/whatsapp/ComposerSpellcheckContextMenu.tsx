@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowRight, SpellCheck2, X } from 'lucide-react';
 import type { WhatsAppSpellcheckHit } from './composerSpellcheck';
+import { LAYER } from '../../styles/layers';
+import { useModalLayer } from '../../styles/modalLayer';
 
 export interface ComposerSpellcheckMenuState extends WhatsAppSpellcheckHit {
   x: number;
@@ -19,6 +21,8 @@ export const ComposerSpellcheckContextMenu: React.FC<ComposerSpellcheckContextMe
   onReplace,
   onClose,
 }) => {
+  // Portal para o `body`: dentro do widget o menu precisa da faixa dele.
+  const camada = useModalLayer(LAYER.POPOVER);
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => { setActiveIndex(0); }, [menu?.issue.word]);
@@ -69,8 +73,8 @@ export const ComposerSpellcheckContextMenu: React.FC<ComposerSpellcheckContextMe
     <div role="menu" aria-label={`Correções para ${menu.issue.word}`}
       data-testid="wa-spellcheck-context-menu"
       onPointerDown={event => event.stopPropagation()}
-      className="fixed z-[150] w-56 overflow-hidden rounded-xl border border-[#e5e1d8] bg-white/98 shadow-[0_18px_45px_-8px_rgba(15,23,42,0.28)] backdrop-blur-sm"
-      style={{ left, top }}>
+      className="fixed w-56 overflow-hidden rounded-xl border border-[#e5e1d8] bg-white/98 shadow-[0_18px_45px_-8px_rgba(15,23,42,0.28)] backdrop-blur-sm"
+      style={{ left, top, zIndex: camada }}>
       <div className="flex items-start gap-2.5 border-b border-[#eeeae2] bg-[#faf9f6] px-3 py-2.5">
         <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
           <SpellCheck2 size={14} />

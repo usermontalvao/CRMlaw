@@ -1,6 +1,6 @@
 // Camada de mensagens: leitura da thread, envio de texto/mídia, upload e edição.
 import { supabase } from '../../config/supabase';
-import type { WhatsAppMessage, SendMediaInput, UploadedMedia, WhatsAppDeleteScope } from '../../types/whatsapp.types';
+import type { WhatsAppMessage, SendMediaInput, UploadedMedia, WhatsAppDeleteScope, WaReacao } from '../../types/whatsapp.types';
 import { MSG_TABLE, MEDIA_BUCKET, attachSignedUrls, invokeFn, extOf } from './shared';
 
 /**
@@ -25,7 +25,7 @@ export type SendResult = {
  * Literal numa linha só de propósito: o supabase-js tipa o retorno a partir do
  * texto da consulta, e uma string montada em tempo de execução vira `unknown`.
  */
-const MSG_COLUMNS = 'id, conversation_id, evolution_message_id, direction, type, content, media_url, media_mime, storage_path, media_size, media_sha256, file_name, media_duration_seconds, transcription_text, transcription_status, is_animated, reply_to_id, edited_at, status, sender_user_id, wa_timestamp, created_at, deleted_at, deleted_by, deleted_scope';
+const MSG_COLUMNS = 'id, conversation_id, evolution_message_id, direction, type, content, media_url, media_mime, storage_path, media_size, media_sha256, file_name, media_duration_seconds, transcription_text, transcription_status, is_animated, reply_to_id, edited_at, reactions, status, sender_user_id, wa_timestamp, created_at, deleted_at, deleted_by, deleted_scope';
 
 export const messagesApi = {
   /**
@@ -138,6 +138,7 @@ export const messagesApi = {
       storage_path: params.storagePath,
       mime_type: params.mimeType,
       file_name: params.fileName,
+      media_size: params.mediaSize,
       reply_to_id: params.replyToId,
       as_gif: params.asGif === true,
     });
@@ -153,6 +154,8 @@ export const messagesApi = {
   sendAudio(p: Omit<SendMediaInput, 'type'>) { return messagesApi.sendMedia({ ...p, type: 'audio' }); },
   sendDocument(p: Omit<SendMediaInput, 'type'>) { return messagesApi.sendMedia({ ...p, type: 'document' }); },
   sendVideo(p: Omit<SendMediaInput, 'type'>) { return messagesApi.sendMedia({ ...p, type: 'video' }); },
+  /** GIF do seletor: sai como figurinha animada (ver `SendMediaInput.asGif`). */
+  sendSticker(p: Omit<SendMediaInput, 'type'>) { return messagesApi.sendMedia({ ...p, type: 'sticker' }); },
 
   async editMessage(messageId: string, text: string): Promise<void> {
     await invokeFn('evolution-send', { action: 'edit', message_id: messageId, text });
@@ -168,5 +171,22 @@ export const messagesApi = {
    */
   async deleteMessage(messageId: string, scope: WhatsAppDeleteScope): Promise<void> {
     await invokeFn('evolution-send', { action: 'delete', message_id: messageId, scope });
+  },
+
+  /**
+   * Reage (ou desfaz a reação) a uma mensagem — a reação SAI para o aparelho do
+   * contato, como no aplicativo.
+   *
+   * `emoji` vazio remove a reação, que é exatamente o que o WhatsApp entende.
+   * Quem grava a lista é a Edge Function: a reação da equipe e a que chega do
+   * contato pelo webhook passam pela mesma regra, e assim as duas não podem
+   * divergir. Devolve a lista já atualizada, para a bolha não precisar esperar
+   * o realtime.
+   */
+  async reactToMessage(messageId: string, emoji: string): Promise<WaReacao[]> {
+    const data = await invokeFn('evolution-send', {
+      action: 'react', message_id: messageId, emoji,
+    });
+    return Array.isArray(data?.reactions) ? (data.reactions as WaReacao[]) : [];
   },
 };

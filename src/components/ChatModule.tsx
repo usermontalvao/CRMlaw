@@ -12,6 +12,7 @@ import { ModuleSkeleton } from './ui';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { criarControleDePresenca, type ControleDePresenca } from '../services/realtime/presenceTrack';
 import { applyOutputToElement, openPreferredMicrophone } from '../utils/audioDevices';
+import { LAYER, zc } from '../styles/layers';
 
 const DEFAULT_ROOM_NAME = 'Geral';
 
@@ -331,7 +332,7 @@ const AttachmentSignedMedia: React.FC<{ attachment: ChatAttachmentPayload; kind:
         {/* Viewer em portal para escapar do backdrop-filter stacking context */}
         {viewerOpen && createPortal(
           <div
-            className="fixed inset-0 z-[99999] bg-black/85 flex items-center justify-center p-4"
+            className={`fixed inset-0 ${zc.MODAL_NESTED} bg-black/85 flex items-center justify-center p-4`}
             style={{ backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
             onClick={() => setViewerOpen(false)}
           >
@@ -2289,7 +2290,7 @@ const ChatModule: React.FC = () => {
 
       {/* Modal de Nova Conversa */}
       {showNewChatModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center px-3 sm:px-6 py-4`}>
           <div
             className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
             onClick={() => {
@@ -2420,7 +2421,7 @@ const ChatModule: React.FC = () => {
 
       {/* Drawer - Informações do Contato */}
       {showContactInfo && selectedRoomMember && (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-50" style={{ zIndex: LAYER.MODAL }}>
           <button
             type="button"
             className="absolute inset-0 bg-black/50"

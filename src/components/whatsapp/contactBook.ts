@@ -35,7 +35,7 @@ export interface ContactSection {
 }
 
 /** Minúsculas, sem acento — para comparar nome digitado com nome cadastrado. */
-function fold(text: string): string {
+export function fold(text: string): string {
   return (text || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 

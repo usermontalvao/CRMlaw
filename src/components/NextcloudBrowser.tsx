@@ -86,6 +86,7 @@ import {
   formatBytes, formatDateTime,
 } from '../utils/nextcloudFile';
 import { formatRelativeTime, relativeTimeRefreshDelay } from '../utils/relativeTime';
+import { layerStack, zc, zcStack } from '../styles/layers';
 import {
   canGoBack as historyCanGoBack,
   canGoForward as historyCanGoForward,
@@ -3898,7 +3899,7 @@ const NextcloudBrowser: React.FC = () => {
         >
           {marquee && (
             <div
-              className="pointer-events-none fixed z-[80] border border-blue-500 bg-blue-500/15 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]"
+              className={`pointer-events-none fixed ${zcStack[0]} border border-blue-500 bg-blue-500/15 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]`}
               style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }}
             />
           )}
@@ -4303,7 +4304,7 @@ const NextcloudBrowser: React.FC = () => {
           return (
             <div
               ref={ctxMenuRef}
-              className={`fixed z-[9999] max-h-[calc(100dvh-16px)] w-64 overflow-y-auto overscroll-contain rounded-2xl border p-1.5 ${NC_BORDER} ${NC_SURFACE} shadow-[0_18px_55px_rgba(15,23,42,0.24)]`}
+              className={`fixed ${zc.POPOVER} max-h-[calc(100dvh-16px)] w-64 overflow-y-auto overscroll-contain rounded-2xl border p-1.5 ${NC_BORDER} ${NC_SURFACE} shadow-[0_18px_55px_rgba(15,23,42,0.24)]`}
               style={{ left: ctxMenu.x, top: ctxMenu.y }}
               onContextMenu={(event) => event.preventDefault()}
             >
@@ -4335,7 +4336,7 @@ const NextcloudBrowser: React.FC = () => {
         return (
           <div
             ref={ctxMenuRef}
-            className={`fixed z-[9999] max-h-[calc(100dvh-16px)] w-60 overflow-y-auto overscroll-contain rounded-2xl border p-1.5 ${NC_BORDER} ${NC_SURFACE} shadow-[0_18px_55px_rgba(15,23,42,0.24)]`}
+            className={`fixed ${zc.POPOVER} max-h-[calc(100dvh-16px)] w-60 overflow-y-auto overscroll-contain rounded-2xl border p-1.5 ${NC_BORDER} ${NC_SURFACE} shadow-[0_18px_55px_rgba(15,23,42,0.24)]`}
             style={{ left: ctxMenu.x, top: ctxMenu.y }}
             onContextMenu={(e) => e.preventDefault()}
           >
@@ -4425,7 +4426,7 @@ const NextcloudBrowser: React.FC = () => {
         );
         return (
           <div
-            className="fixed inset-0 z-[155] flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-[4px]"
+            className={`fixed inset-0 ${zcStack[1]} flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-[4px]`}
             onClick={() => setPropertiesTargets([])}
           >
             <div
@@ -4522,7 +4523,7 @@ const NextcloudBrowser: React.FC = () => {
         const fileCount = pendingMovement.entries.length - folderCount;
         return (
           <div
-            className="fixed inset-0 z-[165] flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-[4px]"
+            className={`fixed inset-0 ${zcStack[2]} flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-[4px]`}
             onClick={() => { if (!movementExecuting) setPendingMovement(null); }}
           >
             <div
@@ -4631,7 +4632,7 @@ const NextcloudBrowser: React.FC = () => {
 
       {/* Bloco de Notas para arquivos de texto */}
       {textEditorOpen && (
-        <div className="fixed inset-0 z-[145] flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-[3px] sm:p-5" onClick={() => closeTextEditor()}>
+        <div className={`fixed inset-0 ${zcStack[0]} flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-[3px] sm:p-5`} onClick={() => closeTextEditor()}>
           <div className="flex h-[90dvh] w-full max-w-[1000px] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-[0_35px_100px_rgba(0,0,0,0.35)] dark:border-zinc-700 dark:bg-zinc-900 sm:h-[76dvh]" onClick={(event) => event.stopPropagation()}>
             <div className="flex h-12 shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-3 dark:border-zinc-700 dark:bg-zinc-800">
               <div className="flex min-w-0 items-center gap-2.5">
@@ -4694,7 +4695,7 @@ const NextcloudBrowser: React.FC = () => {
 
       {/* Modal de preview (PDF / imagem) */}
       {previewFile && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#090b0f]/80 p-2 backdrop-blur-md sm:p-5" onClick={() => setPreviewFile(null)}>
+        <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center bg-[#090b0f]/80 p-2 backdrop-blur-md sm:p-5`} onClick={() => setPreviewFile(null)}>
           <div
             ref={!isPdf(previewFile) ? previewMediaShellRef : undefined}
             className={[
@@ -5078,7 +5079,7 @@ const NextcloudBrowser: React.FC = () => {
 
       {previewRotationConfirm && previewFile && isPdf(previewFile) && (
         <div
-          className="fixed inset-0 z-[175] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+          className={`fixed inset-0 ${zcStack[3]} flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm`}
           onClick={() => { if (!previewRotationSaving) setPreviewRotationConfirm(false); }}
         >
           <div
@@ -5172,7 +5173,7 @@ const NextcloudBrowser: React.FC = () => {
 
       {/* Modal: vincular pasta a cliente */}
       {linkTarget && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]" onClick={() => { setLinkTarget(null); setClientSearch(''); }}>
+        <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]`} onClick={() => { setLinkTarget(null); setClientSearch(''); }}>
           <div className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-[0_32px_90px_rgba(15,23,42,0.35)] ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/10" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="min-w-0">
@@ -5225,7 +5226,7 @@ const NextcloudBrowser: React.FC = () => {
 
       {/* Modal: confirmação da vinculação automática (pastas ambíguas) */}
       {autoLinkPlan && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]" onClick={closeAutoLink}>
+        <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]`} onClick={closeAutoLink}>
           <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-[0_32px_90px_rgba(15,23,42,0.35)] ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/10" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="min-w-0">
@@ -5291,7 +5292,7 @@ const NextcloudBrowser: React.FC = () => {
 
       {/* Modal: ferramentas de PDF */}
       {pdfToolFile && (
-        <div className="fixed inset-0 z-[140] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-[3px] sm:items-center sm:p-4" onClick={() => !applyingTool && closePdfTools()}>
+        <div className={`fixed inset-0 ${zc.MODAL} flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-[3px] sm:items-center sm:p-4`} onClick={() => !applyingTool && closePdfTools()}>
           <div className="flex h-[96dvh] w-full flex-col overflow-hidden rounded-t-[20px] bg-[#f3f3f3] shadow-[0_40px_100px_rgba(0,0,0,0.35)] [font-family:'Segoe_UI',system-ui,sans-serif] sm:h-[90dvh] sm:max-w-6xl sm:rounded-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex shrink-0 items-center gap-4 bg-[#202020] px-5 py-3.5">
               <div className="flex h-10 w-14 shrink-0 items-center justify-center rounded-lg bg-[#0082c9] text-white shadow-sm">
@@ -5879,7 +5880,7 @@ const NextcloudBrowser: React.FC = () => {
 
       {/* Modal: organizador de páginas de PDF */}
       {organizeFile && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-[3px] sm:p-5" onClick={() => !organizeSaving && requestOrganizerExit('close')}>
+        <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-[3px] sm:p-5`} onClick={() => !organizeSaving && requestOrganizerExit('close')}>
           <div className="flex h-[94dvh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-[#f3f3f3] shadow-[0_32px_90px_rgba(15,23,42,0.4)] ring-1 ring-black/10 [font-family:'Segoe_UI',system-ui,sans-serif] dark:bg-zinc-900 dark:ring-white/10 sm:h-[88dvh]" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900">
@@ -6040,7 +6041,7 @@ const NextcloudBrowser: React.FC = () => {
         icon={<ShieldAlert className="h-5 w-5" />}
         accentBarClassName="bg-amber-500"
         iconContainerClassName="rounded-xl bg-amber-500 text-white"
-        zIndex={170}
+        zIndex={layerStack(3)}
         footer={
           <ModalFooter>
             <Button variant="secondary" onClick={() => setOrganizeExitIntent(null)}>Continuar editando</Button>
@@ -6060,7 +6061,7 @@ const NextcloudBrowser: React.FC = () => {
 
       {/* Modal: imagens → PDF */}
       {imagesPdfTargets && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]" onClick={() => !convertingImages && setImagesPdfTargets(null)}>
+        <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]`} onClick={() => !convertingImages && setImagesPdfTargets(null)}>
           <div className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-[0_32px_90px_rgba(15,23,42,0.35)] ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/10" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-center gap-2"><FileImage className="w-5 h-5 text-violet-600" /> <h2 className="font-semibold">Imagens → PDF</h2></div>
@@ -6131,7 +6132,7 @@ const NextcloudBrowser: React.FC = () => {
 
       {/* Modal: histórico de versões */}
       {versionsFile && (
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]" onClick={() => setVersionsFile(null)}>
+        <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[3px]`} onClick={() => setVersionsFile(null)}>
           <div className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-[0_32px_90px_rgba(15,23,42,0.35)] ring-1 ring-black/10 dark:bg-zinc-900 dark:ring-white/10" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-center gap-2 min-w-0"><History className="w-5 h-5 text-amber-600 shrink-0" /> <div className="min-w-0"><h2 className="font-semibold truncate">Versões</h2><p className="text-xs text-gray-500 truncate">{versionsFile.name}</p></div></div>
@@ -6186,7 +6187,7 @@ const NextcloudBrowser: React.FC = () => {
         icon={<NotebookPen className="h-5 w-5" />}
         accentBarClassName="bg-blue-600"
         iconContainerClassName="rounded-xl bg-blue-600 text-white"
-        zIndex={170}
+        zIndex={layerStack(3)}
         footer={
           <ModalFooter>
             <Button variant="secondary" onClick={() => setTextDiscardConfirm(false)}>Cancelar</Button>
@@ -6246,7 +6247,7 @@ const NextcloudBrowser: React.FC = () => {
         icon={<AlertCircle className="h-5 w-5" />}
         accentBarClassName="bg-amber-500"
         iconContainerClassName="rounded-xl bg-amber-500 text-white"
-        zIndex={175}
+        zIndex={layerStack(4)}
         footer={
           <ModalFooter>
             <Button variant="secondary" onClick={() => setTextConflict(false)}>Cancelar</Button>
@@ -6278,7 +6279,7 @@ const NextcloudBrowser: React.FC = () => {
         icon={nameDialog?.mode === 'create' ? <FolderPlus className="h-5 w-5" /> : nameDialog?.mode === 'createWord' ? <FileText className="h-5 w-5" /> : <Pencil className="h-5 w-5" />}
         accentBarClassName="bg-blue-600"
         iconContainerClassName="rounded-xl bg-blue-600 text-white shadow-sm"
-        zIndex={160}
+        zIndex={layerStack(0)}
         footer={
           <ModalFooter>
             <Button variant="secondary" onClick={closeNameDialog} disabled={Boolean(busy)}>Cancelar</Button>
@@ -6320,7 +6321,7 @@ const NextcloudBrowser: React.FC = () => {
       </Modal>
 
       {zipProgress && (
-        <div className="fixed bottom-4 left-4 z-[150] w-[min(92vw,340px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.25)] dark:border-zinc-700 dark:bg-zinc-900" role="status" aria-live="polite">
+        <div className={`fixed bottom-4 left-4 ${zc.NOTICE} w-[min(92vw,340px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.25)] dark:border-zinc-700 dark:bg-zinc-900`} role="status" aria-live="polite">
           <div className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{zipProgress.label}</p>
@@ -6339,7 +6340,7 @@ const NextcloudBrowser: React.FC = () => {
         const done = uploadJobs.filter((j) => j.status === 'done').length;
         const failed = uploadJobs.filter((j) => j.status === 'failed' || j.status === 'canceled').length;
         return (
-          <div className="fixed bottom-4 right-4 z-[150] w-[min(92vw,380px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.25)] dark:border-zinc-700 dark:bg-zinc-900" role="status" aria-live="polite">
+          <div className={`fixed bottom-4 right-4 ${zc.NOTICE} w-[min(92vw,380px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.25)] dark:border-zinc-700 dark:bg-zinc-900`} role="status" aria-live="polite">
             <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-zinc-800">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
@@ -6390,7 +6391,7 @@ const NextcloudBrowser: React.FC = () => {
         icon={<Upload className="h-5 w-5" />}
         accentBarClassName={uploadDropReport?.failures.length ? 'bg-amber-500' : 'bg-emerald-500'}
         iconContainerClassName={uploadDropReport?.failures.length ? 'rounded-xl bg-amber-500 text-white' : 'rounded-xl bg-emerald-500 text-white'}
-        zIndex={161}
+        zIndex={layerStack(1)}
         footer={
           <ModalFooter>
             <Button onClick={() => setUploadDropReport(null)}>Concluir</Button>
@@ -6445,7 +6446,7 @@ const NextcloudBrowser: React.FC = () => {
         icon={<ShieldAlert className="h-5 w-5" />}
         accentBarClassName="bg-red-500"
         iconContainerClassName="rounded-xl bg-red-500 text-white shadow-sm"
-        zIndex={161}
+        zIndex={layerStack(1)}
         footer={
           <ModalFooter>
             <Button variant="secondary" onClick={() => setDeleteTargets([])} disabled={Boolean(busy)}>Cancelar</Button>
@@ -6488,7 +6489,7 @@ const NextcloudBrowser: React.FC = () => {
         icon={<History className="h-5 w-5" />}
         accentBarClassName="bg-amber-500"
         iconContainerClassName="rounded-xl bg-amber-500 text-white shadow-sm"
-        zIndex={162}
+        zIndex={layerStack(2)}
         footer={
           <ModalFooter>
             <Button variant="secondary" onClick={() => setRestoreVersionId(null)} disabled={Boolean(restoringVersion)}>Cancelar</Button>

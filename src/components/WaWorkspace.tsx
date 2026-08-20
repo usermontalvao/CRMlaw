@@ -26,6 +26,7 @@ import { ProcessFormModal } from './ProcessFormModal';
 import { RequirementFormModal } from './RequirementFormModal';
 import { EventFormModal } from './EventFormModal';
 import { useAuth } from '../contexts/AuthContext';
+import { openDialer } from '../utils/phoneDial';
 import { useToastContext } from '../contexts/ToastContext';
 import type { Process, ProcessStatus, ProcessPracticeArea } from '../types/process.types';
 import type { Requirement, BenefitType } from '../types/requirement.types';
@@ -34,6 +35,8 @@ import type { Deadline } from '../types/deadline.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import type { DocumentTemplate } from '../types/document.types';
 import { supabase } from '../config/supabase';
+import { LAYER } from '../styles/layers';
+import { useModalLayer } from '../styles/modalLayer';
 
 // ─── Tipos de modal ───────────────────────────────────────────────────────────
 
@@ -118,6 +121,10 @@ const WaOverlay: React.FC<{
   footer?: React.ReactNode;
   children: React.ReactNode;
 }> = ({ title, icon, onClose, size = 'lg', footer, children }) => {
+  // Estas fichas abrem DE DENTRO da conversa — e a conversa tanto pode estar em
+  // tela cheia (faixa dos modais) quanto dentro do widget flutuante, que mora
+  // acima dos modais. Ver `styles/modalLayer`.
+  const camada = useModalLayer(LAYER.MODAL);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', handler);
@@ -127,7 +134,7 @@ const WaOverlay: React.FC<{
   const maxW = size === 'xl' ? 'max-w-4xl' : size === 'lg' ? 'max-w-2xl' : 'max-w-xl';
 
   return createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 flex items-center justify-center bg-black/50 p-4" style={{ zIndex: camada }} onClick={onClose}>
       <div
         className={`${maxW} w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden`}
         onClick={e => e.stopPropagation()}
@@ -262,11 +269,12 @@ const WaTimelineModal: React.FC<{
   processCode: string;
   clientName?: string;
   onClose: () => void;
-}> = ({ processId, processCode, clientName, onClose }) =>
+}> = ({ processId, processCode, clientName, onClose }) => {
+  const camada = useModalLayer(LAYER.MODAL);
   // Portal para document.body: replica o padrão comprovado do ProcessesModule e
   // escapa de qualquer stacking context do shell do WhatsApp.
-  createPortal(
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center px-4 py-6">
+  return createPortal(
+    <div className="fixed inset-0 flex items-center justify-center px-4 py-6" style={{ zIndex: camada }}>
       <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10">
         <ProcessTimeline
@@ -279,6 +287,7 @@ const WaTimelineModal: React.FC<{
     </div>,
     document.body,
   );
+};
 
 // ─── Modal: Detalhes do compromisso (visualização) ────────────────────────────
 
@@ -441,7 +450,16 @@ const WaEventViewModal: React.FC<{
                 <UserIcon className="w-3.5 h-3.5 text-violet-400" />, 'Cliente',
                 <span className="text-amber-600">{ev.client_name}</span>,
                 phone ? (
-                  <a href={`tel:${phone}`} title="Ligar" className="w-6 h-6 flex items-center justify-center rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition shrink-0 mt-0.5">
+                  <a
+                    href={`tel:${phone}`}
+                    onClick={(e) => {
+                      // A ligação sai pelo CRM, com registro e gravação — o
+                      // `tel:` do aparelho é só o plano B (`utils/phoneDial`).
+                      if (openDialer({ phone, label: ev.client_name ?? null })) e.preventDefault();
+                    }}
+                    title="Ligar pelo discador do CRM"
+                    className="w-6 h-6 flex items-center justify-center rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition shrink-0 mt-0.5"
+                  >
                     <Phone className="w-3 h-3" />
                   </a>
                 ) : undefined,
@@ -665,6 +683,7 @@ const WaDeadlineModal: React.FC<{
   onClose: () => void;
   onSaved: () => void;
 }> = ({ clientId, processId, requirementId, deadlineId, onClose, onSaved }) => {
+  const camadaDoPrazo = useModalLayer(LAYER.MODAL);
   const [deadline, setDeadline] = useState<Deadline | null>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [processes, setProcesses] = useState<Process[]>([]);
@@ -692,7 +711,7 @@ const WaDeadlineModal: React.FC<{
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50">
+      <div className="fixed inset-0 flex items-center justify-center bg-black/50" style={{ zIndex: camadaDoPrazo }}>
         <Loader2 size={24} className="animate-spin text-white" />
       </div>
     );

@@ -119,6 +119,7 @@ import { decideCollabSave, describeOtherEditors } from '../services/collabSaveSc
 import { profileService } from '../services/profile.service';
 import { useUserAvatars } from '../hooks/useUserAvatars';
 import { primeAvatar } from '../services/userAvatars';
+import { layerStack, zc, zcStack } from '../styles/layers';
 
 // Tipo do documento do editor traduzido para o vocabulário do briefing do
 // Assistente IA (o formulário fala "Petição inicial", não "petition").
@@ -7293,8 +7294,8 @@ Regras:
     <>
     {unsavedPrompt && typeof document !== 'undefined' && createPortal(
       <div
-        className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-[2px]"
-        style={{ position: 'fixed', inset: 0, zIndex: 2147483647 }}
+        className={`fixed inset-0 ${zcStack[4]} flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-[2px]`}
+        style={{ position: 'fixed', inset: 0, zIndex: layerStack(4) }}
         role="presentation"
       >
         <section
@@ -7439,7 +7440,7 @@ Regras:
     {/* Onde salvar este documento? (primeiro salvamento) */}
     {saveDestinationOpen && typeof document !== 'undefined' && createPortal(
       <div
-        className="fixed inset-0 z-[2147483646] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]"
+        className={`fixed inset-0 ${zcStack[3]} flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]`}
         role="presentation"
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) { setSaveDestinationOpen(false); pendingAfterSaveRef.current = null; }
@@ -7549,7 +7550,7 @@ Regras:
 
     {/* Confirmação de sobrescrita */}
     {overwritePrompt && typeof document !== 'undefined' && createPortal(
-      <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]" role="presentation">
+      <div className={`fixed inset-0 ${zcStack[4]} flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]`} role="presentation">
         <section
           role="dialog"
           aria-modal="true"
@@ -7613,7 +7614,7 @@ Regras:
 
     {/* Conflito de versão (o arquivo remoto mudou) */}
     {versionConflict && typeof document !== 'undefined' && createPortal(
-      <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]" role="presentation">
+      <div className={`fixed inset-0 ${zcStack[4]} flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]`} role="presentation">
         <section
           role="dialog"
           aria-modal="true"
@@ -8627,7 +8628,7 @@ Regras:
         <div
           id="petition-block-view-backdrop"
           className="fixed inset-0 flex items-center justify-center bg-slate-950/45 p-3 backdrop-blur-[2px] sm:p-6"
-          style={{ zIndex: 2147483600 }}
+          style={{ zIndex: layerStack(3) }}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) closeBlockView();
           }}
@@ -10285,7 +10286,7 @@ Regras:
 
       {/* Modal de Busca de Empresa (CNPJ) */}
       {showCompanyLookupModal && (
-        <aside id="petition-lookup-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+        <aside id="petition-lookup-backdrop" className={`fixed inset-0 ${zcStack[0]} flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto`}>
           <main id="company-lookup-modal" className="bg-white rounded-xl shadow-[0_28px_80px_rgba(15,23,42,0.26)] ring-1 ring-black/10 w-full max-w-2xl my-4 overflow-hidden flex flex-col mx-auto">
             <header className="relative px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-white">
               <div className="flex items-center gap-3">
@@ -10376,7 +10377,7 @@ Regras:
 
       {/* Modal de Busca de Bloco */}
       {showBlockSearchModal && (
-        <aside id="petition-search-backdrop" className="fixed inset-0 z-[100] flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/45 backdrop-blur-sm overflow-y-auto">
+        <aside id="petition-search-backdrop" className={`fixed inset-0 ${zcStack[0]} flex items-start justify-center p-2 sm:p-6 pt-8 bg-slate-900/45 backdrop-blur-sm overflow-y-auto`}>
           <main id="block-search-modal" className="bg-white rounded-xl shadow-[0_28px_80px_rgba(15,23,42,0.28)] ring-1 ring-black/10 w-full max-w-5xl my-4 overflow-hidden flex flex-col mx-auto">
             <header className="px-5 sm:px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-3 bg-white">
               <div className="flex items-center gap-3 min-w-0">
@@ -10570,7 +10571,7 @@ Regras:
       )}
 
       {showAiEditModal && (
-        <aside className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+        <aside className={`fixed inset-0 ${zcStack[1]} flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto`}>
           <main id="ai-edit-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-3xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-1 w-full shrink-0 bg-blue-500" />
 
@@ -10631,7 +10632,7 @@ Regras:
       )}
 
       {showCategoryModal && (
-        <aside id="petition-categories-backdrop" className="fixed inset-0 z-[110] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+        <aside id="petition-categories-backdrop" className={`fixed inset-0 ${zcStack[1]} flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto`}>
           <main id="petition-categories-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-2xl my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-1 w-full shrink-0 bg-blue-500" />
 
@@ -10811,7 +10812,7 @@ Regras:
 
       {/* Modal de Areas JurÃ­dicas */}
       {showLegalAreaModal && (
-        <aside id="legal-area-backdrop" className="fixed inset-0 z-[120] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+        <aside id="legal-area-backdrop" className={`fixed inset-0 ${zcStack[2]} flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto`}>
           <main id="legal-area-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-2 w-full shrink-0" style={{ backgroundColor: editingLegalArea?.color || legalAreaFormData.color || '#f97316' }} />
 
@@ -10950,7 +10951,7 @@ Regras:
 
       {/* Modal de PetiçÃµes Padroes */}
       {showStandardTypeModal && (
-        <aside className="fixed inset-0 z-[120] flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
+        <aside className={`fixed inset-0 ${zcStack[2]} flex items-start justify-center p-2 sm:p-6 pt-12 bg-slate-900/40 backdrop-blur-sm overflow-y-auto`}>
           <main id="standard-type-modal" className="bg-white rounded-2xl shadow-2xl ring-1 ring-black/10 w-full max-w-lg my-4 overflow-hidden flex flex-col mx-auto transition-all duration-300">
             <div className="h-1 w-full shrink-0 bg-blue-500" />
             <header className="relative px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
@@ -11103,7 +11104,7 @@ Regras:
       )}
 
       {showBlockModal && (
-        <aside id="petition-editor-backdrop" className="fixed inset-0 z-[999999] flex flex-col bg-white">
+        <aside id="petition-editor-backdrop" className={`fixed inset-0 ${zc.MODAL} flex flex-col bg-white`}>
           <main id="block-editor-modal" className="flex flex-col flex-1 min-h-0 overflow-hidden">
             <PetitionRibbon
               editorRef={blockEditorRef}

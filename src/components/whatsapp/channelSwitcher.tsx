@@ -79,7 +79,9 @@ export const ChannelSwitcher: React.FC<{
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <button type="button" aria-label="Fechar seletor de canal"
+            className="fixed inset-0 z-40 cursor-default bg-transparent"
+            onClick={() => setOpen(false)} />
           <div role="menu" className="absolute right-0 top-11 z-50 w-64 rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden">
             <div className="px-3 py-1 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Canais disponíveis</div>
             {channels.map(c => (

@@ -4,6 +4,24 @@ import type { Client } from '../types/client.types';
 import { formatCPF, formatCNPJ } from '../utils/formatters';
 import { ClientsSkeleton } from './ui';
 import { useMinLoading } from '../hooks/useMinLoading';
+import { openWhatsAppChat } from '../utils/whatsappChat';
+
+/**
+ * Clique no botão verde da lista — a conversa abre no widget, por cima da
+ * própria lista, e já nasce vinculada ao cadastro.
+ *
+ * O `href` continua apontando para o `wa.me`: é ele que atende quem não tem
+ * acesso ao módulo do WhatsApp e quem está sem canal conectado, e é ele que o
+ * botão direito copia. O `preventDefault` só acontece quando a abertura interna
+ * assumiu o clique de fato.
+ *
+ * O `stopPropagation` é anterior a tudo isso e continua necessário: a linha
+ * inteira é clicável e abriria a ficha por baixo.
+ */
+const abrirConversaCliente = (e: React.MouseEvent<HTMLAnchorElement>, client: Client, phone: string) => {
+  e.stopPropagation();
+  if (openWhatsAppChat({ phone, clientId: client.id, contactName: client.full_name })) e.preventDefault();
+};
 
 /* ───── Avatar com iniciais determinísticas ─────
  * Para PF: gera fundo pastel + texto contrastante a partir do hash do nome.
@@ -222,7 +240,8 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => abrirConversaCliente(e, client, primaryPhone)}
+                          title={`Conversar no WhatsApp: ${primaryPhone}`}
                         >
                           <MessageCircle className="w-3 h-3" />
                         </a>
@@ -377,9 +396,9 @@ const ClientList: React.FC<ClientListProps> = ({ clients, loading, onView, onEdi
                           href={`https://wa.me/${primaryPhone.replace(/\D/g, '')}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => abrirConversaCliente(e, client, primaryPhone)}
                           className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
-                          title={`WhatsApp: ${primaryPhone}`}
+                          title={`Conversar no WhatsApp: ${primaryPhone}`}
                         >
                           <MessageCircle className="w-4 h-4" />
                         </a>

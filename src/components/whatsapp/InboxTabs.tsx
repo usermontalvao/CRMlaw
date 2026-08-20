@@ -55,6 +55,7 @@
 // pessoa olhar vira paisagem, e paisagem não avisa nada. Foi o defeito da
 // primeira versão da aba de ligações, contado em `callHistory.ts`.
 import React, { useEffect, useRef, useState } from 'react';
+import { SegmentedTabs } from '../chat/SegmentedTabs';
 import { AlertTriangle, CalendarClock, Hourglass, Inbox, PhoneCall, PhoneMissed, Reply, Send } from 'lucide-react';
 import { WAITING_FILTERS, type WaitingFilter } from './inboxStatusScope';
 
@@ -89,28 +90,25 @@ export const InboxTabs: React.FC<InboxTabsProps> = ({ active, onChange, counts, 
     // `overflow-x-auto` é rede de segurança, não desenho: os três nomes cabem
     // com 69 px de folga na largura mais apertada do CRM, mas uma fonte maior
     // no sistema do usuário não pode esconder uma aba sem deixar rastro.
-    <div className={`flex items-center gap-2 overflow-x-auto ${className}`}>
-      {abas.map(([key, label, count]) => {
-        const ativa = active === key;
-        const numero = count > 99 ? '99+' : String(count);
-        return (
-          <button key={key} type="button" onClick={() => onChange(key)}
-            title={key === 'all' ? `${label} (${counts.all})` : count > 0 ? `${label} (${count})` : label}
-            aria-label={count > 0 ? `${label}, ${count}` : label}
-            aria-current={ativa ? 'page' : undefined}
-            className={`relative inline-flex shrink-0 items-center gap-1 rounded-full py-1 text-[12px] font-semibold transition ${
-              ativa ? 'bg-amber-600 px-2.5 text-white' : 'px-1 text-slate-500 hover:bg-[#f3f2ef]'
-            }`}>
-            <span>{label}</span>
-            {count > 0 && (
-              <span className={`text-[10px] font-bold tabular-nums ${ativa ? 'text-white/75' : 'text-slate-400'}`}>
-                {numero}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
+    /* O MESMO controle das abas WhatsApp|Equipe do topo do painel — a peça é
+       compartilhada (`chat/SegmentedTabs`), então a pastilha branca desliza
+       aqui pelo mesmo motivo e com a mesma mola. A versão anterior pintava a
+       aba ativa de laranja cheio, na mesma tela do botão laranja de "nova
+       conversa" e do contador laranja de não lidas: três laranjas disputando a
+       pergunta "onde eu clico?". Aqui a cor sobra para o número. */
+    <SegmentedTabs
+      className={className}
+      aria-label="Filtros da lista de conversas"
+      value={active}
+      onChange={onChange}
+      items={abas.map(([key, label, count]) => ({
+        key,
+        label,
+        count,
+        title: key === 'all' ? `${label} (${counts.all})` : count > 0 ? `${label} (${count})` : label,
+        ariaLabel: count > 0 ? `${label}, ${count}` : label,
+      }))}
+    />
   );
 };
 

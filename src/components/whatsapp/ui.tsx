@@ -11,6 +11,8 @@ import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
+import { LAYER } from '../../styles/layers';
+import { useModalLayer } from '../../styles/modalLayer';
 
 /** Tom do diálogo: colore o emblema do cabeçalho e a faixa superior. */
 export type WaDialogTone = 'default' | 'danger' | 'success' | 'info';
@@ -109,9 +111,13 @@ export const WaDialog: React.FC<{
   /** Header escuro (para previews de mídia). Padrão: cabeçalho claro do módulo. */
   headerClassName?: string;
 }> = ({
-  title, subtitle, icon, onClose, children, footer, size = 'md', zIndex = 50,
+  title, subtitle, icon, onClose, children, footer, size = 'md', zIndex: zIndexProp,
   headerActions, tone = 'default', headerClassName,
 }) => {
+  // A camada vem do contexto: o MESMO diálogo abre na faixa dos modais quando o
+  // módulo está em tela cheia e na faixa do widget quando o módulo está embutido
+  // nele — senão ficaria atrás do próprio widget. Ver `styles/modalLayer`.
+  const zIndex = useModalLayer(zIndexProp ?? LAYER.MODAL);
   const panelRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(`wa-dialog-${Math.random().toString(36).slice(2)}`);
   const onCloseRef = useRef(onClose);

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { clientService } from '../services/client.service';
+import { zc, zcStack } from '../styles/layers';
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ const PreviewModal: React.FC<PreviewModalProps> = ({ path, fileName, onClose }) 
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-3 sm:p-6">
+    <div className={`fixed inset-0 ${zcStack[2]} flex items-center justify-center p-3 sm:p-6`}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-[3px]" onClick={onClose} />
 
@@ -218,7 +219,7 @@ const PreviewModal: React.FC<PreviewModalProps> = ({ path, fileName, onClose }) 
 
 const ModalShell: React.FC<{ onClose: () => void; children: React.ReactNode }> = ({ onClose, children }) =>
   createPortal(
-    <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto px-3 py-8">
+    <div className={`fixed inset-0 ${zcStack[1]} flex items-start justify-center overflow-y-auto px-3 py-8`}>
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-lg bg-[#f8f7f5] rounded-2xl shadow-2xl ring-1 ring-black/5 overflow-hidden my-auto">
         <div className="h-1 w-full bg-gradient-to-r from-orange-500 to-amber-400" />
@@ -1017,8 +1018,8 @@ export const DocumentRequestsTracker: React.FC<Props> = ({ open, onClose, onBadg
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[150] bg-slate-900/30 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="fixed right-0 top-0 bottom-0 z-[151] flex flex-col w-full max-w-sm bg-white shadow-2xl border-l border-[#e7e5df]"
+      <div className={`fixed inset-0 ${zc.MODAL} bg-slate-900/30 backdrop-blur-[2px]`} onClick={onClose} />
+      <div className={`fixed right-0 top-0 bottom-0 ${zcStack[0]} flex flex-col w-full max-w-sm bg-white shadow-2xl border-l border-[#e7e5df]`}
         style={{ animation: 'slideInRight 0.22s cubic-bezier(0.4,0,0.2,1)' }}>
 
         {/* Header */}

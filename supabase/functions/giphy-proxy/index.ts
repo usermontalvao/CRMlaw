@@ -24,25 +24,30 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
-interface GiphyImagem { url?: string; width?: string; height?: string; mp4?: string }
+interface GiphyImagem { url?: string; width?: string; height?: string }
 
 /** Só os campos que a grade e o envio consomem. */
 function enxugar(g: Record<string, any>) {
   const imgs = (g.images ?? {}) as Record<string, GiphyImagem>;
-  // `fixed_width` é a miniatura da grade; `downsized_medium` é o que vai para o
-  // cliente. O mp4 é preferido no envio: o WhatsApp converte GIF para mp4 de
-  // qualquer jeito, e mandar o .gif original gasta muito mais dado.
-  const preview = imgs.fixed_width ?? imgs.downsized ?? imgs.original;
-  const envio = imgs.downsized_medium ?? imgs.original;
+  // A miniatura da grade e o arquivo do envio são a MESMA rendição (`fixed_width`,
+  // 200px de largura), e isso não é economia à toa.
+  //
+  // O envio saía em `.mp4` porque "o WhatsApp converte GIF para mp4 de qualquer
+  // jeito". Converte — mas com a marca `gifPlayback`, que a Evolution 2.3.7 NÃO
+  // deixa passar (`prepareMediaMessage` força `gifPlayback = false`). Resultado:
+  // o GIF chegava como vídeo comum, parado, com botão de play. O único caminho
+  // dela para uma animação de verdade é a FIGURINHA ANIMADA — e ali o que vale é
+  // um `.gif` pequeno, porque a figurinha é reconvertida para webp e o WhatsApp
+  // tem teto de tamanho. `downsized_medium` (até 5 MB) estouraria; 200px é
+  // exatamente o tamanho em que a figurinha é exibida.
+  const rendicao = imgs.fixed_width ?? imgs.downsized ?? imgs.original;
   return {
     id: String(g.id ?? ''),
     titulo: String(g.title ?? '').trim(),
-    previewUrl: preview?.url ?? null,
-    largura: Number(preview?.width ?? 0) || 0,
-    altura: Number(preview?.height ?? 0) || 0,
-    // mp4 quando existe; senão o .gif serve.
-    mp4Url: envio?.mp4 ?? imgs.original?.mp4 ?? null,
-    gifUrl: envio?.url ?? null,
+    previewUrl: rendicao?.url ?? null,
+    largura: Number(rendicao?.width ?? 0) || 0,
+    altura: Number(rendicao?.height ?? 0) || 0,
+    gifUrl: rendicao?.url ?? null,
   };
 }
 

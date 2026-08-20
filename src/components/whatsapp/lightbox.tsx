@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight, Download, Loader2 } from 'lucide-react';
+import { LAYER } from '../../styles/layers';
+import { useModalLayer } from '../../styles/modalLayer';
 
 /**
  * Lightbox/galeria de mídia da thread. Renderiza num portal para `document.body`
@@ -22,6 +24,9 @@ export const WaLightbox: React.FC<{
   images: string[];
   onClose: () => void;
 }> = React.memo(({ image, images, onClose }) => {
+  // Em portal para o `body`: fora do widget é a camada de sempre (o diálogo que
+  // um diálogo abriu); dentro dele, a faixa do widget. Ver `styles/modalLayer`.
+  const camada = useModalLayer(LAYER.MODAL_NESTED);
   const [current, setCurrent] = useState(image);
   // A imagem QUE ESTÁ NA TELA anda um passo atrás da escolhida: ela só troca
   // depois que a próxima terminou de decodificar. Trocar o `src` direto deixa
@@ -88,7 +93,7 @@ export const WaLightbox: React.FC<{
     // Sem `backdrop-filter`: desfocar a viewport inteira obriga o navegador a
     // reprocessar todo o CRM que está atrás a cada repaint da galeria, e sob 92%
     // de preto o efeito nem aparecia.
-    <div className="fixed inset-0 z-[100000] bg-black/92 flex items-center justify-center p-6" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/92 flex items-center justify-center p-6" style={{ zIndex: camada }} onClick={onClose}>
       <img
         src={shown}
         alt=""
@@ -140,6 +145,7 @@ export const WaVideoLightbox: React.FC<{
   name: string;
   onClose: () => void;
 }> = ({ src, name, onClose }) => {
+  const camada = useModalLayer(LAYER.MODAL_NESTED);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
     window.addEventListener('keydown', onKey, true);
@@ -147,7 +153,7 @@ export const WaVideoLightbox: React.FC<{
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[100000] flex flex-col bg-black/90" style={{ backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }} onClick={onClose}>
+    <div className="fixed inset-0 flex flex-col bg-black/90" style={{ zIndex: camada, backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }} onClick={onClose}>
       <div className="flex flex-shrink-0 items-center gap-3 px-4 py-2.5 text-white" onClick={e => e.stopPropagation()}>
         <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">{name}</span>
         <a href={src} download={name} title="Baixar vídeo"

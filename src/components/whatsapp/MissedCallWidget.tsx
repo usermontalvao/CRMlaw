@@ -40,9 +40,10 @@ import {
   missedCallsHeadline,
   type MissedCall,
 } from '../../services/wacalls/missedCalls';
+import { LAYER } from '../../styles/layers';
 
 /** Abaixo do painel da chamada em curso (2147483100): uma linha aberta vem antes. */
-const Z_MISSED = 2147483050;
+const Z_MISSED = LAYER.NOTICE;
 const POSITION_KEY = 'wa:missedCallPos';
 const COLLAPSED_KEY = 'wa:missedCallCollapsed';
 const CARD_SIZE = { width: 352, height: 260 };

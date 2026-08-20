@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Trash2, Save, Loader2, PenTool, Signature, Move, ZoomOut, ZoomIn, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { renderAsync } from 'docx-preview';
+import { zcStack } from '../styles/layers';
 
 // Tipo para documento ativo (pode ser o principal ou um arquivo adicional)
 interface ActiveDocument {
@@ -451,7 +452,7 @@ const SignaturePositionDesigner: React.FC<SignaturePositionDesignerProps> = ({ i
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex bg-slate-100/80 backdrop-blur-sm" onClick={onClose}>
+    <div className={`fixed inset-0 ${zcStack[0]} flex bg-slate-100/80 backdrop-blur-sm`} onClick={onClose}>
       <div className="flex-1 flex flex-col bg-[#f8f7f5] dark:bg-zinc-900 max-h-screen overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#e7e5df] dark:border-zinc-800 bg-slate-900 text-white flex-shrink-0">
           <div className="flex items-center gap-3">

@@ -25,6 +25,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../config/supabase';
 import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { usePermissions } from '../hooks/usePermissions';
+import { openWhatsAppChat } from '../utils/whatsappChat';
+import { openDialer } from '../utils/phoneDial';
 import type { Deadline } from '../types/deadline.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
@@ -36,6 +38,7 @@ import { Modal, ModalBody, ModuleSkeleton } from './ui';
 import { useSyncTick } from '../lib/syncBus';
 import { matchesCalendarSearch } from '../utils/calendarSearch.utils';
 import { intlTimeZonePlugin } from '../utils/fullCalendarTimeZone';
+import { LAYER, layerStack, zc } from '../styles/layers';
 import {
   describeBrowserZone,
   describeOfficeZone,
@@ -2800,7 +2803,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     <div className="calendar-page space-y-0">
       {feedback && (
         <div
-          className={`fixed bottom-6 right-6 z-[9999] max-w-sm rounded-xl border px-4 py-3 shadow-lg transition transform flex items-start gap-3 ${
+          className={`fixed bottom-6 right-6 ${zc.NOTICE} max-w-sm rounded-xl border px-4 py-3 shadow-lg transition transform flex items-start gap-3 ${
             feedback.type === 'success'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
               : 'bg-red-50 border-red-200 text-red-700'
@@ -3090,7 +3093,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       {showResponsiblePicker && (
         <div
           ref={responsibleDropdownRef}
-          className="fixed z-[9999] bg-white border border-[#e7e5df] rounded-xl shadow-xl p-3 min-w-[200px]"
+          className={`fixed ${zc.POPOVER} bg-white border border-[#e7e5df] rounded-xl shadow-xl p-3 min-w-[200px]`}
           style={{ top: responsiblePickerPos.top, left: responsiblePickerPos.left }}
         >
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Selecionar pessoa</p>
@@ -3435,7 +3438,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         eyebrow="Compromisso"
         icon={<CalendarIcon className="w-4 h-4" />}
         size="md"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         subtitle={selectedEvent ? (
           <div className="flex flex-wrap items-center gap-1.5 mt-1">
             {selectedEvent.extendedProps.type && (
@@ -3583,8 +3586,17 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                   {selectedEvent.extendedProps.clientPhone && (
                     <a
                       href={`tel:${selectedEvent.extendedProps.clientPhone}`}
+                      onClick={(e) => {
+                        // A ligação sai pelo CRM (discador), não pelo aparelho
+                        // de quem clicou — ver `utils/phoneDial`. Sem discador
+                        // na tela, o `tel:` continua valendo.
+                        if (openDialer({
+                          phone: selectedEvent.extendedProps.clientPhone!,
+                          label: selectedEvent.extendedProps.clientName ?? null,
+                        })) e.preventDefault();
+                      }}
                       className="w-6 h-6 flex items-center justify-center rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition shrink-0 mt-0.5"
-                      title="Ligar"
+                      title="Ligar pelo discador do CRM"
                     >
                       <Phone className="w-3 h-3" />
                     </a>
@@ -3924,6 +3936,14 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                           href={whatsappUrl}
                           target="_blank"
                           rel="noreferrer"
+                          onClick={(e) => {
+                            // A conversa com o correspondente abre no widget,
+                            // sobre a agenda — ver `utils/whatsappChat`.
+                            if (openWhatsAppChat({
+                              phone: representative!.phone!,
+                              contactName: representativeName,
+                            })) e.preventDefault();
+                          }}
                           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium transition shrink-0"
                         >
                           <MessageCircle className="w-3 h-3" />
@@ -4013,7 +4033,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         eyebrow="Agenda"
         icon={<CalendarIcon className="w-4 h-4" />}
         size="lg"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-h-10 items-center">
@@ -4675,7 +4695,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         eyebrow="Clientes"
         icon={<User className="w-4 h-4" />}
         size="xl"
-        zIndex={80}
+        zIndex={layerStack(1)}
       >
         <ModalBody className="p-0">
           <ClientForm
@@ -5104,7 +5124,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         eyebrow="Exportação"
         subtitle="Selecione o período que deseja exportar"
         size="sm"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex gap-3 w-full">
             <button
@@ -5252,7 +5272,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         eyebrow="Auditoria"
         subtitle="Exclusões dos últimos 30 dias."
         size="lg"
-        zIndex={75}
+        zIndex={layerStack(0)}
         footer={
           <div className="flex justify-end w-full">
             <button
@@ -5361,7 +5381,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         onClose={() => setIsRepresentativesPanelOpen(false)}
         title="Correspondentes"
         size="xl"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
       >
         <ModalBody className="p-0">
           <RepresentativesPanel
@@ -5374,7 +5394,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       {/* ── Modal de busca global ─────────────────────────────────── */}
       {isSearchOpen && (
         <div
-          className="fixed inset-0 z-[9998] bg-black/40 flex items-start justify-center pt-[10vh]"
+          className={`fixed inset-0 ${zc.MODAL} bg-black/40 flex items-start justify-center pt-[10vh]`}
           onMouseDown={(e) => { if (e.target === e.currentTarget) { setIsSearchOpen(false); setSearchQuery(''); } }}
         >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden flex flex-col" style={{ maxHeight: '75vh' }}>

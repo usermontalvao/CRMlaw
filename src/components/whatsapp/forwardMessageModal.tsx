@@ -7,6 +7,7 @@ import { WaDialog, WaDialogBody, waInput } from './ui';
 import { Avatar } from './avatar';
 import { prettyPhone, typeLabel } from './format';
 import { waPlainText } from './waRichText';
+import { fold } from './contactBook';
 import type { WhatsAppConversation, WhatsAppMessage } from '../../types/whatsapp.types';
 
 /** Quantos destinos por vez. O mesmo limite do WhatsApp, e um freio saudável:
@@ -34,13 +35,17 @@ export const ForwardMessageModal: React.FC<{
   const [picked, setPicked] = useState<string[]>([]);
 
   const options = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = fold(query).trim();
     return conversations
       .filter(c => c.id !== currentConversationId && !c.is_blocked)
       .filter(c => {
         if (!q) return true;
-        const name = (c.client_name || c.contact_name || '').toLowerCase();
-        return name.includes(q) || (c.contact_phone || '').includes(q.replace(/\D/g, ''));
+        const name = fold(c.client_name || c.contact_name || '');
+        if (name.includes(q)) return true;
+        // Só compara telefone quando a busca tem dígito: `includes('')` é sempre
+        // verdadeiro e deixava passar a lista inteira em qualquer busca por nome.
+        const digits = q.replace(/\D/g, '');
+        return digits.length > 0 && (c.contact_phone || '').replace(/\D/g, '').includes(digits);
       })
       .slice(0, 80);
   }, [conversations, currentConversationId, query]);

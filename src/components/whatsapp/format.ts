@@ -7,6 +7,7 @@ import type {
 } from '../../types/whatsapp.types';
 import type { StaffOption } from '../../services/whatsapp.service';
 import type { ElapsedMinutes } from './businessTime';
+import { nomeProprio } from './nomeProprio';
 
 export const formatTime = (iso: string | null) => {
   if (!iso) return '';
@@ -37,12 +38,17 @@ export const prettyPhone = (phone: string) => {
  * assim que existe cliente vinculado a lista, o cabeçalho e o funil passam a
  * mostrar o nome do cadastro. Sem vínculo, cai no nome do WhatsApp e, por fim,
  * no telefone formatado.
+ *
+ * O nome sai daqui já ESCRITO como gente escreve: metade do cadastro do
+ * escritório está em caixa alta (veio do documento ou da planilha), e a lista
+ * inteira gritando era a maior diferença entre a nossa inbox e a de um produto
+ * bem-acabado. O dado guardado não muda — ver `nomeProprio`.
  */
 export const conversationName = (c: {
   client_name?: string | null;
   contact_name: string | null;
   contact_phone: string;
-}) => (c.client_name || c.contact_name || prettyPhone(c.contact_phone));
+}) => nomeProprio(c.client_name || c.contact_name) || prettyPhone(c.contact_phone);
 
 /**
  * Busca da inbox: casa contra os DOIS nomes (cadastro e WhatsApp) além do

@@ -5,6 +5,28 @@ import LeadModal from './LeadModal';
 import { leadService } from '../services/lead.service';
 import { settingsService } from '../services/settings.service';
 import type { Lead, LeadStage, CreateLeadDTO } from '../types/lead.types';
+import { openWhatsAppChat } from '../utils/whatsappChat';
+import { LAYER } from '../styles/layers';
+
+/**
+ * O telefone do lead é um botão de conversa, não um link para fora.
+ *
+ * Lead é justamente quem ainda não é cliente: a primeira conversa com ele é o
+ * registro que decide se vira cadastro. Mandar isso para o WhatsApp Web era
+ * perder a única coisa que interessa aqui — a thread com o histórico do
+ * primeiro contato dentro do CRM. Quando o lead já foi convertido, a conversa
+ * nasce vinculada ao cadastro que saiu dele.
+ *
+ * O `wa.me` do `href` permanece como saída para quem não tem o módulo.
+ */
+const abrirConversaLead = (e: React.MouseEvent<HTMLAnchorElement>, lead: Lead) => {
+  if (!lead.phone) return;
+  if (openWhatsAppChat({
+    phone: lead.phone,
+    clientId: lead.converted_to_client_id ?? null,
+    contactName: lead.name,
+  })) e.preventDefault();
+};
 
 const STAGES: { key: LeadStage; label: string; accent: string; gradient: string; description: string; icon: React.ReactNode }[] = [
   { key: 'novo', label: 'Novo', accent: 'text-slate-600', gradient: 'from-slate-950/90 via-slate-900 to-slate-800', description: 'Lead recém-cadastrado, aguarda primeiro contato.', icon: <Plus className="w-4 h-4" /> },
@@ -429,6 +451,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead, embedded = fal
                         {lead.phone && (
                           <a
                             href={`https://wa.me/${lead.phone.replace(/\D/g, '')}`}
+                            onClick={(e) => abrirConversaLead(e, lead)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center justify-between gap-2 text-xs text-emerald-700 mb-2 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-lg hover:bg-emerald-100 hover:border-emerald-200 transition-all group/phone"
@@ -500,7 +523,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead, embedded = fal
         eyebrow={editMode ? 'Editando Lead' : 'Detalhes do Lead'}
         subtitle={selectedLead ? [stages.find(s => s.key === selectedLead.stage)?.label, selectedLead.email, selectedLead.phone].filter(Boolean).join(' · ') : undefined}
         size="lg"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         headerActions={
           !editMode ? (
             <button onClick={() => setEditMode(true)} className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Editar">
@@ -573,6 +596,7 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead, embedded = fal
                     selectedLead.phone ? (
                       <a
                         href={`https://wa.me/${selectedLead.phone.replace(/\D/g, '')}`}
+                        onClick={(e) => abrirConversaLead(e, selectedLead)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 px-4 py-3 rounded-lg hover:bg-emerald-100 transition-colors"

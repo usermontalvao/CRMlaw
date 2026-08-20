@@ -107,6 +107,7 @@ import { FinancialModal } from './FinancialModal';
 import { PostModal } from './PostModal';
 import { supabase } from '../config/supabase';
 import { userNotificationService } from '../services/userNotification.service';
+import { LAYER } from '../styles/layers';
 
 interface FeedProps {
   onNavigateToModule?: (moduleKey: string, params?: Record<string, string>) => void;
@@ -5954,6 +5955,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     {imageGalleryModal.open && (
       <div 
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+        style={{ zIndex: LAYER.MODAL_NESTED }}
         onClick={closeImageGallery}
       >
         <div 
@@ -6005,7 +6007,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
     {/* Modal de quem curtiu/comentou */}
     {interactionModal.open && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" style={{ zIndex: LAYER.MODAL_NESTED }}>
         <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col">
           <div className="flex items-center justify-between p-4 border-b border-[#e7e5df]">
             <h3 className="font-bold text-slate-900">
@@ -6120,7 +6122,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
     {/* Modal: Quem votou na enquete */}
     {pollVotersModal.open && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closePollVotersModal}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" style={{ zIndex: LAYER.MODAL_NESTED }} onClick={closePollVotersModal}>
         <div
           className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}

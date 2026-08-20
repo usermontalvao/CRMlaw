@@ -968,6 +968,73 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.338',
+    date: '20/08/2026',
+    summary: 'Reagir a uma mensagem, achar o emoji certo e mandar um GIF que se mexe; e todo botao verde do CRM passou a abrir a conversa aqui dentro, em vez de jogar voce no WhatsApp Web.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Reagir a uma mensagem, como no aplicativo',
+            description: 'A reacao do contato chegava como uma bolha escrita "Reagiu com [emoji]", solta no meio da conversa logo abaixo da mensagem que ela comentava — ruido no lugar de resposta. Agora ela e uma pastilha grudada na propria mensagem, e a equipe tambem pode reagir: passe o mouse na bolha e escolha o emoji. Vale a regra do aplicativo — uma reacao por pessoa, reagir de novo troca, reagir com o mesmo emoji desfaz. As reacoes que ja estavam no historico viraram pastilha, e as bolhas antigas sairam da tela.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Um seletor de emoji que entende portugues',
+            description: 'Escrever emoji dependia do teclado do sistema operacional de cada um. O compositor agora tem seletor proprio, com busca em portugues e sem acento: "coracao", "obrigado", "risada", "joia". Os mais usados ficam a mao, e o catalogo foi escrito para o escritorio em vez de puxado de uma biblioteca de mais de um megabyte, que abriria em ingles.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O GIF enviado volta a se mexer',
+            description: 'O GIF escolhido na busca chegava parado do outro lado, como uma figura qualquer. Ele saia convertido em video, e o WhatsApp so anima o que vai como figurinha animada. Agora e o proprio arquivo .gif que sobe, pelo caminho que preserva a animacao quadro a quadro — o que chega ao contato se mexe, como ele se mexia na hora de escolher.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Um atendimento por pessoa, mesmo com varios numeros',
+            description: 'A inbox ja tratava as conversas do mesmo contato em canais diferentes como uma pessoa so, mas as ACOES nao: encerrar, reabrir, assumir, transferir, aceitar, devolver a fila e marcar como lida agiam so na linha clicada, e a mesma pessoa reaparecia pendente pelo outro numero. Agora essas acoes valem para o contato inteiro, de uma vez. Enviar, presenca e bloqueio continuam pertencendo ao canal, que e onde eles realmente moram.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Nome de gente escrito como gente escreve',
+            description: 'Metade dos contatos entra no sistema em caixa alta, vinda do documento ou da planilha, e a lista de conversas exibia exatamente isso: uma coluna inteira gritando. Agora o nome aparece capitalizado na tela, com as particulas ("de", "dos", "e") em minuscula. O cadastro nao muda — dele saem documentos e peticoes; muda so a exibicao, e so onde o nome esta evidentemente gritado.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O painel de conversas abre mais rapido',
+            description: 'Fechar o painel flutuante jogava fora tudo o que ele sabia, e reabrir refazia onze consultas ao banco antes de a caixa de entrada aparecer — setores, equipe, canais, roteamento, horario comercial. Dez dessas quase nunca mudam: sao cadastro, mexido uma vez por mes. Agora elas ficam guardadas enquanto a sessao dura, e a segunda abertura em diante e imediata.',
+          },
+        ],
+      },
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'O botao verde abre a conversa aqui dentro',
+            description: 'Falar com o cliente pela ficha, pela lista, pelo lead, pelo requerimento, pela assinatura, pela agenda, pela busca global ou pela nuvem mandava voce para o WhatsApp Web numa aba nova — a conversa acontecia num lugar que o escritorio nao ve, sem thread na inbox, sem vinculo com o cadastro, sem historico e sem SLA. Agora o mesmo clique abre (ou reabre) a conversa no painel flutuante, por cima da tela em que voce ja esta: quem clicou de dentro da ficha continua na ficha. Enquanto a conversa carrega, aparece de quem ela e — nome, telefone e o formato do que esta chegando — em vez de um painel vazio piscando a lista de outra pessoa. Se nao houver canal conectado, o clique ainda cai no link antigo.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'O telefone do cliente abre o discador do CRM',
+            description: 'Os links de telefone espalhados pelo sistema entregavam a ligacao ao aparelho de quem clicou: a chamada acontecia fora, nao entrava no historico, nao era gravada, e o numero que aparecia para quem recebia era o do atendente. Agora o clique abre o discador ja com o numero escrito — e nao disca sozinho de proposito: voce confere o numero, escolhe a linha e aperta o verde, pela mesma porta e com as mesmas travas das demais ligacoes.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Os canais do painel de mensagens viraram uma coluna',
+            description: 'WhatsApp e Equipe eram duas abas espremidas no cabecalho do painel, disputando espaco com o titulo e os tres botoes de janela — e nao cabia uma quarta. Agora o canal e uma coluna estreita a esquerda, com o contador de cada um sempre a vista, e o cabecalho fica com uma coisa so: onde voce esta. Os filtros "Todas, Nao lidas, Minhas" ganharam a mesma pastilha que desliza de uma aba para a outra, no lugar de aparecer e sumir.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Quem nao tem foto deixa de ser mais um circulo laranja',
+            description: 'Todo avatar sem foto era o mesmo laranja da marca: quatro conversas na tela viravam quatro circulos identicos, sem nenhuma ajuda para distinguir uma linha da outra. Agora a cor sai do nome — a mesma pessoa tem sempre a mesma cor, em qualquer lista e em qualquer dia — em oito tons claros com a letra escura, que distinguem sem gritar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.337',
     date: '20/08/2026',
     summary: 'Uma regua unica passou a decidir o que fica na frente do que na tela, no lugar dos numeros soltos que cada caixa escolhia por conta propria.',

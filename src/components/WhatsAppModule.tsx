@@ -8,7 +8,7 @@ import {
   Clock, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw, RefreshCw,
   StickyNote, Trash2, CalendarClock, MessageSquare, Filter, Maximize2,
   UserPlus, UserMinus, PenLine, HandCoins, ListTodo, FilePlus,
-  Sparkles, Tag, Tags, Bot, Clapperboard,
+  Sparkles, Tag, Tags, Bot, Clapperboard, Smile,
   Shield, ShieldCheck, Eye, EyeOff, Timer, TimerOff,
   BarChart2, TrendingUp, Users, Clock3, CheckCircle, Inbox,
   MapPin, Play, Pause, Bell, BellOff, Info, MoreVertical, BellRing,
@@ -27,6 +27,7 @@ import { useThreadDragDrop } from './whatsapp/hooks/useThreadDragDrop';
 import { muteStore } from '../services/whatsapp/muteStore';
 import { notifyScope } from '../services/whatsapp/notifyScope';
 import { whatsappService, normalizePhone, renderTemplate, agentPermissions, summarizeOverview, DEFAULT_AGENT_PREFS, type StaffOption, type AgentPrefs, type ScheduleDeadline, type ClientDocRequest, type ClientOverview, type ClientSchedule, type ClientPendings, type WhatsAppInternalNote, type ClientTrackedSignatureStatus } from '../services/whatsapp.service';
+import { swrWa, lidoDaMemoriaWa, guardaNaMemoriaWa } from '../services/whatsapp/sessionCache';
 import type { WhatsAppScheduledMessage } from '../types/whatsapp.types';
 import {
   formatTime, initials, prettyPhone, formatBytes, dayLabel, lastSeenLabel, presenceInfo,
@@ -76,7 +77,8 @@ import {
   ChannelSwitcher, ChannelDownBanner, ReconnectHoldSiren, channelName,
 } from './whatsapp/channelSwitcher';
 import { GifPicker } from './whatsapp/gifPicker';
-import { giphyService } from '../services/giphy.service';
+import { EmojiPicker } from './whatsapp/emojiPicker';
+import { ACTOR_ESCRITORIO, aplicarReacao } from '../utils/waReactions';
 import { sendReconnectHoldsThroughChannel } from '../services/whatsapp/resilientSend';
 import { ConversationFunnelBoard } from './whatsapp/conversationFunnelBoard';
 import { nextLeadChannelFilter } from './whatsapp/channelFilterSync';
@@ -203,6 +205,16 @@ const WA_REC_BARS = [0.35, 0.6, 0.9, 0.5, 0.75, 1, 0.45, 0.7, 0.55, 0.85, 0.4, 0
 interface WhatsAppModuleProps {
   /** Deep-link: conversa a abrir ao entrar no módulo (ex.: clique na notificação). */
   openConversationId?: string;
+  /**
+   * Texto que já entra escrito no compositor da conversa do deep-link.
+   *
+   * Existe para os botões que ANTES abriam `wa.me/...?text=`: o modelo de
+   * mensagem do requerimento e o convite de assinatura chegavam prontos no
+   * WhatsApp Web, e continuam chegando prontos aqui. Sem isto, trocar o link
+   * externo pela conversa interna cobraria do atendente redigitar o texto que o
+   * sistema já tinha montado.
+   */
+  openConversationDraft?: string;
   /** Avisa o App para limpar o param de navegação após consumi-lo. */
   onParamConsumed?: () => void;
   /** Converte um lead em cliente (delega ao fluxo global do App). */
@@ -213,12 +225,37 @@ interface WhatsAppModuleProps {
    * (Funil de Leads e Dashboard). `'full'` (default) = página completa.
    */
   variant?: 'full' | 'embedded';
-  /** Reporta a conversa aberta (deep-link ao maximizar o widget). */
-  onActiveConversationChange?: (id: string | null) => void;
+  /**
+   * Reporta a conversa aberta — o id para o deep-link ao maximizar o widget, e
+   * a identidade para quem precisa DESENHAR essa conversa de fora do módulo.
+   *
+   * A identidade veio junto por causa do widget minimizado: a barra flutuante
+   * mostra o rosto e o nome da conversa que ficou guardada, e o módulo está
+   * desmontado nessa hora. Sem isto, a barra teria de ir buscar sozinha um dado
+   * que quem estava com a conversa na tela já tinha na mão.
+   */
+  onActiveConversationChange?: (
+    id: string | null,
+    contato?: { nome: string; avatarUrl: string | null } | null,
+  ) => void;
 }
 
-const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onParamConsumed, onConvertLead, variant = 'full', onActiveConversationChange }) => {
+const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, openConversationDraft, onParamConsumed, onConvertLead, variant = 'full', onActiveConversationChange }) => {
   const embedded = variant === 'embedded';
+  // Dentro do widget, o verde do WhatsApp cede ao laranja da casa. O botão de
+  // enviar é o elemento mais chamativo do painel: um verde de outro produto
+  // logo abaixo de uma conversa que já é creme e laranja denuncia a colagem.
+  // No módulo cheio nada muda — lá o ambiente É o do aplicativo.
+  const btnEnviarCor = embedded
+    ? 'bg-[#f27a23] hover:bg-[#e06b1f]'
+    : 'bg-[#00a884] hover:bg-[#008f72]';
+  // Cabeçalho e compositor: as duas barras que emolduram a conversa. O
+  // #f0f2f5 é cinza-AZULADO — combina com o bege do aplicativo e briga com o
+  // creme do painel, que é quente. Dentro do widget a conversa ficava
+  // ensanduichada entre duas faixas de outra temperatura; era boa parte do
+  // "estranho". Embutido, a moldura usa o mesmo quase-branco quente da zona de
+  // controle da lista.
+  const molduraBg = embedded ? 'bg-[#fdfcfb]' : 'bg-[#f0f2f5]';
   const { user } = useAuth();
   const { requirePin } = useSecurityPin();
   const toast = useToastContext();
@@ -262,14 +299,25 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   }, []);
   useEffect(() => { void reloadFunnelLabels(); }, [reloadFunnelLabels]);
   useEffect(() => {
-    settingsService.getWhatsAppModuleConfig().then(setModuleConfig).catch(() => {});
-  }, []);
+    swrWa(user?.id, 'moduleConfig', () => settingsService.getWhatsAppModuleConfig(), setModuleConfig);
+  }, [user?.id]);
   // Reflete no atendimento qualquer ajuste de funil feito na gaveta de Leads.
   useEffect(() => { if (leadsPanelOpen) { setLeadsEverOpened(true); void reloadFunnelLabels(); } }, [leadsPanelOpen, reloadFunnelLabels]);
-  const [conversations, setConversations] = useState<WhatsAppConversation[]>([]);
+  // Já nasce com a última lista que esta aba viu. O widget monta e desmonta o
+  // módulo a cada abertura; sem isto, toda vez a caixa de entrada começava
+  // vazia e só aparecia depois da ida ao banco.
+  const [conversations, setConversations] = useState<WhatsAppConversation[]>(
+    () => lidoDaMemoriaWa<WhatsAppConversation[]>(user?.id, 'conversations') ?? [],
+  );
   // Reabre na conversa em que o atendente parou. Só no módulo cheio: no widget
   // embutido a inbox é efêmera e abrir sozinha uma conversa seria intrusivo.
   const [selectedId, setSelectedId] = useState<string | null>(() => readStoredConversationId(!embedded));
+  // Texto do deep-link esperando a conversa entrar na tela (ver o efeito que o
+  // consome, logo abaixo do `useWaComposer`).
+  const draftPendente = useRef<{ conversationId: string; texto: string } | null>(null);
+  // Conversa pedida de fora que ainda pode não estar na lista (ver a limpeza de
+  // seleção mais abaixo, e o efeito do deep-link).
+  const deepLinkPendente = useRef<string | null>(null);
   // Responsividade: abaixo de `md` (768px) a lista e a thread não cabem lado a
   // lado, então alternamos para um painel por vez (estilo WhatsApp mobile).
   // No modo embutido (widget estreito) forçamos esse mesmo painel único — os
@@ -292,6 +340,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // Menu "+" do composer (documento, modelo, agendar) — mantém a barra enxuta.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   // Menu do sino: unifica som das notificações + push do navegador num só ícone.
   // Web Push do staff: avisa o atendente mesmo com o navegador fechado.
   const { pushState, toggleStaffPush } = useStaffPush();
@@ -372,7 +421,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   useEffect(() => { void muteStore.init(); }, []);
   const [muteModalOpen, setMuteModalOpen] = useState(false);
   useEffect(() => { setMuteModalOpen(false); }, [selectedId]);
-  const [loadingConvs, setLoadingConvs] = useState(true);
+  // "Carregando" só quando não há NADA para mostrar. Com a lista da abertura
+  // anterior na mão, o esqueleto seria um piscar sobre conteúdo bom.
+  const [loadingConvs, setLoadingConvs] = useState(
+    () => lidoDaMemoriaWa<WhatsAppConversation[]>(user?.id, 'conversations') === undefined,
+  );
   // Fase H: ação jurídica a partir de mensagem
   const [deadlineSource, setDeadlineSource] = useState<WhatsAppMessage | null>(null);
   const [taskSource, setTaskSource] = useState<WhatsAppMessage | null>(null);
@@ -596,8 +649,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       const rows = await whatsappService.listConversations();
       if (req !== convReqRef.current) return;
       setConversations(rows);
+      // Fica para a próxima abertura do widget — ver `sessionCache`.
+      guardaNaMemoriaWa(user?.id, 'conversations', rows);
     } catch {/* */} finally { if (req === convReqRef.current) setLoadingConvs(false); }
-  }, []);
+  }, [user?.id]);
 
   const runFunnelStageActions = useCallback(async (
     conversation: WhatsAppConversation,
@@ -704,34 +759,42 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // ausência da conversa aberta. Uma consulta por conversa, como era antes,
   // repetia a mesma resposta a cada troca de thread.
   const loadBusinessHours = useCallback(() => {
-    whatsappService.listAllBusinessHours()
-      .then(rows => { setBusinessHoursByChannel(rows); setBusinessHoursLoaded(true); })
-      .catch(() => {});
-  }, []);
+    swrWa(user?.id, 'businessHours', () => whatsappService.listAllBusinessHours(), (rows) => {
+      setBusinessHoursByChannel(rows);
+      setBusinessHoursLoaded(true);
+    });
+  }, [user?.id]);
 
   const loadChannels = useCallback(() => {
-    whatsappService.listChannels().then(setChannels).catch(() => {});
-  }, []);
+    swrWa(user?.id, 'channels', () => whatsappService.listChannels(), setChannels);
+  }, [user?.id]);
 
   const loadReconnectAlerts = useCallback(() => {
     if (!user?.id) { setReconnectAlerts([]); return; }
     whatsappService.listMyReconnectAlerts().then(setReconnectAlerts).catch(() => {});
   }, [user?.id]);
 
-  // Bootstrap dos dados auxiliares (uma vez). O fluxo reativo (realtime de
-  // conversa/mensagem/IA) vive em useWaRealtime.
+  // Bootstrap dos dados auxiliares (uma vez).
+  //
+  // Tudo aqui é CADASTRO: setor, equipe, canal, roteamento, horário comercial.
+  // Muda nas Configurações, uma vez por mês; era buscado quarenta vezes por dia,
+  // uma por abertura do widget, e a caixa de entrada esperava a fila inteira
+  // chegar de São Paulo. Agora cada um pinta com o que a aba já sabia e se
+  // corrige sozinho quando a resposta chega — ver `swrWa`.
+  //
+  // O fluxo reativo (realtime de conversa/mensagem/IA) vive em useWaRealtime.
   useEffect(() => {
     loadConversations();
     loadChannels();
-    whatsappService.listDepartments().then(setDepartments).catch(() => {});
-    settingsService.getWhatsAppChannelDepartmentRouting().then(setChannelRouting).catch(() => {});
-    whatsappService.listStaff().then(setStaff).catch(() => {});
-    whatsappService.getMyAgentPrefs().then(setAgentPrefs).catch(() => {});
+    swrWa(user?.id, 'departments', () => whatsappService.listDepartments(), setDepartments);
+    swrWa(user?.id, 'channelRouting', () => settingsService.getWhatsAppChannelDepartmentRouting(), setChannelRouting);
+    swrWa(user?.id, 'staff', () => whatsappService.listStaff(), setStaff);
+    swrWa(user?.id, 'agentPrefs', () => whatsappService.getMyAgentPrefs(), setAgentPrefs);
     // Matriz setor→membros: a distribuição da fila precisa dela para não
     // mandar conversa de um setor para quem não pertence a ele.
-    whatsappService.listAllDepartmentMembers().then(setDepartmentMembers).catch(() => {});
+    swrWa(user?.id, 'departmentMembers', () => whatsappService.listAllDepartmentMembers(), setDepartmentMembers);
     loadBusinessHours();
-  }, [loadConversations, loadBusinessHours, loadChannels]);
+  }, [loadConversations, loadBusinessHours, loadChannels, user?.id]);
 
   // Estado do canal é dado operacional, não configuração estática. Se um
   // número cair enquanto a tela está aberta, o modal preventivo precisa reagir
@@ -1004,6 +1067,30 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     });
   }, [setDraft]);
 
+  /**
+   * Põe o emoji onde o cursor está — e não no fim do texto.
+   *
+   * O campo é NÃO CONTROLADO (ver o `useLayoutEffect` acima), então a posição
+   * do cursor é lida do próprio DOM: entre abrir o painel e escolher o emoji, o
+   * rascunho no estado pode estar um passo atrás do que está escrito na tela.
+   * A reposição do cursor vem depois do render, pelo mesmo motivo da
+   * formatação — senão o próximo emoji cairia no fim.
+   */
+  const inserirEmoji = useCallback((emoji: string) => {
+    const ta = draftRef.current;
+    const texto = ta ? ta.value : draft;
+    const inicio = ta ? ta.selectionStart : texto.length;
+    const fim = ta ? ta.selectionEnd : texto.length;
+    setDraft(texto.slice(0, inicio) + emoji + texto.slice(fim));
+    requestAnimationFrame(() => {
+      const el = draftRef.current;
+      if (!el) return;
+      el.focus();
+      const cursor = inicio + emoji.length;
+      el.setSelectionRange(cursor, cursor);
+    });
+  }, [draft, setDraft]);
+
   useEffect(() => { if (!draft) setTextSel(null); }, [draft]);
   const closeComposerSpellMenu = useCallback(() => setComposerSpellMenu(null), []);
   const openComposerSpellMenu = useCallback((event: React.MouseEvent<HTMLTextAreaElement>) => {
@@ -1103,16 +1190,53 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // deixar a thread num vazio sem explicação.
   useEffect(() => {
     if (loadingConvs || !selectedId || conversations.length === 0) return;
-    if (!conversations.some(c => c.id === selectedId)) setSelectedId(null);
+    if (conversations.some(c => c.id === selectedId)) { deepLinkPendente.current = null; return; }
+    // Conversa RECÉM-CRIADA por um clique de fora ("Conversar no WhatsApp" na
+    // ficha do cliente) ainda não está nesta lista — ela nasceu há um instante,
+    // no servidor. Sem esta trégua, a limpeza acima desfazia a abertura no
+    // quadro seguinte ao clique, e o widget mostrava a inbox no lugar da
+    // conversa. A trégua dura só até a recarga responder: se a conversa não
+    // vier nem lá, a seleção é desfeita como sempre foi.
+    if (deepLinkPendente.current === selectedId) return;
+    setSelectedId(null);
   }, [loadingConvs, conversations, selectedId]);
 
   // Deep-link: ao clicar na notificação de mensagem nova (fora do módulo), o App
   // navega para cá com a conversa-alvo. Seleciona e limpa o param para não reabrir.
   useEffect(() => {
     if (!openConversationId) return;
-    setSelectedId(openConversationId);
+    const alvo = openConversationId;
+    setSelectedId(alvo);
+    const texto = openConversationDraft?.trim();
+    if (texto) draftPendente.current = { conversationId: alvo, texto };
+    // A lista pode não conhecer esta conversa ainda (acabou de ser criada pelo
+    // clique). Recarrega — e segura a limpeza de seleção até a resposta chegar.
+    deepLinkPendente.current = alvo;
+    void loadConversations().finally(() => {
+      if (deepLinkPendente.current === alvo) deepLinkPendente.current = null;
+    });
     onParamConsumed?.();
-  }, [openConversationId, onParamConsumed]);
+  }, [openConversationId, openConversationDraft, onParamConsumed, loadConversations]);
+
+  /**
+   * Escreve no compositor o texto que veio junto com o deep-link.
+   *
+   * Em efeito SEPARADO, e depois do `useWaComposer` de propósito: ao trocar de
+   * conversa o compositor restaura o rascunho daquela thread (ou o vazio), e
+   * esse efeito mora dentro do hook — declarado antes, ele roda antes. Escrever
+   * no mesmo efeito da seleção seria escrever para ser apagado meio ciclo
+   * depois.
+   *
+   * Rascunho que já existia na thread ganha do texto pronto: o que o atendente
+   * deixou escrito pela metade é trabalho dele, e o modelo pode ser remontado
+   * com um clique.
+   */
+  useEffect(() => {
+    const pendente = draftPendente.current;
+    if (!pendente || pendente.conversationId !== selectedId) return;
+    draftPendente.current = null;
+    setDraft(atual => (atual.trim() ? atual : pendente.texto));
+  }, [selectedId, setDraft]);
 
   // Fase N: aviso de fora do horário de atendimento do canal da conversa aberta.
   // A regra de "está aberto?" mora em `businessTime` (a mesma que mede o SLA);
@@ -1342,7 +1466,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         hasSearch: search.trim().length > 0,
         dialogOpen: !!document.querySelector('[role="dialog"]'),
         recording,
-        overlayOpen: attachMenuOpen || gifOpen || slashActive,
+        overlayOpen: attachMenuOpen || gifOpen || emojiOpen || slashActive,
         composing: !!editing || !!replyTo,
         hasDraft: draft.trim().length > 0,
       });
@@ -1596,8 +1720,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // `conversationsApi.countUnreadContacts()` — uma verdade só, que não depende
   // de o módulo estar montado nem do que está filtrado na tela.
 
-  // Reporta a conversa aberta (deep-link ao maximizar o widget).
-  useEffect(() => { onActiveConversationChange?.(selectedId); }, [selectedId, onActiveConversationChange]);
+  // Reporta a conversa aberta: o id (deep-link ao maximizar) e a identidade
+  // (rosto e nome que a barra flutuante mostra com o widget minimizado).
+  useEffect(() => {
+    onActiveConversationChange?.(
+      selectedId,
+      selected ? { nome: conversationName(selected), avatarUrl: selected.contact_avatar_url } : null,
+    );
+  }, [selectedId, selected, onActiveConversationChange]);
 
   // Ações operacionais/governança da conversa aberta (accept/assume/release/
   // reopen/unblock, silenciar, limpar, toggles de ausência e guarda jurídica).
@@ -1858,6 +1988,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     createDeadline: (m: WhatsAppMessage) => void; createTask: (m: WhatsAppMessage) => void;
     forward: (m: WhatsAppMessage) => void;
     remove: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => void;
+    react: (m: WhatsAppMessage, emoji: string) => void;
     /** Ações do cartão de contato recebido (ver `contactMessageCard.tsx`). */
     openContactChat: (phone: string, name: string) => void;
     callContactPhone: (phone: string, name: string) => void;
@@ -1876,6 +2007,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     createTask: (m) => comCadastro('abrir uma tarefa', () => setTaskSource(m)),
     forward: (m) => setForwardSource(m),
     remove: (m, scope) => { void deleteMessage(m, scope); },
+    react: (m, emoji) => { void reactToMessage(m, emoji); },
     // Ligar para um número do cartão de contato. Vai pela MESMA porta da
     // ligação do cabeçalho: quem decide se aquilo é um número discável é
     // `resolveCallablePhone`, não a bolha.
@@ -1932,6 +2064,37 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       }
     }
   };
+  /**
+   * Reage a uma mensagem — ou desfaz a reação, quando `emoji` vem vazio.
+   *
+   * A pastilha aparece antes da resposta do servidor: reagir é gesto de meio
+   * segundo, e esperar a Evolution ida e volta para o emoji surgir faz o clique
+   * parecer perdido (e convida ao segundo clique, que desfaria). Se o envio
+   * falhar, a lista volta a ser exatamente a de antes.
+   *
+   * Quem manda no formato da lista é o servidor: o que ele devolve substitui o
+   * palpite local, inclusive quando o contato reagiu no mesmo instante.
+   */
+  const reactToMessage = async (m: WhatsAppMessage, emoji: string) => {
+    const antes = m.reactions ?? [];
+    const otimista = aplicarReacao(antes, {
+      emoji,
+      from: 'out',
+      actor: ACTOR_ESCRITORIO,
+      name: (user ? agentLabel(staffById.get(user.id)) : null) || null,
+      at: new Date().toISOString(),
+    });
+    setMessages(prev => prev.map(x => x.id === m.id ? { ...x, reactions: otimista } : x));
+    try {
+      const reactions = await whatsappService.reactToMessage(m.id, emoji);
+      setMessages(prev => prev.map(x => x.id === m.id ? { ...x, reactions } : x));
+    } catch (err: any) {
+      setMessages(prev => prev.map(x => x.id === m.id ? { ...x, reactions: antes } : x));
+      playWaActionSound('error');
+      toast.error('Não foi possível reagir', err?.message);
+    }
+  };
+
   /**
    * Encaminha a mensagem para outras conversas. Mídia vai pelo CAMINHO DO
    * STORAGE (`sendMedia({ storagePath })`), sem baixar e subir o arquivo de
@@ -1993,6 +2156,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
     onCreateDeadline: (m: WhatsAppMessage) => bubbleImplRef.current.createDeadline(m),
     onCreateTask: (m: WhatsAppMessage) => bubbleImplRef.current.createTask(m),
     onDelete: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => bubbleImplRef.current.remove(m, scope),
+    onReact: (m: WhatsAppMessage, emoji: string) => bubbleImplRef.current.react(m, emoji),
     onOpenContactChat: (phone: string, name: string) => bubbleImplRef.current.openContactChat(phone, name),
     onCallContactPhone: (phone: string, name: string) => bubbleImplRef.current.callContactPhone(phone, name),
     onLinkContactPhone: (phone: string, name: string) => bubbleImplRef.current.linkContactPhone(phone, name),
@@ -2157,14 +2321,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         <button onClick={takeNextInQueue}
           title={`Próximo da fila: ${nextUp.label}`}
           aria-label={`Próximo da fila: ${nextUp.label}`}
-          className={`flex items-center justify-center w-7 h-7 rounded-full transition ${
+          className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
             nextUp.bucket === 'transferencia_travada' || nextUp.bucket === 'sla_estourado'
-              ? 'bg-red-100 text-red-700 hover:bg-red-200'
+              ? 'bg-[#fdecea] text-[#c5221f] hover:bg-[#fbdedb]'
               : nextUp.bucket === 'urgente' || nextUp.bucket === 'sla_atencao'
-                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                : 'bg-[#f3f2ef] text-slate-600 hover:bg-slate-200'
+                ? 'bg-[#fdf1e0] text-[#a15c07] hover:bg-[#fbe6cc]'
+                : 'text-slate-500 hover:bg-[#f1f0ec] hover:text-slate-700'
           }`}>
-          <ListTodo size={15} />
+          <ListTodo size={16} />
         </button>
       )}
       {/* Gestão (fila, dashboard, acessos, funis) atrás de um único botão. Em
@@ -2174,10 +2338,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
         <div className="relative">
           <button onClick={() => setMoreMenuOpen(o => !o)} aria-expanded={moreMenuOpen}
             title="Gestão do atendimento"
-            className={`relative flex items-center justify-center w-7 h-7 rounded-full transition ${
-              moreMenuOpen ? 'bg-slate-200 text-slate-700' : 'bg-[#f3f2ef] text-slate-600 hover:bg-slate-200'
+            className={`relative flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
+              moreMenuOpen ? 'bg-[#eceae5] text-slate-800' : 'text-slate-500 hover:bg-[#f1f0ec] hover:text-slate-700'
             }`}>
-            <MoreVertical size={15} />
+            <MoreVertical size={16} />
             {queueAlerts > 0 && (
               <span title={`${queueAlerts} na fila precisando de ação`}
                 className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-[3px] rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center">
@@ -2187,7 +2351,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           </button>
           {moreMenuOpen && (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setMoreMenuOpen(false)} />
+              <button type="button" aria-label="Fechar menu"
+                className="fixed inset-0 z-40 cursor-default bg-transparent"
+                onClick={() => setMoreMenuOpen(false)} />
               <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-xl border border-[#e7e5df] bg-white shadow-lg py-1">
                 <button onClick={() => { setMoreMenuOpen(false); setQueuePanelOpen(true); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-[#faf9f7] transition">
@@ -2228,9 +2394,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           )}
         </div>
       )}
+      {/* A única cor cheia da barra: uma barra de ferramentas com quatro botões
+          coloridos não tem ação principal nenhuma. */}
       <button onClick={() => setNewConvOpen(true)} title="Nova conversa"
-        className="flex items-center justify-center w-7 h-7 rounded-full bg-amber-600 text-white hover:bg-amber-700 transition active:scale-90 hover:rotate-90 duration-200">
-        <Plus size={16} />
+        className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#f27a23] text-white shadow-[0_1px_2px_rgba(242,122,35,.4)] hover:bg-[#e06b1f] transition-colors active:scale-95">
+        <Plus size={17} />
       </button>
     </div>
   );
@@ -2316,7 +2484,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
       <aside style={isMobile ? undefined : { width: listWidth }}
         data-testid="whatsapp-conversation-list"
         className={`relative flex-shrink-0 flex-col border-r border-[#e7e5df] bg-white min-h-0 ${isMobile ? (selectedId ? 'hidden' : 'flex w-full') : 'flex'}`}>
-        <div className={`border-b border-[#e7e5df] ${embedded ? 'px-3 pt-2.5 pb-2' : 'px-4 pt-4 pb-3'}`}>
+        {/* ZONA DE CONTROLE. Busca, filtros e abas ficam sobre um creme quase
+            branco, e a lista sobre o branco: sem essa separação, o topo e o
+            conteúdo eram a mesma superfície e o olho não sabia onde acabava a
+            ferramenta e onde começava o trabalho. */}
+        <div className={`border-b border-[#e7e5df] bg-[#fdfcfb] ${embedded ? 'px-3 pt-2.5 pb-2' : 'px-4 pt-4 pb-3'}`}>
           {!embedded && (
             <div className="flex items-center justify-between gap-2 mb-3">
               {/* O título cede espaço antes das ações: se algo tiver que
@@ -2333,7 +2505,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Buscar conversa…" title="Buscar conversa (Ctrl+K) · ↑ ↓ trocam de conversa"
-                className={`w-full pl-9 text-[13px] rounded-lg bg-[#f3f2ef] border border-transparent focus:bg-white focus:border-amber-300 outline-none ${embedded ? 'py-1.5 pr-3' : 'py-2 pr-12'}`} />
+                className={`w-full pl-9 text-[13px] text-slate-800 placeholder-slate-400 rounded-full bg-[#f4f3f0] border border-transparent outline-none transition focus:bg-white focus:border-[#e0ddd5] focus:shadow-[0_1px_3px_rgba(15,23,42,.07)] ${embedded ? 'py-1.5 pr-3' : 'py-2 pr-12'}`} />
               {/* Atalho anunciado no próprio campo: atalho que ninguém descobre
                   não existe. Some quando há texto (o dedo já está no teclado) e
                   no modo embutido, onde não há largura sobrando. */}
@@ -2347,9 +2519,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
               const active = (channelFilter !== 'all' ? 1 : 0) + (deptFilter !== 'all' ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + (labelFilter !== '' ? 1 : 0);
               return (
                 <button onClick={() => setFiltersOpen(o => !o)} title={filtersOpen ? 'Ocultar filtros' : 'Mostrar filtros'} aria-expanded={filtersOpen}
-                  className={`flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-[12.5px] font-semibold transition ${filtersOpen || active ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-[#f3f2ef] text-slate-600 hover:bg-slate-200'}`}>
-                  <Filter size={15} />
-                  {active > 0 && <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-amber-600 text-white text-[10px] font-bold">{active}</span>}
+                  className={`flex-shrink-0 inline-flex items-center gap-1 h-8 px-2 rounded-lg text-[12.5px] font-semibold transition-colors ${filtersOpen || active ? 'bg-[#fdf1e0] text-[#a15c07] hover:bg-[#fbe6cc]' : 'text-slate-500 hover:bg-[#f1f0ec] hover:text-slate-700'}`}>
+                  <Filter size={16} />
+                  {active > 0 && <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-[#f27a23] text-white text-[10px] font-bold">{active}</span>}
                   <ChevronDown size={14} className={`transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
                 </button>
               );
@@ -2510,7 +2682,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           </div>
         ) : (
           <>
-            <header className={`flex items-center gap-2 sm:gap-3 border-b border-black/[0.06] bg-[#f0f2f5] ${embedded ? 'px-2.5 py-2' : 'px-2.5 sm:px-5 py-2.5'}`}>
+            <header className={`flex items-center gap-2 sm:gap-3 border-b border-black/[0.06] ${molduraBg} ${embedded ? 'px-2.5 py-2' : 'px-2.5 sm:px-5 py-2.5'}`}>
               {isMobile && (
                 <button onClick={() => setSelectedId(null)} title="Voltar à lista"
                   className="flex-shrink-0 -ml-1 w-9 h-9 rounded-lg text-slate-600 hover:bg-[#f3f2ef] flex items-center justify-center transition">
@@ -2753,7 +2925,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     const run = (fn: () => void) => () => { setHeaderMenuOpen(false); fn(); };
                     return (
                       <>
-                        <div className="fixed inset-0 z-40" onClick={() => setHeaderMenuOpen(false)} />
+                        <button type="button" aria-label="Fechar menu da conversa"
+                          className="fixed inset-0 z-40 cursor-default bg-transparent"
+                          onClick={() => setHeaderMenuOpen(false)} />
                         <div role="menu" className="absolute right-0 top-11 z-50 w-56 rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden">
                           {!panelDocked && (
                             <button className={item} onClick={run(() => setMobilePanelOpen(true))}><Info size={16} className="text-slate-400" /> Detalhes do contato</button>
@@ -2844,7 +3018,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             {/* `overscroll-contain`: chegar ao fim da conversa não pode empurrar
                 a rolagem para o que estiver atrás (a página do CRM, o painel).
                 Era o pulo seco no fim de cada thread. */}
-            <div ref={setThreadEl} onScroll={onThreadScroll} className="wa-thread-bg flex-1 overflow-y-auto overscroll-contain min-h-0">
+            {/* DENTRO DO WIDGET, A CONVERSA TEM O CHÃO DO PAINEL.
+                Em tela cheia o módulo mantém o bege com os rabiscos — é o
+                ambiente do WhatsApp e quem atende o dia inteiro o reconhece de
+                longe. Mas no painel flutuante ele divide a mesma janela com o
+                chat da equipe, que é creme liso: trocar de aba trocava o chão
+                debaixo do pé. Embutido, os dois lados usam a mesma superfície;
+                o que distingue um do outro é o conteúdo, não o papel de parede. */}
+            <div ref={setThreadEl} onScroll={onThreadScroll} className={`${embedded ? 'wa-thread-bg-liso' : 'wa-thread-bg'} flex-1 overflow-y-auto overscroll-contain min-h-0`}>
               <div ref={threadContentRef} className="mx-auto w-full max-w-[1180px] px-3 sm:px-6 py-4">
               {loadingMsgs ? (
                 <ThreadSkeleton />
@@ -2972,7 +3153,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
 
             {/* Banner de reply / edição */}
             {(replyTo || editing) && !selected.is_blocked && (
-              <div className="px-3 pt-2 bg-[#f0f2f5]">
+              <div className={`px-3 pt-2 ${molduraBg}`}>
                 <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border-l-[3px] border-[#00a884] shadow-sm">
                   {editing ? <Pencil size={14} className="text-[#008069] flex-shrink-0" /> : <CornerUpLeft size={14} className="text-[#008069] flex-shrink-0" />}
                   <div className="min-w-0 flex-1">
@@ -3054,7 +3235,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                 </button>
               </div>
             ) : (
-            <div className="relative px-2.5 sm:px-3 py-2 border-t border-black/[0.06] bg-[#f0f2f5]">
+            <div className={`relative px-2.5 sm:px-3 py-2 border-t border-black/[0.06] ${molduraBg}`}>
               {recording ? (
                 <div className="flex items-center gap-2.5">
                   {/* Lixeira = cancelar e descartar a gravação (ou Esc) */}
@@ -3087,7 +3268,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                   </div>
                   {/* Enviar o áudio */}
                   <button onClick={() => stopRecording(true)} title="Enviar áudio (Enter)"
-                    className="flex-shrink-0 w-10 h-10 rounded-full bg-[#00a884] text-white flex items-center justify-center hover:bg-[#008f72] transition">
+                    className={`flex-shrink-0 w-10 h-10 rounded-full ${btnEnviarCor} text-white flex items-center justify-center transition`}>
                     <Send size={16} />
                   </button>
                 </div>
@@ -3098,19 +3279,32 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                     <input ref={imgInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={e => onPickFiles(e, 'media')} />
                     <input ref={docInputRef} type="file" className="hidden" onChange={e => onPickFiles(e, 'document')} />
                     {/* Backdrop p/ fechar o widget flutuante ao tocar fora */}
-                    {gifOpen && <div className="fixed inset-0 z-20" onClick={() => setGifOpen(false)} />}
+                    {/* PEGA-CLIQUES, não cortina. `<button>` e não `<div>` de
+                        propósito: a correção global de modais do `index.css`
+                        casa por SUBSTRING de classe (`div` + `fixed` +
+                        `inset-0`) e pinta o elemento de preto 60% com
+                        `blur(8px)` e `!important` — era isso que escurecia e
+                        desfocava o CRM inteiro atrás do menu. O seletor exige
+                        `div`, então o botão passa incólume, e de quebra o
+                        fechar-ao-tocar-fora vira alcançável pelo teclado. */}
+                    {gifOpen && (
+                      <button type="button" aria-label="Fechar seletor de GIF"
+                        className="fixed inset-0 z-20 cursor-default bg-transparent"
+                        onClick={() => setGifOpen(false)} />
+                    )}
+                    {/* `onPick` não espera nada: o download do arquivo mora
+                        dentro de `sendGif`, DEPOIS de a bolha já estar na tela.
+                        Baixar antes era o que fazia o seletor fechar e a
+                        conversa ficar parada por segundos. */}
                     {gifOpen && (
                       <GifPicker onClose={() => setGifOpen(false)}
-                        onPick={async item => {
-                          setGifOpen(false);
-                          try {
-                            void sendGif(await giphyService.baixar(item));
-                          } catch (e: any) {
-                            toast.error('GIF não enviado', e?.message || 'Falha ao baixar o GIF.');
-                          }
-                        }} />
+                        onPick={item => { setGifOpen(false); void sendGif(item); }} />
                     )}
-                    {attachMenuOpen && <div className="fixed inset-0 z-20" onClick={() => setAttachMenuOpen(false)} />}
+                    {attachMenuOpen && (
+                      <button type="button" aria-label="Fechar menu de anexos"
+                        className="fixed inset-0 z-20 cursor-default bg-transparent"
+                        onClick={() => setAttachMenuOpen(false)} />
+                    )}
                     {/* Menu de anexos acima do botão "+" integrado ao compositor. */}
                     {attachMenuOpen && (() => {
                         const row = 'w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-[13.5px] font-medium text-slate-700 hover:bg-amber-50 transition disabled:opacity-50';
@@ -3141,6 +3335,21 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                       })()}
                   </>
                 )}
+                {/* Emojis. Fora do menu "+" de propósito — e valendo também na
+                    EDIÇÃO, onde o menu de anexos não existe: quem está
+                    corrigindo a mensagem é justamente quem quer acrescentar o
+                    emoji que faltou. O painel fica aberto depois da escolha,
+                    porque quase nunca se manda um só. */}
+                {emojiOpen && (
+                  <button type="button" aria-label="Fechar seletor de emojis"
+                    className="fixed inset-0 z-20 cursor-default bg-transparent"
+                    onClick={() => setEmojiOpen(false)} />
+                )}
+                {emojiOpen && (
+                  <EmojiPicker className="absolute left-2.5 sm:left-3 bottom-full mb-2 z-30 w-[320px] max-w-[calc(100%-1.25rem)]"
+                    onPick={inserirEmoji}
+                    onClose={() => setEmojiOpen(false)} />
+                )}
                 <div className="flex items-end gap-2">
                   {!editing && (
                     <button onClick={() => setAttachMenuOpen(o => !o)} title="Anexos e ações" aria-haspopup="menu" aria-expanded={attachMenuOpen}
@@ -3148,6 +3357,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                       <Plus size={22} className={`transition-transform duration-200 ${attachMenuOpen ? 'rotate-45' : ''}`} />
                     </button>
                   )}
+                  <button onClick={() => { setEmojiOpen(o => !o); setAttachMenuOpen(false); }}
+                    title="Emojis" aria-label="Emojis" aria-expanded={emojiOpen}
+                    className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition hover:bg-black/[0.06] ${
+                      emojiOpen ? (embedded ? 'text-[#f27a23]' : 'text-[#00a884]') : 'text-[#54656f]'}`}>
+                    <Smile size={21} />
+                  </button>
                   <div className="relative flex-1">
                     {/* Menu do atalho "/" — modelos de mensagem (estilo WhatsApp) */}
                     {slashActive && (
@@ -3225,12 +3440,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
                        interna e saem na ordem digitada, então dá para escrever a
                        próxima enquanto a anterior ainda está carregando. */
                     <button onClick={handleSend} disabled={sending || !draft.trim()}
-                      className={`flex-shrink-0 w-10 h-10 rounded-full bg-[#00a884] text-white flex items-center justify-center hover:bg-[#008f72] hover:scale-105 disabled:opacity-40 transition active:scale-90 ${sending ? '' : 'wa-send-ready'}`}>
+                      className={`flex-shrink-0 w-10 h-10 rounded-full ${btnEnviarCor} text-white flex items-center justify-center hover:scale-105 disabled:opacity-40 transition active:scale-90 ${sending ? '' : embedded ? 'wa-send-ready wa-send-ready-casa' : 'wa-send-ready'}`}>
                       {sending ? <Loader2 size={16} className="animate-spin" /> : editing ? <Check size={18} /> : <Send size={16} />}
                     </button>
                   ) : (
                     <button title="Gravar áudio" onClick={startRecording}
-                      className="flex-shrink-0 w-10 h-10 rounded-full text-[#54656f] flex items-center justify-center hover:bg-black/[0.06] hover:text-[#00a884] transition active:scale-90">
+                      className={`flex-shrink-0 w-10 h-10 rounded-full text-[#54656f] flex items-center justify-center hover:bg-black/[0.06] ${embedded ? 'hover:text-[#f27a23]' : 'hover:text-[#00a884]'} transition active:scale-90`}>
                       <Mic size={18} />
                     </button>
                   )}
@@ -3601,7 +3816,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
             staff={staff}
             moduleConfig={moduleConfig}
             requirePin={requirePin}
-            onChannelsChange={next => { setChannels(next); void reloadFunnelLabels(); }}
+            /* A memória de aba tem de andar junto: quem edita um canal aqui
+               atualiza a tela na hora, e se a lista guardada continuasse a
+               antiga, a próxima abertura do widget pintaria com ela por um
+               instante — a edição "voltando atrás" na frente de quem a fez. */
+            onChannelsChange={next => {
+              setChannels(next);
+              guardaNaMemoriaWa(user?.id, 'channels', next);
+              void reloadFunnelLabels();
+            }}
             onFeedback={(type, message) => type === 'success'
               ? toast.success('Funil atualizado', message)
               : toast.error('Erro ao salvar funil', message)}

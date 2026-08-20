@@ -8,6 +8,8 @@ import {
   Type, EyeOff, Undo2, Trash2, Loader2,
 } from 'lucide-react';
 import { formatBytes } from './format';
+import { LAYER } from '../../styles/layers';
+import { useModalLayer } from '../../styles/modalLayer';
 import {
   ANNOTATION_COLORS, ANNOTATION_SIZES, clamp01, drawAnnotations, flattenAnnotations,
   fontSizePx, hasInk, hitTestText, isFreehand, isShape, isText, pointFromPointer, undoLast,
@@ -32,6 +34,9 @@ export const AttachmentPreviewModal: React.FC<{
   onClose: (caption: string) => void;
   onConfirm: (caption: string, files: File[]) => void;
 }> = ({ files, initialCaption = '', onClose, onConfirm }) => {
+  // Ver `styles/modalLayer`: a mesma prévia abre na faixa dos modais no módulo
+  // em tela cheia e na faixa do widget quando a conversa está dentro dele.
+  const camada = useModalLayer(LAYER.MODAL_NESTED);
   const [items, setItems] = useState<File[]>(files);
   const [active, setActive] = useState(0);
   const [caption, setCaption] = useState(initialCaption);
@@ -257,7 +262,7 @@ export const AttachmentPreviewModal: React.FC<{
   const btnBase = 'w-8 h-8 rounded-lg flex items-center justify-center transition flex-shrink-0';
 
   return createPortal(
-    <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4" onClick={fechar}>
+    <div className="fixed inset-0 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4" style={{ zIndex: camada }} onClick={fechar}>
       {/* A moldura ABRAÇA a imagem: a largura do modal é a largura que a imagem
           assume depois de limitada por `max-h`/`max-w`, sem faixa escura em
           volta. O mínimo existe só para o cabeçalho não espremer as
