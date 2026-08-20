@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.10.344',
+    date: '20/08/2026',
+    summary: 'A tecla Esc voltou a funcionar dentro do widget: uma vez volta da conversa para a lista, outra fecha a janela.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Esc volta ao início; de novo, fecha a janela',
+            description: 'Dentro do widget a tecla Esc não fazia nada — o teclado da caixa de entrada era desligado ali de propósito, porque as setas pertencem à página que está atrás da janela. Agora só o Esc é reativado, e ele desfaz uma coisa por vez, da mais recente para a mais antiga: a gravação em curso, o menu aberto, a resposta que estava sendo escrita, a busca digitada, a conversa aberta e, por último, a própria janela. Um gesto para voltar, o mesmo gesto de novo para sair.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O Esc nunca apaga o que você escreveu',
+            description: 'Com texto no campo de mensagem, o Esc não fecha nada — nem a conversa, nem a janela. Perder parágrafos digitados com uma tecla, sem desfazer, é o oposto do que essa tecla promete. Vale também na aba Equipe, que ganhou a mesma escada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.343',
     date: '20/08/2026',
     summary: 'A conversa que está aberta na sua frente parou de tocar a cada mensagem, e o widget volta na aba em que você estava.',

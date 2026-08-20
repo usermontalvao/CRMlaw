@@ -264,7 +264,9 @@ const AttachmentSignedMedia: React.FC<{
   useEffect(() => {
     if (!viewerOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setViewerOpen(false);
+      // `preventDefault` marca a tecla como consumida: sem isso, o mesmo Esc
+      // que fecha a imagem continuaria descendo a escada e sairia da conversa.
+      if (e.key === 'Escape') { e.preventDefault(); setViewerOpen(false); }
       else if (e.key === 'ArrowRight') setViewerIndex(i => Math.min(i + 1, list.length - 1));
       else if (e.key === 'ArrowLeft') setViewerIndex(i => Math.max(i - 1, 0));
     };
@@ -563,6 +565,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
   const [chatTab, setChatTab] = useState<'equipe' | 'whatsapp'>('equipe');
 
+
   /**
    * Onde eu estava fica guardado.
    *
@@ -637,6 +640,46 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const [previewPlaying, setPreviewPlaying] = useState(false);
   
   const [showNewChatModal, setShowNewChatModal] = useState(false);
+
+  /**
+   * A ESCADA DO ESC NA ABA EQUIPE.
+   *
+   * A mesma da inbox de WhatsApp (`inboxKeyboard`), aplicada aqui porque a
+   * conversa de equipe é nossa, não do módulo: um Esc volta da conversa para a
+   * lista, o seguinte fecha a janela. Um gesto, dois degraus — e nunca dois de
+   * uma vez.
+   *
+   * Três coisas ficam de fora, e cada uma por um motivo:
+   *  · tecla JÁ CONSUMIDA (`defaultPrevented`): quem estava por cima —
+   *    o visualizador de imagem, um menu — já respondeu por ela;
+   *  · diálogo aberto: o teclado é dele enquanto estiver na tela;
+   *  · campo de texto COM CONTEÚDO: fechar a janela de quem está no meio de uma
+   *    frase é perder trabalho, que é exatamente o que o Esc não pode fazer.
+   *
+   * Na aba WhatsApp este ouvinte se cala: lá quem desce a escada é o módulo,
+   * que conhece a pilha inteira (gravação, menus, resposta, rascunho) e nos
+   * devolve o gesto só no último degrau, via `onEscapeExit`.
+   */
+  useEffect(() => {
+    if (!open) return;
+    if (chatTab === 'whatsapp' && hasWhatsAppAccess) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      const alvo = document.activeElement as HTMLElement | null;
+      if (alvo) {
+        const campo = alvo instanceof HTMLInputElement || alvo instanceof HTMLTextAreaElement;
+        const texto = campo ? alvo.value.trim() : alvo.isContentEditable ? (alvo.textContent ?? '').trim() : '';
+        if (texto) return;
+      }
+      e.preventDefault();
+      if (showNewChatModal) { setShowNewChatModal(false); return; }
+      if (selectedRoomId) { setSelectedRoomId(null); return; }
+      setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, chatTab, hasWhatsAppAccess, showNewChatModal, selectedRoomId]);
   const [searchMember, setSearchMember] = useState('');
   const [readStates, setReadStates] = useState<Map<string, string>>(new Map());
   const [shaking, setShaking] = useState(false);
@@ -2682,6 +2725,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                       openConversationId={waOpenConvId ?? undefined}
                       onParamConsumed={() => setWaOpenConvId(null)}
                       onActiveConversationChange={handleWaActiveConversation}
+                      /* O Esc na lista fecha a janela: é o degrau que o módulo
+                         não tem como dar sozinho, porque a janela é nossa. */
+                      onEscapeExit={() => setOpen(false)}
                     />
                   ) : temInboxGuardada ? (
                     // Com a inbox na memória o corpo chega em um quadro: pôr um

@@ -138,3 +138,55 @@ test('reconhece campos de texto e contenteditable', () => {
   assert.equal(isTypingTarget(fake('BUTTON')), false);
   assert.equal(isTypingTarget(null), false);
 });
+
+// ── O último degrau: fechar a janela que hospeda a inbox ─────────────
+// Só existe no widget. O contrato que interessa é a ORDEM: um Esc volta ao
+// início, o próximo fecha — nunca os dois de uma vez, e nunca por cima de algo
+// que a pessoa estava fazendo.
+
+test('no widget, o Esc na lista fecha a janela', () => {
+  const acao = resolveInboxKey({ key: 'Escape' }, ctx({ selectedId: null, canExitSurface: true }));
+  assert.deepEqual(acao, { kind: 'exitSurface' });
+});
+
+test('com a conversa aberta, o primeiro Esc volta à lista e não fecha a janela', () => {
+  const acao = resolveInboxKey({ key: 'Escape' }, ctx({ selectedId: 'b', canExitSurface: true }));
+  assert.deepEqual(acao, { kind: 'closeConversation' });
+});
+
+test('em tela cheia não há janela para fechar: o Esc na lista não faz nada', () => {
+  const acao = resolveInboxKey({ key: 'Escape' }, ctx({ selectedId: null }));
+  assert.equal(acao, null);
+});
+
+test('rascunho escrito segura a escada inteira — nem a janela fecha', () => {
+  const acao = resolveInboxKey(
+    { key: 'Escape' },
+    ctx({ selectedId: 'b', hasDraft: true, canExitSurface: true }),
+  );
+  assert.equal(acao, null);
+});
+
+test('o que está por cima é desfeito antes, mesmo no widget', () => {
+  const base = { selectedId: null, canExitSurface: true } as const;
+  assert.deepEqual(
+    resolveInboxKey({ key: 'Escape' }, ctx({ ...base, recording: true })),
+    { kind: 'cancelRecording' },
+  );
+  assert.deepEqual(
+    resolveInboxKey({ key: 'Escape' }, ctx({ ...base, overlayOpen: true })),
+    { kind: 'closeOverlay' },
+  );
+  assert.deepEqual(
+    resolveInboxKey({ key: 'Escape' }, ctx({ ...base, inSearch: true, hasSearch: true })),
+    { kind: 'clearSearch' },
+  );
+});
+
+test('com um diálogo aberto, nem o último degrau vale', () => {
+  const acao = resolveInboxKey(
+    { key: 'Escape' },
+    ctx({ selectedId: null, canExitSurface: true, dialogOpen: true }),
+  );
+  assert.equal(acao, null);
+});

@@ -20,7 +20,8 @@ export type InboxKeyAction =
   | { kind: 'cancelRecording' }
   | { kind: 'closeOverlay' }
   | { kind: 'cancelCompose' }
-  | { kind: 'closeConversation' };
+  | { kind: 'closeConversation' }
+  | { kind: 'exitSurface' };
 
 export interface InboxKeyContext {
   /** Ids das conversas na ordem em que estão na tela (já filtradas). */
@@ -43,6 +44,14 @@ export interface InboxKeyContext {
   composing?: boolean;
   /** Há rascunho escrito no compositor. */
   hasDraft?: boolean;
+  /**
+   * A inbox está dentro de uma janela que pode ser FECHADA — o widget
+   * flutuante. Só então o Esc tem um último degrau depois da lista: sair.
+   *
+   * Em tela cheia isto é `false`: ali a inbox é a tela, e não há janela para
+   * fechar; um Esc a mais não pode tirar a pessoa do módulo.
+   */
+  canExitSurface?: boolean;
 }
 
 export interface InboxKeyEvent {
@@ -93,6 +102,14 @@ export function neighbourId(visibleIds: string[], selectedId: string | null, ste
  *                        quer limpar seleciona e apaga.
  *   6. Conversa aberta → fecha a conversa e volta à lista. Só no fim, quando não
  *                        há mais nada por cima; é o "voltar" da tela.
+ *   7. Janela aberta   → fecha a janela, e só onde existe uma (o widget
+ *                        flutuante). É o degrau que faz o segundo Esc na lista
+ *                        sair do widget: um Esc volta ao início, o próximo
+ *                        fecha. Na inbox de tela cheia este degrau não existe.
+ *
+ * Repare que o rascunho (5) continua barrando a descida: com texto escrito no
+ * compositor, nem a conversa fecha nem a janela — o Esc não pode ser o caminho
+ * mais curto para perder o que se estava escrevendo.
  */
 function escapeAction(ctx: InboxKeyContext): InboxKeyAction | null {
   if (ctx.recording) return { kind: 'cancelRecording' };
@@ -101,6 +118,7 @@ function escapeAction(ctx: InboxKeyContext): InboxKeyAction | null {
   if (ctx.inSearch) return ctx.hasSearch ? { kind: 'clearSearch' } : { kind: 'blurSearch' };
   if (ctx.hasDraft) return null;
   if (ctx.selectedId) return { kind: 'closeConversation' };
+  if (ctx.canExitSurface) return { kind: 'exitSurface' };
   return null;
 }
 

@@ -238,9 +238,17 @@ interface WhatsAppModuleProps {
     id: string | null,
     contato?: { nome: string; avatarUrl: string | null } | null,
   ) => void;
+  /**
+   * Fechar a janela que hospeda o módulo — o último degrau do Esc.
+   *
+   * Só faz sentido embutido: no widget, um Esc volta da conversa para a lista e
+   * o seguinte fecha a janela. Em tela cheia não existe janela para fechar, e
+   * por isso quem não passa esta função simplesmente não tem o degrau.
+   */
+  onEscapeExit?: () => void;
 }
 
-const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, openConversationDraft, onParamConsumed, onConvertLead, variant = 'full', onActiveConversationChange }) => {
+const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, openConversationDraft, onParamConsumed, onConvertLead, variant = 'full', onActiveConversationChange, onEscapeExit }) => {
   const embedded = variant === 'embedded';
   // Dentro do widget, o verde do WhatsApp cede ao laranja da casa. O botão de
   // enviar é o elemento mais chamativo do painel: um verde de outro produto
@@ -1452,11 +1460,14 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   const searchRef = useRef<HTMLInputElement>(null);
   const filteredIds = useMemo(() => filtered.map(c => c.id), [filtered]);
   useEffect(() => {
-    // Só na inbox de tela cheia. No modo embutido (widget dentro de outra tela)
-    // a seta pertence à página que hospeda o widget, e duas instâncias montadas
-    // ao mesmo tempo brigariam pela mesma tecla.
-    if (embedded) return;
     const onKey = (e: KeyboardEvent) => {
+      // NO MODO EMBUTIDO, SÓ O ESC. As setas continuam sendo da página que
+      // hospeda o widget — ali elas rolam a tela de trás, e duas instâncias
+      // montadas ao mesmo tempo brigariam pela mesma tecla. O Esc não tem esse
+      // problema: ele age sobre a pilha do que ESTE módulo abriu, e quando não
+      // há mais nada por cima ele devolve o gesto ao hospedeiro (`exitSurface`),
+      // em vez de disputá-lo.
+      if (embedded && e.key !== 'Escape') return;
       const alvo = document.activeElement;
       const action = resolveInboxKey(e, {
         visibleIds: filteredIds,
@@ -1469,6 +1480,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
         overlayOpen: attachMenuOpen || gifOpen || emojiOpen || slashActive,
         composing: !!editing || !!replyTo,
         hasDraft: draft.trim().length > 0,
+        canExitSurface: embedded && !!onEscapeExit,
       });
       if (!action) return;
       e.preventDefault();
@@ -1482,6 +1494,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
         return;
       }
       if (action.kind === 'cancelCompose') { setEditing(null); setReplyTo(null); return; }
+      if (action.kind === 'exitSurface') { onEscapeExit?.(); return; }
       if (action.kind === 'closeConversation') {
         setSelectedId(null);
         // Devolve o foco à lista: sem isso o próximo Esc (ou a próxima seta)
@@ -1507,7 +1520,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [filteredIds, selectedId, search, embedded]);
+    // O ouvinte lê estado direto, então precisa ser refeito quando esse estado
+    // muda — senão a escada do Esc decide com um retrato velho. O caso que
+    // dói é o RASCUNHO: com `hasDraft` desatualizado, o Esc fecharia a conversa
+    // (ou a janela) de quem está no meio de uma frase. Recriar um ouvinte de
+    // `keydown` é barato; decidir errado, não.
+  }, [
+    filteredIds, selectedId, search, embedded, onEscapeExit,
+    draft, editing, replyTo, recording, attachMenuOpen, gifOpen, emojiOpen, slashActive,
+  ]);
 
   // ── Props estáveis da lista ──────────────────────────────────────────
   // A lista está atrás de um React.memo (ver conversationList.tsx). Estas três
