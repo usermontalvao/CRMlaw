@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ehTelefoneReal, patchIdentidade, stanzaIdCitado } from './wa-identity.ts';
+import { ehTelefoneReal, enderecosContato, patchIdentidade, stanzaIdCitado } from './wa-identity.ts';
 
 test('telefone real é 55 + DDD + 8/9 dígitos; LID tem mais', () => {
   assert.equal(ehTelefoneReal('556596128787'), true);
@@ -9,6 +9,27 @@ test('telefone real é 55 + DDD + 8/9 dígitos; LID tem mais', () => {
   assert.equal(ehTelefoneReal('30971327959064'), false, 'LID de 14 dígitos');
   assert.equal(ehTelefoneReal(''), false);
   assert.equal(ehTelefoneReal(null), false);
+});
+
+test('LID sem endereço alternativo nunca vira telefone', () => {
+  assert.deepEqual(
+    enderecosContato('228935296151739@lid', null),
+    { phone: '', lid: '228935296151739' },
+  );
+});
+
+test('LID com remoteJidAlt preserva os dois endereços em seus campos', () => {
+  assert.deepEqual(
+    enderecosContato('228935296151739@lid', '556593074778@s.whatsapp.net'),
+    { phone: '556593074778', lid: '228935296151739' },
+  );
+});
+
+test('JID normal fornece somente o telefone real', () => {
+  assert.deepEqual(
+    enderecosContato('556593074778@s.whatsapp.net', null),
+    { phone: '556593074778', lid: null },
+  );
 });
 
 test('conversa sem telefone recebe o número real que chegou', () => {

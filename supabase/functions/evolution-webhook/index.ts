@@ -33,12 +33,63 @@ import { triggerWaAiAfterTranscription } from '../_shared/wa-ai-transcription.ts
 import { desembrulharMensagem, lerConteudoNativo } from '../_shared/wa-native-content.ts';
 import { classificarReabertura } from '../_shared/wa-reopen.ts';
 import { applyChannelState } from '../_shared/wa-channel-state.ts';
-import { patchIdentidade } from '../_shared/wa-identity.ts';
+import {
+  ehTelefoneReal,
+  enderecosContato,
+  patchIdentidade,
+  stanzaIdCitado,
+} from '../_shared/wa-identity.ts';
 import { ACTOR_CONTATO, ACTOR_ESCRITORIO, aplicarReacao, type WaReacao } from '../_shared/wa-reactions.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
 const MEDIA_BUCKET = 'whatsapp-media';
+
+type ConvRow = {
+  id: string; contact_avatar_path: string | null; is_blocked: boolean; status: string;
+  department_id: string | null; contact_phone: string | null; contact_name: string | null;
+  contact_lid: string | null;
+};
+
+const CONV_COLS = 'id, contact_avatar_path, is_blocked, status, department_id, contact_phone, contact_name, contact_lid';
+
+/**
+ * A mensagem da Evolution é única DENTRO do canal, não dentro da conversa.
+ *
+ * A mesma entrega pode reaparecer uma vez como telefone e outra como LID. A
+ * antiga consulta por `(conversation_id, evolution_message_id)` só reconhecia
+ * a reentrega depois de escolher a mesma conversa — exatamente o que ainda não
+ * sabemos quando o LID chega sem `remoteJidAlt`. Aqui o ID da mensagem denuncia
+ * a conversa já escolhida pela primeira entrega.
+ */
+async function conversationByEvolutionMessage(
+  admin: any,
+  instanceId: string,
+  evolutionMessageId: string | null,
+): Promise<ConvRow | null> {
+  if (!evolutionMessageId) return null;
+  const { data: refs, error: refsError } = await admin.from('whatsapp_messages')
+    .select('conversation_id')
+    .eq('evolution_message_id', evolutionMessageId)
+    .limit(20);
+  if (refsError) {
+    console.error('wa conversation lookup by message failed', refsError);
+    return null;
+  }
+  const ids = [...new Set((refs || []).map((r: any) => r.conversation_id).filter(Boolean))];
+  if (!ids.length) return null;
+  const { data, error } = await admin.from('whatsapp_conversations')
+    .select(CONV_COLS)
+    .eq('instance_id', instanceId)
+    .in('id', ids)
+    .order('last_message_at', { ascending: false, nullsFirst: false })
+    .limit(1);
+  if (error) {
+    console.error('wa conversation lookup by channel failed', error);
+    return null;
+  }
+  return data?.[0] || null;
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204 });
@@ -173,22 +224,22 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   const fromMe = !!key?.fromMe;
   const evoId: string | null = key?.id || null;
 
-  // Telefone real: contatos @lid escondem o número; vem em remoteJidAlt.
+  // Telefone real: contatos @lid escondem o número; quando conhecido, vem em
+  // remoteJidAlt. Sem ele, `phone` fica vazio — LID jamais vira telefone.
   const altJid: string = key?.remoteJidAlt || '';
-  const realJid = altJid && altJid.includes('@s.whatsapp.net') ? altJid : remoteJid;
-  const phone = realJid.split('@')[0];
+  const { phone, lid: lidVisto } = enderecosContato(remoteJid, altJid);
+  const realJid = phone ? `${phone}@s.whatsapp.net` : remoteJid;
   // O LID visto nesta mensagem — o apelido INTERNO do contato no WhatsApp.
   // Guardá-lo é o que permite reconhecer quem está ligando quando o convite de
   // voz chega endereçado por LID em vez de por número (ver a migration
   // `20260818010000_whatsapp_lid_map.sql`). Ele NUNCA vale como telefone.
-  const lidVisto = [remoteJid, altJid]
-    .find(j => j.endsWith('@lid'))?.split('@')[0].replace(/\D/g, '') || null;
   // ATENÇÃO: `pushName` só representa o nome do CONTATO quando a mensagem é
   // RECEBIDA (!fromMe). Em mensagens próprias (fromMe) ele é o nome do dono da
   // conta conectada — nunca deve virar `contact_name` (ver guarda mais abaixo).
   const pushName: string | null = m?.pushName || null;
 
   const msg = desembrulharMensagem(m?.message || {});
+  const quotedEvolutionId = stanzaIdCitado(m, msg);
 
   // ── Revogação ("apagar para todos" feito no aparelho) ──
   // Chega como uma mensagem normal cujo conteúdo é um protocolMessage REVOKE
@@ -325,23 +376,34 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
   const waTimestamp = tsRaw ? new Date(Number(tsRaw) * 1000).toISOString() : new Date().toISOString();
 
   // ── Resolve a conversa (anti-duplicação) ──
-  // 1) por remote_jid exato; 2) se @lid com telefone real conhecido, por
-  // contact_phone (variantes do 9º dígito) — pega a thread que o agente já criou
-  // via <telefone>@s.whatsapp.net; 3) cria nova pela chave original.
-  type ConvRow = {
-    id: string; contact_avatar_path: string | null; is_blocked: boolean; status: string;
-    department_id: string | null; contact_phone: string | null; contact_name: string | null;
-    contact_lid: string | null;
-  };
-  const CONV_COLS = 'id, contact_avatar_path, is_blocked, status, department_id, contact_phone, contact_name, contact_lid';
+  // O endereço exato é só a primeira evidência. Se ele for um LID antigo que
+  // nasceu como conversa fantasma, uma conversa com telefone real vence por:
+  // contact_lid, telefone resolvido, mensagem citada ou pelo próprio ID desta
+  // entrega. Só depois aceitamos a linha LID exata ou criamos outra.
   let conv: ConvRow | null = null;
+  let exactConv: ConvRow | null = null;
   {
     const { data } = await admin.from('whatsapp_conversations')
       .select(CONV_COLS)
       .eq('instance_id', instanceId).eq('remote_jid', remoteJid).maybeSingle();
-    conv = data || null;
+    exactConv = data || null;
   }
-  if (!conv && remoteJid.includes('@lid') && /^\d{12,13}$/.test(phone)) {
+
+  const lidDelivery = remoteJid.endsWith('@lid');
+  if (!lidDelivery) conv = exactConv;
+  if (lidDelivery && lidVisto) {
+    const { data } = await admin.from('whatsapp_conversations')
+      .select(CONV_COLS)
+      .eq('instance_id', instanceId)
+      .eq('contact_lid', lidVisto)
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .limit(10);
+    // Havendo duas linhas com o mesmo LID, a que conhece o telefone real é a
+    // canônica. A linha inválida fica para o saneamento, nunca para outra bolha.
+    conv = (data || []).find((c: ConvRow) => ehTelefoneReal(c.contact_phone)) || null;
+  }
+
+  if ((!conv || !ehTelefoneReal(conv.contact_phone)) && phone) {
     const variants = phoneVariants(phone);
     const { data } = await admin.from('whatsapp_conversations')
       .select(CONV_COLS)
@@ -351,13 +413,27 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
       .limit(1);
     conv = data?.[0] || null;
   }
+
+  if (!conv || (lidDelivery && !ehTelefoneReal(conv.contact_phone))) {
+    const quotedConv = await conversationByEvolutionMessage(admin, instanceId, quotedEvolutionId);
+    if (quotedConv) conv = quotedConv;
+  }
+
+  if (!conv || (lidDelivery && !ehTelefoneReal(conv.contact_phone))) {
+    const deliveredConv = await conversationByEvolutionMessage(admin, instanceId, evoId);
+    if (deliveredConv) conv = deliveredConv;
+  }
+
+  if (!conv) conv = exactConv;
   if (!conv) {
     // Conversa nova: nasce no departamento padrão do canal (aba Roteamento).
     const defaultDepartmentId = await getDefaultDepartmentForChannel(admin, instanceId);
     const { data } = await admin.from('whatsapp_conversations').upsert({
       instance_id: instanceId,
       remote_jid: remoteJid,
-      contact_phone: phone,
+      // NOT NULL no schema. Vazio significa "LID ainda não resolvido"; os
+      // dígitos do apelido interno nunca mais contaminam este campo.
+      contact_phone: phone || '',
       contact_lid: lidVisto,
       department_id: defaultDepartmentId,
     }, { onConflict: 'instance_id,remote_jid' }).select(CONV_COLS).single();
@@ -455,11 +531,12 @@ async function handleMessage(admin: any, instanceId: string, instanceName: strin
     conv = { ...conv, ...patch } as typeof conv;
   }
 
-  // Idempotência: se já existe a mensagem, não reprocessa mídia.
+  // Idempotência por CANAL: a mesma entrega pelo telefone e pelo LID não pode
+  // existir em duas conversas. A consulta antiga filtrava `conversation_id` e
+  // portanto só funcionava depois de acertar a identidade — tarde demais.
   if (evoId) {
-    const { data: existing } = await admin.from('whatsapp_messages')
-      .select('id').eq('conversation_id', conv.id).eq('evolution_message_id', evoId).maybeSingle();
-    if (existing) return;
+    const existingConv = await conversationByEvolutionMessage(admin, instanceId, evoId);
+    if (existingConv) return;
   }
 
   // ── Mídia: baixar bytes e salvar no storage ──

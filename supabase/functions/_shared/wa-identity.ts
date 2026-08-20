@@ -24,6 +24,32 @@ export function ehTelefoneReal(valor: string | null | undefined): boolean {
 }
 
 /**
+ * Separa os dois endereços que podem chegar na chave da Evolution.
+ *
+ * `remoteJidAlt` não é garantido. Quando ele falta e o endereço principal é
+ * `<n>@lid`, aqueles dígitos NÃO são telefone e portanto `phone` fica vazio.
+ * A coluna `contact_phone` é NOT NULL no banco; string vazia é o estado honesto
+ * para "ainda não resolvido" e, ao contrário do LID, nunca vira um número
+ * internacional inventado na interface.
+ */
+export function enderecosContato(
+  remoteJid: string | null | undefined,
+  remoteJidAlt: string | null | undefined,
+): { phone: string; lid: string | null } {
+  const jids = [remoteJidAlt || '', remoteJid || ''].filter(Boolean);
+  let phone = '';
+  let lid: string | null = null;
+
+  for (const jid of jids) {
+    const digits = jid.split('@')[0].replace(/\D/g, '');
+    if (!phone && jid.endsWith('@s.whatsapp.net') && ehTelefoneReal(digits)) phone = digits;
+    if (!lid && jid.endsWith('@lid') && digits) lid = digits;
+  }
+
+  return { phone, lid };
+}
+
+/**
  * ID da mensagem citada (resposta), venha do nível da mensagem ou de dentro do
  * nó de conteúdo. A Evolution hoista o `contextInfo` para o topo em mensagens
  * de texto simples, mas o mantém dentro do nó em mídia e texto estendido.

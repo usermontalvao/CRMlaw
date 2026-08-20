@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.10.340',
+    date: '20/08/2026',
+    summary: 'A mesma pessoa parou de virar duas conversas quando o WhatsApp entrega o apelido interno em vez do telefone — e as conversas fantasmas que já existiam foram consolidadas.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Contato que chega pelo apelido interno não abre conversa nova',
+            description: 'O WhatsApp às vezes identifica quem escreveu por um apelido interno (`<numero>@lid`) e não manda o telefone junto. O sistema tratava aqueles dígitos como se fossem número: nascia uma segunda conversa do mesmo cliente, com um "telefone" que não existe, e a resposta ia para o lugar errado. Agora o apelido é guardado como apelido, o telefone fica em branco enquanto não for conhecido de verdade, e a própria identificação da mensagem — que é única dentro do canal — denuncia a conversa que já tinha sido aberta na primeira entrega.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'As conversas duplicadas que já existiam foram juntadas',
+            description: 'O passivo foi consolidado em duas etapas, sem adivinhação: primeiro os casos em que o apelido e o canal batem exatamente com uma conversa que já conhece o telefone real; depois os antigos, anteriores à coluna do apelido, em que a prova é mais forte ainda — a MESMA mensagem da Evolution gravada nas duas conversas do mesmo canal. Mensagens, vínculo com o cadastro e histórico foram para a linha que fica; nenhum par duvidoso foi tocado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.339',
     date: '20/08/2026',
     summary: 'Depois de um deploy, quem recarrega a pagina passa a ver um painel contando o que mudou — as novidades e as correcoes — uma vez so, e o Changelog do sistema volta a mostrar o historico de verdade.',
