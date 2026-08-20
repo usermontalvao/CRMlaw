@@ -131,6 +131,7 @@ import { usePermissions } from './hooks/usePermissions';
 import type { Lead } from './types/lead.types';
 import type { CreateClientDTO } from './types/client.types';
 import { DISPLAY_APP_VERSION_LABEL } from './utils/appVersion';
+import VersionNewsPanel from './components/VersionNewsPanel';
 import { isEditorAppLocation } from './utils/editorAppRoute';
 import { settingsService, type ModulesConfig, FLOATING_WINDOW_MODULE_DEFAULTS } from './services/settings.service';
 import { useToastContext } from './contexts/ToastContext';
@@ -3137,6 +3138,18 @@ useEffect(() => {
       {/* Chamadas de voz (WaCalls): o convite de chamada recebida precisa
           aparecer em QUALQUER tela do CRM, não só na inbox. */}
       <WaCallsHost onOpenConversation={(conversationId) => navigateTo('whatsapp', { conversationId })} />
+
+      {/* "O que mudou" depois de um deploy: quando a página é recarregada e o
+          pacote que chega é de uma versão que esta pessoa ainda não viu, o
+          painel entra pela direita com TODAS as versões desde a última — um
+          push leva vários commits, e cada commit é uma versão. Aparece uma vez
+          só e apenas em produção; o resto das regras está no componente.
+
+          Fora da janela isolada de módulo: ali o CRM é uma tela só, e um painel
+          de novidades no meio do editor não teria para onde levar. */}
+      {!isStandaloneModule && (
+        <VersionNewsPanel enabled={isAdmin && !!user} userId={user?.id ?? null} />
+      )}
 
       {/* #9 "” Modal de busca global ⌘K */}
       <GlobalSearchModal

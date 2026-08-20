@@ -179,6 +179,15 @@ if (currentPath !== '/' && !keepPath) {
 async function renderRoot() {
   let rootElement: React.ReactNode;
 
+  // DEV-ONLY: bancada do aviso flutuante (?avisopreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('avisopreview')) {
+    const { default: AvisoFlutuantePreview } = await import('./dev/AvisoFlutuantePreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <AvisoFlutuantePreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: bancada do painel de conversas (?wainboxpreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('wainboxpreview')) {
     const { default: WhatsAppInboxPreview } = await import('./dev/WhatsAppInboxPreview');
@@ -413,6 +422,15 @@ async function renderRoot() {
     const { default: BirthdayPreview } = await import('./dev/BirthdayPreview');
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <BirthdayPreview />,
+    );
+    return;
+  }
+
+  // DEV-ONLY: bancada do aviso de versão (?novidadespreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('novidadespreview')) {
+    const { default: VersionNewsPreview } = await import('./dev/VersionNewsPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <VersionNewsPreview />,
     );
     return;
   }

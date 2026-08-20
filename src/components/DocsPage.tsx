@@ -34,8 +34,12 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { matchesNormalizedSearch } from '../utils/search';
+import { releases } from '../data/releases';
+import { FULL_APP_VERSION } from '../utils/appVersion';
 
-const CURRENT_VERSION = '1.10.016';
+// A versão vem do pacote que está no ar. Digitada à mão, esta linha ficou oito
+// meses parada na 1.10.016 enquanto o CRM já ia na 1.10.3xx.
+const CURRENT_VERSION = FULL_APP_VERSION;
 const VERSION_CODENAME = 'Café Padrão';
 
 type DocSection = 'inicio' | 'guia' | 'changelog' | 'faq';
@@ -73,18 +77,59 @@ const FAQ_ITEMS = [
   { category: 'Segurança', question: 'Meus dados estão seguros?', answer: 'Sim! Usamos criptografia SSL, Supabase, autenticação robusta e backups automáticos.' },
 ];
 
-const CHANGELOG = [
-  { version: '1.3.29', date: '27/12/2025', summary: 'Autenticidade: exibição do contato real do signatário', changes: [{ type: 'improvement' as const, module: 'Assinaturas', title: 'Contato real na autenticidade' }] },
-  { version: '1.3.28', date: '27/12/2025', summary: 'Selfie: anti-falso-negativo na validação', changes: [{ type: 'fix' as const, module: 'Assinaturas', title: 'Anti-falso-negativo na selfie' }] },
-  { version: '1.3.27', date: '27/12/2025', summary: 'Selfie: critérios de IA ajustados', changes: [{ type: 'improvement' as const, module: 'Assinaturas', title: 'Critérios de validação relaxados' }] },
-  { version: '1.3.26', date: '27/12/2025', summary: 'Validação de selfie com IA na assinatura pública', changes: [{ type: 'feature' as const, module: 'Assinaturas', title: 'Validação de selfie com IA' }] },
-  { version: '1.3.25', date: '26/12/2025', summary: 'Validação de foto facial com IA', changes: [{ type: 'feature' as const, module: 'Assinaturas', title: 'Validação com OpenAI Vision' }] },
-  { version: '1.3.24', date: '26/12/2025', summary: 'Notificações do navegador', changes: [{ type: 'feature' as const, module: 'Notificações', title: 'Notificação push do navegador' }] },
-  { version: '1.3.23', date: '26/12/2025', summary: 'Notificações fixas na tela', changes: [{ type: 'improvement' as const, module: 'Notificações', title: 'Popups fixos até fechar' }] },
-  { version: '1.3.22', date: '26/12/2025', summary: 'Notificações para todas as intimações', changes: [{ type: 'improvement' as const, module: 'Intimações', title: 'Notificação para todas as intimações' }] },
-  { version: '1.3.21', date: '25/12/2025', summary: 'Integração de Requerimentos nas notificações', changes: [{ type: 'feature' as const, module: 'Requerimentos', title: 'Alertas de MS/tempo em análise' }] },
-  { version: '1.3.20', date: '25/12/2025', summary: 'Popup de notificação por 60 minutos', changes: [{ type: 'improvement' as const, module: 'Notificações', title: 'Popup permanece por 60 minutos' }] },
-];
+/**
+ * O changelog desta página vinha de uma lista digitada aqui dentro, que parou
+ * na v1.3.29 de dezembro de 2025 — enquanto o histórico de verdade seguia sendo
+ * escrito a cada commit. Agora ele SAI desse histórico
+ * (`data/releases.ts`), o mesmo que alimenta o aviso de versão do CRM.
+ *
+ * O achatamento existe porque lá as mudanças são agrupadas por módulo e aqui a
+ * lista é corrida: cada mudança carrega o nome do módulo de onde veio.
+ */
+const MODULE_LABEL: Record<string, string> = Object.fromEntries(
+  SYSTEM_MODULES.map((m) => [m.id, m.name]),
+);
+
+const EXTRA_MODULE_LABEL: Record<string, string> = {
+  sistema: 'Sistema',
+  core: 'Sistema',
+  geral: 'Sistema',
+  whatsapp: 'WhatsApp',
+  chat: 'Mensagens',
+  email: 'E-mail',
+  peticoes: 'Petições',
+  petitions: 'Petições',
+  documents: 'Documentos',
+  signature: 'Assinaturas',
+  settings: 'Configurações',
+  seguranca: 'Segurança',
+  portal: 'Portal do cliente',
+  branding: 'Identidade visual',
+  docs: 'Documentação',
+};
+
+const moduleLabel = (moduleId: string): string =>
+  MODULE_LABEL[moduleId]
+  || EXTRA_MODULE_LABEL[moduleId]
+  || (moduleId ? moduleId.charAt(0).toUpperCase() + moduleId.slice(1) : 'Sistema');
+
+/** Quantas versões a página mostra sem busca — são mais de mil no histórico. */
+const CHANGELOG_PAGE_SIZE = 60;
+
+const CHANGELOG = releases.map((release) => ({
+  version: release.version,
+  date: release.date,
+  summary: release.summary || '',
+  changes: release.modules.flatMap((mod) =>
+    mod.changes.map((change) => ({
+      type: change.type,
+      module: moduleLabel(mod.moduleId),
+      title: change.title,
+    })),
+  ),
+}));
+
+const FALLBACK_TYPE_CONFIG = { label: 'Alteração', icon: TrendingUp, color: 'text-slate-700', bg: 'bg-slate-100' };
 
 const CHANGE_TYPE_CONFIG = {
   feature: { label: 'Novo', icon: Zap, color: 'text-emerald-700', bg: 'bg-emerald-100' },
@@ -121,8 +166,12 @@ const DocsPage: React.FC = () => {
   }, [searchQuery]);
 
   const filteredChangelog = useMemo(() => {
-    if (!searchQuery.trim()) return CHANGELOG;
-    return CHANGELOG.filter((c) => matchesNormalizedSearch(searchQuery, [c.version, c.summary]));
+    if (!searchQuery.trim()) return CHANGELOG.slice(0, CHANGELOG_PAGE_SIZE);
+    // Com busca, procura no histórico INTEIRO — inclusive no título de cada
+    // mudança, que é onde estão as palavras que alguém lembraria.
+    return CHANGELOG.filter((c) =>
+      matchesNormalizedSearch(searchQuery, [c.version, c.summary, ...c.changes.map((ch) => ch.title)]),
+    ).slice(0, CHANGELOG_PAGE_SIZE);
   }, [searchQuery]);
 
   const handleBack = () => window.history.back();
@@ -379,7 +428,7 @@ const DocsPage: React.FC = () => {
                         </div>
                       </div>
                       <div className="p-5 space-y-3">
-                        {entry.changes.map((change, idx) => { const typeConfig = CHANGE_TYPE_CONFIG[change.type]; const TypeIcon = typeConfig.icon; return (
+                        {entry.changes.map((change, idx) => { const typeConfig = CHANGE_TYPE_CONFIG[change.type as keyof typeof CHANGE_TYPE_CONFIG] || FALLBACK_TYPE_CONFIG; const TypeIcon = typeConfig.icon; return (
                           <div key={idx} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
                             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold ${typeConfig.bg} ${typeConfig.color} flex-shrink-0`}>
                               <TypeIcon className="w-3 h-3" />

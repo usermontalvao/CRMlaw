@@ -9,6 +9,17 @@ const { execSync } = require('node:child_process');
  */
 const MAX_BUFFER = 64 * 1024 * 1024;
 
+/**
+ * Onde mora o historico de versoes.
+ *
+ * Era `src/components/DocsChangesPage.tsx`, ate o dado sair de dentro da tela e
+ * virar `src/data/releases.ts` - a mesma lista passou a alimentar TAMBEM o
+ * painel de "o que mudou" que aparece depois do deploy, e componente nao e
+ * lugar de guardar 1 MB de dado. O hook seguia olhando o arquivo antigo e, como
+ * as entradas nao estao mais la, passou a reprovar todo commit.
+ */
+const CHANGELOG_PATH = 'src/data/releases.ts';
+
 function run(cmd) {
   return execSync(cmd, { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER })
     .toString('utf8')
@@ -72,7 +83,7 @@ function main() {
   );
   if (isExempt) process.exit(0);
 
-  const requiredFiles = ['package.json', 'src/components/DocsChangesPage.tsx'];
+  const requiredFiles = ['package.json', CHANGELOG_PATH];
   const onlyRequired = stagedFiles.every((f) => requiredFiles.includes(f));
 
   if (!onlyRequired) {
@@ -83,7 +94,7 @@ function main() {
       missing.forEach((m) => console.error(`- ${m}`));
       console.error('\n[pre-commit] Ação necessária:');
       console.error('- Atualize o "version" no package.json');
-      console.error('- Atualize o changelog em src/components/DocsChangesPage.tsx');
+      console.error('- Atualize o changelog em src/data/releases.ts');
       console.error('- Adicione ambos ao stage e tente novamente.\n');
       process.exit(1);
     }
@@ -132,7 +143,7 @@ function main() {
     }
   }
 
-  const stagedChangelog = getTextFromGit(':', 'src/components/DocsChangesPage.tsx');
+  const stagedChangelog = getTextFromGit(':', CHANGELOG_PATH);
   const versionRegex = new RegExp(`version\\s*:\\s*['\"]${stagedVersion.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}['\"]`);
 
   if (!versionRegex.test(stagedChangelog)) {
