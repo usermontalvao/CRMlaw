@@ -12,6 +12,7 @@ import {
 import { messagesApi } from './messages';
 import { subscribeWaMessageEvents, type WaMessageEvent } from './messageEvents';
 import { subscribeWaConversationEvents } from './conversationEvents';
+import { collapseContactThreads } from '../../components/whatsapp/contactThreads';
 
 export const conversationsApi = {
   // ── Conversas ────────────────────────────────────────────────
@@ -24,6 +25,40 @@ export const conversationsApi = {
     const convs = (data || []) as WhatsAppConversation[];
     await Promise.all([attachAvatarUrls(convs), attachClientNames(convs)]);
     return convs;
+  },
+
+  /**
+   * Quantas PESSOAS estão esperando resposta agora.
+   *
+   * É o mesmo número da aba "Não lidas" da inbox, e existe para quem está fora
+   * do módulo — o widget flutuante, que precisa do total sem manter a lista de
+   * conversas carregada. As três regras vêm de lá, não de uma definição nova:
+   *
+   *   • `unread_count > 0` é o sinal de pendência (ver `markUnread`);
+   *   • bloqueada não conta — ela sai da fila normal;
+   *   • ENCERRADA não conta — e esta é a regra que faltava. O `unread_count`
+   *     não é zerado quando o atendimento fecha, então sobra uma marca de "não
+   *     lida" em conversas resolvidas semanas atrás. Era daí que saíam os 16 do
+   *     badge com a inbox mostrando 1: catorze delas estavam fechadas, a mais
+   *     antiga havia quinze dias. A inbox nunca as mostrou porque o filtro de
+   *     status dela nasce em "Abertas" (`hiddenByStatusFilter`);
+   *   • duas linhas do mesmo contato (um por canal do escritório) são UMA
+   *     pessoa, pelo mesmo `collapseContactThreads` que a lista usa.
+   *
+   * Silenciada CONTA: silenciar cala o aviso, não resolve o atendimento.
+   *
+   * A consulta traz só as linhas não lidas — é um punhado, não a inbox inteira —
+   * e o RLS já limita o que este usuário enxerga.
+   */
+  async countUnreadContacts(): Promise<number> {
+    const { data, error } = await supabase
+      .from(CONV_TABLE)
+      .select('id, contact_phone, remote_jid, client_id, status, unread_count, is_blocked')
+      .gt('unread_count', 0)
+      .eq('is_blocked', false)
+      .neq('status', 'closed');
+    if (error) throw new Error(error.message);
+    return collapseContactThreads((data || []) as any[]).length;
   },
 
   /** Busca/atualiza a foto de perfil do contato na Evolution e persiste. */

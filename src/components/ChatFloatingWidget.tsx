@@ -1,6 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, FileText, Maximize2, Minimize2, MessageCircle, Mic, Paperclip, Plus, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Maximize2, Minimize2, MessageCircle, Mic, Paperclip, Plus, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { usePermissions } from '../hooks/usePermissions';
@@ -12,6 +12,9 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch } from '../utils/search';
 import WhatsAppModule from './WhatsAppModule';
 import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
+import { applyOutputToElement, openPreferredMicrophone } from '../utils/audioDevices';
+import ChatLauncherBar from './chat/ChatLauncherBar';
+import { whatsappService } from '../services/whatsapp.service';
 import { criarControleDePresenca } from '../services/realtime/presenceTrack';
 
 // Tamanho padrão do widget (usado no reset e quando não há preferência salva).
@@ -177,7 +180,7 @@ const ProAudioPlayer: React.FC<{ src: string; onReady?: () => void }> = ({ src, 
         preload="metadata"
         onLoadedMetadata={(e) => { setDuration(e.currentTarget.duration || 0); onReady?.(); }}
         onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
-        onPlay={() => setPlaying(true)}
+        onPlay={e => { setPlaying(true); void applyOutputToElement(e.currentTarget); }}
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); setCurrent(0); }}
         className="hidden"
@@ -604,15 +607,39 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   }, [user?.id]);
 
   const [chatTab, setChatTab] = useState<'equipe' | 'whatsapp'>('equipe');
-  // Aba WhatsApp (modo lite): o WhatsAppModule embutido é dono da seleção; aqui
-  // só guardamos o total de não-lidas (badge) e a conversa ativa (deep-link ao maximizar).
+  /**
+   * Quantas PESSOAS do WhatsApp estão esperando resposta — o MESMO número da
+   * aba "Não lidas" da inbox, lido do banco.
+   *
+   * Antes isto era um contador de sessão: +1 a cada aviso de mensagem nova,
+   * zerado ao abrir a aba WhatsApp do widget. Três consequências, todas
+   * relatadas como "o widget mente":
+   *
+   *   • recarregar a página zerava o número, com a fila intacta no banco;
+   *   • responder a conversa pelo MÓDULO não descontava nada — o badge só
+   *     crescia;
+   *   • abrir a aba do widget zerava tudo de uma vez, inclusive as conversas
+   *     que continuavam não lidas.
+   *
+   * Vindo do banco, o número é o estado real: ele desce sozinho quando alguém
+   * lê a conversa em qualquer lugar, e sobrevive ao F5. O aviso de mensagem
+   * nova deixou de ser a FONTE do número e virou só mais um gatilho de
+   * releitura.
+   */
   const [waUnread, setWaUnread] = useState(0);
+  // Aba WhatsApp (modo lite): o WhatsAppModule embutido é dono da seleção; aqui
+  // só guardamos a conversa ativa (deep-link ao maximizar).
   const [waActiveConvId, setWaActiveConvId] = useState<string | null>(null);
-  // Contador de não-lidas do WhatsApp para o BADGE do launcher (estrutura do
-  // widget antigo): quando o widget está fechado o WhatsAppModule embutido não
-  // está montado e não há waUnread vivo, então acumulamos aqui via o evento de
-  // notificação. Zera ao abrir a aba WhatsApp.
-  const [waNotifyCount, setWaNotifyCount] = useState(0);
+  /**
+   * Conversa que o widget deve ABRIR (deep-link vindo do cartão de aviso).
+   *
+   * Diferente de `waActiveConvId`, que é um relato — "o módulo embutido está
+   * nesta conversa". Este é uma ordem, entregue ao `WhatsAppModule` pela mesma
+   * porta que o módulo em tela cheia já usa (`openConversationId`), e apagada
+   * assim que ele confirma ter consumido. Sem apagar, voltar para a lista
+   * dentro do widget seria desfeito no render seguinte.
+   */
+  const [waOpenConvId, setWaOpenConvId] = useState<string | null>(null);
   const [ticketTyping, setTicketTyping] = useState<Map<string, string>>(new Map());
   const [liveTypingText, setLiveTypingText] = useState('');
   const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -778,7 +805,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   const handleStartRecording = useCallback(async () => {
     try {
       if (!selectedRoomId || uploadingAttachment) return;
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // O MESMO microfone das ligações: quem escolheu o headset no painel de
+      // áudio escolheu para falar, e não só para ligar.
+      const stream = await openPreferredMicrophone();
       const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       recordingChunksRef.current = []; // reset chunks
 
@@ -846,7 +875,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     const audio = new Audio(url);
     audio.onended = () => setPreviewPlaying(false);
     previewAudioRef.current = audio;
-    void audio.play();
+    // A prévia da própria gravação também sai no alto-falante escolhido —
+    // conferir o que se gravou pelo dispositivo errado não confere nada.
+    void applyOutputToElement(audio).finally(() => { void audio.play(); });
     setPreviewPlaying(true);
   }, []);
 
@@ -1157,33 +1188,51 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     selectedRoomIdRef.current = selectedRoomId;
   }, [selectedRoomId]);
 
-  // Ao abrir a aba WhatsApp do widget, zera o badge acumulado (o módulo embutido
-  // passa a refletir as não-lidas reais).
+  /**
+   * O número do WhatsApp no badge, lido do banco.
+   *
+   * Três gatilhos de releitura, e nenhum deles ESCREVE o número — quem sabe
+   * quantas conversas estão esperando é a tabela:
+   *
+   *   • a montagem (e a troca de usuário), para o F5 já chegar com o total;
+   *   • qualquer mudança de conversa no realtime, que é o mesmo fan-out local
+   *     que o módulo usa (nenhum socket novo) — cobre tanto a mensagem que
+   *     chega quanto a leitura feita em outra tela, ou por outra pessoa;
+   *   • o aviso de mensagem nova, como reforço: ele dispara no INSERT da
+   *     mensagem, antes do UPDATE da conversa, e adianta o badge em uma volta.
+   *
+   * A releitura é agrupada num pequeno atraso porque uma rajada de mensagens
+   * produz uma rajada de eventos, e o total só precisa estar certo no fim dela.
+   */
   useEffect(() => {
-    if (open && chatTab === 'whatsapp') setWaNotifyCount(0);
-  }, [open, chatTab]);
+    // Sem acesso ao módulo não há fila para contar — e a consulta voltaria
+    // vazia pelo RLS de qualquer forma.
+    if (!user || !hasWhatsAppAccess) { setWaUnread(0); return; }
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-  // Badge do launcher: o hook global (App) faz toda a filtragem ("é minha?",
-  // silenciada, camada do aviso) e emite o evento; o cartão visual é desenhado
-  // pelo WhatsAppNotifyHost (global). Aqui só somamos o contador do launcher,
-  // que existe porque com o widget fechado o WhatsAppModule embutido não está
-  // montado e não há não-lidas vivas para exibir.
-  useEffect(() => {
-    const handle = (data?: any) => {
-      const conversationId = data?.conversationId;
-      if (!conversationId) return;
-      const viewingThis = open && chatTab === 'whatsapp' && waActiveConvId === conversationId;
-      if (!viewingThis) setWaNotifyCount((c) => c + 1);
+    const readNow = () => {
+      whatsappService.countUnreadContacts()
+        .then((n) => { if (alive) setWaUnread(n); })
+        .catch(() => { /* sem número é melhor que número errado: mantém o último */ });
     };
-    // Escuta o CustomEvent nativo no window (o emitter sempre o dispara). Usar só
-    // o window evita disparo duplo e sobrevive a divergência de instância entre
-    // chunks lazy (o emitter in-memory dependeria de timing de registro).
-    const domHandler = (e: Event) => handle((e as CustomEvent).detail);
+    const scheduleRead = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(readNow, 400);
+    };
+
+    readNow();
+    const unsubConv = whatsappService.subscribeConversationNotifications(scheduleRead);
+    const domHandler = () => scheduleRead();
     window.addEventListener(`crm:${SYSTEM_EVENTS.WHATSAPP_NOTIFY}`, domHandler);
+
     return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+      unsubConv();
       window.removeEventListener(`crm:${SYSTEM_EVENTS.WHATSAPP_NOTIFY}`, domHandler);
     };
-  }, [open, chatTab, waActiveConvId]);
+  }, [user?.id, hasWhatsAppAccess]);
 
   useEffect(() => {
     const map = new Map<string, Profile>();
@@ -1387,18 +1436,74 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     }
   }, []);
 
+  /**
+   * Mensagens já buscadas, por sala. É o que faz abrir uma conversa ser
+   * INSTANTÂNEO na segunda vez.
+   *
+   * Antes, todo clique numa conversa mostrava "Carregando mensagens…" e
+   * esperava a rede — inclusive ao voltar para a conversa de onde se tinha
+   * acabado de sair, cujo conteúdo o componente havia jogado fora. Num widget
+   * que se usa aos pulos (abre, responde, fecha, volta), essa espera era a maior
+   * parte do tempo de uso.
+   *
+   * O cache não substitui a busca: ele desenha a conversa AGORA e a busca
+   * continua, corrigindo por cima quando chega. Se o servidor discordar, quem
+   * vence é o servidor — só que sem tela em branco no meio.
+   */
+  const messagesCacheRef = useRef<Map<string, ChatMessage[]>>(new Map());
+  /** Teto do cache: memória de conversa não pode crescer sem fim numa aba aberta o dia todo. */
+  const MESSAGES_CACHE_MAX = 12;
+
+  const rememberMessages = useCallback((roomId: string, list: ChatMessage[]) => {
+    const cache = messagesCacheRef.current;
+    cache.delete(roomId);          // reinsere no fim: o mapa vira uma fila de uso
+    cache.set(roomId, list);
+    while (cache.size > MESSAGES_CACHE_MAX) {
+      const maisAntiga = cache.keys().next().value;
+      if (maisAntiga === undefined) break;
+      cache.delete(maisAntiga);
+    }
+  }, []);
+
   const loadMessages = useCallback(async (roomId: string) => {
     if (!user) return;
-    setLoadingMessages(true);
+    const cached = messagesCacheRef.current.get(roomId);
+    if (cached) {
+      // Pinta na hora, sem passar pelo estado de carregando — é este ramo que
+      // faz a conversa aparecer no mesmo quadro do clique.
+      setMessages(cached);
+      pinnedToBottomRef.current = true;
+      scrollToBottom('auto');
+    } else {
+      setLoadingMessages(true);
+    }
     try {
       const list = await chatService.listMessages({ roomId });
+      rememberMessages(roomId, list);
+      // A pessoa pode ter trocado de conversa enquanto a resposta vinha; sem
+      // esta conferência, a lista antiga cairia dentro da conversa nova.
+      if (selectedRoomIdRef.current !== roomId) return;
       setMessages(list);
       pinnedToBottomRef.current = true;
       scrollToBottom('auto');
     } finally {
       setLoadingMessages(false);
     }
-  }, [user, scrollToBottom]);
+  }, [user, scrollToBottom, rememberMessages]);
+
+  /**
+   * Busca as mensagens ANTES do clique, ao passar o mouse na linha da lista.
+   *
+   * O intervalo entre apontar e clicar é tempo morto que já pagava a viagem à
+   * rede — é o truque que faz a primeira abertura também parecer instantânea.
+   * Uma sala só é buscada uma vez: quem já está no cache não repete.
+   */
+  const prefetchRoomMessages = useCallback((roomId: string) => {
+    if (!user || messagesCacheRef.current.has(roomId)) return;
+    void chatService.listMessages({ roomId })
+      .then((list) => rememberMessages(roomId, list))
+      .catch(() => { /* era adiantamento, não obrigação */ });
+  }, [user, rememberMessages]);
 
   const handleSendMessage = useCallback(async () => {
     if (!user || !selectedRoomId || !messageText.trim() || sendingMessage) return;
@@ -1555,6 +1660,24 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     return () => window.clearInterval(refreshTimer);
   }, [user, loadMembers, loadRooms, loadUnread, loadRoomUnreadCounts]);
 
+  // Cartão de aviso de mensagem nova → conversa aberta AQUI, sem trocar de tela.
+  useEffect(() => {
+    if (!user || !hasWhatsAppAccess) return;
+    const unsub = events.on(SYSTEM_EVENTS.CHAT_WIDGET_OPEN_WHATSAPP, (payload?: any) => {
+      const conversationId = String(payload?.conversationId ?? '').trim();
+      if (!conversationId) return;
+      setToast(null);
+      // Sai de qualquer sala da equipe que estivesse aberta: o painel tem um
+      // conteúdo só, e o pedido é explícito sobre qual.
+      setSelectedRoomId(null);
+      setChatTab('whatsapp');
+      setWaOpenConvId(conversationId);
+      setOpen(true);
+      ensureAudioContext();
+    });
+    return () => unsub();
+  }, [user, hasWhatsAppAccess, ensureAudioContext]);
+
   useEffect(() => {
     if (!user) return;
 
@@ -1612,6 +1735,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     };
   }, [user]);
 
+  // O cache acompanha a conversa aberta: mensagem que chega pelo realtime, ou
+  // que acabou de ser enviada, entra aqui sem precisar de um gancho em cada
+  // ponto que mexe em `messages`. É o que garante que voltar para a conversa
+  // mostre o que já estava na tela, e não o retrato de quando ela foi buscada.
+  useEffect(() => {
+    if (!selectedRoomId || messages.length === 0) return;
+    rememberMessages(selectedRoomId, messages);
+  }, [selectedRoomId, messages, rememberMessages]);
+
   // Carrega mensagens + poll de leitura ao selecionar sala (SEM subscription própria)
   useEffect(() => {
     if (!selectedRoomId) {
@@ -1621,6 +1753,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
     }
     loadMessages(selectedRoomId);
     markRoomAsRead(selectedRoomId);
+
     setNotifyCount(0);
     setRoomUnreadCounts((prev) => {
       const next = new Map(prev);
@@ -1950,7 +2083,23 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
   // totalUnreadFromRooms is updated optimistically by realtime handlers, so it's
   // always accurate. notifyCount is a session-only increment that can become stale
   // (e.g. after acceptedByOther removes the room), so we don't use Math.max here.
-  const badgeCount = totalUnreadFromRooms + waNotifyCount;
+  const badgeCount = totalUnreadFromRooms + waUnread;
+
+  /**
+   * O número sozinho não diz de onde vem. Duas filas diferentes moram no mesmo
+   * badge — o chat da equipe e o WhatsApp —, e "16" sem procedência foi
+   * exatamente a pergunta que o widget provocou. A dica do mouse abre a conta.
+   */
+  const launcherTitle = badgeCount === 0
+    ? 'Mensagens'
+    : [
+        totalUnreadFromRooms > 0
+          ? `${totalUnreadFromRooms} ${totalUnreadFromRooms === 1 ? 'conversa da equipe' : 'conversas da equipe'}`
+          : null,
+        waUnread > 0
+          ? `${waUnread} ${waUnread === 1 ? 'contato no WhatsApp' : 'contatos no WhatsApp'}`
+          : null,
+      ].filter(Boolean).join(' · ');
   const topUnreadUser = topUnreadRoom ? getOtherUserForRoom(topUnreadRoom) : null;
 
   const showToast = !!toast && (!open || !selectedRoomId || toast.roomId !== selectedRoomId);
@@ -2022,7 +2171,6 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         @keyframes chatPanelIn{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
         @keyframes chatBackdropIn{from{opacity:0}to{opacity:1}}
         @keyframes chatGlowPulse{0%,100%{box-shadow:0 0 0 0 rgba(251,146,60,0)}50%{box-shadow:0 0 0 8px rgba(251,146,60,.15)}}
-        @keyframes chatLauncherGlow{0%,100%{box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 0 rgba(251,146,60,.4)}50%{box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 0 12px rgba(251,146,60,0)}}
         @keyframes chatTypingDot{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-3px);opacity:1}}
         @keyframes chatToastIn{0%{opacity:0;transform:translateY(20px) scale(.92)}55%{opacity:1;transform:translateY(-4px) scale(1.02)}75%{transform:translateY(2px) scale(.995)}100%{opacity:1;transform:translateY(0) scale(1)}}
         @keyframes chatToastOut{0%{opacity:1;transform:translateY(0) scale(1)}100%{opacity:0;transform:translateY(10px) scale(.95)}}
@@ -2088,8 +2236,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               ? { animation: 'chatShake 1s cubic-bezier(.36,.07,.19,.97) both, chatShakeGlow 1s ease-out both' }
               : { animation: 'chatPanelIn 360ms cubic-bezier(.22,1,.36,1) both' }),
             background: '#ffffff',
+            // Sem o anel branco de 6px que envolvia o painel: ele imitava uma
+            // moldura de foto e brigava com a borda real do card.
             boxShadow:
-              '0 34px 72px -20px rgba(15,23,42,.24), 0 16px 34px -18px rgba(15,23,42,.18), 0 0 0 1px rgba(15,23,42,.08), 0 0 0 6px rgba(255,255,255,.34), inset 0 1px 0 rgba(255,255,255,.78)',
+              '0 24px 56px -20px rgba(15,23,42,.28), 0 8px 20px -12px rgba(15,23,42,.16), 0 0 0 1px rgba(15,23,42,.07)',
           }}
         >
           {/* Pega de redimensionamento (largura) na borda esquerda */}
@@ -2113,15 +2263,6 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             onPointerDown={startPanelDrag('wh')}
             className="absolute top-0 left-0 w-4 h-4 z-50 cursor-nwse-resize"
             title="Arrastar para redimensionar"
-          />
-          {/* Brilho sutil no topo */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-0 h-32"
-            style={{
-              background:
-                'radial-gradient(80% 100% at 50% 0%, rgba(251,146,60,.12) 0%, transparent 70%)',
-            }}
           />
           {/* Flash laranja no início do shake */}
           {shaking && (
@@ -2203,34 +2344,61 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 </>
               ) : (
                 <>
-                  <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-[0_4px_12px_rgba(251,146,60,.35)] shrink-0">
-                    <MessageCircle className="w-4 h-4 text-white" />
-                  </div>
+                  {/* Com as abas à mostra, o ícone é enfeite: "WhatsApp" e
+                      "Equipe" já dizem o que o painel é, e cada pixel do topo
+                      está disputado por três barras de ferramentas. Sem abas
+                      (usuário sem WhatsApp) o painel precisa se apresentar. */}
+                  {!hasWhatsAppAccess && (
+                    <>
+                      <MessageCircle className="w-[18px] h-[18px] text-slate-400 shrink-0" strokeWidth={1.9} />
+                      <span className="text-[14px] font-semibold tracking-tight text-slate-800">Mensagens</span>
+                    </>
+                  )}
                 </>
               )}
             </div>
             {/* Abas EQUIPE | WHATSAPP — embutidas na própria linha do título (topo enxuto) */}
             {!selectedRoomId && !showNewChatModal && hasWhatsAppAccess && (
-              <nav className="flex-1 flex items-stretch self-stretch min-w-0 mx-2">
-                {(['whatsapp', 'equipe'] as const).map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => setChatTab(tab)}
-                    className={`relative flex-1 text-[11px] font-bold tracking-wide uppercase transition-colors ${
-                      chatTab === tab ? 'text-orange-600' : 'text-slate-400 hover:text-slate-600'
-                    }`}
-                  >
-                    {tab === 'equipe' ? 'Equipe' : 'WhatsApp'}
-                    {tab === 'whatsapp' && (waUnread || waNotifyCount) > 0 && (
-                      <span className="ml-1 inline-flex items-center justify-center min-w-[15px] h-[15px] px-1 rounded-full bg-orange-500 text-white text-[9px] font-bold align-middle">
-                        {(waUnread || waNotifyCount) > 9 ? '9+' : (waUnread || waNotifyCount)}
-                      </span>
-                    )}
-                    {chatTab === tab && (
-                      <span className="absolute -bottom-2 left-3 right-3 h-[2.5px] rounded-full bg-orange-500" />
-                    )}
-                  </button>
-                ))}
+              /* Controle segmentado, não duas palavras em caixa alta com um
+                 traço laranja embaixo. A pastilha diz sozinha o que está
+                 selecionado e o que é clicável — e o contador de cada aba fica
+                 do lado do nome dela, que é onde a pessoa procura. */
+              <nav
+                /* Largura de CONTROLE, não de barra de título: esticado de
+                   ponta a ponta, o par de abas virava o próprio cabeçalho e
+                   empurrava os botões da janela para o canto. */
+                className="flex items-center gap-0.5 min-w-0 mr-2 p-0.5 rounded-lg bg-slate-900/[0.05] w-full max-w-[230px]"
+                role="tablist"
+              >
+                {(['whatsapp', 'equipe'] as const).map(tab => {
+                  const ativa = chatTab === tab;
+                  const pendencias = tab === 'whatsapp' ? waUnread : totalUnreadFromRooms;
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      role="tab"
+                      aria-selected={ativa}
+                      onClick={() => setChatTab(tab)}
+                      className={`flex-1 flex items-center justify-center gap-1.5 h-[26px] rounded-[7px] text-[12px] font-medium transition-colors ${
+                        ativa
+                          ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,.12)]'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {tab === 'equipe' ? 'Equipe' : 'WhatsApp'}
+                      {pendencias > 0 && (
+                        <span
+                          className={`inline-flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full text-[10px] font-semibold leading-none tabular-nums ${
+                            ativa ? 'bg-orange-500 text-white' : 'bg-slate-900/10 text-slate-600'
+                          }`}
+                        >
+                          {pendencias > 99 ? '99+' : pendencias}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </nav>
             )}
             <div className="flex items-center gap-1">
@@ -2399,7 +2567,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <WhatsAppModule
                     variant="embedded"
-                    onUnreadChange={setWaUnread}
+                    openConversationId={waOpenConvId ?? undefined}
+                    onParamConsumed={() => setWaOpenConvId(null)}
                     onActiveConversationChange={setWaActiveConvId}
                   />
                 </div>
@@ -2450,6 +2619,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     <button
                       key={room.id}
                       type="button"
+                      onMouseEnter={() => prefetchRoomMessages(room.id)}
+                      onFocus={() => prefetchRoomMessages(room.id)}
                       onClick={() => {
                         setToast(null);
                         setSelectedRoomId(room.id);
@@ -2459,51 +2630,48 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                           return next;
                         });
                       }}
-                      className={`group w-full mx-2 px-3 py-2.5 flex items-center gap-3 text-left rounded-xl active:scale-[0.99] transition-all duration-150 ${
-                        roomUnread > 0
-                          ? 'bg-gradient-to-r from-orange-500/[0.08] to-transparent hover:from-orange-500/[0.12]'
-                          : 'hover:bg-white/[0.05]'
+                      className={`group w-full mx-2 px-2.5 py-2 flex items-center gap-3 text-left rounded-xl transition-colors duration-100 ${
+                        roomUnread > 0 ? 'hover:bg-slate-900/[0.05]' : 'hover:bg-slate-900/[0.04]'
                       }`}
                       style={{ width: 'calc(100% - 16px)' }}
                     >
                       {isTicketRoom ? (
                         <div className="relative shrink-0">
-                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center text-white text-[13px] font-bold shadow-[0_2px_8px_rgba(251,146,60,.4)]">
+                          <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center text-white text-[13px] font-semibold">
                             {displayName.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()}
                           </div>
-                          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-orange-500 border-2 border-[#1e1e2e]" />
                         </div>
                       ) : (
                         <Avatar src={avatarUrl} name={displayName} online={room.is_public ? undefined : online} />
                       )}
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-baseline justify-between gap-2">
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            <div className={`text-[13px] truncate ${roomUnread > 0 ? 'font-bold text-slate-900' : 'font-semibold text-slate-700'}`}>{displayName}</div>
+                            <div className={`text-[13.5px] truncate ${roomUnread > 0 ? 'font-semibold text-slate-900' : 'font-medium text-slate-800'}`}>{displayName}</div>
                             {verified && <VerifiedBadge variant={verified} />}
                           </div>
-                          <div className={`text-[10px] shrink-0 ${roomUnread > 0 ? 'text-orange-300 font-semibold' : 'text-white/40'}`}>
+                          <div className={`text-[11px] shrink-0 tabular-nums ${roomUnread > 0 ? 'text-orange-600 font-medium' : 'text-slate-400'}`}>
                             {room.last_message_at ? new Date(room.last_message_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}
                           </div>
                         </div>
-                        <div className="flex items-center justify-between gap-2 mt-0.5">
-                          <div className={`text-[11.5px] truncate ${roomUnread > 0 ? 'text-white/85 font-medium' : 'text-white/50'}`}>
+                        <div className="flex items-center justify-between gap-2 mt-[3px]">
+                          <div className={`text-[12.5px] truncate ${roomUnread > 0 ? 'text-slate-700 font-medium' : 'text-slate-500'}`}>
                             {/* Preview de digitação do cliente */}
                             {isTicketRoom && (ticketTyping.get(room.id) ?? '').trim() ? (
-                              <span className="flex items-center gap-1 text-orange-400/90 font-medium italic">
+                              <span className="flex items-center gap-1 text-orange-600 italic">
                                 <span className="inline-flex gap-[2px] items-center">
-                                  {[0,1,2].map(i => <span key={i} className="w-1 h-1 rounded-full bg-orange-400 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
+                                  {[0,1,2].map(i => <span key={i} className="w-1 h-1 rounded-full bg-orange-500 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
                                 </span>
                                 {ticketTyping.get(room.id)!.slice(0, 30)}{(ticketTyping.get(room.id)?.length ?? 0) > 30 ? '…' : ''}
                               </span>
                             ) : (roomTypingUsers.get(room.id)?.length ?? 0) > 0 ? (
-                              <span className="flex items-center gap-1.5 text-emerald-400">
+                              <span className="flex items-center gap-1.5 text-emerald-600">
                                 {roomTypingUsers.get(room.id)!.length === 1
                                   ? 'digitando'
                                   : 'várias pessoas digitando'}
                                 <span className="flex gap-[3px] items-center">
                                   {[0, 1, 2].map((i) => (
-                                    <span key={i} className="block w-1 h-1 bg-emerald-400 rounded-full"
+                                    <span key={i} className="block w-1 h-1 bg-emerald-500 rounded-full"
                                       style={{ animation: `chatTypingDot 1.2s ease-in-out ${i * 0.15}s infinite` }} />
                                   ))}
                                 </span>
@@ -2511,9 +2679,12 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             ) : (preview || subtitle)}
                           </div>
                           {roomUnread > 0 && (
-                            <span className="inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white text-[10px] font-bold shrink-0 shadow-[0_2px_8px_rgba(251,146,60,.4)]">
-                              {roomUnread > 99 ? '99+' : roomUnread}
-                            </span>
+                            /* Um ponto, não um número: com uma conversa por
+                               linha, "3" ao lado do nome é ruído — o que importa
+                               é QUE há algo por ler, e o nome em negrito já
+                               carrega isso. O número exato continua no badge da
+                               barra, que é onde ele decide se vale abrir. */
+                            <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" aria-label={`${roomUnread} não lidas`} />
                           )}
                         </div>
                       </div>
@@ -2548,24 +2719,31 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
               >
                 {/* Overlay drag & drop */}
                 {isDragging && (
-                  <div className="absolute inset-2 z-10 bg-orange-500/15 border-2 border-dashed border-orange-400 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none backdrop-blur-sm">
-                    <Paperclip className="w-8 h-8 text-orange-300" />
-                    <span className="text-sm font-semibold text-orange-200">Solte para enviar</span>
+                  <div className="absolute inset-2 z-10 bg-white/85 border-2 border-dashed border-orange-400 rounded-2xl flex flex-col items-center justify-center gap-2 pointer-events-none">
+                    <Paperclip className="w-7 h-7 text-orange-500" />
+                    <span className="text-[13px] font-medium text-slate-700">Solte para enviar</span>
                   </div>
                 )}
 
                 {loadingMessages && messages.length === 0 ? (
-                  <div className="flex items-center gap-2 text-sm text-white/50 py-8 justify-center">
-                    <div className="w-4 h-4 border-2 border-orange-400/30 border-t-orange-400 rounded-full animate-spin" />
-                    Carregando mensagens...
+                  /* Esqueleto, não roda-roda: o desenho já tem a forma da
+                     conversa que vai chegar, então a troca não dá o solavanco
+                     de um bloco vazio virando texto. Com o cache, este estado
+                     quase não aparece — ele é para a PRIMEIRA abertura. */
+                  <div className="py-2 space-y-4" aria-label="Carregando mensagens">
+                    {[0, 1, 2, 3].map((i) => (
+                      <div key={i} className={`flex ${i % 2 ? 'justify-end' : 'justify-start'}`}>
+                        <div
+                          className="h-9 rounded-2xl bg-slate-900/[0.05] animate-pulse"
+                          style={{ width: `${[62, 44, 72, 38][i]}%` }}
+                        />
+                      </div>
+                    ))}
                   </div>
                 ) : !loadingMessages && messages.length === 0 ? (
-                  <div className="flex flex-col items-center gap-3 py-12 text-white/50">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500/15 to-amber-500/5 flex items-center justify-center ring-1 ring-orange-500/20">
-                      <MessageCircle className="w-8 h-8 text-orange-400/70" />
-                    </div>
-                    <span className="text-sm font-semibold text-white/80">Nenhuma mensagem ainda</span>
-                    <span className="text-xs text-white/40">Seja o primeiro a escrever 👋</span>
+                  <div className="flex flex-col items-center justify-center gap-1.5 py-16 px-6 text-center">
+                    <span className="text-[13.5px] font-medium text-slate-600">Nenhuma mensagem ainda</span>
+                    <span className="text-[12px] text-slate-400">Escreva abaixo para começar a conversa.</span>
                   </div>
                 ) : (() => {
                   const otherReads = Array.from(readStates.entries())
@@ -2576,7 +2754,27 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   let lastDayKey = '';
 
                   const toTitleCase = (s: string) => s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-                  return messages.map((msg) => {
+
+                  /**
+                   * Mensagens seguidas da mesma pessoa formam um BLOCO.
+                   *
+                   * Sem isto, quem escrevia três linhas seguidas gerava três
+                   * nomes, três horários e três balões separados por espaço
+                   * igual — a conversa parecia uma lista de registros, não uma
+                   * fala. Dentro do bloco só o primeiro traz o nome e só o
+                   * último traz o horário e o "rabinho" do balão.
+                   *
+                   * Cinco minutos é o corte: acima disso é outro momento, e
+                   * juntar esconderia a pausa.
+                   */
+                  const JANELA_DO_BLOCO_MS = 5 * 60 * 1000;
+                  const mesmaVoz = (a?: ChatMessage, b?: ChatMessage) =>
+                    !!a && !!b && !a.is_system && !b.is_system && a.user_id === b.user_id
+                    && Math.abs(new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) < JANELA_DO_BLOCO_MS;
+
+                  return messages.map((msg, idx) => {
+                    const anterior = messages[idx - 1];
+                    const proxima = messages[idx + 1];
                     const isMine = msg.user_id === user?.id;
                     const isDeleted = !!msg.deleted_at;
                     const sender = membersByUserIdRef.current.get(msg.user_id) || members.find((m) => m.user_id === msg.user_id);
@@ -2591,6 +2789,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     const showSeparator = dayKey !== lastDayKey;
                     if (showSeparator) lastDayKey = dayKey;
 
+                    const abreBloco = showSeparator || !mesmaVoz(anterior, msg);
+                    const fechaBloco = !mesmaVoz(msg, proxima)
+                      || (!!proxima && getDayKey(proxima.created_at) !== dayKey);
+
                     const replyMsg = msg.reply_to ? messages.find((m) => m.id === msg.reply_to) : null;
                     const replySender = replyMsg ? (membersByUserIdRef.current.get(replyMsg.user_id) || members.find((m) => m.user_id === replyMsg.user_id)) : null;
 
@@ -2599,37 +2801,38 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     return (
                       <React.Fragment key={msg.id}>
                         {showSeparator && (
-                          <div className="flex items-center gap-3 py-3 my-1">
-                            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-900/10 to-transparent" />
-                            <span className="text-[10px] text-white/40 font-semibold tracking-wider uppercase px-2 shrink-0">
+                          /* Uma etiqueta centralizada, sem os dois fios em
+                             degradê: a data é uma marca de tempo, não uma
+                             divisória de capítulo. */
+                          <div className="flex justify-center py-3">
+                            <span className="px-2.5 py-1 rounded-full bg-slate-900/[0.05] text-[10.5px] font-medium text-slate-500">
                               {formatDateSeparator(msg.created_at)}
                             </span>
-                            <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-900/10 to-transparent" />
                           </div>
                         )}
                         {/* ── Mensagem de sistema (nudge, eventos) ── */}
                         {msg.is_system ? (
                           <div className="flex items-center justify-center py-1.5 px-4 my-0.5">
-                            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 ring-1 ring-amber-500/20">
-                              <span className="text-[11px] text-amber-300/80 font-medium">{msg.content}</span>
-                            </div>
+                            <span className="px-2.5 py-1 rounded-full bg-amber-50 ring-1 ring-amber-200/70 text-[11px] font-medium text-amber-700">
+                              {msg.content}
+                            </span>
                           </div>
                         ) : (
                         <div
-                          className={`group flex flex-col min-w-0 mb-1.5 ${isMine ? 'items-end' : 'items-start'} ${isNew ? 'animate-in slide-in-from-left-2 fade-in duration-300' : ''}`}
+                          className={`group flex flex-col min-w-0 ${fechaBloco ? 'mb-2.5' : 'mb-[3px]'} ${isMine ? 'items-end' : 'items-start'} ${isNew ? 'animate-in fade-in slide-in-from-bottom-1 duration-200' : ''}`}
                         >
-                          {!isMine && (
-                            <div className="text-[10px] text-white/50 font-medium mb-0.5 ml-2.5">{senderName}</div>
+                          {!isMine && abreBloco && (
+                            <div className="text-[11px] font-medium text-slate-500 mb-1 ml-2.5">{senderName}</div>
                           )}
 
                           {/* Reply preview */}
                           {replyMsg && !isDeleted && (
-                            <div className={`mb-1 px-2.5 py-1.5 rounded-xl border-l-2 border-orange-400 bg-[#f8f7f5]/[0.04] max-w-[80%] ${isMine ? 'mr-1' : 'ml-1'}`}>
-                              <div className="text-[10px] text-orange-300 font-semibold truncate">
+                            <div className={`mb-1 px-2.5 py-1.5 rounded-lg border-l-2 border-orange-400 bg-slate-900/[0.04] max-w-[80%] ${isMine ? 'mr-1' : 'ml-1'}`}>
+                              <div className="text-[10.5px] font-semibold text-orange-700 truncate">
                                 {replySender?.name || 'Usuário'}
                               </div>
-                              <div className="text-[11px] text-white/50 truncate">
-                                {replyMsg.deleted_at ? '🗑️ Mensagem apagada' : getPreview(replyMsg.content)}
+                              <div className="text-[11.5px] text-slate-500 truncate">
+                                {replyMsg.deleted_at ? 'Mensagem apagada' : getPreview(replyMsg.content)}
                               </div>
                             </div>
                           )}
@@ -2639,19 +2842,27 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                               <button
                                 type="button"
                                 onClick={() => setReplyTo(msg)}
-                                className="opacity-0 group-hover:opacity-100 transition-all duration-150 h-7 w-7 rounded-full bg-[#f8f7f5]/[0.04] hover:bg-orange-500/15 hover:text-orange-300 flex items-center justify-center shrink-0 mb-1 text-white/50"
+                                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-100 h-7 w-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-900/[0.06] flex items-center justify-center shrink-0 mb-1"
                                 title="Responder"
                               >
                                 <Reply className="w-3 h-3" />
                               </button>
                             )}
                             <div
-                              className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-[13.5px] leading-snug transition-all overflow-hidden ${
+                              /* Quem fala sou EU leva a cor da marca; quem fala
+                                 comigo leva o cinza. Estava invertido — a
+                                 mensagem RECEBIDA vinha num degradê laranja com
+                                 halo e a minha num cinza pálido, o oposto de
+                                 qualquer chat e a maior fonte de ruído da tela.
+                                 Cor chapada nos dois, sem sombra colorida.
+                                 O canto reto só no ÚLTIMO balão do bloco: é ele
+                                 que aponta para quem falou. */
+                              className={`max-w-[80%] px-3.5 py-2 text-[13.5px] leading-[1.45] overflow-hidden ${
                                 isDeleted
-                                  ? 'bg-[#f8f7f5]/[0.04] text-white/30 italic ring-1 ring-white/5'
+                                  ? 'rounded-2xl bg-slate-900/[0.04] text-slate-400 italic ring-1 ring-slate-900/[0.06]'
                                   : isMine
-                                    ? 'bg-slate-100 text-slate-800 rounded-br-md ring-1 ring-slate-900/[0.06] shadow-[0_2px_8px_rgba(15,23,42,.08)]'
-                                    : 'bg-gradient-to-br from-orange-500 to-amber-600 text-white rounded-bl-md shadow-[0_4px_16px_-4px_rgba(251,146,60,.55),inset_0_1px_0_rgba(255,255,255,.18)]'
+                                    ? `bg-orange-500 text-white rounded-2xl ${fechaBloco ? 'rounded-br-md' : ''}`
+                                    : `bg-slate-100 text-slate-800 ring-1 ring-slate-900/[0.05] rounded-2xl ${fechaBloco ? 'rounded-bl-md' : ''}`
                               }`}
                             >
                               {isDeleted
@@ -2663,7 +2874,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                               <button
                                 type="button"
                                 onClick={() => setReplyTo(msg)}
-                                className="opacity-0 group-hover:opacity-100 transition-all duration-150 h-7 w-7 rounded-full bg-[#f8f7f5]/[0.04] hover:bg-orange-500/15 hover:text-orange-300 flex items-center justify-center shrink-0 mb-1 text-white/50"
+                                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-100 h-7 w-7 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-900/[0.06] flex items-center justify-center shrink-0 mb-1"
                                 title="Responder"
                               >
                                 <Reply className="w-3 h-3" />
@@ -2671,18 +2882,24 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                             )}
                           </div>
 
-                          <div className={`text-[10px] text-white/35 mt-1 flex items-center gap-1 ${isMine ? 'mr-9' : 'ml-9'}`}>
-                            {new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                            {msg.edited_at && !isDeleted && <span className="text-white/25">· editada</span>}
-                            {isMine && !isDeleted && (
-                              <span
-                                className={`ml-0.5 ${seen ? 'text-sky-400' : 'text-white/35'}`}
-                                title={seen ? 'Visualizada' : 'Enviada'}
-                              >
-                                {seen ? '✓✓' : '✓'}
-                              </span>
-                            )}
-                          </div>
+                          {/* Uma hora por BLOCO, no fim dele. Repetida a cada
+                              linha, ela dobrava a altura de uma sequência de
+                              respostas curtas para informar três vezes o mesmo
+                              minuto. */}
+                          {fechaBloco && (
+                            <div className={`text-[10.5px] text-slate-400 mt-1 flex items-center gap-1 tabular-nums ${isMine ? 'mr-9' : 'ml-9'}`}>
+                              {new Date(msg.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              {msg.edited_at && !isDeleted && <span className="text-slate-300">· editada</span>}
+                              {isMine && !isDeleted && (
+                                <span
+                                  className={`ml-0.5 ${seen ? 'text-sky-500' : 'text-slate-400'}`}
+                                  title={seen ? 'Visualizada' : 'Enviada'}
+                                >
+                                  {seen ? '✓✓' : '✓'}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                         )} {/* fecha ternário is_system */}
                       </React.Fragment>
@@ -2698,10 +2915,10 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                   <button
                     type="button"
                     onClick={() => { pinnedToBottomRef.current = true; scrollToBottom('smooth'); }}
-                    className="h-9 w-9 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 hover:scale-110 active:scale-95 shadow-[0_8px_24px_-4px_rgba(251,146,60,.6)] ring-1 ring-white/20 flex items-center justify-center transition-transform duration-150"
+                    className="h-9 w-9 rounded-full bg-white text-slate-600 hover:text-slate-900 ring-1 ring-slate-900/10 shadow-[0_4px_14px_-4px_rgba(15,23,42,.30)] flex items-center justify-center transition-colors duration-100"
                     title="Ir para o fim"
                   >
-                    <ChevronDown className="w-4 h-4 text-white" />
+                    <ChevronDown className="w-4 h-4" />
                   </button>
                 </div>
               )}
@@ -3089,10 +3306,15 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         </div>
       )}
 
-      <button
-        data-chat-floating-widget-launcher="1"
-        type="button"
-        onClick={() => {
+      <ChatLauncherBar
+        badgeCount={badgeCount}
+        title={launcherTitle}
+        peerName={topUnreadUser?.name || lastUnreadImageSender?.name || null}
+        peerAvatarUrl={topUnreadUser?.avatar_url || lastUnreadImageSender?.avatarUrl || null}
+        editorMinimized={petitionEditorMinimized}
+        editorHasUnsavedChanges={petitionEditorHasUnsavedChanges}
+        onOpenEditor={() => events.emit(SYSTEM_EVENTS.PETITION_EDITOR_MAXIMIZE)}
+        onToggle={() => {
           setOpen((prev) => {
             const next = !prev;
             if (next) {
@@ -3107,127 +3329,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             return next;
           });
         }}
-        className={`group relative rounded-full overflow-hidden transition-all duration-200 hover:scale-[1.04] active:scale-[0.97] ${
-          badgeCount > 0 && !open ? 'ring-2 ring-orange-400/40' : 'ring-1 ring-white/10'
-        }`}
-        style={{
-          boxShadow:
-            badgeCount > 0 && !open
-              ? '0 20px 60px rgba(0,0,0,.5), 0 0 0 0 rgba(251,146,60,0)'
-              : '0 20px 60px rgba(0,0,0,.5)',
-          animation: badgeCount > 0 && !open ? 'chatLauncherGlow 2.4s ease-in-out infinite' : undefined,
-        }}
-        title="Mensagens / Editor"
-      >
-        {/* Mobile — círculo compacto */}
-        <div
-          className="sm:hidden flex items-center justify-center h-12 w-12 text-white relative"
-          style={{
-            background:
-              'linear-gradient(135deg, rgba(20,28,46,.98) 0%, rgba(10,15,28,.98) 100%)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-          }}
-        >
-          {/* Highlight superior */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-0 h-1/2 opacity-60"
-            style={{
-              background: 'linear-gradient(180deg, rgba(255,255,255,.08) 0%, transparent 100%)',
-            }}
-          />
-          <div className="relative">
-            <MessageCircle className="w-5 h-5" strokeWidth={2.4} />
-            {badgeCount > 0 && (
-              <span className="absolute -top-2 -right-2 min-w-5 h-5 px-1.5 rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-white text-[11px] font-bold flex items-center justify-center shadow-[0_2px_8px_rgba(239,68,68,.6)] ring-2 ring-[#0a0f1c]">
-                {badgeCount > 99 ? '99+' : badgeCount}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Desktop — barra horizontal */}
-        <div
-          className="hidden sm:flex items-stretch text-white relative"
-          style={{
-            background:
-              'linear-gradient(135deg, rgba(20,28,46,.98) 0%, rgba(10,15,28,.98) 100%)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-          }}
-        >
-          {/* Highlight superior */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-0 h-1/2 opacity-70 rounded-t-full"
-            style={{
-              background: 'linear-gradient(180deg, rgba(255,255,255,.1) 0%, transparent 100%)',
-            }}
-          />
-          <div className="flex items-center gap-2.5 px-4 h-12 relative">
-            <div className="relative flex items-center justify-center h-7 w-7 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 shadow-[0_4px_10px_rgba(251,146,60,.4),inset_0_1px_0_rgba(255,255,255,.25)]">
-              <MessageCircle className="w-3.5 h-3.5 text-white" strokeWidth={2.6} />
-              {badgeCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-gradient-to-br from-red-500 to-rose-600 text-white text-[10px] font-bold flex items-center justify-center shadow-[0_2px_6px_rgba(239,68,68,.6)] ring-2 ring-[#0a0f1c]">
-                  {badgeCount > 99 ? '99+' : badgeCount}
-                </span>
-              )}
-            </div>
-            <span className="text-[13.5px] font-semibold tracking-tight">Mensagens</span>
-          </div>
-
-          {petitionEditorMinimized && (
-            <>
-              <div className="w-px bg-[#f8f7f5]/[0.08]" aria-hidden />
-              <div
-                className="relative flex items-center gap-2 px-4 h-12 text-white hover:bg-white/[0.04] transition"
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  events.emit(SYSTEM_EVENTS.PETITION_EDITOR_MAXIMIZE);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    events.emit(SYSTEM_EVENTS.PETITION_EDITOR_MAXIMIZE);
-                  }
-                }}
-                title="Abrir Editor"
-              >
-                <FileText className="w-4 h-4 text-orange-300" />
-                <span className="text-[13px] font-semibold">Editor</span>
-                {petitionEditorHasUnsavedChanges && (
-                  <span
-                    className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full ring-2 ring-[#0a0f1c] animate-pulse"
-                    title="Alterações não salvas"
-                  />
-                )}
-              </div>
-            </>
-          )}
-
-          {badgeCount > 0 && (topUnreadUser || lastUnreadImageSender) && (
-            <div className="flex items-center pr-3 pl-1 h-12">
-              <div className="relative">
-                {(topUnreadUser?.avatar_url || lastUnreadImageSender?.avatarUrl) ? (
-                  <img
-                    src={(topUnreadUser?.avatar_url || lastUnreadImageSender?.avatarUrl) as string}
-                    alt={topUnreadUser?.name || lastUnreadImageSender?.name || ''}
-                    className="w-8 h-8 rounded-full object-cover ring-2 ring-orange-400 shadow-[0_4px_12px_rgba(251,146,60,.4)]"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 ring-2 ring-orange-300 flex items-center justify-center text-[11px] font-bold text-white shadow-[0_4px_12px_rgba(251,146,60,.4)]">
-                    {(topUnreadUser?.name || lastUnreadImageSender?.name || '?').substring(0, 1).toUpperCase()}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </button>
+      />
     </div>
     </ChatImagesContext.Provider>,
     document.body

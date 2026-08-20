@@ -11,12 +11,25 @@
 // da máquina, não da pessoa. Quem entra de outro computador escolhe de novo — e
 // deve mesmo, porque os dispositivos são outros.
 //
-// Três consumidores, um lugar só:
+// UM canal de áudio para o CRM inteiro. A escolha não é "o microfone das
+// ligações": é o microfone, ponto — quem pôs o headset na cabeça o pôs para
+// falar, e gravar o áudio do WhatsApp por outro dispositivo era o sistema
+// contrariando a própria configuração.
+//
+// Quem entra por aqui:
 //   • `services/wacalls/audioBridge` — microfone da ligação e voz do cliente;
+//   • `components/whatsapp/hooks/useWaComposer` — gravação de áudio do WhatsApp;
+//   • `components/ChatFloatingWidget` e `components/ChatModule` — gravação e
+//                                      reprodução de áudio do chat interno;
+//   • `components/whatsapp/messageBubble` — reprodução do áudio recebido;
+//   • `components/whatsapp/callRecordingPlayer` — gravações de ligação;
 //   • `utils/notificationSound`      — o AudioContext compartilhado, que carrega
 //                                      o toque da chamada, os avisos de mensagem
 //                                      e os sons de ação;
 //   • `components/whatsapp/audioDeviceSettings` — o painel que deixa escolher.
+//
+// Fora daqui, de propósito: o PORTAL DO CLIENTE. Lá não existe painel de áudio
+// — quem usa é o cliente, na máquina dele, e o padrão do sistema é o certo.
 
 import { getContextoTocavel } from './notificationSound';
 
@@ -118,6 +131,36 @@ export function microphoneConstraints(): MediaTrackConstraints {
   };
   const deviceId = getPreferredInputId();
   return deviceId ? { ...base, deviceId: { exact: deviceId } } : base;
+}
+
+/**
+ * Abre o microfone ESCOLHIDO, com o padrão do sistema como rede de proteção.
+ *
+ * Um lugar só para a regra porque ela vale para tudo o que capta voz: a
+ * ligação, o áudio do WhatsApp e o áudio do chat interno. Quem configurou o
+ * headset configurou para falar — não faz sentido a ligação respeitar a escolha
+ * e a mensagem de voz gravar pelo microfone da webcam.
+ *
+ * A queda para o padrão só acontece quando o dispositivo escolhido não está
+ * lá (desconectado, ou tomado por outro programa). Recusa de permissão,
+ * microfone ocupado e o resto sobem como vieram: quem chama traduz o erro para
+ * a linguagem do seu contexto — "a chamada não sai" e "o áudio não grava" são
+ * avisos diferentes.
+ */
+export async function openPreferredMicrophone(): Promise<MediaStream> {
+  const constraints = microphoneConstraints();
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: constraints });
+  } catch (err) {
+    const name = (err as DOMException)?.name;
+    const tinhaPreferencia = !!(constraints as { deviceId?: unknown }).deviceId;
+    if (tinhaPreferencia && (name === 'OverconstrainedError' || name === 'NotFoundError')) {
+      return await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    }
+    throw err;
+  }
 }
 
 /**

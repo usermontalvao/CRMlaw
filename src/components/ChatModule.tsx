@@ -11,6 +11,7 @@ import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { ModuleSkeleton } from './ui';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { criarControleDePresenca, type ControleDePresenca } from '../services/realtime/presenceTrack';
+import { applyOutputToElement, openPreferredMicrophone } from '../utils/audioDevices';
 
 const DEFAULT_ROOM_NAME = 'Geral';
 
@@ -219,7 +220,7 @@ const ProAudioPlayer: React.FC<{ src: string; onReady?: () => void }> = ({ src, 
         preload="metadata"
         onLoadedMetadata={(e) => { setDuration(e.currentTarget.duration || 0); onReady?.(); }}
         onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
-        onPlay={() => setPlaying(true)}
+        onPlay={e => { setPlaying(true); void applyOutputToElement(e.currentTarget); }}
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); setCurrent(0); }}
         className="hidden"
@@ -550,7 +551,8 @@ const ChatModule: React.FC = () => {
 
   const handleStartRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // O MESMO microfone das ligações — ver `utils/audioDevices`.
+      const stream = await openPreferredMicrophone();
       const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
       recordingChunksRef.current = [];
       cancelRecordingRef.current = false;
@@ -656,7 +658,9 @@ const ChatModule: React.FC = () => {
     const audio = new Audio(url);
     audio.onended = () => setPreviewPlaying(false);
     previewAudioRef.current = audio;
-    void audio.play();
+    // A prévia da própria gravação também sai no alto-falante escolhido —
+    // conferir o que se gravou pelo dispositivo errado não confere nada.
+    void applyOutputToElement(audio).finally(() => { void audio.play(); });
     setPreviewPlaying(true);
   };
 

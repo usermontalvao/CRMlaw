@@ -26,7 +26,7 @@
 // isso que o worklet de captura acumula em vez de mandar os blocos de 128 que
 // a placa entrega.
 import {
-  applyOutputToElement, microphoneConstraints, onAudioDeviceChange,
+  applyOutputToElement, onAudioDeviceChange, openPreferredMicrophone,
   type OutputRouting,
 } from '../../utils/audioDevices';
 import { waCallsLog } from './config';
@@ -187,21 +187,14 @@ export async function openMicrophone(): Promise<MediaStream> {
     );
   }
   try {
-    return await navigator.mediaDevices.getUserMedia({ audio: microphoneConstraints() });
+    // A escolha do painel de áudio, com a queda para o padrão do sistema quando
+    // o dispositivo escolhido não está aí — a MESMA regra que vale para gravar
+    // áudio no WhatsApp e no chat interno. Uma ligação não pode morrer por
+    // causa de uma preferência, e a escolha continua salva: o headset volta a
+    // valer assim que for plugado de novo.
+    return await openPreferredMicrophone();
   } catch (err) {
     const name = (err as DOMException)?.name;
-    // O microfone ESCOLHIDO no painel de áudio não está aí (desconectado, ou
-    // tomado por outro programa). Uma ligação não pode morrer por causa de uma
-    // preferência: cai no padrão do sistema e segue. A escolha continua salva —
-    // o headset volta a valer assim que for plugado de novo.
-    if ((name === 'OverconstrainedError' || name === 'NotFoundError') && microphoneConstraints().deviceId) {
-      waCallsLog('microfone preferido indisponível — usando o padrão do sistema');
-      try {
-        return await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        });
-      } catch { /* cai nas mensagens abaixo com o erro original */ }
-    }
     if (name === 'NotAllowedError' || name === 'SecurityError') {
       throw new MicrophoneError(
         'Permissão de microfone necessária para realizar a chamada. Libere o microfone nas permissões do navegador.',

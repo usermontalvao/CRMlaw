@@ -11,6 +11,7 @@
 import React, { useCallback, useState } from 'react';
 import { Download, Loader2, Play } from 'lucide-react';
 import { callLogService } from '../../services/callLog.service';
+import { applyOutputToElement } from '../../utils/audioDevices';
 
 export const CallRecordingPlayer: React.FC<{
   /** Caminho no bucket (`call-recordings/<callId>.webm`). */
@@ -33,7 +34,7 @@ export const CallRecordingPlayer: React.FC<{
   if (url) {
     return (
       <div className="mt-1.5 flex items-center gap-1.5">
-        <audio src={url} controls autoPlay className={compact ? 'h-8 w-full max-w-[240px]' : 'h-8 w-full max-w-sm'} />
+        <audio src={url} controls autoPlay onPlay={e => { void applyOutputToElement(e.currentTarget); }} className={compact ? 'h-8 w-full max-w-[240px]' : 'h-8 w-full max-w-sm'} />
         <a href={url} download title="Baixar a gravação"
           className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-black/[0.06] hover:text-slate-600">
           <Download className="h-4 w-4" />

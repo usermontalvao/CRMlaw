@@ -481,6 +481,68 @@ const cancelIdleWork = (handle: number | null): void => {
 let activeSpellRequestId = 0;
 let activeSpellAbortController: AbortController | null = null;
 
+/**
+ * Tudo o que o filtro de ortografia mexeu no DOM do menu de contexto na
+ * ABERTURA ANTERIOR — para desfazer antes que a próxima comece a se montar.
+ *
+ * O Syncfusion reaproveita os MESMOS elementos entre uma abertura e outra, e só
+ * recalcula o `display` dos itens NATIVOS. Duas marcas nossas ficavam para trás:
+ *
+ *   • os itens do CRM ("Inserir bloco...", "Adicionar bloco...", "Buscar
+ *     empresa...", "Formatar com IA...") e os separadores, escondidos quando o
+ *     clique caiu sobre palavra com erro de ortografia, continuavam escondidos
+ *     em TODOS os cliques seguintes — o menu perdia as opções de bloco;
+ *
+ *   • o `position: fixed` que usamos para reposicionar o menu sobrevivia no
+ *     wrapper, e aí o Syncfusion escrevia coordenadas de DOCUMENTO num elemento
+ *     posicionado pelo VIEWPORT: com a petição rolada para baixo, o menu abria
+ *     fora da tela — o clique direito parecia simplesmente não fazer nada.
+ *
+ * Por isso o desfazer roda no início de `onContextMenuInternal`, ANTES de
+ * `showContextMenuOnSel`: assim o Syncfusion recalcula os itens nativos por
+ * cima do estado limpo, e o que ele não gerencia volta ao que era.
+ */
+const spellMenuMutations: {
+  items: { el: HTMLElement; display: string }[];
+  wrappers: { el: HTMLElement; position: string; top: string; left: string }[];
+} = { items: [], wrappers: [] };
+
+/** Guarda o estado atual do elemento antes da primeira alteração desta abertura. */
+function rememberSpellMenuItem(el: HTMLElement): void {
+  if (spellMenuMutations.items.some((entry) => entry.el === el)) return;
+  spellMenuMutations.items.push({ el, display: el.style.display });
+}
+
+function rememberSpellMenuWrapper(el: HTMLElement): void {
+  if (spellMenuMutations.wrappers.some((entry) => entry.el === el)) return;
+  spellMenuMutations.wrappers.push({
+    el,
+    position: el.style.position,
+    top: el.style.top,
+    left: el.style.left,
+  });
+}
+
+/** Devolve o menu ao estado anterior ao filtro. Idempotente. */
+function restoreSpellMenuMutations(): void {
+  // As sugestões injetadas são <li> nossos, criados à mão dentro do <ul> que o
+  // Syncfusion reaproveita. Só eram removidos quando havia uma injeção NOVA —
+  // então, depois de um clique sobre palavra errada, a correção de outra palavra
+  // continuava no topo de todos os menus seguintes, pronta para ser clicada.
+  document
+    .querySelectorAll('[data-spell-suggestion]')
+    .forEach((el) => el.remove());
+
+  spellMenuMutations.items.forEach(({ el, display }) => { el.style.display = display; });
+  spellMenuMutations.wrappers.forEach(({ el, position, top, left }) => {
+    el.style.position = position;
+    el.style.top = top;
+    el.style.left = left;
+  });
+  spellMenuMutations.items = [];
+  spellMenuMutations.wrappers = [];
+}
+
 /** Cache por palavra+frase: reabrir o menu não gasta tokens de novo. */
 const contextSuggestionCache = new Map<string, string[]>();
 const contextSuggestionPending = new Map<string, Promise<string[]>>();
@@ -1368,6 +1430,13 @@ function patchContextMenuForSpellCheck(editor: any): void {
 
   const patchedOnContextMenu = function patchedOnContextMenu(event: any) {
     try {
+      // 0) Desfaz o filtro da abertura anterior. Tem de vir ANTES de
+      //    showContextMenuOnSel: ele recalcula os itens nativos, e o que ele não
+      //    gerencia (itens do CRM, separadores, posição do wrapper) só volta ao
+      //    normal aqui. Sem isto, um clique sobre palavra com erro deixava o
+      //    menu mutilado — e mal posicionado — em todos os cliques seguintes.
+      restoreSpellMenuMutations();
+
       // 1) Abrir o menu normal IMEDIATAMENTE (sem esperar spell check)
       if (typeof ctxModule.hideSpellContextItems === 'function') {
         ctxModule.hideSpellContextItems();
@@ -3855,8 +3924,11 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             const isCopyText = (t: string) =>
               t === 'copy' || t === 'copy...' || t === 'copiar' || t === 'copiar...';
 
+            // Cada item alterado é registrado ANTES de mudar, para que a
+            // próxima abertura do menu comece do estado original.
             menuItems.forEach((li, idx) => {
               const t = normText(li);
+              rememberSpellMenuItem(li);
               if (isCrmItem(li)) {
                 // Itens CRM nunca são sugestões — sempre esconder no contexto spell
                 li.style.display = 'none';
@@ -3873,6 +3945,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             // Esconder separadores no modo spell-check
             visibleWrappers.forEach((w) => {
               w.querySelectorAll<HTMLElement>('li.e-separator').forEach((sep) => {
+                rememberSpellMenuItem(sep);
                 sep.style.display = 'none';
               });
             });
@@ -3883,6 +3956,7 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             if (pos.y > 0) {
               visibleWrappers.forEach((w) => {
                 // Forçar position:fixed para que top/left sejam relativos ao viewport
+                rememberSpellMenuWrapper(w);
                 w.style.position = 'fixed';
                 w.style.top = `${pos.y}px`;
                 if (pos.x > 0) w.style.left = `${pos.x}px`;

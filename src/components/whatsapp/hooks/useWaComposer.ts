@@ -14,6 +14,7 @@ import { agentLabel, conversationPreviewLabel } from '../format';
 import { createSendQueue, type SendQueue } from '../sendQueue';
 import { isReconnectPendingError, enqueueReconnectHold } from '../../../services/whatsapp/resilientSend';
 import { playWaActionSound } from '../../../utils/waActionSounds';
+import { openPreferredMicrophone } from '../../../utils/audioDevices';
 import { useToastContext } from '../../../contexts/ToastContext';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppAiSession,
@@ -846,7 +847,8 @@ export function useWaComposer({
   const startRecording = async () => {
     if (!selected || recording) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // O MESMO microfone das ligações — ver `utils/audioDevices`.
+      const stream = await openPreferredMicrophone();
       const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
         : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);

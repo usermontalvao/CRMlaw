@@ -213,13 +213,11 @@ interface WhatsAppModuleProps {
    * (Funil de Leads e Dashboard). `'full'` (default) = página completa.
    */
   variant?: 'full' | 'embedded';
-  /** Reporta o total de conversas não-lidas (alimenta o badge da aba no widget). */
-  onUnreadChange?: (total: number) => void;
   /** Reporta a conversa aberta (deep-link ao maximizar o widget). */
   onActiveConversationChange?: (id: string | null) => void;
 }
 
-const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onParamConsumed, onConvertLead, variant = 'full', onUnreadChange, onActiveConversationChange }) => {
+const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onParamConsumed, onConvertLead, variant = 'full', onActiveConversationChange }) => {
   const embedded = variant === 'embedded';
   const { user } = useAuth();
   const { requirePin } = useSecurityPin();
@@ -1592,7 +1590,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
   // "Não lidas" da inbox (`tabCounts.unread` = QUANTIDADE de conversas com não
   // lidas, sob os mesmos filtros de fila), e não a soma bruta de mensagens.
   // Assim o número do topo nunca diverge do que a lista mostra.
-  useEffect(() => { onUnreadChange?.(tabCounts.unread); }, [tabCounts.unread, onUnreadChange]);
+  // O badge do widget NÃO vem daqui. Vinha, e mentia: `tabCounts.unread` é o
+  // recorte da lista com os filtros de fila aplicados, então digitar na busca
+  // fazia o número do launcher cair. Hoje ele é lido do banco por
+  // `conversationsApi.countUnreadContacts()` — uma verdade só, que não depende
+  // de o módulo estar montado nem do que está filtrado na tela.
 
   // Reporta a conversa aberta (deep-link ao maximizar o widget).
   useEffect(() => { onActiveConversationChange?.(selectedId); }, [selectedId, onActiveConversationChange]);
@@ -2133,9 +2135,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, onP
           Reconectando…
         </span>
       ) : (
-        <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
+        // Embutido no widget, só o ponto: a palavra "Online" custa 45 pixels
+        // numa linha de 384 que já carrega busca, filtro e três botões — e o
+        // verde sozinho já diz o mesmo. O texto continua na dica do mouse.
+        <span
+          className="flex items-center gap-1.5 text-[11px] text-slate-500"
+          title={anyConnected ? 'Conectado ao WhatsApp' : 'Sem conexão com o WhatsApp'}
+        >
           <span className="inline-block w-2 h-2 rounded-full" style={{ background: anyConnected ? '#16a34a' : '#9ca3af' }} />
-          {anyConnected ? 'Online' : 'Offline'}
+          {!embedded && (anyConnected ? 'Online' : 'Offline')}
         </span>
       )}
       <WaNotifyBell pushState={pushState} onTogglePush={toggleStaffPush} />

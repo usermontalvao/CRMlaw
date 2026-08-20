@@ -799,7 +799,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
   };
 
   return (
-    <div className="relative" ref={panelRef}>
+    <div className="relative flex-shrink-0" ref={panelRef}>
 
       {/* Bell button */}
       <button

@@ -17,6 +17,7 @@ import { WaPdfCard, isPdfMessage } from './pdfPreview';
 import { WaContactCard, type ContactCardActions } from './contactMessageCard';
 import { WaVideoLightbox } from './lightbox';
 import type { WhatsAppMessage, WhatsAppDeleteScope } from '../../types/whatsapp.types';
+import { applyOutputToElement } from '../../utils/audioDevices';
 
 const WA_MESSAGE_MENU_EVENT = 'wa-message-menu-open';
 const WA_MESSAGE_MENU_WIDTH = 192;
@@ -426,7 +427,14 @@ const WaAudioPlayer: React.FC<{
       <audio ref={audioRef} src={src} preload="metadata"
         onLoadedMetadata={e => setDuration(e.currentTarget.duration || 0)}
         onTimeUpdate={e => setCurrent(e.currentTarget.currentTime)}
-        onPlay={() => { setPlaying(true); pausarOsOutrosAudios(messageId); }}
+        onPlay={e => {
+          setPlaying(true); pausarOsOutrosAudios(messageId);
+          // O alto-falante escolhido no painel de áudio vale aqui também: quem
+          // pôs o headset para atender não quer o áudio do cliente saindo no
+          // monitor. Aplicado a cada play, e não uma vez só, porque a escolha
+          // pode mudar (inclusive noutra janela) com a página aberta.
+          void applyOutputToElement(e.currentTarget);
+        }}
         onPause={() => setPlaying(false)}
         onEnded={() => {
           setPlaying(false); setCurrent(0);

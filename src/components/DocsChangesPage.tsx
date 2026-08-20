@@ -968,6 +968,53 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.335',
+    date: '19/08/2026',
+    summary: 'O aviso de mensagem nova passa a abrir a conversa sem tirar voce da tela, e a barra do topo finalmente cabe no celular.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Responder sem sair do que voce estava fazendo',
+            description: 'O cartao de aviso de mensagem nova levava voce para o modulo WhatsApp: para responder um "ok", perdia-se a peticao, o processo ou a agenda que estava aberta. Agora o clique abre a conversa dentro do painel flutuante, por cima da tela em que voce ja esta, com os mesmos recursos de sempre — audio, anexo, resposta e transferencia. Dentro do proprio WhatsApp e do Chat nada muda: la o clique continua navegando, porque a inbox ja esta na tela.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O numero de conversas pendentes passa a bater com a inbox',
+            description: 'O painel flutuante mostrava 16 pendencias com a inbox exibindo 1. O contador somava tudo o que um dia ficou sem leitura, inclusive atendimentos ENCERRADOS — catorze deles estavam fechados, o mais antigo havia quinze dias. Agora ele conta pessoas realmente esperando resposta, pelas mesmas regras da aba "Nao lidas", e duas conversas do mesmo contato em canais diferentes contam como uma pessoa so.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O microfone escolhido vale para o CRM inteiro',
+            description: 'A escolha de microfone e alto-falante valia so para as ligacoes. Gravar um audio no WhatsApp ou no chat interno continuava usando o dispositivo padrao do computador — o sistema contrariando a propria configuracao de quem colocou o headset na cabeca para falar. Agora a preferencia vale nos tres lugares, e se o dispositivo escolhido nao estiver conectado a gravacao cai no padrao do sistema em vez de falhar; a escolha continua salva para quando ele voltar.',
+          },
+        ],
+      },
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A barra do topo cabe na tela do celular',
+            description: 'No celular a barra superior era mais larga que a propria tela: os icones da direita empurravam a foto do perfil para fora e ela aparecia cortada na borda. A causa era um espaco fixo de 190 pixels reservado para o titulo do modulo, que no celular nem e exibido. Agora a barra se mede pelo que realmente esta nela — o menu a esquerda, todas as acoes a direita e a foto inteira dentro da tela, sem esconder nenhum botao. No computador e no tablet nada muda.',
+          },
+        ],
+      },
+      {
+        moduleId: 'peticoes',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O botao direito no editor volta a mostrar os blocos',
+            description: 'Bastava clicar com o botao direito sobre uma palavra marcada como erro de ortografia para o menu perder, no resto da sessao, as opcoes de inserir e adicionar bloco, buscar empresa e formatar com IA. E, com a peticao rolada para baixo, o menu passava a abrir fora da tela — o clique direito parecia simplesmente nao funcionar. As duas marcas que o corretor deixava no menu agora sao desfeitas a cada abertura.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.334',
     date: '19/08/2026',
     summary: 'Ligar deixou de exigir uma conversa aberta: o telefone agora fica na barra de pesquisa e disca de qualquer tela do CRM.',

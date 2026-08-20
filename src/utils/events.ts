@@ -79,6 +79,13 @@ export const SYSTEM_EVENTS = {
   // launcher. Mensagem na conversa JÁ ABERTA não emite o evento — ali o aviso
   // é só o toque curto.
   WHATSAPP_NOTIFY: 'whatsapp_notify',
+  // Clique no cartão de aviso: abre a conversa DENTRO do widget flutuante, na
+  // aba WhatsApp, sem trocar a tela em que a pessoa está. Trocar de módulo para
+  // responder "ok" era a interrupção que o aviso deveria evitar. Quem já está
+  // no módulo do WhatsApp não passa por aqui — lá o App navega direto, porque o
+  // widget nem é montado.
+  // Payload: { conversationId: string }
+  CHAT_WIDGET_OPEN_WHATSAPP: 'chat_widget_open_whatsapp',
   // Admin alterou quais módulos aparecem no menu lateral
   MODULES_CONFIG_UPDATED: 'modules_config_updated',
 };

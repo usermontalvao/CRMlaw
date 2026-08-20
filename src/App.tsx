@@ -2628,10 +2628,10 @@ useEffect(() => {
           aria-hidden={isStandaloneModule || undefined}
         >
           <div className="px-4 lg:px-6">
-            <div className="flex h-[62px] items-center gap-4">
+            <div className="flex h-[62px] items-center gap-2 md:gap-4">
 
               {/* LEFT: mobile menu + breadcrumb */}
-              <div className="flex min-w-0 flex-none items-center gap-3 w-[190px]">
+              <div className="flex min-w-0 flex-none items-center gap-3 md:w-[190px]">
                 <button
                   className="md:hidden inline-flex items-center justify-center p-2 rounded-lg text-slate-600 hover:text-white hover:bg-slate-800 transition flex-shrink-0"
                   onClick={() => setIsMobileNavOpen((prev) => !prev)}
@@ -2696,18 +2696,18 @@ useEffect(() => {
               </div>
 
               {/* RIGHT: ações */}
-              <div className="flex flex-none items-center gap-1">
+              <div className="flex min-w-0 flex-1 items-center justify-end gap-0.5 md:flex-none md:gap-1">
                 {/* Busca mobile */}
                 <button
                   onClick={() => setGlobalSearchOpen(true)}
-                  className="flex md:hidden items-center justify-center h-9 w-9 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                  className="flex md:hidden flex-shrink-0 items-center justify-center h-9 w-9 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
                 >
                   <Search className="w-4 h-4" />
                 </button>
 
                 {/* No celular não há pill para o discador morar dentro: ele fica
                     ao lado da lupa, que é a outra ferramenta que atravessa o CRM. */}
-                <span className="flex md:hidden">
+                <span className="flex md:hidden flex-shrink-0">
                   <DialerLauncher standalone />
                 </span>
 
@@ -2717,7 +2717,7 @@ useEffect(() => {
                   ) : (isModuleEnabled('tarefas') && canAccessModule('tarefas') && !hiddenMenuModules.has('tarefas') && (
                   <button
                     onClick={() => navigateTo('tarefas')}
-                    className={`relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+                    className={`relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg transition-colors ${
                       activeModule === 'tarefas'
                         ? 'text-[#f27a23] bg-[#fff3e8]'
                         : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
@@ -2744,7 +2744,7 @@ useEffect(() => {
                 {activeModule !== 'cloud' && (
                   <button
                     onClick={toggleTheme}
-                    className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
                     title={theme === 'dark' ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
                   >
                     {theme === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
@@ -2752,7 +2752,7 @@ useEffect(() => {
                 )}
 
                 {/* Identidade: nome + foto agrupados (foto à direita), tamanhos fixos */}
-                <div className={`flex items-center gap-3 ${activeModule === 'cloud' ? '' : 'ml-1.5 pl-3.5 border-l border-[#e7e5df]'}`}>
+                <div className={`flex flex-shrink-0 items-center gap-3 ${activeModule === 'cloud' ? '' : 'ml-0.5 border-l border-[#e7e5df] pl-1.5 md:ml-1.5 md:pl-3.5'}`}>
                   {profileReady ? (
                     <div className="hidden lg:block text-right leading-tight w-[190px]">
                       <p className="text-[14.5px] font-semibold text-slate-900 truncate">{profile.name}</p>
@@ -2778,7 +2778,7 @@ useEffect(() => {
                       aria-expanded={profileMenuOpen}
                       title="Meu Perfil"
                     >
-                      <div className="relative overflow-hidden rounded-full border border-amber-500 shadow-md h-11 w-11 bg-amber-100">
+                      <div className="relative overflow-hidden rounded-full border border-amber-500 shadow-md h-9 w-9 md:h-11 md:w-11 bg-amber-100">
                         {profileReady ? (
                           <img src={profile.avatarUrl || GENERIC_AVATAR} alt={profile.name} decoding="async" className="w-full h-full object-cover" />
                         ) : (
@@ -3091,7 +3091,24 @@ useEffect(() => {
 
       {/* Avisos de mensagem nova do WhatsApp: pilha própria, visível em
           QUALQUER tela (inclusive dentro do módulo, onde o widget nem monta). */}
-      <WhatsAppNotifyHost onOpen={(conversationId) => navigateTo('whatsapp', { conversationId })} />
+      <WhatsAppNotifyHost
+        onOpen={(conversationId) => {
+          // O aviso abre a conversa ONDE A PESSOA ESTÁ: o widget sobe com a
+          // conversa carregada e a tela por baixo continua a mesma. Ele embute
+          // o WhatsAppModule de verdade, então responder dali tem os mesmos
+          // recursos de sempre — áudio, anexo, resposta, transferência.
+          //
+          // Dois módulos ficam de fora, e por motivos diferentes: no WhatsApp o
+          // widget não é montado (a inbox inteira já está na tela) e no Chat ele
+          // cobriria o campo de digitação. Nesses dois o clique navega, como
+          // antes.
+          if (activeModule === 'whatsapp' || activeModule === 'chat') {
+            navigateTo('whatsapp', { conversationId });
+            return;
+          }
+          events.emit(SYSTEM_EVENTS.CHAT_WIDGET_OPEN_WHATSAPP, { conversationId });
+        }}
+      />
 
       {/* Chamadas de voz (WaCalls): o convite de chamada recebida precisa
           aparecer em QUALQUER tela do CRM, não só na inbox. */}
