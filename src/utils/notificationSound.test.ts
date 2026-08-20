@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { scheduleNotificationTone, type NotifyTone } from './notificationSound.ts';
+import {
+  isInChatSoundMuted,
+  scheduleNotificationTone,
+  setInChatSoundMuted,
+  type NotifyTone,
+} from './notificationSound.ts';
 
 // Contexto de áudio de mentira: registra o que foi agendado. Basta para provar o
 // contrato dos três toques — quantas notas, em que altura e com que volume —
@@ -109,4 +114,49 @@ test('nenhuma das cinco espécies soa na mesma altura de outra', () => {
 
 test('a falha informa sem virar alarme: mais curta que o toque de mensagem', () => {
   assert.ok(render('alert').fim < render('global').fim);
+});
+
+// ── A preferência do toque da conversa aberta ────────────────────────────
+// O padrão é a regra que mais importa aqui: com a conversa na frente, a
+// mensagem já está aparecendo na tela, e quem atende pelo widget passa o dia
+// inteiro nesse estado. O teste existe para o dia em que alguém "simplificar"
+// a leitura da chave e devolver o toque a quem nunca pediu por ele.
+
+/** localStorage de mentira, com o mínimo que o módulo usa. */
+function comArmazenamento(inicial: Record<string, string> = {}): void {
+  const dados = new Map(Object.entries(inicial));
+  (globalThis as any).localStorage = {
+    getItem: (k: string) => (dados.has(k) ? dados.get(k)! : null),
+    setItem: (k: string, v: string) => { dados.set(k, String(v)); },
+    removeItem: (k: string) => { dados.delete(k); },
+  };
+}
+
+test('sem preferência guardada, a conversa aberta fica calada', () => {
+  comArmazenamento();
+  assert.equal(isInChatSoundMuted(), true);
+});
+
+test('quem tinha DESLIGADO antes continua desligado', () => {
+  comArmazenamento({ 'wa:notifySoundInChat': 'off' });
+  assert.equal(isInChatSoundMuted(), true);
+});
+
+test('ligar grava o pedido explícito, e desligar apaga', () => {
+  comArmazenamento();
+  setInChatSoundMuted(false);
+  assert.equal(isInChatSoundMuted(), false);
+  setInChatSoundMuted(true);
+  assert.equal(isInChatSoundMuted(), true);
+});
+
+test('sem localStorage (aba privada) também cala', () => {
+  (globalThis as any).localStorage = {
+    getItem() { throw new Error('indisponível'); },
+    setItem() { throw new Error('indisponível'); },
+    removeItem() { throw new Error('indisponível'); },
+  };
+  assert.equal(isInChatSoundMuted(), true);
+  // E nunca levanta para quem chamou.
+  assert.doesNotThrow(() => setInChatSoundMuted(false));
 });

@@ -117,7 +117,7 @@ export const WaNotifyBell: React.FC<{
                 {inChatOn ? <MessageSquare size={16} className="text-amber-500 shrink-0" /> : <MessageSquareOff size={16} className="text-slate-400 shrink-0" />}
                 <span className="min-w-0">
                   <span className="block leading-tight">Toque da conversa aberta</span>
-                  <span className="block text-[11px] text-slate-400">Aviso curto quando a mensagem chega na conversa à sua frente</span>
+                  <span className="block text-[11px] text-slate-400">Desligado por padrão: com a conversa aberta, a mensagem já aparece sozinha</span>
                 </span>
                 <span className={pill(inChatOn)}>{inChatOn ? 'ON' : 'OFF'}</span>
               </button>

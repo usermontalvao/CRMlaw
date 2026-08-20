@@ -17,10 +17,22 @@
 
 // Preferência de som (persistida). 'off' silencia o som mantendo o aviso visual.
 const MUTE_KEY = 'wa:notifySound';
-// Preferência separada para o toque da conversa que está ABERTA na tela. Quem
-// atende o dia inteiro com a conversa à vista costuma querer só o toque das
-// outras — este é o único som que dispara enquanto a pessoa já está lendo.
-const IN_CHAT_MUTE_KEY = 'wa:notifySoundInChat';
+/**
+ * O toque da conversa que está ABERTA na tela — o único que dispara enquanto a
+ * pessoa já está lendo. Preferência própria, e **desligado por padrão**.
+ *
+ * Nasceu ligado, com o argumento de que ele acompanha a digitação de quem está
+ * do outro lado. Na prática é o contrário: com a conversa na frente, a mensagem
+ * já está aparecendo na tela, e o som vira um toque a cada linha que o cliente
+ * escreve — no widget, onde se atende com a conversa aberta o tempo todo, isso
+ * é ruído contínuo. Um aviso serve para chamar a atenção para o que NÃO está à
+ * vista.
+ *
+ * Por isso a chave passou a guardar o LIGADO (`'on'`), e não o desligado: sem
+ * nada guardado, cala. Quem tinha desligado antes tem `'off'` gravado, que
+ * também não é `'on'` — continua calado, como pediu.
+ */
+const IN_CHAT_SOUND_KEY = 'wa:notifySoundInChat';
 
 /** true se o usuário desligou o som das notificações de WhatsApp. */
 export function isNotifySoundMuted(): boolean {
@@ -35,16 +47,21 @@ export function setNotifySoundMuted(muted: boolean): void {
   } catch { /* localStorage indisponível — ignora */ }
 }
 
-/** true se o usuário desligou só o toque da conversa aberta. */
+/**
+ * true quando a conversa aberta deve ficar CALADA — o padrão.
+ *
+ * Sem preferência guardada, cala: só quem pediu o toque explicitamente o ouve.
+ * Falta de localStorage (aba privada) também cala, pelo mesmo motivo.
+ */
 export function isInChatSoundMuted(): boolean {
-  try { return localStorage.getItem(IN_CHAT_MUTE_KEY) === 'off'; } catch { return false; }
+  try { return localStorage.getItem(IN_CHAT_SOUND_KEY) !== 'on'; } catch { return true; }
 }
 
 /** Liga/desliga o toque da conversa aberta (independente do som geral). */
 export function setInChatSoundMuted(muted: boolean): void {
   try {
-    if (muted) localStorage.setItem(IN_CHAT_MUTE_KEY, 'off');
-    else localStorage.removeItem(IN_CHAT_MUTE_KEY);
+    if (muted) localStorage.removeItem(IN_CHAT_SOUND_KEY);
+    else localStorage.setItem(IN_CHAT_SOUND_KEY, 'on');
   } catch { /* localStorage indisponível — ignora */ }
 }
 

@@ -12,7 +12,7 @@ import { supabase } from '../config/supabase';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { matchesNormalizedSearch } from '../utils/search';
 import WhatsAppModule from './WhatsAppModule';
-import { dashboardPreferencesService } from '../services/dashboardPreferences.service';
+import { dashboardPreferencesService, type ChatWidgetPrefs } from '../services/dashboardPreferences.service';
 import { applyOutputToElement, openPreferredMicrophone } from '../utils/audioDevices';
 import ChatLauncherBar from './chat/ChatLauncherBar';
 import ChatChannelRail from './chat/ChatChannelRail';
@@ -521,6 +521,11 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
 
   // ── Carregar/salvar o tamanho do widget (preferência por usuário no banco) ──
   // IMPORTANTE: estes hooks ficam ANTES de qualquer early return do componente.
+  // O retrato COMPLETO da preferência, para quem grava não apagar o que o outro
+  // acabou de guardar: a coluna é um jsonb só, e gravar `{w, h}` ao soltar o
+  // canto do painel levava a aba junto. Todo mundo escreve por aqui.
+  const widgetPrefsRef = useRef<ChatWidgetPrefs>({ w: WIDGET_DEFAULT_W, h: WIDGET_DEFAULT_H });
+
   useEffect(() => {
     if (!user?.id) return;
     let alive = true;
@@ -532,21 +537,46 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         const nextH = Math.max(WIDGET_MIN_H, Math.min(WIDGET_MAX_H, migratedH));
         setPanelW(nextW);
         setPanelH(nextH);
+        widgetPrefsRef.current = { ...widgetPrefsRef.current, ...p, w: nextW, h: nextH };
         if (nextW !== p.w || nextH !== p.h) {
-          void dashboardPreferencesService.saveChatWidgetPrefs(user.id, { w: nextW, h: nextH });
+          void dashboardPreferencesService.saveChatWidgetPrefs(user.id, widgetPrefsRef.current);
         }
       }
+      // A aba de volta: só quando ela ainda existe para esta pessoa. Quem perdeu
+      // o acesso ao WhatsApp desde a última vez cai na Equipe, sem erro.
+      if (p?.tab === 'whatsapp' && hasWhatsAppAccess) setChatTab('whatsapp');
       widgetPrefsLoaded.current = true;
     }).catch(() => { widgetPrefsLoaded.current = true; });
     return () => { alive = false; };
+  }, [user?.id, hasWhatsAppAccess]);
+
+  const persistWidgetPrefs = useCallback((patch: Partial<ChatWidgetPrefs>) => {
+    if (!user?.id) return;
+    const proximo = { ...widgetPrefsRef.current, ...patch };
+    widgetPrefsRef.current = proximo;
+    void dashboardPreferencesService.saveChatWidgetPrefs(user.id, proximo);
   }, [user?.id]);
 
   const persistWidgetSize = useCallback((w: number, h: number) => {
-    if (!user?.id) return;
-    void dashboardPreferencesService.saveChatWidgetPrefs(user.id, { w, h });
-  }, [user?.id]);
+    persistWidgetPrefs({ w, h });
+  }, [persistWidgetPrefs]);
 
   const [chatTab, setChatTab] = useState<'equipe' | 'whatsapp'>('equipe');
+
+  /**
+   * Onde eu estava fica guardado.
+   *
+   * Vale para a troca no trilho e para a abertura programática (um "conversar no
+   * WhatsApp" vindo de outra tela) — as duas terminam aqui, e por isso a
+   * gravação mora no estado, não nos cliques. Nada é gravado enquanto a
+   * preferência está sendo lida: senão a aba padrão sobrescreveria a guardada
+   * antes de ela chegar.
+   */
+  useEffect(() => {
+    if (!widgetPrefsLoaded.current) return;
+    if (widgetPrefsRef.current.tab === chatTab) return;
+    persistWidgetPrefs({ tab: chatTab });
+  }, [chatTab, persistWidgetPrefs]);
   /**
    * Quantas PESSOAS do WhatsApp estão esperando resposta — o MESMO número da
    * aba "Não lidas" da inbox, lido do banco.

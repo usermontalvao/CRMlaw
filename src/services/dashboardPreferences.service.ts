@@ -20,6 +20,16 @@ export interface DashboardPreferences {
 export interface ChatWidgetPrefs {
   w: number;
   h: number;
+  /**
+   * Em que aba a pessoa estava quando saiu — Equipe ou WhatsApp.
+   *
+   * Quem atende pelo widget passa o dia na aba WhatsApp, e voltar para "Equipe"
+   * a cada abertura é um clique a mais em cada uma das dezenas de aberturas do
+   * dia. Fica no banco, e não no navegador, pelo mesmo motivo do tamanho do
+   * painel: quem usa dois computadores encontra o widget do mesmo jeito nos
+   * dois. Ausente = Equipe, como sempre foi.
+   */
+  tab?: 'equipe' | 'whatsapp';
 }
 
 export interface EmailLayoutPrefs {

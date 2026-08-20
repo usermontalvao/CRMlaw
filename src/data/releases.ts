@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.10.343',
+    date: '20/08/2026',
+    summary: 'A conversa que está aberta na sua frente parou de tocar a cada mensagem, e o widget volta na aba em que você estava.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A conversa aberta não toca mais',
+            description: 'Com a conversa à vista no widget, cada linha que o cliente escrevia produzia um toque — e quem atende pelo widget passa o dia inteiro nesse estado. O aviso existe para chamar a atenção para o que NÃO está na tela, então esse toque passou a nascer desligado. Quem quiser de volta liga em um clique: sino do cabeçalho, "Toque da conversa aberta". Quem já tinha desligado continua desligado, e o cartão nunca apareceu nesse caso — só o som.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O widget volta onde você estava',
+            description: 'A janela de mensagens sempre reabria na aba Equipe, mesmo para quem só usa a de WhatsApp: um clique a mais em cada uma das dezenas de aberturas do dia. Agora a última aba fica guardada no seu perfil — como o tamanho do painel já era —, então vale também no outro computador. Quem perdeu o acesso ao WhatsApp desde a última vez cai na Equipe, sem erro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.342',
     date: '20/08/2026',
     summary: 'A conversa que cai no seu nome passa a avisar — com cartão, com o nome de quem passou e com um toque próprio. E nenhum aviso do CRM entra mudo.',
