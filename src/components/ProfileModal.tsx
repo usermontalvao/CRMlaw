@@ -36,6 +36,7 @@ import { djenSyncStatusService, type DjenSyncLog } from '../services/djenSyncSta
 import { djenLocalService } from '../services/djenLocal.service';
 import { supabase } from '../config/supabase';
 import { usePermissions } from '../hooks/usePermissions';
+import { LAYER } from '../styles/layers';
 
 export type UserRole = 'Administrador' | 'Advogado' | 'Auxiliar' | 'Secretária' | 'Financeiro' | 'Estagiário';
 type ActiveTab = 'dados' | 'profissional' | 'sobre' | 'security' | 'stats';
@@ -567,7 +568,7 @@ export default function ProfileModal({
       title="Configurações"
       eyebrow="Perfil"
       size="2xl"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
     >
       {/* Tabs Navigation */}
       <div className="border-b border-[#e7e5df] dark:border-zinc-800 bg-white dark:bg-zinc-900">

@@ -22,6 +22,7 @@ import { useSelectionState } from '../hooks/useSelectionState';
 import { getClientMissingFields, isOutdatedClientRecord, OUTDATED_THRESHOLD_DAYS } from '../utils/clientQuality';
 import { settingsService, CLIENT_MODULE_DEFAULTS } from '../services/settings.service';
 import { useSyncRefresh } from '../lib/syncBus';
+import { LAYER } from '../styles/layers';
 
 interface ClientsModuleProps {
   prefillData?: Partial<CreateClientDTO> | null;
@@ -1386,7 +1387,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
         subtitle="Busque e selecione os contatos a serem mesclados. O mais recente será o principal por padrão."
         icon={<Merge className="w-5 h-5" />}
         size="lg"
-        zIndex={50}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex items-center justify-between gap-3 w-full">
             <p className="text-xs text-slate-500">

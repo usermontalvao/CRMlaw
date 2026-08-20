@@ -6,6 +6,7 @@ import { securityPinService, type PinMeta } from '../services/securityPin.servic
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { Modal, ModalBody, ModuleSkeleton } from './ui';
+import { LAYER } from '../styles/layers';
 
 interface Profile {
   id: string;
@@ -529,7 +530,7 @@ export const UserManagementModule: React.FC = () => {
         onClose={() => setShowCreateModal(false)}
         title="Criar Novo Usuário"
         size="sm"
-        zIndex={50}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex items-center justify-end gap-2">
             <button
@@ -674,7 +675,7 @@ export const UserManagementModule: React.FC = () => {
 
       {/* Edit role modal inline */}
       {editingUser && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        <div style={{ position: 'fixed', inset: 0, zIndex: LAYER.MODAL, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(6px)' }}
           onClick={() => setEditingUser(null)}>
           <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: '360px',

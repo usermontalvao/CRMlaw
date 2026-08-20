@@ -20,12 +20,13 @@ import { DeleteConfirmProvider } from './contexts/DeleteConfirmContext';
 import { WhatsAppNotifyHost } from './components/whatsapp/WhatsAppNotifyHost';
 import { WaCallsHost } from './components/whatsapp/WaCallsHost';
 import { useWhatsAppNotifications } from './hooks/useWhatsAppNotifications';
+import { zc } from './styles/layers';
 
 const WhatsAppModule = lazy(() => import('./components/WhatsAppModule'));
 
 /** Loader dedicado, mostrado até a inbox montar. */
 const AtendimentoBootLoader: React.FC<{ label?: string }> = ({ label = 'Abrindo atendimento' }) => (
-  <div className="fixed inset-0 z-[50] flex flex-col items-center justify-center bg-[#0b141a] text-emerald-50">
+  <div className={`fixed inset-0 ${zc.FLOATING} flex flex-col items-center justify-center bg-[#0b141a] text-emerald-50`}>
     <Loader2 className="w-10 h-10 animate-spin text-emerald-400" />
     <p className="mt-4 text-[15px] font-semibold tracking-tight">{label}</p>
   </div>

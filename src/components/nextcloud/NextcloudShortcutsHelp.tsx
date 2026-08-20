@@ -2,6 +2,7 @@ import React from 'react';
 import { Keyboard } from 'lucide-react';
 import { Modal, ModalBody } from '../ui/Modal';
 import { NC_HAIRLINE, NC_TEXT, NC_TEXT_MUTED, NC_TEXT_STRONG } from './ncTokens';
+import { layerStack } from '../../styles/layers';
 
 /**
  * NextcloudShortcutsHelp — a lista de atalhos do explorador (tecla `?`).
@@ -55,7 +56,7 @@ export const NextcloudShortcutsHelp: React.FC<{ open: boolean; onClose: () => vo
       icon={<Keyboard className="h-5 w-5" />}
       accentBarClassName="bg-blue-600"
       iconContainerClassName="bg-blue-600 text-white"
-      zIndex={160}
+      zIndex={layerStack(0)}
     >
       <ModalBody>
         <Group title="Navegação">

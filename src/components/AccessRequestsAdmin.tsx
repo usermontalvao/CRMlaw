@@ -6,6 +6,7 @@ import {
 import { accessRequestService, type ModuleAccessRequest, type DurationType } from '../services/accessRequest.service';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../config/supabase';
+import { zc } from '../styles/layers';
 
 const MODULE_LABELS: Record<string, string> = {
   leads: 'Leads', clientes: 'Clientes', documentos: 'Documentos',
@@ -312,7 +313,7 @@ export const AccessRequestsAdmin: React.FC = () => {
           : null;
 
         return (
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4" onClick={() => !processing && setApproveModal(null)}>
+          <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center p-4`} onClick={() => !processing && setApproveModal(null)}>
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <div
               className="relative bg-[#f8f7f5] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-[#e7e5df]"
@@ -466,7 +467,7 @@ export const AccessRequestsAdmin: React.FC = () => {
         const req = denyModal.request;
         const photo = avatarMap[req.requester_id];
         return (
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4" onClick={() => !processing && setDenyModal(null)}>
+          <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center p-4`} onClick={() => !processing && setDenyModal(null)}>
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <div
               className="relative bg-[#f8f7f5] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-[#e7e5df]"
@@ -543,7 +544,7 @@ export const AccessRequestsAdmin: React.FC = () => {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[99999] flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium ${
+        <div className={`fixed bottom-6 right-6 ${zc.MODAL} flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium ${
           toast.type === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'
         }`}>
           {toast.type === 'ok' ? <CheckCheck className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}

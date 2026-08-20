@@ -2,6 +2,7 @@
 import React, { useState, useCallback } from 'react';
 import { WaDialog, WaDialogBody, waBtnPrimary, waBtnGhost, waBtnDanger } from './ui';
 import type { ConfirmOpts, ConfirmFn } from './types';
+import { LAYER } from '../../styles/layers';
 
 export function useConfirm(): { confirm: ConfirmFn; pending: (ConfirmOpts & { resolve: (v: boolean) => void }) | null; resolve: (v: boolean) => void } {
   const [pending, setPending] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null);
@@ -16,7 +17,7 @@ export const ConfirmDialog: React.FC<{ opts: ConfirmOpts; onResolve: (v: boolean
       title={opts.title || 'Confirmar'}
       onClose={() => onResolve(false)}
       size="sm"
-      zIndex={60}
+      zIndex={LAYER.MODAL}
       footer={
         <div className="flex items-center justify-end gap-2">
           <button onClick={() => onResolve(false)} className={waBtnGhost}>Cancelar</button>

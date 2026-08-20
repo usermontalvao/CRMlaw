@@ -13,6 +13,7 @@ import { Loader2, Phone, UserPlus, X } from 'lucide-react';
 import { whatsappService } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
 import { prettyPhone } from './format';
+import { zc } from '../../styles/layers';
 
 export const PreCadastroModal: React.FC<{
   conversationId: string;
@@ -44,7 +45,7 @@ export const PreCadastroModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center bg-black/50 p-4`} onClick={onClose}>
       <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-2 px-4 pt-4">
           <div>

@@ -15,6 +15,7 @@
  * já existentes na pasta), para que o chamador confirme sobrescrita e grave.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { zc } from '../../styles/layers';
 import {
   AlertCircle,
   ArrowLeft,
@@ -417,7 +418,7 @@ export function NextcloudFileDialog({
 
   return (
     <div
-      className={`${darkMode ? 'dark ' : ''}fixed inset-0 z-[2147483600] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-[3px] sm:p-6`}
+      className={`${darkMode ? 'dark ' : ''}fixed inset-0 ${zc.MODAL} flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-[3px] sm:p-6`}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !busy) onClose();

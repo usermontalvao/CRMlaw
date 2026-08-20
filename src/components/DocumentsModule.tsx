@@ -48,6 +48,7 @@ import type { DocumentTemplate, CreateDocumentTemplateDTO, TemplateCustomField, 
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { SignerAuthMethod } from '../types/signature.types';
+import { LAYER } from '../styles/layers';
 
 
 const defaultTemplateContent = `[[NOME COMPLETO]], [[nacionalidade]], [[estado civil]], [[profissão]], inscrito(a) no CPF sob o nº [[CPF]], residente e domiciliado(a) na [[endereço]], nº [[número]], [[complemento]], Bairro [[bairro]], [[cidade]] – [[estado]], CEP [[CEP]], telefone/WhatsApp [[celular]]
@@ -2276,7 +2277,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         title="Adicionar Template"
         eyebrow="Formulário"
         size="md"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex items-center justify-end gap-2">
             <button
@@ -2388,7 +2389,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       title={previewTemplate?.name ?? ''}
       eyebrow="Visualizar Template"
       size="xl"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
     >
       <ModalBody className="px-5 py-4">
         {previewLoading ? (
@@ -2499,7 +2500,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       title="Preparando documentos..."
       eyebrow="Aguarde"
       size="sm"
-      zIndex={90}
+      zIndex={LAYER.MODAL_NESTED + 2}
     >
       <ModalBody className="px-5 py-4">
         <div className="flex items-center gap-4">
@@ -2520,7 +2521,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       title={editingTemplate?.name ?? ''}
       eyebrow="Editar Template"
       size="lg"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
       footer={
         <div className="flex items-center justify-end gap-2">
           <button
@@ -2621,7 +2622,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       eyebrow="Sucesso"
       icon={<CheckCircle2 className="w-5 h-5" />}
       size="sm"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
       footer={
         <button
           onClick={() => setShowDocOptionsModal(false)}
@@ -2689,7 +2690,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       eyebrow="Pronto para enviar"
       icon={<Link2 className="w-5 h-5" />}
       size="md"
-      zIndex={80}
+      zIndex={LAYER.MODAL_NESTED}
       footer={
         <button
           onClick={() => setShowTemplateFillLinkModal(false)}
@@ -2759,7 +2760,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       eyebrow="Configuração do link público"
       subtitle="Edite o título, a descrição e se o campo é obrigatório no formulário público."
       size="lg"
-      zIndex={85}
+      zIndex={LAYER.MODAL_NESTED + 1}
       headerActions={
         <button
           type="button"
@@ -3028,7 +3029,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       eyebrow="Pronto para enviar"
       icon={<Link2 className="w-5 h-5" />}
       size="md"
-      zIndex={80}
+      zIndex={LAYER.MODAL_NESTED}
       footer={
         <button
           onClick={() => setShowSignatureLinkModal(false)}

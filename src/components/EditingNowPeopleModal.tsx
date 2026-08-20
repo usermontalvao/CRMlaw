@@ -4,6 +4,7 @@ import { Modal, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import type { EditingPeer } from '../hooks/useNextcloudPresence';
 import { useUserAvatars } from '../hooks/useUserAvatars';
+import { LAYER } from '../styles/layers';
 
 /**
  * EditingNowPeopleModal
@@ -132,7 +133,7 @@ export const EditingNowPeopleModal: React.FC<EditingNowPeopleModalProps> = ({
           ? 'rounded-xl bg-blue-600 text-white shadow-sm'
           : 'rounded-xl bg-amber-500 text-white shadow-sm'
       }
-      zIndex={180}
+      zIndex={LAYER.MODAL_NESTED}
       footer={
         <ModalFooter>
           <Button variant="secondary" onClick={onCancel}>Cancelar</Button>

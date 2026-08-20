@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import type { Client } from '../types/client.types';
+import { LAYER } from '../styles/layers';
 
 // â”€â”€ Tipos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -141,7 +142,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
       title="Nova Solicitação"
       eyebrow={client.full_name}
       size="md"
-      zIndex={80}
+      zIndex={LAYER.MODAL_NESTED}
       footer={
         <div className="flex items-center justify-end gap-3">
           <button onClick={onClose} disabled={saving} className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition">Cancelar</button>

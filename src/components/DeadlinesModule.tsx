@@ -73,6 +73,7 @@ import type { Requirement } from '../types/requirement.types';
 import type { Profile } from '../services/profile.service';
 import type { Client } from '../types/client.types';
 import { formatDate as fmtDateGlobal, formatDateTime as fmtDateTimeGlobal } from '../utils/formatters';
+import { LAYER, layerStack, zc } from '../styles/layers';
 
 const STATUS_OPTIONS: {
   key: DeadlineStatus;
@@ -213,7 +214,7 @@ const CancellationAttachments: React.FC<{ attachments: DeadlineCancellationAttac
       {/* Galeria */}
       {current && createPortal(
         <div
-          className="fixed inset-0 z-[99999] bg-black/90 flex flex-col"
+          className={`fixed inset-0 ${zc.MODAL_NESTED} bg-black/90 flex flex-col`}
           style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
           onClick={() => setViewerIndex(null)}
         >
@@ -2922,7 +2923,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       title="Relatório de Prazos"
       eyebrow="Relatório"
       size="xl"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
       footer={
         <div className="flex justify-end gap-3">
           <button type="button" onClick={() => setShowReportModal(false)} className="px-4 py-2 text-sm text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white transition">Fechar</button>
@@ -3255,7 +3256,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       eyebrow={cancelTarget?.label}
       icon={<XCircle className="w-5 h-5" />}
       size="md"
-      zIndex={90}
+      zIndex={layerStack(0)}
       accentBarClassName="bg-red-500"
       iconContainerClassName="bg-red-500 text-white"
       footer={
@@ -3438,7 +3439,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           eyebrow={getTypeLabel(d.type)}
           icon={<Clock className="w-5 h-5" />}
           size="lg"
-          zIndex={70}
+          zIndex={LAYER.MODAL}
           headerActions={
             <div className="flex items-center gap-2">
               {d.status === 'pendente' && (

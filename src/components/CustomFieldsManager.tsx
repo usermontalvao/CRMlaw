@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import type { CustomField, CustomFieldType, CreateCustomFieldDTO, CustomFieldOption } from '../types/document.types';
+import { LAYER } from '../styles/layers';
 
 interface CustomFieldsManagerProps {
   isOpen: boolean;
@@ -209,7 +210,7 @@ const CustomFieldsManager: React.FC<CustomFieldsManagerProps> = ({
       title="Campos Personalizados"
       eyebrow="Configurações"
       size="lg"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
       footer={
         fields.length > 0 && !showAddForm ? (
           <div className="flex items-center justify-end">

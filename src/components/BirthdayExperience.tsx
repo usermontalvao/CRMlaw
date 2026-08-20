@@ -9,6 +9,7 @@ import {
 } from '../services/birthday.service';
 import { securityPinService } from '../services/securityPin.service';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
+import { zc } from '../styles/layers';
 import {
   BIRTHDAY_GATE_DELAY_MS,
   BIRTHDAY_INVITE_DELAY_MS,
@@ -88,7 +89,7 @@ export function BirthDateRequiredGate({
 
   return (
     <motion.div
-      className="birthday-gate-overlay fixed inset-0 z-[2147483000] flex items-center justify-center overflow-y-auto bg-slate-950/70 px-4 py-8 backdrop-blur-sm"
+      className={`birthday-gate-overlay fixed inset-0 ${zc.BLOCKING} flex items-center justify-center overflow-y-auto bg-slate-950/70 px-4 py-8 backdrop-blur-sm`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="birth-date-required-title"
@@ -226,7 +227,7 @@ export function BirthdayMailToast({
 
   return (
     <motion.div
-      className="fixed bottom-4 right-4 z-[2147482900] w-[calc(100vw-2rem)] max-w-[22rem] sm:bottom-6 sm:right-6"
+      className={`fixed bottom-4 right-4 ${zc.NOTICE} w-[calc(100vw-2rem)] max-w-[22rem] sm:bottom-6 sm:right-6`}
       initial={{ opacity: 0, y: 16, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 10, scale: 0.98 }}
@@ -505,7 +506,7 @@ export default function BirthdayExperience({
         </AnimatePresence>
 
         {videoOpen && (
-          <Suspense fallback={<div className="fixed inset-0 z-[2147483000] bg-[#07040f]" />}>
+          <Suspense fallback={<div className={`fixed inset-0 ${zc.BLOCKING} bg-[#07040f]`} />}>
             <BirthdayVideo
               personName={personName}
               avatarUrl={avatarUrl}

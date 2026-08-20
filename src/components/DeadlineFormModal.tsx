@@ -14,6 +14,7 @@ import type { Client } from '../types/client.types';
 import { useFormLayout } from '../hooks/useFormLayout';
 import { formatDateLong } from '../utils/formatters';
 import { toOfficeTimestamp } from '../utils/officeTime';
+import { LAYER } from '../styles/layers';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -402,7 +403,7 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
       subtitle={`Preencha os dados abaixo para ${selectedDeadline ? 'atualizar o' : 'cadastrar um novo'} prazo`}
       icon={<Clock className="w-5 h-5" />}
       size="2xl"
-      zIndex={80}
+      zIndex={LAYER.MODAL_NESTED}
       footer={
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-400"><span className="text-red-400">*</span> campos obrigatórios</p>

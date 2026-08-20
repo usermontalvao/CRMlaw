@@ -18,6 +18,7 @@ import type { NotifyTier } from '../../services/whatsapp/notifyScope';
 import { resolveAvatarUrl, resolveMediaUrl } from '../../services/whatsapp/shared';
 import { whatsappService } from '../../services/whatsapp.service';
 import { signatureService } from '../../services/signature.service';
+import { LAYER } from '../../styles/layers';
 import WhatsAppMessageToast, {
   WHATSAPP_TOAST_DURATION_MS,
   type WhatsAppMessageToastData,
@@ -179,7 +180,7 @@ export const WhatsAppNotifyHost: React.FC<{
       data-testid="whatsapp-notify-host"
       className="pointer-events-none fixed right-3 flex flex-col items-end sm:right-4"
       // Abaixo do cabeçalho (62px) e acima de tudo, menos dos toasts do sistema.
-      style={{ top: 74, zIndex: 2147483000 }}
+      style={{ top: 74, zIndex: LAYER.NOTICE }}
     >
       {stack.map(toast => (
         <div key={toast.id} className="pointer-events-auto">

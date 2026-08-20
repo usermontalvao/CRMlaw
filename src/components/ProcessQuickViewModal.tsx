@@ -23,6 +23,7 @@ import { clientService } from '../services/client.service';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
 import type { Process, ProcessStatus } from '../types/process.types';
 import type { Client } from '../types/client.types';
+import { LAYER } from '../styles/layers';
 
 interface ProcessQuickViewModalProps {
   processId: string | null;
@@ -128,7 +129,7 @@ export const ProcessQuickViewModal: React.FC<ProcessQuickViewModalProps> = ({
         eyebrow="Processo vinculado à intimação"
         icon={<Scale className="w-5 h-5" />}
         size="xl"
-        zIndex={100}
+        zIndex={LAYER.MODAL_NESTED}
         headerActions={process ? (
           <button
             type="button"

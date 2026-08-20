@@ -968,6 +968,23 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.337',
+    date: '20/08/2026',
+    summary: 'Uma regua unica passou a decidir o que fica na frente do que na tela, no lugar dos numeros soltos que cada caixa escolhia por conta propria.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Caixas, avisos e paineis param de disputar a frente da tela',
+            description: 'Cada caixa do sistema escolhia sozinha a propria altura de empilhamento, e a escolha mais comum era o maior numero possivel: quem chegasse por ultimo ficava por cima, independentemente de fazer sentido. O resultado aparecia como aviso escondido atras de uma caixa, menu suspenso cortado pela janela e caixa aberta de dentro de outra caixa ficando por baixo dela. Agora existe uma unica escala nomeada, com a ordem definida uma vez so — a tela do sistema, a janela flutuante, a caixa, o menu, o aviso e, acima de tudo, a ligacao em andamento, que nunca pode ser encoberta. Nada muda de aparencia; muda quem ganha quando duas coisas ocupam o mesmo lugar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.336',
     date: '19/08/2026',
     summary: 'A barra de mensagens que fica no canto da tela ganhou a cara do resto do sistema, e o painel deixou de aparecer e sumir em corte seco.',

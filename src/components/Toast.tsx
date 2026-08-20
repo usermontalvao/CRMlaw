@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle, XCircle, AlertCircle, Info, X, Loader2, MessageCircle } from 'lucide-react';
+import { zc } from '../styles/layers';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'loading' | 'whatsapp';
 
@@ -185,7 +186,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
       <div
         aria-live="polite"
         aria-atomic="false"
-        className="pointer-events-none fixed inset-x-0 bottom-11 z-[2147483647] flex justify-center px-3"
+        className={`pointer-events-none fixed inset-x-0 bottom-11 ${zc.NOTICE} flex justify-center px-3`}
       >
         <div className="flex max-w-full flex-col items-center">
           {toasts.map((toast) => (

@@ -18,6 +18,7 @@ import { processDjenSyncService } from '../services/processDjenSync.service';
 import { djenService } from '../services/djen.service';
 import { fetchDatajudMovimentos } from '../services/datajud.service';
 import type { Process, ProcessStatus, ProcessPracticeArea, HearingMode } from '../types/process.types';
+import { LAYER } from '../styles/layers';
 
 const STATUS_OPTIONS: { key: ProcessStatus; label: string }[] = [
   { key: 'nao_protocolado', label: 'Não Protocolado' },
@@ -328,7 +329,7 @@ export const ProcessFormModal: React.FC<ProcessFormModalProps> = ({
       title={editingProcess ? 'Editar Processo' : 'Novo Processo'}
       eyebrow="Processos"
       size="2xl"
-      zIndex={80}
+      zIndex={LAYER.MODAL_NESTED}
       footer={
         <div className="flex items-center justify-end gap-3">
           <button type="button" onClick={onClose} disabled={saving}

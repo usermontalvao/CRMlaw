@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Shield, X, Loader2, Lock, LockOpen, Trash2 } from 'lucide-react';
 import { securityPinService } from '../services/securityPin.service';
+import { LAYER } from '../styles/layers';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -446,7 +447,7 @@ export const SecurityPinModal: React.FC<SecurityPinModalProps> = ({
         background: 'rgba(8, 8, 18, 0.65)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
-        zIndex: 2147483647,
+        zIndex: LAYER.BLOCKING,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '16px',
       }}>

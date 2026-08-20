@@ -3,6 +3,7 @@ import { Plus, Loader2 } from 'lucide-react';
 import type { CreateLeadDTO } from '../types/lead.types';
 import { useFormLayout } from '../hooks/useFormLayout';
 import { Modal, ModalBody } from './ui';
+import { LAYER } from '../styles/layers';
 
 interface LeadModalProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ export const LeadModal: React.FC<LeadModalProps> = ({
       title="Novo Lead"
       eyebrow="Leads"
       size="md"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
       footer={
         <div className="flex items-center justify-end gap-2">
           <button

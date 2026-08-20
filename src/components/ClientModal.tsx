@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal } from './ui';
+import { LAYER } from '../styles/layers';
 
 type ModalSize = 'lg' | 'xl';
 
@@ -42,7 +43,7 @@ const ClientModal: React.FC<ClientModalProps> = ({
     size={sizeMap[size]}
     icon={icon}
     headerActions={headerActions}
-    zIndex={70}
+    zIndex={LAYER.MODAL}
     footer={footer}
     accentBarClassName="bg-amber-500"
   >

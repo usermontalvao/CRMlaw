@@ -19,6 +19,7 @@ import type { Process } from '../../types/process.types';
 import type { Requirement } from '../../types/requirement.types';
 import type { WhatsAppMessage } from '../../types/whatsapp.types';
 import type { Profile } from '../../services/profile.service';
+import { LAYER } from '../../styles/layers';
 
 const EMPTY_CLIENTS: Client[] = [];
 
@@ -111,7 +112,7 @@ export const CreateDeadlineFromMessageModal: React.FC<FromMessageProps> = ({
         subtitle={loading ? 'Carregando o formulário do módulo de Prazos' : 'Não foi possível carregar o formulário'}
         icon={<Clock className="h-5 w-5" />}
         size="2xl"
-        zIndex={80}
+        zIndex={LAYER.MODAL_NESTED}
       >
         <ModalBody className="px-5 py-10">
           {loading ? (

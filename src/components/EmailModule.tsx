@@ -24,6 +24,7 @@ import { resolveFolder } from '../utils/email.transitions';
 import type { BounceRecord } from '../utils/emailDelivery';
 import { detectBounce, findAddressIssues, matchBouncesToSent } from '../utils/emailDelivery';
 import BounceNotice from './email/BounceNotice';
+import { LAYER, zc } from '../styles/layers';
 
 const FOLDERS: { key: EmailFolder; label: string; Icon: typeof Inbox }[] = [
   { key: 'inbox', label: 'Caixa de entrada', Icon: Inbox },
@@ -2677,14 +2678,14 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       {/* Botão flutuante "Escrever" — acima do widget Mensagens (canto inferior direito) */}
       {!composeOpen && (
         <button onClick={() => startCompose()} title="Escrever" aria-label="Escrever"
-          className="fixed bottom-[88px] right-5 z-[9990] flex h-14 w-14 items-center justify-center rounded-full bg-amber-600 text-white shadow-[0_8px_24px_-4px_rgba(217,119,6,.55)] ring-1 ring-white/20 transition-transform hover:scale-105 hover:bg-amber-700 active:scale-95 sm:right-6">
+          className={`fixed bottom-[88px] right-5 ${zc.FLOATING} flex h-14 w-14 items-center justify-center rounded-full bg-amber-600 text-white shadow-[0_8px_24px_-4px_rgba(217,119,6,.55)] ring-1 ring-white/20 transition-transform hover:scale-105 hover:bg-amber-700 active:scale-95 sm:right-6`}>
           <PenSquare className="h-6 w-6" />
         </button>
       )}
 
       {/* Compose expandido (tela cheia sobre o módulo) */}
       {composeOpen && !composeInline && composeMinimized && (
-        <div className="fixed bottom-[88px] right-5 z-[9990] flex items-center gap-2 rounded-2xl border border-[#e7e5df] bg-white px-3 py-2 shadow-[0_10px_30px_-10px_rgba(15,23,42,0.35)] sm:right-6">
+        <div className={`fixed bottom-[88px] right-5 ${zc.FLOATING} flex items-center gap-2 rounded-2xl border border-[#e7e5df] bg-white px-3 py-2 shadow-[0_10px_30px_-10px_rgba(15,23,42,0.35)] sm:right-6`}>
           <button
             type="button"
             onClick={() => setComposeMinimized(false)}
@@ -2852,7 +2853,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
             : { icon: <Trash2 className="h-4 w-4" />, label: 'Excluir', action: () => void moveEmailToFolder(ctxMenu.m, 'trash'), danger: true },
         ];
         return (
-          <div ref={ctxRef} style={{ position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: 9999 }}
+          <div ref={ctxRef} style={{ position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: LAYER.POPOVER }}
             className="min-w-[200px] overflow-hidden rounded-xl border border-[#e7e5df] bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
             onMouseDown={(e) => e.stopPropagation()}>
             {ctxItems.map((item, i) =>
@@ -3878,7 +3879,7 @@ function RichEditor({ initialHtml, onChange, onAttach, fill, autoFocus, aiContex
       )}
       {spellMenu && (
         <div
-          className="fixed z-[120] min-w-[220px] rounded-xl border border-[#eadfce] bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.18)]"
+          className={`fixed ${zc.POPOVER} min-w-[220px] rounded-xl border border-[#eadfce] bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.18)]`}
           style={{ left: spellMenu.x, top: spellMenu.y }}
           onMouseDown={(e) => e.stopPropagation()}
         >

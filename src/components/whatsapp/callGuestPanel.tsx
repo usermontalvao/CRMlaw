@@ -20,6 +20,7 @@ import {
   type CallInviteMode, type InvitableOperator,
 } from '../../services/wacalls/callGuests';
 import type { CallGuest, CallInvite } from '../../services/wacalls/callBridge';
+import { LAYER } from '../../styles/layers';
 
 /** Iniciais para o rosto de quem não tem foto no cadastro. */
 const iniciais = (nome: string | null): string => {
@@ -161,7 +162,7 @@ export const CallInviteCard: React.FC<{
       role="dialog"
       aria-label="Convite para entrar em uma ligação"
       className="fixed left-1/2 top-4 w-[min(92vw,22rem)] -translate-x-1/2 overflow-hidden rounded-2xl border border-[#e7e5df] bg-white shadow-[0_20px_50px_-16px_rgba(15,23,42,0.5)]"
-      style={{ zIndex: 2147483000 }}
+      style={{ zIndex: LAYER.CALL }}
     >
       <div className="flex items-center gap-2 border-b border-[#f1f0ec] bg-emerald-50 px-3 py-2">
         <UserPlus size={14} className="text-emerald-700" />
@@ -218,7 +219,7 @@ export const GuestCallBar: React.FC<{
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       className="fixed left-1/2 top-3 flex -translate-x-1/2 items-center gap-2 rounded-full border border-[#e7e5df] bg-white px-3 py-1.5 shadow-[0_14px_36px_-14px_rgba(15,23,42,0.45)]"
-      style={{ zIndex: 2147483000 }}
+      style={{ zIndex: LAYER.CALL }}
     >
       <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
       <p className="max-w-[42vw] truncate text-[12px] font-bold text-slate-700">

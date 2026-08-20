@@ -74,6 +74,7 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 import { useSyncRefresh } from '../lib/syncBus';
 import { Modal, ModalBody, FinancialSkeleton } from './ui';
 import { formatCurrency, formatDate as fmtDateShared } from '../utils/formatters';
+import { LAYER } from '../styles/layers';
 
 interface FinancialModuleProps {
   entityId?: string;
@@ -3418,7 +3419,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         title="Editar Lançamento"
         eyebrow="Edição"
         size="xl"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex items-center justify-between gap-3">
             <button
@@ -4635,7 +4636,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         title="Novo Lançamento"
         eyebrow="Financeiro"
         size="2xl"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="w-full">
             {(() => {
@@ -5177,7 +5178,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
           ) : undefined
         }
         size="xl"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex justify-between items-center">
             <span className="text-xs text-slate-400 dark:text-slate-500">
@@ -5639,7 +5640,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         eyebrow="Financeiro"
         subtitle="Entrada manual fora do cronograma de parcelas"
         size="md"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
       >
         <ModalBody className="space-y-4">
               {/* Data e Valor */}
@@ -5713,7 +5714,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
             : undefined
         }
         size="lg"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex justify-end gap-3">
             <button
@@ -5859,7 +5860,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         eyebrow="Relatório"
         subtitle="Receitas de honorários advocatícios"
         size="xl"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex items-center justify-end gap-3">
             <button
@@ -6036,7 +6037,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         eyebrow="Relatório"
         subtitle="Selecione o ano para gerar o relatório"
         size="sm"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <p className="text-xs text-slate-500 dark:text-slate-400 text-center w-full">
             O relatório incluirá todos os honorários recebidos no ano selecionado
@@ -6117,7 +6118,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
             : 'Todos os lançamentos'
         }
         size="xl"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         headerActions={
           <div className="flex items-center gap-2">
             {auditShowAll ? (

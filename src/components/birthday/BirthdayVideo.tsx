@@ -5,6 +5,7 @@ import ConfettiCanvas, { type ConfettiHandle } from './ConfettiCanvas';
 import BokehCanvas from './BokehCanvas';
 import { BEAT, BirthdayMusic, MUSIC_CLIMAX_BEAT } from './birthdayMusic';
 import { formatDayAndMonth, getAge, getFirstName, getInitials } from '../../utils/birthday';
+import { zc } from '../../styles/layers';
 
 /**
  * "Vídeo" de aniversário — não é um arquivo de mídia, é uma sequência animada
@@ -972,7 +973,7 @@ export default function BirthdayVideo({
 
   return (
     <div
-      className="birthday-video fixed inset-0 z-[2147483000] overflow-hidden bg-[#07040f] text-white"
+      className={`birthday-video fixed inset-0 ${zc.BLOCKING} overflow-hidden bg-[#07040f] text-white`}
       role="dialog"
       aria-modal="true"
       aria-label={`Vídeo de aniversário de ${fullName}`}

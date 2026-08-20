@@ -30,6 +30,7 @@ import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { openDocInEditorWindow } from '../utils/openEditorWindow';
 import { subscribeEditorDocSourceSaved } from '../utils/editorDocSourceEvents';
+import { LAYER } from '../styles/layers';
 import type {
   StandardPetition,
   StandardPetitionField,
@@ -1112,7 +1113,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
         title={editingPetition ? 'Editar Petição' : 'Nova Petição'}
         eyebrow="Petições"
         size="md"
-        zIndex={80}
+        zIndex={LAYER.MODAL_NESTED}
         footer={
           <div className="flex items-center justify-end gap-3">
             <button type="button" onClick={handleCloseFormModal} disabled={formSaving} className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition">Cancelar</button>
@@ -1202,7 +1203,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
         title={fieldsPetition?.name ?? ''}
         eyebrow="Campos Personalizados"
         size="lg"
-        zIndex={80}
+        zIndex={LAYER.MODAL_NESTED}
         footer={
           <div className="flex items-center justify-end">
             <button type="button" onClick={handleCloseFieldsModal} className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition">Fechar</button>
@@ -1266,7 +1267,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
         title={viewingPetition?.name ?? ''}
         eyebrow="Petições"
         size="md"
-        zIndex={80}
+        zIndex={LAYER.MODAL_NESTED}
         footer={
           <div className="flex items-center justify-end gap-3">
             <button type="button" onClick={handleCloseViewModal} className="px-3 py-1.5 text-[13px] font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-200/50 dark:hover:bg-zinc-800 rounded transition">Fechar</button>

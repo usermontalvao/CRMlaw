@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { BrandLogo } from './ui';
+import { zc } from '../styles/layers';
 
 /**
  * LogoutOverlay — despedida sóbria e premium, na mesma linguagem visual
@@ -19,7 +20,7 @@ export const LogoutOverlay: React.FC<LogoutOverlayProps> = ({ userName }) => {
   const firstName = (userName || '').trim().split(/\s+/)[0] || '';
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-[#0a0806]">
+    <div className={`fixed inset-0 ${zc.BLOCKING} flex items-center justify-center overflow-hidden bg-[#0a0806]`}>
       <style>{`
         @keyframes lo-breathe{0%,100%{opacity:.55;transform:translate(-50%,-50%) scale(1)}50%{opacity:.9;transform:translate(-50%,-50%) scale(1.08)}}
         @keyframes lo-orbit{to{transform:rotate(360deg)}}

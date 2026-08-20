@@ -23,6 +23,7 @@ import {
 import { whatsappService, type StaffOption } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
 import type { WhatsAppConversation } from '../../types/whatsapp.types';
+import { LAYER } from '../../styles/layers';
 
 /** Converte a conversa do módulo no recorte que a fila avalia. */
 export function toQueueItem(c: WhatsAppConversation): QueueItem {
@@ -235,7 +236,7 @@ export const QueuePanel: React.FC<{
       icon={<Activity size={18} />}
       onClose={onClose}
       size="lg"
-      zIndex={60}
+      zIndex={LAYER.MODAL}
       tone={diagnosis.tone === 'danger' ? 'danger' : diagnosis.tone === 'warn' ? 'default' : 'success'}
     >
       <WaDialogBody>

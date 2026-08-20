@@ -10,6 +10,7 @@ import {
 } from '../utils/editorDocSourceEvents';
 import SignaturePositionDesigner from './SignaturePositionDesigner';
 import type { DocumentTemplate, TemplateFile, SignatureFieldConfigValue } from '../types/document.types';
+import { zc } from '../styles/layers';
 
 interface TemplateFilesManagerProps {
   isOpen: boolean;
@@ -300,7 +301,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
 
   return createPortal(
     <>
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-100/80 backdrop-blur-sm" onClick={onClose}>
+    <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center bg-slate-100/80 backdrop-blur-sm`} onClick={onClose}>
       <div className="!bg-[#f8f7f5] rounded-2xl shadow-2xl w-full max-w-3xl max-h-[82vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between px-6 py-4 border-b border-[#e7e5df]">
           <div className="min-w-0">

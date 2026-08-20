@@ -23,6 +23,7 @@ import type { Client } from '../types/client.types';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { Modal, ModalBody } from './ui';
 import { formatCurrency } from '../utils/formatters';
+import { LAYER } from '../styles/layers';
 
 interface AgreementFormModalProps {
   open: boolean;
@@ -349,7 +350,7 @@ export const AgreementFormModal: React.FC<AgreementFormModalProps> = ({
       title="Novo Lançamento"
       eyebrow="Financeiro"
       size="2xl"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
       footer={
         <div className="w-full">
           {(() => {

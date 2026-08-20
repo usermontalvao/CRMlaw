@@ -5,6 +5,7 @@ import {
   CheckCircle, Clock3, MessageCircle,
 } from 'lucide-react';
 import { WaDialog } from './ui';
+import { LAYER } from '../../styles/layers';
 
 interface DashboardStats {
   by_status: Record<string, number> | null;
@@ -76,7 +77,7 @@ export const AttendanceDashboard: React.FC<{ onClose: () => void }> = ({ onClose
       icon={<BarChart2 size={18} />}
       onClose={onClose}
       size="lg"
-      zIndex={60}
+      zIndex={LAYER.MODAL}
       headerActions={
         <button onClick={load} disabled={loading} title="Atualizar"
           className="shrink-0 rounded-full p-1.5 text-white/80 hover:bg-white/15 hover:text-white disabled:opacity-40 transition">

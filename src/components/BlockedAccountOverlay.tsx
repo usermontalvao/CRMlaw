@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldOff, AlertTriangle, LogOut } from 'lucide-react';
+import { zc } from '../styles/layers';
 
 const COUNTDOWN = 10;
 
@@ -18,7 +19,7 @@ export const BlockedAccountOverlay: React.FC<Props> = ({ onLogout }) => {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center overflow-hidden"
+      className={`fixed inset-0 ${zc.BLOCKING} flex flex-col items-center justify-center overflow-hidden`}
       style={{ background: 'radial-gradient(ellipse at center, #3b0000 0%, #1a0000 40%, #000000 100%)' }}
     >
       <style>{`

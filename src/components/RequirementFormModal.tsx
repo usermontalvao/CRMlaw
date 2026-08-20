@@ -12,6 +12,7 @@ import { requirementService } from '../services/requirement.service';
 import { clientService } from '../services/client.service';
 import { profileService, type Profile } from '../services/profile.service';
 import type { Requirement, RequirementStatus, BenefitType } from '../types/requirement.types';
+import { LAYER } from '../styles/layers';
 
 const STATUS_OPTIONS: { key: RequirementStatus; label: string }[] = [
   { key: 'aguardando_confeccao', label: 'Aguardando Confecção' },
@@ -211,7 +212,7 @@ export const RequirementFormModal: React.FC<RequirementFormModalProps> = ({
       title={editing ? 'Editar Requerimento' : 'Novo Requerimento'}
       eyebrow={editing ? 'Editar' : 'Novo'}
       size="2xl"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
       footer={
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-400 dark:text-zinc-500">* Campos obrigatórios</p>

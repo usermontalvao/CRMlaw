@@ -53,6 +53,7 @@ import type {
 import type { CalendarEvent } from '../types/calendar.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
+import { zc } from '../styles/layers';
 
 // Labels inline para evitar problemas de importação
 const SERVICE_STATUS_LABELS_MAP: Record<ServiceStatus, string> = {
@@ -1244,7 +1245,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
 
       {/* Modal de Correspondente */}
       {isRepresentativeModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+        <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center px-3 sm:px-6 py-4`}>
           <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsRepresentativeModalOpen(false)} />
           <div className="relative w-full max-w-2xl max-h-[92vh] rounded-2xl bg-[#f8f7f5] shadow-2xl ring-1 ring-black/5 flex flex-col overflow-hidden">
             <div className="h-2 w-full bg-orange-500" />
@@ -1426,7 +1427,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       {/* Modal de Vínculo */}
       <>
         {isAppointmentModalOpen && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center px-3 sm:px-6 py-4`}>
             <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsAppointmentModalOpen(false)} />
             <div className="relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-[#f8f7f5] text-slate-900 shadow-2xl ring-1 ring-black/5">
               <div className="h-2 w-full bg-orange-500" />
@@ -1674,7 +1675,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
         )}
 
         {isPaymentModalOpen && payingAppointment && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center px-3 sm:px-6 py-4">
+          <div className={`fixed inset-0 ${zc.MODAL} flex items-center justify-center px-3 sm:px-6 py-4`}>
             <div className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={() => setIsPaymentModalOpen(false)} />
             <div className="relative flex w-full max-w-2xl max-h-[92vh] flex-col overflow-hidden rounded-2xl bg-[#f8f7f5] text-slate-900 shadow-2xl ring-1 ring-black/5">
               <div className="h-2 w-full bg-orange-500" />

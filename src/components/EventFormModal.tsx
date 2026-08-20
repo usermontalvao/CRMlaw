@@ -23,6 +23,7 @@ import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 import { addMinutesToWallTime } from '../utils/officeTime';
+import { LAYER } from '../styles/layers';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -785,7 +786,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
       {/* Modal de cadastro de novo cliente */}
       {showClientForm && (
-        <Modal open onClose={() => setShowClientForm(false)} title="Novo Cliente" eyebrow="Clientes" size="xl" zIndex={80}>
+        <Modal open onClose={() => setShowClientForm(false)} title="Novo Cliente" eyebrow="Clientes" size="xl" zIndex={LAYER.MODAL_NESTED}>
           <ModalBody className="p-0">
             <ClientForm
               client={null}

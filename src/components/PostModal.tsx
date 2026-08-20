@@ -29,6 +29,7 @@ import { feedPollsService, type FeedPoll } from '../services/feedPolls.service';
 import { profileService, type Profile } from '../services/profile.service';
 import { matchesNormalizedSearch } from '../utils/search';
 import { useAuth } from '../contexts/AuthContext';
+import { LAYER } from '../styles/layers';
 
 // Avatar component
 const Avatar: React.FC<{ src?: string | null; name: string; size?: 'xs' | 'sm' | 'md' | 'lg' }> = ({ src, name, size = 'md' }) => {
@@ -393,7 +394,7 @@ export const PostModal: React.FC<PostModalProps> = ({
       title={post ? `Post de ${post.author?.name || 'Usuário'}` : 'Carregando...'}
       eyebrow="Feed"
       size="lg"
-      zIndex={9999}
+      zIndex={LAYER.MODAL_NESTED}
       headerActions={
         onBackToFeed ? (
           <button

@@ -16,12 +16,13 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { SecurityPinProvider } from './contexts/SecurityPinContext';
 import { DeleteConfirmProvider } from './contexts/DeleteConfirmContext';
+import { zc } from './styles/layers';
 
 const PetitionEditorWidget = lazy(() => import('./components/PetitionEditorWidget'));
 
 /** Loader dedicado, mostrado até o editor ficar interativo. */
 const EditorBootLoader: React.FC<{ label?: string }> = ({ label = 'Abrindo editor' }) => (
-  <div className="fixed inset-0 z-[50] flex flex-col items-center justify-center bg-[#0a0806] text-amber-50">
+  <div className={`fixed inset-0 ${zc.FLOATING} flex flex-col items-center justify-center bg-[#0a0806] text-amber-50`}>
     <Loader2 className="w-10 h-10 animate-spin text-amber-500" />
     <p className="mt-4 text-[15px] font-semibold tracking-tight">{label}</p>
   </div>

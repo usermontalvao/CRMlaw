@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle, Clock, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { zc } from '../styles/layers';
 
 const SessionWarning: React.FC = () => {
   const { sessionWarning, extendSession, signOut } = useAuth();
@@ -8,7 +9,7 @@ const SessionWarning: React.FC = () => {
   if (!sessionWarning) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] max-w-sm">
+    <div className={`fixed top-4 right-4 ${zc.NOTICE} max-w-sm`}>
       <div className="bg-amber-50 border border-amber-200 rounded-lg shadow-lg p-4">
         <div className="flex items-start gap-3">
           <div className="flex-shrink-0">

@@ -8,6 +8,7 @@ import { settingsService, TASK_MODULE_DEFAULTS, type TaskPriorityConfig } from '
 import { taskService } from '../services/task.service';
 import type { Process } from '../types/process.types';
 import type { Task, TaskPriority } from '../types/task.types';
+import { LAYER } from '../styles/layers';
 
 export type TaskFormData = {
   title: string;
@@ -185,7 +186,7 @@ export const TaskFormModal: React.FC<TaskFormModalProps> = ({
       subtitle={isQuick ? 'Registre uma ação rápida para esta conversa' : selectedTask ? 'Atualize os dados e vínculos da tarefa' : 'Preencha os dados abaixo para cadastrar uma nova tarefa'}
       icon={<ListTodo className="h-5 w-5" />}
       size={isQuick ? 'md' : '2xl'}
-      zIndex={80}
+      zIndex={LAYER.MODAL_NESTED}
       footer={
         <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-400"><span className="text-red-400">*</span> campos obrigatórios</p>

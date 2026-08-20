@@ -71,6 +71,7 @@ import type { IntimationAnalysis } from '../types/ai.types';
 import { addMinutesToWallTime } from '../utils/officeTime';
 import { detectIntimationOutcome, type IntimationOutcomeKind } from '../utils/intimationOutcome';
 import { dataInternaDoPrazo, prioridadePorUrgencia } from '../utils/intimationDeadline';
+import { LAYER } from '../styles/layers';
 
 interface ModuleSettings {
   defaultGroupByProcess: boolean;
@@ -2701,7 +2702,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         title="Vincular Intimação"
         eyebrow="Vínculo"
         size="lg"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex justify-end gap-3">
             <button
@@ -2992,7 +2993,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
             open
             onClose={fechar}
             size="xl"
-            zIndex={60}
+            zIndex={LAYER.MODAL}
             eyebrow={detalhe.sigla_tribunal || 'Intimação'}
             title={detalhe.numero_processo_mascara || detalhe.numero_processo || 'Sem número'}
             icon={<Gavel className="w-4 h-4" fill="currentColor" />}
@@ -3139,7 +3140,7 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
         title="Execução Sobrestada"
         eyebrow="Prescrição"
         size="md"
-        zIndex={70}
+        zIndex={LAYER.MODAL}
         footer={
           <div className="flex justify-end gap-3">
             <button
@@ -3379,7 +3380,7 @@ const DeadlineCreationModal: React.FC<DeadlineCreationModalProps> = ({
       title="Criar Prazo"
       eyebrow="Novo Prazo"
       size="lg"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
       footer={
         <div className="flex justify-end gap-3">
           <button
@@ -3722,7 +3723,7 @@ const AppointmentCreationModal: React.FC<AppointmentCreationModalProps> = ({
       title="Adicionar Compromisso"
       eyebrow="Novo Compromisso"
       size="lg"
-      zIndex={70}
+      zIndex={LAYER.MODAL}
       footer={
         <div className="flex justify-end gap-3">
           <button

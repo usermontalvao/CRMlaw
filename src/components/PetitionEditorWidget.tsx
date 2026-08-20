@@ -16,6 +16,7 @@ import {
 import type { Client } from '../types/client.types';
 import { isEditorAppLocation } from '../utils/editorAppRoute';
 import type { EditorDocSource } from '../utils/editorDocSource';
+import { zc } from '../styles/layers';
 
 const PetitionEditorModule = lazy(() => import('./PetitionEditorModule'));
 
@@ -74,7 +75,7 @@ const PetitionEditorWidget: React.FC = () => {
   // Verdadeiro quando esta aba foi aberta SÓ para o editor (via #editor-doc=).
   // Nesse caso, fechar o editor deve fechar a ABA inteira, não voltar ao CRM.
   const openedAsDedicatedTabRef = useRef(false);
-  // Altura da taskbar de janelas flutuantes (z-[9999], acima deste widget):
+  // Altura da taskbar de janelas flutuantes (${zc.FLOATING}, acima deste widget):
   // o editor reserva esse espaço para a status bar não ficar encoberta.
   const [taskbarHeight, setTaskbarHeight] = useState(0);
 
@@ -277,8 +278,8 @@ const PetitionEditorWidget: React.FC = () => {
       <div
         className={
           isMinimized
-            ? 'fixed inset-x-0 top-0 z-[9998] bg-white dark:bg-slate-900 flex flex-col opacity-0 pointer-events-none'
-            : 'fixed inset-x-0 top-0 z-[9998] bg-white dark:bg-slate-900 flex flex-col'
+            ? 'fixed inset-x-0 top-0 ${zc.FLOATING} bg-white dark:bg-slate-900 flex flex-col opacity-0 pointer-events-none'
+            : 'fixed inset-x-0 top-0 ${zc.FLOATING} bg-white dark:bg-slate-900 flex flex-col'
         }
         style={{ isolation: 'isolate', bottom: taskbarHeight }}
         aria-hidden={isMinimized}
@@ -318,7 +319,7 @@ const PetitionEditorWidget: React.FC = () => {
         !hasChatLauncher && (
           <button
             onClick={handleMaximize}
-            className="fixed bottom-6 right-6 z-[9999] flex flex-col items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-full shadow-[0_20px_60px_rgba(234,88,12,0.45)] hover:shadow-[0_25px_70px_rgba(234,88,12,0.6)] hover:scale-110 transition-all duration-300 group"
+            className={`fixed bottom-6 right-6 ${zc.FLOATING} flex flex-col items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 text-white rounded-full shadow-[0_20px_60px_rgba(234,88,12,0.45)] hover:shadow-[0_25px_70px_rgba(234,88,12,0.6)] hover:scale-110 transition-all duration-300 group`}
             title="Abrir Editor de Petições"
           >
             <span className="absolute -inset-3 rounded-full bg-gradient-to-br from-orange-500/30 to-amber-500/20 blur-2xl opacity-80 group-hover:opacity-100 transition-opacity" aria-hidden />
