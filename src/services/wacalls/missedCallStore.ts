@@ -38,6 +38,7 @@ import {
   type MissedCall,
 } from './missedCalls';
 import type { WaCall } from './types';
+import { isNotifySoundMuted, playNotificationSound } from '../../utils/notificationSound';
 
 /** O aviso guardado, para atravessar o F5. */
 const LIST_KEY = 'wa:missedCalls';
@@ -53,6 +54,15 @@ const DISMISSED_KEY = 'wa:missedCallsDismissed';
  * para ninguém ver.
  */
 const REFRESH_MS = 5 * 60_000;
+
+/**
+ * Até quando uma perdida ainda merece TOQUE (o cartão dura muito mais).
+ *
+ * Dois minutos é o tempo entre o telefone parar de tocar e a linha aparecer na
+ * releitura do registro — cobre o caminho lento sem alcançar a ligação da hora
+ * anterior, que já é história quando o CRM abre.
+ */
+const NOVIDADE_SONORA_MS = 2 * 60_000;
 
 export interface MissedCallsSnapshot {
   /** As perdidas que ainda merecem tela, da mais recente para a mais antiga. */
@@ -121,12 +131,28 @@ async function add(novas: readonly MissedCall[]): Promise<void> {
   if (novas.length === 0) return;
   const minhas = await missedCallsForMe(novas);
   if (minhas.length === 0) return;
+  const agora = Date.now();
+  const conhecidas = new Set(entries.map(c => c.callId));
   entries = mergeMissedCalls(entries, minhas, {
-    now: Date.now(),
+    now: agora,
     dismissed: dismissed.map(d => d.callId),
     seenUntil: readCallsSeenUntilMs(),
   });
   recompute();
+
+  // O TOQUE DA PERDIDA. O cartão sempre soube aparecer; o som faltava, e sem
+  // ele quem estava com o CRM aberto numa aba de fundo só descobria a ligação
+  // ao voltar para a aba — que é o caso em que a perdida mais dói.
+  //
+  // Duas guardas, e as duas vieram de casos reais:
+  //  · SÓ O QUE É NOVO PARA ESTA ABA. A releitura do registro roda a cada cinco
+  //    minutos e traz de volta as mesmas ligações; sem comparar com o que já
+  //    estava na lista, o CRM tocaria a cada releitura.
+  //  · SÓ O QUE ACABOU DE ACONTECER. Abrir o CRM às duas da tarde traz as
+  //    perdidas da manhã inteira. Elas merecem o cartão (por isso ele
+  //    atravessa o F5), não o toque: tocar ali seria alarme de coisa velha.
+  const recentes = minhas.filter(c => !conhecidas.has(c.callId) && agora - c.startedAt <= NOVIDADE_SONORA_MS);
+  if (recentes.length > 0 && !isNotifySoundMuted()) playNotificationSound('alert');
 }
 
 /** A chamada que acabou de tocar aqui, do jeito que o aviso precisa dela. */

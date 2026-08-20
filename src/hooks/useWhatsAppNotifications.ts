@@ -22,6 +22,13 @@ import { supabase } from '../config/supabase';
 import { whatsappService } from '../services/whatsapp.service';
 import { muteStore } from '../services/whatsapp/muteStore';
 import { notifyScope } from '../services/whatsapp/notifyScope';
+import {
+  avisoSuprimido,
+  decidirAvisoDeTransferencia,
+  limparSupressoes,
+  suprimirAvisoDeTransferencia,
+  type LinhaDeAtribuicao,
+} from '../services/whatsapp/transferNotice';
 import { resolveAvatarUrl, resolveMediaUrl } from '../services/whatsapp/shared';
 import { signatureService } from '../services/signature.service';
 import { playNotificationSound, isNotifySoundMuted, isInChatSoundMuted } from '../utils/notificationSound';
@@ -131,6 +138,74 @@ function systemBodyOf(preview: string, kind: NotifyKind, fileName?: string | nul
   }
 }
 
+/**
+ * O AVISO DE "A CONVERSA CAIU NO SEU NOME".
+ *
+ * Roda depois de a decisão já ter passado — aqui só se monta o cartão. A ordem
+ * das três coisas é escolhida: o SOM primeiro, porque ele não depende de rede e
+ * é o que tira os olhos do documento; o cartão depois das duas consultas (rosto
+ * do cadastro e quem passou), porque um cartão dizendo apenas "esta conversa é
+ * sua" mandaria a pessoa abrir a conversa para descobrir o resto — que é
+ * exatamente o trabalho que o aviso existe para poupar.
+ *
+ * O toque é o `task`: duas notas subindo, mais graves que o de mensagem. Não dá
+ * para confundir com um cliente falando, e é isso que se quer — trabalho novo e
+ * recado novo pedem reações diferentes.
+ */
+async function notificarTransferencia(params: {
+  conversationId: string;
+  row: Record<string, any>;
+  aguardandoAceite: boolean;
+  onOpen: (conversationId: string) => void;
+}): Promise<void> {
+  const { conversationId, row, aguardandoAceite, onOpen } = params;
+
+  if (!isNotifySoundMuted()) playNotificationSound('task');
+
+  const [client, origem] = await Promise.all([
+    row.client_id ? clientMetaOf(row.client_id).catch(() => null) : Promise.resolve(null),
+    whatsappService.getTransferOrigin(conversationId).catch(() => null),
+  ]);
+
+  const name = client?.full_name || row.contact_name || row.contact_phone || 'Contato';
+
+  events.emit(SYSTEM_EVENTS.WHATSAPP_NOTIFY, {
+    conversationId,
+    name,
+    preview: '',
+    // A camada aqui é sempre a de fora: transferência não tem "conversa aberta"
+    // que torne o cartão redundante — quem está lendo a conversa também precisa
+    // saber que ela mudou de dono.
+    tier: 'global' as const,
+    kind: 'text' as const,
+    at: Date.now(),
+    clientPhotoPath: client?.photo_path ?? null,
+    avatarPath: row.contact_avatar_path ?? null,
+    variant: 'transfer' as const,
+    byName: origem?.byName ?? null,
+    note: origem?.note ?? null,
+    awaitingAccept: aguardandoAceite,
+  });
+
+  // Com a aba escondida, o cartão não existe para ninguém — e a transferência é
+  // justamente o aviso que não pode esperar a pessoa voltar à aba.
+  const abaEscondida = typeof document !== 'undefined' && document.visibilityState !== 'visible';
+  if (abaEscondida && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    try {
+      const icon = client?.photo_path
+        ? await signatureService.getSignedImageUrl(client.photo_path, 3600).catch(() => null)
+        : await resolveAvatarUrl(row.contact_avatar_path ?? null).catch(() => null);
+      const quem = origem?.byName ? `${origem.byName} passou` : 'Passaram';
+      const n = new Notification(`${quem} uma conversa para você`, {
+        body: origem?.note ? `${name} — “${origem.note}”` : name,
+        tag: `wa:transfer:${conversationId}`,
+        ...(icon ? { icon } : {}),
+      });
+      n.onclick = () => { window.focus(); onOpen(conversationId); n.close(); };
+    } catch { /* alguns ambientes exigem ServiceWorker; o cartão já cobre */ }
+  }
+}
+
 interface Params {
   /** Usuário atual; sem ele não há escopo "minha" para filtrar. */
   userId: string | undefined;
@@ -169,12 +244,22 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
     // responderia pela pessoa errada. Cada login começa do zero.
     convMetaCache.clear();
     clientMetaCache.clear();
+    limparSupressoes();
 
     // Mantém o cache de atribuição fresco (a conversa muda de dono ao ser assumida/
-    // transferida). Não notifica daqui — é só cache para o gatilho de mensagem.
+    // transferida) E é daqui que sai o aviso de TRANSFERÊNCIA: a mesma linha que
+    // atualiza o cache é a que conta que a conversa passou a ser minha. Quem
+    // decide se aquilo é notícia é `decidirAvisoDeTransferencia`, com as três
+    // armadilhas documentadas lá.
     const unsubConv = whatsappService.subscribeConversationNotifications((payload) => {
       const row = payload.new as Record<string, any> | undefined;
       if (!row?.id) return;
+
+      // O "antes" só existe aqui, e some no próximo `set` — por isso a decisão
+      // é tomada antes de o cache ser atualizado. `undefined` (conversa nunca
+      // vista) é diferente de `null` (estava sem responsável).
+      const anterior = convMetaCache.get(row.id);
+
       convMetaCache.set(row.id, {
         assigned_user_id: row.assigned_user_id ?? null,
         contact_name: row.contact_name ?? null,
@@ -182,6 +267,40 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         is_blocked: row.is_blocked === true,
         contact_avatar_path: row.contact_avatar_path ?? null,
         client_id: row.client_id ?? null,
+      });
+
+      if (payload.eventType !== 'UPDATE' && payload.eventType !== 'INSERT') return;
+      if (row.is_blocked === true) return;
+
+      // "Fui eu que fiz isto" vale para o ATENDIMENTO inteiro: assumir uma
+      // conversa move junto a linha irmã do outro número do escritório, e ela
+      // chega como um evento à parte. Marcar o grupo na primeira linha
+      // suprimida cobre a segunda. (Sobra uma fresta: se a irmã for entregue
+      // ANTES da que recebeu o clique, ela avisa uma vez.)
+      const grupo = (row.attendance_key ?? '') as string;
+      const suprimido = avisoSuprimido(row.id) || (!!grupo && avisoSuprimido(grupo));
+      if (suprimido && grupo) suprimirAvisoDeTransferencia(grupo);
+
+      const decisao = decidirAvisoDeTransferencia({
+        linha: row as LinhaDeAtribuicao,
+        conversaId: row.id,
+        usuarioId: userId,
+        donoAnterior: anterior ? anterior.assigned_user_id : undefined,
+        suprimido,
+        agoraMs: Date.now(),
+      });
+      if (!decisao.avisar) return;
+
+      // A conversa silenciada cala o RECADO, não a responsabilidade: quem
+      // silenciou o cliente continua precisando saber que o caso agora é dele.
+      // Por isso o mute não entra nesta decisão.
+      if (!claimNotification(decisao.chave)) return;
+
+      void notificarTransferencia({
+        conversationId: row.id,
+        row,
+        aguardandoAceite: decisao.aguardandoAceite,
+        onOpen: onOpenRef.current,
       });
     });
 

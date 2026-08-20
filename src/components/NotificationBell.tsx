@@ -24,7 +24,7 @@ import { useAuth } from '../contexts/AuthContext';
 import usePermissions from '../hooks/usePermissions';
 import { supabase } from '../config/supabase';
 import { pushNotifications } from '../utils/pushNotifications';
-import { getContextoTocavel } from '../utils/notificationSound';
+import { getContextoTocavel, playNotificationSound as tocarDaEscala } from '../utils/notificationSound';
 import type { UserNotification } from '../types/user-notification.types';
 import { zc, zcStack } from '../styles/layers';
 
@@ -63,10 +63,61 @@ const playTone = (
   osc.stop(t0 + dur + 0.03);
 };
 
+/**
+ * O SINO PASSA A FALAR A MESMA LÍNGUA DO RESTO DOS AVISOS.
+ *
+ * Antes eram dois sons: o chime do e-mail e um bipe para as outras vinte e uma
+ * espécies de notificação. Um prazo atribuído, uma intimação urgente e uma
+ * curtida no feed soavam idênticos — e som que não diz nada é som que se
+ * desliga.
+ *
+ * Agora o tipo escolhe o toque, na mesma escala do WhatsApp (ver
+ * `notificationSound`): TAREFA para o que passa a esperar por você, FALHA para
+ * o que corre contra o relógio ou deu errado, e o bipe de sempre para o resto.
+ * O chime do e-mail fica como estava — é o único que o escritório já reconhece
+ * de ouvido, e trocá-lo seria tirar informação em vez de somar.
+ */
+const AVISOS_DE_TAREFA: ReadonlySet<string> = new Set([
+  'deadline_assigned', 'appointment_assigned', 'deadline_reminder', 'appointment_reminder',
+  'mention', 'access_request', 'poll_invite', 'signature_pending_self', 'profile_update_request',
+]);
+
+const AVISOS_DE_FALHA: ReadonlySet<string> = new Set([
+  'intimation_new', 'intimation_urgent', 'requirement_alert', 'execution_pending',
+]);
+
+type TomDoSino = 'default' | 'email' | 'task' | 'alert';
+
+/** De que espécie é o aviso — decide o toque, não o desenho. */
+const tomDe = (tipo?: string | null): TomDoSino => {
+  if (tipo === 'email_new') return 'email';
+  if (tipo && AVISOS_DE_TAREFA.has(tipo)) return 'task';
+  if (tipo && AVISOS_DE_FALHA.has(tipo)) return 'alert';
+  return 'default';
+};
+
+/**
+ * O tom mais forte da rajada manda.
+ *
+ * Cinco notificações de uma vez tocam UMA vez, e o que se ouve é a mais grave
+ * delas: se no meio de quatro curtidas veio uma intimação, o som tem de ser o
+ * da intimação.
+ */
+const tomDaRajada = (tipos: readonly (string | null | undefined)[]): TomDoSino => {
+  const tons = tipos.map(tomDe);
+  if (tons.includes('alert')) return 'alert';
+  if (tons.includes('task')) return 'task';
+  if (tons.every(t => t === 'email')) return 'email';
+  return 'default';
+};
+
 // Som de notificação. 'email' = chime macio de dois tons (mais baixo e gentil);
-// 'default' = bipe único, agora com envelope suave (sem clique) e volume menor.
-const playNotificationSound = (kind: 'default' | 'email' = 'default') => {
+// 'default' = bipe único, com envelope suave (sem clique) e volume menor;
+// 'task'/'alert' saem da escala compartilhada, para o ouvido não ter de aprender
+// duas famílias de som dentro do mesmo CRM.
+const playNotificationSound = (kind: TomDoSino = 'default') => {
   try {
+    if (kind === 'task' || kind === 'alert') { tocarDaEscala(kind); return; }
     const ctx = getContextoTocavel();
     if (!ctx) return; // sem gesto do usuário ainda — silencioso
     if (kind === 'email') {
@@ -405,9 +456,9 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       const unreadCount = filtered.filter(n => !n.read).length;
       // Só toca som em novas notificações APÓS a carga inicial (evita AudioContext bloqueado)
       if (!isInitialLoadRef.current && unreadCount > prevCountRef.current && soundEnabled) {
-        // Se a notificação mais recente é e-mail, usa o chime suave.
+        // O tipo da mais recente decide o toque (e-mail, tarefa, falha, resto).
         const newest = filtered.find((n) => !n.read);
-        playNotificationSound(newest?.type === 'email_new' ? 'email' : 'default');
+        playNotificationSound(tomDe(newest?.type));
       }
       isInitialLoadRef.current = false;
       prevCountRef.current = unreadCount;
@@ -444,13 +495,12 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       return next.slice(-MAX_POPUPS);
     });
 
-    // Som throttled: 1 beep por rajada, no máximo 1 a cada 3 s. E-mail toca o
-    // chime suave; só usa o som padrão se a rajada tiver algo que não seja e-mail.
+    // Som throttled: 1 toque por rajada, no máximo 1 a cada 3 s — e o toque é o
+    // da notificação mais forte que veio nela (ver `tomDaRajada`).
     const now = Date.now();
     if (soundEnabledRef.current && now - lastSoundRef.current >= 3000) {
       lastSoundRef.current = now;
-      const allEmail = queued.every((n) => n.type === 'email_new');
-      playNotificationSound(allEmail ? 'email' : 'default');
+      playNotificationSound(tomDaRajada(queued.map((n) => n.type)));
     }
 
     for (const n of queued) {

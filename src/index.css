@@ -3065,6 +3065,20 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
     background-color: rgba(16, 185, 129, 0.16) !important;
     color: #6ee7b7 !important;
   }
+
+  /* O cartão de TRANSFERÊNCIA veste a cor do CRM (laranja), não a do WhatsApp.
+     É de propósito: o verde diz "o cliente falou", e este aviso não é o cliente
+     falando — é o escritório passando trabalho. Mesmo rosto, mesma moldura, selo
+     de outra cor; a diferença é lida antes da leitura. */
+  .wa-toast-badge-task { background-color: #f27a23; }
+  .wa-toast-ico-transfer { color: #d9691a; }
+  .dark .wa-toast-badge-task { background-color: #fb923c; }
+  .dark .wa-toast-ico-transfer { color: #fdba74; }
+  .wa-toast-pending { background-color: #fef3e7; color: #b45309; }
+  .dark div.wa-toast span.wa-toast-pending {
+    background-color: rgba(251, 146, 60, 0.18) !important;
+    color: #fdba74 !important;
+  }
 }
 
 @layer components {

@@ -188,8 +188,21 @@ function strikeBell(
  *               mais curta. Avisa que a lista mexeu sem interromper a leitura.
  * - `in-chat` — na própria conversa aberta: nota grave e baixa, quase um toque
  *               de confirmação; a mensagem já está aparecendo na tela.
+ *
+ * Os dois seguintes não são camadas de mensagem: são ESPÉCIES de aviso, e
+ * existem porque o resto do WhatsApp passou a avisar também. A regra é que o
+ * ouvido saiba do que se trata antes de os olhos chegarem à tela:
+ *
+ * - `task`    — alguma coisa passou a esperar por VOCÊ (conversa transferida,
+ *               a IA pedindo aprovação, o caso devolvido para atendimento
+ *               humano). Duas notas subindo por uma quarta, mais graves que o
+ *               toque de mensagem: soa como pergunta, não como recado.
+ * - `alert`   — alguma coisa não deu certo ou terminou sem você (chamada
+ *               perdida, canal fora do ar, mensagem agendada que falhou). Duas
+ *               notas DESCENDO, graves e curtas. É a única direção que o ouvido
+ *               lê como "isto não avançou" sem precisar de volume.
  */
-export type NotifyTone = 'global' | 'inbox' | 'in-chat';
+export type NotifyTone = 'global' | 'inbox' | 'in-chat' | 'task' | 'alert';
 
 /**
  * Agenda o toque num contexto qualquer. Separado de `playNotificationSound`
@@ -212,6 +225,26 @@ export function scheduleNotificationTone(
     // dezenas de vezes por dia na frente de quem está lendo — precisa passar
     // despercebido quando se está atento e ser notado quando não se está.
     strikeBell(ac, master, { freq: 523.25, at: 0, dur: 0.26, gain: 0.13, pan: 0 });
+    return;
+  }
+
+  if (tone === 'task') {
+    // Fá5 → Si♭5: quarta justa ascendente, uma oitava abaixo do toque de
+    // mensagem. Fica claramente mais escuro que o "chegou coisa nova" e ainda
+    // assim resolve para cima — quem ouve entende que ganhou trabalho, não que
+    // perdeu alguma coisa. As duas notas quase se encostam (60ms) para o par
+    // soar como UM toque, e não como dois avisos seguidos.
+    strikeBell(ac, master, { freq: 698.46, at: 0, dur: 0.5, gain: 0.26, pan: -0.14 });
+    strikeBell(ac, master, { freq: 932.33, at: 0.06, dur: 0.8, gain: 0.24, pan: 0.14 });
+    return;
+  }
+
+  if (tone === 'alert') {
+    // Sol4 → Ré4: quinta DESCENDENTE, a mesma distância do toque de mensagem
+    // virada de cabeça para baixo. Grave e curta de propósito: informa a queda
+    // sem soar como alarme, que é o que faz desligar o som de tudo.
+    strikeBell(ac, master, { freq: 392, at: 0, dur: 0.42, gain: 0.28, pan: -0.1 });
+    strikeBell(ac, master, { freq: 293.66, at: 0.1, dur: 0.6, gain: 0.24, pan: 0.1 });
     return;
   }
 

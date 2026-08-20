@@ -21,8 +21,10 @@ import { signatureService } from '../../services/signature.service';
 import { LAYER } from '../../styles/layers';
 import WhatsAppMessageToast, {
   WHATSAPP_TOAST_DURATION_MS,
+  WHATSAPP_TOAST_TASK_DURATION_MS,
   type WhatsAppMessageToastData,
   type WhatsAppToastKind,
+  type WhatsAppToastVariant,
 } from './WhatsAppMessageToast';
 
 /** Quantos cartões ficam visíveis ao mesmo tempo (os mais antigos saem). */
@@ -42,6 +44,14 @@ interface Incoming {
   at?: number;
   /** Id da mensagem — usado para buscar miniatura/duração da mídia. */
   messageId?: string | null;
+  /** Espécie do aviso. Ausente = mensagem, o caso de sempre. */
+  variant?: WhatsAppToastVariant;
+  /** Quem passou a conversa (transferência). */
+  byName?: string | null;
+  /** Observação escrita por quem passou. */
+  note?: string | null;
+  /** Transferência que ainda espera o aceite de quem recebeu. */
+  awaitingAccept?: boolean;
 }
 
 /**
@@ -101,14 +111,22 @@ export const WhatsAppNotifyHost: React.FC<{
       if (!conversationId) return;
 
       const id = `${conversationId}:${Date.now()}`;
+      const variant: WhatsAppToastVariant = data?.variant ?? 'message';
+      const duracao = variant === 'transfer' ? WHATSAPP_TOAST_TASK_DURATION_MS : WHATSAPP_TOAST_DURATION_MS;
       setStack(prev => {
         // Rajada da MESMA conversa não vira pilha de cartões iguais: o mais
         // recente substitui o anterior daquela conversa, como no celular — e
         // herda a contagem, para o cartão dizer "3 novas" em vez de esconder
         // as duas anteriores.
+        //
+        // A substituição é por conversa E POR ESPÉCIE: uma mensagem que chega
+        // logo depois da transferência não pode engolir o aviso de que a
+        // conversa passou a ser sua — são duas notícias diferentes sobre a
+        // mesma conversa, e a segunda não contém a primeira.
         let acumuladas = 0;
         const semRepetida = prev.filter(t => {
           if (t.conversationId !== conversationId) return true;
+          if ((t.variant ?? 'message') !== variant) return true;
           acumuladas = Math.max(acumuladas, t.count ?? 1);
           const timer = timersRef.current.get(t.id);
           if (timer) { window.clearTimeout(timer); timersRef.current.delete(t.id); }
@@ -123,6 +141,11 @@ export const WhatsAppNotifyHost: React.FC<{
           fileName: data?.fileName ?? null,
           at: data?.at ?? Date.now(),
           count: acumuladas + 1,
+          variant,
+          byName: data?.byName ?? null,
+          note: data?.note ?? null,
+          awaitingAccept: data?.awaitingAccept === true,
+          durationMs: duracao,
         }];
         // Estourou o teto: os mais antigos saem (e levam seus temporizadores).
         while (proxima.length > MAX_VISIBLE) {
@@ -132,7 +155,7 @@ export const WhatsAppNotifyHost: React.FC<{
         }
         return proxima;
       });
-      timersRef.current.set(id, window.setTimeout(() => dismiss(id), WHATSAPP_TOAST_DURATION_MS));
+      timersRef.current.set(id, window.setTimeout(() => dismiss(id), duracao));
 
       // A foto entra por cima das iniciais quando a assinatura volta; se o
       // cartão já saiu (ou foi substituído pela rajada), o update não acha o id

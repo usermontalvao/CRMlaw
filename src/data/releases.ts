@@ -37,6 +37,43 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.10.342',
+    date: '20/08/2026',
+    summary: 'A conversa que cai no seu nome passa a avisar — com cartão, com o nome de quem passou e com um toque próprio. E nenhum aviso do CRM entra mudo.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'A conversa transferida avisa quem recebeu',
+            description: 'Transferir registrava tudo no banco e mandava um aviso automático ao CLIENTE — e quem passava a ser o responsável não era avisado de nada. A conversa aparecia no nome dele na próxima vez que abrisse a caixa de entrada, que podia ser à tarde, com o cliente esperando desde a manhã. Agora entra um cartão no canto da tela, em qualquer módulo do CRM, com o rosto do contato, o nome de quem passou e a observação que a pessoa escreveu ao passar. Ele fica VINTE segundos, e não oito como o aviso de mensagem: recado pode sumir enquanto você lê outra coisa, trabalho que virou seu não pode.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A chamada perdida agora toca',
+            description: 'O cartão de chamada perdida sempre soube aparecer, mas era silencioso: quem estava com o CRM numa aba de fundo só descobria a ligação ao voltar para ela. Passa a tocar — só o que é novo e acabou de acontecer, para a releitura do registro (que roda a cada cinco minutos) não tocar de novo pelas mesmas ligações, e para quem abre o CRM à tarde não ouvir alarme pelas perdidas da manhã.',
+          },
+        ],
+      },
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Cada tipo de aviso tem o seu toque',
+            description: 'O sino tocava o mesmo bipe para vinte e uma espécies de notificação: um prazo atribuído, uma intimação e uma curtida no feed soavam idênticos — e som que não diz nada é som que se desliga. Agora o tipo escolhe o toque, dentro de uma escala pequena e reconhecível: DUAS NOTAS SUBINDO quando alguma coisa passou a esperar por você (prazo, compromisso, menção, pedido de acesso, conversa transferida) e DUAS NOTAS GRAVES DESCENDO quando alguma coisa não deu certo (intimação, chamada perdida, erro na tela). Numa rajada de avisos toca uma vez só, e vale o tom mais forte do lote. O chime do e-mail continua o mesmo, porque é o único que o escritório já reconhece de ouvido.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Erro e alerta na tela passam a ser ouvidos',
+            description: 'As mensagens de erro e de atenção que aparecem no rodapé sumiam sozinhas, muitas vezes sem ninguém ver, porque a pessoa já tinha ido olhar outra coisa. Passam a tocar o toque de falha, no máximo um a cada dois segundos para uma tela que falha em rajada não virar barulho. A mensagem de SUCESSO continua muda de propósito: ela confirma um clique que você acabou de dar, olhando a tela, e um som a cada salvamento é o primeiro que se desliga — levando junto os avisos que importam.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.341',
     date: '20/08/2026',
     summary: 'A central de notificações parou de dizer que um compromisso de amanhã foi "1d atrás", e a lista passou a começar pelo que ainda vai acontecer.',

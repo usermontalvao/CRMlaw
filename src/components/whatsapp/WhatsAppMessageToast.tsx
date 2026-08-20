@@ -18,13 +18,34 @@
 //    Montalvão Neto") sem cortar, com reticências só nos casos extremos;
 //  • entra e sai em fade — some sozinho aos 8s, sem cronômetro à vista.
 import React, { useEffect, useState } from 'react';
-import { FileText, Image as ImageIcon, Mic, Play, Sticker, Video, X } from 'lucide-react';
+import { ArrowRightLeft, FileText, Image as ImageIcon, Mic, Play, Sticker, Video, X } from 'lucide-react';
 
 export const WHATSAPP_TOAST_DURATION_MS = 8000;
+/**
+ * Quanto tempo fica na tela um cartão que representa TAREFA (uma conversa que
+ * passou a ser sua), e não recado.
+ *
+ * Oito segundos é a medida de "chegou mensagem": some enquanto você lê, e a
+ * mensagem continua na conversa esperando. Uma transferência não tem esse
+ * consolo — se o cartão sumir sem ser visto, a conversa fica no seu nome sem
+ * você saber, e o cliente espera. Vinte segundos é o tempo de voltar os olhos
+ * do documento para a tela.
+ */
+export const WHATSAPP_TOAST_TASK_DURATION_MS = 20000;
 /** Duração do fade de saída (o cartão só é removido depois dele). */
 export const WHATSAPP_TOAST_OUT_MS = 420;
 
 export type WhatsAppToastKind = 'text' | 'audio' | 'image' | 'video' | 'document' | 'sticker';
+
+/**
+ * De que espécie é o aviso.
+ *
+ * `message` é o cartão de sempre: alguém falou com o escritório. `transfer` é o
+ * primeiro aviso de WhatsApp que não nasce de uma mensagem — nasce de a conversa
+ * ter mudado de dono. O desenho é o mesmo de propósito (mesmo rosto, mesma
+ * moldura): muda o selo no canto da foto, a frase e o tempo em tela.
+ */
+export type WhatsAppToastVariant = 'message' | 'transfer';
 
 export interface WhatsAppMessageToastData {
   id: string;
@@ -49,6 +70,16 @@ export interface WhatsAppMessageToastData {
   thumbUrl?: string | null;
   /** Duração do áudio/vídeo em segundos, quando conhecida. */
   durationSeconds?: number | null;
+  /** Espécie do aviso. Ausente = `message`, o cartão de sempre. */
+  variant?: WhatsAppToastVariant;
+  /** Quem passou a conversa (variante `transfer`). */
+  byName?: string | null;
+  /** A observação que quem transferiu escreveu, quando escreveu. */
+  note?: string | null;
+  /** true quando a transferência ainda espera o seu aceite. */
+  awaitingAccept?: boolean;
+  /** Quanto tempo o cartão fica na tela. Ausente = os 8 s de mensagem. */
+  durationMs?: number;
 }
 
 /** Segundos → "0:07" / "4:12". O formato do próprio WhatsApp. */
@@ -106,6 +137,29 @@ const VoiceWave: React.FC = () => (
 const PreviewLine: React.FC<{ toast: WhatsAppMessageToastData }> = ({ toast }) => {
   const kind = toast.kind ?? 'text';
   const line = 'flex min-w-0 flex-1 items-center gap-[7px] text-[13.5px] leading-tight text-slate-600 dark:text-slate-300';
+
+  // Transferência não tem mensagem para mostrar: a informação é QUEM passou e o
+  // que escreveu ao passar. A observação vem entre aspas, no lugar onde o
+  // cartão de mensagem mostraria a fala do cliente — é o mesmo gesto de leitura.
+  if (toast.variant === 'transfer') {
+    const quem = toast.byName ? displayContactName(toast.byName) : null;
+    // Duas linhas, e não uma: a observação de quem transferiu ("é sobre o INSS
+    // dela, já expliquei o agendamento") é a informação que evita reler a
+    // conversa inteira, e cortá-la na metade transformava o cartão num convite a
+    // abrir a conversa — o trabalho que ele existe para poupar.
+    return (
+      <span className="flex min-w-0 flex-1 items-start gap-[7px] text-[13.5px] leading-[1.35] text-slate-600 dark:text-slate-300">
+        <ArrowRightLeft className="wa-toast-ico-transfer mt-[2px] h-[15px] w-[15px] shrink-0" />
+        <span className="line-clamp-2 min-w-0 flex-1">
+          {toast.note
+            ? `${quem ? `${quem}: ` : ''}“${toast.note}”`
+            : quem
+              ? `${quem} passou esta conversa para você`
+              : 'Esta conversa passou a ser sua'}
+        </span>
+      </span>
+    );
+  }
 
   if (kind === 'audio') {
     // A duração é a informação que decide se a pessoa para o que está fazendo:
@@ -227,14 +281,19 @@ export const WhatsAppMessageToast: React.FC<WhatsAppMessageToastProps> = ({ toas
   useEffect(() => { setPhotoOk(false); }, [toast.avatarUrl]);
 
   const kind = toast.kind ?? 'text';
-  const count = toast.count && toast.count > 1 ? toast.count : 0;
+  const isTransfer = toast.variant === 'transfer';
+  // A contagem é de mensagens acumuladas; num cartão de transferência ela não
+  // significaria nada (uma transferência não se repete).
+  const count = !isTransfer && toast.count && toast.count > 1 ? toast.count : 0;
+  const duration = toast.durationMs ?? WHATSAPP_TOAST_DURATION_MS;
 
   return (
     <div
       data-testid="whatsapp-message-toast"
+      data-variant={toast.variant ?? 'message'}
       className="wa-toast mb-2.5 w-[400px] max-w-[calc(100vw-24px)]"
       style={{
-        animation: `waToastIn 260ms cubic-bezier(.16,1,.3,1) both, waToastOut ${WHATSAPP_TOAST_OUT_MS}ms ${WHATSAPP_TOAST_DURATION_MS - WHATSAPP_TOAST_OUT_MS}ms ease-in both`,
+        animation: `waToastIn 260ms cubic-bezier(.16,1,.3,1) both, waToastOut ${WHATSAPP_TOAST_OUT_MS}ms ${duration - WHATSAPP_TOAST_OUT_MS}ms ease-in both`,
       }}
     >
       <div
@@ -276,9 +335,16 @@ export const WhatsAppMessageToast: React.FC<WhatsAppMessageToastProps> = ({ toas
                 />
               )}
             </span>
-            {/* Selo do WhatsApp no canto da foto: diz de onde veio sem escrever. */}
-            <span className="wa-toast-badge absolute -bottom-0.5 -right-0.5 flex h-[19px] w-[19px] items-center justify-center rounded-full text-white">
-              <WhatsAppGlyph className="h-[11px] w-[11px]" />
+            {/* Selo no canto da foto: diz de onde veio sem escrever. Na
+                transferência ele troca de desenho — é o que separa, de relance,
+                "o cliente falou" de "a conversa é sua agora", com o mesmo rosto
+                nos dois casos. */}
+            <span
+              className={`wa-toast-badge absolute -bottom-0.5 -right-0.5 flex h-[19px] w-[19px] items-center justify-center rounded-full text-white${isTransfer ? ' wa-toast-badge-task' : ''}`}
+            >
+              {isTransfer
+                ? <ArrowRightLeft className="h-[11px] w-[11px]" strokeWidth={2.6} />
+                : <WhatsAppGlyph className="h-[11px] w-[11px]" />}
             </span>
           </span>
 
@@ -293,11 +359,18 @@ export const WhatsAppMessageToast: React.FC<WhatsAppMessageToastProps> = ({ toas
             </span>
             {/* A contagem da rajada mora na SEGUNDA linha: na primeira ela
                 comeria justamente o espaço do nome completo do cliente. */}
-            <span className="mt-0.5 flex items-center gap-2">
+            <span className={`mt-0.5 flex gap-2 ${isTransfer ? 'flex-col items-start' : 'items-center'}`}>
               <PreviewLine toast={toast} />
               {count > 0 && (
                 <span className="wa-toast-count shrink-0 rounded-full px-[9px] py-[2px] text-[11.5px] font-semibold">
                   {count} novas
+                </span>
+              )}
+              {/* O aceite pendente é a diferença entre "assuma quando puder" e
+                  "ninguém está atendendo esta conversa até você clicar". */}
+              {isTransfer && toast.awaitingAccept && (
+                <span className="wa-toast-pending shrink-0 rounded-full px-[9px] py-[2px] text-[11.5px] font-semibold">
+                  Aguardando aceite
                 </span>
               )}
             </span>

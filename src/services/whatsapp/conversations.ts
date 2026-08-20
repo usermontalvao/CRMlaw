@@ -13,6 +13,7 @@ import { messagesApi } from './messages';
 import { subscribeWaMessageEvents, type WaMessageEvent } from './messageEvents';
 import { subscribeWaConversationEvents } from './conversationEvents';
 import { collapseContactThreads } from '../../components/whatsapp/contactThreads';
+import { suprimirAvisoDeTransferencia } from './transferNotice';
 
 export const conversationsApi = {
   // ── Conversas ────────────────────────────────────────────────
@@ -207,12 +208,51 @@ export const conversationsApi = {
   },
 
   /**
+   * QUEM passou esta conversa, e o que escreveu ao passar.
+   *
+   * Serve ao aviso de "a conversa caiu no seu nome": sem o nome de quem passou,
+   * o cartão diria apenas que a conversa mudou de dono — e a primeira pergunta
+   * de quem recebe é sempre "quem me passou isso, e por quê?". A observação vem
+   * junto porque é ela que evita o retrabalho de reler a conversa inteira.
+   *
+   * Best-effort de propósito: falhando a consulta (ou não havendo linha de
+   * transferência, que é o caso da distribuição automática de fila), o aviso
+   * sai sem o nome em vez de não sair.
+   */
+  async getTransferOrigin(conversationId: string): Promise<{ byName: string | null; note: string | null } | null> {
+    const { data, error } = await supabase
+      .from(TRANSFER_TABLE)
+      .select('performed_by, note, created_at')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+
+    const note = ((data as any).note ?? null) as string | null;
+    const performedBy = ((data as any).performed_by ?? null) as string | null;
+    if (!performedBy) return { byName: null, note };
+
+    const { data: perfil } = await supabase
+      .from('profiles')
+      .select('name')
+      .eq('user_id', performedBy)
+      .maybeSingle();
+
+    return { byName: ((perfil as any)?.name ?? null) as string | null, note };
+  },
+
+  /**
    * Aceita a transferência pendente: o usuário atual assume o atendimento,
    * limpa o estado "aguardando aceite" e carimba a transferência como aceita.
    * Validação: só o destinatário designado (ou membro do setor de destino,
    * quando não há pessoa-alvo) pode aceitar — evita "roubo" por terceiros.
    */
   async acceptTransfer(conversationId: string): Promise<void> {
+    // Antes da RPC: a linha nova volta pelo realtime em milissegundos, e a
+    // marca precisa já estar de pé quando ela chegar — senão o sistema avisa a
+    // pessoa do clique que ela mesma acabou de dar.
+    suprimirAvisoDeTransferencia(conversationId);
     const { error } = await supabase.rpc('wa_accept_contact_transfer', {
       p_conversation_id: conversationId,
     });
@@ -225,6 +265,8 @@ export const conversationsApi = {
    * transferência. Reabre a conversa se estiver encerrada (voltou a atender).
    */
   async assumeConversation(conversationId: string): Promise<void> {
+    // Assumir é um clique meu — ver `acceptTransfer`.
+    suprimirAvisoDeTransferencia(conversationId);
     const { error } = await supabase.rpc('wa_assume_contact_attendance', {
       p_conversation_id: conversationId,
     });

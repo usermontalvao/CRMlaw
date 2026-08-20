@@ -73,3 +73,40 @@ test('as três camadas soam em alturas diferentes', () => {
   const alturas = new Set([fundamental('global'), fundamental('inbox'), fundamental('in-chat')]);
   assert.equal(alturas.size, 3);
 });
+
+// ── As duas espécies que não são mensagem ────────────────────────────────
+// O contrato aqui não é musical, é de reconhecimento: quem atende o dia inteiro
+// precisa saber pelo OUVIDO se ganhou trabalho ou se alguma coisa caiu, sem
+// olhar para a tela. Por isso o que se testa é a DIREÇÃO do intervalo e a
+// distância em relação ao toque de mensagem.
+
+test('o toque de tarefa sobe, e o de falha desce', () => {
+  const tarefa = render('task').freqs;
+  const falha = render('alert').freqs;
+  // 3 parciais por nota: as duas espécies têm duas notas, como o toque global.
+  assert.equal(tarefa.length, 6);
+  assert.equal(falha.length, 6);
+  // freqs[0] é a fundamental da 1ª nota; freqs[3], a da 2ª.
+  assert.ok(tarefa[3] > tarefa[0], 'tarefa resolve para cima');
+  assert.ok(falha[3] < falha[0], 'falha resolve para baixo');
+});
+
+test('tarefa e falha são mais graves que o toque de mensagem', () => {
+  const mensagem = render('global').freqs[0];
+  assert.ok(render('task').freqs[0] < mensagem, 'tarefa abaixo da mensagem');
+  assert.ok(render('alert').freqs[0] < mensagem, 'falha abaixo da tarefa e da mensagem');
+  assert.ok(render('alert').freqs[0] < render('task').freqs[0], 'falha é a mais grave');
+});
+
+test('nenhuma das cinco espécies soa na mesma altura de outra', () => {
+  const fundamental = (tone: NotifyTone) => render(tone).freqs[0];
+  const alturas = new Set<number>([
+    fundamental('global'), fundamental('inbox'), fundamental('in-chat'),
+    fundamental('task'), fundamental('alert'),
+  ]);
+  assert.equal(alturas.size, 5);
+});
+
+test('a falha informa sem virar alarme: mais curta que o toque de mensagem', () => {
+  assert.ok(render('alert').fim < render('global').fim);
+});
