@@ -32,6 +32,11 @@ import { signatureService } from '../services/signature.service';
 import { userNotificationService } from '../services/userNotification.service';
 import { financialService } from '../services/financial.service';
 import { matchesNormalizedSearch } from '../utils/search';
+import {
+  compareNotificationDates,
+  formatNotificationDate,
+  parseNotificationDate,
+} from '../utils/notificationDates';
 import type { DjenComunicacaoLocal } from '../types/djen.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import type { SignatureRequest } from '../types/signature.types';
@@ -178,7 +183,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
       setDeadlines((deadlinesResult.data ?? []) as EnrichedDeadline[]);
 
       const now = new Date();
-      setAppointments(appointmentsData.filter((a) => new Date(a.start_at) >= now));
+      setAppointments(appointmentsData.filter((a) => parseNotificationDate(a.start_at) >= now));
 
       if (canSeeIntimacoes) {
         try {
@@ -330,7 +335,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
       if (a.isRead !== b.isRead) return a.isRead ? 1 : -1;
       const po = { urgent: 0, high: 1, normal: 2 };
       if (po[a.priority] !== po[b.priority]) return po[a.priority] - po[b.priority];
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
+      return compareNotificationDates(a.date, b.date);
     });
   }, [intimations, deadlines, appointments, signatureRequests, userNotifications, overdueInstallments, readNotifications]);
 
@@ -422,17 +427,6 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
     }
   };
 
-  const formatDate = (date: string) => {
-    const d = new Date(date);
-    const now = new Date();
-    const diff = now.getTime() - d.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    if (days === 0) return 'Hoje';
-    if (days === 1) return 'Ontem';
-    if (days < 7) return `${days}d atrás`;
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
-  };
-
   const formatDueDate = (dateStr: string) => {
     const d = new Date(dateStr);
     const now = new Date();
@@ -496,7 +490,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
 
   const renderAppointmentDetail = (n: NotificationItem) => {
     const appt = n.data as CalendarEvent;
-    const start = new Date(appt.start_at);
+    const start = parseNotificationDate(appt.start_at);
     return (
       <div className="flex flex-wrap gap-1.5 mt-2">
         <Chip
@@ -714,7 +708,7 @@ const NotificationsModuleNew: React.FC<NotificationsModuleProps> = ({ onNavigate
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
                         )}
                       </div>
-                      <span className="text-[11px] text-slate-400 flex-shrink-0">{formatDate(notification.date)}</span>
+                      <span className="text-[11px] text-slate-400 flex-shrink-0">{formatNotificationDate(notification.date)}</span>
                     </div>
 
                     {/* Row 2: title */}

@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.10.341',
+    date: '20/08/2026',
+    summary: 'A central de notificações parou de dizer que um compromisso de amanhã foi "1d atrás", e a lista passou a começar pelo que ainda vai acontecer.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Compromisso futuro não é mais descrito como passado',
+            description: 'A data era comparada por diferença de horas e arredondada para baixo, então tudo o que ainda não tinha acontecido caía na frase de coisa vencida: um compromisso de amanhã aparecia como "1d atrás". Agora a conta é de DIAS DE CALENDÁRIO, e o rótulo diz o que é — Hoje, Ontem, Amanhã, "3d atrás" ou "Em 3d". Datas de anos diferentes passam a mostrar o ano.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Data sem horário deixa de pular um dia',
+            description: 'Uma data escrita só como dia (sem hora) era lida pelo navegador como se fosse UTC, e no fuso de Cuiabá isso jogava o item para a véspera. Agora ela é interpretada no calendário local, que é o calendário em que o escritório trabalha.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A lista começa pelo que ainda vai acontecer',
+            description: 'A ordenação passou a separar futuro de passado: primeiro o que está por vir, do mais próximo para o mais distante; depois o que já passou, do mais recente para o mais antigo. Antes tudo era misturado por data bruta, e o prazo de amanhã aparecia embaixo da intimação da semana passada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.340',
     date: '20/08/2026',
     summary: 'A mesma pessoa parou de virar duas conversas quando o WhatsApp entrega o apelido interno em vez do telefone — e as conversas fantasmas que já existiam foram consolidadas.',
