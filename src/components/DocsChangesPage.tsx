@@ -968,6 +968,33 @@ const CHANGE_TYPE_CONFIG: Record<ChangeType, { label: string; icon: React.Elemen
 
 const releases: ReleaseNote[] = [
   {
+    version: '1.10.336',
+    date: '19/08/2026',
+    summary: 'A barra de mensagens que fica no canto da tela ganhou a cara do resto do sistema, e o painel deixou de aparecer e sumir em corte seco.',
+    modules: [
+      {
+        moduleId: 'chat',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'A barra de mensagens agora parece parte do sistema',
+            description: 'A barra que fica no canto inferior direito, presente em todas as telas, era uma pastilha azul-escura — uma cor que nao existe em nenhum outro lugar do CRM, logo abaixo de um painel branco. Agora ela e feita do mesmo material do resto: fundo claro, fio fino e sombra curta, com o laranja da casa no icone e no contador quando ha alguem esperando resposta. Com o painel aberto ela vira o botao de fechar — antes continuava dizendo "Mensagens" com as mensagens ja na tela.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O painel abre e fecha com movimento, nao com corte',
+            description: 'O painel de conversas aparecia com uma animacao e desaparecia de uma vez, como se a tela tivesse piscado. Agora ele cresce a partir do canto onde a barra esta e volta para la ao fechar. A largura da barra tambem passou a acompanhar o que entra nela: o rosto de quem escreveu e o atalho do Editor minimizado surgem crescendo, sem o tranco de antes, e o numero de pendencias troca deslizando, com um unico pulso quando sobe. Quem ativou "reduzir movimento" no proprio computador ve tudo isso sem nenhuma animacao.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O painel arrastado para outro canto para de dar um pulo ao abrir',
+            description: 'Quem arrastava o painel de conversas para outra posicao da tela via ele reabrir por um instante no lugar antigo, saltando em seguida para o lugar escolhido. A animacao de entrada ignorava a posicao guardada durante a fracao de segundo em que rodava. O painel agora abre direto onde voce o deixou.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.335',
     date: '19/08/2026',
     summary: 'O aviso de mensagem nova passa a abrir a conversa sem tirar voce da tela, e a barra do topo finalmente cabe no celular.',

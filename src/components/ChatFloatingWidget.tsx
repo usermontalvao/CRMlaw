@@ -1,5 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, BadgeCheck, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, Maximize2, Minimize2, MessageCircle, Mic, Paperclip, Plus, Reply, Search, Send, Smile, Trash2, Users, X, Zap, Play, Pause, PhoneOff, RotateCcw, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
@@ -2217,8 +2218,16 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
         .cw-light [class~="ring-white/20"],.cw-light [class~="ring-white/10"],.cw-light [class~="ring-white/5"],.cw-light [class~="ring-white/[0.08]"],.cw-light [class~="ring-white/[0.07]"],.cw-light [class~="ring-white/[0.06]"]{--tw-ring-color:rgba(15,23,42,.1)}
         .cw-light [class~="placeholder-white/40"]::placeholder,.cw-light [class~="placeholder-white/30"]::placeholder{color:rgba(15,23,42,.4)}
       `}</style>
+      <AnimatePresence>
       {open && (
-        <div className="relative mb-3">
+        <motion.div
+          className="relative mb-3"
+          style={{ transformOrigin: 'bottom right' }}
+          initial={{ opacity: 0, y: 14, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.97 }}
+          transition={{ type: 'spring', stiffness: 460, damping: 36, mass: 0.8 }}
+        >
           {/* Anéis de pulso — expandem para fora do painel durante o shake */}
           {shaking && <>
             <div className="absolute inset-0 rounded-[24px] pointer-events-none"
@@ -2234,7 +2243,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             transform: `translate(${panelPos.x}px, ${panelPos.y}px)`,
             ...(shaking
               ? { animation: 'chatShake 1s cubic-bezier(.36,.07,.19,.97) both, chatShakeGlow 1s ease-out both' }
-              : { animation: 'chatPanelIn 360ms cubic-bezier(.22,1,.36,1) both' }),
+              : {}),
             background: '#ffffff',
             // Sem o anel branco de 6px que envolvia o painel: ele imitava uma
             // moldura de foto e brigava com a borda real do card.
@@ -3206,8 +3215,9 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
             </div>
           )}
         </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {showToast && toast && (
         <div
@@ -3309,6 +3319,7 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       <ChatLauncherBar
         badgeCount={badgeCount}
         title={launcherTitle}
+        open={open}
         peerName={topUnreadUser?.name || lastUnreadImageSender?.name || null}
         peerAvatarUrl={topUnreadUser?.avatar_url || lastUnreadImageSender?.avatarUrl || null}
         editorMinimized={petitionEditorMinimized}

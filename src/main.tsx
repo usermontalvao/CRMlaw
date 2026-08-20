@@ -179,6 +179,15 @@ if (currentPath !== '/' && !keepPath) {
 async function renderRoot() {
   let rootElement: React.ReactNode;
 
+  // DEV-ONLY: bancada da barra de mensagens (?chatlauncherpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('chatlauncherpreview')) {
+    const { default: ChatLauncherPreview } = await import('./dev/ChatLauncherPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <ChatLauncherPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: bancada visual da conversa WhatsApp (?waconversationpreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('waconversationpreview')) {
     const { default: WhatsAppConversationPreview } = await import('./dev/WhatsAppConversationPreview');
