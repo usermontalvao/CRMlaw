@@ -55,6 +55,18 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // `session_id` vem do corpo e a leitura abaixo é com service role, que ignora
+  // RLS: sem esta conferência, trocar o id aprovaria (e enviaria) a resposta da
+  // IA num atendimento de canal alheio. Quem responde é a policy da sessão, pelo
+  // cliente do usuário — sessão invisível volta nula.
+  const { data: sessaoVisivel } = await userClient
+    .from('whatsapp_ai_sessions').select('id').eq('id', session_id).maybeSingle();
+  if (!sessaoVisivel) {
+    return new Response(JSON.stringify({ error: 'Você não tem acesso a este atendimento.' }), {
+      status: 403, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const { data: session } = await admin.from('whatsapp_ai_sessions')
     .select('*, whatsapp_conversations(id, instance_id, remote_jid, status)')
     .eq('id', session_id)

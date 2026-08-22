@@ -7,8 +7,9 @@
 // Esta função cobre exatamente esse caso, ancorando o tempo no momento em que o
 // signatário deixou a página (last_seen_at), e pula quem já é coberto por um kit.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { jobTokenOk, naoAutorizado } from '../_shared/job-token.ts';
 
-const TOKEN = Deno.env.get('WA_FOLLOWUP_TOKEN') || 'wa-followup-2026';
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const PUBLIC_APP_ORIGIN = Deno.env.get('PUBLIC_APP_ORIGIN') || 'https://jurius.com.br';
@@ -62,7 +63,7 @@ function inBusinessHours(d = new Date()): boolean {
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
-  if (url.searchParams.get('token') !== TOKEN) return json({ error: 'unauthorized' }, 401);
+  if (!await jobTokenOk('wa_followup_token', req)) return naoAutorizado();
 
   const force = url.searchParams.get('force') === '1';
   if (BUSINESS_HOURS_ENABLED && !force && !inBusinessHours()) {

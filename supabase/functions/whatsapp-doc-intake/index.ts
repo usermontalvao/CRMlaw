@@ -26,6 +26,7 @@
 // solicitação dispara (trigger em `document_request_items`), para dar baixa no
 // que o cliente já tinha mandado ANTES de alguém pedir.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { jobTokenOk, naoAutorizado } from '../_shared/job-token.ts';
 import {
   compareWaAiResidenceHolder,
   isWaAiResidenceProofLabel,
@@ -42,7 +43,7 @@ import {
   WA_AI_DOCUMENT_DOMAIN_KNOWLEDGE,
 } from '../_shared/wa-ai-doc-intake.ts';
 
-const TOKEN = Deno.env.get('WA_DOC_INTAKE_TOKEN') || 'wa-doc-intake-2026';
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const OPENAI_KEY = Deno.env.get('OPENAI_API_KEY') ?? '';
@@ -236,10 +237,7 @@ async function avisarArquivosRecebidos(admin: any) {
 }
 
 Deno.serve(async (req) => {
-  const url = new URL(req.url);
-  if (url.searchParams.get('token') !== TOKEN) {
-    return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
-  }
+  if (!await jobTokenOk('wa_doc_intake_token', req)) return naoAutorizado();
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   const body = await req.json().catch(() => ({}));
   const targetIds: string[] | null = Array.isArray(body?.message_ids) && body.message_ids.length ? body.message_ids : null;

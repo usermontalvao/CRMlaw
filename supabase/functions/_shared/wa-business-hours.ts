@@ -38,13 +38,22 @@ export function localTimeInTz(timezone: string, now: Date = new Date()): { dow: 
   }
 }
 
-/** 'HH:MM[:SS]' → minutos desde a meia-noite. Devolve null no que não for hora. */
+/**
+ * 'HH:MM[:SS]' → minutos desde a meia-noite. Devolve null no que não for hora.
+ *
+ * 24:00 (= 1440) é hora VÁLIDA aqui: é assim que o canal de plantão diz "vou até
+ * o fim do dia" sem deixar o minuto das 23:59 de fora, e o `TIME` do Postgres a
+ * guarda tal e qual. Enquanto ela era recusada, a linha inteira caía do filtro
+ * abaixo e o canal 24h passava a ser lido como "canal sem agenda" — que dá
+ * aberto pelo motivo errado, e desmoronaria no primeiro dia com jornada mista.
+ */
 function toMinutes(hhmm: string): number | null {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || '').trim());
   if (!m) return null;
   const h = Number(m[1]);
   const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
+  if (min > 59) return null;
+  if (h > 24 || (h === 24 && min > 0)) return null;
   return h * 60 + min;
 }
 

@@ -22,7 +22,6 @@ export interface ContactEntry {
   phone: string;
   /** De onde o número veio no cadastro. */
   phoneKind: 'mobile' | 'phone';
-  doc: string | null;
   /** Foto já resolvida (do cadastro ou a do WhatsApp de uma conversa antiga). */
   avatarUrl: string | null;
   isPreCadastro: boolean;
@@ -60,7 +59,7 @@ export function filterContacts(entries: readonly ContactEntry[], query: string):
   return entries.filter(e => {
     if (fold(e.name).includes(raw)) return true;
     if (!digits) return false;
-    return e.phone.includes(digits) || (e.doc || '').replace(/\D/g, '').includes(digits);
+    return e.phone.includes(digits);
   });
 }
 

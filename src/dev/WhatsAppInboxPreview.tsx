@@ -19,8 +19,7 @@ import type { WhatsAppChannel, WhatsAppConversation } from '../types/whatsapp.ty
 
 const CANAL: WhatsAppChannel = {
   id: 'canal', instance_name: 'atendimento', name: 'Atendimento', color: '#f27a23',
-  phone_number: null, status: 'connected', last_qr: null, profile_pic_url: null,
-  webhook_token: null, is_active: true, connected_at: null, absence_message: null,
+  phone_number: null, status: 'connected', profile_pic_url: null, is_active: true, connected_at: null, absence_message: null,
   absence_enabled: false, timezone: 'America/Cuiaba', visibility_mode: 'all',
   funnel_enabled: true, funnel_initial_stage: 'novo',
   auto_close_enabled: true, auto_close_minutes: 240, auto_close_message: null,

@@ -428,6 +428,16 @@ export async function resolveMediaUrl(path: string | null | undefined): Promise<
   return resolveOneSignedUrl(path);
 }
 
+/**
+ * Assina VÁRIOS caminhos do bucket de mídia de uma vez, devolvendo path→url.
+ * Mesmo cache das listas de conversa — a biblioteca de mídias abre com as
+ * miniaturas já assinadas, sem uma ida ao storage por item.
+ */
+export async function resolveMediaUrls(paths: string[]): Promise<Map<string, string>> {
+  if (paths.length === 0) return new Map();
+  return resolveSignedUrls(paths);
+}
+
 async function resolveOneSignedUrl(path: string | null | undefined): Promise<string | null> {
   if (!path) return null;
   const byPath = await resolveSignedUrls([path]);

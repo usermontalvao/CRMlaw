@@ -18,7 +18,7 @@ import { giphyService, type GiphyItem } from '../../../services/giphy.service';
 import { openPreferredMicrophone } from '../../../utils/audioDevices';
 import { useToastContext } from '../../../contexts/ToastContext';
 import type {
-  WhatsAppConversation, WhatsAppMessage, WhatsAppAiSession,
+  WhatsAppConversation, WhatsAppMessage, WhatsAppAiSession, WhatsAppMediaLibraryItem,
 } from '../../../types/whatsapp.types';
 import type { WhatsAppModuleConfig } from '../../../services/settings.service';
 
@@ -75,6 +75,8 @@ export interface WaComposerApi {
   /** Desiste do anexo: a legenda escrita volta a ser o texto do compositor. */
   cancelStagedSend: (caption: string) => void;
   sendGif: (item: GiphyItem) => Promise<void>;
+  /** Envia uma mídia já CADASTRADA (biblioteca): sem upload, sem espera. */
+  sendSavedMedia: (item: WhatsAppMediaLibraryItem, caption: string) => Promise<void>;
 }
 
 /**
@@ -128,7 +130,10 @@ export function useWaComposer({
     // GIF guarda o ITEM da grade, não o arquivo: quando o envio falha antes do
     // download, arquivo é o que ainda não existe — e é justamente esse o caso
     // em que "tentar de novo" precisa funcionar.
-    | { kind: 'gif'; item: GiphyItem }>>(new Map());
+    | { kind: 'gif'; item: GiphyItem }
+    // Mídia da biblioteca: nada de arquivo aqui. O objeto já está no bucket, e
+    // reenviar é apontar para ele de novo.
+    | { kind: 'saved'; item: WhatsAppMediaLibraryItem; caption: string; replyId?: string }>>(new Map());
   // Mapa de progresso de upload (0-100) por tempId; alimentado por timer simulado.
   const [uploadProgress, setUploadProgress] = useState<Map<string, number>>(new Map());
   const cancelledUploads = useRef<Set<string>>(new Set());
@@ -637,6 +642,72 @@ export function useWaComposer({
     }
   }, [selected, sendQueue, bumpConversationPreview, settleSend, markPendingFailed, refreshMessages, toast]);
 
+  /**
+   * Envia uma mídia da BIBLIOTECA (cadastrada uma vez, reusada sempre).
+   *
+   * É o envio mais curto que existe aqui: o arquivo já está no bucket, então
+   * não há upload, nem barra de progresso, nem espera — a bolha nasce em
+   * "enviando" e vai direto para a Evolution, que lê o objeto pelo
+   * `storage_path`. Era exatamente esse minuto de upload, repetido a cada
+   * cliente, que a biblioteca existe para cortar.
+   *
+   * A legenda vem de quem chama (o texto do compositor, ou a legenda padrão
+   * cadastrada), pelo mesmo motivo do envio de arquivo: o compositor pode já ter
+   * sido esvaziado quando este código roda.
+   */
+  const sendSavedMedia = useCallback(async (item: WhatsAppMediaLibraryItem, captionRaw: string) => {
+    if (!selected) return;
+    const conversationId = selected.id;
+    const caption = captionRaw.trim();
+    const sentAt = new Date().toISOString();
+    const tempId = newTempId();
+    const replyId = replyTo?.id;
+    const optimistic = buildOptimistic(conversationId, tempId, sentAt, {
+      type: item.type, content: caption || null,
+      // A miniatura da biblioteca já está assinada e no cache do navegador:
+      // reusá-la faz a bolha pintar na hora, sem quadro em branco.
+      media_url: item.preview_url ?? null,
+      media_mime: item.mime_type, media_size: item.size_bytes ?? null, file_name: item.file_name,
+      storage_path: item.storage_path,
+      reply_to_id: replyId ?? null, _local: 'sending',
+    });
+    retryRef.current.set(tempId, { kind: 'saved', item, caption, replyId });
+    setPending(prev => [...prev, optimistic]);
+    bumpConversationPreview(conversationId, conversationPreviewLabel(item.type, caption, item.file_name), sentAt);
+    setReplyTo(null);
+    playWaActionSound('send');
+    const turn = sendQueue.take();
+    try {
+      await turn.wait;
+      settleSend(conversationId, tempId, await whatsappService.sendMedia({
+        conversationId, type: item.type, text: caption || undefined,
+        storagePath: item.storage_path, mimeType: item.mime_type,
+        fileName: item.file_name, mediaSize: item.size_bytes ?? undefined, replyToId: replyId,
+      }));
+      retryRef.current.delete(tempId);
+      // Contador de uso: é o que põe a mídia do dia a dia no topo da lista.
+      // Falhar aqui não é falha de envio — o cliente já recebeu.
+      whatsappService.touchSavedMedia(item.id).catch(() => {});
+      void refreshMessages(conversationId);
+    } catch (err: any) {
+      if (isAutoQueueError(err)) {
+        try {
+          await enqueueAutoRetry({
+            text: caption || undefined, type: item.type,
+            storagePath: item.storage_path, mimeType: item.mime_type, fileName: item.file_name,
+          });
+          retryRef.current.delete(tempId);
+          setPending(prev => prev.filter(p => p._tempId !== tempId));
+          return;
+        } catch {/* cai no fluxo normal */}
+      }
+      markPendingFailed(tempId);
+      toast.error('Mídia não enviada', err?.message || 'Falha ao enviar pelo WhatsApp.');
+    } finally {
+      turn.release();
+    }
+  }, [selected, replyTo?.id, sendQueue, bumpConversationPreview, setReplyTo, settleSend, markPendingFailed, refreshMessages, toast, isAutoQueueError, enqueueAutoRetry]);
+
   // Reenvia uma mensagem que falhou (texto ou mídia), reusando o que foi guardado.
   const retryPending = (m: WhatsAppMessage) => {
     const tempId = m._tempId;
@@ -647,6 +718,7 @@ export function useWaComposer({
     setPending(prev => prev.filter(p => p._tempId !== tempId)); // remove o item falho
     if (desc.kind === 'text') void resendText(desc.text, desc.replyId);
     else if (desc.kind === 'gif') void sendGif(desc.item);
+    else if (desc.kind === 'saved') void sendSavedMedia(desc.item, desc.caption);
     else void sendFile(desc.file, desc.mediaKind, desc.caption);
   };
 
@@ -982,6 +1054,6 @@ export function useWaComposer({
     retryPending, discardPending, cancelUpload, resendExisting,
     startRecording, stopRecording,
     onPickFiles, handleDroppedFiles, confirmStagedSend, cancelStagedSend,
-    sendGif,
+    sendGif, sendSavedMedia,
   };
 }

@@ -29,6 +29,27 @@ const MSG_COLUMNS = 'id, conversation_id, evolution_message_id, direction, type,
 
 export const messagesApi = {
   /**
+   * O TEXTO de uma mensagem, para quem só precisa da prévia do aviso.
+   *
+   * Existe porque o broadcast `whatsapp:messages` deixou de carregar o conteúdo:
+   * o tópico é um só para o escritório inteiro, e o que entra no payload chega a
+   * toda aba aberta — inclusive a de quem não enxerga aquele canal. O texto
+   * volta a ser lido por HTTP, que é onde o RLS de `whatsapp_messages` responde.
+   *
+   * Devolve `null` quando a mensagem não existe OU quando este usuário não pode
+   * lê-la: são a mesma resposta de propósito. O aviso cai na frase genérica.
+   */
+  async getPreview(messageId: string): Promise<{ content: string | null; type: string | null } | null> {
+    const { data, error } = await supabase
+      .from(MSG_TABLE)
+      .select('content, type')
+      .eq('id', messageId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return { content: (data as any).content ?? null, type: (data as any).type ?? null };
+  },
+
+  /**
    * Mensagens de uma conversa — ou de várias, quando o mesmo contato tem thread em
    * mais de um canal do escritório.
    *

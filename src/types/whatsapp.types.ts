@@ -234,7 +234,6 @@ export interface WhatsAppContactBookEntry {
   /** Só dígitos. */
   phone: string;
   phoneKind: 'mobile' | 'phone';
-  doc: string | null;
   /** Foto de perfil que o WhatsApp mandou para este número, já assinada. */
   avatarUrl: string | null;
   isPreCadastro: boolean;
@@ -263,9 +262,7 @@ export interface WhatsAppChannel {
   color: string | null;
   phone_number: string | null;
   status: WhatsAppInstanceStatus;
-  last_qr: string | null;
   profile_pic_url: string | null;
-  webhook_token: string | null;
   is_active: boolean;
   connected_at: string | null;
   /**
@@ -367,6 +364,36 @@ export interface WhatsAppTemplate {
   department_id: string | null;
   body: string;
   is_active: boolean;
+}
+
+/**
+ * Mídia CADASTRADA para reuso — o vídeo de apresentação, o áudio de instrução,
+ * o PDF de orientação que saem todo dia para clientes diferentes.
+ *
+ * O arquivo mora no bucket de mídia como qualquer anexo; o que esta linha
+ * guarda é o apontamento para ele. Enviar da biblioteca não faz upload nenhum:
+ * reaproveita o objeto que já está lá (ver `whatsapp_media_library`).
+ */
+export type WhatsAppMediaLibraryType = 'image' | 'video' | 'audio' | 'document';
+export interface WhatsAppMediaLibraryItem {
+  id: string;
+  name: string;
+  category: string | null;
+  type: WhatsAppMediaLibraryType;
+  storage_path: string;
+  mime_type: string;
+  file_name: string;
+  size_bytes: number | null;
+  /** Legenda padrão; editável na hora do envio. */
+  caption: string | null;
+  is_active: boolean;
+  usage_count: number;
+  last_used_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  /** URL assinada da pré-visualização (preenchida na listagem, não vem do banco). */
+  preview_url?: string | null;
 }
 
 /** Mensagem agendada (Fase 8.1). */

@@ -57,3 +57,46 @@ test('o fuso do escritório é lido de verdade (Cuiabá = UTC-4)', () => {
   const lido = localTimeInTz('America/Cuiaba', new Date(Date.UTC(2026, 7, 17, 15, 30)));
   assert.equal(lido.curMins, 11 * 60 + 30);
 });
+
+// ── Plantão 24 horas ─────────────────────────────────────────────────
+// Sete dias ativos, de 00:00 a 24:00. Nenhum instante pode cair fora — nem a
+// virada da meia-noite, que é onde uma agenda escrita como 00:00–23:59 abriria
+// um buraco de sessenta segundos toda madrugada.
+
+const plantao24h: WaBusinessHourRow[] = [0, 1, 2, 3, 4, 5, 6].map(day_of_week => ({
+  day_of_week,
+  start_time: '00:00:00',
+  end_time: '24:00:00',
+  is_active: true,
+}));
+
+test('canal 24 horas está aberto em qualquer minuto de qualquer dia', () => {
+  for (let dow = 0; dow < 7; dow += 1) {
+    for (const curMins of [0, 1, 7 * 60 + 59, 12 * 60, 18 * 60, 23 * 60 + 59]) {
+      assert.equal(isWithinBusinessHours(plantao24h, { dow, curMins }), true,
+        `fechado em dow=${dow} min=${curMins}`);
+    }
+  }
+});
+
+test('24h aberto porque a agenda diz, não porque a agenda sumiu', () => {
+  // A hora 24:00 já foi recusada pelo parser, e a linha inteira caía do filtro:
+  // o canal virava "sem agenda", que também dá aberto — pelo motivo errado. Um
+  // único dia fechado prova que as linhas estão mesmo sendo lidas.
+  const plantaoMenosDomingo = plantao24h.map(r => r.day_of_week === 0 ? { ...r, is_active: false } : r);
+  assert.equal(isWithinBusinessHours(plantaoMenosDomingo, { dow: 0, curMins: 3 * 60 }), false);
+  assert.equal(isWithinBusinessHours(plantaoMenosDomingo, { dow: 1, curMins: 3 * 60 }), true);
+});
+
+test('24:30 não é hora e derruba a linha; 24:00 é', () => {
+  const invalida: WaBusinessHourRow[] = [{ day_of_week: 2, start_time: '00:00', end_time: '24:30', is_active: true }];
+  // Sem linha legível, a agenda fica vazia → canal sem agenda → aberto.
+  assert.equal(isWithinBusinessHours(invalida, { dow: 2, curMins: 3 * 60 }), true);
+  assert.equal(isWithinBusinessHours(invalida, { dow: 5, curMins: 3 * 60 }), true);
+});
+
+test('jornada da noite até o fim do dia cobre 23:59', () => {
+  const noturno: WaBusinessHourRow[] = [{ day_of_week: 6, start_time: '18:00', end_time: '24:00', is_active: true }];
+  assert.equal(isWithinBusinessHours(noturno, { dow: 6, curMins: 23 * 60 + 59 }), true);
+  assert.equal(isWithinBusinessHours(noturno, { dow: 6, curMins: 17 * 60 + 59 }), false);
+});

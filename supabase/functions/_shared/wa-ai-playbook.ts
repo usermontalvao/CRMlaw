@@ -551,6 +551,14 @@ export interface WaAiPlaybookCut {
   reason: string;
   /** O que o agente faz agora. Entra no prompt como ordem, não como cálculo. */
   guidance: string;
+  /**
+   * A frase que vai AO CLIENTE quando este corte fecha a conversa.
+   *
+   * Existe porque a reserva do backend é uma só para todos os roteiros, e ela
+   * não pode dizer a coisa certa em todos: "precisa de uma análise específica"
+   * serve a um corte e mente em outro. Vazio mantém a reserva de antes.
+   */
+  reply?: string;
 }
 
 /**
@@ -590,6 +598,15 @@ export interface WaAiPlaybook {
   /** O que fazer quando o roteiro fecha sem corte: documentos, resumo, entrega. */
   closing?: string;
   /**
+   * A frase que vai AO CLIENTE no fechamento, quando o modelo não escreve a
+   * dele (é o que acontece sempre que o backend executa uma ação terminal: o
+   * texto do modelo foi redigido antes de ele saber o que aconteceu).
+   *
+   * `closing` instrui o MODELO; esta instrui o backend sobre o que dizer. Vazio
+   * mantém a reserva genérica que já existia.
+   */
+  closingReply?: string;
+  /**
    * Regras estruturadas complementares coladas no editor. Elas orientam
    * continuidade, follow-up, handoff e limites; campos, ordem e cortes continuam
    * nas propriedades declarativas abaixo, que o backend consegue conferir.
@@ -597,6 +614,17 @@ export interface WaAiPlaybook {
   context?: Record<string, unknown>;
   /** Pessoas, setores e modelos escolhidos pela tela — nunca pelo texto JSON. */
   bindings?: WaAiPlaybookBinding[];
+  /**
+   * Liga o acompanhamento do CARD durante a triagem: "Em triagem", "Aguardando
+   * resposta", "Qualificado" e "Não qualificado" (ver `waAiFunnel.ts`).
+   *
+   * É opt-in, e não padrão, porque o funil é do CANAL e não do roteiro. Ligar
+   * para todo mundo faria os agentes que já estão no ar começarem a mover cards
+   * de outros canais — que é justamente a mudança que ninguém pediu. Os degraus
+   * de documento, KIT e transferência continuam valendo sempre: esses o backend
+   * já movia antes desta chave existir.
+   */
+  funnel?: boolean;
   fields: WaAiPlaybookField[];
   stages: WaAiPlaybookStage[];
   cuts: WaAiPlaybookCut[];
@@ -1418,6 +1446,164 @@ const NAO = /^(nao|n|negativo|false|ja sai|sai|saiu|encerrado|inativo|nunca)\b/;
  * guardado num campo que só entende `publico` deixaria o corte de órgão público
  * sem disparar, calado, com a triagem seguindo em frente.
  */
+// ── O roteiro da rescisão indireta ──────────────────────────────────────────
+
+/**
+ * "Rescisão indireta" — triagem curta do canal de mesmo nome.
+ *
+ * É o roteiro mais simples do CRM, e isso é o desenho: sete perguntas, nenhum
+ * pedido de documento e nenhum corte que descarte alguém. Em rescisão indireta
+ * quem decide se houve falta grave é o advogado olhando as provas, então a
+ * triagem não tem veredito a dar — ela existe para que o Pedro receba o caso
+ * já contado, com o que a pessoa disse separado do que o assistente concluiu.
+ *
+ * O ÚNICO corte é o do assunto que não é deste canal, e ele é `handoff`, nunca
+ * `disqualify`: quem escreveu procurando outra coisa também é encaminhado a uma
+ * pessoa. "Não qualificado" continua existindo no quadro para uso humano.
+ */
+export const WA_AI_PLAYBOOK_RESCISAO_INDIRETA: WaAiPlaybook = {
+  id: 'rescisao_indireta',
+  label: 'Rescisão indireta',
+  funnel: true,
+  bindings: [
+    {
+      key: 'destino_triagem_concluida',
+      label: 'Triagem concluída',
+      description: 'Depois de ouvir a situação, encaminhar o atendimento para:',
+      action: 'transferir_atendimento', required: true,
+      targetLabel: 'Pedro Rodrigues Montalvao Neto',
+    },
+    {
+      key: 'destino_outro_assunto',
+      label: 'Assunto fora do tema deste canal',
+      description: 'Quando o relato não for sobre a situação no trabalho, encaminhar para:',
+      action: 'transferir_atendimento', required: true,
+      targetLabel: 'Pedro Rodrigues Montalvao Neto',
+      trigger: { type: 'cut_handoff', cutId: 'assunto_fora_do_tema' },
+    },
+  ],
+  opening: 'Olá! Sou o assistente do Pedro Montalvão Advocacia. Vou fazer algumas perguntas rápidas '
+    + 'para entender sua situação e encaminhar seu atendimento.\n\n'
+    + 'Para começar, você ainda está trabalhando nessa empresa?',
+  style: [
+    'Uma pergunta por rodada. Sempre. Espere a resposta antes da próxima.',
+    'Mensagens curtas, como gente digitando no WhatsApp. Nada de parágrafo longo nem lista numerada, '
+      + 'exceto na pergunta que já vem com os pontos escritos.',
+    'Diga que você é o assistente quando se apresentar. Nunca se passe por advogado.',
+    'Nada de juridiquês: não use "rescisão indireta", "justa causa do empregador", "falta grave" nem '
+      + 'artigo de lei na conversa com a pessoa. Fale do que aconteceu com ela.',
+    'Reaja ao que a pessoa contou antes de perguntar outra coisa — "entendi", "sinto muito por isso". '
+      + 'Curto, sem drama.',
+    'Nunca pergunte o que ela já respondeu. Se vierem várias informações de uma vez, aproveite todas.',
+    'Se a resposta vier vaga ou confusa, pergunte de outro jeito antes de registrar qualquer coisa.',
+    'NUNCA diga que a pessoa tem direito, que vai ganhar, quanto vai receber, quanto demora ou que o '
+      + 'caso está ganho. Se perguntarem, diga que quem avalia isso é o advogado, depois de olhar o caso.',
+    'NUNCA conclua que existe ou que não existe direito a sair da empresa por culpa do empregador. '
+      + 'Sua tarefa é ouvir e encaminhar.',
+    'Não pressione. Se a pessoa não quiser responder alguma coisa, siga em frente com o que já tem.',
+    'Não peça CPF, RG, senha, dados bancários, documentos nem arquivos nesta conversa. Se a pessoa '
+      + 'mandar algo por conta própria, agradeça e siga — quem pede documento é a equipe, depois.',
+  ],
+  closing: 'A triagem terminou. NÃO peça documentos, arquivos nem dados pessoais, e não faça mais '
+    + 'perguntas. NÃO diga que a pessoa tem ou não tem direito, e não prometa prazo, valor ou '
+    + 'resultado. O encaminhamento para o advogado é registrado pelo próprio sistema — não chame '
+    + 'ação=transferir por conta própria.\n'
+    + 'Escreva apenas a mensagem de despedida: agradeça as informações, diga que um advogado precisa '
+    + 'analisar os detalhes e as provas antes de indicar qualquer medida e avise que você vai '
+    + 'encaminhar o atendimento ao Pedro.',
+  closingReply: 'Obrigado pelas informações. Pelo seu relato, é importante que um advogado analise os '
+    + 'detalhes e as provas antes de indicar qualquer medida. Vou encaminhar seu atendimento ao Pedro '
+    + 'para que ele possa avaliar o caso.',
+  fields: [
+    {
+      key: 'tipo_atendimento', label: 'Tipo de atendimento', type: 'enum',
+      options: ['situacao_no_trabalho', 'outro_assunto'], required: false,
+      // O teto do normalizador é 200 caracteres, e o que passar disso é cortado
+      // no meio da frase — justamente onde a regra diz o que fazer.
+      ask: 'identificado pelo relato, sem perguntar: vazio enquanto o assunto for a situação dela '
+        + 'no trabalho; outro_assunto só quando ela trouxer, sozinha, um problema que não é do trabalho',
+    },
+    {
+      key: 'vinculo_atual', label: 'Ainda trabalha na empresa', type: 'bool', required: true,
+      ask: 'se ainda está trabalhando nessa empresa',
+      question: 'Para começar, você ainda está trabalhando nessa empresa?',
+    },
+    {
+      key: 'data_saida', label: 'Saída', type: 'data_mes_ano', required: true,
+      ask: 'mês e ano em que saiu da empresa',
+      question: 'Em que mês e ano você saiu de lá?',
+      onlyWhen: { field: 'vinculo_atual', value: 'não' },
+    },
+    {
+      key: 'problema', label: 'Problema relatado', type: 'texto', required: true,
+      ask: 'o que está acontecendo no trabalho',
+      question: 'E o que está acontecendo no seu trabalho?',
+    },
+    {
+      key: 'duracao', label: 'Há quanto tempo', type: 'texto', required: true,
+      ask: 'há quanto tempo isso acontece',
+      question: 'Há quanto tempo isso vem acontecendo?',
+    },
+    {
+      key: 'tipo_falta', label: 'Ponto apontado', type: 'enum',
+      options: [
+        'salario_atrasado_ou_nao_pago',
+        'fgts_nao_depositado',
+        'assedio_humilhacao_ou_ameaca',
+        'risco_a_saude_ou_seguranca',
+        'reducao_salarial',
+        'descumprimento_do_contrato',
+        'outra_falta_grave',
+        'nenhum_desses',
+      ],
+      required: true,
+      ask: 'qual dos pontos da lista se parece com a situação dela',
+      question: 'A sua situação envolve algum destes pontos? Salário atrasado ou não pago; FGTS não '
+        + 'depositado; assédio, humilhação ou ameaça; risco à saúde ou à segurança; redução de '
+        + 'salário; outro descumprimento importante do combinado. Pode me dizer qual mais se parece '
+        + 'com o seu caso — ou se é algo diferente disso.',
+    },
+    {
+      key: 'provas', label: 'Possíveis provas', type: 'texto', required: true,
+      ask: 'o que ela tem que possa mostrar o que aconteceu',
+      question: 'Você tem alguma coisa que ajude a mostrar isso? Pode ser conversa, holerite, '
+        + 'extrato, foto, documento ou alguém que tenha visto. Se não tiver nada, também pode me dizer.',
+    },
+    {
+      key: 'cidade_estado', label: 'Cidade e estado', type: 'texto', required: true,
+      ask: 'em qual cidade e estado ela trabalha',
+      question: 'Em qual cidade e estado fica esse trabalho?',
+    },
+    {
+      key: 'nome', label: 'Nome', type: 'texto', required: true,
+      ask: 'o nome da pessoa',
+      question: 'Para finalizar, qual é o seu nome?',
+    },
+  ],
+  stages: [
+    { id: 'vinculo', label: 'Vínculo', fields: ['tipo_atendimento', 'vinculo_atual', 'data_saida'] },
+    { id: 'situacao', label: 'O que aconteceu', fields: ['problema', 'duracao', 'tipo_falta'] },
+    { id: 'elementos', label: 'Possíveis provas', fields: ['provas'] },
+    { id: 'identificacao', label: 'Onde e quem', fields: ['cidade_estado', 'nome'] },
+  ],
+  cuts: [
+    {
+      id: 'assunto_fora_do_tema',
+      rule: { kind: 'field_equals', field: 'tipo_atendimento', values: ['outro_assunto'] },
+      // handoff, e nunca disqualify: o pedido é explícito — assunto fora do tema
+      // NÃO se descarta em silêncio, se entrega a uma pessoa.
+      effect: 'handoff',
+      reason: 'o relato não é sobre a situação da pessoa no trabalho',
+      guidance: 'Pare a triagem do trabalho. Não peça documentos e não opine sobre o assunto que ela '
+        + 'trouxe. Diga em uma frase curta que você vai encaminhar o relato para avaliação de uma '
+        + 'pessoa da equipe, que vai olhar o caso e retornar por aqui. Sem prometer prazo.',
+      reply: 'Entendi, obrigado por contar. Esse assunto foge um pouco do que eu consigo triar por '
+        + 'aqui, então vou encaminhar seu relato para a equipe avaliar e retornar para você por esta '
+        + 'mesma conversa.',
+    },
+  ],
+};
+
 export function normalizeWaAiPlaybookValue(field: WaAiPlaybookField, value: unknown): string {
   const bruto = String(value ?? '').replace(/\s+/g, ' ').trim();
   if (!bruto) return WA_AI_VAZIO;
@@ -2280,6 +2466,7 @@ export function normalizeWaAiPlaybook(raw: unknown): WaAiPlaybook | null {
           + 'nos critérios deste atendimento e encerre de forma educada. '
           + 'Marque STATUS: NÃO QUALIFICADO — ÓRGÃO PÚBLICO.'
         : textoAparado(c.guidance, 800),
+      ...(textoAparado(c.reply, 600) ? { reply: textoAparado(c.reply, 600) } : {}),
     });
   }
 
@@ -2308,6 +2495,7 @@ export function normalizeWaAiPlaybook(raw: unknown): WaAiPlaybook | null {
     ? rawClosing.replace(/ação=transferir\(Atendimento\)/g,
       'ação=transferir({{destino_triagem_concluida}})')
     : rawClosing;
+  const closingReply = textoLongo(src.closingReply, 600);
   const declaredBindings = normalizeWaAiPlaybookBindings(
     src.bindings ?? (isSemRegistro
       ? WA_AI_PLAYBOOK_SEM_REGISTRO.bindings
@@ -2321,9 +2509,11 @@ export function normalizeWaAiPlaybook(raw: unknown): WaAiPlaybook | null {
   return {
     id: chaveNormalizada(src.id) || 'roteiro',
     label: textoAparado(src.label, 80) || 'Triagem',
+    ...(src.funnel === true ? { funnel: true } : {}),
     ...(opening ? { opening } : {}),
     ...(style.length > 0 ? { style } : {}),
     ...(closing ? { closing } : {}),
+    ...(closingReply ? { closingReply } : {}),
     ...(context ? { context } : {}),
     ...(bindings.length > 0 ? { bindings } : {}),
     fields, stages, cuts,

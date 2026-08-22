@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   businessMinutesBetween, isWithinBusinessHours, nextBusinessOpening,
   addBusinessMinutes, scheduleFromRows, elapsedMinutesFor, elapsedMinutesForChannels,
-  businessHoursStatus, formatMinuteOfDay,
+  businessHoursStatus, formatMinuteOfDay, alwaysOpenRows, isAlwaysOpen,
   DEFAULT_BUSINESS_SCHEDULE,
   type BusinessSchedule,
 } from './businessTime.ts';
@@ -367,4 +367,42 @@ test('a conta rápida bate com a varredura minuto a minuto', () => {
       );
     }
   }
+});
+
+// ── Plantão 24 horas ─────────────────────────────────────────────────
+
+test('as sete linhas de plantão viram uma agenda sempre aberta', () => {
+  const schedule = scheduleFromRows(alwaysOpenRows(), -240);
+  assert.equal(schedule.days.length, 7);
+  for (const instante of [
+    ' 2026-08-04T00:00:00', '2026-08-04T03:17:00', '2026-08-04T12:00:00',
+    '2026-08-04T23:59:00', '2026-08-08T05:00:00', '2026-08-09T21:00:00',
+  ]) {
+    assert.equal(isWithinBusinessHours(office(instante.trim()), schedule), true, instante);
+  }
+});
+
+test('em canal 24h o tempo de espera vira o relógio de parede', () => {
+  const schedule = scheduleFromRows(alwaysOpenRows(), -240);
+  // Sexta 18h05 até segunda 8h: 61h55 corridas, e nenhum minuto some.
+  assert.equal(businessMinutesBetween(SEX_18H05, SEG_08H00, schedule), 61 * 60 + 55);
+  assert.equal(nextBusinessOpening(SAB_10H, schedule), SAB_10H);
+  assert.equal(businessHoursStatus(SAB_10H, schedule).open, true);
+});
+
+test('isAlwaysOpen reconhece o plantão como o banco o devolve', () => {
+  assert.equal(isAlwaysOpen(alwaysOpenRows()), true);
+  assert.equal(isAlwaysOpen(alwaysOpenRows().map(r => ({ ...r, start_time: '00:00:00', end_time: '24:00:00' }))), true);
+});
+
+test('isAlwaysOpen recusa o que só se parece com plantão', () => {
+  assert.equal(isAlwaysOpen([]), false, 'canal sem agenda não é 24h');
+  assert.equal(isAlwaysOpen(null), false);
+  // Um dia de folga não é plantão — e é justamente a agenda que a tela não pode
+  // reabrir com o interruptor de 24h ligado.
+  assert.equal(isAlwaysOpen(alwaysOpenRows().filter(r => r.day_of_week !== 0)), false);
+  assert.equal(isAlwaysOpen(alwaysOpenRows().map(r => r.day_of_week === 0 ? { ...r, is_active: false } : r)), false);
+  // 23:59 deixa o último minuto do dia de fora: parecido, mas não é 24h.
+  assert.equal(isAlwaysOpen(alwaysOpenRows().map(r => ({ ...r, end_time: '23:59' }))), false);
+  assert.equal(isAlwaysOpen(alwaysOpenRows().map(r => ({ ...r, start_time: '08:00' }))), false);
 });

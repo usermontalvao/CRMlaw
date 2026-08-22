@@ -187,6 +187,8 @@ export interface QueueItem {
   lastMessageDirection: 'in' | 'out' | null;
   lastCustomerMessageAt?: string | null;
   lastMessageAt?: string | null;
+  /** Ligação já registrada também transforma o rascunho em atendimento real. */
+  lastCallAt?: string | null;
   labels?: string[] | null;
 }
 
@@ -250,6 +252,17 @@ export const DEFAULT_QUEUE_POLICY: QueuePolicy = {
   urgentLabels: ['Urgente'],
 };
 
+/**
+ * A fila só pode operar sobre atendimentos que realmente começaram.
+ *
+ * Uma linha sem mensagem e sem ligação é apenas o rascunho criado ao abrir
+ * "Nova conversa". A inbox já a oculta; deixá-la entrar no roteamento fazia o
+ * botão "Próximo da fila" abrir um contato que não constava na lista.
+ */
+export function hasQueueActivity(item: Pick<QueueItem, 'lastMessageAt' | 'lastCallAt'>): boolean {
+  return !!(item.lastMessageAt || item.lastCallAt);
+}
+
 function minutesSince(
   iso: string | null | undefined,
   now: number,
@@ -282,6 +295,7 @@ export function scoreQueueItem(
   now: number,
   policy: QueuePolicy = DEFAULT_QUEUE_POLICY,
 ): QueuePriority | null {
+  if (!hasQueueActivity(item)) return null;
   if (item.isBlocked) return null;
   if (item.status === 'closed') return null;
 
@@ -412,6 +426,7 @@ export function stalledTransfers(
 ): Array<{ id: string; pendingMinutes: number }> {
   const out: Array<{ id: string; pendingMinutes: number }> = [];
   for (const item of items) {
+    if (!hasQueueActivity(item)) continue;
     if (!item.awaitingAccept || item.isBlocked || item.status === 'closed') continue;
     // Também em horário útil: encaminhar às 17h55 e o destino aceitar às 8h05
     // do dia seguinte são 10 minutos de espera real, não 14 horas de abandono.
@@ -425,6 +440,7 @@ export function stalledTransfers(
 export function agentLoads(items: QueueItem[]): Record<string, number> {
   const loads: Record<string, number> = {};
   for (const item of items) {
+    if (!hasQueueActivity(item)) continue;
     if (!item.assignedUserId) continue;
     if (item.status === 'closed' || item.isBlocked) continue;
     loads[item.assignedUserId] = (loads[item.assignedUserId] ?? 0) + 1;

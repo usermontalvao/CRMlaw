@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Save, Loader2, Eye, EyeOff, Plus, Trash2, QrCode, Check, Users, X, Phone,
   Clock, BellOff, Bot, Pencil, MessageSquare, IdCard, TimerOff,
@@ -17,6 +17,7 @@ import { agentLabel, agentRoleLabel } from './whatsapp/format';
 import type {
   WhatsAppChannel, WhatsAppDepartment, WhatsAppTemplate, WhatsAppBusinessHoursRow,
 } from '../types/whatsapp.types';
+import { alwaysOpenRows, isAlwaysOpen } from './whatsapp/businessTime';
 import ChannelAccessManager from './whatsapp/ChannelAccessManager';
 import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
 import AiAssistantsPanel from './whatsapp/aiAssistantsPanel';
@@ -119,6 +120,10 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   const [hoursData, setHoursData] = useState<WhatsAppBusinessHoursRow[]>([]);
   const [absence, setAbsence] = useState({ message: '', enabled: false, timezone: 'America/Cuiaba' });
   const [savingHours, setSavingHours] = useState(false);
+  // Agenda de antes de ligar o 24h. Desligar o plantão devolve o horário que
+  // estava na tela; sem isso, um clique errado apaga a jornada inteira e a
+  // pessoa tem de redigitar sete dias para voltar ao que era.
+  const hoursBefore24h = useRef<WhatsAppBusinessHoursRow[] | null>(null);
   // Encerramento automático por inatividade: painel PRÓPRIO, não um rodapé do
   // horário comercial. São decisões de naturezas diferentes — uma diz quando o
   // escritório atende, a outra desiste de um atendimento — e quem mexe numa
@@ -181,8 +186,33 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     const full: WhatsAppBusinessHoursRow[] = Array.from({ length: 7 }, (_, i) =>
       byDay.get(i) ?? { id: '', instance_id: ch.id, day_of_week: i, start_time: '08:00', end_time: '18:00', is_active: i >= 1 && i <= 5 }
     );
+    hoursBefore24h.current = null;
     setHoursData(full);
   }, [hoursOpenFor]);
+
+  /**
+   * Liga/desliga o plantão 24 horas do canal em edição.
+   *
+   * 24h aqui não é uma flag separada: é a agenda cheia (sete dias, 00:00→24:00).
+   * O canal de plantão passa então pelo MESMO caminho de todos os outros — SLA
+   * da fila, aviso de ausência, encerramento por inatividade —, sem que cada um
+   * desses pontos precise aprender uma segunda regra e esquecer dela.
+   */
+  const toggle24h = (ligar: boolean, instanceId: string) => {
+    if (ligar) {
+      hoursBefore24h.current = hoursData;
+      setHoursData(alwaysOpenRows().map(r => ({ ...r, id: '', instance_id: instanceId })));
+      return;
+    }
+    setHoursData(hoursBefore24h.current ?? Array.from({ length: 7 }, (_, i) => ({
+      id: '', instance_id: instanceId, day_of_week: i,
+      start_time: '08:00', end_time: '18:00', is_active: i >= 1 && i <= 5,
+    })));
+    hoursBefore24h.current = null;
+  };
+
+  /** O canal em edição está com plantão 24h? Lido da própria agenda na tela. */
+  const is24h = isAlwaysOpen(hoursData);
 
   const saveHours = async (ch: WhatsAppChannel) => {
     setSavingHours(true);
@@ -960,7 +990,33 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                     </select>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px' }}>
+                  {/* Plantão 24 horas. Fica ACIMA da grade porque é a primeira
+                      pergunta ("este canal fecha?"); só quem responde "sim"
+                      precisa da grade de dias. */}
+                  <label style={{
+                    display: 'flex', alignItems: 'flex-start', gap: '7px', cursor: 'pointer',
+                    marginBottom: '12px', padding: '9px 10px', borderRadius: '8px',
+                    border: `1px solid ${is24h ? '#bbf7d0' : '#e5e7eb'}`,
+                    background: is24h ? '#f0fdf4' : '#fff',
+                  }}>
+                    <input type="checkbox" checked={is24h} style={{ marginTop: '2px' }}
+                      onChange={e => toggle24h(e.target.checked, ch.id)} />
+                    <span>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: is24h ? '#15803d' : '#374151' }}>
+                        Atendimento 24 horas, todos os dias
+                      </span>
+                      <span style={{ display: 'block', marginTop: '2px', fontSize: '10.5px', lineHeight: 1.45, color: '#6b7280' }}>
+                        O canal nunca fica fora do horário: nada de mensagem de ausência, e a espera da fila
+                        conta no relógio de parede. Use em plantão e em canal de campanha, que recebe a
+                        qualquer hora.
+                      </span>
+                    </span>
+                  </label>
+
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '14px',
+                    opacity: is24h ? 0.45 : 1, pointerEvents: is24h ? 'none' : 'auto',
+                  }} aria-hidden={is24h}>
                     {hoursData.map((row, idx) => (
                       <div key={row.day_of_week} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', minWidth: '38px' }}>
@@ -986,6 +1042,12 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                     <input type="checkbox" checked={absence.enabled} onChange={e => setAbsence(a => ({ ...a, enabled: e.target.checked }))} />
                     <span style={{ fontSize: '12px', color: '#374151' }}>Enviar mensagem automática ao cliente quando fora do horário</span>
                   </label>
+                  {is24h && absence.enabled && (
+                    <p style={{ margin: '-4px 0 8px 22px', fontSize: '10.5px', lineHeight: 1.4, color: '#b45309' }}>
+                      Com o plantão 24 horas ligado, nunca existe "fora do horário" — esta mensagem fica
+                      guardada, mas não vai sair para ninguém.
+                    </p>
+                  )}
                   {absence.enabled && (
                     <>
                       <textarea value={absence.message} onChange={e => setAbsence(a => ({ ...a, message: e.target.value }))}

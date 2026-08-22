@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../config/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 import { limpaMemoriaWa } from '../services/whatsapp/sessionCache';
+import { esqueceCanaisPermitidos } from '../services/whatsapp/conversations';
 
 // ── Anti-força-bruta do login staff (defesa em profundidade) ─────────────────
 // Chama a Edge Function `staff-login-guard`. Fail-open: qualquer erro
@@ -260,6 +261,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // aqui que ela precisa ser esquecida — senão o dado de quem saiu continua
     // na memória enquanto a aba estiver de pé.
     limpaMemoriaWa();
+    // Idem para os canais que o servidor autorizou: eles são o insumo da
+    // segunda tranca da lista, e são de QUEM saiu.
+    esqueceCanaisPermitidos();
     if (opts?.redirect !== false) window.location.href = '/';
   };
 

@@ -118,6 +118,7 @@ import {
   WA_AI_ACCOUNT_ROUTE_DOCS_TITLE,
   buildWaAiCompletionPlans,
   renderWaAiHandoffSummary,
+  type WaAiCompletionContact,
   type WaAiCompletionExternalState,
 } from '../_shared/wa-ai-completion.ts';
 import { waAiAnnotateDates, waAiDateBlock } from '../_shared/wa-ai-now.ts';
@@ -612,9 +613,22 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   const replyAction: WaAiTriageNextAction | null = terminal
     ? { type: 'handoff', cutId: 'acao_terminal', reason: 'transferência executada', guidance: '' }
     : nextAction;
+  // A frase de fechamento DECLARADA pelo roteiro. Quando o backend executa uma
+  // ação terminal, o texto do modelo é descartado (ele foi escrito antes de o
+  // modelo saber o que aconteceu) e quem fala é a reserva — que até aqui era
+  // uma só para todos os roteiros. O corte tem a dele, o fim de triagem tem a
+  // dele; roteiro que não declara nenhuma continua com a reserva de sempre.
+  const cutIdDoFechamento = nextAction
+    && (nextAction.type === 'handoff' || nextAction.type === 'disqualify')
+    ? nextAction.cutId : null;
+  const fechamentoDoRoteiro = cutIdDoFechamento
+    ? String((playbook?.cuts || []).find(c => c.id === cutIdDoFechamento)?.reply || '')
+    : (nextAction?.type === 'complete' ? String(playbook?.closingReply || '') : '');
+
   const validated = playbook && replyAction
     ? validateReplyForAction(ultimaLeitura, replyAction,
-        executed.filter((item: any) => item?.ok).map((item: any) => String(item?.action || '')))
+        executed.filter((item: any) => item?.ok).map((item: any) => String(item?.action || '')),
+        fechamentoDoRoteiro)
     : { reply: String(completion.text || '').trim(), degraded: false, reason: null };
   const degradado = !!playbook && (
     !!extractionDegraded || leituras.length === 0 || leituras.some(l => l.degraded) || validated.degraded
@@ -775,7 +789,7 @@ function followupPolicyOf(assistant: Assistant): WaAiFollowupPolicy {
 /** Conversa + canal + agente + sessão. Devolve null quando não há agente no canal. */
 async function loadContext(admin: any, conversationId: string): Promise<TurnContext | null> {
   const { data: conversation } = await admin.from('whatsapp_conversations')
-    .select('id, instance_id, client_id, contact_name, contact_phone, status, is_blocked, assigned_user_id, department_id, awaiting_accept, last_customer_message_at')
+    .select('id, instance_id, client_id, contact_name, contact_phone, status, is_blocked, assigned_user_id, department_id, awaiting_accept, last_customer_message_at, created_at')
     .eq('id', conversationId).maybeSingle();
   if (!conversation) return null;
 
@@ -821,6 +835,30 @@ async function loadContext(admin: any, conversationId: string): Promise<TurnCont
         ? assistant.playbook : {},
     } as Assistant,
     session,
+  };
+}
+
+/**
+ * O que o CRM já sabe do contato — para o resumo de quem recebe a conversa.
+ *
+ * Lido só no fechamento, que acontece uma vez por atendimento: pendurar o nome
+ * do canal em `loadContext` custaria uma consulta em TODO turno para um dado
+ * que quase nenhum turno usa.
+ */
+async function contactOf(admin: any, ctx: TurnContext): Promise<WaAiCompletionContact> {
+  let channelName: string | null = null;
+  try {
+    if (ctx.conversation.instance_id) {
+      const { data } = await admin.from('whatsapp_instances')
+        .select('name, instance_name').eq('id', ctx.conversation.instance_id).maybeSingle();
+      channelName = String(data?.name || data?.instance_name || '').trim() || null;
+    }
+  } catch { channelName = null; }
+  return {
+    name: ctx.conversation.contact_name ?? null,
+    phone: ctx.conversation.contact_phone ?? null,
+    channelName,
+    firstContactAt: ctx.conversation.created_at ?? null,
   };
 }
 
@@ -1145,7 +1183,8 @@ async function runLifecycleTurn(
       ? ['transferir_atendimento', 'transferir_para_humano', 'solicitar_documentos']
       : ['enviar_documento', 'solicitar_documentos'])
     : ['transferir_atendimento', 'transferir_para_humano'];
-  const plan = buildWaAiCompletionPlans(ctx.assistant, playbook, memory, state)
+  const plan = buildWaAiCompletionPlans(
+    ctx.assistant, playbook, memory, state, await contactOf(admin, ctx))
     .find(item => expectedActions.includes(item.action));
   if (!plan) return { ok: true, skipped: 'nenhuma transição configurada para este estado', state };
 
@@ -2095,8 +2134,21 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   }
 
   if (nextAction?.type === 'complete') {
+    // O card passa por "Qualificado" ANTES da transferência, e não depois: a
+    // transferência move para uma etapa mais adiantada, e a escada não recua.
+    // Se a transferência falhar, o card fica em Qualificado — que é a verdade.
+    //
+    // `mode === 'auto'` junto, como no bloco do fim do turno: em modo de teste
+    // nada é enviado e a transferência é simulada, então mover o card mostraria
+    // ao escritório inteiro um lead "Qualificado" que ninguém atendeu.
+    if (playbook?.funnel === true && assistant.mode === 'auto') {
+      await moveWaAiFunnel(admin, ctx, 'qualificado');
+    }
+
     const externalState = await loadWaAiCompletionExternalState(admin, ctx, playbook);
-    for (const plan of buildWaAiCompletionPlans(assistant, playbook, turnMemory, externalState)) {
+    const contato = await contactOf(admin, ctx);
+    for (const plan of buildWaAiCompletionPlans(
+      assistant, playbook, turnMemory, externalState, contato)) {
       requested.push({
         action: plan.action,
         args: actionArgsForLog(plan.action, plan.args),
@@ -2225,9 +2277,18 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   const replyAction: WaAiTriageNextAction | null = terminal
     ? { type: 'handoff', cutId: 'acao_terminal', reason: 'transferência executada', guidance: '' }
     : nextAction;
+  // A frase de fechamento DECLARADA pelo roteiro — a mesma leitura da prévia.
+  const cutIdDoFechamento = nextAction
+    && (nextAction.type === 'handoff' || nextAction.type === 'disqualify')
+    ? nextAction.cutId : null;
+  const fechamentoDoRoteiro = cutIdDoFechamento
+    ? String((playbook?.cuts || []).find(c => c.id === cutIdDoFechamento)?.reply || '')
+    : (nextAction?.type === 'complete' ? String(playbook?.closingReply || '') : '');
+
   const validated = playbook && replyAction
     ? validateReplyForAction(ultimaLeitura, replyAction,
-        executed.filter((item: any) => item?.ok).map((item: any) => String(item?.action || '')))
+        executed.filter((item: any) => item?.ok).map((item: any) => String(item?.action || '')),
+        fechamentoDoRoteiro)
     : { reply: String(completion.text || '').trim(), degraded: false, reason: null };
 
   // ── A situação dos documentos é ESCRITA PELO BACKEND ──
@@ -2412,6 +2473,25 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     triageComplete: progresso?.complete === true,
   });
   if (autoFollowup) executed.push(autoFollowup);
+
+  // ── O card ──
+  // A condução do funil durante a triagem é OPT-IN do roteiro (`playbook.funnel`):
+  // ver o comentário do tipo em `wa-ai-funnel.ts`. A transferência e os degraus
+  // de documento não passam por aqui — eles movem o card por conta própria,
+  // dentro da ação, como sempre fizeram.
+  //
+  // "Aguardando resposta" é o acompanhamento SAINDO, não o acompanhamento
+  // agendado: um pendente é criado depois de praticamente toda resposta, então
+  // marcar o card no agendamento significaria pular "Em triagem" já no primeiro
+  // turno. O card só diz que a IA está esperando quando ela de fato cobrou.
+  if (playbook?.funnel === true && !terminal && assistant.mode === 'auto') {
+    if (progresso?.cut?.effect === 'disqualify') {
+      await moveWaAiFunnel(admin, ctx, 'desqualificado');
+    } else if (sent && !sendError) {
+      await moveWaAiFunnel(admin, ctx,
+        opts.followupInstruction ? 'aguardando_resposta' : 'triagem_iniciada');
+    }
+  }
 
   await finishExecution(admin, executionId, {
     status: assistant.mode === 'test'
@@ -2631,6 +2711,8 @@ function applyTriagePatch(
  */
 function fallbackReplyForAction(
   action: WaAiTriageNextAction, executedActions: string[] = [],
+  /** A frase que o ROTEIRO declarou para este fechamento, quando declarou. */
+  fechamentoDoRoteiro = '',
 ): string {
   if (action.type === 'ask_field') return action.question;
   if (action.type === 'handoff') {
@@ -2638,12 +2720,15 @@ function fallbackReplyForAction(
     // fechou. A frase genérica de corte ("precisa de uma análise específica")
     // soaria como problema onde houve conclusão.
     if (action.cutId === 'acao_terminal') {
-      return 'Perfeito, está tudo certo por aqui. Vou encaminhar seu atendimento para a equipe responsável, que segue com você por aqui mesmo.';
+      return fechamentoDoRoteiro
+        || 'Perfeito, está tudo certo por aqui. Vou encaminhar seu atendimento para a equipe responsável, que segue com você por aqui mesmo.';
     }
-    return 'Entendi. Esse tipo de situação precisa de uma análise específica. Vou encaminhar seu atendimento para a equipe.';
+    return fechamentoDoRoteiro
+      || 'Entendi. Esse tipo de situação precisa de uma análise específica. Vou encaminhar seu atendimento para a equipe.';
   }
   if (action.type === 'disqualify') {
-    return 'Obrigado pelas informações. Pelos critérios desta triagem, o escritório não seguirá com este atendimento.';
+    return fechamentoDoRoteiro
+      || 'Obrigado pelas informações. Pelos critérios desta triagem, o escritório não seguirá com este atendimento.';
   }
   if (action.type === 'complete') {
     if (executedActions.indexOf('solicitar_documentos') !== -1) {
@@ -2651,7 +2736,8 @@ function fallbackReplyForAction(
     }
     if (executedActions.indexOf('transferir_atendimento') !== -1
       || executedActions.indexOf('transferir_para_humano') !== -1) {
-      return 'Perfeito. Vou encaminhar seu atendimento agora para a equipe responsável.';
+      return fechamentoDoRoteiro
+        || 'Perfeito. Vou encaminhar seu atendimento agora para a equipe responsável.';
     }
     // Nada a executar quer dizer que o caso está esperando o cliente — o pedido
     // de documentos ou a assinatura, que têm cobrança automática própria.
@@ -2710,10 +2796,12 @@ function deterministicHandoffPlan(
 function validateReplyForAction(
   reading: WaAiTriageReply | null, action: WaAiTriageNextAction,
   executedActions: string[] = [],
+  fechamentoDoRoteiro = '',
 ): { reply: string; degraded: boolean; reason: string | null } {
   const proposed = String(reading?.message || '').trim();
   const cair = (reason: string) => ({
-    reply: fallbackReplyForAction(action, executedActions), degraded: true, reason,
+    reply: fallbackReplyForAction(action, executedActions, fechamentoDoRoteiro),
+    degraded: true, reason,
   });
   const aceitar = () => ({
     reply: proposed, degraded: !!reading?.degraded, reason: reading?.reason || null,

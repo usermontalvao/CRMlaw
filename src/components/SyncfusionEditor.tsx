@@ -17,11 +17,6 @@ import {
   setCachedSuggestions,
   pruneExpiredEntries,
 } from './spell-check-cache';
-import {
-  createDebouncedScanner,
-  autoFixIssues,
-  type ScanResult,
-} from './editor-issues-scanner';
 import { attachLocalSpellChecker } from './local-spell-checker';
 import { syncCollabCaretFlags, type CaretFlagPeer } from './collabCaretFlags';
 import {
@@ -254,6 +249,52 @@ const applySyncfusionServiceUrl = (editor: any) => {
   if (!editor) return;
   try {
     editor.serviceUrl = SYNCFUSION_SERVICE_URL;
+  } catch {
+    // ignore
+  }
+};
+
+/* ────────────────────────────────────────────────────────────────
+ * Colagem de conteúdo grande vindo de fora
+ *
+ * Conteúdo COM formatação (Word, RTF, HTML de site) não é convertido aqui: o
+ * Syncfusion sobe o conteúdo inteiro para o servidor de documentos e espera o
+ * SFDT de volta — com `timeout: 0`, ou seja, SEM prazo nenhum. Enquanto a
+ * resposta não chega, ele deixa o spinner de pé por cima do editor. Se a
+ * conversão empaca, o spinner fica lá para sempre e o console não registra
+ * nada: é exatamente o "editor eternamente carregando" relatado.
+ *
+ * Medido contra docs.jurius-api.com (20/08/2026):
+ *
+ *     120 KB → 1,7s | 1 MB → 3,5s | 4 MB → 15s | 12 MB → 200 com corpo VAZIO
+ *
+ * Acima de poucos MB o servidor deixa de responder direito e, quando responde,
+ * o SFDT que volta é grande o bastante para a montagem das páginas (síncrona)
+ * pendurar a aba. Daí as duas travas abaixo.
+ * ──────────────────────────────────────────────────────────────── */
+
+/** Teto do que vai para o servidor. Acima disto, cola como texto na hora. */
+const RICH_PASTE_MAX_BYTES = 2 * 1024 * 1024;
+
+/** Prazo do que foi para o servidor. Vencido, a colagem cai para texto. */
+const RICH_PASTE_TIMEOUT_MS = 30_000;
+
+const formatMegabytes = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+
+/**
+ * Baixa o spinner do Syncfusion à força.
+ *
+ * Cinto e suspensório: ao abortarmos o XHR, o próprio `onPasteFailure` da
+ * biblioteca chama `hideSpinner`. Isto cobre o caso de o abort não chegar a
+ * disparar o `readystatechange` — e é o que garante que a tela SEMPRE volta.
+ */
+const forceHideEditorSpinner = (editor: any) => {
+  try {
+    const host: HTMLElement | null = editor?.element ?? null;
+    host?.querySelectorAll<HTMLElement>('.e-spinner-pane').forEach((wrap) => {
+      wrap.classList.remove('e-spin-show');
+      wrap.classList.add('e-spin-hide');
+    });
   } catch {
     // ignore
   }
@@ -1875,12 +1916,12 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     const pinnedRulerCleanupRef = useRef<(() => void) | null>(null);
     const resizeObserverRef = useRef<(() => void) | null>(null);
     const lastContextMenuPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-    const scannerRef = useRef<{ trigger: () => void; cancel: () => void } | null>(null);
     const sentenceAnalysisTimerRef = useRef<number | null>(null);
     const sentenceAnalysisIdleRef = useRef<number | null>(null);
     const sentenceAnalysisAbortRef = useRef<AbortController | null>(null);
     const sentenceAnalysisRequestIdRef = useRef(0);
     const forcedPasteModeRef = useRef<'smart' | 'source' | 'merge' | 'text' | 'clean' | null>(null);
+    const richPasteWatchdogRef = useRef<number | null>(null);
     // Refs para callbacks de status bar — handleCreated roda uma única vez e
     // capturaria versões antigas das props sem eles.
     // Assinantes externos do selectionChange (faixa de opções, etc.). Ver o
@@ -1891,7 +1932,23 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
     onSelectionChangeRef.current = onSelectionChange;
     onViewChangeRef.current = onViewChange;
     const [isCreated, setIsCreated] = useState(false);
-    const [scanResult, setScanResult] = useState<ScanResult>({ issues: [], totalOccurrences: 0 });
+    /** Recado curto do próprio editor (colagem que caiu para texto, etc.). */
+    const [editorNotice, setEditorNotice] = useState<string | null>(null);
+    const editorNoticeTimerRef = useRef<number | null>(null);
+
+    /**
+     * Fala com quem está editando SEM depender de contexto de toast: o editor
+     * é montado em seis lugares diferentes (módulo, widget, nuvem, modelo,
+     * link público, bancada) e nem todos têm provider de toast por perto.
+     */
+    const showEditorNotice = (text: string) => {
+      setEditorNotice(text);
+      if (editorNoticeTimerRef.current !== null) window.clearTimeout(editorNoticeTimerRef.current);
+      editorNoticeTimerRef.current = window.setTimeout(() => {
+        editorNoticeTimerRef.current = null;
+        setEditorNotice(null);
+      }, 9000);
+    };
     const [syncfusionHeaders, setSyncfusionHeaders] = useState<object[]>(() => buildSyncfusionHeaders(null));
 
     const toSentenceCase = (value: string) => {
@@ -2000,11 +2057,9 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
       };
     }, []);
 
-    // Cleanup do scanner no unmount
+    // Cleanup da revisão contextual no unmount
     useEffect(() => {
       return () => {
-        scannerRef.current?.cancel();
-        scannerRef.current = null;
         if (sentenceAnalysisTimerRef.current !== null) {
           window.clearTimeout(sentenceAnalysisTimerRef.current);
           sentenceAnalysisTimerRef.current = null;
@@ -3676,21 +3731,9 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
         }
       }
       onContentChange?.();
-      // Dispara scanner de issues (espaços duplos, etc.) com debounce
-      scannerRef.current?.trigger();
       // Revisão contextual do trecho do cursor: entra apenas quando o
       // dicionário local já apontou uma palavra ali.
       scheduleContextualSentenceAnalysis();
-    };
-
-    // Aplica todas as correções de issues (espaços duplos, etc.)
-    const fixAllIssues = () => {
-      const editor: any = containerRef.current?.documentEditor as any;
-      if (!editor) return 0;
-      const fixed = autoFixIssues(editor, scanResult.issues);
-      // Re-escanear para atualizar UI
-      scannerRef.current?.trigger();
-      return fixed;
     };
 
     const handleDocumentChange = () => {
@@ -4093,15 +4136,6 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
             };
             editor.viewChange = () => onViewChangeRef.current?.();
           }
-        } catch {
-          // ignore
-        }
-
-        // Inicializa scanner de issues (espaços duplos, espaço antes de pontuação)
-        try {
-          scannerRef.current = createDebouncedScanner(editor, (result) => {
-            setScanResult(result);
-          }, 1500);
         } catch {
           // ignore
         }
@@ -4820,8 +4854,51 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
 
         // Conteúdo rico do Word/RTF/HTML formatado deve seguir o pipeline nativo
         // do Syncfusion para preservar estilo, listas, tabelas e demais marcas.
+        // O pipeline nativo é uma ida ao SERVIDOR — ver RICH_PASTE_MAX_BYTES.
         if (shouldKeepRichFormatting(html, clipboard)) {
+          // Colar como texto, com a formatação do cursor. É o plano B tanto do
+          // conteúdo grande demais quanto do servidor que não respondeu.
+          const colarComoTexto = (motivo: string): boolean => {
+            const fallbackText = extractStructuredTextFromHtml(html) || normalizePastedParagraphs(plainText);
+            if (!fallbackText.trim()) return false;
+            const inserido = insertTextWithInheritedFormatting(ed, fallbackText);
+            if (inserido) showEditorNotice(motivo);
+            return inserido;
+          };
+
+          // Quando existe RTF na área de transferência (é o caso do Word), é o
+          // RTF que o Syncfusion manda — e ele costuma ser bem maior que o HTML.
+          const rtf = clipboard?.getData('text/rtf') || clipboard?.getData('application/rtf') || '';
+          const bytesQueVaoSubir = rtf ? rtf.length : html.length;
+
+          if (bytesQueVaoSubir > RICH_PASTE_MAX_BYTES) {
+            event.preventDefault();
+            if (colarComoTexto(
+              `Colado como texto: são ${formatMegabytes(bytesQueVaoSubir)} de conteúdo formatado, `
+              + 'e a conversão desse tamanho trava o editor. O texto veio inteiro — a formatação, não.',
+            )) return;
+            // Sem texto para cair de volta, o caminho nativo ainda é melhor que nada.
+          }
+
           runNative();
+
+          // A partir daqui o Syncfusion está esperando o servidor SEM prazo.
+          // O cão de guarda é quem devolve a tela se a resposta não vier.
+          if (richPasteWatchdogRef.current !== null) window.clearTimeout(richPasteWatchdogRef.current);
+          richPasteWatchdogRef.current = window.setTimeout(() => {
+            richPasteWatchdogRef.current = null;
+            const pendente: any = ed?.editor?.pasteRequestHandler?.xmlHttpRequest;
+            if (!pendente || pendente.readyState === 4) return;
+            // Abortar faz a própria biblioteca cair no onPasteFailure e baixar
+            // o spinner; o forceHide cobre o caso de o abort não avisar.
+            try { pendente.abort(); } catch { /* ignore */ }
+            forceHideEditorSpinner(ed);
+            if (!colarComoTexto(
+              'O servidor de documentos não respondeu a tempo. Colei o conteúdo como texto, sem formatação.',
+            )) {
+              showEditorNotice('O servidor de documentos não respondeu a tempo e a colagem foi cancelada.');
+            }
+          }, RICH_PASTE_TIMEOUT_MS);
           return;
         }
 

@@ -5,10 +5,10 @@ import {
   CheckCheck, Check, AlertCircle, Link2, ArrowRightLeft, X,
   Paperclip, Mic, FileText, Image as ImageIcon, CornerUpLeft, UserRound,
   Pencil, UserCheck, Unlink, IdCard, Scale, Calendar,
-  Clock, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw, RefreshCw,
+  Clock, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Plus, Ban, ShieldOff, CheckCircle2, RotateCcw,
   StickyNote, Trash2, CalendarClock, MessageSquare, Filter, Maximize2,
   UserPlus, UserMinus, PenLine, HandCoins, ListTodo, FilePlus,
-  Sparkles, Tag, Tags, Bot, Clapperboard, Smile,
+  Sparkles, Tag, Tags, Bot, Clapperboard, Smile, FolderOpen,
   Shield, ShieldCheck, Eye, EyeOff, Timer, TimerOff,
   BarChart2, TrendingUp, Users, Clock3, CheckCircle, Inbox,
   MapPin, Play, Pause, Bell, BellOff, Info, MoreVertical, BellRing,
@@ -73,10 +73,12 @@ import { useWaViewers } from './whatsapp/hooks/useWaViewers';
 import { viewersLabel } from '../services/whatsapp/inboxPresenceState';
 import { imagesFromClipboard } from '../utils/clipboardImages';
 import { applyWaFormat, formatFromKey, type WaFormat } from './whatsapp/composerFormat';
+import { autoCapitalizarDigitacao } from './whatsapp/composerAutoCapitalize';
 import {
-  ChannelSwitcher, ChannelDownBanner, ReconnectHoldSiren, channelName,
+  ChannelSwitcher, ChannelDownBanner, ChannelHealthChip, ReconnectHoldSiren, channelName,
 } from './whatsapp/channelSwitcher';
 import { GifPicker } from './whatsapp/gifPicker';
+import { MediaLibraryPicker } from './whatsapp/mediaLibraryPicker';
 import { EmojiPicker } from './whatsapp/emojiPicker';
 import { ACTOR_ESCRITORIO, aplicarReacao } from '../utils/waReactions';
 import { sendReconnectHoldsThroughChannel } from '../services/whatsapp/resilientSend';
@@ -147,7 +149,7 @@ import type { Requirement, RequirementStatus } from '../types/requirement.types'
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppChannel, WhatsAppDepartment,
   WhatsAppClientLite, WhatsAppPresence, WhatsAppDirection, WhatsAppChannelFunnelStage, WhatsAppBusinessHoursRow,
-  WhatsAppDeleteScope,
+  WhatsAppDeleteScope, WhatsAppMediaLibraryItem,
 } from '../types/whatsapp.types';
 import { playWaActionSound } from '../utils/waActionSounds';
 import type { Process, ProcessStatus, ProcessPracticeArea } from '../types/process.types';
@@ -348,6 +350,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   // Menu "+" do composer (documento, modelo, agendar) — mantém a barra enxuta.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
+  // Biblioteca de mídias salvas (vídeo/áudio/PDF cadastrados para reenvio).
+  const [mediaLibOpen, setMediaLibOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   // Menu do sino: unifica som das notificações + push do navegador num só ícone.
   // Web Push do staff: avisa o atendente mesmo com o navegador fechado.
@@ -365,6 +369,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     if (!embedded) localStorage.setItem('wa_details_panel_collapsed', detailsPanelCollapsed ? '1' : '0');
   }, [detailsPanelCollapsed, embedded]);
   const [channels, setChannels] = useState<WhatsAppChannel[]>([]);
+  // Antes de a lista de canais chegar, `channels` é `[]` — e `[]` fazia o chip
+  // do cabeçalho afirmar "Offline". Não estava carregando: estava dizendo que o
+  // WhatsApp do escritório está fora, o que é uma frase diferente e errada. Um
+  // segundo depois virava "Online". A mesma regra do `loadingConvs`: só se diz
+  // "carregando" quando não há NADA na mão — com a lista da abertura anterior em
+  // cache, o estado de espera seria um piscar sobre conteúdo bom.
+  const [channelsLoading, setChannelsLoading] = useState(
+    () => lidoDaMemoriaWa<WhatsAppChannel[]>(user?.id, 'channels') === undefined,
+  );
   // Pendências persistidas do atendente logado. É propositalmente global ao
   // módulo (não pertence à conversa aberta): a sirene precisa sobreviver quando
   // ele troca de cliente, fecha a thread ou recarrega a página.
@@ -774,7 +787,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   }, [user?.id]);
 
   const loadChannels = useCallback(() => {
-    swrWa(user?.id, 'channels', () => whatsappService.listChannels(), setChannels);
+    swrWa(user?.id, 'channels', () => whatsappService.listChannels(), (next) => {
+      setChannels(next);
+      setChannelsLoading(false);
+    });
   }, [user?.id]);
 
   const loadReconnectAlerts = useCallback(() => {
@@ -867,7 +883,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     handleSend, beginEdit,
     retryPending, discardPending, cancelUpload, resendExisting,
     startRecording, stopRecording,
-    onPickFiles, handleDroppedFiles, confirmStagedSend, cancelStagedSend, sendGif,
+    onPickFiles, handleDroppedFiles, confirmStagedSend, cancelStagedSend, sendGif, sendSavedMedia,
   } = useWaComposer({
     selectedId, selected, user, agentPrefs, moduleConfig, staffById, aiSession,
     messages, setMessages, setConversations, refreshMessages,
@@ -977,6 +993,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   // Marca interna "saiu de um agendamento" das mensagens desta conversa.
   const scheduledSentMarks = useScheduledSentMarks(selectedId);
 
+  // Último valor visto pelo compositor — base de comparação da digitação.
+  const valorDigitadoRef = useRef('');
   // O campo de mensagem é NÃO CONTROLADO de propósito.
   //
   // Com `value={draft}`, cada tecla só aparecia na tela depois do render do
@@ -994,9 +1012,41 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   // encadear negrito+itálico e a troca de palavra do corretor.
   useLayoutEffect(() => {
     const el = draftRef.current;
+    valorDigitadoRef.current = draft;
     if (!el || el.value === draft) return;
     el.value = draft;
   }, [draft]);
+
+  /**
+   * Digitação do compositor: aplica a MAIÚSCULA AUTOMÁTICA do começo de frase e
+   * só então repassa ao estado.
+   *
+   * O navegador no computador ignora `autocapitalize` (é regra de teclado de
+   * celular), então a mesma mensagem saía "bom dia" pelo desktop e "Bom dia"
+   * pelo telefone. A correção é feita na tecla, sobre a letra recém-digitada —
+   * ver `composerAutoCapitalize`.
+   *
+   * O valor anterior vem de um ref porque o campo é NÃO CONTROLADO: `draft` no
+   * estado pode estar um passo atrás do que já está escrito na tela. O ref é
+   * atualizado também pelo efeito acima, para que uma mudança de fora
+   * (template, emoji, troca de conversa) não confunda a comparação da próxima
+   * tecla.
+   */
+  const handleDraftChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    const digitado = el.value;
+    const cursor = el.selectionStart ?? digitado.length;
+    const corrigido = autoCapitalizarDigitacao(valorDigitadoRef.current, digitado, cursor);
+    if (corrigido) {
+      // Escreve direto no DOM: sem isso a minúscula ficaria na tela até o
+      // próximo render. O texto tem o mesmo tamanho (só a caixa muda), então o
+      // cursor volta exatamente para onde estava.
+      el.value = corrigido;
+      el.setSelectionRange(cursor, cursor);
+    }
+    valorDigitadoRef.current = corrigido ?? digitado;
+    setDraft(corrigido ?? digitado);
+  }, [setDraft]);
 
   // Auto-crescimento do campo de mensagem: cresce com o texto até um teto e
   // então rola. Roda a cada mudança do rascunho, então também encolhe de volta
@@ -1098,6 +1148,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
       el.setSelectionRange(cursor, cursor);
     });
   }, [draft, setDraft]);
+
+  /**
+   * Envia uma mídia da BIBLIOTECA. A legenda é o que já estava escrito no
+   * compositor — e só na falta dele entra a legenda padrão do cadastro.
+   *
+   * O texto é lido do DOM, não do estado: o campo é NÃO CONTROLADO, então o que
+   * está na tela pode estar um passo à frente de `draft` (ver o `useLayoutEffect`
+   * acima). Ler o estado aqui mandaria a legenda faltando a última letra.
+   */
+  const enviarMidiaSalva = useCallback((item: WhatsAppMediaLibraryItem) => {
+    const escrito = (draftRef.current?.value ?? draft).trim();
+    void sendSavedMedia(item, escrito || item.caption || '');
+    if (escrito) setDraft('');
+  }, [draft, sendSavedMedia, setDraft]);
 
   useEffect(() => { if (!draft) setTextSel(null); }, [draft]);
   const closeComposerSpellMenu = useCallback(() => setComposerSpellMenu(null), []);
@@ -1477,7 +1541,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
         hasSearch: search.trim().length > 0,
         dialogOpen: !!document.querySelector('[role="dialog"]'),
         recording,
-        overlayOpen: attachMenuOpen || gifOpen || emojiOpen || slashActive,
+        overlayOpen: attachMenuOpen || gifOpen || mediaLibOpen || emojiOpen || slashActive,
         composing: !!editing || !!replyTo,
         hasDraft: draft.trim().length > 0,
         canExitSurface: embedded && !!onEscapeExit,
@@ -1487,7 +1551,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
       // ── Esc: desfaz o topo da pilha (ver `escapeAction`) ──
       if (action.kind === 'cancelRecording') { stopRecording(false); return; }
       if (action.kind === 'closeOverlay') {
-        setAttachMenuOpen(false); setGifOpen(false);
+        setAttachMenuOpen(false); setGifOpen(false); setMediaLibOpen(false);
         // O menu de modelos não tem estado próprio: ele aparece enquanto o
         // rascunho começa com "/", então fechá-lo é apagar a barra.
         if (slashActive) setDraft('');
@@ -1527,7 +1591,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     // `keydown` é barato; decidir errado, não.
   }, [
     filteredIds, selectedId, search, embedded, onEscapeExit,
-    draft, editing, replyTo, recording, attachMenuOpen, gifOpen, emojiOpen, slashActive,
+    draft, editing, replyTo, recording, attachMenuOpen, gifOpen, mediaLibOpen, emojiOpen, slashActive,
   ]);
 
   // ── Props estáveis da lista ──────────────────────────────────────────
@@ -1655,7 +1719,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     const q = deferredSearch.trim().toLowerCase();
     const searching = q.length > 0;
     const base = conversations.filter(c => {
-      if (!c.last_message_at && c.id !== selectedId) return false;
+      if (!c.last_message_at && !c.last_call_at && c.id !== selectedId) return false;
       // MESMA regra da lista, pela mesma função: quando a busca traz encerradas
       // do arquivo, elas precisam contar aqui também. Enquanto isto ficou de
       // fora, as abas mostravam "Todas (0)" com três conversas na tela.
@@ -1697,7 +1761,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     // último em que a pessoa esteve, que é para onde o clique devolve a lista.
     const escopo = filter === 'all' || filter === 'unread' || filter === 'mine' ? filter : lastQueueScope.current;
     const base = conversations.filter(c => {
-      if (!c.last_message_at && c.id !== selectedId) return false;
+      if (!c.last_message_at && !c.last_call_at && c.id !== selectedId) return false;
       if (escopo === 'unread' && c.unread_count === 0) return false;
       if (escopo === 'mine' && c.assigned_user_id !== user?.id) return false;
       if (channelFilter !== 'all' && c.instance_id !== channelFilter) return false;
@@ -1728,7 +1792,6 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     if (filter === 'scheduled' || filter === 'calls') setFilter(lastQueueScope.current);
   }, [filter]);
 
-  const anyConnected = channels.some(c => c.status === 'connected');
   const connectedChannels = useMemo(() => channels.filter(c => c.status === 'connected'), [channels]);
 
   // Badge da aba "WHATSAPP" do widget: usa a MESMA fonte de verdade da tab
@@ -2204,6 +2267,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
       lastMessageDirection: c.last_message_direction,
       lastCustomerMessageAt: c.last_customer_message_at,
       lastMessageAt: c.last_message_at,
+      lastCallAt: c.last_call_at,
       labels: c.labels,
       // Sem o canal, a fila não teria como medir cada conversa no expediente
       // do número em que ela chegou.
@@ -2311,26 +2375,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
 
   const listHeaderActions = (
     <div className="flex items-center gap-2 shrink-0">
-      {/* Canal fora = a inbox parou de receber eventos e está sendo reposta por
-          HTTP. Dizer isso evita a leitura de "o sistema travou". */}
-      {realtimeStatus === 'down' ? (
-        <span title="Sem conexão em tempo real — atualizando por sincronização periódica"
-          className="flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-          <RefreshCw size={11} className="animate-spin" />
-          Reconectando…
-        </span>
-      ) : (
-        // Embutido no widget, só o ponto: a palavra "Online" custa 45 pixels
-        // numa linha de 384 que já carrega busca, filtro e três botões — e o
-        // verde sozinho já diz o mesmo. O texto continua na dica do mouse.
-        <span
-          className="flex items-center gap-1.5 text-[11px] text-slate-500"
-          title={anyConnected ? 'Conectado ao WhatsApp' : 'Sem conexão com o WhatsApp'}
-        >
-          <span className="inline-block w-2 h-2 rounded-full" style={{ background: anyConnected ? '#16a34a' : '#9ca3af' }} />
-          {!embedded && (anyConnected ? 'Online' : 'Offline')}
-        </span>
-      )}
+      {/* Um chip só para as duas quedas possíveis — e, quando é canal, com o
+          nome dele. Ver ChannelHealthChip para por que estavam misturadas. */}
+      <ChannelHealthChip channels={channels} realtimeDown={realtimeStatus === 'down'} compact={embedded}
+        loading={channelsLoading} />
       <WaNotifyBell pushState={pushState} onTogglePush={toggleStaffPush} />
       {/* Microfone e alto-falante ficam AQUI, à vista, e não em Configurações:
           o driver errado só se descobre no meio de uma ligação, e nesse momento
@@ -3321,6 +3369,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                       <GifPicker onClose={() => setGifOpen(false)}
                         onPick={item => { setGifOpen(false); void sendGif(item); }} />
                     )}
+                    {/* Biblioteca de mídias: o vídeo/áudio/PDF que sai todo dia,
+                        cadastrado uma vez. Mesmo pega-cliques do seletor de GIF
+                        (ver o comentário acima sobre `button` e não `div`). */}
+                    {mediaLibOpen && (
+                      <button type="button" aria-label="Fechar biblioteca de mídias"
+                        className="fixed inset-0 z-20 cursor-default bg-transparent"
+                        onClick={() => setMediaLibOpen(false)} />
+                    )}
+                    {mediaLibOpen && (
+                      <MediaLibraryPicker embedded={embedded}
+                        onClose={() => setMediaLibOpen(false)}
+                        onPick={item => { setMediaLibOpen(false); enviarMidiaSalva(item); }} />
+                    )}
                     {attachMenuOpen && (
                       <button type="button" aria-label="Fechar menu de anexos"
                         className="fixed inset-0 z-20 cursor-default bg-transparent"
@@ -3337,6 +3398,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                             <button className={row} onClick={run(() => imgInputRef.current?.click())}><span className={`${dot} bg-amber-100 text-amber-700`}><ImageIcon size={17} /></span> Imagem ou vídeo</button>
                             <button className={row} onClick={run(() => docInputRef.current?.click())}><span className={`${dot} bg-amber-100 text-amber-700`}><Paperclip size={17} /></span> Documento</button>
                             <button className={row} onClick={run(() => setGifOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><Clapperboard size={17} /></span> GIF</button>
+                            {/* Mídias cadastradas: o mesmo vídeo de sempre sai
+                                sem procurar arquivo no computador nem esperar
+                                upload — o arquivo já está no servidor. */}
+                            <button className={row} onClick={run(() => setMediaLibOpen(true))}><span className={`${dot} bg-amber-100 text-amber-700`}><FolderOpen size={17} /></span> Mídia salva</button>
                             {/* Contato salvo = a agenda dos clientes, enviada
                                 como CARTÃO e não como número no meio de uma
                                 frase: quem recebe salva com um toque, em vez de
@@ -3431,7 +3496,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                       <ComposerSpellcheckOverlay text={draft} issues={composerSpellcheck.issues}
                         scrollTop={composerScrollTop} scrollbarWidth={composerScrollbarWidth} />
                     )}
-                    <textarea ref={draftRef} defaultValue={draft} onChange={e => setDraft(e.target.value)}
+                    <textarea ref={draftRef} defaultValue={draft} onChange={handleDraftChange}
                       onScroll={e => setComposerScrollTop(e.currentTarget.scrollTop)}
                       onContextMenu={openComposerSpellMenu}
                       onSelect={syncTextSel}

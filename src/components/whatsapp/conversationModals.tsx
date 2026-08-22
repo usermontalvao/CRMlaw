@@ -51,6 +51,7 @@ export const TransferModal: React.FC<{
       lastMessageDirection: c.last_message_direction,
       lastCustomerMessageAt: c.last_customer_message_at,
       lastMessageAt: c.last_message_at,
+      lastCallAt: c.last_call_at,
       labels: c.labels,
     }))),
     [conversations],

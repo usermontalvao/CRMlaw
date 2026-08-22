@@ -40,6 +40,7 @@ import {
   stanzaIdCitado,
 } from '../_shared/wa-identity.ts';
 import { ACTOR_CONTATO, ACTOR_ESCRITORIO, aplicarReacao, type WaReacao } from '../_shared/wa-reactions.ts';
+import { isWithinBusinessHours as canalAbertoAgora } from '../_shared/wa-business-hours.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
@@ -104,10 +105,15 @@ Deno.serve(async (req: Request) => {
   const token = url.searchParams.get('token');
   if (!token) return new Response('Unauthorized', { status: 401 });
 
-  // Resolve o canal pelo token
-  const { data: channel } = await admin.from('whatsapp_instances')
-    .select('id, instance_name, status, last_open_at, connected_at')
-    .eq('webhook_token', token).maybeSingle();
+  // Resolve o canal pelo token.
+  //
+  // O token NÃO mora mais em `whatsapp_instances`: aquela tabela é lida pelo
+  // navegador de toda a equipe, e a linha inteira ia junto — quem tivesse o
+  // token injetaria evento aqui como se fosse o WhatsApp. Ele agora vive em
+  // `private.whatsapp_instance_secrets`, e quem traduz token → canal é uma RPC
+  // SECURITY DEFINER concedida só ao service role.
+  const { data: canais } = await admin.rpc('wa_channel_by_webhook_token', { p_token: token });
+  const channel = Array.isArray(canais) ? canais[0] : canais;
   if (!channel) return new Response('Unauthorized', { status: 401 });
   const instanceId = channel.id;
   const instanceName = channel.instance_name;
@@ -897,15 +903,12 @@ async function maybeAutoSendAbsence(
     const { data: bhRows } = await admin.from('whatsapp_business_hours')
       .select('day_of_week, start_time, end_time, is_active')
       .eq('instance_id', instanceId);
-    const row = (bhRows || []).find((r: any) => r.day_of_week === dow);
-
-    if (row && row.is_active) {
-      const [sh, sm] = (row.start_time as string).split(':').map(Number);
-      const [eh, em] = (row.end_time as string).split(':').map(Number);
-      const startMins = sh * 60 + sm;
-      const endMins = eh * 60 + em;
-      if (curMins >= startMins && curMins < endMins) return; // dentro do horário
-    }
+    // A regra de "está aberto?" mora em `_shared/wa-business-hours.ts`, a mesma
+    // que a varredura de encerramento e a de documentos consultam. Havia uma
+    // segunda cópia aqui, e ela lia `end_time` na mão: a hora 24:00 — que é como
+    // o canal de plantão diz "até o fim do dia" — dependia de um `split(':')`
+    // dar certo por sorte, e nada avisaria se parasse de dar.
+    if (canalAbertoAgora(bhRows as any, { dow, curMins })) return; // dentro do horário
 
     // ── A IA está atendendo? Então o aviso comercial está errado. ──
     // Última checagem antes de reservar o disparo, de propósito: é a mais cara

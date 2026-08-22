@@ -101,7 +101,15 @@ function kindOf(type?: string | null): NotifyKind {
 }
 
 /**
- * Preview curto da mensagem a partir da própria linha (sem esperar a conversa).
+ * Preview curto da mensagem.
+ *
+ * O texto NÃO vem mais do evento de tempo real: o tópico `whatsapp:messages` é
+ * um só para o escritório inteiro, então tudo que entra no payload chega a toda
+ * aba aberta, inclusive à de quem não enxerga aquele canal. Quem tem o texto é
+ * a consulta HTTP, onde o RLS de `whatsapp_messages` responde — e responde
+ * vazio para quem não pode ler. Sem texto, o cartão cai na frase genérica, que
+ * é o mesmo que já acontecia com mídia sem legenda.
+ *
  * Mídia sem legenda volta VAZIA de propósito: quem diz "Mensagem de voz" ou
  * "Foto" é o cartão, com ícone — escrever a palavra aqui produzia aquele
  * "Áudio" solto no lugar da mensagem.
@@ -358,7 +366,11 @@ export function useWhatsAppNotifications({ userId, inModule, onOpen }: Params): 
         // cadastro achado), cai no nome/avatar do WhatsApp e, por fim, no número.
         const client = meta.client_id ? await clientMetaOf(meta.client_id).catch(() => null) : null;
         const name = client?.full_name || meta.contact_name || meta.contact_phone || 'Contato';
-        const preview = previewOf(msg);
+        // Só aqui — depois de o aviso já estar decidido — vale a ida ao servidor
+        // pelo texto: é uma consulta por notificação que sai, não por mensagem
+        // que chega no escritório.
+        const texto = await whatsappService.getPreview(msg.id).catch(() => null);
+        const preview = previewOf({ content: texto?.content ?? null, type: texto?.type ?? msg.type });
         const kind = kindOf(msg.type);
 
         // Visual (in-app): cartão clicável, renderizado pelo host global

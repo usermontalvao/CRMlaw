@@ -8,6 +8,7 @@ import {
   Type, EyeOff, Undo2, Trash2, Loader2,
 } from 'lucide-react';
 import { formatBytes } from './format';
+import { autoCapitalizarDigitacao } from './composerAutoCapitalize';
 import { LAYER } from '../../styles/layers';
 import { useModalLayer } from '../../styles/modalLayer';
 import {
@@ -473,7 +474,17 @@ export const AttachmentPreviewModal: React.FC<{
             className="flex-shrink-0 w-10 h-10 rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white flex items-center justify-center transition">
             <Plus size={20} />
           </button>
-          <textarea value={caption} onChange={e => setCaption(e.target.value)}
+          {/* Legenda também é mensagem: mesma maiúscula automática do compositor.
+              O cursor é reposto depois do render porque o campo é CONTROLADO —
+              React reescreve o valor e jogaria o cursor para o fim. */}
+          <textarea value={caption}
+            onChange={e => {
+              const el = e.currentTarget;
+              const cursor = el.selectionStart ?? el.value.length;
+              const corrigido = autoCapitalizarDigitacao(caption, el.value, cursor);
+              setCaption(corrigido ?? el.value);
+              if (corrigido) requestAnimationFrame(() => el.setSelectionRange(cursor, cursor));
+            }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void confirmar(); } }}
             rows={1} placeholder={items.length > 1 ? `Legenda · ${items.length} itens…` : 'Adicionar uma legenda…'}
             className="flex-1 resize-none max-h-28 px-3.5 py-2.5 text-[13.5px] rounded-lg bg-white/10 text-white placeholder:text-white/40 border border-transparent focus:bg-white/15 outline-none" />

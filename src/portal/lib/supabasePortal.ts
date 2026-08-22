@@ -22,7 +22,11 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error('Variáveis de ambiente do Supabase não configuradas. Verifique o arquivo .env');
 }
 
-export const supabasePortal = createClient(supabaseUrl, supabaseKey, {
+// Mesma trava do client do escritório (ver `src/config/supabase.ts`): o módulo
+// pode ser avaliado mais de uma vez, e dois GoTrueClient na mesma `storageKey`
+// disputam o refresh do token.
+// O tipo sai da própria expressão (ver a mesma nota em `src/config/supabase.ts`).
+const criarClientPortal = () => createClient(supabaseUrl, supabaseKey, {
   auth: {
     storageKey: 'jurius-portal-auth',
     autoRefreshToken: true,
@@ -32,3 +36,10 @@ export const supabasePortal = createClient(supabaseUrl, supabaseKey, {
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
   },
 });
+type ClientDoPortal = ReturnType<typeof criarClientPortal>;
+
+type ComCache = typeof globalThis & { __juriusSupabasePortal?: ClientDoPortal };
+const raiz = globalThis as ComCache;
+
+export const supabasePortal: ClientDoPortal =
+  raiz.__juriusSupabasePortal ?? (raiz.__juriusSupabasePortal = criarClientPortal());

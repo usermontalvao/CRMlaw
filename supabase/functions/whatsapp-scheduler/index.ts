@@ -9,6 +9,7 @@
 // significaria mais um job chamando Edge Function com JWT — a armadilha que já
 // deixou o weekly-digest seis semanas quebrado em silêncio.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { jobTokenOk, naoAutorizado } from '../_shared/job-token.ts';
 import {
   buildWaAiFollowupMessage,
   decideAutoFollowup,
@@ -22,7 +23,7 @@ import { ensureWaAiFollowupScheduled } from '../_shared/wa-ai-followup-store.ts'
 import { isWithinBusinessHours, localTimeInTz } from '../_shared/wa-business-hours.ts';
 import { CHANNEL_FLAP_GRACE_MS, applyChannelState, isWaConnectionFailure } from '../_shared/wa-channel-state.ts';
 
-const TOKEN = Deno.env.get('WA_SCHEDULER_TOKEN') || 'wa-scheduler-2026';
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
@@ -94,10 +95,7 @@ async function reconciliarCanais(admin: any) {
 }
 
 Deno.serve(async (req: Request) => {
-  const url = new URL(req.url);
-  if (url.searchParams.get('token') !== TOKEN) {
-    return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
-  }
+  if (!await jobTokenOk('wa_scheduler_token', req)) return naoAutorizado();
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   const nowIso = new Date().toISOString();

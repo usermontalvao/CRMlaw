@@ -233,6 +233,34 @@ Deno.serve(async (req: Request) => {
       headers: { 'Content-Type': 'application/json', apikey, ...(init?.headers || {}) },
     });
 
+  // ── PORTEIRO DE CANAL ──────────────────────────────────────────────────────
+  //
+  // Daqui para baixo tudo roda com o `admin` (service role), que IGNORA RLS —
+  // é o que permite escrever no que o webhook trouxe. O efeito colateral é que
+  // um id de conversa ou de mensagem vindo do corpo da requisição valeria como
+  // permissão: bastaria trocar o `conversation_id` para escrever (ou fazer o
+  // "digitando…" aparecer) num atendimento de canal alheio.
+  //
+  // A conferência é feita com o cliente do USUÁRIO, não com o admin: quem
+  // responde é a mesma policy que recorta a inbox (`wa_can_see_conv`). Linha
+  // que ele não pode ler volta nula, e nula aqui é 403. Chamada de sistema
+  // (cron/scheduler, `isSystem`) não passa por isto — ela não tem usuário.
+  const podeVer = async (tabela: string, id: string | null | undefined): Promise<boolean> => {
+    if (isSystem) return true;
+    if (!id) return false;
+    const { data } = await userClient.from(tabela).select('id').eq('id', id).maybeSingle();
+    return !!data;
+  };
+  const negado = () => json({ error: 'Você não tem acesso a este atendimento.' }, 403);
+
+  if (body?.action === 'edit' || body?.action === 'delete' || body?.action === 'react') {
+    if (!await podeVer('whatsapp_messages', body?.message_id)) return negado();
+  }
+  if (body?.action === 'block' || body?.action === 'unblock'
+      || body?.action === 'subscribe_presence' || body?.action === 'typing') {
+    if (!await podeVer('whatsapp_conversations', body?.conversation_id)) return negado();
+  }
+
   if (body?.action === 'edit') return await handleEdit(admin, base, apikey, body);
   if (body?.action === 'delete') {
     if (!user) return json({ error: 'Não autenticado' }, 401);
@@ -256,6 +284,10 @@ Deno.serve(async (req: Request) => {
   let conversationId: string | null = body?.conversation_id || null;
   let instanceId: string | null = body?.channel_id || null;
   let sendTarget = '';
+  // Nova conversa só ganha linha no banco DEPOIS que a Evolution confirmar o
+  // envio. Antes disso existe apenas como intenção local — assim canal fora,
+  // número inexistente ou falha de rede não deixam atendimento vazio na fila.
+  let newConversationPhone: string | null = null;
   // Estado da conversa ANTES do envio — é o que decide a reabertura no fim.
   let wasClosed = false;
   let hadOwner = false;
@@ -265,6 +297,9 @@ Deno.serve(async (req: Request) => {
   let destinoJaProvado = false;
 
   if (conversationId) {
+    // Mesmo porteiro do bloco acima, agora para o envio em si: o id da conversa
+    // é do cliente, e ele não pode valer como autorização.
+    if (!await podeVer('whatsapp_conversations', conversationId)) return negado();
     const { data: conv } = await admin.from('whatsapp_conversations')
       .select('contact_phone, instance_id, remote_jid, is_blocked, status, assigned_user_id, last_customer_message_at')
       .eq('id', conversationId).maybeSingle();
@@ -279,14 +314,15 @@ Deno.serve(async (req: Request) => {
     const phone = (body?.phone || '').toString().replace(/\D/g, '');
     if (!phone) return json({ error: 'Informe conversation_id ou phone' }, 400);
     if (!instanceId) return json({ error: 'Informe channel_id para nova conversa' }, 400);
+    // Conversa NOVA: a permissão é a do canal escolhido — e a conferência vem
+    // antes do upsert, senão a própria tentativa já criaria a linha no canal
+    // alheio.
+    if (!await podeVer('whatsapp_instances', instanceId)) return negado();
     const remoteJid = `${phone}@s.whatsapp.net`;
     sendTarget = remoteJid;
-    const { data: conv } = await admin.from('whatsapp_conversations').upsert({
-      instance_id: instanceId, remote_jid: remoteJid, contact_phone: phone,
-    }, { onConflict: 'instance_id,remote_jid' }).select('id').single();
-    conversationId = conv?.id || null;
+    newConversationPhone = phone;
   }
-  if (!conversationId || !instanceId) return json({ error: 'Falha ao resolver conversa/canal' }, 500);
+  if (!instanceId) return json({ error: 'Falha ao resolver o canal' }, 500);
   if (!sendTarget) return json({ error: 'Destino do envio não pôde ser resolvido.' }, 400);
 
   const { data: channel } = await admin.from('whatsapp_instances')
@@ -474,6 +510,31 @@ Deno.serve(async (req: Request) => {
     if (out?.key) evoRaw = slimWaRaw({ key: out.key, message: out.message });
   } catch (err) {
     return json({ error: evoNetworkError(err) }, 502);
+  }
+
+  // O contato recebeu a primeira mensagem: só AGORA a intenção vira conversa.
+  // O JID já está canônico (inclusive a variante correta do 9º dígito), evitando
+  // criar uma linha pelo número cru e depois tentar corrigir a chave única.
+  if (!conversationId) {
+    const canonicalPhone = sendTarget.replace(/@.*/, '').replace(/\D/g, '') || newConversationPhone;
+    const { data: conv, error: convErr } = await admin.from('whatsapp_conversations').upsert({
+      instance_id: instanceId,
+      remote_jid: sendTarget,
+      contact_phone: canonicalPhone,
+    }, { onConflict: 'instance_id,remote_jid' })
+      .select('id, status, assigned_user_id')
+      .single();
+    if (convErr || !conv?.id) {
+      // A mensagem já saiu; explicitar isso evita que o cliente repita o envio e
+      // entregue uma duplicata enquanto a persistência é investigada.
+      return json({
+        error: 'A mensagem foi enviada pelo WhatsApp, mas o atendimento não pôde ser salvo. Atualize a tela antes de tentar novamente.',
+        sent_but_not_saved: true,
+      }, 500);
+    }
+    conversationId = conv.id;
+    wasClosed = conv.status === 'closed';
+    hadOwner = !!conv.assigned_user_id;
   }
 
   const insertRow: Record<string, unknown> = {

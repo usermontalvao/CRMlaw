@@ -7,8 +7,30 @@
  * destinatário é o usuário interno (`staff_push_subscriptions.user_id`).
  *
  * verify_jwt OFF: é acionada server-side pelo trigger (mesmo padrão do
- * portal-push). Não expõe dados — só dispara notificações para quem já
- * registrou uma subscription.
+ * portal-push), e o trigger manda a chave ANÔNIMA no Authorization — que não
+ * identifica ninguém. O endpoint é, na prática, público.
+ *
+ * POR QUE ELA NÃO LÊ MAIS O QUE RECEBE
+ * ------------------------------------
+ * Antes, `user_id`, `title` e `body` vinham do corpo e iam direto para o
+ * telefone do funcionário. Quem descobrisse um id de usuário mandava a
+ * notificação que quisesse, com a cara do CRM — engenharia social sem precisar
+ * de sessão nenhuma, e sem deixar rastro no atendimento.
+ *
+ * Agora o corpo só APONTA o que notificar (`conversation_id`); o texto é
+ * remontado aqui, a partir do banco, com service role:
+ *
+ *   · a conversa tem de existir, não estar bloqueada e estar ATRIBUÍDA ao
+ *     `user_id` pedido — ninguém notifica pelo atendimento de outro;
+ *   · tem de haver mensagem RECEBIDA nos últimos 2 minutos — é isso que
+ *     transforma "id que eu chutei" em "coisa que acabou de acontecer";
+ *   · título e corpo saem do nome do contato e do tipo da mensagem, pelas
+ *     mesmas regras que o trigger usava.
+ *
+ * O pior que uma chamada forjada consegue, então, é repetir um aviso que já
+ * estava saindo de qualquer forma. Não há segredo compartilhado para vazar e o
+ * contrato com o trigger não muda: os campos `title`/`body` que ele continua
+ * mandando são simplesmente ignorados.
  */
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
@@ -30,6 +52,18 @@ function jsonResponse(payload: unknown, status = 200) {
   });
 }
 
+/** As mesmas frases que o trigger montava — agora do lado de cá. */
+function previewDe(tipo: string | null, conteudo: string | null): string {
+  switch (tipo) {
+    case 'image':    return '[Imagem]';
+    case 'audio':    return '[Audio]';
+    case 'video':    return '[Video]';
+    case 'document': return '[Documento]';
+    case 'sticker':  return 'Figurinha';
+    default:         return (conteudo || '').slice(0, 120).trim() || 'Nova mensagem';
+  }
+}
+
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
@@ -43,20 +77,53 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // `title` e `body` ainda chegam do trigger — e são ignorados de propósito.
     const body = await req.json() as {
       user_id: string;
-      title: string;
-      body: string;
       conversation_id?: string;
     };
 
     if (!body.user_id) return jsonResponse({ error: 'user_id required' }, 400);
+    if (!body.conversation_id) return jsonResponse({ error: 'conversation_id required' }, 400);
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       { auth: { persistSession: false } },
     );
+
+    // ── O que se vai notificar sai do banco, não do corpo da requisição ─────
+    const { data: conversa } = await supabase
+      .from('whatsapp_conversations')
+      .select('id, contact_name, contact_phone, assigned_user_id, is_blocked')
+      .eq('id', body.conversation_id)
+      .maybeSingle();
+
+    if (!conversa || conversa.is_blocked || conversa.assigned_user_id !== body.user_id) {
+      // 202, e não 403: quem chama é um gatilho do banco, e "não é mais para
+      // notificar" (a conversa foi transferida entre o INSERT e o disparo) é
+      // resultado normal — não erro para encher o log.
+      return jsonResponse({ sent: 0, total: 0, skipped: 'conversa não confere' }, 202);
+    }
+
+    const desde = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data: ultima } = await supabase
+      .from('whatsapp_messages')
+      .select('type, content, created_at')
+      .eq('conversation_id', conversa.id)
+      .eq('direction', 'in')
+      .gte('created_at', desde)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!ultima) {
+      return jsonResponse({ sent: 0, total: 0, skipped: 'nada recente para avisar' }, 202);
+    }
+
+    const contato = (conversa.contact_name || '').trim() || conversa.contact_phone || 'Contato';
+    const titulo = `WhatsApp - ${contato}`;
+    const texto = previewDe(ultima.type, ultima.content);
 
     const { data: subscriptions, error } = await supabase
       .from('staff_push_subscriptions')
@@ -73,8 +140,8 @@ Deno.serve(async (req: Request) => {
     }
 
     const payload = JSON.stringify({
-      title: body.title,
-      body: body.body,
+      title: titulo,
+      body: texto,
       icon: '/icon-192.png',
       badge: '/favicon.svg',
       tag: body.conversation_id ? `wa:${body.conversation_id}` : undefined,

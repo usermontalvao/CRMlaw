@@ -142,6 +142,30 @@ test('encerrada e bloqueada ficam fora da fila', () => {
   assert.deepEqual(ranked, []);
 });
 
+test('rascunho sem mensagem nem ligação fica fora de toda a fila', () => {
+  const vazio = conv({
+    id: 'rascunho',
+    lastMessageDirection: null,
+    lastMessageAt: null,
+    lastCustomerMessageAt: null,
+    lastCallAt: null,
+  });
+  assert.deepEqual(rankQueue([vazio], NOW), []);
+  assert.equal(nextInQueue([vazio], NOW), null);
+  assert.deepEqual(agentLoads([{ ...vazio, assignedUserId: 'ana' }]), {});
+});
+
+test('conversa somente com ligação continua sendo atendimento real', () => {
+  const chamada = conv({
+    id: 'ligacao',
+    lastMessageDirection: null,
+    lastMessageAt: null,
+    lastCustomerMessageAt: null,
+    lastCallAt: minutesAgo(3),
+  });
+  assert.equal(nextInQueue([chamada], NOW)?.id, 'ligacao');
+});
+
 test('aguardando o cliente com dono não ocupa a fila', () => {
   const ranked = rankQueue([
     conv({ id: 'c1', assignedUserId: 'ana', lastMessageDirection: 'out' }),

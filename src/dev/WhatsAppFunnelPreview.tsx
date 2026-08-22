@@ -7,16 +7,14 @@ import type { WhatsAppChannel, WhatsAppChannelFunnelStage, WhatsAppDepartment } 
 const channelSeed: WhatsAppChannel[] = [
   {
     id: 'channel-commercial', instance_name: 'comercial', name: 'Comercial', color: '#ea6c00',
-    phone_number: '(65) 99999-0101', status: 'connected', last_qr: null, profile_pic_url: null,
-    webhook_token: null, is_active: true, connected_at: new Date().toISOString(), absence_message: null,
+    phone_number: '(65) 99999-0101', status: 'connected', profile_pic_url: null, is_active: true, connected_at: new Date().toISOString(), absence_message: null,
     absence_enabled: false, timezone: 'America/Cuiaba', visibility_mode: 'restricted',
     funnel_enabled: true, funnel_initial_stage: 'novo_contato',
     auto_close_enabled: false, auto_close_minutes: 1440, auto_close_message: null, auto_close_business_hours_only: true,
   },
   {
     id: 'channel-pedro', instance_name: 'pedro', name: 'Pedro', color: '#2563eb',
-    phone_number: '(65) 99999-0202', status: 'connected', last_qr: null, profile_pic_url: null,
-    webhook_token: null, is_active: true, connected_at: new Date().toISOString(), absence_message: null,
+    phone_number: '(65) 99999-0202', status: 'connected', profile_pic_url: null, is_active: true, connected_at: new Date().toISOString(), absence_message: null,
     absence_enabled: false, timezone: 'America/Cuiaba', visibility_mode: 'all',
     funnel_enabled: true, funnel_initial_stage: 'entrada',
     auto_close_enabled: false, auto_close_minutes: 1440, auto_close_message: null, auto_close_business_hours_only: true,

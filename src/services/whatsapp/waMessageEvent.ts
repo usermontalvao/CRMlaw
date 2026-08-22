@@ -7,13 +7,20 @@
  * privado não estava provado em produção, e saiu quando ficou.
  *
  * O broadcast manda o MÍNIMO por operação, e não um formato fixo:
- *   · INSERT — id, conversation_id, direction, type, status, content (120) e
- *     refresh=true. `direction`/`type`/`content` existem só porque o notificador
- *     os usa (filtra 'in' e monta o preview); a thread não lê nenhum dos três.
- *   · UPDATE — id, conversation_id, status e refresh. Sem `content`: ninguém lê
- *     texto de mensagem no UPDATE, e mandá-lo a cada `sent → delivered → read`
- *     era espalhar conteúdo por toda aba aberta sem consumidor.
+ *   · INSERT — id, conversation_id, direction, type, status e refresh=true.
+ *     `direction`/`type` existem só porque o notificador os usa (filtra 'in' e
+ *     escolhe o ícone); a thread não lê nenhum dos dois.
+ *   · UPDATE — id, conversation_id, status e refresh.
  *   · DELETE — id e conversation_id.
+ *
+ * NENHUMA operação carrega o TEXTO da mensagem, e esta é uma regra de
+ * autorização, não de economia: `whatsapp:messages` é um tópico só para o
+ * escritório inteiro, e a policy de `realtime.messages` decide quem ENTRA no
+ * tópico, não o que cada um recebe. Tudo que o gatilho puser no payload chega
+ * a toda aba aberta, inclusive à de quem não enxerga aquele canal. O texto é
+ * lido por HTTP (`messagesApi.getPreview`), onde o RLS responde por usuário.
+ * O campo `content` continua aceito aqui só para a janela do deploy, em que o
+ * gatilho antigo ainda pode estar no ar.
  *
  * Por isso os campos extras são opcionais aqui: ausência é o normal, não erro.
  *

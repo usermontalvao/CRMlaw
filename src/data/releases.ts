@@ -37,6 +37,73 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.0',
+    date: '22/08/2026',
+    summary: 'Uma auditoria de segurança do WhatsApp virou trabalho: a regra de "de quem é este canal" passou a valer no sistema inteiro, e três credenciais que estavam em lugares que podiam ser lidos saíram de lá.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'A regra do canal vale para tudo, não só para a conversa',
+            description: 'Abrir a conversa de um canal alheio já não mostrava mensagem nenhuma — mas a lateral continuava contando a história por outros caminhos: a aba Ligações trazia telefone, horário, duração e desfecho de TODAS as chamadas do escritório; os contadores do painel somavam conversas que a pessoa não pode abrir; o histórico de quem assumiu e transferiu o quê estava aberto; e o texto da mensagem viajava no tempo real para toda aba do escritório. Agora tudo isso enxerga o que a caixa de entrada enxerga. Administrador continua vendo tudo, e quem é responsável por uma conversa continua vendo a sua, mesmo sem ser do canal.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Saber o número de uma conversa deixou de ser permissão para agir nela',
+            description: 'As nove ações de atendimento — assumir, atribuir, transferir, aceitar, liberar, encerrar, reabrir, marcar lida e não lida — não conferiam se a pessoa podia ver aquele atendimento. Assumir uma conversa dá visibilidade sobre ela, então assumir a conversa certa era o caminho para ler o que era de outro canal. As nove passaram a conferir antes.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Áudio, foto, documento e gravação seguem a conversa',
+            description: 'Os arquivos do WhatsApp ficavam num depósito onde qualquer pessoa do escritório alcançava todos os 1.476 — inclusive a gravação de ligação. Recortar a linha da mensagem sem recortar o arquivo não protege nada. Agora o arquivo herda a permissão da conversa a que pertence, e a gravação herda a da ligação. A biblioteca de mídias continua de todo mundo, porque ali não há conversa envolvida.',
+          },
+          {
+            type: 'security' as const,
+            title: 'A agenda da "Nova conversa" não carrega mais CPF',
+            description: 'Abrir o painel trazia a base inteira de clientes para o navegador com nome, telefone e documento — e escrevia o documento em cada linha da lista, que fica aberta na tela enquanto se escolhe com quem falar. Para começar uma conversa basta o telefone. A ficha do cliente e o painel de vínculo continuam mostrando o documento, onde ele é o assunto.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O aviso de canal não diz mais "Offline" antes de saber',
+            description: 'Ao abrir o módulo, o indicador do topo afirmava "Offline" e nenhum canal por um segundo, até a lista chegar. Não estava carregando: estava dizendo que o WhatsApp do escritório está fora — que é a frase que faz o atendente parar de escrever e ir conferir o celular. Agora ele diz "Carregando…" enquanto não sabe.',
+          },
+        ],
+      },
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'A busca de clientes exige estar dentro do sistema',
+            description: 'Duas consultas usadas pela caixa de entrada respondiam sem sessão nenhuma — devolviam nome, CPF, telefone, e-mail e cidade de quem procurasse. Fechadas por dois caminhos independentes, para que uma alteração futura não reabra a porta sem querer.',
+          },
+          {
+            type: 'security' as const,
+            title: 'As rotinas automáticas ganharam senha de verdade',
+            description: 'As varreduras que rodam sozinhas (envio agendado, triagem de documentos e os três acompanhamentos) eram protegidas por uma senha escrita no próprio código do sistema, e viajavam com ela no endereço da chamada. Agora a senha é sorteada dentro do banco de dados, nunca aparece escrita em lugar nenhum e não vai mais no endereço.',
+          },
+          {
+            type: 'security' as const,
+            title: 'A chave de pareamento do canal saiu de vista',
+            description: 'A tabela de canais que o navegador lê carregava junto a senha do webhook e o último QR Code de pareamento — e quem lê o QR entra na conta de WhatsApp do escritório. A senha foi para um cofre que só o servidor abre, e o QR deixou de ser guardado: ele aparece na hora de parear e acabou.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Duas sessões deixaram de disputar o mesmo login',
+            description: 'O CRM, o editor de petições em janela própria e o WhatsApp em janela própria criavam, cada um, uma conexão de login separada — todas gravando no mesmo lugar e cada uma com o seu relógio de renovação. Duas renovações simultâneas podem invalidar uma à outra e derrubar a sessão no meio do expediente. Agora é uma só, por página.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Notificação no celular não pode mais ser forjada',
+            description: 'O endereço que envia o aviso de mensagem nova para o telefone dos atendentes aceitava título e texto de quem chamasse. Agora ele ignora o que recebe e remonta o aviso lendo o banco: só sai notificação de conversa que é sua e de mensagem que chegou de verdade.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.10.344',
     date: '20/08/2026',
     summary: 'A tecla Esc voltou a funcionar dentro do widget: uma vez volta da conversa para a lista, outra fecha a janela.',

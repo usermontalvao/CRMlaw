@@ -27,12 +27,29 @@ Deno.serve(async (req: Request) => {
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
   const admin = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  // O cabeçalho diz "requer JWT (equipe)" desde sempre, mas quem conferia era só
+  // o gateway — que aceita QUALQUER `authenticated`, inclusive o cliente logado
+  // no Portal. E o que sai daqui é o QR CODE do canal: quem lê o QR entra na
+  // conta de WhatsApp do escritório. A conferência é de gente do escritório E de
+  // acesso àquele canal, e quem responde a segunda é a policy `wa_can_see_channel`
+  // (pelo cliente do USUÁRIO — o `admin` acima ignora RLS de propósito).
+  const userClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
+    global: { headers: { Authorization: req.headers.get('Authorization') || '' } },
+  });
+  const { data: { user } } = await userClient.auth.getUser();
+  if (!user) return json({ error: 'Não autenticado' }, 401);
+  const { data: ehEquipe } = await userClient.rpc('is_office_staff');
+  if (ehEquipe !== true) return json({ error: 'Sem permissão' }, 403);
 
   let body: any = {};
   try { body = await req.json(); } catch { /* */ }
   const action = body?.action || 'connect';
   const channelId = body?.channel_id;
   if (!channelId) return json({ error: 'channel_id obrigatório' }, 400);
+
+  const { data: canalVisivel } = await userClient
+    .from('whatsapp_instances').select('id').eq('id', channelId).maybeSingle();
+  if (!canalVisivel) return json({ error: 'Você não tem acesso a este canal.' }, 403);
 
   // Servidor
   const { data: row } = await admin.from('system_settings').select('value')
@@ -70,11 +87,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── connect ──
-    let token = channel.webhook_token as string | null;
-    if (!token) {
-      token = crypto.randomUUID();
-      await admin.from('whatsapp_instances').update({ webhook_token: token }).eq('id', channel.id);
-    }
+    //
+    // O token do webhook saiu de `whatsapp_instances` (tabela que o navegador de
+    // toda a equipe lê) para `private.whatsapp_instance_secrets`. Quem o entrega
+    // — criando um na primeira vez — é uma RPC SECURITY DEFINER concedida só ao
+    // service role. São 32 bytes aleatórios em hex, e não mais um uuid: uuid v4
+    // é identificador, não segredo.
+    const { data: token, error: tokenErr } = await admin.rpc('wa_ensure_webhook_token', { p_channel: channel.id });
+    if (tokenErr || !token) return json({ error: 'Falha ao preparar o webhook do canal.' }, 500);
     const webhookUrl = `${SUPABASE_URL}/functions/v1/evolution-webhook?token=${token}`;
     const events = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE', 'CONTACTS_UPSERT', 'PRESENCE_UPDATE'];
 
@@ -137,8 +157,12 @@ Deno.serve(async (req: Request) => {
     const st2 = await evo(`/instance/connectionState/${inst}`).then(r => r.json()).catch(() => ({}));
     const finalState = st2?.instance?.state || state;
 
+    // O QR vai na RESPOSTA e não é mais guardado. `last_qr` existia desde a
+    // primeira migration do módulo e nunca foi lido por ninguém — era um QR de
+    // pareamento parado no banco, e quem lê o QR entra na conta de WhatsApp do
+    // escritório. Um segredo que ninguém consome só tem tempo para vazar.
     await admin.from('whatsapp_instances')
-      .update({ last_qr: qr, last_reconnect_attempt_at: new Date().toISOString() }).eq('id', channel.id);
+      .update({ last_reconnect_attempt_at: new Date().toISOString() }).eq('id', channel.id);
     const decision = await applyChannelState(admin, channel, finalState);
     return json({ status: decision.status, qr, phone: channel.phone_number });
   } catch (err) {

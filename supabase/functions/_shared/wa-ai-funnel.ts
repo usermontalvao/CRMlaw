@@ -27,8 +27,18 @@
  * onde está.
  */
 
-/** Os degraus que o BACKEND sabe ter alcançado. Nenhum vem do modelo. */
+/**
+ * Os degraus que o BACKEND sabe ter alcançado. Nenhum vem do modelo.
+ *
+ * Os três primeiros são da CONDUÇÃO da triagem e só valem para roteiro que
+ * pediu (`playbook.funnel`). Sem esse pedido, um agente antigo passaria a mover
+ * cards que hoje ninguém move — e o funil de outro canal não é assunto de quem
+ * está mexendo neste.
+ */
 export type WaAiFunnelMilestone =
+  | 'triagem_iniciada'
+  | 'aguardando_resposta'
+  | 'qualificado'
   | 'documentos_solicitados'
   | 'documentos_completos'
   | 'kit_enviado'
@@ -53,8 +63,16 @@ function simples(value: string | null | undefined): string {
 /**
  * O que cada degrau procura no rótulo da etapa, em ordem de preferência.
  * A primeira expressão que casar decide.
+ *
+ * A pista que começa com `=` exige o rótulo INTEIRO, e não um pedaço dele.
+ * "Qualificado" pede isso: por pedaço ele casaria também com "Não Qualificado",
+ * que é a etapa oposta e existe em canal que já está no ar. Quem casa por
+ * pedaço continua casando exatamente como antes.
  */
 const PISTAS: Record<WaAiFunnelMilestone, string[]> = {
+  triagem_iniciada: ['em triagem', 'triagem'],
+  aguardando_resposta: ['aguardando resposta', 'aguardando retorno', 'aguardando contato'],
+  qualificado: ['=qualificado', '=lead qualificado', '=caso qualificado'],
   documentos_solicitados: ['aguardando documento', 'aguardando docs', 'documento'],
   documentos_completos: ['documento recebid', 'documento complet', 'documentos ok'],
   kit_enviado: ['aguardando assinatura', 'assinatura'],
@@ -79,7 +97,10 @@ export function pickWaAiFunnelStage(
 ): WaAiFunnelStage | null {
   const ativas = (stages || []).filter(item => item && item.isActive !== false);
   for (const pista of PISTAS[milestone] || []) {
-    const achada = ativas.find(stage => textosDaEtapa(stage).some(texto => texto.indexOf(pista) !== -1));
+    const exata = pista.charAt(0) === '=';
+    const alvo = exata ? pista.slice(1) : pista;
+    const achada = ativas.find(stage => textosDaEtapa(stage).some(
+      texto => exata ? texto === alvo : texto.indexOf(alvo) !== -1));
     if (achada) return achada;
   }
   return null;

@@ -102,3 +102,77 @@ test('o corte da triagem acha "Não Qualificado" onde ele existe', () => {
   // É o rótulo que manda, e por isso ela não é escolhida para desqualificação.
   assert.equal(pickWaAiFunnelStage('transferido', PEDRO)?.label, 'Em atendimento');
 });
+
+// O funil do canal "Rescisão Indireta", criado pela migration
+// `20260821..._whatsapp_rescisao_indireta`.
+const RESCISAO: WaAiFunnelStage[] = [
+  { stageKey: 'novo_contato', label: 'Novo contato', labels: ['Novo contato'], position: 0, isActive: true },
+  { stageKey: 'em_triagem', label: 'Em triagem', labels: ['Em triagem'], position: 1, isActive: true },
+  { stageKey: 'aguardando_resposta', label: 'Aguardando resposta', labels: ['Aguardando resposta'], position: 2, isActive: true },
+  { stageKey: 'qualificado', label: 'Qualificado', labels: ['Qualificado'], position: 3, isActive: true },
+  { stageKey: 'transferido_pedro', label: 'Transferido ao Pedro', labels: ['Transferido ao Pedro'], position: 4, isActive: true },
+  { stageKey: 'em_acompanhamento', label: 'Em acompanhamento', labels: ['Em acompanhamento'], position: 5, isActive: true },
+  { stageKey: 'nao_qualificado', label: 'Não qualificado', labels: ['Não qualificado'], position: 6, isActive: true },
+  { stageKey: 'encerrado', label: 'Encerrado', labels: ['Encerrado'], position: 7, isActive: true },
+];
+
+test('a escada da triagem acha cada etapa do funil de rescisão indireta', () => {
+  assert.equal(pickWaAiFunnelStage('triagem_iniciada', RESCISAO)?.stageKey, 'em_triagem');
+  assert.equal(pickWaAiFunnelStage('aguardando_resposta', RESCISAO)?.stageKey, 'aguardando_resposta');
+  assert.equal(pickWaAiFunnelStage('qualificado', RESCISAO)?.stageKey, 'qualificado');
+  assert.equal(pickWaAiFunnelStage('transferido', RESCISAO)?.stageKey, 'transferido_pedro');
+  assert.equal(pickWaAiFunnelStage('desqualificado', RESCISAO)?.stageKey, 'nao_qualificado');
+});
+
+test('"Qualificado" casa pelo rótulo INTEIRO — nunca com "Não Qualificado"', () => {
+  // Este é o teste que protege o canal Comercial, que já está no ar: lá as duas
+  // etapas existem, e casar por pedaço escolheria qualquer uma das duas
+  // dependendo da ordem em que o banco devolveu as linhas.
+  assert.equal(pickWaAiFunnelStage('qualificado', COMERCIAL)?.stageKey, 'qualificado');
+  const soANegativa = COMERCIAL.filter(s => s.stageKey !== 'qualificado');
+  assert.equal(pickWaAiFunnelStage('qualificado', soANegativa), null);
+});
+
+test('a condução não encosta nos funis dos canais que já existem', () => {
+  // Nenhum dos dois tem etapa de triagem ou de espera por resposta, então
+  // ligar a condução num agente novo não move card de outro canal.
+  for (const stages of [COMERCIAL, PEDRO]) {
+    assert.equal(pickWaAiFunnelStage('triagem_iniciada', stages), null);
+    assert.equal(pickWaAiFunnelStage('aguardando_resposta', stages), null);
+  }
+});
+
+test('"Aguardando resposta" não é confundida com "Aguardando Documentos"', () => {
+  assert.equal(pickWaAiFunnelStage('aguardando_resposta', COMERCIAL), null);
+  assert.equal(pickWaAiFunnelStage('documentos_solicitados', RESCISAO), null);
+});
+
+test('a triagem que já espera resposta não volta para "Em triagem"', () => {
+  const triagem = pickWaAiFunnelStage('triagem_iniciada', RESCISAO)!;
+  assert.equal(
+    shouldMoveWaAiFunnel({
+      milestone: 'triagem_iniciada', target: triagem, stages: RESCISAO,
+      currentLabels: ['Aguardando resposta'],
+    }),
+    false,
+  );
+});
+
+test('o card passa por Qualificado antes de Transferido ao Pedro', () => {
+  const qualificado = pickWaAiFunnelStage('qualificado', RESCISAO)!;
+  assert.equal(
+    shouldMoveWaAiFunnel({
+      milestone: 'qualificado', target: qualificado, stages: RESCISAO,
+      currentLabels: ['Em triagem'],
+    }),
+    true,
+  );
+  // E, depois de transferido, não retrocede se um gancho atrasado chegar.
+  assert.equal(
+    shouldMoveWaAiFunnel({
+      milestone: 'qualificado', target: qualificado, stages: RESCISAO,
+      currentLabels: ['Transferido ao Pedro'],
+    }),
+    false,
+  );
+});

@@ -6,8 +6,9 @@
 // (08–18, seg–sex, America/Cuiaba). Se o cliente sinalizar que não tem mais
 // interesse, cancela o follow-up. Chamado por pg_cron (token na query).
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { jobTokenOk, naoAutorizado } from '../_shared/job-token.ts';
 
-const TOKEN = Deno.env.get('WA_FOLLOWUP_TOKEN') || 'wa-followup-2026';
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
@@ -47,7 +48,7 @@ function inBusinessHours(d = new Date()): boolean {
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
-  if (url.searchParams.get('token') !== TOKEN) return json({ error: 'unauthorized' }, 401);
+  if (!await jobTokenOk('wa_followup_token', req)) return naoAutorizado();
 
   const force = url.searchParams.get('force') === '1'; // teste: ignora horário comercial
   if (!force && !inBusinessHours()) return json({ ok: true, skipped: 'fora do horário comercial' });

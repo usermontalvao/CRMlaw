@@ -8,8 +8,9 @@
 // ainda nao purgadas (`retention_purged_at is null`). Processa em lote para
 // nao estourar limites; chame de novo (ou deixe o cron) ate zerar o backlog.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { jobTokenOk, naoAutorizado } from '../_shared/job-token.ts';
 
-const TOKEN = Deno.env.get('WA_RETENTION_TOKEN') || 'wa-retention-2026';
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const BUCKET = 'whatsapp-media';
@@ -17,9 +18,7 @@ const BATCH = 500;
 
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
-  if (url.searchParams.get('token') !== TOKEN) {
-    return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
-  }
+  if (!await jobTokenOk('wa_retention_token', req)) return naoAutorizado();
 
   const months = Math.max(1, Math.min(120, Number(url.searchParams.get('months')) || 6));
   const dryRun = url.searchParams.get('dry_run') === '1';

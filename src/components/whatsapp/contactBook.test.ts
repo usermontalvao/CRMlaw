@@ -9,7 +9,6 @@ const contato = (name: string, phone: string, extra: Partial<ContactEntry> = {})
   name,
   phone,
   phoneKind: 'mobile',
-  doc: null,
   avatarUrl: null,
   isPreCadastro: false,
   ...extra,
@@ -17,7 +16,7 @@ const contato = (name: string, phone: string, extra: Partial<ContactEntry> = {})
 
 const agenda: ContactEntry[] = [
   contato('Álvaro Nunes', '5565984001122'),
-  contato('Ana Beatriz', '5565984002233', { doc: '123.456.789-00' }),
+  contato('Ana Beatriz', '5565984002233'),
   contato('Bruno Carvalho', '5565984003344'),
   contato('Bruno Carvalho', '556533221100', { phoneKind: 'phone' }),
   contato('Ícaro Melo', '5565984005566'),
@@ -72,8 +71,11 @@ test('telefone digitado com máscara também casa', () => {
   assert.equal(filterContacts(agenda, '(65) 98400-2233').length, 1);
 });
 
-test('busca por CPF com pontuação acha o cliente', () => {
-  assert.deepEqual(filterContacts(agenda, '123.456').map(e => e.name), ['Ana Beatriz']);
+// A agenda não carrega mais CPF/CNPJ (nem do banco, nem para a tela): para
+// COMEÇAR uma conversa basta o telefone. Digitar documento agora não casa com
+// ninguém — é este o comportamento esperado, não uma regressão.
+test('documento digitado não casa com ninguém: o CPF saiu da agenda', () => {
+  assert.equal(filterContacts(agenda, '123.456').length, 0);
 });
 
 test('nada casando devolve lista vazia, não a agenda toda', () => {

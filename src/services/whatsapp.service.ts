@@ -9,6 +9,7 @@ import { adminApi } from './whatsapp/admin';
 import { client360Api } from './whatsapp/client360';
 import { automationApi } from './whatsapp/automation';
 import { aiAssistantsApi } from './whatsapp/aiAssistants';
+import { mediaLibraryApi } from './whatsapp/mediaLibrary';
 
 // Helpers e tipos de domínio (telefone, template, permissões, overview, etc.).
 export {
@@ -26,6 +27,8 @@ export type {
   WhatsAppAiExecution, WhatsAppAiFollowup, WhatsAppAiConversationState, WhatsAppAiTargetOption,
 } from '../types/whatsapp.types';
 export { WaAiValidationError } from './whatsapp/aiAssistants';
+export { tipoDeMidia, MEDIA_LIBRARY_MAX_BYTES } from './whatsapp/mediaLibrary';
+export type { WhatsAppMediaLibraryItem, WhatsAppMediaLibraryType } from '../types/whatsapp.types';
 
 /**
  * API única consumida pela UI. Mantida como objeto composto para preservar os
@@ -39,4 +42,5 @@ export const whatsappService = {
   ...client360Api,
   ...automationApi,
   ...aiAssistantsApi,
+  ...mediaLibraryApi,
 };

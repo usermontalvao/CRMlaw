@@ -5,25 +5,63 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { processService } from '../process.service';
 import type { WhatsAppConversation, WhatsAppClientLite, TimelineEvent } from '../../types/whatsapp.types';
 import {
-  CONV_TABLE, MSG_TABLE, TRANSFER_TABLE, NOTES_TABLE,
+  CONV_TABLE, MSG_TABLE, CHANNEL_TABLE, TRANSFER_TABLE, NOTES_TABLE,
   attachAvatarUrls, attachClientNames, invokeFn, normalizePhone, phoneVariants, resolveAvatarUrl,
   type WhatsAppInternalNote,
 } from './shared';
+import { filtrarPorCanalPermitido } from './canaisPermitidos';
 import { messagesApi } from './messages';
 import { subscribeWaMessageEvents, type WaMessageEvent } from './messageEvents';
 import { subscribeWaConversationEvents } from './conversationEvents';
 import { collapseContactThreads } from '../../components/whatsapp/contactThreads';
 import { suprimirAvisoDeTransferencia } from './transferNotice';
 
+/**
+ * Os canais que o SERVIDOR entrega para este usuário — a lista de
+ * `whatsapp_instances` já recortada pela policy `wa_can_see_channel`.
+ *
+ * É o insumo da segunda tranca (`filtrarPorCanalPermitido`), e por isso é
+ * guardada por pouco tempo: perder acesso a um canal precisa refletir na lista
+ * na atualização seguinte, não no próximo F5. Falha de rede devolve `null` —
+ * "não sei" —, e "não sei" nunca filtra nada.
+ */
+const VALIDADE_CANAIS_MS = 60_000;
+let canaisEm = 0;
+let canaisIds: string[] | null = null;
+
+async function canaisPermitidosIds(): Promise<string[] | null> {
+  if (canaisIds && Date.now() - canaisEm < VALIDADE_CANAIS_MS) return canaisIds;
+  const { data, error } = await supabase.from(CHANNEL_TABLE).select('id');
+  if (error) return null;
+  const ids = (data || []).map((c: any) => c.id as string).filter(Boolean);
+  // Lista vazia não é resposta: pode ser a consulta que saiu antes de a sessão
+  // ser restaurada. Não guarda, e devolve "não sei".
+  if (ids.length === 0) return null;
+  canaisIds = ids;
+  canaisEm = Date.now();
+  return ids;
+}
+
+/** Esquece os canais guardados — usado quando a conta muda. */
+export function esqueceCanaisPermitidos(): void {
+  canaisIds = null;
+  canaisEm = 0;
+}
+
 export const conversationsApi = {
   // ── Conversas ────────────────────────────────────────────────
   async listConversations(): Promise<WhatsAppConversation[]> {
-    const { data, error } = await supabase
-      .from(CONV_TABLE)
-      .select('*')
-      .order('last_message_at', { ascending: false, nullsFirst: false });
+    const [resposta, canais] = await Promise.all([
+      supabase
+        .from(CONV_TABLE)
+        .select('*')
+        .order('last_message_at', { ascending: false, nullsFirst: false }),
+      canaisPermitidosIds(),
+    ]);
+    const { data, error } = resposta;
     if (error) throw new Error(error.message);
-    const convs = (data || []) as WhatsAppConversation[];
+    // A policy já recortou. Isto é a segunda tranca — ver `canaisPermitidos.ts`.
+    const convs = filtrarPorCanalPermitido((data || []) as WhatsAppConversation[], canais);
     await Promise.all([attachAvatarUrls(convs), attachClientNames(convs)]);
     return convs;
   },
@@ -52,14 +90,18 @@ export const conversationsApi = {
    * e o RLS já limita o que este usuário enxerga.
    */
   async countUnreadContacts(): Promise<number> {
-    const { data, error } = await supabase
-      .from(CONV_TABLE)
-      .select('id, contact_phone, remote_jid, client_id, status, unread_count, is_blocked')
-      .gt('unread_count', 0)
-      .eq('is_blocked', false)
-      .neq('status', 'closed');
+    const [resposta, canais] = await Promise.all([
+      supabase
+        .from(CONV_TABLE)
+        .select('id, instance_id, contact_phone, remote_jid, client_id, status, unread_count, is_blocked')
+        .gt('unread_count', 0)
+        .eq('is_blocked', false)
+        .neq('status', 'closed'),
+      canaisPermitidosIds(),
+    ]);
+    const { data, error } = resposta;
     if (error) throw new Error(error.message);
-    return collapseContactThreads((data || []) as any[]).length;
+    return collapseContactThreads(filtrarPorCanalPermitido((data || []) as any[], canais)).length;
   },
 
   /** Busca/atualiza a foto de perfil do contato na Evolution e persiste. */

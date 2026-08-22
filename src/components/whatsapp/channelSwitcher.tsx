@@ -6,8 +6,9 @@
 // o canal (com o estado dele) no cabeçalho e poder pular para outro conectado —
 // sem procurar a outra conversa na inbox — é o que evita a espera silenciosa.
 import React, { useState } from 'react';
-import { BellRing, Check, Loader2, Smartphone, AlertTriangle } from 'lucide-react';
+import { BellRing, Check, Loader2, Smartphone, AlertTriangle, RefreshCw } from 'lucide-react';
 import { conversationName, maskName, prettyPhone } from './format';
+import { zc } from '../../styles/layers';
 import type {
   WhatsAppChannel, WhatsAppConversation, WhatsAppInstanceStatus, WhatsAppScheduledMessage,
 } from '../../types/whatsapp.types';
@@ -91,6 +92,136 @@ export const ChannelSwitcher: React.FC<{
             <p className="px-3 pt-1.5 pb-1 text-[10.5px] leading-snug text-slate-400 border-t border-[#f1f0ec] mt-1">
               Trocar abre a conversa deste contato no outro número.
             </p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+/**
+ * Estado das conexões no cabeçalho da inbox — dito com NOME.
+ *
+ * Antes havia aqui um "Reconectando…" solto, e ele misturava duas coisas que
+ * pedem reações opostas: o socket de tempo real do CRM (que só atrasa a lista,
+ * e se resolve sozinho) e um NÚMERO do escritório fora do ar (que retém tudo
+ * que for escrito e exige revalidar o canal). Quem lia só via a palavra e
+ * perguntava "qual canal caiu?" — sem resposta na tela, porque o aviso nunca
+ * tinha sido sobre canal nenhum.
+ *
+ * Agora o chip diz qual é o caso e, quando é canal, diz o nome. O ponto verde
+ * também deixou de ser "algum canal conectado": com três números e um fora, ele
+ * continuava verde e a queda só aparecia na hora do Enter.
+ */
+export const ChannelHealthChip: React.FC<{
+  channels: WhatsAppChannel[];
+  /** Socket de tempo real do CRM caído (a lista está sendo reposta por HTTP). */
+  realtimeDown: boolean;
+  /** No widget o espaço é curto: só o essencial fica escrito. */
+  compact?: boolean;
+  /** A lista de canais ainda não chegou — "nenhum canal" ainda não é um fato. */
+  loading?: boolean;
+}> = ({ channels, realtimeDown, compact, loading }) => {
+  const [open, setOpen] = useState(false);
+  // Canal desativado no cadastro não está "fora do ar": ele foi desligado de
+  // propósito, e acender alarme por ele treina o atendente a ignorar o chip.
+  const ativos = channels.filter(c => c.is_active !== false);
+  const fora = ativos.filter(c => c.status !== 'connected');
+  const caidos = fora.filter(c => c.status === 'disconnected');
+
+  // Um canal fora vale mais que o socket caído: o socket atrasa, o canal impede.
+  const grave = caidos.length > 0;
+  const tom = fora.length > 0
+    ? (grave
+      ? { dot: '#dc2626', chip: 'bg-red-50 text-red-700', hover: 'hover:bg-red-100' }
+      : { dot: '#f59e0b', chip: 'bg-amber-50 text-amber-700', hover: 'hover:bg-amber-100' })
+    : realtimeDown
+      ? { dot: '#f59e0b', chip: 'bg-amber-50 text-amber-700', hover: 'hover:bg-amber-100' }
+      : { dot: loading ? '#cbd5e1' : ativos.length > 0 ? '#16a34a' : '#9ca3af', chip: 'text-slate-500', hover: 'hover:bg-[#f1f0ec]' };
+
+  // Enquanto a lista não chega, o chip não afirma nada. Dizer "Offline" com
+  // base em `channels === []` é confundir "ainda não sei" com "está fora" — e
+  // "está fora" é a frase que faz o atendente parar de escrever e ir conferir o
+  // celular. Silêncio é melhor do que uma afirmação que se desmente sozinha um
+  // segundo depois.
+  const rotulo = loading
+    ? 'Carregando…'
+    : fora.length > 0
+    ? (fora.length === 1
+      ? `${channelName(fora[0])} ${fora[0].status === 'connecting' ? 'reconectando' : 'fora'}`
+      : `${fora.length} canais fora`)
+    : realtimeDown
+      ? 'Reconectando…'
+      : ativos.length > 0 ? 'Online' : 'Offline';
+
+  const dica = loading
+    ? 'Consultando o estado dos canais…'
+    : fora.length > 0
+    ? `${fora.map(c => `${channelName(c)}: ${CHANNEL_STATUS_META[c.status].label.toLowerCase()}`).join(' · ')}`
+    : realtimeDown
+      ? 'Sem conexão em tempo real com o CRM — a lista está sendo atualizada por sincronização periódica. Seus canais do WhatsApp seguem conectados.'
+      : ativos.length > 0 ? 'Conectado ao WhatsApp' : 'Nenhum canal conectado';
+
+  return (
+    <div className="relative flex-shrink-0">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}
+        title={dica}
+        className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold transition ${tom.chip} ${tom.hover}`}>
+        {fora.length === 0 && realtimeDown
+          ? <RefreshCw size={11} className="animate-spin" />
+          : <span className="inline-block w-2 h-2 rounded-full" style={{ background: tom.dot }} />}
+        {/* Estando tudo no ar, o verde sozinho já diz o mesmo e a palavra
+            "Online" custa 45 pixels numa linha de 384 que já carrega busca,
+            filtro e três botões. Queda, não: ali o nome precisa estar escrito
+            mesmo no widget, senão volta a pergunta "qual canal?". */}
+        {(!compact || fora.length > 0 || realtimeDown || loading) && <span className="max-w-[132px] truncate">{rotulo}</span>}
+      </button>
+      {open && (
+        <>
+          <button type="button" aria-label="Fechar estado dos canais"
+            className={`fixed inset-0 ${zc.POPOVER} cursor-default bg-transparent`}
+            onClick={() => setOpen(false)} />
+          {/* Abre para a DIREITA, não para a esquerda: o chip é o primeiro item
+              do cabeçalho da lista, e um painel de 256px ancorado à direita
+              saía pela borda do módulo e ia parar embaixo do menu lateral. Para
+              a direita ele cabe inteiro dentro da coluna de conversas. */}
+          <div role="menu"
+            className={`absolute left-0 top-8 ${zc.POPOVER} w-64 rounded-xl bg-white shadow-xl border border-[#e7e5df] py-1.5 overflow-hidden`}>
+            <div className="px-3 py-1 text-[10.5px] font-bold uppercase tracking-wide text-slate-400">Estado dos canais</div>
+            {ativos.length === 0 && (
+              <p className="px-3 py-2 text-[11.5px] text-slate-500">
+                {loading ? 'Consultando os canais…' : 'Nenhum canal ativo cadastrado.'}
+              </p>
+            )}
+            {ativos.map(c => {
+              const meta = CHANNEL_STATUS_META[c.status];
+              return (
+                <div key={c.id} className="flex items-center gap-2.5 px-3 py-2">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.color || '#94a3b8' }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12.5px] font-semibold text-slate-800 truncate">{channelName(c)}</span>
+                    <span className="flex items-center gap-1.5 text-[10.5px] text-slate-400">
+                      {c.phone_number ? prettyPhone(c.phone_number) : 'sem número'}
+                      <span className={`inline-flex items-center gap-1 font-semibold ${meta.text}`}>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ background: meta.dot }} />{meta.label}
+                      </span>
+                    </span>
+                  </span>
+                </div>
+              );
+            })}
+            {fora.length > 0 && (
+              <p className="px-3 pt-1.5 pb-2 text-[10.5px] leading-snug text-slate-400 border-t border-[#f0eee9]">
+                O que for escrito por um canal fora fica <strong>retido</strong> até ele voltar. Revalide o número em
+                {' '}<strong>Configurações → Integrações → WhatsApp</strong>.
+              </p>
+            )}
+            {realtimeDown && (
+              <p className="px-3 pt-1.5 pb-2 text-[10.5px] leading-snug text-slate-400 border-t border-[#f0eee9]">
+                A atualização em tempo real do CRM também está fora: a inbox segue
+                sendo reposta por sincronização periódica.
+              </p>
+            )}
           </div>
         </>
       )}

@@ -72,6 +72,15 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
+  // Ser do escritório não é ser do CANAL. A leitura abaixo usa service role e
+  // ignora RLS, então o `call_log_id` do corpo valeria como permissão: bastaria
+  // trocá-lo para receber o TEXTO da ligação de um atendimento alheio. A
+  // conferência vai pelo cliente do usuário, onde a policy da ligação responde
+  // (`wa_can_see_call`); linha invisível volta nula.
+  const { data: podeOuvir } = await userClient
+    .from('whatsapp_call_logs').select('id').eq('id', callLogId).maybeSingle();
+  if (!podeOuvir) return json({ error: 'Você não tem acesso a esta ligação.' }, 403);
+
   const { data: row, error: rowErr } = await admin
     .from('whatsapp_call_logs')
     .select('id, recording_path, recording_mime, recording_bytes, transcript, transcript_status, transcript_model')

@@ -265,10 +265,15 @@ export const callLogService = {
    *
    * Traz o nome e o rosto junto porque uma lista de telefones não é histórico
    * de ligação: são duas consultas (as chamadas, depois as conversas delas), e
-   * não um `join` no PostgREST, porque a política de leitura de
-   * `whatsapp_conversations` é por setor e um `join` esconderia a CHAMADA
-   * inteira de quem não enxerga a conversa. Aqui a chamada aparece sempre; o
-   * nome é que pode faltar.
+   * não um `join` no PostgREST.
+   *
+   * O RECORTE É DO BANCO. Esta lista já foi "todas as chamadas do escritório", e
+   * era por onde o telefone, o nome, o rosto e o horário de contatos de um canal
+   * restrito apareciam para quem não podia abrir aquela conversa — a aba de
+   * Ligações contando o que a thread se recusava a mostrar. Hoje a policy
+   * `wa_can_see_call` responde por linha: a ligação aparece se for SUA, se
+   * pertencer a um atendimento que você enxerga, ou se o número não for de
+   * conversa nenhuma. Nada disso é decidido aqui.
    */
   async listRecent(limit = 80): Promise<CallLogRow[]> {
     const { data, error } = await supabase

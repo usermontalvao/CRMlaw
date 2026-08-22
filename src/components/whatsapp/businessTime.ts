@@ -292,3 +292,54 @@ export function elapsedMinutesForChannels(
     return fn(fromMs, toMs);
   };
 }
+
+// ── Canal 24 horas ───────────────────────────────────────────────────
+//
+// "Atende 24h" NÃO é uma coluna à parte no canal: é a agenda cheia — os sete
+// dias ativos, de 00:00 a 24:00. Guardar assim faz o plantão passar pelo MESMO
+// caminho de todo mundo (SLA da fila, aviso de ausência, encerramento por
+// inatividade, varredura de documentos) sem que cada um desses lugares precise
+// aprender uma segunda regra — e esquecer dela.
+//
+// O fim é 24:00, não 23:59: `TIME` do Postgres aceita a hora 24 e ela vale 1440
+// minutos aqui, então o minuto das 23:59 fica DENTRO do expediente. Com 23:59 o
+// canal fecharia por sessenta segundos toda madrugada, e alguém iria descobrir
+// isso pelo aviso de ausência disparando às 23:59:30.
+
+export const ALWAYS_OPEN_START = '00:00';
+export const ALWAYS_OPEN_END = '24:00';
+
+/** Uma linha de expediente como o banco a guarda. */
+export interface BusinessHourRowLike {
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  is_active: boolean;
+}
+
+/** As sete linhas de um canal 24 horas, prontas para gravar. */
+export function alwaysOpenRows(): BusinessHourRowLike[] {
+  return Array.from({ length: 7 }, (_, day_of_week) => ({
+    day_of_week,
+    start_time: ALWAYS_OPEN_START,
+    end_time: ALWAYS_OPEN_END,
+    is_active: true,
+  }));
+}
+
+/**
+ * Estas linhas descrevem um canal 24 horas? Serve para a tela reabrir no estado
+ * em que foi salva. Aceita `HH:MM` e `HH:MM:SS` porque é isso que o Postgres
+ * devolve ('24:00:00'), e exige os sete dias — seis dias de plantão e um dia
+ * fechado é uma agenda comum, não 24h.
+ */
+export function isAlwaysOpen(rows: readonly BusinessHourRowLike[] | null | undefined): boolean {
+  const days = new Set<number>();
+  for (const row of rows || []) {
+    if (!row.is_active) return false;
+    if (parseMinute(row.start_time) !== 0) return false;
+    if (parseMinute(row.end_time) !== 24 * 60) return false;
+    days.add(row.day_of_week);
+  }
+  return days.size === 7;
+}

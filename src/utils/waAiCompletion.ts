@@ -30,6 +30,22 @@ export interface WaAiCompletionMemory {
   pendingItems: string[];
 }
 
+/**
+ * O que o CRM já sabe do contato sem ter perguntado nada.
+ *
+ * Telefone, canal e data de entrada não são resposta de triagem — são fato do
+ * atendimento. Perguntá-los ao cliente seria pedir o que já está na tela, e
+ * deixá-los de fora obrigaria quem recebe a conversa a procurar em outro lugar
+ * justamente enquanto lê o resumo.
+ */
+export interface WaAiCompletionContact {
+  name?: string | null;
+  phone?: string | null;
+  channelName?: string | null;
+  /** Quando o contato chegou, em ISO. */
+  firstContactAt?: string | null;
+}
+
 export interface WaAiCompletionExternalState {
   documents: 'none' | 'pending' | 'complete';
   /** O documento que a ROTA de residência exige, pedido em separado. */
@@ -276,6 +292,209 @@ function buildAccountCompletionPlans(
 }
 
 /**
+ * ── Rescisão indireta ──────────────────────────────────────────────────────
+ *
+ * O fechamento mais simples do CRM, e de propósito: uma transferência, sem
+ * escada e sem pedido de documento. A triagem inicial deste canal não pede
+ * arquivo, CPF nem dado bancário, então não há estado externo a esperar — o que
+ * termina a conversa é a análise humana, não um upload.
+ */
+
+/** Os pontos do artigo 483 que a triagem oferece, no vocabulário do cliente. */
+const WA_AI_RESCISAO_FALTAS_GRAVES = [
+  'salario_atrasado_ou_nao_pago',
+  'fgts_nao_depositado',
+  'assedio_humilhacao_ou_ameaca',
+  'risco_a_saude_ou_seguranca',
+  'reducao_salarial',
+  'descumprimento_do_contrato',
+  'outra_falta_grave',
+];
+
+/** Os que costumam não esperar: vínculo ativo somado a um destes. */
+const WA_AI_RESCISAO_FALTAS_URGENTES = [
+  'assedio_humilhacao_ou_ameaca',
+  'risco_a_saude_ou_seguranca',
+  'salario_atrasado_ou_nao_pago',
+];
+
+function textoDoFato(facts: Record<string, unknown>, key: string): string {
+  const valor = facts[key];
+  return vazioNoResumo(valor) ? '' : String(valor).trim();
+}
+
+function verdade(value: unknown): boolean {
+  if (value === true) return true;
+  return comparable(String(value ?? '')) === 'sim';
+}
+
+/**
+ * O nível de urgência — INFERÊNCIA, e o resumo diz isso com todas as letras.
+ *
+ * Vale a pena calcular no backend em vez de perguntar ao modelo pelo mesmo
+ * motivo de sempre: é regra fixa, e regra fixa o modelo erra de vez em quando
+ * sem avisar. Aqui ela é sempre a mesma e sempre explicável.
+ */
+export function waAiRescisaoUrgencia(
+  facts: Record<string, unknown>,
+): { nivel: 'alta' | 'media' | 'baixa'; porque: string } {
+  const ativo = verdade(facts.vinculo_atual);
+  const falta = comparable(textoDoFato(facts, 'tipo_falta'));
+  if (ativo && WA_AI_RESCISAO_FALTAS_URGENTES.indexOf(falta) !== -1) {
+    return { nivel: 'alta', porque: 'ainda está na empresa e relatou ponto que costuma não esperar' };
+  }
+  if (ativo) return { nivel: 'media', porque: 'ainda está na empresa' };
+  return { nivel: 'baixa', porque: 'o vínculo já está encerrado' };
+}
+
+/**
+ * Por que este contato chegou até aqui — os critérios que de fato bateram.
+ *
+ * Não é veredito: nenhum deles diz que existe rescisão indireta, e a frase
+ * final do resumo repete isso. É a prestação de contas do encaminhamento.
+ */
+export function waAiRescisaoMotivoDaQualificacao(facts: Record<string, unknown>): string {
+  const motivos: string[] = [];
+  if (verdade(facts.vinculo_atual)) motivos.push('vínculo de emprego ativo');
+  else {
+    const saida = textoDoFato(facts, 'data_saida');
+    motivos.push(saida ? `vínculo encerrado em ${saida}` : 'vínculo já encerrado');
+  }
+  const falta = comparable(textoDoFato(facts, 'tipo_falta'));
+  if (WA_AI_RESCISAO_FALTAS_GRAVES.indexOf(falta) !== -1) {
+    motivos.push('relato de possível descumprimento do empregador');
+  }
+  const provas = textoDoFato(facts, 'provas');
+  if (provas) motivos.push('indicou elementos que podem demonstrar os fatos');
+  return `${motivos.join('; ')} — caso para análise humana.`;
+}
+
+/** A data do contato como o escritório a lê: dia/mês/ano no fuso de Cuiabá. */
+function dataDoContato(iso: string | null | undefined): string {
+  const bruto = String(iso || '').trim();
+  if (!bruto) return '';
+  const data = new Date(bruto);
+  if (Number.isNaN(data.getTime())) return '';
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Cuiaba', day: '2-digit', month: '2-digit', year: 'numeric',
+  }).format(data);
+}
+
+/** Teto do `resumo` de `transferir_atendimento` no catálogo de ações. */
+const WA_AI_RESUMO_MAX = 800;
+
+/** Um fato longo demais vira um fato curto, não um resumo cortado no meio. */
+function fatoNoLimite(texto: string): string {
+  if (texto.length <= 200) return texto;
+  return `${texto.slice(0, 199).replace(/\s+\S*$/, '')}…`;
+}
+
+/**
+ * O resumo que o Pedro lê.
+ *
+ * A regra que organiza tudo: FATO e INFERÊNCIA em blocos separados e rotulados.
+ * O que o contato disse fica no primeiro bloco, do jeito que ele disse; o que o
+ * assistente concluiu (urgência, motivo do encaminhamento) fica no segundo, com
+ * o rótulo dizendo que é leitura de máquina. Quem recebe precisa saber, sem
+ * perguntar, qual das duas coisas está lendo.
+ */
+export function renderWaAiRescisaoSummary(input: {
+  facts: Record<string, unknown>;
+  pendingItems?: string[];
+  fields?: { key: string; label?: string }[];
+  contact?: WaAiCompletionContact | null;
+}): string {
+  const facts = input.facts || {};
+  const campos = input.fields || [];
+  const contato = input.contact || {};
+
+  const rotulo = (key: string) => {
+    const achado = campos.find(item => item.key === key);
+    return String(achado?.label || key).trim();
+  };
+
+  const nome = textoDoFato(facts, 'nome') || String(contato.name || '').trim();
+  const identificacao = [nome || 'sem nome informado', String(contato.phone || '').trim()]
+    .filter(Boolean).join(' · ');
+  const origem = [
+    String(contato.channelName || '').trim() ? `canal ${String(contato.channelName).trim()}` : '',
+    dataDoContato(contato.firstContactAt),
+  ].filter(Boolean).join(' · ');
+
+  const cabecalho = [`Contato: ${identificacao}`];
+  const cidade = textoDoFato(facts, 'cidade_estado');
+  if (cidade) cabecalho.push(`Cidade/UF: ${cidade}`);
+  if (origem) cabecalho.push(`Origem: ${origem}`);
+
+  // Os fatos saem na ORDEM DO ROTEIRO, que é a ordem em que a conversa
+  // aconteceu. Identificação e cidade já estão no cabeçalho e não se repetem.
+  const noCabecalho = ['nome', 'cidade_estado'];
+  const ordenadas = campos.map(item => item.key)
+    .filter(key => key in facts && noCabecalho.indexOf(key) === -1);
+  for (const key of Object.keys(facts)) {
+    if (ordenadas.indexOf(key) === -1 && noCabecalho.indexOf(key) === -1) ordenadas.push(key);
+  }
+
+  const linhas: string[] = [];
+  const semResposta: string[] = [];
+  for (const key of ordenadas) {
+    if (vazioNoResumo(facts[key])) { semResposta.push(rotulo(key).toLowerCase()); continue; }
+    const valor = typeof facts[key] === 'boolean' ? (facts[key] ? 'sim' : 'não') : String(facts[key]).trim();
+    linhas.push(`• ${rotulo(key)}: ${fatoNoLimite(valor)}`);
+  }
+
+  const urgencia = waAiRescisaoUrgencia(facts);
+  const inferencias = [
+    `• Urgência: ${urgencia.nivel} — ${urgencia.porque}.`,
+    `• Encaminhado porque: ${waAiRescisaoMotivoDaQualificacao(facts)}`,
+    '• Nenhuma conclusão sobre existir ou não rescisão indireta: depende da análise do advogado.',
+  ];
+
+  // O bloco de inferência é RESERVADO antes de qualquer corte. Ele é o que
+  // carrega a ressalva de que nada ali é veredito, e um relato comprido não
+  // pode empurrá-la para fora do teto de 800 — quem recebe leria as conclusões
+  // do assistente sem a linha que diz que são conclusões do assistente.
+  const rodape = `Leitura do assistente (não confirmada):\n${inferencias.join('\n')}`;
+
+  const corpo = [cabecalho.join('\n')];
+  corpo.push(linhas.length > 0
+    ? `Informado pelo contato:\n${linhas.join('\n')}`
+    : 'Informado pelo contato: ainda não há fatos estruturados.');
+  if (semResposta.length > 0) corpo.push(`Não informado: ${semResposta.join(', ')}.`);
+  const pendentes = (input.pendingItems || []).filter(Boolean);
+  if (pendentes.length > 0) corpo.push(`Ainda falta: ${pendentes.join(' · ')}.`);
+
+  const espaco = WA_AI_RESUMO_MAX - rodape.length - 2;
+  return `${corpo.join('\n\n').slice(0, Math.max(0, espaco))}\n\n${rodape}`.slice(0, WA_AI_RESUMO_MAX);
+}
+
+function buildRescisaoCompletionPlans(
+  assistant: WaAiCompletionAssistant, playbook: WaAiCompletionPlaybook,
+  memory: WaAiCompletionMemory, contact: WaAiCompletionContact | null,
+): WaAiCompletionPlan[] {
+  const allowed = new Set(assistant.allowed_actions || []);
+  const args = {
+    resumo: renderWaAiRescisaoSummary({
+      facts: memory.knownFacts,
+      pendingItems: memory.pendingItems,
+      fields: playbook.fields,
+      contact,
+    }),
+    motivo: 'Triagem de rescisão indireta concluída — encaminhado para análise do advogado.',
+  };
+
+  const ref = bindingRef(assistant, playbook, 'destino_triagem_concluida', 'transferir_atendimento');
+  if (ref && allowed.has('transferir_atendimento')) {
+    return [{ action: 'transferir_atendimento', args: { ...args, destino: ref.target_label }, ref }];
+  }
+  // Sem destino configurado a conversa NÃO fica com a IA: volta para a fila
+  // humana, que é onde alguém a vê. Perder o destino não pode virar silêncio.
+  return allowed.has('transferir_para_humano')
+    ? [{ action: 'transferir_para_humano', args, ref: null }]
+    : [];
+}
+
+/**
  * O roteiro decide que terminou; esta função apenas materializa o fechamento
  * já configurado. Assim um modelo antigo não consegue esquecer documentos ou
  * transferência e também não escolhe um destino por texto livre.
@@ -285,10 +504,14 @@ export function buildWaAiCompletionPlans(
   playbook: WaAiCompletionPlaybook | null,
   memory: WaAiCompletionMemory,
   externalState: WaAiCompletionExternalState = { documents: 'none', kit: 'none' },
+  contact: WaAiCompletionContact | null = null,
 ): WaAiCompletionPlan[] {
   if (!playbook) return [];
   if (playbook.id === 'bloqueio_encerramento_conta') {
     return buildAccountCompletionPlans(assistant, playbook, memory, externalState);
+  }
+  if (playbook.id === 'rescisao_indireta') {
+    return buildRescisaoCompletionPlans(assistant, playbook, memory, contact);
   }
   if (playbook.id !== 'sem_registro_carteira') return [];
   const allowed = new Set(assistant.allowed_actions || []);

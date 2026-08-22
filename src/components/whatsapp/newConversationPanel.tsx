@@ -24,7 +24,7 @@
 //    aquele número TEM WhatsApp. Ver `whatsapp-contact-probe`.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Search, Loader2, UserPlus, Star, X, MessageCircle, ShieldAlert, Check, Ban } from 'lucide-react';
-import { prettyPhone, prettyDoc } from './format';
+import { prettyPhone } from './format';
 import { ContactAvatar } from './contactAvatar';
 import { whatsappService, normalizePhone } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -479,7 +479,6 @@ export const NewConversationPanel: React.FC<{
                           : <>
                               {prettyPhone(entry.phone)}
                               {entry.phoneKind === 'phone' && <span className="text-slate-300"> · fixo</span>}
-                              {entry.doc && <span className="text-slate-300"> · {prettyDoc(entry.doc)}</span>}
                             </>}
                       </p>
                     </div>

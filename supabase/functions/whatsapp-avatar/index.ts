@@ -36,6 +36,14 @@ Deno.serve(async (req: Request) => {
   const conversationId: string | null = body?.conversation_id || null;
   if (!conversationId) return json({ error: 'conversation_id obrigatório' }, 400);
 
+  // O id da conversa vem do cliente e a leitura abaixo é feita com service role,
+  // que ignora RLS: sem esta conferência, trocar o `conversation_id` traria a
+  // FOTO do contato de um canal que o usuário não pode ver. Quem responde é a
+  // policy da inbox — linha invisível volta nula, e nula aqui é 403.
+  const { data: visivel } = await userClient.from('whatsapp_conversations')
+    .select('id').eq('id', conversationId).maybeSingle();
+  if (!visivel) return json({ error: 'Você não tem acesso a este atendimento.' }, 403);
+
   const { data: conv } = await admin.from('whatsapp_conversations')
     .select('id, instance_id, remote_jid, contact_phone').eq('id', conversationId).maybeSingle();
   if (!conv) return json({ error: 'Conversa não encontrada' }, 404);

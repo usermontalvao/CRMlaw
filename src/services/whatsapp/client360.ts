@@ -101,7 +101,7 @@ export const client360Api = {
     const { data, error } = await supabase.rpc('whatsapp_contact_book');
     if (error) throw new Error(error.message);
     const rows = (data || []) as {
-      client_id: string; full_name: string; cpf_cnpj: string | null;
+      client_id: string; full_name: string;
       phone: string; phone_kind: 'mobile' | 'phone';
       wa_avatar_path: string | null; is_pre_cadastro: boolean | null;
     }[];
@@ -116,7 +116,6 @@ export const client360Api = {
       name: r.full_name,
       phone: r.phone,
       phoneKind: r.phone_kind,
-      doc: r.cpf_cnpj,
       avatarUrl: paraAssinar[i].contact_avatar_url,
       isPreCadastro: r.is_pre_cadastro === true,
     }));
