@@ -79,7 +79,12 @@ Deno.serve(async (req: Request) => {
 
     const callerRole = normalizeRole(callerProfile?.role ?? "");
 
-    if (callerRole !== "administrador" && callerRole !== "advogado") {
+    // Só administrador. Antes "advogado" também podia, e isso era uma escada:
+    // desligar alguém remove vínculos, cancela transferências pendentes e
+    // redistribui as conversas dele (gatilho `wa_offboard_ao_desativar`) — e um
+    // advogado podia aplicar isso ao próprio administrador. Desligar é ato de
+    // administração, não de operação.
+    if (callerRole !== "administrador") {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -131,6 +136,33 @@ Deno.serve(async (req: Request) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // O ban do GoTrue impede LOGIN NOVO; ele não derruba a sessão já aberta, e
+    // um JWT vivo vale por semanas com refresh. A porta de verdade quem fecha é
+    // `is_office_staff()`, que passou a exigir `is_active` — mas deixar o
+    // refresh token de pé seria confiar só nela. O endpoint de logout do GoTrue
+    // revoga as sessões do usuário; best-effort, porque falhar aqui não pode
+    // desfazer o desligamento que já foi gravado.
+    if (!activate) {
+      try {
+        const logout = await fetch(
+          `${supabaseUrl}/auth/v1/admin/users/${targetUserId}/logout`,
+          {
+            method: "POST",
+            headers: {
+              apikey: supabaseServiceRoleKey,
+              Authorization: `Bearer ${supabaseServiceRoleKey}`,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+        if (!logout.ok) {
+          console.error("[toggle-user-status] logout não aplicado", logout.status, await logout.text());
+        }
+      } catch (e) {
+        console.error("[toggle-user-status] logout falhou", e);
+      }
     }
 
     if (activate && normalizedEmail) {

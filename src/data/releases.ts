@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.2',
+    date: '23/08/2026',
+    summary: 'Desligar alguém do escritório virou um ato só e completo: as conversas dele mudam de mãos na hora, as transferências pendentes se encerram e nada fica no nome de quem não está mais aqui.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'As conversas de quem saiu não ficam órfãs',
+            description: 'Desativar uma pessoa era marcar uma caixinha no perfil e nada mais. As conversas continuavam no nome dela: ninguém respondia, e elas não apareciam em fila nenhuma — o cliente ficava falando sozinho com um atendimento que existia só no papel. Agora o desligamento redistribui na hora, nesta ordem: o supervisor do canal da conversa, o supervisor do setor, a fila (quando o canal tem outra gente dentro) e, em último caso, um administrador. Nunca sobra conversa invisível.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Convites, vínculos e mensagens agendadas se encerram junto',
+            description: 'Transferências pendentes endereçadas a quem saiu ficavam pendentes para sempre. Os vínculos de canal e de setor continuavam de pé, então bastava reativar por engano para tudo voltar. E as mensagens que a pessoa havia agendado seguiam programadas para sair em nome do escritório. As três coisas passaram a ser desfeitas no mesmo ato. Mensagem, ligação, nota e histórico de atendimento NUNCA são apagados: quem saiu continua no histórico, porque é o histórico que explica o atendimento.',
+          },
+        ],
+      },
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'Só administrador ativa e desativa uma conta',
+            description: 'Advogado também podia, e isso virou uma escada: desligar alguém agora remove vínculos, cancela convites e redistribui conversas — e um advogado podia aplicar isso ao próprio administrador. Desligar é ato de administração, não de operação.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.1',
     date: '23/08/2026',
     summary: 'O acesso ao WhatsApp deixou de ser autosserviço: ninguém mais se concede uma conversa (nem um canal) sozinho, transferência antiga parou de valer como crachá, e desligar alguém passou a fechar a porta na hora.',
