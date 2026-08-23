@@ -34,7 +34,20 @@ const stage = (
 const stages: WhatsAppChannelFunnelStage[] = [
   stage('channel-commercial', 'novo_contato', 'Novo contato', '#64748b', 0, ['Novo lead'], true, 'Primeiro contato recebido pelo número comercial.'),
   stage('channel-commercial', 'triagem', 'Triagem', '#3b82f6', 1, ['Em triagem', 'Aguardando retorno']),
-  stage('channel-commercial', 'proposta', 'Proposta', '#8b5cf6', 2, ['Proposta enviada']),
+  {
+    // Etapa com transferência JÁ SALVA para um setor que não existe mais: é o
+    // estado que mostrava o campo vazio e trocava o destino em silêncio.
+    ...stage('channel-commercial', 'proposta', 'Proposta', '#8b5cf6', 2, ['Proposta enviada']),
+    entry_actions: [{
+      type: 'transfer_to_department',
+      destination_type: 'department',
+      destination_id: 'department-que-foi-excluido',
+      destination_name: 'Financeiro',
+      target: 'department-que-foi-excluido',
+      message: 'Aguarde um instante, estamos encaminhando seu atendimento para o setor {{setor}}.',
+      payload: { note: 'Transferência automática pela etapa do funil' },
+    }],
+  },
   stage('channel-commercial', 'contratado', 'Contratado', '#10b981', 3, ['Contrato assinado']),
   stage('channel-pedro', 'entrada', 'Entrada', '#06b6d4', 0, ['Novo atendimento'], true),
   stage('channel-pedro', 'analise_juridica', 'Análise jurídica', '#f59e0b', 1, ['Em análise', 'Aguardando documentos']),
@@ -44,12 +57,35 @@ const stages: WhatsAppChannelFunnelStage[] = [
 const departments: WhatsAppDepartment[] = [
   { id: 'department-commercial', name: 'Comercial', color: '#8b5cf6', is_active: true },
   { id: 'department-legal', name: 'Jurídico', color: '#2563eb', is_active: true },
+  { id: 'department-service', name: 'Atendimento', color: '#0ea5e9', is_active: true },
+  // Os dois casos que a lista precisa saber marcar sem escondê-los.
+  { id: 'department-empty', name: 'Cobrança', color: '#f59e0b', is_active: true },
+  { id: 'department-off', name: 'Arquivo morto', color: '#94a3b8', is_active: false },
 ];
 
 const staff: StaffOption[] = [
-  { user_id: 'user-pedro', name: 'Pedro Montalvão' },
-  { user_id: 'user-jacqueline', name: 'Jacqueline Pereira' },
+  { user_id: 'user-pedro', name: 'Pedro Montalvão', role: 'Advogado' },
+  { user_id: 'user-jacqueline', name: 'Jacqueline Pereira', role: 'Auxiliar' },
+  { user_id: 'user-lisliandra', name: 'Lisliandra Cerqueira', role: 'Advogado' },
+  { user_id: 'user-ana', name: 'Ana Administradora', role: 'Administrador' },
+  // Sem vínculo com o canal Comercial: aparece marcada, e não clicável.
+  { user_id: 'user-zulmira', name: 'Zulmira de Outro Canal', role: 'Auxiliar' },
 ];
+
+/** Quem enxerga cada canal. O canal "Pedro" é `visibility_mode: all`. */
+const channelMembers = [
+  { channel_id: 'channel-commercial', user_id: 'user-pedro' },
+  { channel_id: 'channel-commercial', user_id: 'user-jacqueline' },
+  { channel_id: 'channel-commercial', user_id: 'user-lisliandra' },
+];
+
+const departmentMembers: Record<string, string[]> = {
+  'department-commercial': ['user-pedro', 'user-jacqueline'],
+  'department-legal': ['user-pedro', 'user-lisliandra'],
+  'department-service': ['user-lisliandra'],
+  'department-empty': [],
+  'department-off': ['user-pedro'],
+};
 
 const WhatsAppFunnelPreview: React.FC = () => {
   const [channels, setChannels] = useState(channelSeed);
@@ -65,7 +101,10 @@ const WhatsAppFunnelPreview: React.FC = () => {
           </div>
         </header>
         <ChannelFunnelManager channels={channels} departments={departments} staff={staff}
-          initialStages={stages} onChannelsChange={setChannels} />
+          initialStages={stages}
+          initialChannelMembers={channelMembers}
+          initialDepartmentMembers={departmentMembers}
+          onChannelsChange={setChannels} />
       </div>
     </main>
   );

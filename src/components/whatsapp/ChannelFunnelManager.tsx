@@ -14,6 +14,12 @@ import type {
   WhatsAppFunnelStageAction, WhatsAppFunnelStageActionType,
 } from '../../types/whatsapp.types';
 import { normalizeFunnelStageActions, validateFunnelStageActions } from './funnelStageActionConfig';
+import {
+  VARIAVEIS_AVISO_CLIENTE, VARIAVEIS_OBSERVACAO_INTERNA,
+  escreveDestino, leDestino, resolveDestino,
+  type FontesDeDestino, type FunnelDestinationKind,
+} from './funnelTransferTargets';
+import { CampoComVariaveis, SeletorDeDestino, TipoDeDestino } from './funnelTransferPicker';
 
 type StageDraft = Pick<WhatsAppChannelFunnelStage,
   'stage_key' | 'label' | 'description' | 'color' | 'labels' | 'position' | 'is_active' | 'is_default' | 'entry_actions'>;
@@ -33,6 +39,13 @@ interface ChannelFunnelManagerProps {
   onChannelsChange?: (channels: WhatsAppChannel[]) => void;
   /** Permite visualizar o editor sem consultar o banco. */
   initialStages?: WhatsAppChannelFunnelStage[];
+  /**
+   * Matriz canal × usuário e setor → membros. Passe-as para montar o editor sem
+   * ir ao banco (é o que a bancada de preview faz); em produção elas são
+   * carregadas aqui, porque as duas telas que usam este editor não as têm.
+   */
+  initialChannelMembers?: Array<{ channel_id: string; user_id: string }>;
+  initialDepartmentMembers?: Record<string, string[]>;
 }
 
 const normalizeKey = (value: string) => value
@@ -65,6 +78,7 @@ const transferActionOf = (stage: StageDraft) => stage.entry_actions.find(action 
 const ChannelFunnelManager: React.FC<ChannelFunnelManagerProps> = ({
   channels, departments, staff, moduleConfig = WHATSAPP_MODULE_DEFAULTS,
   requirePin, onFeedback, onChannelsChange, initialStages,
+  initialChannelMembers, initialDepartmentMembers,
 }) => {
   const [selectedId, setSelectedId] = useState(channels[0]?.id || '');
   const [drafts, setDrafts] = useState<Record<string, FunnelDraft>>({});
@@ -75,6 +89,13 @@ const ChannelFunnelManager: React.FC<ChannelFunnelManagerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [expandedActions, setExpandedActions] = useState<Record<string, boolean>>({});
+  // Quem enxerga cada canal e quem atende cada setor. É o que separa "a lista
+  // inteira do escritório" de "quem pode mesmo receber uma conversa DESTE
+  // número" — a pergunta que o `<select>` antigo não fazia.
+  const [channelMembers, setChannelMembers] = useState<Array<{ channel_id: string; user_id: string }>>(
+    initialChannelMembers ?? []);
+  const [departmentMembers, setDepartmentMembers] = useState<Record<string, string[]>>(
+    initialDepartmentMembers ?? {});
 
   useEffect(() => {
     if (!channels.some(channel => channel.id === selectedId)) setSelectedId(channels[0]?.id || '');
@@ -113,7 +134,45 @@ const ChannelFunnelManager: React.FC<ChannelFunnelManagerProps> = ({
     return () => { cancelled = true; };
   }, [channels, initialStages, reloadToken]);
 
+  /**
+   * Os vínculos são carregados à parte de propósito: falhar aqui não pode
+   * derrubar o editor de etapas inteiro. Sem eles, `opcoesDePessoa` deixa de
+   * marcar quem não tem acesso — e quem barra passa a ser só o banco, no
+   * salvamento, que é o comportamento de antes desta mudança.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    // Quem chega pronto entra na hora — o módulo carrega as duas matrizes para
+    // outras telas e as repassa, e esperar a consulta de novo faria o editor
+    // abrir sem saber quem tem acesso.
+    if (initialChannelMembers) setChannelMembers(initialChannelMembers);
+    if (initialDepartmentMembers) setDepartmentMembers(initialDepartmentMembers);
+    if (initialChannelMembers && initialDepartmentMembers) return;
+    void (async () => {
+      try {
+        const [canal, setor] = await Promise.all([
+          initialChannelMembers ? Promise.resolve(initialChannelMembers) : whatsappService.listChannelMembers(),
+          initialDepartmentMembers ? Promise.resolve(initialDepartmentMembers) : whatsappService.listAllDepartmentMembers(),
+        ]);
+        if (cancelled) return;
+        setChannelMembers(canal);
+        setDepartmentMembers(setor);
+      } catch { /* o editor continua de pé; a trava do banco continua valendo */ }
+    })();
+    return () => { cancelled = true; };
+  }, [initialChannelMembers, initialDepartmentMembers, reloadToken]);
+
   const channel = channels.find(item => item.id === selectedId) || null;
+  /** O cadastro real, recortado pelo canal cujo funil está aberto. */
+  const fontesDeDestino = useMemo<FontesDeDestino>(() => ({
+    canal: channel ? { id: channel.id, visibility_mode: channel.visibility_mode } : null,
+    setores: departments,
+    pessoas: staff,
+    membrosPorSetor: departmentMembers,
+    membrosDoCanal: channelMembers
+      .filter(row => row.channel_id === selectedId)
+      .map(row => row.user_id),
+  }), [channel, departments, staff, departmentMembers, channelMembers, selectedId]);
   const draft = selectedId ? drafts[selectedId] : undefined;
   const dirty = selectedId ? !sameDraft(draft, saved[selectedId]) : false;
   const activeStages = useMemo(() => draft?.stages.filter(stage => stage.is_active) || [], [draft]);
@@ -214,19 +273,15 @@ const ChannelFunnelManager: React.FC<ChannelFunnelManagerProps> = ({
       removeAction(index, 'transfer');
       return;
     }
-    const toDepartment = departments.find(item => item.is_active !== false);
-    const toUser = staff[0];
-    const transfer: WhatsAppFunnelStageAction = toDepartment ? {
+    // Nasce SEM destino. Escolher sozinho o primeiro setor da lista era o que
+    // fazia a etapa sair de fábrica apontando para um lugar que ninguém pediu —
+    // e, como o campo mostrava um nome plausível, ninguém conferia. A validação
+    // de salvamento cobra o clique.
+    const transfer: WhatsAppFunnelStageAction = escreveDestino({
       type: 'transfer_to_department',
-      target: toDepartment.id,
       message: moduleConfig.transfer_to_department_template,
       payload: { note: 'Transferência automática pela etapa do funil' },
-    } : {
-      type: 'transfer_to_user',
-      target: toUser?.user_id || null,
-      message: moduleConfig.transfer_to_agent_template,
-      payload: { note: 'Transferência automática pela etapa do funil' },
-    };
+    }, { kind: 'department', id: null, nome: null });
     setStageActions(index, [
       ...stage.entry_actions.filter(action => action.type !== 'close_conversation' && !action.type.startsWith('transfer_to_')),
       transfer,
@@ -299,6 +354,21 @@ const ChannelFunnelManager: React.FC<ChannelFunnelManagerProps> = ({
       .map(message => `${stage.label}: ${message}`))[0];
     if (actionError) {
       setError(actionError);
+      return;
+    }
+    // O destino é conferido contra o cadastro ATUAL antes de sair daqui. Não é
+    // a trava (o trigger `wa_funnel_entry_actions_check` recusa igual), mas é a
+    // única que consegue dizer QUAL etapa está errada e por quê — o erro do
+    // banco chega como uma linha só, sem o nome da etapa.
+    const destinoInvalido = normalized.flatMap(stage => {
+      const transfer = stage.entry_actions.find(action => action.type.startsWith('transfer_to_'));
+      if (!transfer) return [];
+      const resolucao = resolveDestino(transfer, fontesDeDestino);
+      if (resolucao.status === 'ok') return [];
+      return [`${stage.label}: ${resolucao.aviso || 'Escolha o destino da transferência automática.'}`];
+    })[0];
+    if (destinoInvalido) {
+      setError(destinoInvalido);
       return;
     }
     const defaultIndex = normalized.findIndex(stage => stage.is_default && stage.is_active);
@@ -462,50 +532,67 @@ const ChannelFunnelManager: React.FC<ChannelFunnelManagerProps> = ({
                               {transferAction ? 'Ativada' : 'Ativar'}
                             </button>
                           </div>
-                          {transferAction && (
+                          {transferAction && (() => {
+                            const destino = leDestino(transferAction);
+                            const resolucao = resolveDestino(transferAction, fontesDeDestino);
+                            // A prévia usa o destino REAL desta ação; só o que
+                            // ainda não se sabe (nome do cliente, etapa) cai no
+                            // exemplo do catálogo.
+                            const destinoEscolhido = resolucao.nome
+                              ? {
+                                destino: resolucao.nome,
+                                // Destino Pessoa não tem setor: a execução manda
+                                // string vazia, e a prévia mostra o mesmo.
+                                setor: destino.kind === 'department' ? resolucao.nome : '',
+                              }
+                              : undefined;
+                            return (
                             <div className="mt-2 grid gap-2 md:grid-cols-2">
-                              <label className="text-[10px] font-semibold text-slate-500">
+                              <div className="text-[10px] font-semibold text-slate-500">
                                 Tipo de destino
-                                <select value={transferAction.type}
-                                  onChange={event => {
-                                    const type = event.target.value as 'transfer_to_department' | 'transfer_to_user';
-                                    upsertAction(index, {
+                                <TipoDeDestino valor={destino.kind} stageKey={stage.stage_key}
+                                  onChange={kind => {
+                                    if (kind === destino.kind) return;
+                                    // Trocar o tipo zera o destino: um id de setor
+                                    // não vira id de pessoa, e manter o anterior
+                                    // aqui só produziria um "sumiu" logo abaixo.
+                                    upsertAction(index, escreveDestino({
                                       ...transferAction,
-                                      type,
-                                      target: type === 'transfer_to_department' ? (departments.find(item => item.is_active !== false)?.id || null) : (staff[0]?.user_id || null),
-                                      message: type === 'transfer_to_department' ? moduleConfig.transfer_to_department_template : moduleConfig.transfer_to_agent_template,
-                                    });
-                                  }}
-                                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:border-violet-300">
-                                  <option value="transfer_to_department">Setor</option>
-                                  <option value="transfer_to_user">Responsável</option>
-                                </select>
-                              </label>
-                              <label className="text-[10px] font-semibold text-slate-500">
+                                      message: kind === 'department'
+                                        ? moduleConfig.transfer_to_department_template
+                                        : moduleConfig.transfer_to_agent_template,
+                                    }, { kind, id: null, nome: null }));
+                                  }} />
+                              </div>
+                              <div className="text-[10px] font-semibold text-slate-500">
                                 Destino
-                                <select value={transferAction.target || ''}
-                                  onChange={event => upsertAction(index, { ...transferAction, target: event.target.value || null })}
-                                  className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:border-violet-300">
-                                  <option value="">Selecione…</option>
-                                  {transferAction.type === 'transfer_to_department'
-                                    ? departments.filter(item => item.is_active !== false).map(item => <option key={item.id} value={item.id}>{item.name}</option>)
-                                    : staff.map(item => <option key={item.user_id} value={item.user_id}>{item.name}</option>)}
-                                </select>
-                              </label>
-                              <label className="text-[10px] font-semibold text-slate-500 md:col-span-2">
-                                Aviso ao cliente <span className="font-normal text-slate-400">(opcional)</span>
-                                <textarea value={transferAction.message || ''} rows={2}
-                                  onChange={event => upsertAction(index, { ...transferAction, message: event.target.value })}
-                                  className="mt-1 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-violet-300" />
-                              </label>
-                              <label className="text-[10px] font-semibold text-slate-500 md:col-span-2">
-                                Observação interna <span className="font-normal text-slate-400">(opcional)</span>
-                                <input value={transferAction.payload?.note || ''}
-                                  onChange={event => upsertAction(index, { ...transferAction, payload: { ...transferAction.payload, note: event.target.value } })}
-                                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-violet-300" />
-                              </label>
+                                <SeletorDeDestino kind={destino.kind} fontes={fontesDeDestino}
+                                  resolucao={resolucao} stageKey={stage.stage_key}
+                                  onSelect={opcao => upsertAction(index, escreveDestino(transferAction, {
+                                    kind: opcao.kind, id: opcao.id, nome: opcao.name,
+                                  }))} />
+                              </div>
+                              <div className="md:col-span-2">
+                                <CampoComVariaveis multilinha testId={`transfer-notice-${stage.stage_key}`}
+                                  rotulo={<>Aviso ao cliente <span className="font-normal text-slate-400">(opcional)</span></>}
+                                  valor={transferAction.message || ''}
+                                  variaveis={VARIAVEIS_AVISO_CLIENTE}
+                                  valoresReais={destinoEscolhido}
+                                  onChange={texto => upsertAction(index, { ...transferAction, message: texto })} />
+                              </div>
+                              <div className="md:col-span-2">
+                                <CampoComVariaveis testId={`transfer-note-${stage.stage_key}`}
+                                  rotulo={<>Observação interna <span className="font-normal text-slate-400">(opcional)</span></>}
+                                  valor={transferAction.payload?.note || ''}
+                                  variaveis={VARIAVEIS_OBSERVACAO_INTERNA}
+                                  valoresReais={destinoEscolhido}
+                                  onChange={texto => upsertAction(index, {
+                                    ...transferAction, payload: { ...transferAction.payload, note: texto },
+                                  })} />
+                              </div>
                             </div>
-                          )}
+                            );
+                          })()}
                         </div>
 
                         <div className={`rounded-lg border p-3 ${closeAction ? 'border-emerald-200 bg-white' : 'border-slate-200 bg-white/70'}`}>

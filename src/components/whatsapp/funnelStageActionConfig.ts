@@ -19,6 +19,17 @@ const cleanOptional = (value: unknown): string | null => {
 };
 
 /**
+ * `destination_type` só é aceito nos dois valores que a execução sabe tratar.
+ * Lixo vindo do JSONB vira `null` e a leitura cai no `type` da ação — a mesma
+ * regra de `leDestino` em `funnelTransferTargets.ts`.
+ *
+ * Este módulo continua SEM import de runtime de propósito: é o que permite ao
+ * `node --test` carregá-lo direto (ver a nota em `waPermissions.ts`).
+ */
+const cleanDestinationType = (value: unknown): 'department' | 'user' | null =>
+  value === 'department' || value === 'user' ? value : null;
+
+/**
  * Sanitiza a configuração vinda do JSONB e fixa uma ordem operacional segura:
  * mensagem → transferência → encerramento. Mantém no máximo uma
  * transferência, pois dois destinos para a mesma entrada seriam ambíguos.
@@ -42,10 +53,26 @@ export function normalizeFunnelStageActions(raw: unknown): WhatsAppFunnelStageAc
     const note = cleanOptional(payloadRaw?.note);
     const payload = reason || note ? { ...(reason ? { reason } : {}), ...(note ? { note } : {}) } : undefined;
 
+    // Destino: `destination_id` manda; `target` é o espelho que os leitores
+    // antigos continuam consultando. Uma etapa salva antes desta separação só
+    // tem `target`, e é dele que os dois passam a sair — sem inventar um
+    // `destination_type`, porque o uuid sozinho não diz de qual tabela veio
+    // (quem resolve isso é `leDestino`, pelo `type` da ação).
+    const source = candidate as WhatsAppFunnelStageAction;
+    const destinationId = cleanOptional(source.destination_id) ?? cleanOptional(source.target);
+    const destinationType = cleanDestinationType(source.destination_type);
+    const destinationName = cleanOptional(source.destination_name);
+    const isTransfer = actionType === 'transfer_to_department' || actionType === 'transfer_to_user';
+
     normalized.push({
       type: actionType,
-      target: cleanOptional((candidate as WhatsAppFunnelStageAction).target),
-      message: cleanOptional((candidate as WhatsAppFunnelStageAction).message),
+      target: destinationId,
+      message: cleanOptional(source.message),
+      ...(isTransfer ? {
+        destination_type: destinationType,
+        destination_id: destinationId,
+        destination_name: destinationName,
+      } : {}),
       ...(payload ? { payload } : {}),
     });
   }
@@ -63,6 +90,13 @@ export function validateFunnelStageActions(raw: unknown): string[] {
 
   if (send && !send.message) errors.push('Escreva a mensagem automática da etapa.');
   if (transfer && !transfer.target) errors.push('Escolha o destino da transferência automática.');
+  // Tipo e destino discordando é o estado que o campo novo veio impedir: um
+  // uuid de setor guardado como `transfer_to_user` transferiria para "ninguém"
+  // e a etapa morreria em silêncio na hora H.
+  if (transfer?.destination_type
+    && transfer.destination_type !== (transfer.type === 'transfer_to_department' ? 'department' : 'user')) {
+    errors.push('O tipo e o destino da transferência não combinam. Escolha o destino de novo.');
+  }
   if (transfer && close) errors.push('A mesma etapa não pode transferir e encerrar o atendimento.');
   return errors;
 }

@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.5',
+    date: '23/08/2026',
+    summary: 'A transferência automática do funil passou a ser escolhida por clique, e o destino é conferido na hora de salvar — não meses depois, quando um card entrar na etapa.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A etapa não salva mais um destino que não pode receber',
+            description: 'Dava para salvar uma etapa apontando para um setor excluído, para um setor sem nenhum atendente dentro (a conversa entra e some da fila de todo mundo), para uma pessoa desligada, ou para alguém que não tem acesso ao canal daquele funil. Nada disso dava erro na hora de salvar: o erro nascia meses depois, quando um card entrasse na etapa, e chegava à tela como "ação pendente", sem dizer o motivo. Agora o destino é conferido no momento de salvar, com uma mensagem que nomeia a etapa e o motivo — e continua sendo conferido de novo na hora de transferir, porque um cadastro pode ser desativado no meio do caminho.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'O destino se escolhe clicando, com busca e com aviso de quem não pode receber',
+            description: 'O campo era uma lista com TODO o escritório dentro, inclusive quem não enxerga aquele canal. Agora a lista mostra apenas quem pode receber de verdade, com busca a partir de sete registros, e quem não pode aparece explicado — "não tem acesso a este canal", "setor sem atendentes" — em vez de simplesmente estar lá.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Reabrir uma ação não troca o destino sem avisar',
+            description: 'Se o destino salvo tinha sido desligado, o campo abria VAZIO — e quem salvasse de novo, achando que estava tudo certo, trocava o destino em silêncio pelo primeiro da lista. Agora a etapa guarda também de qual cadastro o destino saiu e o nome que ele tinha, então a tela consegue dizer "o setor Comercial não existe mais" em vez de mostrar um campo em branco.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'As variáveis da mensagem viraram botões, e o nome do setor é sempre o de agora',
+            description: 'O texto do aviso ao cliente exigia digitar {{setor}} de memória, e errar uma letra não dava erro nenhum: a variável virava vazio e o cliente recebia uma frase truncada. Agora as variáveis se inserem clicando, com prévia. E o nome do destino é lido do cadastro no momento do envio: um setor renomeado depois de a etapa ser salva parou de avisar o cliente com o nome velho.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.4',
     date: '23/08/2026',
     summary: 'Abrir "Nova conversa" parou de baixar a carteira inteira de clientes: vem uma página, e a busca vai ao servidor a partir da segunda letra.',
