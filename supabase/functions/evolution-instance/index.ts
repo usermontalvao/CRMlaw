@@ -51,6 +51,18 @@ Deno.serve(async (req: Request) => {
     .from('whatsapp_instances').select('id').eq('id', channelId).maybeSingle();
   if (!canalVisivel) return json({ error: 'Você não tem acesso a este canal.' }, 403);
 
+  // `connect` devolve o QR CODE, e o QR não é "ver o canal": quem o lê entra na
+  // CONTA de WhatsApp do escritório, com histórico e com o direito de escrever
+  // em nome dela. Enxergar o canal para atender e parear o número são coisas de
+  // ordem diferente — a segunda é do administrador. `status` continua aberto a
+  // quem enxerga o canal: é o que a inbox usa para dizer "conectado".
+  if (action === 'connect') {
+    const { data: admin_ } = await userClient.rpc('wa_is_admin');
+    if (admin_ !== true) {
+      return json({ error: 'Apenas administradores podem parear ou reconectar um canal.' }, 403);
+    }
+  }
+
   // Servidor
   const { data: row } = await admin.from('system_settings').select('value')
     .eq('key', 'whatsapp_evolution_config').maybeSingle();

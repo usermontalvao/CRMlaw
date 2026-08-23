@@ -138,6 +138,16 @@ export interface WhatsAppMessage {
   edited_at: string | null;
   status: WhatsAppMsgStatus;
   sender_user_id: string | null;
+  /**
+   * Em que qualidade a mensagem saiu.
+   *
+   * `'supervisor'` / `'admin'` marcam INTERVENÇÃO: quem enviou não é o
+   * responsável pelo atendimento (é o "Responder sem assumir" do Modo
+   * supervisão). A bolha escreve isso na tela — sem a marca, a resposta de um
+   * supervisor era indistinguível da do responsável, e os dois só descobriam o
+   * atropelo pelo cliente. `null` é o caso normal: quem responde é o dono.
+   */
+  sender_role?: 'attendant' | 'supervisor' | 'admin' | 'system' | 'ai' | null;
   wa_timestamp: string;
   created_at: string;
   /**
@@ -307,8 +317,23 @@ export type WhatsAppFunnelStageActionType =
 
 export interface WhatsAppFunnelStageAction {
   type: WhatsAppFunnelStageActionType;
-  /** Destino da transferência (user_id ou department_id, conforme o tipo). */
+  /**
+   * Destino da transferência (user_id ou department_id, conforme o tipo).
+   *
+   * Espelho legado de `destination_id`, mantido preenchido para os leitores
+   * anteriores a esta separação. Quem escreve deve usar `escreveDestino`
+   * (`funnelTransferTargets.ts`), que grava os dois de uma vez.
+   */
   target?: string | null;
+  /** De qual cadastro o `destination_id` saiu — a pergunta que o `target` sozinho não respondia. */
+  destination_type?: 'department' | 'user' | null;
+  /** Id estável do destino: `whatsapp_departments.id` ou `profiles.user_id`. */
+  destination_id?: string | null;
+  /**
+   * Nome no momento da escolha. RETRATO, nunca a fonte da verdade: serve para a
+   * tela dizer "“Comercial” não existe mais" em vez de mostrar um uuid órfão.
+   */
+  destination_name?: string | null;
   /** Texto enviado; em encerramento, funciona como mensagem de despedida. */
   message?: string | null;
   /** Metadados internos, como motivo/observação da automação. */

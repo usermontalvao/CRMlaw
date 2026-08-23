@@ -20,7 +20,9 @@
  *
  * Servidor (base_url + api_key) global. Requer JWT (equipe).
  */
-import { createClient } from 'jsr:@supabase/supabase-js@2';
+import {
+  abrirContexto, negado, podeComandar, podeResponder, podeVer,
+} from '../_shared/wa-guard.ts';
 import { slimWaRaw } from '../_shared/wa-raw.ts';
 import { ACTOR_ESCRITORIO, aplicarReacao, type WaReacao } from '../_shared/wa-reactions.ts';
 import {
@@ -199,21 +201,13 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
-  const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-  const authHeader = req.headers.get('Authorization') || '';
-
-  const userClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data: { user } } = await userClient.auth.getUser();
-  // Chamada de sistema (cron/scheduler) autentica com o service role — que não é um
-  // "usuário". Aceitamos esse caso para envios automáticos; a atribuição do remetente
-  // vem de body.sender_user_id (quem agendou).
-  const bearer = authHeader.replace(/^Bearer\s+/i, '').trim();
-  const isSystem = !user && bearer === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!user && !isSystem) return json({ error: 'Não autenticado' }, 401);
-
-  const admin = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  // Passos 1 e 2 do porteiro (JWT válido + gente da casa ATIVA) vivem em
+  // `_shared/wa-guard.ts`, junto com o porquê da ordem. Chamada de sistema
+  // (cron/scheduler) entra por `isSystem`: ela não é um "usuário", e a
+  // atribuição do remetente vem de `body.sender_user_id` (quem agendou).
+  const ctx = await abrirContexto(req);
+  if (ctx instanceof Response) return ctx;
+  const { user, isSystem, userClient, admin } = ctx;
 
   let body: any;
   try { body = await req.json(); } catch { return json({ error: 'JSON inválido' }, 400); }
@@ -241,24 +235,38 @@ Deno.serve(async (req: Request) => {
   // permissão: bastaria trocar o `conversation_id` para escrever (ou fazer o
   // "digitando…" aparecer) num atendimento de canal alheio.
   //
-  // A conferência é feita com o cliente do USUÁRIO, não com o admin: quem
-  // responde é a mesma policy que recorta a inbox (`wa_can_see_conv`). Linha
-  // que ele não pode ler volta nula, e nula aqui é 403. Chamada de sistema
-  // (cron/scheduler, `isSystem`) não passa por isto — ela não tem usuário.
-  const podeVer = async (tabela: string, id: string | null | undefined): Promise<boolean> => {
-    if (isSystem) return true;
-    if (!id) return false;
-    const { data } = await userClient.from(tabela).select('id').eq('id', id).maybeSingle();
-    return !!data;
+  // A conferência é feita com o cliente do USUÁRIO (ver `_shared/wa-guard.ts`).
+  //
+  // VER NÃO É AGIR, e é isto que mudou: o supervisor em "apenas acompanhar"
+  // enxerga a conversa e não pode mandar nada por ela. Por isso cada ação
+  // pergunta o VERBO que lhe cabe —
+  //
+  //   · mandar/editar/reagir/apagar para o contato → `wa_can_reply_conv`;
+  //   · bloquear, desbloquear                      → `wa_can_manage_conv`;
+  //   · "digitando…" e presença                    → basta enxergar.
+  const negar = () => negado();
+
+  // Da mensagem para a conversa dela: a permissão mora na conversa, não na
+  // linha da mensagem. Lido com o cliente do usuário, então id de mensagem que
+  // ele não pode ler já volta nulo aqui.
+  const conversaDaMensagem = async (messageId: string | null | undefined): Promise<string | null> => {
+    if (!messageId) return null;
+    const cliente = isSystem ? admin : userClient;
+    const { data } = await cliente.from('whatsapp_messages')
+      .select('conversation_id').eq('id', messageId).maybeSingle();
+    return (data?.conversation_id as string | undefined) ?? null;
   };
-  const negado = () => json({ error: 'Você não tem acesso a este atendimento.' }, 403);
 
   if (body?.action === 'edit' || body?.action === 'delete' || body?.action === 'react') {
-    if (!await podeVer('whatsapp_messages', body?.message_id)) return negado();
+    const convDaMsg = await conversaDaMensagem(body?.message_id);
+    if (!convDaMsg) return negar();
+    if (!await podeResponder(ctx, convDaMsg)) return negar();
   }
-  if (body?.action === 'block' || body?.action === 'unblock'
-      || body?.action === 'subscribe_presence' || body?.action === 'typing') {
-    if (!await podeVer('whatsapp_conversations', body?.conversation_id)) return negado();
+  if (body?.action === 'block' || body?.action === 'unblock') {
+    if (!await podeComandar(ctx, body?.conversation_id)) return negar();
+  }
+  if (body?.action === 'subscribe_presence' || body?.action === 'typing') {
+    if (!await podeVer(ctx, 'whatsapp_conversations', body?.conversation_id)) return negar();
   }
 
   if (body?.action === 'edit') return await handleEdit(admin, base, apikey, body);
@@ -298,8 +306,9 @@ Deno.serve(async (req: Request) => {
 
   if (conversationId) {
     // Mesmo porteiro do bloco acima, agora para o envio em si: o id da conversa
-    // é do cliente, e ele não pode valer como autorização.
-    if (!await podeVer('whatsapp_conversations', conversationId)) return negado();
+    // é do cliente, e ele não pode valer como autorização. Aqui o verbo é
+    // RESPONDER — quem só acompanha não manda mensagem.
+    if (!await podeResponder(ctx, conversationId)) return negar();
     const { data: conv } = await admin.from('whatsapp_conversations')
       .select('contact_phone, instance_id, remote_jid, is_blocked, status, assigned_user_id, last_customer_message_at')
       .eq('id', conversationId).maybeSingle();
@@ -317,7 +326,7 @@ Deno.serve(async (req: Request) => {
     // Conversa NOVA: a permissão é a do canal escolhido — e a conferência vem
     // antes do upsert, senão a própria tentativa já criaria a linha no canal
     // alheio.
-    if (!await podeVer('whatsapp_instances', instanceId)) return negado();
+    if (!await podeVer(ctx, 'whatsapp_instances', instanceId)) return negar();
     const remoteJid = `${phone}@s.whatsapp.net`;
     sendTarget = remoteJid;
     newConversationPhone = phone;
@@ -554,6 +563,17 @@ Deno.serve(async (req: Request) => {
     // sem controles — igual ao que já fazemos com o GIF que chega.
     is_animated: asGif && (type === 'video' || type === 'sticker'),
     sender_user_id: user?.id ?? (body?.sender_user_id ?? null),
+    // Quem enviou, em que qualidade. Só a chamada de SISTEMA pode declarar isto
+    // — de gente o carimbo é do banco (`wa_log_supervisor_reply`, logo abaixo),
+    // que é quem sabe quem era o responsável no instante do envio. Aceitar
+    // `sender_role` de um JWT de usuário deixaria qualquer atendente assinar a
+    // própria mensagem como "IA".
+    //
+    // Sem isto a resposta do agente chegava à tela sem remetente nenhum, e o
+    // histórico não separava o que a IA escreveu do que uma pessoa escreveu.
+    sender_role: isSystem && (body?.sender_role === 'ai' || body?.sender_role === 'system')
+      ? body.sender_role
+      : null,
     reply_to_id: replyToId,
     raw: evoRaw,
     wa_timestamp: new Date().toISOString(),
@@ -561,6 +581,21 @@ Deno.serve(async (req: Request) => {
   const { data: inserted, error: insErr } = await admin.from('whatsapp_messages')
     .insert(insertRow).select('id').single();
   if (insErr) return json({ error: insErr.message }, 500);
+
+  // "Respondeu sem assumir": quem mandou não é o responsável pelo atendimento.
+  // Quem sabe disso é o banco (é ele que guarda o responsável do instante do
+  // envio), então a decisão fica lá — aqui só se avisa que a mensagem entrou.
+  // A RPC carimba `sender_role` na mensagem e registra o evento; a bolha do CRM
+  // lê esse carimbo para escrever "enviada por Fulano — Administrador".
+  // Best-effort: a mensagem já saiu, e falhar o carimbo não desfaz o envio.
+  if (user && inserted?.id && conversationId) {
+    const { error: carimboErr } = await admin.rpc('wa_log_supervisor_reply', {
+      p_conversation_id: conversationId,
+      p_message_id: inserted.id,
+      p_actor: user.id,
+    });
+    if (carimboErr) console.error('carimbo de intervenção falhou', carimboErr);
+  }
 
   // Falar com o cliente É atender: quem escreve numa conversa encerrada a traz de
   // volta para a operação. Sem isso ela seguia fora da fila, do funil e do SLA

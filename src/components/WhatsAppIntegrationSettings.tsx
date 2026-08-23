@@ -18,6 +18,8 @@ import type {
   WhatsAppChannel, WhatsAppDepartment, WhatsAppTemplate, WhatsAppBusinessHoursRow,
 } from '../types/whatsapp.types';
 import { alwaysOpenRows, isAlwaysOpen } from './whatsapp/businessTime';
+import { useWaEscopo } from './whatsapp/hooks/useWaPermissions';
+import { podeConfigurarIa } from '../services/whatsapp/waPermissions';
 import ChannelAccessManager from './whatsapp/ChannelAccessManager';
 import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
 import AiAssistantsPanel from './whatsapp/aiAssistantsPanel';
@@ -84,6 +86,10 @@ const statusLabel = (s: string) => s === 'connected' ? 'Conectado' : s === 'conn
 
 const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, onFeedback }) => {
   const { user } = useAuth();
+  // Quem é esta pessoa segundo o BANCO (`wa_is_admin`, que também exige
+  // `is_active`) — e não segundo o cargo escrito no perfil. É a mesma resposta
+  // que o módulo do WhatsApp usa, e a mesma que as policies aplicam.
+  const escopo = useWaEscopo();
   const [server, setServer] = useState<WhatsAppEvolutionConfig>({ ...WHATSAPP_EVOLUTION_DEFAULTS });
   const [showKey, setShowKey] = useState(false);
   const [savingServer, setSavingServer] = useState(false);
@@ -1541,9 +1547,39 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
         </div>
       </>)}
 
-      {/* ── Agentes de IA ── */}
+      {/* ── Agentes de IA ──
+          Prompt, playbook, modelo, ações permitidas, canais atendidos, horários,
+          limites e política de follow-up. Tudo isto é configuração do
+          ESCRITÓRIO, não de um atendimento — e por isso é de administrador.
+
+          A trava é do banco: `wa_ai_assistants_escrita`, `ai_config_escrita`,
+          `ai_playbooks_escrita` e `wa_ai_agents_escrita` exigem `wa_is_admin()`.
+          O que muda aqui é o outro lado: Configurações é aberta a três cargos
+          (admin, advogado e AUXILIAR), então o auxiliar via o editor de prompt
+          inteiro, escrevia, clicava em salvar e colhia um erro de RLS cru. Não
+          mostrar é o certo — a opção proibida não deve aparecer. */}
       {renderSection('agents', 'Agentes de IA', 'Assistente que atende sozinho no WhatsApp',
-        <AiAssistantsPanel channels={channels} onFeedback={onFeedback} />)}
+        podeConfigurarIa(escopo) ? (
+          <AiAssistantsPanel channels={channels} onFeedback={onFeedback} />
+        ) : (
+          <div style={{
+            border: '1px solid #e7e5df', borderRadius: '10px', padding: '18px',
+            background: '#fafaf9', display: 'flex', gap: '12px', alignItems: 'flex-start',
+          }}>
+            <Bot size={18} style={{ color: '#9ca3af', flexShrink: 0, marginTop: '1px' }} />
+            <div>
+              <p style={{ fontSize: '13px', fontWeight: 700, color: '#374151', marginBottom: '4px' }}>
+                Somente administradores configuram os agentes de IA
+              </p>
+              <p style={{ fontSize: '12.5px', color: '#6b7280', lineHeight: 1.5 }}>
+                Prompt, modelo, ações permitidas, canais atendidos e política de retomada
+                valem para o escritório inteiro. Durante o atendimento, os controles da IA
+                daquela conversa — pausar, retomar, assumir e ver o resumo — ficam no módulo
+                do WhatsApp, na faixa do alto da conversa.
+              </p>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

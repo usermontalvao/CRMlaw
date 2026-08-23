@@ -37,6 +37,58 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.1',
+    date: '23/08/2026',
+    summary: 'O acesso ao WhatsApp deixou de ser autosserviço: ninguém mais se concede uma conversa (nem um canal) sozinho, transferência antiga parou de valer como crachá, e desligar alguém passou a fechar a porta na hora.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'Ninguém mais se dá acesso a uma conversa — nem a um canal — sozinho',
+            description: 'A tabela de transferências aceitava escrita direta de qualquer pessoa do escritório. Bastava gravar uma linha dizendo "esta conversa foi transferida para mim" e o sistema passava a mostrar a conversa — e, quando ela era de um canal restrito, o canal INTEIRO, com todas as demais conversas dele. Não era preciso saber nenhum número secreto: o identificador da conversa aparece na própria caixa de entrada. Agora essa tabela não aceita mais escrita à mão: só as ações de atendimento escrevem nela, e cada transferência passou a ter estado — pendente, aceita, recusada, cancelada ou expirada.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Transferência antiga não abre mais porta',
+            description: 'Quem tivesse recebido uma conversa alguma vez continuava enxergando ela para sempre — mesmo depois de a conversa ter mudado de dono duas vezes, e mesmo meses depois. Passou a valer só o que está vigente: o convite ainda pendente, o empréstimo dentro do prazo, o atendimento que é seu. O histórico continua todo lá para ser lido por quem tem acesso; ele só parou de conceder acesso.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Desligar alguém fecha a porta na hora',
+            description: 'A pergunta que o sistema fazia era "esta pessoa tem cadastro?", não "esta pessoa trabalha aqui?". Desligar no CRM bloqueava um login novo, mas quem já estava com a sessão aberta seguia lendo conversa, mensagem, ligação e gravação por semanas. Agora a conta desativada perde o acesso imediatamente, e a sessão aberta é encerrada junto com o desligamento.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Supervisor de um canal, e conversa emprestada com prazo',
+            description: 'Faltava o meio-termo entre "não vê nada" e "vê o canal inteiro para sempre". Agora existem os dois: o supervisor é supervisor de um canal ou de um setor determinado — não de tudo —, e uma conversa pode ser emprestada a um colega por um prazo, dando acesso àquele atendimento sem abrir o restante do canal. Quem empresta é quem manda na conversa, e o empréstimo pode ser encerrado antes da hora.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Enxergar um atendimento não é o mesmo que agir nele',
+            description: 'O envio de mensagens conferia apenas se a pessoa podia VER a conversa — a mesma régua que monta a caixa de entrada, e que inclui canal aberto, setor sem membros e supervisor. Cada ação passou a perguntar o que lhe cabe: mandar, editar, reagir e apagar exigem poder responder pelo atendimento; bloquear e desbloquear exigem poder comandá-lo; "digitando…" e presença bastam enxergar.',
+          },
+          {
+            type: 'security' as const,
+            title: 'O QR code do canal é do administrador',
+            description: 'Qualquer pessoa que enxergasse o canal podia pedir o QR code dele. Quem lê esse código entra na CONTA de WhatsApp do escritório, com todo o histórico e com o direito de escrever em nome dela — o que é de outra ordem que atender por ali. Parear e reconectar passaram a ser de administrador. Ver se o canal está conectado continua com quem atende, porque é disso que a caixa de entrada precisa.',
+          },
+        ],
+      },
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'O que você não pode configurar deixou de aparecer',
+            description: 'Configurações é aberta a três cargos, mas o editor dos agentes de IA — prompt, modelo, ações permitidas, canais atendidos, limites — é só de administrador. Quem não é via a tela inteira, escrevia, clicava em salvar e colhia um erro cru do banco. Agora o painel explica quem configura, e lembra que os controles do dia a dia da IA (pausar, retomar, assumir) ficam dentro do módulo do WhatsApp, na conversa.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.0',
     date: '22/08/2026',
     summary: 'Uma auditoria de segurança do WhatsApp virou trabalho: a regra de "de quem é este canal" passou a valer no sistema inteiro, e três credenciais que estavam em lugares que podiam ser lidos saíram de lá.',
