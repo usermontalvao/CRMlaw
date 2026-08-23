@@ -254,20 +254,24 @@ export const automationApi = {
       if (new Date(patch.scheduledAt).getTime() < Date.now() - 30000) throw new Error('Escolha uma data/hora no futuro.');
       upd.scheduled_at = patch.scheduledAt;
     }
-    const { error } = await supabase.from(SCHEDULED_TABLE).update(upd).eq('id', id).eq('status', 'pending');
+    const { data: updated, error } = await supabase.from(SCHEDULED_TABLE)
+      .update(upd).eq('id', id).eq('status', 'pending').select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error('Agendamento não encontrado ou você não tem permissão para editá-lo.');
   },
 
   async cancelScheduled(id: string): Promise<void> {
-    const { error } = await supabase.from(SCHEDULED_TABLE)
-      .update({ status: 'canceled' }).eq('id', id).eq('status', 'pending');
+    const { data: updated, error } = await supabase.from(SCHEDULED_TABLE)
+      .update({ status: 'canceled' }).eq('id', id).eq('status', 'pending').select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error('Agendamento não encontrado ou você não tem permissão para cancelá-lo.');
   },
 
   /** Exclui em definitivo uma mensagem agendada (qualquer status). */
   async deleteScheduled(id: string): Promise<void> {
-    const { error } = await supabase.from(SCHEDULED_TABLE).delete().eq('id', id);
+    const { data: deleted, error } = await supabase.from(SCHEDULED_TABLE).delete().eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) throw new Error('Agendamento não encontrado ou você não tem permissão para excluí-lo.');
   },
 
   /**
@@ -287,9 +291,10 @@ export const automationApi = {
     } else {
       upd.scheduled_at = new Date().toISOString();
     }
-    const { error } = await supabase.from(SCHEDULED_TABLE)
-      .update(upd).eq('id', id).in('status', ['failed', 'canceled']);
+    const { data: updated, error } = await supabase.from(SCHEDULED_TABLE)
+      .update(upd).eq('id', id).in('status', ['failed', 'canceled']).select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error('Agendamento não encontrado ou você não tem permissão para reenviá-lo.');
   },
 
   /**

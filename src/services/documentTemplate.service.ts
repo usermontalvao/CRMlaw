@@ -303,12 +303,16 @@ class DocumentTemplateService {
   }
 
   async deleteGeneratedDocument(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from(this.historyTableName)
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Documento não encontrado ou você não tem permissão para excluí-lo.');
+    }
   }
 
   async downloadGeneratedDocument(record: GeneratedDocument) {
@@ -457,28 +461,36 @@ class DocumentTemplateService {
 
     if (fetchError) throw new Error(fetchError.message);
 
-    // Remover do storage
+    // O banco autoriza primeiro. Remover o objeto do storage antes permitiria
+    // apagar o arquivo físico mesmo quando a RLS recusasse a exclusão da linha.
+    const { data: deleted, error } = await supabase
+      .from('template_files')
+      .delete()
+      .eq('id', fileId)
+      .select('id');
+
+    if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Arquivo não encontrado ou você não tem permissão para removê-lo.');
+    }
+
     if (file?.file_path) {
       await supabase.storage.from(STORAGE_BUCKET).remove([file.file_path]);
     }
-
-    // Remover do banco
-    const { error } = await supabase
-      .from('template_files')
-      .delete()
-      .eq('id', fileId);
-
-    if (error) throw new Error(error.message);
   }
 
   // Atualizar ordem dos arquivos
   async updateTemplateFileOrder(fileId: string, newOrder: number): Promise<void> {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('template_files')
       .update({ order: newOrder })
-      .eq('id', fileId);
+      .eq('id', fileId)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) {
+      throw new Error('Arquivo não encontrado ou você não tem permissão para reordená-lo.');
+    }
   }
 
   // Atualizar configuração de assinatura de um arquivo específico
@@ -777,12 +789,16 @@ class DocumentTemplateService {
 
   // Excluir campo personalizado
   async deleteCustomField(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from('document_custom_fields')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Campo não encontrado ou você não tem permissão para excluí-lo.');
+    }
   }
 
   // Reordenar campos personalizados
@@ -793,12 +809,16 @@ class DocumentTemplateService {
     }));
 
     for (const update of updates) {
-      const { error } = await supabase
+      const { data: updated, error } = await supabase
         .from('document_custom_fields')
         .update({ order: update.order })
-        .eq('id', update.id);
+        .eq('id', update.id)
+        .select('id');
 
       if (error) throw new Error(error.message);
+      if (!updated || updated.length === 0) {
+        throw new Error('Campo não encontrado ou você não tem permissão para reordená-lo.');
+      }
     }
   }
 }

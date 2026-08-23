@@ -532,12 +532,16 @@ class PetitionEditorService {
   }
 
   async deleteBlock(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from(this.blocksTable)
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Bloco não encontrado ou você não tem permissão para excluí-lo.');
+    }
   }
 
   async getBlockStandardTypeId(blockId: string): Promise<string | null> {
@@ -565,10 +569,13 @@ class PetitionEditorService {
 
   async reorderBlocks(blockIds: string[]): Promise<void> {
     for (let i = 0; i < blockIds.length; i++) {
-      await supabase
+      const { data, error } = await supabase
         .from(this.blocksTable)
         .update({ order: i })
-        .eq('id', blockIds[i]);
+        .eq('id', blockIds[i])
+        .select('id');
+      if (error) throw new Error(error.message);
+      if (!data?.length) throw new Error('Bloco não encontrado ou sem permissão para reordenar.');
     }
   }
 
@@ -660,12 +667,8 @@ class PetitionEditorService {
       .maybeSingle();
 
     if (error) throw new Error(error.message);
-    if (data) return data;
-
-    // Fallback: alguns ambientes retornam 406 quando não há representação no update
-    const refreshed = await this.getPetition(id);
-    if (!refreshed) throw new Error('Petição não encontrada');
-    return refreshed;
+    if (!data) throw new Error('Petição não encontrada ou você não tem permissão para editá-la.');
+    return data;
   }
 
   async deletePetition(id: string): Promise<void> {
@@ -840,23 +843,31 @@ ${content}
 
   async deleteLegalArea(id: string): Promise<void> {
     // Soft delete - apenas desativa
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from(this.legalAreasTable)
       .update({ is_active: false })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) {
+      throw new Error('Área não encontrada ou você não tem permissão para desativá-la.');
+    }
   }
 
   async reorderLegalAreas(orderedIds: string[]): Promise<void> {
     // Atualizar ordem de cada área
     for (let i = 0; i < orderedIds.length; i++) {
-      const { error } = await supabase
+      const { data: updated, error } = await supabase
         .from(this.legalAreasTable)
         .update({ order: i })
-        .eq('id', orderedIds[i]);
+        .eq('id', orderedIds[i])
+        .select('id');
 
       if (error) throw new Error(error.message);
+      if (!updated || updated.length === 0) {
+        throw new Error('Área não encontrada ou você não tem permissão para reordená-la.');
+      }
     }
   }
 
@@ -980,12 +991,16 @@ ${content}
   }
 
   async deleteStandardType(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from(this.standardTypesTable)
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Petição padrão não encontrada ou você não tem permissão para removê-la.');
+    }
   }
 
   // ==================== VÍNCULO PETIÇÃO PADRÃO → BLOCOS ====================
@@ -1067,21 +1082,24 @@ ${content}
   }
 
   async removeBlockFromStandardType(standardTypeId: string, blockId: string): Promise<void> {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from(this.standardTypeBlocksTable)
       .delete()
       .eq('standard_type_id', standardTypeId)
-      .eq('block_id', blockId);
+      .eq('block_id', blockId)
+      .select('block_id');
 
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('Vínculo não encontrado ou sem permissão para removê-lo.');
   }
 
   async setStandardTypeBlocks(standardTypeId: string, blockIds: string[]): Promise<void> {
     // Remove all existing links
-    await supabase
+    const { error: deleteError } = await supabase
       .from(this.standardTypeBlocksTable)
       .delete()
       .eq('standard_type_id', standardTypeId);
+    if (deleteError) throw new Error(deleteError.message);
 
     // Insert new links
     if (blockIds.length === 0) return;

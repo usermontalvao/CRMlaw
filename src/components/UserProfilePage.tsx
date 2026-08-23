@@ -50,6 +50,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { useSidebarMode } from '../contexts/SidebarModeContext';
 import { securityPinService, type PinMeta } from '../services/securityPin.service';
@@ -200,6 +201,7 @@ const formatTimeAgo = (dateString: string) => {
 
 export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClose, onNavigateToModule }) => {
   const { user } = useAuth();
+  const { confirmDelete } = useDeleteConfirm();
   const { openCreatePin, openChangePin, openRemovePin } = useSecurityPin();
   const { sidebarMode, setSidebarMode } = useSidebarMode();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -1172,7 +1174,17 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({ userId, onClos
 
   const handleDeletePost = async (postId: string) => {
     if (!user) return;
-    if (!confirm('Tem certeza que deseja excluir este post?')) return;
+    const post = userPosts.find((item) => item.id === postId);
+    if (!post || post.author_id !== user.id) {
+      window.alert('Você só pode excluir as suas próprias publicações.');
+      return;
+    }
+    const confirmed = await confirmDelete({
+      title: 'Excluir publicação',
+      message: 'A publicação será removida permanentemente.',
+      confirmLabel: 'Excluir publicação',
+    });
+    if (!confirmed) return;
     try {
       await feedPostsService.deletePost(postId);
       setUserPosts(prev => prev.filter(p => p.id !== postId));

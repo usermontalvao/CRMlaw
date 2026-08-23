@@ -39,6 +39,7 @@ import {
 import { financialService } from '../services/financial.service';
 import { SELFIE_PROFILE_CONSENT_LABEL } from '../constants/signatureTerms';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 import type { SavedPetition } from '../types/petitionEditor.types';
 import type { CloudFolder } from '../types/cloud.types';
 import type { ChatRoom } from '../types/chat.types';
@@ -772,6 +773,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   isOutdated = false,
 }) => {
   const { confirmDelete, notifyDeleted } = useDeleteConfirm();
+  const { ensurePermission } = useSecurityPin();
   const { navigateTo } = useNavigation();
   const [activeTab, setActiveTab] = useState<Tab>('data');
   const [historySearch, setHistorySearch] = useState('');
@@ -2165,6 +2167,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       {/* ── Foto manager modal ── */}
       {selfiePickerOpen && selfies.length > 0 && (() => {
         const handlePin = async (path: string) => {
+          if (!ensurePermission({ module: 'clientes', action: 'edit' })) return;
           setSettingPhoto(true);
           try {
             await clientService.setClientPhoto(client.id, path);
@@ -2176,9 +2179,14 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
 
 
         const handleExclude = async (path: string, label: string) => {
-          if (!window.confirm(`Excluir esta foto do perfil de ${client.full_name}?\n\n"${label}"\n\nA imagem deixa de aparecer em todos os módulos. A prova jurídica na assinatura original é preservada.`)) {
-            return;
-          }
+          const confirmed = await confirmDelete({
+            title: 'Remover foto do perfil',
+            entityName: label,
+            message: `A imagem deixará de aparecer no perfil de ${client.full_name}. A prova jurídica na assinatura original será preservada.`,
+            confirmLabel: 'Remover foto',
+            permission: { module: 'clientes', action: 'edit' },
+          });
+          if (!confirmed) return;
           setSettingPhoto(true);
           try {
             const nextExcluded = await clientService.excludeClientPhoto(client.id, path);

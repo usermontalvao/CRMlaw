@@ -12,6 +12,7 @@ import { processService, type ProcessMovement } from '../../services/process.ser
 import { whatsappService, type ClientPendings, type ClientSchedule } from '../../services/whatsapp.service';
 import { signatureService } from '../../services/signature.service';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useSecurityPin } from '../../contexts/SecurityPinContext';
 import { dueInfo } from './format';
 import type { ConfirmFn, WaOpenWorkspaceFn } from './types';
 import type { Process, ProcessStatus, ProcessPracticeArea } from '../../types/process.types';
@@ -413,9 +414,11 @@ export const DOC_STATUS_LABEL: Record<string, string> = { pending: 'Aguardando e
 
 export const ClientPendingsPanel: React.FC<{ pendings: ClientPendings | null; confirm?: ConfirmFn; onChanged?: () => void }> = ({ pendings: data, confirm, onChanged }) => {
   const toast = useToastContext();
+  const { ensurePermission } = useSecurityPin();
   const [canceling, setCanceling] = useState<string | null>(null);
 
   const cancelDocRequest = async (id: string, title: string) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     if (confirm && !await confirm({ title: 'Cancelar solicitação', message: `A solicitação "${title}" deixará de ser cobrada do cliente e sai das pendências.`, confirmLabel: 'Cancelar solicitação', tone: 'danger' })) return;
     setCanceling(id);
     try { await whatsappService.cancelDocumentRequest(id); onChanged?.(); }

@@ -452,11 +452,15 @@ export const client360Api = {
    * getClientPendings e do portal do cliente, sem apagar o histórico.
    */
   async cancelDocumentRequest(requestId: string): Promise<void> {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('document_requests')
       .update({ status: 'cancelled' })
-      .eq('id', requestId);
+      .eq('id', requestId)
+      .select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) {
+      throw new Error('Solicitação não encontrada ou você não tem permissão para cancelá-la.');
+    }
   },
 
   /**

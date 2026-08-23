@@ -13,6 +13,7 @@ import {
 import { supabase } from '../config/supabase';
 import { clientService } from '../services/client.service';
 import { zc, zcStack } from '../styles/layers';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -234,6 +235,7 @@ const ModalShell: React.FC<{ onClose: () => void; children: React.ReactNode }> =
 interface CreateModalProps { onClose: () => void; onCreated: () => void; }
 
 const CreateRequestModal: React.FC<CreateModalProps> = ({ onClose, onCreated }) => {
+  const { ensurePermission } = useSecurityPin();
   const [step, setStep] = useState<'client' | 'form'>('client');
   const [clientQuery, setClientQuery] = useState('');
   const [clientResults, setClientResults] = useState<ClientResult[]>([]);
@@ -266,6 +268,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ onClose, onCreated }) 
   const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx));
 
   const handleSave = async () => {
+    if (!ensurePermission({ module: 'documentos', action: 'create' })) return;
     if (!selectedClient) return;
     const valid = items.filter(i => i.label.trim());
     if (!title.trim()) { setError('Informe um título.'); return; }
@@ -277,9 +280,10 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ onClose, onCreated }) 
         .insert({ client_id: selectedClient.id, title: title.trim(), description: description.trim() || null, due_date: dueDate || null })
         .select('id').single();
       if (re || !req) throw new Error(re?.message || 'Erro');
-      await supabase.from('document_request_items').insert(
+      const { error: itemsError } = await supabase.from('document_request_items').insert(
         valid.map((item, i) => ({ request_id: req.id, label: item.label.trim(), required: item.required, sort_order: i }))
       );
+      if (itemsError) throw new Error(itemsError.message);
       onCreated();
     } catch (err: any) { setError(err.message || 'Erro ao salvar.'); }
     finally { setSaving(false); }
@@ -418,6 +422,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ onClose, onCreated }) 
 interface EditListModalProps { request: TrackerRequest; onClose: () => void; onSaved: () => void; }
 
 const EditListModal: React.FC<EditListModalProps> = ({ request, onClose, onSaved }) => {
+  const { ensurePermission } = useSecurityPin();
   const [title, setTitle] = useState(request.title);
   const [description, setDescription] = useState(request.description || '');
   const [dueDate, setDueDate] = useState(request.due_date || '');
@@ -435,22 +440,37 @@ const EditListModal: React.FC<EditListModalProps> = ({ request, onClose, onSaved
   const visibleItems = items.filter(i => !i.toDelete);
 
   const handleSave = async () => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     const valid = visibleItems.filter(i => i.label.trim());
     if (!title.trim()) { setError('Informe um título.'); return; }
     if (valid.length === 0) { setError('Adicione pelo menos um documento.'); return; }
     setSaving(true); setError(null);
     try {
-      await supabase.from('document_requests').update({ title: title.trim(), description: description.trim() || null, due_date: dueDate || null }).eq('id', request.id);
+      const { data: updatedRequest, error: requestError } = await supabase.from('document_requests')
+        .update({ title: title.trim(), description: description.trim() || null, due_date: dueDate || null })
+        .eq('id', request.id).select('id');
+      if (requestError) throw new Error(requestError.message);
+      if (!updatedRequest?.length) throw new Error('Solicitação não encontrada ou sem permissão para editar.');
       const toDelete = items.filter(i => !i.isNew && i.toDelete);
-      if (toDelete.length) await supabase.from('document_request_items').delete().in('id', toDelete.map(i => i.id));
+      if (toDelete.length) {
+        const { data: deleted, error: deleteError } = await supabase.from('document_request_items')
+          .delete().in('id', toDelete.map(i => i.id)).select('id');
+        if (deleteError) throw new Error(deleteError.message);
+        if ((deleted?.length ?? 0) !== toDelete.length) throw new Error('Nem todos os itens puderam ser excluídos.');
+      }
       const toInsert = valid.filter(i => i.isNew);
       if (toInsert.length) {
-        await supabase.from('document_request_items').insert(
+        const { error: insertError } = await supabase.from('document_request_items').insert(
           toInsert.map((item, idx) => ({ request_id: request.id, label: item.label.trim(), required: item.required, sort_order: valid.indexOf(item) + idx }))
         );
+        if (insertError) throw new Error(insertError.message);
       }
-      for (const item of valid.filter(i => !i.isNew))
-        await supabase.from('document_request_items').update({ sort_order: valid.indexOf(item) }).eq('id', item.id);
+      for (const item of valid.filter(i => !i.isNew)) {
+        const { data: reordered, error: reorderError } = await supabase.from('document_request_items')
+          .update({ sort_order: valid.indexOf(item) }).eq('id', item.id).select('id');
+        if (reorderError) throw new Error(reorderError.message);
+        if (!reordered?.length) throw new Error('Um item não pôde ser reordenado.');
+      }
       onSaved();
     } catch (err: any) { setError(err.message || 'Erro ao salvar.'); }
     finally { setSaving(false); }
@@ -543,6 +563,7 @@ interface ItemRowProps {
 }
 
 const ItemRow: React.FC<ItemRowProps> = ({ item, actionLoading, isReviewed, onCheck, onRename }) => {
+  const { ensurePermission } = useSecurityPin();
   const itemLoading = actionLoading === item.id + '-item';
   const isApproved = item.status === 'approved';
   const u = item.upload;
@@ -557,16 +578,21 @@ const ItemRow: React.FC<ItemRowProps> = ({ item, actionLoading, isReviewed, onCh
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const startRename = () => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     setRenameDraft(u?.final_name || u?.ai_document_type || '');
     setRenaming(true);
   };
 
   const saveRename = async () => {
     if (!u || !renameDraft.trim()) { setRenaming(false); return; }
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     setRenameLoading(true);
-    await supabase.from('document_uploads').update({ final_name: renameDraft.trim() }).eq('id', u.id);
-    onRename(u.id, renameDraft.trim());
-    setRenaming(false);
+    const { data, error } = await supabase.from('document_uploads')
+      .update({ final_name: renameDraft.trim() }).eq('id', u.id).select('id');
+    if (!error && data?.length) {
+      onRename(u.id, renameDraft.trim());
+      setRenaming(false);
+    }
     setRenameLoading(false);
   };
 
@@ -893,6 +919,7 @@ const RequestCard: React.FC<CardProps> = ({
 interface Props { open: boolean; onClose: () => void; onBadgeCountChange: (count: number) => void; }
 
 export const DocumentRequestsTracker: React.FC<Props> = ({ open, onClose, onBadgeCountChange }) => {
+  const { ensurePermission } = useSecurityPin();
   const [requests, setRequests] = useState<TrackerRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -966,34 +993,45 @@ export const DocumentRequestsTracker: React.FC<Props> = ({ open, onClose, onBadg
     setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const handleCancel = async (reqId: string) => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     setActionLoading(reqId + '-cancel');
-    await supabase.from('document_requests').update({ status: 'cancelled' }).eq('id', reqId);
+    const { data, error } = await supabase.from('document_requests').update({ status: 'cancelled' }).eq('id', reqId).select('id');
+    if (error || !data?.length) { setActionLoading(null); return; }
     await load(); setActionLoading(null);
   };
 
   const handleMarkReviewed = async (reqId: string) => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     setActionLoading(reqId + '-review');
-    await supabase.from('document_requests').update({ status: 'reviewed' }).eq('id', reqId);
+    const { data, error } = await supabase.from('document_requests').update({ status: 'reviewed' }).eq('id', reqId).select('id');
+    if (error || !data?.length) { setActionLoading(null); return; }
     await load(); setActionLoading(null);
   };
 
   const handleSaveDeadline = async (reqId: string) => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     setActionLoading(reqId + '-deadline');
-    await supabase.from('document_requests').update({ due_date: deadlineDraft || null }).eq('id', reqId);
+    const { data, error } = await supabase.from('document_requests').update({ due_date: deadlineDraft || null }).eq('id', reqId).select('id');
+    if (error || !data?.length) { setActionLoading(null); return; }
     setEditingDeadline(null);
     await load(); setActionLoading(null);
   };
 
   const handleItemCheck = async (item: TrackerItem, reqId: string) => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     const newStatus = item.status === 'approved' ? 'pending' : 'approved';
     setActionLoading(item.id + '-item');
-    await supabase.from('document_request_items').update({ status: newStatus }).eq('id', item.id);
+    const { data: updatedItem, error: itemError } = await supabase.from('document_request_items')
+      .update({ status: newStatus }).eq('id', item.id).select('id');
+    if (itemError || !updatedItem?.length) { setActionLoading(null); return; }
     const req = requests.find(r => r.id === reqId);
     if (req) {
       const allItems = req.items.map(i => i.id === item.id ? { ...i, status: newStatus } : i);
       const approved = allItems.filter(i => i.status === 'approved').length;
       const newReqStatus = approved === allItems.length ? 'complete' : approved > 0 ? 'partial' : 'pending';
-      await supabase.from('document_requests').update({ status: newReqStatus }).eq('id', reqId);
+      const { data: updatedRequest, error: requestError } = await supabase.from('document_requests')
+        .update({ status: newReqStatus }).eq('id', reqId).select('id');
+      if (requestError || !updatedRequest?.length) { setActionLoading(null); return; }
     }
     await load(); setActionLoading(null);
   };

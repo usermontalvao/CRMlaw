@@ -887,8 +887,11 @@ export const conversationsApi = {
   },
 
   async deleteNote(noteId: string): Promise<void> {
-    const { error } = await supabase.from(NOTES_TABLE).delete().eq('id', noteId);
+    const { data: deleted, error } = await supabase.from(NOTES_TABLE).delete().eq('id', noteId).select('id');
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Nota não encontrada ou você não tem permissão para excluí-la.');
+    }
   },
 
   // ── Timeline unificada (Fase 7) ──────────────────────────────

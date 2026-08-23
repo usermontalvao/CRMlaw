@@ -11,6 +11,8 @@ import {
 import SignaturePositionDesigner from './SignaturePositionDesigner';
 import type { DocumentTemplate, TemplateFile, SignatureFieldConfigValue } from '../types/document.types';
 import { zc } from '../styles/layers';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 
 interface TemplateFilesManagerProps {
   isOpen: boolean;
@@ -25,6 +27,8 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   template,
   onUpdate,
 }) => {
+  const { confirmDelete } = useDeleteConfirm();
+  const { ensurePermission } = useSecurityPin();
   const [localTemplate, setLocalTemplate] = useState<DocumentTemplate>(template);
   const [files, setFiles] = useState<TemplateFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +46,7 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   const perDocument = localTemplate.signature_model === 'per_document';
 
   const handleToggleSignatureModel = async () => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     const next = perDocument ? 'consolidated' : 'per_document';
     // Otimista: reflete na UI e persiste; reverte em caso de erro.
     setLocalTemplate((prev) => ({ ...prev, signature_model: next }));
@@ -157,6 +162,10 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
     if (!selectedFiles || selectedFiles.length === 0) return;
+    if (!ensurePermission({ module: 'documentos', action: 'create' })) {
+      e.target.value = '';
+      return;
+    }
 
     // Filtrar apenas arquivos válidos
     const validFiles: File[] = [];
@@ -195,7 +204,11 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   };
 
   const handleRemoveFile = async (fileId: string) => {
-    if (!confirm('Tem certeza que deseja remover este arquivo?')) return;
+    const confirmed = await confirmDelete({
+      title: 'Remover arquivo do modelo',
+      permission: { module: 'documentos', action: 'delete' },
+    });
+    if (!confirmed) return;
 
     try {
       setError(null);
@@ -229,6 +242,11 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
 
   const handleDragEnd = async () => {
     if (!draggedFileId) return;
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) {
+      setDraggedFileId(null);
+      await loadFiles();
+      return;
+    }
 
     try {
       for (let i = 0; i < files.length; i++) {
@@ -253,6 +271,10 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
   const handleMainFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) {
+      e.target.value = '';
+      return;
+    }
 
     if (!selectedFile.name.match(/\.(doc|docx)$/i)) {
       setError('Apenas arquivos .doc ou .docx são permitidos para o principal');
@@ -280,7 +302,12 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
 
   const handleRemoveMain = async () => {
     if (!localTemplate.file_path) return;
-    if (!confirm('Deseja remover o documento principal deste template?')) return;
+    const confirmed = await confirmDelete({
+      title: 'Remover documento principal',
+      entityName: localTemplate.name,
+      permission: { module: 'documentos', action: 'delete' },
+    });
+    if (!confirmed) return;
 
     try {
       setUpdatingMain(true);
@@ -372,7 +399,10 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                     )}
                   </button>
                   <button
-                    onClick={() => openDocInEditorWindow({ type: 'template-main', templateId: localTemplate.id }, localTemplate.file_name || `${localTemplate.name}.docx`)}
+                    onClick={() => {
+                      if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
+                      openDocInEditorWindow({ type: 'template-main', templateId: localTemplate.id }, localTemplate.file_name || `${localTemplate.name}.docx`);
+                    }}
                     disabled={updatingMain}
                     className="p-2 hover:bg-amber-100 rounded-lg transition disabled:opacity-50"
                     title="Editar documento principal"
@@ -392,7 +422,10 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                     )}
                   </button>
                   <button
-                    onClick={() => setDesignerFileId('main')}
+                    onClick={() => {
+                      if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
+                      setDesignerFileId('main');
+                    }}
                     disabled={updatingMain}
                     className="p-2 hover:bg-emerald-100 rounded-lg transition disabled:opacity-50"
                     title="Configurar posi??o da assinatura"
@@ -551,14 +584,20 @@ const TemplateFilesManager: React.FC<TemplateFilesManagerProps> = ({
                       )}
                     </button>
                     <button
-                      onClick={() => openDocInEditorWindow({ type: 'template-file', fileId: file.id }, file.file_name || 'documento.docx')}
+                      onClick={() => {
+                        if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
+                        openDocInEditorWindow({ type: 'template-file', fileId: file.id }, file.file_name || 'documento.docx');
+                      }}
                       className="p-2 hover:bg-amber-100 rounded-lg transition"
                       title="Editar documento"
                     >
                       <Pencil className="w-4 h-4 text-amber-600" />
                     </button>
                     <button
-                      onClick={() => setDesignerFileId(file.id)}
+                      onClick={() => {
+                        if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
+                        setDesignerFileId(file.id);
+                      }}
                       className="p-2 hover:bg-emerald-100 rounded-lg transition"
                       title="Configurar posição da assinatura"
                     >

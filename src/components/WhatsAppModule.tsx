@@ -269,7 +269,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   // controle da lista.
   const molduraBg = embedded ? 'bg-[#fdfcfb]' : 'bg-[#f0f2f5]';
   const { user } = useAuth();
-  const { requirePin } = useSecurityPin();
+  const { ensurePermission, requirePin } = useSecurityPin();
   const toast = useToastContext();
   // Sem `useNavigation` de propósito: nada aqui dentro navega para outro módulo,
   // e a dependência do NavigationProvider impediria este módulo de montar no app
@@ -1946,6 +1946,21 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     classifyOnClose: handleAiClassify,
     onStageEntered: runFunnelStageActions,
   });
+  const openNewConversation = useCallback(() => {
+    if (ensurePermission({ module: 'whatsapp', action: 'create' })) setNewConvOpen(true);
+  }, [ensurePermission, setNewConvOpen]);
+  const openTransfer = useCallback(() => {
+    if (ensurePermission({ module: 'whatsapp', action: 'edit' })) setTransferOpen(true);
+  }, [ensurePermission, setTransferOpen]);
+  const openCloseConversation = useCallback(() => {
+    if (ensurePermission({ module: 'whatsapp', action: 'edit' })) setCloseOpen(true);
+  }, [ensurePermission, setCloseOpen]);
+  const openBlockConversation = useCallback(() => {
+    if (ensurePermission({ module: 'whatsapp', action: 'edit' })) setBlockOpen(true);
+  }, [ensurePermission, setBlockOpen]);
+  const openDocumentRequest = useCallback(() => {
+    if (ensurePermission({ module: 'whatsapp', action: 'create' })) setDocRequestOpen(true);
+  }, [ensurePermission, setDocRequestOpen]);
 
   /**
    * Roda uma ação que precisa de um cadastro por trás — prazo, compromisso,
@@ -2167,6 +2182,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
    * descobrir sozinha qual das duas opções ainda funciona.
    */
   const deleteMessage = async (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'delete' })) return;
     const paraTodos = scope === 'everyone';
     const ok = await confirm({
       title: paraTodos ? 'Apagar para todos?' : 'Apagar só aqui?',
@@ -2514,7 +2530,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
       )}
       {/* A única cor cheia da barra: uma barra de ferramentas com quatro botões
           coloridos não tem ação principal nenhuma. */}
-      <button onClick={() => setNewConvOpen(true)} title="Nova conversa"
+      <button onClick={openNewConversation} title="Nova conversa"
         className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#f27a23] text-white shadow-[0_1px_2px_rgba(242,122,35,.4)] hover:bg-[#e06b1f] transition-colors active:scale-95">
         <Plus size={17} />
       </button>
@@ -2972,7 +2988,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                   );
                 })()}
                 {perms.canTransfer && acoes.transferir && (
-                  <button onClick={() => setTransferOpen(true)} title="Transferir conversa"
+                  <button onClick={openTransfer} title="Transferir conversa"
                     className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
                     <ArrowRightLeft size={16} />
                   </button>
@@ -2983,7 +2999,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                     <RotateCcw size={16} />
                   </button>
                 )) : (acoes.encerrar && (
-                  <button onClick={() => setCloseOpen(true)} title="Encerrar atendimento"
+                  <button onClick={openCloseConversation} title="Encerrar atendimento"
                     className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
                     <CheckCircle2 size={16} />
                   </button>
@@ -3023,7 +3039,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                   }
                   if (isMineOpen) {
                     return (
-                      <button onClick={() => setCloseOpen(true)} title="Encerrar atendimento"
+                      <button onClick={openCloseConversation} title="Encerrar atendimento"
                         className={`${isMobile ? 'flex' : 'hidden'} flex-shrink-0 w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 items-center justify-center transition`}>
                         <CheckCircle2 size={18} />
                       </button>
@@ -3060,12 +3076,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                             {selectedContactMuted ? <Bell size={16} className="text-amber-500" /> : <BellOff size={16} className="text-slate-400" />} {selectedContactMuted ? 'Reativar notificações' : 'Silenciar contato…'}
                           </button>
                           {perms.canTransfer && acoes.transferir && (
-                            <button className={item} onClick={run(() => setTransferOpen(true))}><ArrowRightLeft size={16} className="text-slate-400" /> Transferir conversa</button>
+                            <button className={item} onClick={run(openTransfer)}><ArrowRightLeft size={16} className="text-slate-400" /> Transferir conversa</button>
                           )}
                           {selected.status === 'closed' ? (acoes.reabrir && (
                             <button className={item} onClick={run(handleReopen)}><RotateCcw size={16} className="text-emerald-500" /> Reabrir conversa</button>
                           )) : (acoes.encerrar && (
-                            <button className={item} onClick={run(() => setCloseOpen(true))}><CheckCircle2 size={16} className="text-emerald-500" /> Encerrar atendimento</button>
+                            <button className={item} onClick={run(openCloseConversation)}><CheckCircle2 size={16} className="text-emerald-500" /> Encerrar atendimento</button>
                           ))}
                           {perms.canBlock && messages.length > 0 && (
                             <button className={`${item} text-red-600 hover:bg-red-50`} onClick={run(handleClearConversation)}><Trash2 size={16} /> Limpar conversa</button>
@@ -3728,12 +3744,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
           <QuickActions
             blocked={selected.is_blocked}
             onMarkUnread={handleMarkUnread}
-            onTransfer={() => setTransferOpen(true)}
+            onTransfer={openTransfer}
             onTemplates={() => setTemplateOpen(true)}
             onTimeline={() => setTimelineOpen(true)}
             onSummary={selected.client_id ? () => setSummaryOpen(true) : undefined}
             onExport={messages.length > 0 ? handleExportConversation : undefined}
-            onBlock={perms.canBlock ? () => setBlockOpen(true) : undefined}
+            onBlock={perms.canBlock ? openBlockConversation : undefined}
             onUnblock={perms.canBlock ? handleUnblock : undefined}
             muted={selectedContactMuted}
             mutedUntil={selectedContactMutedUntil}
@@ -3848,7 +3864,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                 { label: 'Prazo', icon: <Clock size={15} />, motivo: 'cadastrar um prazo', on: (clientId: string) => openWa({ type: 'deadline_create', clientId }) },
                 { label: 'Agenda', icon: <Calendar size={15} />, motivo: 'marcar um compromisso', on: (clientId: string) => openWa({ type: 'calendar_create', clientId }) },
                 { label: 'Documento', icon: <FileText size={15} />, motivo: 'gerar um documento', on: (clientId: string, clientName: string) => openWa({ type: 'document_generate', clientId, clientName: clientName || undefined, processCode: (overview?.processes ?? [])[0]?.process_code }) },
-                { label: 'Pedir doc.', icon: <FilePlus size={15} />, motivo: 'pedir documentos', on: () => setDocRequestOpen(true) },
+                { label: 'Pedir doc.', icon: <FilePlus size={15} />, motivo: 'pedir documentos', on: openDocumentRequest },
               ].map(a => (
                 <button key={a.label} onClick={() => comCadastro(a.motivo, a.on)}
                   title={selected.client_id ? a.label : `${a.label} — pede um pré-cadastro rápido antes`}

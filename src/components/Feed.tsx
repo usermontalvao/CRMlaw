@@ -2116,6 +2116,11 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
 
   // Excluir post
   const handleDeletePost = useCallback(async (postId: string) => {
+    const post = feedPosts.find((item) => item.id === postId);
+    if (!post || (post.author_id !== user?.id && !isAdmin)) {
+      toast.error('Você não tem permissão para excluir esta publicação.');
+      return;
+    }
     const confirmed = await confirmDelete({
       title: 'Excluir publicação',
       message: 'Tem certeza que deseja excluir esta publicação? Esta ação não pode ser desfeita.',
@@ -2131,7 +2136,7 @@ const Feed: React.FC<FeedProps> = ({ onNavigateToModule, params }) => {
     } catch (error) {
       console.error('Erro ao excluir post:', error);
     }
-  }, [confirmDelete, notifyDeleted]);
+  }, [confirmDelete, feedPosts, isAdmin, notifyDeleted, toast, user?.id]);
 
   // Handler para abrir modal do acordo financeiro
   const handleOpenFinancialModal = useCallback((agreementId: string) => {

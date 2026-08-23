@@ -16,6 +16,7 @@ import { buildAcceptPresentation } from '../format';
 import { sendTextResilient } from '../../../services/whatsapp/resilientSend';
 import { muteStore } from '../../../services/whatsapp/muteStore';
 import { useToastContext } from '../../../contexts/ToastContext';
+import { useSecurityPin } from '../../../contexts/SecurityPinContext';
 import type { ConfirmFn } from '../types';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppAiSession,
@@ -81,9 +82,11 @@ export function useWaConversationActions({
   setMessages, setPending, setReplyTo, setEditing, setHasMoreMsgs, oldestTsRef,
 }: WaConversationActionsArgs): WaConversationActionsApi {
   const toast = useToastContext();
+  const { ensurePermission } = useSecurityPin();
 
   const handleReopen = useCallback(async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     try {
       await whatsappService.reopenConversation(selected.id);
       setConversations(prev => prev.map(c => c.id === selected.id
@@ -93,6 +96,7 @@ export function useWaConversationActions({
 
   const handleUnblock = useCallback(async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     if (!await confirm({ title: 'Desbloquear contato', message: 'Ele voltará ao fluxo normal de atendimento.', confirmLabel: 'Desbloquear' })) return;
     try {
       await whatsappService.unblockContact(selected.id);
@@ -105,6 +109,7 @@ export function useWaConversationActions({
   // responsável ao cliente e limpa o alerta.
   const handleAccept = useCallback(async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     try {
       await whatsappService.acceptTransfer(selected.id);
       // Apresentação automática do responsável ao cliente (best-effort).
@@ -133,6 +138,7 @@ export function useWaConversationActions({
   // Assumir o atendimento direto da fila (sem transferência): vira responsável.
   const handleAssume = useCallback(async () => {
     if (!selected || !user?.id) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     try {
       await whatsappService.assumeConversation(selected.id);
       // Fase J: abortar sessão de IA quando agente humano assume
@@ -147,6 +153,7 @@ export function useWaConversationActions({
   // Devolver a conversa para a fila do setor: remove o responsável.
   const handleRelease = useCallback(async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     if (!await confirm({ title: 'Devolver à fila', message: 'Você deixará de ser o responsável por este atendimento.', confirmLabel: 'Devolver' })) return;
     try {
       await whatsappService.releaseToQueue(selected.id);
@@ -158,6 +165,7 @@ export function useWaConversationActions({
   // ── Silenciar / reativar contato (notificações), por usuário ──
   const muteSelected = useCallback(async (durationMs: number | null, label: string) => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     closeMuteModal();
     const ids = muteConversationIds.length > 0 ? [...new Set(muteConversationIds)] : [selected.id];
     const until = durationMs === null ? null : new Date(Date.now() + durationMs).toISOString();
@@ -174,6 +182,7 @@ export function useWaConversationActions({
 
   const unmuteSelected = useCallback(async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     const ids = muteConversationIds.length > 0 ? [...new Set(muteConversationIds)] : [selected.id];
     const previous = new Map(ids.map(id => [id, muteStore.mutedUntil(id)] as const));
     ids.forEach(id => muteStore.setLocal(id, undefined)); // otimista
@@ -191,6 +200,7 @@ export function useWaConversationActions({
   // guarda jurídica (preserva evidência, igual à política de retenção).
   const handleClearConversation = useCallback(async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'delete' })) return;
     if (selected.legal_hold) {
       toast.error('Conversa sob guarda jurídica', 'Remova a guarda antes de limpar a conversa.');
       return;
@@ -220,6 +230,7 @@ export function useWaConversationActions({
   // flag e a limitação volta sozinha no próximo contato.
   const handleToggleAbsenceSuppressed = useCallback(async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     const next = !selected.absence_suppressed;
     try {
       await whatsappService.setAbsenceSuppressed(selected.id, next);
@@ -241,6 +252,7 @@ export function useWaConversationActions({
   // então ela não sobrevive ao caso que a justificou.
   const handleToggleAutoCloseSuppressed = useCallback(async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     const next = !selected.auto_close_suppressed;
     try {
       await whatsappService.setAutoCloseSuppressed(selected.id, next);
@@ -261,6 +273,7 @@ export function useWaConversationActions({
 
   const applyLegalHold = useCallback(async (newHold: boolean, reason?: string) => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     try {
       await whatsappService.setLegalHold(selected.id, newHold, reason);
       setConversations(prev => prev.map(c =>
@@ -276,6 +289,7 @@ export function useWaConversationActions({
 
   const handleToggleLegalHold = useCallback(() => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     if (selected.legal_hold) void applyLegalHold(false); // remover não pede motivo
     else setLegalHoldModalOpen(true);                    // ativar → modal de motivo opcional
   }, [selected, applyLegalHold]);

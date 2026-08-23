@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.11',
+    date: '23/08/2026',
+    summary: 'A régua de cargos alcança a Nuvem, os Documentos, as Petições, o E-mail e os cadastros do WhatsApp — e o que o banco recusa para de aparecer como feito.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'Os módulos que faltavam entram na matriz de Papéis e módulos',
+            description: 'Nuvem, Documentos, Petições, E-mails, Feed, Perfil e os cadastros do WhatsApp (setores, modelos, assistentes de IA, horários) ainda tratavam qualquer funcionário autenticado como dono de tudo. Agora cada tabela e cada arquivo segue as quatro colunas do cargo — ver, criar, editar, excluir —, preservando autoria, supervisão, canais restritos e os links públicos que precisam continuar abrindo sem sessão.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A recusa chega antes do PIN, do modal e do upload',
+            description: 'Editar um template, apagar um arquivo da Nuvem, enviar mensagem, mexer num assistente de IA: quando o cargo não permite, o aviso aparece na hora e com o motivo, em vez de deixar a pessoa digitar o PIN ou subir o arquivo para só então esbarrar na negativa.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Operação bloqueada deixou de fingir sucesso',
+            description: 'Toda atualização e toda exclusão agora exigem a confirmação de que o banco mexeu em pelo menos uma linha antes de a tela comemorar. Sem isso a regra de segurança nega em silêncio — zero linhas, nenhum erro — e o CRM mostrava um "pronto" que não tinha acontecido. Cobre arquivos, templates, solicitações de documentos, e-mails, petições, assinaturas, Feed e as ações administrativas do WhatsApp.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Arquivo de template não some mais quando a exclusão é negada',
+            description: 'A remoção apagava o arquivo do armazenamento antes de o banco autorizar. Se a permissão recusasse a exclusão do registro, o registro ficava — apontando para um arquivo que já não existia. Agora a linha sai primeiro; o arquivo, só depois.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.10',
     date: '23/08/2026',
     summary: 'A matriz de permissões por cargo deixa de ser decoração: avisa antes de pedir o PIN e passa a valer também no banco.',

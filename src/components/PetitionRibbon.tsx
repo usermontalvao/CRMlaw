@@ -57,6 +57,7 @@ import {
 } from 'lucide-react';
 import type { SyncfusionEditorRef } from './SyncfusionEditor';
 import { profileService, type PetitionRibbonCustomStyle } from '../services/profile.service';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 
 type RibbonTab = 'inicio' | 'inserir' | 'layout' | 'revisao' | 'exibir' | 'configuracoes';
 
@@ -226,6 +227,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
   onOpenFindReplace,
   onOpenProofreader,
 }) => {
+  const { ensurePermission } = useSecurityPin();
   const [tab, setTab] = useState<RibbonTab>('inicio');
   const [fmt, setFmt] = useState<FmtState>(EMPTY_FMT);
   const [zoom, setZoom] = useState(100);
@@ -1511,6 +1513,7 @@ const PetitionRibbon: React.FC<PetitionRibbonProps> = ({
                     onClick={() => applyCustomStyle(style)}
                     onContextMenu={(e) => {
                       e.preventDefault();
+                      if (!ensurePermission({ module: 'peticoes', action: 'edit' })) return;
                       if (window.confirm(`Remover o estilo "${style.name}"?`)) {
                         removeCustomStyle(style.id);
                       }

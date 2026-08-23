@@ -667,7 +667,7 @@ interface EmailModuleProps {
 
 export default function EmailModule({ params }: EmailModuleProps = {}) {
   const { user } = useAuth();
-  const { requirePin } = useSecurityPin();
+  const { requirePin, ensurePermission } = useSecurityPin();
   const [folder, setFolder] = useState<EmailFolder>('inbox');
   const [messages, setMessages] = useState<EmailMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -964,6 +964,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   const moveEmailToFolder = async (m: EmailMessage, dest: EmailFolder) => {
     if (dest === folder) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     try {
       if (dest === 'trash') {
         // Mantém is_spam como metadado; restore depois devolve ao lugar certo.
@@ -1062,6 +1063,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   const bulkRestore = async () => {
     if (checked.size === 0) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     const ids = [...checked];
     await emailService.bulkRestore(ids);
     setMessages((prev) => prev.filter((m) => !checked.has(m.id)));
@@ -1071,6 +1073,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   const bulkNotSpam = async () => {
     if (checked.size === 0) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     const ids = [...checked];
     await emailService.bulkSetSpam(ids, false);
     setMessages((prev) => prev.filter((m) => !checked.has(m.id)));
@@ -1080,6 +1083,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   const bulkTrash = async () => {
     if (checked.size === 0) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     const ids = [...checked];
     await emailService.bulkMoveToTrash(ids);
     setMessages((prev) => prev.filter((m) => !checked.has(m.id)));
@@ -1088,6 +1092,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   };
   const bulkMarkRead = async (isRead: boolean) => {
     if (checked.size === 0) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     const ids = [...checked];
     await emailService.bulkMarkRead(ids, isRead);
     setMessages((prev) => prev.map((m) => (checked.has(m.id) ? { ...m, is_read: isRead } : m)));
@@ -1253,6 +1258,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   const toggleRead = async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     const next = !selected.is_read;
     await emailService.markRead(selected.id, next);
     setMessages((prev) => prev.map((x) => (x.id === selected.id ? { ...x, is_read: next } : x)));
@@ -1264,6 +1270,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   // desmarcar remove a linha da lista.
   const toggleStar = async (m: EmailMessage, e?: ReactMouseEvent) => {
     e?.stopPropagation();
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     const next = !m.is_starred;
     setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, is_starred: next } : x)));
     if (selected?.id === m.id) setSelected((s) => (s ? { ...s, is_starred: next } : s));
@@ -1279,16 +1286,19 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   const onSpam = async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     await emailService.markSpam(selected, true);
     dropFromList(selected.id);
   };
   const onNotSpam = async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     await emailService.unmarkSpam(selected, true);
     dropFromList(selected.id);
   };
   const onTrash = async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     await emailService.moveToTrash(selected.id);
     dropFromList(selected.id);
   };
@@ -1296,6 +1306,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   // Atalho "!" — alterna spam no escopo certo: se há seleção múltipla age nela,
   // senão no item em foco/aberto. Na pasta Spam, tira do spam; fora dela, marca.
   const toggleSpamScope = async () => {
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     const toSpam = folder !== 'spam';
     if (checked.size > 0) {
       const ids = [...checked];
@@ -1313,6 +1324,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   };
   const onRestore = async () => {
     if (!selected) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     await emailService.restoreFromTrash(selected.id);
     dropFromList(selected.id);
   };
@@ -1617,6 +1629,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   };
 
   const doSend = async () => {
+    if (!ensurePermission({ module: 'emails', action: 'create' })) return;
     const toList = parseRecipients(compose.to);
     const missingTo = !toList.length;
     const missingSubject = !compose.subject;
@@ -1707,21 +1720,25 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   const addRule = async () => {
     if (!ruleForm.value.trim()) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     await emailService.addSpamRule(ruleForm.kind, ruleForm.match_type, ruleForm.value);
     setRuleForm({ ...ruleForm, value: '' });
     await loadSpamRules();
   };
   const removeRule = async (id: string) => {
+    if (!ensurePermission({ module: 'emails', action: 'delete' })) return;
     await emailService.deleteSpamRule(id);
     await loadSpamRules();
   };
   const toggleRule = async (r: EmailSpamRule) => {
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     await emailService.setSpamRuleEnabled(r.id, !r.enabled);
     await loadSpamRules();
   };
 
   const trustSender = async () => {
     if (!selected?.from_address) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     await emailService.addSpamRule('whitelist', 'address', selected.from_address);
     if (selected.is_spam) {
       await emailService.unmarkSpam(selected, true);
@@ -1740,6 +1757,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
     if (!email) return;
     const domain = email.split('@')[1];
     if (!domain) return;
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     if (!window.confirm(`Bloquear todos os emails de @${domain}?\n\nEmails desse domínio irão direto para o Spam.`)) return;
     await emailService.addSpamRule('blocklist', 'domain', domain);
     void emailService.listSpamRules().then(setSpamRules).catch(() => {});
@@ -1751,6 +1769,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
   };
 
   const saveSettings = async () => {
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     setSavingSig(true);
     try {
       // Geral (prefs) — persistido por navegador
@@ -2832,6 +2851,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
             icon: ctxMenu.m.is_read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />,
             label: ctxMenu.m.is_read ? 'Marcar como não lido' : 'Marcar como lido',
             action: () => {
+              if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
               emailService.markRead(ctxMenu.m.id, !ctxMenu.m.is_read).catch(() => {});
               setMessages((prev) => prev.map((x) => x.id === ctxMenu.m.id ? { ...x, is_read: !ctxMenu.m.is_read } : x));
             },
@@ -2840,6 +2860,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
             icon: <Star className="h-4 w-4" />,
             label: ctxMenu.m.is_starred ? 'Remover estrela' : 'Marcar com estrela',
             action: () => {
+              if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
               emailService.toggleStar(ctxMenu.m.id, !ctxMenu.m.is_starred).catch(() => {});
               setMessages((prev) => prev.map((x) => x.id === ctxMenu.m.id ? { ...x, is_starred: !ctxMenu.m.is_starred } : x));
             },
@@ -3100,6 +3121,7 @@ type ClientLite = Pick<Client, 'id' | 'full_name' | 'email' | 'phone' | 'mobile'
  * nome e permite desvincular.
  */
 function ClientLinkChip({ message, onLinked }: { message: EmailMessage; onLinked: (clientId: string | null) => void }) {
+  const { ensurePermission } = useSecurityPin();
   const [linkedName, setLinkedName] = useState<string | null>(null);
   const [loadingName, setLoadingName] = useState(false);
   const [suggested, setSuggested] = useState<{ id: string; full_name: string } | null>(null);
@@ -3155,6 +3177,7 @@ function ClientLinkChip({ message, onLinked }: { message: EmailMessage; onLinked
   }, [query, open]);
 
   const link = async (clientId: string, name: string) => {
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     setLinking(true);
     try {
       await emailService.linkClient(message.id, clientId);
@@ -3167,6 +3190,7 @@ function ClientLinkChip({ message, onLinked }: { message: EmailMessage; onLinked
   };
 
   const unlink = async () => {
+    if (!ensurePermission({ module: 'emails', action: 'edit' })) return;
     setLinking(true);
     try {
       await emailService.linkClient(message.id, null);

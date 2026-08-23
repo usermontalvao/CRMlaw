@@ -54,6 +54,8 @@ interface ModalState {
 interface SecurityPinContextType {
   isPinModalOpen: boolean;
   requirePin: (opts: RequirePinOptions) => Promise<boolean>;
+  /** Valida cargo/permissão sem abrir o PIN. Útil para confirmações próprias. */
+  ensurePermission: (permission: PinPermissionRequirement) => boolean;
   openCreatePin: () => Promise<boolean>;
   openChangePin: () => Promise<boolean>;
   openRemovePin: () => Promise<boolean>;
@@ -262,6 +264,22 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, [modal, closeModal]);
 
+  const ensurePermission = useCallback((permission: PinPermissionRequirement): boolean => {
+    if (permissionsLoading) {
+      toastError('Verificando suas permissões', 'Aguarde um instante e tente novamente.');
+      return false;
+    }
+    if (!hasPermission(permission.module, permission.action)) {
+      toastError(
+        'Ação não permitida',
+        permission.deniedMessage
+          ?? 'Seu cargo não possui permissão para realizar esta ação. Solicite acesso a um administrador.',
+      );
+      return false;
+    }
+    return true;
+  }, [hasPermission, permissionsLoading, toastError]);
+
   const requirePin = useCallback(async (opts: RequirePinOptions): Promise<boolean> => {
     const sensitivity = opts.sensitivity ?? 'high';
 
@@ -269,20 +287,7 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
     // PIN confirma quem está executando; ele nunca concede um poder que o cargo
     // não possui. Além de evitar uma pergunta inútil, isto impede a impressão de
     // que a operação foi aceita para só depois ser silenciosamente barrada pela RLS.
-    if (opts.permission) {
-      if (permissionsLoading) {
-        toastError('Verificando suas permissões', 'Aguarde um instante e tente novamente.');
-        return false;
-      }
-      if (!hasPermission(opts.permission.module, opts.permission.action)) {
-        toastError(
-          'Ação não permitida',
-          opts.permission.deniedMessage
-            ?? 'Seu cargo não possui permissão para realizar esta ação. Solicite acesso a um administrador.',
-        );
-        return false;
-      }
-    }
+    if (opts.permission && !ensurePermission(opts.permission)) return false;
 
     // Verificar sessão ativa (exceto critical)
     if (sessionCovers(sensitivity)) {
@@ -314,7 +319,7 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     // Abre verificação
     return openModal('verify', { ...opts, sensitivity });
-  }, [hasPermission, openModal, permissionsLoading, toastError]);
+  }, [ensurePermission, openModal]);
 
   const openCreatePin = useCallback((): Promise<boolean> =>
     openModal('create', { action: 'create_pin', sensitivity: 'high' }),
@@ -383,7 +388,7 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   return (
-    <SecurityPinContext.Provider value={{ isPinModalOpen: modal !== null, requirePin, openCreatePin, openChangePin, openRemovePin, getFinancialSessionExpiry, revealFinancialValues, getFinancialModuleExpiry, financialPinRequired }}>
+    <SecurityPinContext.Provider value={{ isPinModalOpen: modal !== null, requirePin, ensurePermission, openCreatePin, openChangePin, openRemovePin, getFinancialSessionExpiry, revealFinancialValues, getFinancialModuleExpiry, financialPinRequired }}>
       {children}
       {modal && (
         <SecurityPinModal

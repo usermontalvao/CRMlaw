@@ -41,6 +41,7 @@ import { signatureFieldsService } from '../services/signatureFields.service';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 import TemplateFilesManager from './TemplateFilesManager';
 import CustomFieldsManager from './CustomFieldsManager';
 import StandardPetitionsModule from './StandardPetitionsModule';
@@ -234,6 +235,7 @@ interface DocumentsModuleProps {
 const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule }) => {
   const toast = useToastContext();
   const { confirmDelete, notifyDeleted } = useDeleteConfirm();
+  const { ensurePermission } = useSecurityPin();
 
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -433,6 +435,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
   const handleSaveTemplateFormConfig = async () => {
     if (!templateFormConfigTemplate) return;
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     try {
       setTemplateFormConfigSaving(true);
       setTemplateFormConfigError(null);
@@ -706,6 +709,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   }, [selectedTemplateId, selectedTemplate, selectedClient]);
 
   const handleOpenModal = () => {
+    if (!ensurePermission({ module: 'documentos', action: 'create' })) return;
     setIsModalOpen(true);
     setUploadError(null);
     setNameInput('');
@@ -725,6 +729,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
   const handleUploadTemplate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!ensurePermission({ module: 'documentos', action: 'create' })) return;
     if (!fileInput) {
       setUploadError('Selecione um arquivo .doc ou .docx.');
       return;
@@ -918,6 +923,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
   const handleStartPreviewEditing = () => {
     if (!previewTemplate || previewTemplate.file_path) return;
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     setIsPreviewEditing(true);
     setPreviewEditError(null);
   };
@@ -934,6 +940,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const handleSavePreviewEdits = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!previewTemplate || previewTemplate.file_path) return;
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
 
     const trimmedName = previewEditName.trim();
     if (!trimmedName) {
@@ -968,6 +975,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   };
 
   const handleOpenEditModal = (template: DocumentTemplate) => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     setEditingTemplate(template);
     setEditName(template.name);
     setEditDescription(template.description || '');
@@ -988,6 +996,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const handleSaveTemplateEdits = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!editingTemplate) return;
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
 
     const trimmedName = editName.trim();
     if (!trimmedName) {
@@ -1307,6 +1316,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   // Enviar para assinatura - Envia DOCXs separados (documento principal + anexos)
   const handleSendForSignature = async () => {
     if (!selectedTemplate || !selectedClient || !generatedDocBlob) return;
+    if (!ensurePermission({ module: 'assinaturas', action: 'create' })) return;
 
     try {
       setPreparingSignature(true);
@@ -1485,6 +1495,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   };
 
   const handleGenerateTemplateFillLink = async (template: DocumentTemplate) => {
+    if (!ensurePermission({ module: 'documentos', action: 'create' })) return;
     try {
       setCreatingTemplateFillLinkId(template.id);
       setTemplateActionError(null);

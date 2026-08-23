@@ -20,6 +20,7 @@ import type {
   WhatsAppAiTargetOption, WhatsAppChannel,
 } from '../../types/whatsapp.types';
 import { AiAssistantForm } from './aiAssistantForm';
+import { useSecurityPin } from '../../contexts/SecurityPinContext';
 
 /** Agente novo: inativo, em modo de teste e sem nenhuma ação marcada. */
 const EMPTY_DRAFT: WhatsAppAiAssistantInput = {
@@ -61,6 +62,7 @@ interface Props {
 }
 
 export const AiAssistantsPanel: React.FC<Props> = ({ channels, onFeedback }) => {
+  const { ensurePermission } = useSecurityPin();
   const [assistants, setAssistants] = useState<WhatsAppAiAssistant[]>([]);
   const [targets, setTargets] = useState<WhatsAppAiTargetOption[]>([]);
   const [bindings, setBindings] = useState<Record<string, { assistant_id: string | null; ai_enabled: boolean }>>({});
@@ -98,8 +100,14 @@ export const AiAssistantsPanel: React.FC<Props> = ({ channels, onFeedback }) => 
   const patch = (p: Partial<WhatsAppAiAssistantInput>) =>
     setDraft(prev => prev ? { ...prev, ...p } : prev);
 
-  const startNew = () => { setEditingId('new'); setDraft({ ...EMPTY_DRAFT }); };
-  const startEdit = (a: WhatsAppAiAssistant) => { setEditingId(a.id); setDraft({ ...a }); };
+  const startNew = () => {
+    if (!ensurePermission({ module: 'configuracoes', action: 'create' })) return;
+    setEditingId('new'); setDraft({ ...EMPTY_DRAFT });
+  };
+  const startEdit = (a: WhatsAppAiAssistant) => {
+    if (!ensurePermission({ module: 'configuracoes', action: 'edit' })) return;
+    setEditingId(a.id); setDraft({ ...a });
+  };
   const cancelEdit = () => { setEditingId(null); setDraft(null); };
 
   // ── Persistência ────────────────────────────────────────────
@@ -107,6 +115,10 @@ export const AiAssistantsPanel: React.FC<Props> = ({ channels, onFeedback }) => 
   /** `refs` vem do formulário já podado: só as referências ainda citadas no texto. */
   const save = async (refs: WhatsAppAiActionRef[], allowedActions: string[]) => {
     if (!draft) return;
+    if (!ensurePermission({
+      module: 'configuracoes',
+      action: editingId && editingId !== 'new' ? 'edit' : 'create',
+    })) return;
     setSaving(true);
     try {
       const payload = { ...draft, action_refs: refs, allowed_actions: allowedActions };
@@ -123,6 +135,7 @@ export const AiAssistantsPanel: React.FC<Props> = ({ channels, onFeedback }) => 
   };
 
   const remove = async (a: WhatsAppAiAssistant) => {
+    if (!ensurePermission({ module: 'configuracoes', action: 'delete' })) return;
     if (!window.confirm(`Excluir o agente "${a.name}"?`)) return;
     try {
       await whatsappService.deleteAiAssistant(a.id);
@@ -134,6 +147,7 @@ export const AiAssistantsPanel: React.FC<Props> = ({ channels, onFeedback }) => 
   };
 
   const saveBinding = async (channelId: string, next: { assistant_id?: string | null; ai_enabled?: boolean }) => {
+    if (!ensurePermission({ module: 'configuracoes', action: 'edit' })) return;
     const current = bindings[channelId] || { assistant_id: null, ai_enabled: false };
     const merged = { ...current, ...next };
     setBindings(prev => ({ ...prev, [channelId]: merged }));

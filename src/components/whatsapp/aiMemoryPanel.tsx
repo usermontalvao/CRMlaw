@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { whatsappService } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useSecurityPin } from '../../contexts/SecurityPinContext';
 import type { WhatsAppAiConversationState } from '../../types/whatsapp.types';
 import { canShowPrivateAiHandoffSummary } from '../../utils/waAiHandoffSummary';
 import {
@@ -61,6 +62,7 @@ export const AiMemoryPanel: React.FC<{
   podeControlar = false, versao = 0, onMudou,
   loadState = whatsappService.getAiConversationState }) => {
   const toast = useToastContext();
+  const { ensurePermission } = useSecurityPin();
   const [state, setState] = useState<WhatsAppAiConversationState | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -126,6 +128,7 @@ export const AiMemoryPanel: React.FC<{
   };
 
   const clear = async () => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'delete' })) return;
     const ok = await confirm({
       title: 'Limpar a memória da IA?',
       message: 'O resumo, os dados coletados e as pendências desta conversa são apagados. '
@@ -139,6 +142,7 @@ export const AiMemoryPanel: React.FC<{
 
   const cancelFollowup = async () => {
     if (!state.pendingFollowup) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     await run(() => whatsappService.cancelAiFollowup(state.pendingFollowup!.id), 'Acompanhamento cancelado.');
   };
 

@@ -372,12 +372,16 @@ class SignatureService {
   }
 
   async cancelRequest(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from(this.requestsTable)
       .update({ status: 'cancelled' })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) {
+      throw new Error('Solicitação não encontrada ou você não tem permissão para cancelá-la.');
+    }
 
     // Cancelar todos os signatários pendentes
     await supabase
@@ -432,11 +436,15 @@ class SignatureService {
 
   /** Restaura um documento removido (lixeira) de volta ao painel. */
   async restoreRequest(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from(this.requestsTable)
       .update({ archived_at: null, deleted_at: null })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) {
+      throw new Error('Documento não encontrado ou você não tem permissão para restaurá-lo.');
+    }
   }
 
   /** Lista os documentos removidos do painel (lixeira), com signatários. */
@@ -468,20 +476,28 @@ class SignatureService {
 
   /** Bloqueia/revoga um documento: não pode mais ser validado publicamente. */
   async blockRequest(id: string, reason?: string | null): Promise<void> {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from(this.requestsTable)
       .update({ blocked_at: new Date().toISOString(), blocked_reason: reason ?? null })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) {
+      throw new Error('Documento não encontrado ou você não tem permissão para bloqueá-lo.');
+    }
   }
 
   /** Desbloqueia um documento revogado. */
   async unblockRequest(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from(this.requestsTable)
       .update({ blocked_at: null, blocked_reason: null })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) {
+      throw new Error('Documento não encontrado ou você não tem permissão para desbloqueá-lo.');
+    }
   }
 
   /** Remove paths de todos os buckets relevantes (best-effort). */
@@ -530,7 +546,9 @@ class SignatureService {
    */
   async permanentlyDeleteRequest(id: string, deleteFilesFromServer: boolean = true): Promise<void> {
     const request = await this.getRequestWithSigners(id);
-    if (!request) return;
+    if (!request) {
+      throw new Error('Documento não encontrado ou você não tem permissão para excluí-lo.');
+    }
 
     const pathsToDelete: string[] = [];
     if (deleteFilesFromServer) {
@@ -547,11 +565,15 @@ class SignatureService {
       });
     }
 
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from(this.requestsTable)
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Documento não encontrado ou você não tem permissão para excluí-lo.');
+    }
 
     if (deleteFilesFromServer) {
       await this.removePathsFromStorage(pathsToDelete);

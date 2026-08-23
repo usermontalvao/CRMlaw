@@ -116,7 +116,7 @@ const ChannelAccessManager: React.FC<ChannelAccessManagerProps> = ({
       title: 'Alterar acesso ao canal',
       description: `Confirme com seu PIN quem pode ver o canal “${channel.name || channel.instance_name}”.`,
       actionLabel: 'Salvar acessos',
-      permission: { module: 'whatsapp', action: 'edit' },
+      permission: { module: 'configuracoes', action: 'edit' },
     }) : true;
     if (!pinOk) return;
 

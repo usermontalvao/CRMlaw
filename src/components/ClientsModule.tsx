@@ -447,7 +447,12 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       return;
     }
 
-    const confirmed = window.confirm(`Deseja ${label} ${groups.length} grupo(s) de contatos duplicados? Os campos vazios do contato principal serão preenchidos com os dados dos demais.`);
+    const confirmed = await confirmDelete({
+      title: 'Mesclar contatos duplicados',
+      message: `Deseja ${label} ${groups.length} grupo(s)? Os campos vazios do contato principal serão preenchidos e os cadastros duplicados removidos.`,
+      confirmLabel: 'Mesclar contatos',
+      permission: { module: 'clientes', action: 'delete' },
+    });
     if (!confirmed) return;
 
     try {
@@ -499,11 +504,12 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       return;
     }
 
-    const confirmed = window.confirm(
-      `Analisar ${candidates.length} grupo(s) de contatos possivelmente duplicados com a IA?\n\n` +
-      `Só serão mesclados sozinhos os grupos confirmados como a mesma pessoa acima de ${MERGE_THRESHOLD}% de confiança. ` +
-      'Os dados mais recentes prevalecem, campos vazios não sobrescrevem os preenchidos e todo valor substituído fica no histórico do cadastro.',
-    );
+    const confirmed = await confirmDelete({
+      title: 'Mesclar duplicados com IA',
+      message: `Analisar ${candidates.length} grupo(s)? Só serão mesclados automaticamente os confirmados acima de ${MERGE_THRESHOLD}% de confiança. Os cadastros duplicados serão removidos.`,
+      confirmLabel: 'Analisar e mesclar',
+      permission: { module: 'clientes', action: 'delete' },
+    });
     if (!confirmed) return;
 
     setAiMergeLoading(true);

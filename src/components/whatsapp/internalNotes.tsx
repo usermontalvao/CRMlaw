@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { StickyNote, Maximize2, Loader2, Plus, Trash2 } from 'lucide-react';
 import { whatsappService, type WhatsAppInternalNote } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useSecurityPin } from '../../contexts/SecurityPinContext';
 import { fmtNoteDate } from './format';
 import { Modal, ModalBody } from '../ui/Modal';
 import type { ConfirmFn } from './types';
@@ -17,6 +18,7 @@ export const InternalNotesPanel: React.FC<{
   onExpand?: () => void;
 }> = ({ conversationId, staffByUser, currentUserId, confirm, embedded, limit, onExpand }) => {
   const toast = useToastContext();
+  const { ensurePermission } = useSecurityPin();
   const [notes, setNotes] = useState<WhatsAppInternalNote[] | null>(null);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -41,12 +43,14 @@ export const InternalNotesPanel: React.FC<{
   const add = async () => {
     const body = draft.trim();
     if (!body) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'create' })) return;
     setSaving(true);
     try { await whatsappService.addNote(conversationId, body); setDraft(''); load(); }
     catch (e: any) { toast.error('Falha ao salvar nota', e.message); }
     finally { setSaving(false); }
   };
   const remove = async (id: string) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'delete' })) return;
     if (!await confirm({ title: 'Excluir nota', message: 'Esta nota interna será removida.', confirmLabel: 'Excluir', tone: 'danger' })) return;
     try { await whatsappService.deleteNote(id); setNotes(n => (n || []).filter(x => x.id !== id)); }
     catch (e: any) { toast.error('Falha ao excluir', e.message); }

@@ -70,6 +70,8 @@ import { openWhatsAppChat } from '../utils/whatsappChat';
 import { cloudService } from '../services/cloud.service';
 import { clientService } from '../services/client.service';
 import { useToastContext } from '../contexts/ToastContext';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { ClientSearchSelect } from './ClientSearchSelect';
 import SyncfusionEditor, { type SyncfusionEditorRef } from './SyncfusionEditor';
 import { events, SYSTEM_EVENTS } from '../utils/events';
@@ -510,6 +512,8 @@ const SortablePdfPageCard: React.FC<{
 
 const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFolderId, onParamConsumed }) => {
   const toast = useToastContext();
+  const { confirmDelete } = useDeleteConfirm();
+  const { ensurePermission } = useSecurityPin();
   const editorRef = useRef<SyncfusionEditorRef | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cloudCenterDropRef = useRef<HTMLElement | null>(null);
@@ -850,6 +854,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   // ── Folder colors (persisted in Supabase) ──────────────────────────────
   const setFolderColor = async (folderId: string, color: string) => {
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     try {
       await cloudService.updateFolder(folderId, { color: color || null });
       // Update local state so UI reflects immediately
@@ -2177,6 +2182,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const handleCreateFolder = async () => {
     if (!folderName.trim()) return;
+    if (!ensurePermission({ module: 'cloud', action: 'create' })) return;
     try {
       await cloudService.createFolder({
         name: folderName.trim(),
@@ -2206,6 +2212,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
     pending_reason: string | null;
     resolved_at: string | null;
   }) => {
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     try {
       await cloudService.updateFolder(folder.id, payload);
       toast.success('Cloud', payload.has_pending_issue ? 'Status da pasta atualizado.' : 'Pasta marcada como resolvida.');
@@ -2263,6 +2270,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   const handleConvertWordToPdf = useCallback(async (file: CloudFile) => {
+    if (!ensurePermission({ module: 'cloud', action: 'create' })) return;
     if (wordToPdfFileId) return;
     if (!isDocxFile(file.mime_type, file.original_name)) {
       toast.info('Cloud', 'A conversão automática para PDF está disponível no Cloud para arquivos .docx.');
@@ -2414,6 +2422,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   const handleUploadFiles = async (list: FileList | File[]) => {
+    if (!ensurePermission({ module: 'cloud', action: 'create' })) return;
     const filesToUpload = Array.from(list);
     if (filesToUpload.length === 0) return;
     const droppedFiles = filesToUpload.map((file) => ({ file, relativePath: normalizeDroppedRelativePath(file) }));
@@ -2598,6 +2607,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   }, [enqueueUploads, prepareUploadQueueItems]);
 
   const handleDropUpload = useCallback(async (dataTransfer: DataTransfer) => {
+    if (!ensurePermission({ module: 'cloud', action: 'create' })) return;
     try {
       const files = await extractFilesFromDataTransfer(dataTransfer);
       await uploadDroppedFiles(files);
@@ -2709,6 +2719,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   }, [uploadClipboardImage]);
 
   const handlePastePrintFromClipboard = async () => {
+    if (!ensurePermission({ module: 'cloud', action: 'create' })) return;
     if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
       toast.info('Cloud', 'Use Ctrl+V para colar o print nesta pasta.');
       return;
@@ -2817,6 +2828,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const commitInlineRename = useCallback(async () => {
     if (!inlineRenameTarget || !inlineRenameValue.trim()) return;
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
 
     try {
       if (inlineRenameTarget.type === 'file') {
@@ -2876,9 +2888,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
     if (filesToDelete.length === 0 && foldersToDelete.length === 0) return;
 
-    const confirmed = window.confirm(
-      `Excluir ${filesToDelete.length} arquivo(s) e ${foldersToDelete.length} pasta(s) selecionados?`,
-    );
+    const confirmed = await confirmDelete({
+      title: 'Enviar itens para a lixeira',
+      message: `Excluir ${filesToDelete.length} arquivo(s) e ${foldersToDelete.length} pasta(s) selecionados?`,
+      confirmLabel: 'Enviar para a lixeira',
+      permission: { module: 'cloud', action: 'delete' },
+    });
     if (!confirmed) return;
 
     try {
@@ -2897,7 +2912,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
     } catch (error: any) {
       toast.error('Cloud', error.message || 'Erro ao remover itens selecionados.');
     }
-  }, [allFolders, cloudService, files, loadData, selectedFileKeys, selectedFolderKeys, toast]);
+  }, [allFolders, cloudService, confirmDelete, files, loadData, selectedFileKeys, selectedFolderKeys, toast]);
 
   const openPdfToolsModal = async (file: CloudFile) => {
     try {
@@ -3260,6 +3275,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   const handleConvertImagesToPdf = async () => {
+    if (!ensurePermission({ module: 'cloud', action: 'create' })) return;
     if (!currentFolderId) {
       toast.info('Cloud', 'Selecione uma pasta antes de gerar o PDF.');
       return;
@@ -3316,6 +3332,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const handleMoveFile = async () => {
     if (!selectedFileToMove || !targetFolderId) return;
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     try {
       const targetFolder = allFolders.find((item) => item.id === targetFolderId) ?? null;
       await cloudService.moveFile(selectedFileToMove.id, targetFolderId, targetFolder?.client_id || null);
@@ -3331,6 +3348,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const handleCreateShare = async () => {
     if (!selectedFolderForShare) return;
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     try {
       const share = await cloudService.createShare({
         folder_id: selectedFolderForShare.id,
@@ -3348,6 +3366,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const handleDisableShare = async () => {
     if (!activeShare) return;
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     try {
       await cloudService.updateShare(activeShare.id, { is_active: false });
       setActiveShare(null);
@@ -3362,6 +3381,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const handleClearSharePassword = async () => {
     if (!activeShare) return;
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     try {
       const share = await cloudService.updateShare(activeShare.id, { password: '' });
       setActiveShare(share);
@@ -3373,6 +3393,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   const handleDeleteFile = async (file: CloudFile) => {
+    if (!ensurePermission({ module: 'cloud', action: 'delete' })) return;
     try {
       setDeleteModalState({
         open: true,
@@ -3410,6 +3431,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   const handleRestoreArchivedFile = async (file: CloudFile) => {
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     try {
       await cloudService.restoreFile(file.id);
       toast.success('Cloud', file.delete_scheduled_for ? 'Arquivo restaurado da lixeira com sucesso.' : 'Arquivo restaurado com sucesso.');
@@ -3420,7 +3442,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   const handleDeleteFilePermanently = async (file: CloudFile) => {
-    const confirmed = window.confirm(`Excluir permanentemente o arquivo "${file.original_name}"?`);
+    const confirmed = await confirmDelete({
+      title: 'Excluir arquivo permanentemente',
+      entityName: file.original_name,
+      message: 'O arquivo será apagado definitivamente e não poderá ser recuperado.',
+      confirmLabel: 'Excluir definitivamente',
+      permission: { module: 'cloud', action: 'delete' },
+    });
     if (!confirmed) return;
 
     try {
@@ -3465,7 +3493,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       return;
     }
 
-    const confirmed = window.confirm(`Esvaziar a lixeira e excluir permanentemente ${files.length} arquivo(s) e ${folders.length} pasta(s)?`);
+    const confirmed = await confirmDelete({
+      title: 'Esvaziar lixeira',
+      message: `Excluir permanentemente ${files.length} arquivo(s) e ${folders.length} pasta(s)?`,
+      confirmLabel: 'Esvaziar lixeira',
+      permission: { module: 'cloud', action: 'delete' },
+    });
     if (!confirmed) return;
 
     try {
@@ -3546,6 +3579,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const handleDropOnSpecialView = async (target: 'archived' | 'trash') => {
     if (!draggingItemKey) return;
+    if (!ensurePermission({ module: 'cloud', action: target === 'trash' ? 'delete' : 'edit' })) return;
 
     try {
       const activeKeys = draggingSelectionKeys.length > 0 ? draggingSelectionKeys : [draggingItemKey];
@@ -3613,6 +3647,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const handleDropOnFolder = async (targetFolderId: string | null) => {
     if (!draggingItemKey) return;
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
 
     try {
       const activeKeys = draggingSelectionKeys.length > 0 ? draggingSelectionKeys : [draggingItemKey];
@@ -3725,6 +3760,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const handleRename = async () => {
     if (!renameTarget || !renameValue.trim()) return;
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
 
     try {
       if (renameTarget.type === 'file') {
@@ -3746,6 +3782,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   const handleDuplicateFile = async (file: CloudFile) => {
+    if (!ensurePermission({ module: 'cloud', action: 'create' })) return;
     try {
       await cloudService.duplicateFile(file.id);
       toast.success('Cloud', 'Arquivo duplicado com sucesso.');
@@ -3777,6 +3814,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   }, [folderChildrenMap]);
 
   const handleCutSelectionToFolder = useCallback(async (targetFolder: CloudFolder) => {
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     const targetFiles = files.filter((item) => selectedFileKeys.includes(`file:${item.id}`));
     const targetFolders = allFolders.filter((item) => selectedFolderKeys.includes(`folder:${item.id}`));
 
@@ -3814,6 +3852,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   }, [allFolders, cloudService, files, isFolderDescendant, loadData, selectedFileKeys, selectedFolderKeys, toast]);
 
   const handleCopySelectionToFolder = useCallback(async (targetFolder: CloudFolder) => {
+    if (!ensurePermission({ module: 'cloud', action: 'create' })) return;
     const targetFiles = files.filter((item) => selectedFileKeys.includes(`file:${item.id}`));
     const targetFolders = allFolders.filter((item) => selectedFolderKeys.includes(`folder:${item.id}`));
 
@@ -3845,6 +3884,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   }, [allFolders, cloudService, files, isFolderDescendant, loadData, selectedFileKeys, selectedFolderKeys, toast]);
 
   const handleDuplicateFolder = useCallback(async (folder: CloudFolder) => {
+    if (!ensurePermission({ module: 'cloud', action: 'create' })) return;
     try {
       await cloudService.duplicateFolderToFolder(folder.id, folder.parent_id ?? null, folder.client_id ?? null);
       toast.success('Cloud', 'Cópia da pasta criada com sucesso.');
@@ -3876,6 +3916,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       toast.info('Cloud', 'Nada para colar no momento.');
       return;
     }
+
+    if (!ensurePermission({
+      module: 'cloud',
+      action: clipboardSelection.mode === 'copy' ? 'create' : 'edit',
+    })) return;
 
     const clipboardFileKeys = clipboardSelection.itemKeys.filter((key) => key.startsWith('file:'));
     const clipboardFolderKeys = clipboardSelection.itemKeys.filter((key) => key.startsWith('folder:'));
@@ -4126,6 +4171,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   }, []);
 
   const handleBulkRename = useCallback(async () => {
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     const targetFiles = files.filter((item) => selectedFileKeys.includes(`file:${item.id}`));
     const targetFolders = allFolders.filter((item) => selectedFolderKeys.includes(`folder:${item.id}`));
     if (targetFiles.length === 0 && targetFolders.length === 0) return;
@@ -4163,6 +4209,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const handleBulkMove = useCallback(async () => {
     if (!bulkMoveTargetFolderId) return;
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
 
     const targetFiles = files.filter((item) => selectedFileKeys.includes(`file:${item.id}`));
     const targetFolders = allFolders.filter((item) => selectedFolderKeys.includes(`folder:${item.id}`));
@@ -4188,6 +4235,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   }, [allFolders, bulkMoveTargetFolderId, cloudService, files, loadData, selectedFileKeys, selectedFolderKeys, toast]);
 
   const handleLinkFolderClient = async (folderId: string, clientId: string) => {
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     try {
       await cloudService.updateFolder(folderId, { client_id: clientId || null });
       toast.success('Cloud', clientId ? 'Cliente vinculado com sucesso.' : 'Vínculo removido com sucesso.');
@@ -4381,7 +4429,13 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
 
   const handleDeleteFolder = async (folder: CloudFolder) => {
     if (folder.delete_scheduled_for) {
-      const confirmedPermanent = window.confirm(`Excluir permanentemente a pasta "${folder.name}"?`);
+      const confirmedPermanent = await confirmDelete({
+        title: 'Excluir pasta permanentemente',
+        entityName: folder.name,
+        message: 'A pasta e seu conteúdo serão apagados definitivamente.',
+        confirmLabel: 'Excluir definitivamente',
+        permission: { module: 'cloud', action: 'delete' },
+      });
       if (!confirmedPermanent) return;
 
       try {
@@ -4421,7 +4475,12 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       return;
     }
 
-    const confirmed = window.confirm(`Enviar a pasta "${folder.name}" para a lixeira?`);
+    const confirmed = await confirmDelete({
+      title: 'Enviar pasta para a lixeira',
+      entityName: folder.name,
+      confirmLabel: 'Enviar para a lixeira',
+      permission: { module: 'cloud', action: 'delete' },
+    });
     if (!confirmed) return;
 
     try {
@@ -4467,7 +4526,14 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   const handleArchiveFolder = async (folder: CloudFolder) => {
-    const confirmed = window.confirm(`Arquivar a pasta "${folder.name}"?`);
+    const confirmed = await confirmDelete({
+      title: 'Arquivar pasta',
+      entityName: folder.name,
+      message: 'A pasta sairá da área ativa e poderá ser restaurada depois.',
+      confirmLabel: 'Arquivar',
+      sensitivity: 'high',
+      permission: { module: 'cloud', action: 'edit' },
+    });
     if (!confirmed) return;
 
     try {
@@ -4486,6 +4552,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   };
 
   const handleUnarchiveFolder = async (folder: CloudFolder) => {
+    if (!ensurePermission({ module: 'cloud', action: 'edit' })) return;
     try {
       if (folder.delete_scheduled_for) {
         await cloudService.restoreFolder(folder.id);

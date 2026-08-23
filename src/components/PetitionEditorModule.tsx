@@ -94,6 +94,7 @@ import type { Client } from '../types/client.types';
 import type { CloudFile } from '../types/cloud.types';
 import { useAuth } from '../contexts/AuthContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { supabase } from '../config/supabase';
 import { ligarRecargaPorBroadcast } from '../utils/broadcastReloadChannel';
@@ -1791,6 +1792,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 }) => {
   const { user } = useAuth();
   const { confirmDelete, notifyDeleted } = useDeleteConfirm();
+  const { ensurePermission } = useSecurityPin();
   const { success: toastSuccess, error: toastError } = useToastContext();
 
   const formatUserDisplayName = (raw: string) => {
@@ -2268,6 +2270,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   }, [defaultDocFont]);
 
   const saveDefaultDocFont = (font: { fontFamily?: string; fontSize?: number } | null) => {
+    if (!ensurePermission({ module: 'peticoes', action: 'edit' })) return;
     setDefaultDocFont(font);
     // Salvar no banco
     petitionEditorService.saveDefaultFont(
@@ -2868,6 +2871,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // ==================== ÃREAS JURÃDICAS ====================
 
   const openLegalAreaModal = (area?: LegalArea) => {
+    if (!ensurePermission({ module: 'peticoes', action: area ? 'edit' : 'create' })) return;
     setError(null);
     if (area) {
       setEditingLegalArea(area);
@@ -2885,6 +2889,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   };
 
   const handleSaveLegalArea = async () => {
+    if (!ensurePermission({ module: 'peticoes', action: editingLegalArea ? 'edit' : 'create' })) return;
     if (!legalAreaFormData.name.trim()) {
       setError('Nome da area e obrigatorio');
       return;
@@ -2924,6 +2929,15 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   };
 
   const handleDeleteLegalArea = async (areaId: string) => {
+    const area = legalAreas.find((item) => item.id === areaId);
+    const confirmed = await confirmDelete({
+      title: 'Desativar área jurídica',
+      entityName: area?.name,
+      message: 'Os blocos vinculados ficarão disponíveis para todas as áreas.',
+      confirmLabel: 'Desativar',
+      permission: { module: 'peticoes', action: 'delete' },
+    });
+    if (!confirmed) return;
     try {
       await petitionEditorService.deleteLegalArea(areaId);
       const areas = (await petitionEditorService.listLegalAreas()).map(sanitizeLegalAreaRecord);
@@ -2942,6 +2956,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   // ==================== PETIÃ‡Ã•ES PADRÃ•ES ====================
 
   const openStandardTypeModal = (type?: PetitionStandardType) => {
+    if (!ensurePermission({ module: 'peticoes', action: type ? 'edit' : 'create' })) return;
     if (type) {
       setEditingStandardType(type);
       setStandardTypeFormData({ name: type.name, description: type.description || '' });
@@ -2953,6 +2968,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   };
 
   const handleSaveStandardType = async () => {
+    if (!ensurePermission({ module: 'peticoes', action: editingStandardType ? 'edit' : 'create' })) return;
     if (!standardTypeFormData.name.trim()) {
       setError('Nome da peticao padrao e obrigatorio');
       return;
@@ -2995,6 +3011,13 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
   };
 
   const handleDeleteStandardType = async (typeId: string) => {
+    const type = standardTypes.find((item) => item.id === typeId);
+    const confirmed = await confirmDelete({
+      title: 'Remover petição padrão',
+      entityName: type?.name,
+      permission: { module: 'peticoes', action: 'delete' },
+    });
+    if (!confirmed) return;
     try {
       await petitionEditorService.deleteStandardType(typeId);
       const types = (await petitionEditorService.listStandardTypes(selectedLegalAreaId)).map(sanitizeStandardTypeRecord);
@@ -3015,6 +3038,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   const handleSetDefaultDocument = async (typeId: string) => {
     if (!editorRef.current) return;
+    if (!ensurePermission({ module: 'peticoes', action: 'edit' })) return;
     try {
       setSaving(true);
       const sfdt = editorRef.current.getSfdt();
@@ -3044,6 +3068,7 @@ const PetitionEditorModule: React.FC<PetitionEditorModuleProps> = ({
 
   const handleLinkBlockToStandardType = async (blockId: string) => {
     if (!selectedStandardTypeId) return;
+    if (!ensurePermission({ module: 'peticoes', action: 'edit' })) return;
     try {
       await petitionEditorService.addBlockToStandardType(selectedStandardTypeId, blockId);
       showSuccessMessage('Bloco vinculado a peticao padrao');
@@ -4324,6 +4349,10 @@ Regras:
     // mesma regra do botão (que fica cinza) em vez de refazer um upload igual.
     // "Salvar como" e "Salvar uma cópia" não passam por aqui e continuam ativos.
     if (!request.forceJurius && !hasUnsavedChangesRef.current) return;
+    if (!ensurePermission({
+      module: 'peticoes',
+      action: currentPetitionIdRef.current || activeOriginRef.current.kind !== 'new' ? 'edit' : 'create',
+    })) return;
     // `forceJurius`: escolha explícita do usuário no diálogo de destino.
     const decision: ReturnType<typeof decideSaveTarget> = request.forceJurius
       ? { action: 'petition', petitionId: currentPetitionIdRef.current }
@@ -4799,6 +4828,7 @@ Regras:
 
   // Define o documento aberto no editor como o modelo padrao do usuario.
   const setCurrentDocAsDefaultTemplate = async () => {
+    if (!ensurePermission({ module: 'peticoes', action: hasDefaultTemplate ? 'edit' : 'create' })) return;
     const editor = editorRef.current;
     if (!editor) {
       setError('Editor nao disponivel');
@@ -4853,6 +4883,10 @@ Regras:
 
   // Sobe um arquivo .docx e o define como modelo padrao (sem precisar abrir o editor).
   const handleUploadDefaultTemplate = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!ensurePermission({ module: 'peticoes', action: hasDefaultTemplate ? 'edit' : 'create' })) {
+      e.currentTarget.value = '';
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.docx')) {
@@ -4899,6 +4933,14 @@ Regras:
 
   // Remove o modelo padrao do usuario.
   const clearDefaultTemplate = async () => {
+    const confirmed = await confirmDelete({
+      title: 'Remover documento padrão',
+      entityName: defaultTemplateName || 'Documento padrão',
+      message: 'O modelo padrão pessoal será removido. Esta ação não pode ser desfeita.',
+      confirmLabel: 'Remover',
+      permission: { module: 'peticoes', action: 'delete' },
+    });
+    if (!confirmed) return;
     defaultTemplateMemoryRef.current = null;
     setHasDefaultTemplate(false);
     setDefaultTemplateName(null);
@@ -5007,7 +5049,13 @@ Regras:
   };
 
   const deleteBlock = async (blockId: string): Promise<boolean> => {
-    if (!confirm('Tem certeza que deseja excluir este bloco?')) return false;
+    const block = blocks.find((item) => item.id === blockId);
+    const confirmed = await confirmDelete({
+      title: 'Excluir bloco de petição',
+      entityName: block?.title,
+      permission: { module: 'peticoes', action: 'delete' },
+    });
+    if (!confirmed) return false;
 
     try {
       await petitionEditorService.deleteBlock(blockId);
@@ -5137,12 +5185,14 @@ Regras:
 
   // Salvar bloco (criar ou atualizar)
   const saveBlock = async () => {
+    const targetUpdateId = editingBlock?.id || (updateExistingBlockMode ? updateExistingBlockId : '');
+    if (!ensurePermission({ module: 'peticoes', action: targetUpdateId ? 'edit' : 'create' })) return;
+
     if (!blockFormData.title.trim()) {
       setError('Titulo e obrigatorio');
       return;
     }
 
-    const targetUpdateId = editingBlock?.id || (updateExistingBlockMode ? updateExistingBlockId : '');
     if (!editingBlock && updateExistingBlockMode && !targetUpdateId) {
       setError('Selecione o bloco que sera atualizado');
       return;
@@ -10777,6 +10827,7 @@ Regras:
               <button
                 type="button"
                 onClick={async () => {
+                  if (!ensurePermission({ module: 'peticoes', action: 'edit' })) return;
                   try {
                     const normalized = categoryDraft
                       .slice()
@@ -10910,11 +10961,7 @@ Regras:
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (confirm(`Desativar a area "${area.name}"? Os blocos vinculados a ela ficarao disponiveis para todas as areas.`)) {
-                                handleDeleteLegalArea(area.id);
-                              }
-                            }}
+                            onClick={() => { void handleDeleteLegalArea(area.id); }}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="Desativar"
                           >

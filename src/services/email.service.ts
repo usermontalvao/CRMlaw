@@ -234,14 +234,16 @@ class EmailService {
   }
 
   async markRead(id: string, isRead = true): Promise<void> {
-    const { error } = await supabase.from(TABLE).update({ is_read: isRead }).eq('id', id);
+    const { data, error } = await supabase.from(TABLE).update({ is_read: isRead }).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('E-mail não encontrado ou você não tem permissão para editá-lo.');
   }
 
   /** Marca/desmarca estrela (importante). */
   async toggleStar(id: string, isStarred: boolean): Promise<void> {
-    const { error } = await supabase.from(TABLE).update({ is_starred: isStarred }).eq('id', id);
+    const { data, error } = await supabase.from(TABLE).update({ is_starred: isStarred }).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('E-mail não encontrado ou você não tem permissão para editá-lo.');
   }
 
   /**
@@ -249,8 +251,9 @@ class EmailService {
    * Operação idempotente; funciona de qualquer pasta.
    */
   async moveToInbox(id: string): Promise<void> {
-    const { error } = await supabase.from(TABLE).update(patchForInbox()).eq('id', id);
+    const { data, error } = await supabase.from(TABLE).update(patchForInbox()).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('E-mail não encontrado ou você não tem permissão para movê-lo.');
   }
 
   /**
@@ -259,10 +262,12 @@ class EmailService {
    * Limpa is_trash para que o item saia da lixeira se estava lá.
    */
   async markSpam(msg: EmailMessage, learnSender = true): Promise<void> {
-    const { error } = await supabase.from(TABLE).update(patchForSpam()).eq('id', msg.id);
+    const { data, error } = await supabase.from(TABLE).update(patchForSpam()).eq('id', msg.id).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('E-mail não encontrado ou você não tem permissão para movê-lo.');
     if (learnSender && msg.from_address) {
-      await supabase.from('email_spam_senders').upsert({ address: msg.from_address.toLowerCase() });
+      const { error: senderError } = await supabase.from('email_spam_senders').upsert({ address: msg.from_address.toLowerCase() });
+      if (senderError) throw new Error(senderError.message);
     }
   }
 
@@ -273,55 +278,64 @@ class EmailService {
   async unmarkSpam(msg: EmailMessage, forgetSender = true): Promise<void> {
     await this.moveToInbox(msg.id);
     if (forgetSender && msg.from_address) {
-      await supabase.from('email_spam_senders').delete().eq('address', msg.from_address.toLowerCase());
+      const { error } = await supabase.from('email_spam_senders').delete().eq('address', msg.from_address.toLowerCase());
+      if (error) throw new Error(error.message);
     }
   }
 
   /** Zera os sinais de spam de uma mensagem (some o aviso na leitura). */
   async clearSpamSignals(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from(TABLE)
       .update({ is_spam: false, spam_score: 0, spam_reason: null, spam_checked: true })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('E-mail não encontrado ou você não tem permissão para editá-lo.');
   }
 
   async moveToTrash(id: string): Promise<void> {
-    const { error } = await supabase.from(TABLE).update({ is_trash: true }).eq('id', id);
+    const { data, error } = await supabase.from(TABLE).update({ is_trash: true }).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('E-mail não encontrado ou você não tem permissão para movê-lo.');
   }
 
   async restoreFromTrash(id: string): Promise<void> {
-    const { error } = await supabase.from(TABLE).update({ is_trash: false }).eq('id', id);
+    const { data, error } = await supabase.from(TABLE).update({ is_trash: false }).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('E-mail não encontrado ou você não tem permissão para restaurá-lo.');
   }
 
   /** Move vários para a lixeira de uma vez. */
   async bulkMoveToTrash(ids: string[]): Promise<void> {
     if (!ids.length) return;
-    const { error } = await supabase.from(TABLE).update({ is_trash: true }).in('id', ids);
+    const { data, error } = await supabase.from(TABLE).update({ is_trash: true }).in('id', ids).select('id');
     if (error) throw new Error(error.message);
+    if ((data?.length ?? 0) !== ids.length) throw new Error('Nem todos os e-mails puderam ser movidos. Verifique sua permissão.');
   }
 
   /** Marca vários como lido/não-lido. */
   async bulkMarkRead(ids: string[], isRead: boolean): Promise<void> {
     if (!ids.length) return;
-    const { error } = await supabase.from(TABLE).update({ is_read: isRead }).in('id', ids);
+    const { data, error } = await supabase.from(TABLE).update({ is_read: isRead }).in('id', ids).select('id');
     if (error) throw new Error(error.message);
+    if ((data?.length ?? 0) !== ids.length) throw new Error('Nem todos os e-mails puderam ser editados. Verifique sua permissão.');
   }
 
   /** Restaura vários da lixeira de uma vez (cada item volta para spam ou inbox conforme is_spam). */
   async bulkRestore(ids: string[]): Promise<void> {
     if (!ids.length) return;
-    const { error } = await supabase.from(TABLE).update({ is_trash: false }).in('id', ids);
+    const { data, error } = await supabase.from(TABLE).update({ is_trash: false }).in('id', ids).select('id');
     if (error) throw new Error(error.message);
+    if ((data?.length ?? 0) !== ids.length) throw new Error('Nem todos os e-mails puderam ser restaurados. Verifique sua permissão.');
   }
 
   /** Move vários para a Caixa de Entrada (limpa is_spam E is_trash). */
   async bulkMoveToInbox(ids: string[]): Promise<void> {
     if (!ids.length) return;
-    const { error } = await supabase.from(TABLE).update(patchForInbox()).in('id', ids);
+    const { data, error } = await supabase.from(TABLE).update(patchForInbox()).in('id', ids).select('id');
     if (error) throw new Error(error.message);
+    if ((data?.length ?? 0) !== ids.length) throw new Error('Nem todos os e-mails puderam ser movidos. Verifique sua permissão.');
   }
 
   /**
@@ -332,8 +346,9 @@ class EmailService {
   async bulkSetSpam(ids: string[], isSpam: boolean): Promise<void> {
     if (!ids.length) return;
     const patch = isSpam ? patchForSpam() : patchForInbox();
-    const { error } = await supabase.from(TABLE).update(patch).in('id', ids);
+    const { data, error } = await supabase.from(TABLE).update(patch).in('id', ids).select('id');
     if (error) throw new Error(error.message);
+    if ((data?.length ?? 0) !== ids.length) throw new Error('Nem todos os e-mails puderam ser editados. Verifique sua permissão.');
   }
 
   /**
@@ -361,20 +376,22 @@ class EmailService {
     const { data: u } = await supabase.auth.getUser();
     const user_id = u?.user?.id;
     if (!user_id) throw new Error('não autenticado');
-    const { error } = await supabase.from('email_signatures').upsert({
+    const { data, error } = await supabase.from('email_signatures').upsert({
       user_id,
       name: sig.name ?? null,
       signature_text: sig.signature_text ?? null,
       signature_html: sig.signature_html ?? null,
       use_html: sig.use_html ?? false,
       updated_at: new Date().toISOString(),
-    });
+    }).select('user_id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('A assinatura não foi salva. Verifique sua permissão.');
   }
 
   async linkClient(id: string, clientId: string | null): Promise<void> {
-    const { error } = await supabase.from(TABLE).update({ client_id: clientId }).eq('id', id);
+    const { data, error } = await supabase.from(TABLE).update({ client_id: clientId }).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('E-mail não encontrado ou você não tem permissão para vinculá-lo.');
   }
 
   // ── Antispam: regras (whitelist / blocklist) ───────────────────────────
@@ -401,13 +418,15 @@ class EmailService {
   }
 
   async setSpamRuleEnabled(id: string, enabled: boolean): Promise<void> {
-    const { error } = await supabase.from('email_spam_rules').update({ enabled }).eq('id', id);
+    const { data, error } = await supabase.from('email_spam_rules').update({ enabled }).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('Regra não encontrada ou você não tem permissão para editá-la.');
   }
 
   async deleteSpamRule(id: string): Promise<void> {
-    const { error } = await supabase.from('email_spam_rules').delete().eq('id', id);
+    const { data, error } = await supabase.from('email_spam_rules').delete().eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('Regra não encontrada ou você não tem permissão para excluí-la.');
   }
 
   /** URL assinada temporária para baixar um anexo do bucket privado. */
@@ -443,8 +462,9 @@ class EmailService {
       updated_at: new Date().toISOString(),
     };
     if (d.id) {
-      const { error } = await supabase.from(TABLE).update(row).eq('id', d.id);
+      const { data, error } = await supabase.from(TABLE).update(row).eq('id', d.id).select('id');
       if (error) throw new Error(error.message);
+      if (!data?.length) throw new Error('Rascunho não encontrado ou você não tem permissão para editá-lo.');
       return d.id;
     }
     const { data, error } = await supabase.from(TABLE)
@@ -456,8 +476,9 @@ class EmailService {
   }
 
   async deleteDraft(id: string): Promise<void> {
-    const { error } = await supabase.from(TABLE).delete().eq('id', id);
+    const { data, error } = await supabase.from(TABLE).delete().eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('Rascunho não encontrado ou você não tem permissão para excluí-lo.');
   }
 
   /** Remove rascunhos órfãos do usuário logado com o mesmo subject após um envio. */

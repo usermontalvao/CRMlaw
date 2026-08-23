@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { whatsappService } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useSecurityPin } from '../../contexts/SecurityPinContext';
 import type { WhatsAppAiConversationState } from '../../types/whatsapp.types';
 import { describeWaAiFollowupStatus } from '../../utils/waAiFollowupDisplay';
 import { ROTULO_ESTADO_IA, estadoDaIa, type WaIaEstado } from '../../services/whatsapp/waPermissions';
@@ -87,6 +88,7 @@ export const AiAgentBanner: React.FC<Props> = ({
   loadState = whatsappService.getAiConversationState,
 }) => {
   const toast = useToastContext();
+  const { ensurePermission } = useSecurityPin();
   const [state, setState] = useState<WhatsAppAiConversationState | null>(null);
   const [agora, setAgora] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
@@ -138,9 +140,12 @@ export const AiAgentBanner: React.FC<Props> = ({
     }
   };
 
-  const pausar = () => rodar(
-    () => whatsappService.stopAiForConversation(conversationId),
-    'IA pausada nesta conversa.');
+  const pausar = () => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
+    void rodar(
+      () => whatsappService.stopAiForConversation(conversationId),
+      'IA pausada nesta conversa.');
+  };
 
   /**
    * Retomar tem impacto que o atendente não vê pela palavra "retomar": a
@@ -149,6 +154,7 @@ export const AiAgentBanner: React.FC<Props> = ({
    * operacionais da IA que muda o responsável do atendimento.
    */
   const retomar = async () => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     const ok = await confirm({
       title: 'Devolver esta conversa para a IA?',
       message: 'O atendimento sai do nome de quem estiver com ele e a conversa volta para a fila. '

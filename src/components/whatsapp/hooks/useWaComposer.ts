@@ -17,6 +17,7 @@ import { playWaActionSound } from '../../../utils/waActionSounds';
 import { giphyService, type GiphyItem } from '../../../services/giphy.service';
 import { openPreferredMicrophone } from '../../../utils/audioDevices';
 import { useToastContext } from '../../../contexts/ToastContext';
+import { useSecurityPin } from '../../../contexts/SecurityPinContext';
 import type {
   WhatsAppConversation, WhatsAppMessage, WhatsAppAiSession, WhatsAppMediaLibraryItem,
 } from '../../../types/whatsapp.types';
@@ -101,6 +102,7 @@ export function useWaComposer({
   messages, setMessages, setConversations, refreshMessages, autoAssumir = true,
 }: WaComposerArgs): WaComposerApi {
   const toast = useToastContext();
+  const { ensurePermission } = useSecurityPin();
 
   // Detecção e retenção por reconexão vivem agora no módulo compartilhado
   // resilientSend (mesmo contrato usado por modais e ações operacionais). Aqui só
@@ -391,6 +393,7 @@ export function useWaComposer({
   const sendingRef = useRef(false);
 
   const handleSend = async () => {
+    if (!ensurePermission({ module: 'whatsapp', action: editing ? 'edit' : 'create' })) return;
     // O texto sai do REF, não do estado: dois disparos no mesmo tick (Enter com
     // key-repeat, Enter + clique) leriam o mesmo `draft`, porque o setDraft('')
     // do primeiro ainda não teria repintado — e a mensagem iria duas vezes.
@@ -619,6 +622,7 @@ export function useWaComposer({
   // acabou de exibir (o navegador a tem em cache, então ela pinta na hora) e o
   // download/upload corre por baixo, com a barrinha de progresso de sempre.
   const sendGif = useCallback(async (item: GiphyItem) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'create' })) return;
     if (!selected || !item.gifUrl) return;
     const conversationId = selected.id;
     const sentAt = new Date().toISOString();
@@ -668,6 +672,7 @@ export function useWaComposer({
    * sido esvaziado quando este código roda.
    */
   const sendSavedMedia = useCallback(async (item: WhatsAppMediaLibraryItem, captionRaw: string) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'create' })) return;
     if (!selected) return;
     const conversationId = selected.id;
     const caption = captionRaw.trim();
@@ -785,6 +790,7 @@ export function useWaComposer({
   // Reenvio rápido de um arquivo já enviado: reaproveita o objeto no storage
   // (sem novo upload) e dispara de novo pela conversa atual.
   const resendExisting = async (m: WhatsAppMessage) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'create' })) return;
     if (!selected || !m.storage_path || m.type === 'text') return;
     const sentAt = new Date().toISOString();
     const tempId = newTempId();
@@ -823,6 +829,10 @@ export function useWaComposer({
   };
 
   const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>, _kind: 'media' | 'document') => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'create' })) {
+      e.currentTarget.value = '';
+      return;
+    }
     const files = Array.from(e.target.files || []);
     e.target.value = '';
     stageAttachments(files);
@@ -853,6 +863,7 @@ export function useWaComposer({
   // Confirma o envio dos anexos do preview: a legenda vai com o 1º arquivo
   // (padrão WhatsApp para álbum); os demais seguem sem legenda.
   const confirmStagedSend = (caption: string, files: File[]) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'create' })) return;
     setAttachStaged(null);
     setStagedCaption('');
     files.forEach((f, i) => sendFile(f, kindForFile(f), i === 0 ? caption : ''));
@@ -883,7 +894,10 @@ export function useWaComposer({
   };
 
   // Arquivos soltos vão para o mesmo preview com legenda (múltiplos suportados).
-  const handleDroppedFiles = (files: File[]) => stageAttachments(files);
+  const handleDroppedFiles = (files: File[]) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'create' })) return;
+    stageAttachments(files);
+  };
 
   // ── Gravação de áudio ──
 
@@ -949,6 +963,7 @@ export function useWaComposer({
   };
 
   const startRecording = async () => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'create' })) return;
     if (!selected || recording) return;
     try {
       // O MESMO microfone das ligações — ver `utils/audioDevices`.
@@ -1050,6 +1065,7 @@ export function useWaComposer({
   };
 
   const beginEdit = (m: WhatsAppMessage) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     setEditing(m); setReplyTo(null); setDraft(m.content || '');
   };
 

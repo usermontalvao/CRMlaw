@@ -470,14 +470,18 @@ class FeedPostsService {
 
   // Deletar post
   async deletePost(postId: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from('feed_posts')
       .delete()
-      .eq('id', postId);
+      .eq('id', postId)
+      .select('id');
 
     if (error) {
       console.error('Erro ao deletar post:', error);
       throw error;
+    }
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Publicação não encontrada ou você não tem permissão para excluí-la.');
     }
   }
 

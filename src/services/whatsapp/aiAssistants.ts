@@ -240,8 +240,11 @@ export const aiAssistantsApi = {
     if ((emUso || []).length > 0) {
       throw new WaAiValidationError('Este agente está vinculado a um canal. Desvincule antes de excluir.');
     }
-    const { error } = await supabase.from(ASSISTANTS_TABLE).delete().eq('id', id);
+    const { data: deleted, error } = await supabase.from(ASSISTANTS_TABLE).delete().eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Agente não encontrado ou você não tem permissão para excluí-lo.');
+    }
   },
 
   // ── Vínculo com o canal ───────────────────────────────────────
@@ -588,10 +591,13 @@ export const aiAssistantsApi = {
       'wa_ai_cancel_followup',
       { p_followup_id: followupId },
       async () => {
-        const { error } = await supabase.from(FOLLOWUPS_TABLE)
+        const { data: updated, error } = await supabase.from(FOLLOWUPS_TABLE)
           .update({ status: 'cancelled', cancel_reason: 'Cancelado pelo atendente.' })
-          .eq('id', followupId).eq('status', 'pending');
+          .eq('id', followupId).eq('status', 'pending').select('id');
         if (error) throw new Error(error.message);
+        if (!updated || updated.length === 0) {
+          throw new Error('Acompanhamento não encontrado ou você não tem permissão para cancelá-lo.');
+        }
       },
     );
   },

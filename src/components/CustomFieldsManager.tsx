@@ -19,6 +19,8 @@ import {
 import { documentTemplateService } from '../services/documentTemplate.service';
 import type { CustomField, CustomFieldType, CreateCustomFieldDTO, CustomFieldOption } from '../types/document.types';
 import { LAYER } from '../styles/layers';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 
 interface CustomFieldsManagerProps {
   isOpen: boolean;
@@ -58,6 +60,8 @@ const CustomFieldsManager: React.FC<CustomFieldsManagerProps> = ({
   isOpen,
   onClose,
 }) => {
+  const { confirmDelete } = useDeleteConfirm();
+  const { ensurePermission } = useSecurityPin();
   const [fields, setFields] = useState<CustomField[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -117,6 +121,7 @@ const CustomFieldsManager: React.FC<CustomFieldsManagerProps> = ({
   };
 
   const handleEditField = (field: CustomField) => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     setEditingField(field);
     setFormData({
       name: field.name,
@@ -148,6 +153,11 @@ const CustomFieldsManager: React.FC<CustomFieldsManagerProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!ensurePermission({
+      module: 'documentos',
+      action: editingField ? 'edit' : 'create',
+    })) return;
 
     if (!formData.name.trim() || !formData.placeholder.trim()) {
       setError('Nome e placeholder são obrigatórios');
@@ -193,7 +203,12 @@ const CustomFieldsManager: React.FC<CustomFieldsManagerProps> = ({
   };
 
   const handleDeleteField = async (field: CustomField) => {
-    if (!confirm(`Deseja excluir o campo "${field.name}"?`)) return;
+    const confirmed = await confirmDelete({
+      title: 'Excluir campo personalizado',
+      entityName: field.name,
+      permission: { module: 'documentos', action: 'delete' },
+    });
+    if (!confirmed) return;
 
     try {
       await documentTemplateService.deleteCustomField(field.id);

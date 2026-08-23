@@ -76,8 +76,9 @@ export const adminApi = {
     id: string,
     patch: Partial<Pick<WhatsAppChannel, 'name' | 'color' | 'phone_number' | 'is_active' | 'default_assignee_id'>>,
   ): Promise<void> {
-    const { error } = await supabase.from(CHANNEL_TABLE).update(patch).eq('id', id);
+    const { data: updated, error } = await supabase.from(CHANNEL_TABLE).update(patch).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error('Canal não encontrado ou você não tem permissão para editá-lo.');
   },
 
   /** Matriz de acesso canal × usuário. Carregada uma vez pelo editor de acessos. */
@@ -204,8 +205,9 @@ export const adminApi = {
   },
 
   async deleteChannel(id: string): Promise<void> {
-    const { error } = await supabase.from(CHANNEL_TABLE).delete().eq('id', id);
+    const { data: deleted, error } = await supabase.from(CHANNEL_TABLE).delete().eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) throw new Error('Canal não encontrado ou você não tem permissão para excluí-lo.');
   },
 
   /** Conecta um canal (cria/gera QR na Evolution). */
@@ -238,13 +240,15 @@ export const adminApi = {
   },
 
   async updateDepartment(id: string, patch: Partial<Pick<WhatsAppDepartment, 'name' | 'color' | 'is_active'>>): Promise<void> {
-    const { error } = await supabase.from(DEPT_TABLE).update(patch).eq('id', id);
+    const { data: updated, error } = await supabase.from(DEPT_TABLE).update(patch).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error('Departamento não encontrado ou você não tem permissão para editá-lo.');
   },
 
   async deleteDepartment(id: string): Promise<void> {
-    const { error } = await supabase.from(DEPT_TABLE).delete().eq('id', id);
+    const { data: deleted, error } = await supabase.from(DEPT_TABLE).delete().eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) throw new Error('Departamento não encontrado ou você não tem permissão para excluí-lo.');
   },
 
   async listDepartmentMembers(departmentId: string): Promise<string[]> {
@@ -274,11 +278,13 @@ export const adminApi = {
   },
 
   async setDepartmentMembers(departmentId: string, userIds: string[]): Promise<void> {
-    await supabase.from(DEPT_MEMBER_TABLE).delete().eq('department_id', departmentId);
+    const { error: deleteError } = await supabase.from(DEPT_MEMBER_TABLE).delete().eq('department_id', departmentId);
+    if (deleteError) throw new Error(deleteError.message);
     if (userIds.length) {
-      await supabase.from(DEPT_MEMBER_TABLE).insert(
+      const { error: insertError } = await supabase.from(DEPT_MEMBER_TABLE).insert(
         userIds.map(uid => ({ department_id: departmentId, user_id: uid })),
       );
+      if (insertError) throw new Error(insertError.message);
     }
   },
 
@@ -301,13 +307,15 @@ export const adminApi = {
   },
 
   async updateTemplate(id: string, patch: Partial<Pick<WhatsAppTemplate, 'name' | 'body' | 'category' | 'scope' | 'channel_id' | 'department_id' | 'is_active'>>): Promise<void> {
-    const { error } = await supabase.from(TEMPLATES_TABLE).update(patch).eq('id', id);
+    const { data: updated, error } = await supabase.from(TEMPLATES_TABLE).update(patch).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error('Modelo não encontrado ou você não tem permissão para editá-lo.');
   },
 
   async deleteTemplate(id: string): Promise<void> {
-    const { error } = await supabase.from(TEMPLATES_TABLE).delete().eq('id', id);
+    const { data: deleted, error } = await supabase.from(TEMPLATES_TABLE).delete().eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) throw new Error('Modelo não encontrado ou você não tem permissão para excluí-lo.');
   },
 
   // ── Equipe (para atribuir/transferir) ────────────────────────
@@ -539,12 +547,15 @@ export const adminApi = {
   async updatePlaybook(id: string, patch: Partial<Pick<WhatsAppAiPlaybook,
     'name' | 'description' | 'category' | 'welcome_message' | 'questions' | 'handoff_message' | 'system_prompt' | 'is_active'
   >>): Promise<void> {
-    const { error } = await supabase.from('whatsapp_ai_playbooks').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+    const { data: updated, error } = await supabase.from('whatsapp_ai_playbooks')
+      .update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error('Playbook não encontrado ou você não tem permissão para editá-lo.');
   },
 
   async deletePlaybook(id: string): Promise<void> {
-    const { error } = await supabase.from('whatsapp_ai_playbooks').delete().eq('id', id);
+    const { data: deleted, error } = await supabase.from('whatsapp_ai_playbooks').delete().eq('id', id).select('id');
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) throw new Error('Playbook não encontrado ou você não tem permissão para excluí-lo.');
   },
 };

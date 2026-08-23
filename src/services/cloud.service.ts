@@ -217,12 +217,16 @@ class CloudService {
       await this.deleteFile(childFile);
     }
 
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from(this.foldersTable)
       .delete()
-      .eq('id', folderId);
+      .eq('id', folderId)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Pasta não encontrada ou você não tem permissão para excluí-la.');
+    }
   }
 
   async listFiles(folderId: string, includeArchived = false): Promise<CloudFile[]> {
@@ -417,8 +421,15 @@ class CloudService {
   }
 
   async deleteFile(file: CloudFile): Promise<void> {
-    const { error } = await supabase.from(this.filesTable).delete().eq('id', file.id);
+    const { data: deleted, error } = await supabase
+      .from(this.filesTable)
+      .delete()
+      .eq('id', file.id)
+      .select('id');
     if (error) throw new Error(error.message);
+    if (!deleted || deleted.length === 0) {
+      throw new Error('Arquivo não encontrado ou você não tem permissão para excluí-lo.');
+    }
     await supabase.storage.from(CLOUD_BUCKET).remove([file.storage_path]);
   }
 
@@ -738,12 +749,16 @@ class CloudService {
   }
 
   async disableShare(shareId: string): Promise<void> {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from(this.sharesTable)
       .update({ is_active: false })
-      .eq('id', shareId);
+      .eq('id', shareId)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) {
+      throw new Error('Compartilhamento não encontrado ou você não tem permissão para desativá-lo.');
+    }
   }
 
   async resolvePublicShare(token: string, password?: string): Promise<CloudShareAccessResult> {

@@ -186,7 +186,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const { navigateTo } = useNavigation();
   const { confirmDelete } = useDeleteConfirm();
   const { requirePin } = useSecurityPin();
-  const { canDelete } = usePermissions();
+  const { canEdit, canDelete, isAdmin } = usePermissions();
 
   const toastRef = useRef(toast);
 
@@ -1587,6 +1587,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const deleteSelectedRequests = async () => {
     if (selectedRequestIds.size === 0) return;
 
+    const hasUnauthorizedRequest = Array.from(selectedRequestIds).some((id) => {
+      const request = requests.find((item) => item.id === id);
+      return !canRemoveRequest(request?.created_by);
+    });
+    if (hasUnauthorizedRequest) {
+      toast.error('A seleção contém assinatura de outra pessoa que você não tem permissão para remover.');
+      return;
+    }
+
     const confirmed = await confirmDelete({
       title: 'Remover documentos selecionados',
       message: `Você tem certeza que deseja remover ${selectedRequestIds.size} documento(s) do painel? Os links de assinatura serão invalidados.`,
@@ -2775,8 +2784,6 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   // Modal de exclusão customizado
   const [deleteModalTarget, setDeleteModalTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteAlsoBlock, setDeleteAlsoBlock] = useState(false);
-  const isAdmin = user?.email === 'pedro@advcuiaba.com';
-
   /** Remover do painel segue a régua de Configurações → Permissões → Papéis e
    *  módulos. Quem criou a assinatura sempre pode remover a sua. */
   const canRemoveRequest = useCallback(
@@ -2835,6 +2842,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   };
   const handleBulkPermanentDelete = async () => {
     if (trashSelected.size === 0) return;
+    if (!isAdmin) {
+      toast.error('Apenas administradores podem excluir assinaturas definitivamente.');
+      return;
+    }
     const ok = await confirmDelete({
       title: `Excluir definitivamente (${trashSelected.size})`,
       message: `Ação IRREVERSÍVEL: apaga ${trashSelected.size} documento(s) e TODOS os arquivos do servidor. Não poderão mais ser validados.`,
@@ -2855,6 +2866,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   };
 
   const handleRestore = async (id: string) => {
+    if (!canEdit('assinaturas')) {
+      toast.error('Você não tem permissão para restaurar assinaturas.');
+      return;
+    }
     try {
       await signatureService.restoreRequest(id);
       // Desbloquear automaticamente ao restaurar
@@ -2871,6 +2886,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   };
 
   const handlePermanentDelete = async (req: SignatureRequestWithSigners) => {
+    if (!isAdmin) {
+      toast.error('Apenas administradores podem excluir assinaturas definitivamente.');
+      return;
+    }
     const ok = await confirmDelete({
       title: 'Excluir definitivamente',
       entityName: req.document_name || undefined,
@@ -2893,6 +2912,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
       entityName: req.document_name || undefined,
       message: 'O documento bloqueado/revogado NÃO poderá ser validado publicamente pelo código nem por upload do arquivo. Você pode desbloquear depois.',
       confirmLabel: 'Bloquear',
+      permission: { module: 'assinaturas', action: 'edit' },
     });
     if (!ok) return;
     try {
@@ -2909,6 +2929,10 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   };
 
   const handleUnblockRequest = async (req: { id: string }) => {
+    if (!canEdit('assinaturas')) {
+      toast.error('Você não tem permissão para desbloquear assinaturas.');
+      return;
+    }
     try {
       setBlockLoading(true);
       await signatureService.unblockRequest(req.id);

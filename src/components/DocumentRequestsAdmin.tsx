@@ -12,6 +12,7 @@ import {
 import { supabase } from '../config/supabase';
 import type { Client } from '../types/client.types';
 import { LAYER } from '../styles/layers';
+import { useSecurityPin } from '../contexts/SecurityPinContext';
 
 // â”€â”€ Tipos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -80,6 +81,7 @@ interface CreateModalProps {
 }
 
 const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCreated }) => {
+  const { ensurePermission } = useSecurityPin();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
@@ -96,6 +98,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
   };
 
   const handleSave = async () => {
+    if (!ensurePermission({ module: 'documentos', action: 'create' })) return;
     const validItems = items.filter(i => i.label.trim());
     if (!title.trim()) { setError('Informe um tÃ­tulo para a solicitaÃ§Ã£o.'); return; }
     if (validItems.length === 0) { setError('Adicione pelo menos um documento.'); return; }
@@ -116,7 +119,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
       if (re || !req) throw new Error(re?.message || 'Erro ao criar solicitaÃ§Ã£o');
 
       // Cria itens
-      await supabase.from('document_request_items').insert(
+      const { error: itemsError } = await supabase.from('document_request_items').insert(
         validItems.map((item, i) => ({
           request_id: req.id,
           label: item.label.trim(),
@@ -125,6 +128,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
           sort_order: i,
         }))
       );
+      if (itemsError) throw new Error(itemsError.message);
 
       // NotificaÃ§Ã£o disparada automaticamente pelo trigger no banco
       onCreated();
@@ -207,6 +211,7 @@ const CreateRequestModal: React.FC<CreateModalProps> = ({ client, onClose, onCre
 interface Props { client: Client; }
 
 export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
+  const { ensurePermission } = useSecurityPin();
   const [requests, setRequests] = useState<DocRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -255,9 +260,14 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
   };
 
   const handleApprove = async (uploadId: string, itemId: string, requestId: string) => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     setReviewLoading(uploadId);
-    await supabase.from('document_uploads').update({ review_status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', uploadId);
-    await supabase.from('document_request_items').update({ status: 'approved' }).eq('id', itemId);
+    const { data: upload, error: uploadError } = await supabase.from('document_uploads')
+      .update({ review_status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', uploadId).select('id');
+    if (uploadError || !upload?.length) { setReviewLoading(null); return; }
+    const { data: item, error: itemError } = await supabase.from('document_request_items')
+      .update({ status: 'approved' }).eq('id', itemId).select('id');
+    if (itemError || !item?.length) { setReviewLoading(null); return; }
     // Recalcula o pedido no servidor e, ao completar a campanha de conta,
     // avança automaticamente para o KIT CONSUMIDOR.
     await supabase.functions.invoke('whatsapp-ai-lifecycle', {
@@ -275,9 +285,15 @@ export const DocumentRequestsAdmin: React.FC<Props> = ({ client }) => {
   };
 
   const handleReject = async (uploadId: string, itemId: string) => {
+    if (!ensurePermission({ module: 'documentos', action: 'edit' })) return;
     setReviewLoading(uploadId);
-    await supabase.from('document_uploads').update({ review_status: 'rejected', rejection_reason: rejectReason || 'Documento nÃ£o aceito.', reviewed_at: new Date().toISOString() }).eq('id', uploadId);
-    await supabase.from('document_request_items').update({ status: 'rejected' }).eq('id', itemId);
+    const { data: upload, error: uploadError } = await supabase.from('document_uploads')
+      .update({ review_status: 'rejected', rejection_reason: rejectReason || 'Documento nÃ£o aceito.', reviewed_at: new Date().toISOString() })
+      .eq('id', uploadId).select('id');
+    if (uploadError || !upload?.length) { setReviewLoading(null); return; }
+    const { data: item, error: itemError } = await supabase.from('document_request_items')
+      .update({ status: 'rejected' }).eq('id', itemId).select('id');
+    if (itemError || !item?.length) { setReviewLoading(null); return; }
     // Notifica cliente
     await supabase.from('portal_client_notifications').insert({
       client_id: client.id, type: 'document_upload_rejected',

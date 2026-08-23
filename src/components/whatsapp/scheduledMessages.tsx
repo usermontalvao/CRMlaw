@@ -4,6 +4,7 @@ import { CalendarClock, Pencil, X, Loader2, Check, RotateCcw, Trash2, Wifi, Aler
 import { whatsappService } from '../../services/whatsapp.service';
 import { HISTORICO_AGENDADAS_DIAS } from '../../services/whatsapp/automation';
 import { useToastContext } from '../../contexts/ToastContext';
+import { useSecurityPin } from '../../contexts/SecurityPinContext';
 import { conversationName, maskName, maskSensitive } from './format';
 import { Avatar } from './avatar';
 import { WaRichText } from './WaRichTextView';
@@ -14,6 +15,7 @@ import type { WhatsAppScheduledMessage, WhatsAppScheduledWithContact } from '../
 // ── Bolhas-fantasma das mensagens agendadas dentro da thread ──
 export const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMode: boolean; confirm: ConfirmFn }> = ({ conversationId, privateMode, confirm }) => {
   const toast = useToastContext();
+  const { ensurePermission } = useSecurityPin();
   const [items, setItems] = useState<WhatsAppScheduledMessage[] | null>(null);
   // A lista vem PRONTA da fonte compartilhada — este componente e o painel
   // lateral mostram a mesma coisa e agora dividem um canal e uma consulta.
@@ -34,8 +36,12 @@ export const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMo
     const d = new Date(iso); const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
-  const startEdit = (s: WhatsAppScheduledMessage) => { setEditingId(s.id); setEditText(s.body || ''); setEditWhen(toLocalInput(s.scheduled_at)); };
+  const startEdit = (s: WhatsAppScheduledMessage) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
+    setEditingId(s.id); setEditText(s.body || ''); setEditWhen(toLocalInput(s.scheduled_at));
+  };
   const removeScheduled = async (id: string) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'delete' })) return;
     if (!await confirm({ title: 'Excluir agendamento', message: 'A mensagem agendada não será enviada.', confirmLabel: 'Excluir', tone: 'danger' })) return;
     try { await whatsappService.cancelScheduled(id); load(); toast.success('Agendamento excluído.'); }
     catch (e: any) { toast.error('Falha ao excluir', e.message); }
@@ -43,6 +49,7 @@ export const ThreadScheduledGhosts: React.FC<{ conversationId: string; privateMo
   const cancelEdit = () => { setEditingId(null); setEditText(''); setEditWhen(''); };
   const saveEdit = async (id: string) => {
     if (!editWhen) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     setBusy(true);
     try {
       await whatsappService.updateScheduled(id, { text: editText, scheduledAt: new Date(editWhen).toISOString() });
@@ -159,6 +166,7 @@ const schedBadge = (s: WhatsAppScheduledMessage): { label: string; cls: string }
     : (SCHED_STATUS[s.status] || { label: s.status, cls: 'bg-slate-100 text-slate-500' });
 export const ScheduledMessagesPanel: React.FC<{ conversationId: string; canSchedule: boolean; confirm: ConfirmFn }> = ({ conversationId, confirm }) => {
   const toast = useToastContext();
+  const { ensurePermission } = useSecurityPin();
   const [items, setItems] = useState<WhatsAppScheduledMessage[] | null>(null);
 
   // Mesma fonte compartilhada das bolhas-fantasma da thread: um canal e uma
@@ -183,12 +191,14 @@ export const ScheduledMessagesPanel: React.FC<{ conversationId: string; canSched
   };
 
   const startEdit = (s: WhatsAppScheduledMessage) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     setEditingId(s.id); setEditText(s.body || ''); setEditWhen(toLocalInput(s.scheduled_at));
   };
   const cancelEdit = () => { setEditingId(null); setEditText(''); setEditWhen(''); };
 
   const saveEdit = async (s: WhatsAppScheduledMessage) => {
     if (!editWhen) return;
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     setBusy(s.id);
     try {
       const scheduledAt = new Date(editWhen).toISOString();
@@ -204,18 +214,21 @@ export const ScheduledMessagesPanel: React.FC<{ conversationId: string; canSched
   };
 
   const cancel = async (id: string) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'delete' })) return;
     if (!await confirm({ title: 'Cancelar agendamento', message: 'A mensagem agendada não será enviada.', confirmLabel: 'Cancelar envio', tone: 'danger' })) return;
     try { await whatsappService.cancelScheduled(id); load(); }
     catch (e: any) { toast.error('Falha ao cancelar', e.message); }
   };
 
   const del = async (id: string) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'delete' })) return;
     if (!await confirm({ title: 'Excluir agendamento', message: 'Remove a mensagem agendada do histórico. Não pode ser desfeito.', confirmLabel: 'Excluir', tone: 'danger' })) return;
     try { await whatsappService.deleteScheduled(id); load(); }
     catch (e: any) { toast.error('Falha ao excluir', e.message); }
   };
 
   const retryNow = async (id: string) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     setBusy(id);
     try { await whatsappService.retryScheduled(id); load(); }
     catch (e: any) { toast.error('Falha ao reenviar', e.message); }
@@ -352,10 +365,12 @@ export const MyScheduledList: React.FC<{
   onOpenConversation: (conversationId: string, messageId?: string | null) => void;
 }> = ({ items, privateMode, confirm, onReload, onOpenConversation }) => {
   const toast = useToastContext();
+  const { ensurePermission } = useSecurityPin();
   const [busy, setBusy] = useState<string | null>(null);
   const [aba, setAba] = useState<'pendentes' | 'concluidas'>('pendentes');
 
   const retryNow = async (id: string) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'edit' })) return;
     setBusy(id);
     try { await whatsappService.retryScheduled(id); onReload(); toast.success('Reenviando agora.'); }
     catch (e: any) { toast.error('Falha ao reenviar', e.message); }
@@ -363,12 +378,14 @@ export const MyScheduledList: React.FC<{
   };
 
   const cancel = async (id: string) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'delete' })) return;
     if (!await confirm({ title: 'Cancelar agendamento', message: 'A mensagem agendada não será enviada.', confirmLabel: 'Cancelar envio', tone: 'danger' })) return;
     try { await whatsappService.cancelScheduled(id); onReload(); }
     catch (e: any) { toast.error('Falha ao cancelar', e.message); }
   };
 
   const del = async (id: string) => {
+    if (!ensurePermission({ module: 'whatsapp', action: 'delete' })) return;
     if (!await confirm({ title: 'Excluir agendamento', message: 'Remove a mensagem agendada do histórico. Não pode ser desfeito.', confirmLabel: 'Excluir', tone: 'danger' })) return;
     try { await whatsappService.deleteScheduled(id); onReload(); }
     catch (e: any) { toast.error('Falha ao excluir', e.message); }
