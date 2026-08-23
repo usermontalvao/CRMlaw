@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.3',
+    date: '23/08/2026',
+    summary: 'O aviso instantâneo de mensagem nova passou a respeitar o canal: cada aba só é avisada do que ela pode abrir.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'O tempo real deixou de avisar o escritório inteiro',
+            description: 'Existia um aviso só, para todo mundo: cada mensagem que chegava em qualquer canal acordava a aba de todas as pessoas do escritório. O texto já não viajava por ali — isso foi corrigido antes —, mas o identificador da conversa sim, e ele é informação de um canal restrito chegando a quem não tem aquele canal. Agora há um aviso por canal, e quem recebe é decidido pela MESMA regra que monta a caixa de entrada. Conversa que não pertence a canal nenhum continua no aviso geral, como sempre esteve.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Canal concedido hoje começa a entregar hoje',
+            description: 'Quando alguém ganha acesso a um canal, a aba que já estava aberta passa a receber os avisos daquele canal sem precisar recarregar a página. E um canal recusado não derruba os outros: cada canal tem a sua assinatura, então uma negativa isolada não deixa a pessoa sem tempo real no restante.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.2',
     date: '23/08/2026',
     summary: 'Desligar alguém do escritório virou um ato só e completo: as conversas dele mudam de mãos na hora, as transferências pendentes se encerram e nada fica no nome de quem não está mais aqui.',
