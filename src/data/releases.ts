@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.8',
+    date: '23/08/2026',
+    summary: 'Assinaturas deixam de ser "só de quem criou": quem tem o módulo passa a ver o módulo. E a exclusão que dizia ter funcionado sem funcionar foi calada.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Quem tem acesso ao módulo enxerga todas as assinaturas',
+            description: 'O banco respondia "só o criador, ou um administrador" — e essa regra governava a lista, os signatários, os campos, os documentos e o histórico. Na prática cada pessoa abria Assinaturas e via um pedaço: uma via 20 de 331, outra via 2 de 331, sem nada na tela explicando o que faltava. Agora a régua é a tela que já existia e ninguém obedecia: Configurações → Permissões → Papéis e módulos. Quem tem "ver" em Assinaturas vê todas; editar e excluir continuam seguindo o que o cargo permite. O arquivo em si nunca esteve escondido — só a lista escondia.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Remover documento sem permissão dizia "removido" e não removia',
+            description: 'Quem não podia excluir passava pelo PIN, via o aviso "Documento removido do painel" e o documento continuava lá — porque uma exclusão barrada pelo banco não devolve erro, devolve silêncio, e a tela tratava silêncio como sucesso. Agora a permissão é conferida antes de qualquer coisa: sem ela, o aviso é claro e o PIN nem chega a ser pedido. Pedir a senha a quem vai ser barrado depois só ensina que a senha não funciona.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Tirar do painel passou a exigir permissão de excluir, não de editar',
+            description: '"Remover do painel" é, por dentro, uma edição do documento. Sem uma trava própria, um cargo com permissão de editar mas sem a de excluir — o financeiro, hoje — poderia tirar do painel o documento de qualquer colega. Agora o próprio banco recusa, com mensagem em vez de silêncio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.7',
     date: '23/08/2026',
     summary: 'Nasce o Modo supervisão: abrir a conversa de um colega para conferir deixou de mexer no atendimento dele. E transferir ganhou o que faltava — recusar, cancelar, e a garantia de que o destino consegue receber.',

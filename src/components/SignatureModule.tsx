@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { useNavigation } from '../contexts/NavigationContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { signatureService } from '../services/signature.service';
@@ -185,6 +186,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const { navigateTo } = useNavigation();
   const { confirmDelete } = useDeleteConfirm();
   const { requirePin } = useSecurityPin();
+  const { canDelete } = usePermissions();
 
   const toastRef = useRef(toast);
 
@@ -2775,6 +2777,14 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
   const [deleteAlsoBlock, setDeleteAlsoBlock] = useState(false);
   const isAdmin = user?.email === 'pedro@advcuiaba.com';
 
+  /** Remover do painel segue a régua de Configurações → Permissões → Papéis e
+   *  módulos. Quem criou a assinatura sempre pode remover a sua. */
+  const canRemoveRequest = useCallback(
+    (createdBy?: string | null) =>
+      canDelete('assinaturas') || (!!user?.id && createdBy === user.id),
+    [canDelete, user?.id],
+  );
+
   const loadArchived = async () => {
     setArchivedLoading(true);
     setTrashSelected(new Set());
@@ -2914,6 +2924,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
 
   const handleDeleteRequest = (requestId: string) => {
     const req = requests.find((r) => r.id === requestId);
+    // Antes de qualquer coisa: sem permissão, nem PIN nem modal. Pedir o PIN a
+    // quem o banco vai barrar depois só ensina que a senha "não funciona".
+    if (!canRemoveRequest(req?.created_by)) {
+      toast.error('Você não tem permissão para remover assinaturas de outras pessoas.');
+      return;
+    }
     setDeleteAlsoBlock(false);
     setDeleteModalTarget({ id: requestId, name: req?.document_name || 'Documento' });
   };

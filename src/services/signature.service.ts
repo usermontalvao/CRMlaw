@@ -393,12 +393,20 @@ class SignatureService {
     // Arquiva (some do painel), invalida link público /#/assinar e mantém verificação por hash.
     const now = new Date().toISOString();
 
-    const { error: reqError } = await supabase
+    // `.select()` não é enfeite: um UPDATE barrado por RLS não devolve erro no
+    // PostgREST — devolve zero linhas. Sem conferir isso, quem não tem
+    // permissão via o toast "Documento removido do painel" e o documento
+    // continuava lá.
+    const { data: updated, error: reqError } = await supabase
       .from(this.requestsTable)
       .update({ archived_at: now, public_token: null })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (reqError) throw new Error(reqError.message);
+    if (!updated || updated.length === 0) {
+      throw new Error('Você não tem permissão para remover esta assinatura.');
+    }
 
     const { error: signersError } = await supabase
       .from(this.signersTable)
