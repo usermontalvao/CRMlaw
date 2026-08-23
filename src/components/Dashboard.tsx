@@ -497,17 +497,37 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     loadUserName();
   }, []);
 
-  // Auto-expira o reveal financeiro quando o prazo chega
+  const { revealFinancialValues, getFinancialModuleExpiry, financialPinRequired } = useSecurityPin();
+
+  // Com o PIN exigido, "revelado" é uma sessão que vence. Com o PIN desligado
+  // em Configurações, é só um estado de tela: não expira, e voltar a ocultar
+  // continua sendo um clique.
+  const financialRevealed = financialRevealedUntil !== null
+    && (!financialPinRequired || financialRevealedUntil > new Date());
+
+  // PIN desligado em Configurações → Módulos → Financeiro: o cartão de valores
+  // já nasce aberto, sem clique. Dispara uma vez, quando a configuração chega.
   useEffect(() => {
+    if (financialPinRequired) return;
+    void revealFinancialValues((expiry) => setFinancialRevealedUntil(expiry));
+  }, [financialPinRequired, revealFinancialValues]);
+
+  // Auto-expira o reveal financeiro quando o prazo chega.
+  // Com o PIN desligado em Configurações não há prazo: sem esta guarda, os
+  // valores voltariam a ser censurados sozinhos ao fim da sessão de 2 h — e
+  // não haveria como revelá-los de novo sem recarregar a página.
+  useEffect(() => {
+    if (!financialPinRequired) return;
     if (!financialRevealedUntil) return;
     const ms = financialRevealedUntil.getTime() - Date.now();
     if (ms <= 0) { setFinancialRevealedUntil(null); return; }
     const timer = setTimeout(() => setFinancialRevealedUntil(null), ms);
     return () => clearTimeout(timer);
-  }, [financialRevealedUntil]);
+  }, [financialRevealedUntil, financialPinRequired]);
 
   // Contador regressivo em segundos (atualiza a cada segundo quando revelado)
   useEffect(() => {
+    if (!financialPinRequired) { setFinancialSecondsLeft(0); return; }
     if (!financialRevealedUntil) { setFinancialSecondsLeft(0); return; }
     const tick = () => {
       const secs = Math.max(0, Math.round((financialRevealedUntil.getTime() - Date.now()) / 1000));
@@ -516,7 +536,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [financialRevealedUntil]);
+  }, [financialRevealedUntil, financialPinRequired]);
 
   useEffect(() => {
     const unsubscribe = events.on(SYSTEM_EVENTS.CLIENTS_CHANGED, () => {
@@ -535,7 +555,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
   }, []);
 
   const { canView, canCreate, loading: permissionsLoading } = usePermissions();
-  const { revealFinancialValues, getFinancialModuleExpiry } = useSecurityPin();
   const { user } = useAuth();
 
   // Agendadas do WhatsApp: fora do cache de 5 minutos do painel, de propósito.
@@ -1401,8 +1420,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {/* Contador regressivo com arco SVG — visível apenas quando revelado */}
-                    {financialRevealedUntil && financialRevealedUntil > new Date() && (() => {
+                    {/* Contador regressivo com arco SVG — só quando os valores estão
+                        revelados POR SESSÃO. Com o PIN desligado em Configurações não
+                        há prazo para expirar: um relógio correndo ali só assustaria. */}
+                    {financialPinRequired && financialRevealed && (() => {
                       const totalSecs = 10 * 60;
                       const pct = financialSecondsLeft / totalSecs;
                       const r = 9;
@@ -1429,7 +1450,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     })()}
                     <button
                       onClick={async () => {
-                        const revealed = financialRevealedUntil !== null && financialRevealedUntil > new Date();
+                        const revealed = financialRevealed;
                         if (revealed) {
                           setFinancialRevealedUntil(null);
                         } else {
@@ -1438,10 +1459,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                           });
                         }
                       }}
-                      title={financialRevealedUntil && financialRevealedUntil > new Date() ? 'Ocultar valores' : 'Ver valores'}
+                      title={financialRevealed ? 'Ocultar valores' : 'Ver valores'}
                       className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
                     >
-                      {financialRevealedUntil && financialRevealedUntil > new Date() ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {financialRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                     <button onClick={() => handleNavigate('financeiro')}
                       className="text-[11px] font-semibold text-amber-600 hover:text-amber-700 flex items-center gap-0.5 transition">
@@ -1457,7 +1478,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToModule }) => {
                     </div>
                   ) : (() => {
                     const s = financialStats;
-                    const isRevealed = financialRevealedUntil !== null && financialRevealedUntil > new Date();
+                    const isRevealed = financialRevealed;
                     return (
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">

@@ -151,12 +151,24 @@ export interface AuditLogEntry {
   created_at: string;
 }
 
+/** Método de pagamento criado pelo escritório, além dos seis nativos. */
+export interface CustomPaymentMethod {
+  /** Chave gravada na parcela. Nasce do nome e nunca muda depois — é ela que
+   *  liga o histórico ao rótulo. */
+  key: string;
+  label: string;
+}
+
 export interface FinancialModuleConfig {
   default_fee_percentage: number;
   default_installments_count: number;
   default_payment_type: 'upfront' | 'installments';
   payment_methods: string[];
   overdue_check_days: number;
+  /** Métodos criados à mão pelo escritório (boleto, carnê, convênio...). */
+  custom_payment_methods: CustomPaymentMethod[];
+  /** Pedir o PIN de segurança para revelar valores no módulo financeiro. */
+  require_pin_to_view_values: boolean;
 }
 
 export const FINANCIAL_MODULE_DEFAULTS: FinancialModuleConfig = {
@@ -165,8 +177,12 @@ export const FINANCIAL_MODULE_DEFAULTS: FinancialModuleConfig = {
   default_payment_type: 'installments',
   payment_methods: ['pix', 'transferencia', 'dinheiro', 'cartao_credito', 'cartao_debito', 'cheque'],
   overdue_check_days: 2,
+  custom_payment_methods: [],
+  require_pin_to_view_values: true,
 };
 
+/** Os seis nativos. Não somem nem podem ser renomeados — parcelas antigas
+ *  apontam para estas chaves. */
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   pix: 'PIX',
   transferencia: 'Transferência Bancária',
@@ -175,6 +191,29 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cartao_debito: 'Cartão de Débito',
   cheque: 'Cheque',
 };
+
+/** Nome digitado → chave estável ('Carnê do escritório' → 'carne_do_escritorio'). */
+export function slugifyPaymentMethod(label: string): string {
+  return label
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+}
+
+/** Catálogo completo de rótulos: os nativos mais os do escritório.
+ *  É o que a tela de baixa usa para não mostrar a chave crua. */
+export function buildPaymentMethodLabels(
+  config?: Pick<FinancialModuleConfig, 'custom_payment_methods'> | null,
+): Record<string, string> {
+  const labels = { ...PAYMENT_METHOD_LABELS };
+  for (const m of config?.custom_payment_methods ?? []) {
+    if (m?.key) labels[m.key] = m.label || m.key;
+  }
+  return labels;
+}
 
 export interface EmailIntegrationConfig {
   resend_key: string;

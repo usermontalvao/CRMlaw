@@ -49,7 +49,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import SensitiveValue from './SensitiveValue';
 import { openReceipt } from '../lib/receipt';
-import { settingsService, type OfficeIdentity, PAYMENT_METHOD_LABELS, FINANCIAL_MODULE_DEFAULTS, type FinancialModuleConfig } from '../services/settings.service';
+import { settingsService, type OfficeIdentity, PAYMENT_METHOD_LABELS, buildPaymentMethodLabels, FINANCIAL_MODULE_DEFAULTS, type FinancialModuleConfig } from '../services/settings.service';
 import { financialService } from '../services/financial.service';
 import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
@@ -87,11 +87,24 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   const toast = useToastContext();
   const { confirmDelete, notifyDeleted } = useDeleteConfirm();
   const { user } = useAuth();
-  const { requirePin, revealFinancialValues, getFinancialModuleExpiry } = useSecurityPin();
+  const { requirePin, revealFinancialValues, getFinancialModuleExpiry, financialPinRequired } = useSecurityPin();
 
   // Sessão financeira (2h) — restaurada do sessionStorage ao montar
   const [financialRevealedUntil, setFinancialRevealedUntil] = useState<Date | null>(() => getFinancialModuleExpiry());
-  const financialRevealed = financialRevealedUntil !== null && financialRevealedUntil > new Date();
+  // Com o PIN exigido, "revelado" é uma sessão que vence. Com o PIN desligado
+  // em Configurações, é só um estado de tela: não expira sozinho — do
+  // contrário os valores voltariam a ser censurados no fim das 2 h.
+  const financialRevealed = financialRevealedUntil !== null
+    && (!financialPinRequired || financialRevealedUntil > new Date());
+
+  // PIN desligado em Configurações → Módulos → Financeiro: os valores já
+  // nascem à mostra. O efeito depende só do interruptor, então dispara uma vez
+  // quando a configuração chega — quem clicar em "ocultar" depois continua
+  // ocultando.
+  useEffect(() => {
+    if (financialPinRequired) return;
+    void revealFinancialValues((expiry) => setFinancialRevealedUntil(expiry));
+  }, [financialPinRequired, revealFinancialValues]);
   const [loading, setLoading] = useState(true);
   const [officeIdentity, setOfficeIdentity] = useState<OfficeIdentity | null>(null);
   const [stats, setStats] = useState<FinancialStats | null>(null);
@@ -167,8 +180,6 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     const n = Number(normalized);
     return Number.isFinite(n) ? n : 0;
   };
-  const getPaymentMethodLabel = (method?: string | null) =>
-    method ? (PAYMENT_METHOD_LABELS[method] ?? method) : 'Não informado';
 
   // Mapa de ícones locais (ícones não são persistidos no banco)
   const PAYMENT_METHOD_ICONS: Record<string, React.ElementType> = {
@@ -338,6 +349,18 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
     Object.keys(PAYMENT_METHOD_LABELS), // fallback seguro com todos os métodos
   );
   const [financialDefaults, setFinancialDefaults] = useState<FinancialModuleConfig>(FINANCIAL_MODULE_DEFAULTS);
+
+  // Rótulos dos métodos: os seis nativos mais os criados em Configurações.
+  // Sem isto, um método do escritório apareceria pela chave crua ('carne_2x').
+  const paymentMethodLabels = useMemo(
+    () => buildPaymentMethodLabels(financialDefaults),
+    [financialDefaults],
+  );
+  const getPaymentMethodLabel = useCallback(
+    (method?: string | null) =>
+      method ? (paymentMethodLabels[method] ?? method) : 'Não informado',
+    [paymentMethodLabels],
+  );
 
   useEffect(() => {
     const select = editStatusSelectRef.current;
@@ -834,6 +857,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         ? (editForm.status === 'aguardando_definicao' ? 'Mover lançamento para aguardando definição' : 'Retomar lançamento no fluxo')
         : 'Editar lançamento financeiro',
       description: 'Confirme com seu PIN para salvar as alterações neste lançamento.',
+      permission: { module: 'financeiro', action: 'edit' },
     });
     if (!pinOk) return;
 
@@ -1139,6 +1163,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       description: nextStatus === 'aguardando_definicao'
         ? 'Confirme com seu PIN para tirar este lançamento do fluxo operacional e do faturamento estimado.'
         : 'Confirme com seu PIN para devolver este lançamento ao fluxo operacional do financeiro.',
+      permission: { module: 'financeiro', action: 'edit' },
     });
     if (!pinOk) return;
 
@@ -1241,6 +1266,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       title: 'Excluir entrada avulsa',
       message: 'Deseja remover esta entrada avulsa? A ação não pode ser desfeita.',
       confirmLabel: 'Excluir',
+      permission: { module: 'financeiro', action: 'delete' },
     });
     if (!confirmed) return;
     try {
@@ -1296,6 +1322,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       sensitivity: 'high',
       title: 'Quitar todas as parcelas',
       description: `Confirme com seu PIN para quitar ${pending.length} parcela${pending.length > 1 ? 's' : ''} do lançamento.`,
+      permission: { module: 'financeiro', action: 'edit' },
     });
     if (!pinOk) return;
     setBulkPaymentLoading(true);
@@ -1338,6 +1365,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       description: isEditingPayment
         ? 'Confirme com seu PIN para editar os dados desta baixa.'
         : 'Confirme com seu PIN para registrar o pagamento desta parcela.',
+      permission: { module: 'financeiro', action: 'edit' },
     });
     if (!pinOk) return;
 
@@ -3202,8 +3230,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       entityName: agreement.title,
       message: 'Tem certeza que deseja excluir este lançamento? Esta ação apagará todas as parcelas relacionadas.',
       confirmLabel: 'Excluir lançamento',
+      permission: { module: 'financeiro', action: 'delete' },
     });
-    if (!confirmed) return;
+    if (!confirmed) return false;
 
     try {
       await deleteCalendarEventsForAgreement(agreement.id);
@@ -3216,8 +3245,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
       }
 
       await loadData();
+      return true;
     } catch (err: any) {
       toast.error('Erro ao excluir lançamento', err.message);
+      return false;
     }
   };
 
@@ -3340,7 +3371,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
         <button
           type="button"
           onClick={handleToggleFinancialReveal}
-          title={financialRevealed ? 'Ocultar valores (clique para esconder)' : 'Ver valores (requer PIN de segurança)'}
+          title={financialRevealed
+            ? 'Ocultar valores (clique para esconder)'
+            : financialPinRequired
+              ? 'Ver valores (requer PIN de segurança)'
+              : 'Ver valores'}
           className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors"
           style={financialRevealed
             ? { background: '#fff7ed', borderColor: '#fed7aa', color: '#c2410c' }
@@ -3426,15 +3461,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
               type="button"
               onClick={async () => {
                 if (!selectedAgreement) return;
-                const confirmed = await confirmDelete({
-                  title: 'Excluir lançamento',
-                  entityName: selectedAgreement.title,
-                  message: 'Tem certeza que deseja excluir este lançamento? Esta ação apagará todas as parcelas relacionadas.',
-                  confirmLabel: 'Excluir lançamento',
-                });
-                if (!confirmed) return;
-                await handleDeleteAgreement(selectedAgreement);
-                handleCloseEditModal();
+                const deleted = await handleDeleteAgreement(selectedAgreement);
+                if (deleted) handleCloseEditModal();
               }}
               disabled={editLoading}
               className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg flex items-center gap-2 transition border border-red-200 dark:border-red-900/50"
@@ -5329,7 +5357,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                                       className="w-full rounded-lg border border-[#e7e5df] dark:border-zinc-700 bg-[#f8f7f5] dark:bg-zinc-900 text-slate-900 dark:text-white text-xs py-1.5 px-2 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                                     >
                                       {paymentMethods.map(key => (
-                                        <option key={key} value={key}>{PAYMENT_METHOD_LABELS[key] ?? key}</option>
+                                        <option key={key} value={key}>{paymentMethodLabels[key] ?? key}</option>
                                       ))}
                                     </select>
                                   </div>
@@ -5669,7 +5697,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                 <div className="grid grid-cols-3 gap-2">
                   {paymentMethods.map(key => {
                     const Icon = PAYMENT_METHOD_ICONS[key] ?? Banknote;
-                    const label = PAYMENT_METHOD_LABELS[key] ?? key;
+                    const label = paymentMethodLabels[key] ?? key;
                     const active = manualEntryData.paymentMethod === key;
                     return (
                       <button key={key} type="button"
@@ -5814,7 +5842,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                   <div className="grid grid-cols-3 gap-2">
                     {paymentMethods.map(key => {
                       const Icon = PAYMENT_METHOD_ICONS[key] ?? Banknote;
-                      const label = PAYMENT_METHOD_LABELS[key] ?? key;
+                      const label = paymentMethodLabels[key] ?? key;
                       const active = paymentData.paymentMethod === key;
                       return (
                         <button

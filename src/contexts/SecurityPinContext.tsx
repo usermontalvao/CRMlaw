@@ -10,10 +10,20 @@ import { securityPinService } from '../services/securityPin.service';
 import { settingsService } from '../services/settings.service';
 import { SecurityPinModal } from '../components/SecurityPinModal';
 import { supabase } from '../config/supabase';
+import { usePermissions } from '../hooks/usePermissions';
+import { useToastContext } from './ToastContext';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
 type Sensitivity = 'medium' | 'high' | 'critical';
+export type PermissionAction = 'view' | 'create' | 'edit' | 'delete';
+
+export interface PinPermissionRequirement {
+  module: string;
+  action: PermissionAction;
+  /** Texto específico da tela. Se omitido, exibimos uma mensagem consistente. */
+  deniedMessage?: string;
+}
 
 export interface RequirePinOptions {
   action: string;
@@ -25,6 +35,8 @@ export interface RequirePinOptions {
   description?: string;
   actionLabel?: string;
   onVerified?: () => void | Promise<void>;
+  /** Autorização vem antes da autenticação por PIN. */
+  permission?: PinPermissionRequirement;
 }
 
 interface PinSession {
@@ -52,6 +64,10 @@ interface SecurityPinContextType {
   revealFinancialValues: (onReveal?: (expiry: Date) => void) => Promise<boolean>;
   /** Retorna Date de expiração da sessão financeira (2h); null se não autenticado. */
   getFinancialModuleExpiry: () => Date | null;
+  /** Configurações → Módulos → Financeiro decide se revelar valores pede PIN.
+   *  Enquanto a configuração não chegou, vale `true` — errar para o lado de
+   *  pedir é recuperável; errar para o lado de mostrar não é. */
+  financialPinRequired: boolean;
 }
 
 // ── Sessão efêmera (sessionStorage, nunca PIN) ────────────────────────────────
@@ -134,15 +150,36 @@ function sessionCovers(sensitivity: Sensitivity): boolean {
   return false;
 }
 
+/** Disparado pelas Configurações quando o módulo financeiro é salvo, para que
+ *  o interruptor do PIN valha imediatamente. */
+export const FINANCIAL_CONFIG_CHANGED_EVENT = 'jurius:financial-config-changed';
+
 // ── Context ───────────────────────────────────────────────────────────────────
 
 const SecurityPinContext = createContext<SecurityPinContextType | undefined>(undefined);
 
 export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { hasPermission, loading: permissionsLoading } = usePermissions();
+  const { error: toastError } = useToastContext();
   const [modal, setModal] = useState<ModalState | null>(null);
   const ttlHighRef      = useRef(TTL_HIGH_MS);
   const ttlMediumRef    = useRef(TTL_MEDIUM_MS);
   const ttlFinancialRef = useRef(TTL_FINANCIAL_MS);
+  const [financialPinRequired, setFinancialPinRequired] = useState(true);
+  // Espelho em ref: revealFinancialValues lê o valor no momento do clique, sem
+  // recriar o callback (e sem invalidar os useCallback de quem o consome).
+  const financialPinRequiredRef = useRef(true);
+
+  const loadFinancialPinSetting = useCallback(async () => {
+    try {
+      const cfg = await settingsService.getFinancialModuleConfig();
+      const required = cfg.require_pin_to_view_values !== false;
+      financialPinRequiredRef.current = required;
+      setFinancialPinRequired(required);
+    } catch {
+      /* mantém o padrão: pedir PIN */
+    }
+  }, []);
 
   // Carregar TTLs configurados — só para staff autenticado. Em rotas PÚBLICAS
   // (assinatura/verificação) não há sessão e `system_settings` é fechado p/
@@ -156,8 +193,20 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
         ttlMediumRef.current = pinMs;
         ttlFinancialRef.current = Math.max(0.5, cfg.financial_view_hours ?? 2) * 60 * 60 * 1000;
       }).catch(() => {});
+
+      loadFinancialPinSetting();
     }).catch(() => {});
-  }, []);
+  }, [loadFinancialPinSetting]);
+
+  // Salvar em Configurações → Módulos → Financeiro reflete na hora, sem F5.
+  // Sem isto o interruptor parece não funcionar: o provider só lia a
+  // configuração na montagem, e quem acabou de desmarcar continuava vendo tudo
+  // censurado até recarregar a página.
+  useEffect(() => {
+    const onChanged = () => { void loadFinancialPinSetting(); };
+    window.addEventListener(FINANCIAL_CONFIG_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(FINANCIAL_CONFIG_CHANGED_EVENT, onChanged);
+  }, [loadFinancialPinSetting]);
 
   // Limpar sessão no logout
   useEffect(() => {
@@ -216,6 +265,25 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const requirePin = useCallback(async (opts: RequirePinOptions): Promise<boolean> => {
     const sensitivity = opts.sensitivity ?? 'high';
 
+    // Autorização (cargo/permissão) SEMPRE vem antes da autenticação (PIN).
+    // PIN confirma quem está executando; ele nunca concede um poder que o cargo
+    // não possui. Além de evitar uma pergunta inútil, isto impede a impressão de
+    // que a operação foi aceita para só depois ser silenciosamente barrada pela RLS.
+    if (opts.permission) {
+      if (permissionsLoading) {
+        toastError('Verificando suas permissões', 'Aguarde um instante e tente novamente.');
+        return false;
+      }
+      if (!hasPermission(opts.permission.module, opts.permission.action)) {
+        toastError(
+          'Ação não permitida',
+          opts.permission.deniedMessage
+            ?? 'Seu cargo não possui permissão para realizar esta ação. Solicite acesso a um administrador.',
+        );
+        return false;
+      }
+    }
+
     // Verificar sessão ativa (exceto critical)
     if (sessionCovers(sensitivity)) {
       if (opts.onVerified) {
@@ -246,7 +314,7 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     // Abre verificação
     return openModal('verify', { ...opts, sensitivity });
-  }, [openModal]);
+  }, [hasPermission, openModal, permissionsLoading, toastError]);
 
   const openCreatePin = useCallback((): Promise<boolean> =>
     openModal('create', { action: 'create_pin', sensitivity: 'high' }),
@@ -274,6 +342,16 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const existing = readFinancialSession();
     if (existing) {
       onReveal?.(new Date(existing.expiresAt));
+      return true;
+    }
+
+    // PIN desligado em Configurações → Módulos → Financeiro: revela direto.
+    // A sessão continua sendo escrita para que o resto do app (que só olha a
+    // expiração) siga funcionando sem saber do toggle.
+    if (!financialPinRequiredRef.current) {
+      writeFinancialSession(ttlFinancialRef.current);
+      const s = readFinancialSession();
+      if (s) onReveal?.(new Date(s.expiresAt));
       return true;
     }
 
@@ -305,7 +383,7 @@ export const SecurityPinProvider: React.FC<{ children: React.ReactNode }> = ({ c
   }, []);
 
   return (
-    <SecurityPinContext.Provider value={{ isPinModalOpen: modal !== null, requirePin, openCreatePin, openChangePin, openRemovePin, getFinancialSessionExpiry, revealFinancialValues, getFinancialModuleExpiry }}>
+    <SecurityPinContext.Provider value={{ isPinModalOpen: modal !== null, requirePin, openCreatePin, openChangePin, openRemovePin, getFinancialSessionExpiry, revealFinancialValues, getFinancialModuleExpiry, financialPinRequired }}>
       {children}
       {modal && (
         <SecurityPinModal
@@ -346,17 +424,18 @@ interface ProtectedActionProps {
   description?: string;
   actionLabel?: string;
   disabled?: boolean;
+  permission?: PinPermissionRequirement;
 }
 
 export const ProtectedAction: React.FC<ProtectedActionProps> = ({
   action, resourceType, resourceId, sensitivity = 'high',
-  onVerified, children, className, title, description, actionLabel, disabled,
+  onVerified, children, className, title, description, actionLabel, disabled, permission,
 }) => {
   const { requirePin } = useSecurityPin();
 
   const handleClick = async () => {
     if (disabled) return;
-    await requirePin({ action, resourceType, resourceId, sensitivity, onVerified, title, description, actionLabel });
+    await requirePin({ action, resourceType, resourceId, sensitivity, onVerified, title, description, actionLabel, permission });
   };
 
   return (

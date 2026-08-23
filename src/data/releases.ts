@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.9',
+    date: '23/08/2026',
+    summary: 'O PIN para ver valores virou escolha do escritório, e os métodos de pagamento deixaram de ser uma lista fechada de seis.',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Pedir PIN para ver os valores agora é um interruptor',
+            description: 'Em Configurações → Módulos → Financeiro. Desligado, os valores do módulo e do cartão do painel já aparecem para quem tem acesso, sem clique e sem senha. Junto com a senha some o resto da encenação: o cronômetro regressivo sai da tela e a sessão deixa de expirar — do contrário os valores voltariam a ser censurados sozinhos no fim das duas horas, e só recarregar a página resolveria.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Métodos de pagamento próprios, e os nativos podem ser renomeados',
+            description: 'Boleto, carnê, convênio: o escritório cria os seus, e eles aparecem na baixa de parcela junto com os nativos. Renomear vale para todos — PIX pode virar "Pix Itaú" —, e o nome de fábrica volta com um clique. O que muda é só o rótulo: nenhuma parcela já baixada perde o vínculo com a forma de pagamento.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Método de pagamento novo teria quebrado na hora de salvar a baixa',
+            description: 'O banco guardava os seis métodos escritos na unha. Qualquer forma criada apareceria normalmente na tela e só estouraria ao confirmar o recebimento — o pior lugar possível para descobrir. A lista fechada deu lugar a uma regra de formato.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Salvar as configurações do financeiro passou a valer na hora',
+            description: 'O interruptor do PIN era lido uma única vez, quando a tela abria. Quem acabava de desmarcar continuava vendo tudo censurado até recarregar a página, e concluía que a opção não funcionava.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.8',
     date: '23/08/2026',
     summary: 'Assinaturas deixam de ser "só de quem criou": quem tem o módulo passa a ver o módulo. E a exclusão que dizia ter funcionado sem funcionar foi calada.',

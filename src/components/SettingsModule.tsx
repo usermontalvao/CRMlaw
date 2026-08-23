@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Edit2,
   Trash2,
+  RotateCcw,
   Search,
   Plus,
   Save,
@@ -66,7 +67,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { useSecurityPin } from '../contexts/SecurityPinContext';
+import { useSecurityPin, FINANCIAL_CONFIG_CHANGED_EVENT } from '../contexts/SecurityPinContext';
 import { supabase } from '../config/supabase';
 import ConfigurableList, { normalizeItems, type ConfigurableItem } from './ConfigurableList';
 import { ClientSearchSelect } from './ClientSearchSelect';
@@ -103,6 +104,8 @@ import {
   EMAIL_INTEGRATION_DEFAULTS,
   WHATSAPP_EVOLUTION_DEFAULTS,
   PAYMENT_METHOD_LABELS,
+  slugifyPaymentMethod,
+  type CustomPaymentMethod,
   NOTIFICATION_TRIGGERS,
   DEFAULT_NOTIFICATION_RULES,
   PROCESS_MODULE_DEFAULTS,
@@ -534,6 +537,37 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
 
   // Novas seções de configuração
   const [financialConfig, setFinancialConfig] = useState<FinancialModuleConfig>({ ...FINANCIAL_MODULE_DEFAULTS });
+  // Métodos de pagamento do escritório: rascunho do que está sendo criado ou renomeado
+  const [newPaymentMethodLabel, setNewPaymentMethodLabel] = useState('');
+  const [editingPaymentMethodKey, setEditingPaymentMethodKey] = useState<string | null>(null);
+  const [editingPaymentMethodLabel, setEditingPaymentMethodLabel] = useState('');
+
+  /** Cria um método de pagamento do escritório e já o deixa marcado como aceito.
+   *  A chave nasce do nome e é única: um nome que colidiria com método existente
+   *  (nativo ou criado) ganha sufixo, para nunca sequestrar o rótulo do outro. */
+  const addPaymentMethod = () => {
+    const label = newPaymentMethodLabel.trim();
+    if (!label) return;
+
+    const base = slugifyPaymentMethod(label);
+    if (!base) return;
+
+    const taken = new Set([
+      ...Object.keys(PAYMENT_METHOD_LABELS),
+      ...(financialConfig.custom_payment_methods ?? []).map(m => m.key),
+    ]);
+    let key = base;
+    let n = 2;
+    while (taken.has(key)) key = `${base}_${n++}`;
+
+    const created: CustomPaymentMethod = { key, label };
+    setFinancialConfig({
+      ...financialConfig,
+      custom_payment_methods: [...(financialConfig.custom_payment_methods ?? []), created],
+      payment_methods: [...financialConfig.payment_methods, key],
+    });
+    setNewPaymentMethodLabel('');
+  };
   const [emailIntConfig, setEmailIntConfig] = useState<EmailIntegrationConfig>({ ...EMAIL_INTEGRATION_DEFAULTS });
   const [showEmailKey, setShowEmailKey] = useState(false);
 
@@ -777,6 +811,11 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         sensitivity,
         title,
         description,
+        permission: {
+          module: 'configuracoes',
+          action: 'edit',
+          deniedMessage: 'Seu cargo não possui permissão para alterar as configurações do sistema.',
+        },
       });
     },
     [requirePin],
@@ -1287,6 +1326,11 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       sensitivity: 'critical',
       title: 'Alterar permissões',
       description: 'Confirme com seu PIN para alterar as permissões de acesso.',
+      permission: {
+        module: 'configuracoes',
+        action: 'edit',
+        deniedMessage: 'Seu cargo não possui permissão para alterar cargos e permissões.',
+      },
     });
     if (!pinOk) return;
     try {
@@ -3073,6 +3117,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             sensitivity: 'critical',
                             title: willHide ? 'Ocultar módulo do menu' : 'Exibir módulo no menu',
                             description: `Confirme com seu PIN para ${willHide ? 'ocultar' : 'exibir'} o módulo "${label}" no menu lateral.`,
+                            permission: { module: 'configuracoes', action: 'edit' },
                           });
                           if (!pinOk) return;
                           const base: ModulesConfig = modulesConfig ?? {
@@ -3256,6 +3301,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             sensitivity: 'critical',
                             title: 'Salvar configurações de segurança',
                             description: 'Confirme com seu PIN para salvar as configurações de segurança.',
+                            permission: { module: 'configuracoes', action: 'edit' },
                           });
                           if (!pinOk) return;
                           setSaving(true);
@@ -3339,6 +3385,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               sensitivity: 'critical',
                               title: 'Salvar integração de e-mail',
                               description: 'Confirme com seu PIN para salvar a chave de API.',
+                              permission: { module: 'configuracoes', action: 'edit' },
                             });
                             if (!pinOk) return;
                             setSaving(true);
@@ -3415,6 +3462,31 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         </div>
                       </div>
 
+                      {/* Sigilo dos valores */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Sigilo dos valores</p>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+                          <div>
+                            <p style={{ fontSize: '13px', fontWeight: 600, color: '#1f2937' }}>
+                              Pedir PIN para ver os valores
+                            </p>
+                            <p style={{ fontSize: '11.5px', color: '#9ca3af', marginTop: '4px', maxWidth: '520px' }}>
+                              Com o PIN ligado, os valores do módulo financeiro e do painel entram ocultos e só
+                              aparecem depois do PIN de segurança. Desligado, aparecem direto para quem já tem
+                              acesso ao módulo.
+                            </p>
+                          </div>
+                          <button
+                            className={`settings-toggle${financialConfig.require_pin_to_view_values ? ' on' : ''}`}
+                            onClick={() => setFinancialConfig({
+                              ...financialConfig,
+                              require_pin_to_view_values: !financialConfig.require_pin_to_view_values,
+                            })}
+                            aria-label="Pedir PIN para ver os valores"
+                          />
+                        </div>
+                      </div>
+
                       {/* Métodos de pagamento aceitos */}
                       <div className="settings-card">
                         <p className="settings-card-title">Métodos de pagamento aceitos</p>
@@ -3422,34 +3494,149 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                           Apenas os métodos marcados aparecem nas opções de recebimento.
                         </p>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                          {Object.entries(PAYMENT_METHOD_LABELS).map(([key, label]) => {
+                          {[
+                            // Nativos: o rótulo é o de fábrica, salvo se o escritório renomeou.
+                            ...Object.entries(PAYMENT_METHOD_LABELS).map(([key, label]) => {
+                              const renamed = (financialConfig.custom_payment_methods ?? []).find(m => m.key === key);
+                              return { key, label: renamed?.label || label, custom: false, renamed: !!renamed };
+                            }),
+                            // Criados: tudo que não é uma renomeação de nativo.
+                            ...(financialConfig.custom_payment_methods ?? [])
+                              .filter(m => !(m.key in PAYMENT_METHOD_LABELS))
+                              .map(m => ({ key: m.key, label: m.label, custom: true, renamed: false })),
+                          ].map(({ key, label, custom, renamed }) => {
                             const enabled = financialConfig.payment_methods.includes(key);
+                            const isEditing = editingPaymentMethodKey === key;
+
+                            if (isEditing) {
+                              const commit = () => {
+                                const nextLabel = editingPaymentMethodLabel.trim();
+                                // A chave NUNCA muda: é ela que liga as parcelas já baixadas ao
+                                // rótulo. Renomear um nativo é só gravar um apelido por cima —
+                                // 'pix' continua 'pix' no banco, mudou o que se lê na tela.
+                                if (nextLabel && nextLabel !== label) {
+                                  const atuais = financialConfig.custom_payment_methods ?? [];
+                                  const jaTem = atuais.some(m => m.key === key);
+                                  setFinancialConfig({
+                                    ...financialConfig,
+                                    custom_payment_methods: jaTem
+                                      ? atuais.map(m => (m.key === key ? { ...m, label: nextLabel } : m))
+                                      : [...atuais, { key, label: nextLabel }],
+                                  });
+                                }
+                                setEditingPaymentMethodKey(null);
+                                setEditingPaymentMethodLabel('');
+                              };
+                              return (
+                                <input
+                                  key={key}
+                                  className="settings-input"
+                                  autoFocus
+                                  value={editingPaymentMethodLabel}
+                                  onChange={e => setEditingPaymentMethodLabel(e.target.value)}
+                                  onBlur={commit}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') commit();
+                                    if (e.key === 'Escape') { setEditingPaymentMethodKey(null); setEditingPaymentMethodLabel(''); }
+                                  }}
+                                />
+                              );
+                            }
+
                             return (
-                              <button
+                              <div
                                 key={key}
-                                type="button"
-                                onClick={() => {
-                                  const next = enabled
-                                    ? financialConfig.payment_methods.filter(m => m !== key)
-                                    : [...financialConfig.payment_methods, key];
-                                  setFinancialConfig({ ...financialConfig, payment_methods: next });
-                                }}
                                 style={{
                                   display: 'flex', alignItems: 'center', gap: '8px',
-                                  padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
+                                  padding: '10px 12px', borderRadius: '8px',
                                   border: `1.5px solid ${enabled ? '#ff8a00' : 'rgba(15,23,42,0.12)'}`,
                                   background: enabled ? 'rgba(255,138,0,0.06)' : '#fff',
-                                  fontSize: '12.5px', fontWeight: enabled ? 600 : 400,
-                                  color: enabled ? '#c45c00' : '#444748',
                                   transition: 'all .12s ease',
                                 }}
                               >
-                                <CreditCard size={13} style={{ color: enabled ? '#ff8a00' : '#b0b5bc' }} />
-                                {label}
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = enabled
+                                      ? financialConfig.payment_methods.filter(m => m !== key)
+                                      : [...financialConfig.payment_methods, key];
+                                    setFinancialConfig({ ...financialConfig, payment_methods: next });
+                                  }}
+                                  style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px', flex: 1,
+                                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                                    fontSize: '12.5px', fontWeight: enabled ? 600 : 400,
+                                    color: enabled ? '#c45c00' : '#444748', textAlign: 'left',
+                                  }}
+                                >
+                                  <CreditCard size={13} style={{ color: enabled ? '#ff8a00' : '#b0b5bc' }} />
+                                  {label}
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Renomear"
+                                  onClick={() => { setEditingPaymentMethodKey(key); setEditingPaymentMethodLabel(label); }}
+                                  style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: '#9ca3af', display: 'flex' }}
+                                >
+                                  <Edit2 size={12} />
+                                </button>
+                                {renamed && (
+                                  <button
+                                    type="button"
+                                    title={`Voltar ao nome original (${PAYMENT_METHOD_LABELS[key]})`}
+                                    onClick={() => setFinancialConfig({
+                                      ...financialConfig,
+                                      // Some só o apelido. O método nativo continua na lista.
+                                      custom_payment_methods: (financialConfig.custom_payment_methods ?? []).filter(m => m.key !== key),
+                                    })}
+                                    style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: '#9ca3af', display: 'flex' }}
+                                  >
+                                    <RotateCcw size={12} />
+                                  </button>
+                                )}
+                                {custom && (
+                                  <button
+                                    type="button"
+                                    title="Remover"
+                                    onClick={() => setFinancialConfig({
+                                      ...financialConfig,
+                                      custom_payment_methods: (financialConfig.custom_payment_methods ?? []).filter(m => m.key !== key),
+                                      payment_methods: financialConfig.payment_methods.filter(m => m !== key),
+                                    })}
+                                    style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer', color: '#e06c6c', display: 'flex' }}
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                )}
+                              </div>
                             );
                           })}
                         </div>
+
+                        {/* Criar método próprio */}
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', maxWidth: '420px' }}>
+                          <input
+                            className="settings-input"
+                            placeholder="Novo método (ex.: Boleto, Carnê, Convênio)"
+                            value={newPaymentMethodLabel}
+                            onChange={e => setNewPaymentMethodLabel(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addPaymentMethod(); } }}
+                          />
+                          <button
+                            type="button"
+                            className="settings-btn-ghost"
+                            onClick={addPaymentMethod}
+                            disabled={!newPaymentMethodLabel.trim()}
+                            style={{ whiteSpace: 'nowrap' }}
+                          >
+                            <Plus size={13} /> Adicionar
+                          </button>
+                        </div>
+                        <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '6px' }}>
+                          Clique no nome para ativar ou desativar. O lápis renomeia qualquer método — inclusive os
+                          nativos, que podem ser chamados como o escritório preferir. Renomear não afeta as parcelas
+                          já baixadas, e remover um método criado também não.
+                        </p>
                       </div>
 
                       <div className="settings-save-bar" style={{ marginTop: 0 }}>
@@ -3467,6 +3654,9 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 () => settingsService.updateFinancialModuleConfig(financialConfig, currentProfile?.name),
                               );
                               if (!persisted) return;
+                              // Avisa o SecurityPinProvider: o interruptor do PIN
+                              // passa a valer agora, sem recarregar a página.
+                              window.dispatchEvent(new Event(FINANCIAL_CONFIG_CHANGED_EVENT));
                               setFeedback('success', 'Configurações financeiras salvas!');
                             } catch (err: any) {
                               setFeedback('error', err.message || 'Erro ao salvar.');
