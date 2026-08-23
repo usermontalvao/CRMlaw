@@ -2,14 +2,24 @@
  * Painel "Memória da IA" na coluna lateral da conversa.
  *
  * Discreto de propósito: só aparece quando existe agente no canal, e recolhido.
- * Serve para o operador ver o que a IA entendeu do caso, se ela está ativa, e
- * poder interromper ou limpar a memória sem sair da conversa.
+ * Serve para o operador ver o que a IA entendeu do caso — resumo, fatos
+ * coletados, pendências, o motivo de o atendimento ter ido para uma pessoa e a
+ * regra da escada de retomadas.
  *
  * Não é dashboard: mostra o ÚLTIMO estado, não uma série histórica.
+ *
+ * ── PAUSAR E RETOMAR SAÍRAM DAQUI ──────────────────────────────────────────
+ *
+ * Os dois botões viviam nesta gaveta E na faixa do topo, cada um com a sua
+ * leitura do estado: pausar aqui deixava a faixa lá em cima anunciando "IA
+ * atendendo" até o próximo minuto. O controle de ligar/desligar agora tem um
+ * lugar só — a faixa —, que é também onde o estado é anunciado. O que sobrou
+ * aqui são as ações sobre a MEMÓRIA (limpar, cancelar a retomada agendada), que
+ * é o assunto do painel.
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Bot, BrainCircuit, ChevronDown, ChevronRight, Clock, Loader2, Pause, Play, Trash2,
+  Bot, BrainCircuit, ChevronDown, ChevronRight, Clock, Trash2,
 } from 'lucide-react';
 import { whatsappService } from '../../services/whatsapp.service';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -35,9 +45,20 @@ export const AiMemoryPanel: React.FC<{
   currentUserId: string | null;
   assignedUserId: string | null;
   confirm: ConfirmFn;
+  /**
+   * `acoes.controlarIa` — espelho de `wa_ai_require_control`. Quem não tem
+   * continua LENDO o estado (é o que faz o supervisor conseguir acompanhar),
+   * mas não vê as ações que o banco recusaria.
+   */
+  podeControlar?: boolean;
+  /** Muda quando a faixa do topo mexeu na IA; força a releitura. */
+  versao?: number;
+  /** Avisa o módulo de que algo mudou aqui. */
+  onMudou?: () => void;
   /** Injetável apenas nas bancadas visuais; produção usa o serviço real. */
   loadState?: (conversationId: string) => Promise<WhatsAppAiConversationState | null>;
 }> = ({ conversationId, currentUserId, assignedUserId, confirm,
+  podeControlar = false, versao = 0, onMudou,
   loadState = whatsappService.getAiConversationState }) => {
   const toast = useToastContext();
   const [state, setState] = useState<WhatsAppAiConversationState | null>(null);
@@ -58,6 +79,10 @@ export const AiMemoryPanel: React.FC<{
   }, [conversationId, loadState]);
 
   useEffect(() => { setOpen(false); load(); }, [conversationId, load]);
+
+  // A faixa do topo pausou, retomou ou o módulo mexeu na conversa. Sem isto o
+  // painel continuaria dizendo "Ativa" com a IA já parada.
+  useEffect(() => { if (versao > 0) load(); }, [versao, load]);
 
   // Meio minuto é o suficiente: a menor unidade que a conta regressiva mostra é
   // o minuto. Só corre quando há retomada agendada.
@@ -86,28 +111,19 @@ export const AiMemoryPanel: React.FC<{
   // Depois do handoff, resumo, fatos e pendências viram o recado operacional do
   // caso e ficam apenas com quem recebeu a conversa.
   //
-  // O PAINEL, porém, continua de pé para todos: ele é o único lugar onde se
-  // religa a IA. Esconder o painel inteiro depois do handoff — que acontece
-  // sozinho quando um humano responde — deixava a conversa sem nenhuma forma de
-  // trazer o agente de volta.
+  // O PAINEL, porém, continua de pé para todos: ele é a leitura do que a IA
+  // entendeu, e acompanhar um atendimento é justamente poder ler isso. Ligar e
+  // desligar mudou de lugar — está na faixa do topo, junto do estado.
   const podeVerResumo = state.status !== 'handed_off' || canShowPrivateAiHandoffSummary({
     currentUserId, assignedUserId, status: state.status,
   });
 
   const run = async (fn: () => Promise<void>, ok: string) => {
     setBusy(true);
-    try { await fn(); toast.success(ok); load(); }
+    try { await fn(); toast.success(ok); load(); onMudou?.(); }
     catch (e) { toast.error((e as Error).message); }
     finally { setBusy(false); }
   };
-
-  const stop = () => run(
-    () => whatsappService.stopAiForConversation(conversationId),
-    'IA interrompida nesta conversa.');
-
-  const resume = () => run(
-    () => whatsappService.resumeAiForConversation(conversationId),
-    'IA reativada nesta conversa.');
 
   const clear = async () => {
     const ok = await confirm({
@@ -269,7 +285,7 @@ export const AiMemoryPanel: React.FC<{
                   className="text-[10.5px] font-semibold text-slate-500 hover:text-slate-700 transition">
                   {regraAberta ? 'ocultar regra' : 'ver regra'}
                 </button>
-                {state.pendingFollowup && (
+                {state.pendingFollowup && podeControlar && (
                   <button onClick={cancelFollowup} disabled={busy}
                     className="text-[10.5px] font-semibold text-slate-500 hover:text-red-600 transition">
                     cancelar retomada
@@ -296,27 +312,21 @@ export const AiMemoryPanel: React.FC<{
             </p>
           )}
 
-          <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-200">
-            {state.aiActive ? (
-              <button onClick={stop} disabled={busy}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-amber-700 hover:border-amber-200 transition disabled:opacity-50">
-                {busy ? <Loader2 size={11} className="animate-spin" /> : <Pause size={11} />} Interromper IA
+          {/* Pausar e retomar NÃO estão aqui: eles moram na faixa do topo, ao
+              lado do estado que anunciam. Duas cópias do mesmo interruptor, cada
+              uma com a sua leitura do banco, faziam a tela se contradizer. */}
+          {podeControlar && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-200">
+              <button onClick={clear} disabled={busy}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-red-600 hover:border-red-200 transition disabled:opacity-50">
+                <Trash2 size={11} /> Limpar memória
               </button>
-            ) : (
-              <button onClick={resume} disabled={busy}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-emerald-700 hover:border-emerald-200 transition disabled:opacity-50">
-                {busy ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />} Reativar IA
-              </button>
-            )}
-            <button onClick={clear} disabled={busy}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:text-red-600 hover:border-red-200 transition disabled:opacity-50">
-              <Trash2 size={11} /> Limpar memória
-            </button>
-          </div>
+            </div>
+          )}
           <p className="text-[10.5px] text-slate-400">
             {state.aiActive
-              ? 'A IA para sozinha quando alguém do escritório responde.'
-              : 'Reativar devolve a conversa à fila: a IA não atende conversa que já tem dono.'}
+              ? 'A IA para sozinha quando alguém do escritório responde ao cliente.'
+              : 'Ligar e desligar a IA desta conversa fica na faixa do alto da conversa.'}
           </p>
         </div>
       )}

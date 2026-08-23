@@ -13,6 +13,12 @@ interface Options {
   loadState?: (conversationId: string) => Promise<WhatsAppAiConversationState | null>;
   /** Idem: a devolução de verdade solta a conversa e religa o agente. */
   resumeAi?: (conversationId: string) => Promise<void>;
+  /**
+   * Devolver à IA é a MESMA operação do botão "Retomar IA" da faixa do topo.
+   * Sem este aviso, a faixa continuaria dizendo "Atendimento humano" depois de
+   * a conversa já ter voltado para o agente.
+   */
+  onChanged?: () => void;
 }
 
 export interface AiHandoffSummary {
@@ -40,6 +46,7 @@ export const useAiHandoffSummary = ({
   conversationId, currentUserId, assignedUserId,
   loadState = whatsappService.getAiConversationState,
   resumeAi = whatsappService.resumeAiForConversation,
+  onChanged,
 }: Options): AiHandoffSummary => {
   const toast = useToastContext();
   const [state, setState] = useState<WhatsAppAiConversationState | null>(null);
@@ -76,6 +83,7 @@ export const useAiHandoffSummary = ({
       setState(prev => (prev ? { ...prev, aiActive: true, status: 'active' } : prev));
       toast.success('Atendimento devolvido à IA',
         'A conversa voltou para a fila e o agente continua de onde parou.');
+      onChanged?.();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {

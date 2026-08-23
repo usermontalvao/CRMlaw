@@ -37,6 +37,53 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.6',
+    date: '23/08/2026',
+    summary: 'A IA da conversa ganhou uma faixa que sempre diz em que pé ela está, controles com um dono só, e registro no histórico do caso. Pausar, retomar e limpar a memória passaram a ser de quem responde pelo atendimento.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'A faixa da IA parou de sumir',
+            description: 'A faixa só existia enquanto a IA conduzia a conversa: assim que ela passava o atendimento para uma pessoa, sumia — e a única pista do que havia acontecido era um chip cinza dentro de um painel recolhido na lateral. Quatro situações diferentes (a IA está atendendo, alguém pausou e ninguém assumiu, a última tentativa do agente falhou, uma pessoa está atendendo) chegavam à tela como "a faixa não está aí". Agora a faixa é o indicador de estado e não desaparece: cada situação tem cor, texto e o botão que cabe nela.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Ligar e desligar a IA tem um lugar só',
+            description: 'Pausar e retomar viviam em dois lugares — a faixa do topo e a gaveta "Memória da IA" —, cada um com a sua leitura do estado: pausar na gaveta deixava a faixa anunciando "IA atendendo" por até um minuto. O controle passou a morar na faixa, que é onde o estado é anunciado. Na gaveta ficaram as ações sobre a memória, que é o assunto dela.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Pausar a IA passou a ser de quem responde pelo atendimento',
+            description: 'Pausar, religar e limpar a memória exigiam apenas conseguir VER a conversa — a régua da caixa de entrada, que inclui canal aberto, setor sem membros, conversa emprestada e supervisor. Qualquer um deles desligava a IA de um atendimento que não é seu, e desligar a IA é parar de responder ao cliente. A régua passou a ser a mesma de assumir e encerrar. E "retomar a IA" deixou de ser uma escrita solta que soltava o responsável e reabria uma conversa encerrada por fora de todas as regras de atendimento.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A IA agora aparece no histórico do atendimento',
+            description: 'Assumir, transferir e encerrar deixavam registro; pausar a IA, religá-la e apagar a memória do caso não deixavam nada — justamente as três que mudam o que o cliente recebe a seguir. As quatro ações passaram a entrar no MESMO histórico das demais, porque "a IA foi pausada às 14h" e "Fulano assumiu às 14h02" são a mesma história.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Responder sem assumir também pausa a IA',
+            description: 'A promessa era "a IA para sozinha quando alguém do escritório responde", mas ela parava na ATRIBUIÇÃO. Com a resposta sem assumir, a atribuição não muda — então o supervisor escrevia, a IA continuava ativa, e os dois falavam com o mesmo cliente ao mesmo tempo. Agora é a mensagem de gente que pausa, tenha havido atribuição ou não.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Dá para saber o que foi a IA e o que foi gente',
+            description: 'As mensagens do agente saíam sem remetente nenhum e chegavam à tela idênticas às de um atendente sem cargo — quem lia o histórico não conseguia separar as duas coisas, e o resumo do caso depende dessa distinção. Agora a bolha do que a IA mandou diz "IA".',
+          },
+          {
+            type: 'security' as const,
+            title: 'Aprovar a resposta da IA exige poder responder',
+            description: 'O botão de aprovar a sugestão da IA MANDA a mensagem ao cliente, e o de rejeitar decide que ela não sai — mas os dois conferiam apenas se a pessoa podia ver a conversa. Um supervisor em "apenas acompanhar", que não pode escrever uma linha no campo de mensagem, falava com o cliente por esse botão. Agora os dois seguem o mesmo verbo do campo de mensagem.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.5',
     date: '23/08/2026',
     summary: 'A transferência automática do funil passou a ser escolhida por clique, e o destino é conferido na hora de salvar — não meses depois, quando um card entrar na etapa.',

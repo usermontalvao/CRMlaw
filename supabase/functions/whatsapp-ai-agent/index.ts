@@ -3030,7 +3030,13 @@ async function sendText(conversationId: string, text: string): Promise<string | 
     const res = await fetch(`${SUPABASE_URL}/functions/v1/evolution-send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_ROLE}` },
-      body: JSON.stringify({ conversation_id: conversationId, sender_user_id: null, text }),
+      // `sender_role: 'ai'` é o que faz a bolha do CRM escrever "IA" no que o
+      // agente mandou. Sem ele a mensagem chegava sem remetente nenhum e ficava
+      // idêntica à de um atendente sem cargo — quem lia o histórico não
+      // conseguia dizer o que foi a IA e o que foi gente.
+      body: JSON.stringify({
+        conversation_id: conversationId, sender_user_id: null, sender_role: 'ai', text,
+      }),
       signal: AbortSignal.timeout(30_000),
     });
     const out = await res.json().catch(() => ({}));

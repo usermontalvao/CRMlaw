@@ -136,7 +136,12 @@ const WhatsAppAiFollowupPanelPreview: React.FC = () => (
             <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
               <AiAgentBanner
                 conversationId="previa"
+                assignedUserId={null}
+                awaitingAccept={false}
+                podeControlar
+                podeAssumir
                 onAssume={() => {}}
+                confirm={async () => true}
                 loadState={async () => cenario.state}
               />
               <div className="p-3">
@@ -150,6 +155,7 @@ const WhatsAppAiFollowupPanelPreview: React.FC = () => (
                 currentUserId={null}
                 assignedUserId={null}
                 confirm={async () => true}
+                podeControlar
                 loadState={async () => cenario.state}
               />
             </div>

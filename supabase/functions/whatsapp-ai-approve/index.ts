@@ -90,6 +90,31 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // ── VER NÃO É AGIR ────────────────────────────────────────────────────────
+  //
+  // A conferência acima ("a sessão é visível para mim?") passa pela régua da
+  // INBOX — que inclui o canal aberto, o setor sem membros e o supervisor de
+  // qualquer canal. Mas aprovar uma resposta da IA MANDA A MENSAGEM ao cliente,
+  // e rejeitar decide que ela não sai. São atos de atendimento, e o verbo deles
+  // é o mesmo do compositor: `wa_can_reply_conv`.
+  //
+  // Sem isto, o supervisor em "apenas acompanhar" — que não pode escrever uma
+  // linha no compositor — falava com o cliente por este botão.
+  //
+  // A função nasce na migration `20260822090000`; enquanto ela não estiver
+  // aplicada, a conferência de visibilidade acima continua valendo sozinha
+  // (era o que existia antes). Erro DE VERDADE não é tratado como ausência.
+  const { data: podeResponder, error: permErr } = await userClient
+    .rpc('wa_can_reply_conv', { p_conv: conv.id });
+  const funcaoAusente = !!permErr
+    && (permErr.code === '42883' || permErr.code === 'PGRST202'
+      || /could not find the function|does not exist/i.test(permErr.message ?? ''));
+  if (!funcaoAusente && podeResponder !== true) {
+    return new Response(JSON.stringify({
+      error: 'Você não responde por este atendimento. Assuma a conversa para aprovar ou rejeitar.',
+    }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+  }
+
   // ── Rejeição ─────────────────────────────────────────────────────────────
   if (action === 'reject') {
     await admin.from('whatsapp_ai_sessions').update({

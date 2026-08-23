@@ -50,6 +50,53 @@ export class WaAiValidationError extends Error {
   }
 }
 
+/**
+ * Os quatro controles operacionais da IA passam por aqui.
+ *
+ * ── POR QUE RPC, E NÃO ESCRITA DIRETA ──────────────────────────────────────
+ *
+ * Pausar, retomar, limpar a memória e cancelar a retomada mudam o que o cliente
+ * recebe a seguir. Como escrita direta do navegador, três coisas faltavam:
+ *
+ *   · o porteiro certo — a RLS pedia só "poder VER a conversa", que é a régua
+ *     da inbox e inclui canal aberto, colaborador emprestado e supervisor de
+ *     outro canal;
+ *   · a atomicidade — "retomar" eram três escritas soltas, e entre elas a
+ *     conversa ficava sem dono e sem IA;
+ *   · o rastro — nenhuma das quatro deixava evento de auditoria.
+ *
+ * As RPCs resolvem as três de uma vez, e a decisão passa a morar num lugar só.
+ *
+ * ── A QUEDA PARA O CAMINHO ANTIGO ──────────────────────────────────────────
+ *
+ * A migration e o front-end sobem em momentos diferentes. Chamar uma função que
+ * o banco ainda não tem devolve `42883` (ou `PGRST202`, quando o PostgREST nem
+ * a encontra no cache do schema) — e um erro aqui deixaria "Interromper IA" sem
+ * fazer nada até o deploy do banco. Nesse caso, e SÓ nesse, o caminho antigo
+ * roda. Qualquer outro erro sobe: `42501` é a recusa de permissão, e ela tem de
+ * chegar à tela como recusa, não como silêncio.
+ *
+ * Mesmo desenho da leitura de `role` em `scope.ts`. Quando a migration estiver
+ * em produção, os quatro `legado` abaixo podem sair.
+ */
+async function chamarControleIa(
+  fn: 'wa_ai_pause' | 'wa_ai_resume' | 'wa_ai_clear_memory' | 'wa_ai_cancel_followup',
+  args: Record<string, unknown>,
+  legado: () => Promise<void>,
+): Promise<void> {
+  const { error } = await supabase.rpc(fn, args);
+  if (!error) return;
+
+  const ausente = error.code === '42883'
+    || error.code === 'PGRST202'
+    || /could not find the function|does not exist/i.test(error.message ?? '');
+  if (ausente) {
+    await legado();
+    return;
+  }
+  throw new Error(error.message);
+}
+
 function rowToAssistant(row: any): WhatsAppAiAssistant {
   return {
     ...row,
@@ -370,20 +417,30 @@ export const aiAssistantsApi = {
   /**
    * Interrompe a IA nesta conversa. É o botão de pânico do operador: a IA para
    * na hora e NÃO volta sozinha — só a reativação manual a religa.
+   *
+   * Vai pela RPC `wa_ai_pause`: é ela que confere a permissão (mesma régua de
+   * assumir e encerrar), cancela as retomadas agendadas e registra o ato no
+   * histórico do atendimento. Ver `chamarControleIa`.
    */
   async stopAiForConversation(conversationId: string, reason?: string): Promise<void> {
-    const { error } = await supabase.from(SESSIONS_TABLE).upsert({
-      conversation_id: conversationId,
-      ai_active: false,
-      status: 'handed_off',
-      handoff_reason: reason?.trim() || 'Interrompida pelo atendente.',
-      ended_at: new Date().toISOString(),
-    }, { onConflict: 'conversation_id' });
-    if (error) throw new Error(error.message);
+    await chamarControleIa(
+      'wa_ai_pause',
+      { p_conversation_id: conversationId, p_reason: reason?.trim() || null },
+      async () => {
+        const { error } = await supabase.from(SESSIONS_TABLE).upsert({
+          conversation_id: conversationId,
+          ai_active: false,
+          status: 'handed_off',
+          handoff_reason: reason?.trim() || 'Interrompida pelo atendente.',
+          ended_at: new Date().toISOString(),
+        }, { onConflict: 'conversation_id' });
+        if (error) throw new Error(error.message);
 
-    await supabase.from(FOLLOWUPS_TABLE)
-      .update({ status: 'cancelled', cancel_reason: 'IA interrompida pelo atendente.' })
-      .eq('conversation_id', conversationId).eq('status', 'pending');
+        await supabase.from(FOLLOWUPS_TABLE)
+          .update({ status: 'cancelled', cancel_reason: 'IA interrompida pelo atendente.' })
+          .eq('conversation_id', conversationId).eq('status', 'pending');
+      },
+    );
   },
 
   /**
@@ -391,31 +448,40 @@ export const aiAssistantsApi = {
    *
    * Devolve a conversa à fila junto: a IA não atende conversa que tem dono (a
    * portaria da Edge Function recusa o turno), então religar sem soltar a
-   * atribuição seria um botão que não faz nada. A ordem importa — soltar
-   * primeiro, senão o gatilho de "humano assumiu" desligaria de novo.
+   * atribuição seria um botão que não faz nada. Reabrir faz parte pelo mesmo
+   * motivo — a portaria também recusa conversa encerrada.
+   *
+   * As três coisas passaram a acontecer DENTRO da RPC `wa_ai_resume`. Aqui elas
+   * eram três escritas soltas do navegador, e a do meio — soltar o responsável
+   * com um UPDATE cru em `whatsapp_conversations` — era um caminho para
+   * desatribuir e reabrir atendimento sem passar por nenhuma das RPCs de
+   * atendimento, sem porteiro de comando e sem rastro.
    */
   async resumeAiForConversation(conversationId: string): Promise<void> {
-    // Reabrir faz parte de reativar. A portaria do agente recusa conversa
-    // encerrada, então religar a IA numa conversa fechada não fazia nada — o
-    // botão dizia "reativada" e o silêncio continuava.
-    const { error: relErr } = await supabase.from('whatsapp_conversations')
-      .update({
-        assigned_user_id: null,
-        awaiting_accept: false,
-        transfer_pending_since: null,
-        status: 'open',
-      })
-      .eq('id', conversationId);
-    if (relErr) throw new Error(relErr.message);
+    await chamarControleIa(
+      'wa_ai_resume',
+      { p_conversation_id: conversationId },
+      async () => {
+        const { error: relErr } = await supabase.from('whatsapp_conversations')
+          .update({
+            assigned_user_id: null,
+            awaiting_accept: false,
+            transfer_pending_since: null,
+            status: 'open',
+          })
+          .eq('id', conversationId);
+        if (relErr) throw new Error(relErr.message);
 
-    const { error } = await supabase.from(SESSIONS_TABLE).upsert({
-      conversation_id: conversationId,
-      ai_active: true,
-      status: 'active',
-      handoff_reason: null,
-      ended_at: null,
-    }, { onConflict: 'conversation_id' });
-    if (error) throw new Error(error.message);
+        const { error } = await supabase.from(SESSIONS_TABLE).upsert({
+          conversation_id: conversationId,
+          ai_active: true,
+          status: 'active',
+          handoff_reason: null,
+          ended_at: null,
+        }, { onConflict: 'conversation_id' });
+        if (error) throw new Error(error.message);
+      },
+    );
   },
 
   /**
@@ -430,35 +496,41 @@ export const aiAssistantsApi = {
    * comando `/clear` digitado na conversa.
    */
   async clearAiMemory(conversationId: string): Promise<void> {
-    const { error: followupError } = await supabase.from(FOLLOWUPS_TABLE)
-      .update({ status: 'cancelled', cancel_reason: 'Memória da IA reiniciada pelo atendente.' })
-      .eq('conversation_id', conversationId)
-      .eq('status', 'pending');
-    if (followupError) throw new Error(followupError.message);
+    await chamarControleIa(
+      'wa_ai_clear_memory',
+      { p_conversation_id: conversationId },
+      async () => {
+        const { error: followupError } = await supabase.from(FOLLOWUPS_TABLE)
+          .update({ status: 'cancelled', cancel_reason: 'Memória da IA reiniciada pelo atendente.' })
+          .eq('conversation_id', conversationId)
+          .eq('status', 'pending');
+        if (followupError) throw new Error(followupError.message);
 
-    const { error } = await supabase.from(SESSIONS_TABLE).upsert({
-      conversation_id: conversationId,
-      summary: null,
-      known_facts: {},
-      pending_items: [],
-      last_action: null,
-      // O veredito do roteiro é leitura da conversa, não configuração: deixar
-      // um corte antigo de pé faria a triagem recomeçar já encerrada.
-      triage_stage: null,
-      triage_cut: null,
-      triage_cut_reason: null,
-      last_processed_message_id: null,
-      followup_attempts: 0,
-      next_followup_at: null,
-      // Os sinais de interesse são leitura de conversa, não configuração:
-      // limpar a memória tem de apagá-los junto, senão a conversa recomeça com
-      // o agente proibido de retomar por causa de uma frase antiga.
-      followup_opt_out: false,
-      followup_opt_out_reason: null,
-      interest_checked_at: null,
-      history_from: new Date().toISOString(),
-    }, { onConflict: 'conversation_id' });
-    if (error) throw new Error(error.message);
+        const { error } = await supabase.from(SESSIONS_TABLE).upsert({
+          conversation_id: conversationId,
+          summary: null,
+          known_facts: {},
+          pending_items: [],
+          last_action: null,
+          // O veredito do roteiro é leitura da conversa, não configuração: deixar
+          // um corte antigo de pé faria a triagem recomeçar já encerrada.
+          triage_stage: null,
+          triage_cut: null,
+          triage_cut_reason: null,
+          last_processed_message_id: null,
+          followup_attempts: 0,
+          next_followup_at: null,
+          // Os sinais de interesse são leitura de conversa, não configuração:
+          // limpar a memória tem de apagá-los junto, senão a conversa recomeça com
+          // o agente proibido de retomar por causa de uma frase antiga.
+          followup_opt_out: false,
+          followup_opt_out_reason: null,
+          interest_checked_at: null,
+          history_from: new Date().toISOString(),
+        }, { onConflict: 'conversation_id' });
+        if (error) throw new Error(error.message);
+      },
+    );
   },
 
   /**
@@ -512,10 +584,16 @@ export const aiAssistantsApi = {
   },
 
   async cancelAiFollowup(followupId: string): Promise<void> {
-    const { error } = await supabase.from(FOLLOWUPS_TABLE)
-      .update({ status: 'cancelled', cancel_reason: 'Cancelado pelo atendente.' })
-      .eq('id', followupId).eq('status', 'pending');
-    if (error) throw new Error(error.message);
+    await chamarControleIa(
+      'wa_ai_cancel_followup',
+      { p_followup_id: followupId },
+      async () => {
+        const { error } = await supabase.from(FOLLOWUPS_TABLE)
+          .update({ status: 'cancelled', cancel_reason: 'Cancelado pelo atendente.' })
+          .eq('id', followupId).eq('status', 'pending');
+        if (error) throw new Error(error.message);
+      },
+    );
   },
 
   // ── Prévia do agente ──────────────────────────────────────────
