@@ -37,6 +37,17 @@ interface WaComposerArgs {
   setMessages: React.Dispatch<React.SetStateAction<WhatsAppMessage[]>>;
   setConversations: React.Dispatch<React.SetStateAction<WhatsAppConversation[]>>;
   refreshMessages: (convId: string) => Promise<void>;
+  /**
+   * Responder PODE assumir o atendimento sem dono?
+   *
+   * `true` (padrão) é o comportamento de sempre: quem responde uma conversa da
+   * fila vira o responsável dela. `false` é o "Responder sem assumir" do Modo
+   * supervisão — ali a mensagem sai identificada como intervenção e o
+   * responsável continua sendo quem já era (ou continua sendo ninguém, se a
+   * conversa estava na fila). Sem este interruptor, o supervisor que só quis
+   * responder uma dúvida herdava o atendimento inteiro sem pedir.
+   */
+  autoAssumir?: boolean;
 }
 
 export interface WaComposerApi {
@@ -87,7 +98,7 @@ export interface WaComposerApi {
  */
 export function useWaComposer({
   selectedId, selected, user, agentPrefs, moduleConfig, staffById, aiSession,
-  messages, setMessages, setConversations, refreshMessages,
+  messages, setMessages, setConversations, refreshMessages, autoAssumir = true,
 }: WaComposerArgs): WaComposerApi {
   const toast = useToastContext();
 
@@ -419,7 +430,8 @@ export function useWaComposer({
     // Decididos no gesto (e não lá dentro da fila) para que a segunda mensagem
     // da rajada já saiba que a primeira vai cuidar disso.
     const assumeKey = `assume:${conversation.id}`;
-    const needsAssume = !conversation.assigned_user_id && !conversation.is_blocked && !!user?.id
+    const needsAssume = autoAssumir
+      && !conversation.assigned_user_id && !conversation.is_blocked && !!user?.id
       && !burstFlagsRef.current.has(assumeKey);
     if (needsAssume) burstFlagsRef.current.add(assumeKey);
     const absenceKey = `absence:${conversation.id}`;

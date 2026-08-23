@@ -34,7 +34,7 @@ import {
   typeLabel, conversationPreviewLabel, firstName, agentLabel, greetingByHour, buildGreeting,
   convStatus, slaSignal, slaInternalSignal, abandonedSignal, transferAlert,
   maskSensitive, maskName, maskPhoneFull, fmtAudioTime, prettyDoc, dueInfo, fmtDateTime,
-  fmtNoteDate, conversationName, matchesConversationSearch, agentRoleLabel, autoCloseLabel,
+  fmtNoteDate, conversationName, matchesConversationSearch, agentRoleLabel, intervencaoLabel, autoCloseLabel,
 } from './whatsapp/format';
 import { autoCloseClock, autoCloseIdleLabel } from './whatsapp/autoCloseClock';
 import {
@@ -109,6 +109,7 @@ import ChannelAccessManager from './whatsapp/ChannelAccessManager';
 import ChannelFunnelManager from './whatsapp/ChannelFunnelManager';
 import { ThreadScheduledGhosts, ScheduledMessagesPanel, MyScheduledList, useMyScheduled, useScheduledSentMarks } from './whatsapp/scheduledMessages';
 import { AiApprovalBanner } from './whatsapp/aiApprovalBanner';
+import { SupervisionBar } from './whatsapp/supervisionBar';
 import { AttendanceDashboard } from './whatsapp/attendanceDashboard';
 import { ClientFillLinksPanel } from './whatsapp/clientFillLinksPanel';
 import { AiMemoryPanel } from './whatsapp/aiMemoryPanel';
@@ -129,6 +130,7 @@ import { useWaInboxPosition, readStoredConversationId } from './whatsapp/hooks/u
 import { useClientOverview } from './whatsapp/hooks/useClientOverview';
 import { useWaRealtime } from './whatsapp/hooks/useWaRealtime';
 import { useWaComposer } from './whatsapp/hooks/useWaComposer';
+import { useWaSupervision } from './whatsapp/hooks/useWaSupervision';
 import { useWaMessages } from './whatsapp/hooks/useWaMessages';
 import { useWaThread, type MessageUnit } from './whatsapp/hooks/useWaThread';
 import { useConversationCalls } from './whatsapp/hooks/useConversationCalls';
@@ -384,6 +386,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   const [reconnectAlerts, setReconnectAlerts] = useState<WhatsAppScheduledMessage[]>([]);
   const [departments, setDepartments] = useState<WhatsAppDepartment[]>([]);
   const [departmentMembers, setDepartmentMembers] = useState<Record<string, string[]>>({});
+  // Matriz canal→membros. Sustenta as listas de destino das ações do funil: sem
+  // ela, o editor ofereceria como destino gente que não enxerga o canal.
+  const [channelMembers, setChannelMembers] = useState<Array<{ channel_id: string; user_id: string }>>([]);
   const [businessHoursByChannel, setBusinessHoursByChannel] = useState<Record<string, WhatsAppBusinessHoursRow[]>>({});
   // Distingue "ainda não sei o expediente" de "não há expediente cadastrado":
   // são conclusões opostas sobre o SLA e sobre a mensagem de ausência.
@@ -533,12 +538,39 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     () => conversations.find(c => c.id === selectedId) || null,
     [conversations, selectedId],
   );
+
+  // ── Modo supervisão ──────────────────────────────────────────────────────
+  //
+  // Quem sou eu NESTA conversa (dono, fila, destino de transferência,
+  // colaborador emprestado, supervisor do canal, administrador) e o que isso me
+  // deixa fazer. A trava é do banco; isto decide o que a tela oferece — para
+  // não mostrar botão que só responderia 403, e para "acompanhar" não mexer no
+  // atendimento de ninguém. Ver `useWaSupervision`.
+  const supervisao = useWaSupervision({ selected, channels, departmentMembers });
+  const podeMarcarLida = supervisao.acoes.marcarLida;
+  // O efeito de marcar como lida roda em troca de conversa e em visibilitychange,
+  // e ler `supervisao` direto dele o faria reassinar a cada quadro. A ref carrega
+  // o valor mais recente sem entrar na lista de dependências.
+  const supervisaoRef = useRef(supervisao);
+  supervisaoRef.current = supervisao;
+  // Atalho para o JSX: o que ESTA pessoa pode fazer nesta conversa, já apertado
+  // pelo modo de supervisão escolhido. Botão proibido não é desabilitado — ele
+  // não entra na barra: um botão cinza que nunca destrava vira ruído
+  // permanente, e a faixa do Modo supervisão já explica por que sumiu.
+  const acoes = supervisao.acoes;
+  // A faixa de estado da IA (topo da thread) e o painel "Memória da IA" (coluna
+  // lateral) leem o mesmo estado do backend por caminhos separados. Este
+  // contador é o que os mantém de acordo: quem age avisa, e o outro relê. Sem
+  // ele, pausar em cima deixava a gaveta anunciando "Ativa" por até um minuto.
+  const [iaVersao, setIaVersao] = useState(0);
+  const iaMudou = useCallback(() => setIaVersao(v => v + 1), []);
   // Uma leitura só do handoff da IA, consumida em dois lugares: a faixa fina da
   // thread e o cartão do painel. Ver aiHandoffSummary.tsx.
   const handoffSummary = useAiHandoffSummary({
     conversationId: selected?.id ?? '',
     currentUserId: user?.id ?? null,
     assignedUserId: selected?.assigned_user_id ?? null,
+    onChanged: iaMudou,
   });
   // Linhas da MESMA pessoa. O escritório tem mais de um número, e quem escreve
   // para dois deles ganha uma conversa em cada — mas continua sendo um contato só,
@@ -683,11 +715,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
       ? channelFunnelStages[conversation.instance_id]?.find(item => item.stage_key === stageKey)
       : null;
     if (!stage?.entry_actions?.length) return;
+    const canal = channels.find(item => item.id === conversation.instance_id) || null;
     const result = await executeFunnelStageActions({
       conversation,
       actions: stage.entry_actions,
       departments,
       staff,
+      departmentMembers,
+      channelMemberIds: channelMembers
+        .filter(row => row.channel_id === conversation.instance_id)
+        .map(row => row.user_id),
+      channelVisibility: canal?.visibility_mode ?? null,
+      channelName: canal?.name || canal?.instance_name || null,
+      stageLabel: stage.label,
     });
     await loadConversations();
     if (result.completed.length > 0) {
@@ -696,7 +736,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     if (result.errors.length > 0) {
       toast.warning('Etapa alterada com ações pendentes', result.errors.join(' · '));
     }
-  }, [channelFunnelStages, departments, staff, loadConversations, toast]);
+  }, [channelFunnelStages, channels, departments, staff, departmentMembers, channelMembers, loadConversations, toast]);
 
   /**
    * Documentos prontos → a conversa sai sozinha de "Aguardando documentos".
@@ -817,6 +857,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     // Matriz setor→membros: a distribuição da fila precisa dela para não
     // mandar conversa de um setor para quem não pertence a ele.
     swrWa(user?.id, 'departmentMembers', () => whatsappService.listAllDepartmentMembers(), setDepartmentMembers);
+    swrWa(user?.id, 'channelMembers', () => whatsappService.listChannelMembers(), setChannelMembers);
     loadBusinessHours();
   }, [loadConversations, loadBusinessHours, loadChannels, user?.id]);
 
@@ -887,6 +928,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   } = useWaComposer({
     selectedId, selected, user, agentPrefs, moduleConfig, staffById, aiSession,
     messages, setMessages, setConversations, refreshMessages,
+    // "Responder sem assumir": no Modo supervisão, mandar uma mensagem não pode
+    // transformar quem só quis ajudar no responsável pelo atendimento.
+    autoAssumir: supervisao.modo !== 'responder',
   });
 
   // As LIGAÇÕES desta conversa. Elas entram na thread como qualquer outra
@@ -1225,6 +1269,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   }, [messages]);
   useEffect(() => {
     if (!selectedId) return;
+    // "Apenas acompanhar" NÃO marca como lida. Este era o atropelo mais
+    // silencioso da supervisão: abrir a conversa de um colega para conferir
+    // zerava o contador dele, e a pendência sumia da tela de quem tinha de
+    // agir — sem que nenhum dos dois soubesse por quê.
+    if (!supervisaoRef.current.acoes.marcarLida) return;
     let cancelled = false;
     const marcarLida = () => {
       if (document.visibilityState !== 'visible') return;
@@ -1237,7 +1286,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     // Voltar para a aba com a conversa aberta também conta como ler.
     document.addEventListener('visibilitychange', marcarLida);
     return () => { cancelled = true; document.removeEventListener('visibilitychange', marcarLida); };
-  }, [selectedId, lastInboundId]);
+  }, [selectedId, lastInboundId, podeMarcarLida]);
 
   // Marcar como não lida e SAIR da conversa. Sair não é detalhe: enquanto ela
   // estiver aberta, o efeito acima a marcaria como lida de novo na primeira
@@ -2893,13 +2942,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                     `isMobile` (consciente do contêiner) em vez de breakpoint de viewport. */}
                 <div className={`${isMobile ? 'hidden' : 'flex'} items-center gap-1.5`}>
                 {/* Comandos de fila (atribuição direta, sem transferência) */}
-                {!selected.is_blocked && selected.status !== 'closed' && !selected.awaiting_accept && selected.assigned_user_id !== user?.id && (
+                {acoes.assumir && !selected.is_blocked && selected.status !== 'closed' && !selected.awaiting_accept && selected.assigned_user_id !== user?.id && (
                   <button onClick={handleAssume} title={selected.assigned_user_id ? 'Assumir este atendimento' : 'Assumir da fila'}
                     className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition">
                     <UserPlus size={16} />
                   </button>
                 )}
-                {!selected.is_blocked && selected.status !== 'closed' && selected.assigned_user_id === user?.id && (
+                {acoes.devolverFila && !selected.is_blocked && selected.status !== 'closed' && selected.assigned_user_id === user?.id && (
                   <button onClick={handleRelease} title="Devolver à fila"
                     className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
                     <UserMinus size={16} />
@@ -2922,23 +2971,23 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                     </div>
                   );
                 })()}
-                {perms.canTransfer && (
+                {perms.canTransfer && acoes.transferir && (
                   <button onClick={() => setTransferOpen(true)} title="Transferir conversa"
                     className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
                     <ArrowRightLeft size={16} />
                   </button>
                 )}
-                {selected.status === 'closed' ? (
+                {selected.status === 'closed' ? (acoes.reabrir && (
                   <button onClick={handleReopen} title="Reabrir conversa"
                     className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 flex items-center justify-center transition">
                     <RotateCcw size={16} />
                   </button>
-                ) : (
+                )) : (acoes.encerrar && (
                   <button onClick={() => setCloseOpen(true)} title="Encerrar atendimento"
                     className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
                     <CheckCircle2 size={16} />
                   </button>
-                )}
+                ))}
                 {/* Limpar conversa (apaga as mensagens; mantém a conversa) */}
                 {perms.canBlock && messages.length > 0 && (
                   <button onClick={handleClearConversation} title="Limpar conversa"
@@ -3001,23 +3050,23 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                           {!panelDocked && (
                             <button className={item} onClick={run(() => setMobilePanelOpen(true))}><Info size={16} className="text-slate-400" /> Detalhes do contato</button>
                           )}
-                          {!selected.is_blocked && selected.status !== 'closed' && !selected.awaiting_accept && selected.assigned_user_id !== user?.id && (
+                          {acoes.assumir && !selected.is_blocked && selected.status !== 'closed' && !selected.awaiting_accept && selected.assigned_user_id !== user?.id && (
                             <button className={item} onClick={run(handleAssume)}><UserPlus size={16} className="text-emerald-500" /> {selected.assigned_user_id ? 'Assumir atendimento' : 'Assumir da fila'}</button>
                           )}
-                          {!selected.is_blocked && selected.status !== 'closed' && selected.assigned_user_id === user?.id && (
+                          {acoes.devolverFila && !selected.is_blocked && selected.status !== 'closed' && selected.assigned_user_id === user?.id && (
                             <button className={item} onClick={run(handleRelease)}><UserMinus size={16} className="text-amber-500" /> Devolver à fila</button>
                           )}
                           <button className={item} onClick={run(() => selectedContactMuted ? unmuteSelected() : setMuteModalOpen(true))}>
                             {selectedContactMuted ? <Bell size={16} className="text-amber-500" /> : <BellOff size={16} className="text-slate-400" />} {selectedContactMuted ? 'Reativar notificações' : 'Silenciar contato…'}
                           </button>
-                          {perms.canTransfer && (
+                          {perms.canTransfer && acoes.transferir && (
                             <button className={item} onClick={run(() => setTransferOpen(true))}><ArrowRightLeft size={16} className="text-slate-400" /> Transferir conversa</button>
                           )}
-                          {selected.status === 'closed' ? (
+                          {selected.status === 'closed' ? (acoes.reabrir && (
                             <button className={item} onClick={run(handleReopen)}><RotateCcw size={16} className="text-emerald-500" /> Reabrir conversa</button>
-                          ) : (
+                          )) : (acoes.encerrar && (
                             <button className={item} onClick={run(() => setCloseOpen(true))}><CheckCircle2 size={16} className="text-emerald-500" /> Encerrar atendimento</button>
-                          )}
+                          ))}
                           {perms.canBlock && messages.length > 0 && (
                             <button className={`${item} text-red-600 hover:bg-red-50`} onClick={run(handleClearConversation)}><Trash2 size={16} /> Limpar conversa</button>
                           )}
@@ -3069,9 +3118,49 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                 era do playbook da tentativa anterior e ficava em zero para
                 sempre, servindo de prova falsa de que o agente estava parado.
                 O estado de verdade vem de getAiConversationState. */}
-            <AiAgentBanner conversationId={selected.id} onAssume={handleAssume} />
-            {/* Fase O: banner de aprovação de resposta IA pendente */}
-            {aiSession?.status === 'pending_approval' && aiSession.pending_ai_reply && (
+            {/* Você está na conversa de outra pessoa. A faixa só aparece quando
+                é supervisão de verdade — na própria conversa, na da fila e na
+                que foi transferida para você não há passo a mais. */}
+            <SupervisionBar
+              modos={supervisao.modos}
+              modo={supervisao.modo}
+              onModo={supervisao.setModo}
+              responsavelNome={
+                selected.assigned_user_id
+                  ? (staffById.get(selected.assigned_user_id)?.name ?? null)
+                  : null
+              }
+              ehAdmin={supervisao.escopo.isAdmin}
+            />
+
+            {/* O indicador de estado da IA desta conversa — "IA atendendo",
+                "IA pausada", "Falha na IA", "Atendimento humano" — e os únicos
+                controles de IA que cabem num atendimento: pausar, retomar e
+                assumir. Configuração (prompt, modelo, canais, limites) não
+                entra aqui: é de administrador e vive em Configurações. */}
+            <AiAgentBanner
+              conversationId={selected.id}
+              assignedUserId={selected.assigned_user_id}
+              awaitingAccept={!!selected.awaiting_accept}
+              responsavelNome={
+                selected.assigned_user_id
+                  ? (staffById.get(selected.assigned_user_id)?.name ?? null)
+                  : null
+              }
+              podeControlar={acoes.controlarIa}
+              podeAssumir={acoes.assumir && !selected.is_blocked}
+              onAssume={handleAssume}
+              confirm={confirm}
+              versao={iaVersao}
+              onMudou={iaMudou}
+            />
+            {/* Fase O: banner de aprovação de resposta IA pendente.
+                Aprovar MANDA a mensagem ao cliente, então o botão segue o mesmo
+                verbo do compositor (`acoes.responder`) — o supervisor em
+                "apenas acompanhar" falava com o cliente por aqui sem poder
+                escrever uma linha lá embaixo. A trava é da Edge Function
+                (`wa_can_reply_conv`); esconder é para não oferecer um 403. */}
+            {acoes.responder && aiSession?.status === 'pending_approval' && aiSession.pending_ai_reply && (
               <AiApprovalBanner
                 session={aiSession}
                 onDone={async () => {
@@ -3145,8 +3234,15 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                   };
                   const groupStart = !belongsToSameGroup(previousTail, head);
                   const groupEnd = !belongsToSameGroup(tail, nextHead);
-                  const senderName = groupStart && head.direction === 'out' && head.sender_user_id
-                    ? (agentLabel(staffById.get(head.sender_user_id)) || staffByUser.get(head.sender_user_id) || null)
+                  // Mensagem que sai sem `sender_user_id` não tem pessoa atrás
+                  // dela. Quando o carimbo diz que foi o agente, a bolha passa a
+                  // dizer "IA" — antes ela chegava idêntica à de um atendente
+                  // sem cargo, e o histórico não separava o que o agente
+                  // escreveu do que uma pessoa escreveu.
+                  const senderName = groupStart && head.direction === 'out'
+                    ? (head.sender_user_id
+                      ? (agentLabel(staffById.get(head.sender_user_id)) || staffByUser.get(head.sender_user_id) || null)
+                      : intervencaoLabel(head.sender_role))
                     : null;
                   const key = u.kind === 'album' ? `album-${head._tempId || head.id}` : (head._tempId || head.id);
                   return withChannel(u.kind === 'album' ? (
@@ -3158,7 +3254,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                       m={u.m}
                       repliedTo={u.m.reply_to_id ? msgById.get(u.m.reply_to_id) || null : null}
                       senderName={senderName}
-                      senderRole={u.m.direction === 'out' && u.m.sender_user_id ? agentRoleLabel(staffById.get(u.m.sender_user_id)) : null}
+                      senderRole={u.m.direction === 'out' && u.m.sender_user_id
+                        // Intervenção ganha o rótulo do PAPEL, não o cargo do
+                        // perfil: aqui o que importa não é "Advogado", é que
+                        // quem respondeu não era o responsável pelo caso.
+                        ? (intervencaoLabel(u.m.sender_role) ?? agentRoleLabel(staffById.get(u.m.sender_user_id)))
+                        : null}
                       groupStart={groupStart}
                       groupEnd={groupEnd}
                       privateMode={privateMode}
@@ -3292,7 +3393,19 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
             )}
 
             {/* Composer (ou aviso de bloqueio) */}
-            {selected.is_blocked ? (
+            {/* "Apenas acompanhar": a barra de escrita sai, e no lugar dela fica
+                o que fazer para poder responder. Deixar o compositor de pé e
+                recusar no envio seria pior — a pessoa escreve a resposta
+                inteira para só então descobrir que não podia mandá-la. */}
+            {acoes.supervisionando && !acoes.responder && !selected.is_blocked ? (
+              <div className="px-4 py-3 border-t border-[#e7e5df] bg-indigo-50/70 flex items-center gap-3">
+                <Eye size={16} className="text-indigo-500 flex-shrink-0" />
+                <p className="flex-1 text-[12.5px] text-indigo-800">
+                  Você está acompanhando este atendimento. Para escrever, escolha
+                  <strong> Responder sem assumir</strong> ou <strong>Assumir atendimento</strong> na faixa acima.
+                </p>
+              </div>
+            ) : selected.is_blocked ? (
               <div className="px-4 py-3 border-t border-[#e7e5df] bg-red-50/60 flex items-center gap-3">
                 <Ban size={16} className="text-red-500 flex-shrink-0" />
                 <p className="flex-1 text-[12.5px] text-red-700">
@@ -3715,6 +3828,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
             currentUserId={user?.id ?? null}
             assignedUserId={selected.assigned_user_id}
             confirm={confirm}
+            podeControlar={acoes.controlarIa}
+            versao={iaVersao}
+            onMudou={iaMudou}
           />
 
           {/* 360: Ações do cliente — o trabalho que sai desta conversa.
@@ -3900,6 +4016,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
             channels={channels}
             departments={departments}
             staff={staff}
+            initialChannelMembers={channelMembers.length ? channelMembers : undefined}
+            initialDepartmentMembers={Object.keys(departmentMembers).length ? departmentMembers : undefined}
             moduleConfig={moduleConfig}
             requirePin={requirePin}
             /* A memória de aba tem de andar junto: quem edita um canal aqui

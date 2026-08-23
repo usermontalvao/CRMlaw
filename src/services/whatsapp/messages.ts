@@ -27,6 +27,46 @@ export type SendResult = {
  */
 const MSG_COLUMNS = 'id, conversation_id, evolution_message_id, direction, type, content, media_url, media_mime, storage_path, media_size, media_sha256, file_name, media_duration_seconds, transcription_text, transcription_status, is_animated, reply_to_id, edited_at, reactions, status, sender_user_id, wa_timestamp, created_at, deleted_at, deleted_by, deleted_scope';
 
+/**
+ * A mesma lista, com `sender_role` — a marca de "respondeu sem assumir".
+ *
+ * ── POR QUE DUAS LISTAS ────────────────────────────────────────────────────
+ *
+ * A coluna nasce numa migration, e migration e front-end sobem em momentos
+ * diferentes neste projeto. Pedir uma coluna que ainda não existe faz o
+ * PostgREST responder 42703 — e, como esta consulta é a que monta a thread, o
+ * efeito não é "a etiqueta não aparece": é a CONVERSA INTEIRA vazia, com a
+ * lista lateral funcionando normalmente ao lado. Foi exatamente o que
+ * aconteceu.
+ *
+ * Então a consulta pergunta pela coluna, e se o banco disser que ela não
+ * existe, repete sem ela e guarda a resposta para o resto da sessão. Assim a
+ * ordem do deploy deixa de importar: front-end novo com banco velho mostra a
+ * thread sem a etiqueta, e a etiqueta passa a aparecer sozinha quando a
+ * migration subir.
+ *
+ * As duas são literais (e não uma string montada) porque o supabase-js tipa o
+ * retorno a partir do TEXTO da consulta — concatenar em tempo de execução
+ * devolveria `unknown` e derrubaria a tipagem da thread inteira.
+ */
+const MSG_COLUMNS_COM_PAPEL = 'id, conversation_id, evolution_message_id, direction, type, content, media_url, media_mime, storage_path, media_size, media_sha256, file_name, media_duration_seconds, transcription_text, transcription_status, is_animated, reply_to_id, edited_at, reactions, status, sender_user_id, sender_role, wa_timestamp, created_at, deleted_at, deleted_by, deleted_scope';
+
+/** `null` = ainda não se sabe. Vira `false` no primeiro 42703, e nunca volta. */
+let bancoTemSenderRole: boolean | null = null;
+
+/** O código que o Postgres usa para "esta coluna não existe". */
+const COLUNA_INEXISTENTE = '42703';
+
+function colunasDeMensagem(): string {
+  return bancoTemSenderRole === false ? MSG_COLUMNS : MSG_COLUMNS_COM_PAPEL;
+}
+
+function ehColunaInexistente(erro: { code?: string; message?: string } | null): boolean {
+  if (!erro) return false;
+  return erro.code === COLUNA_INEXISTENTE
+    || (erro.message ?? '').includes('sender_role');
+}
+
 export const messagesApi = {
   /**
    * O TEXTO de uma mensagem, para quem só precisa da prévia do aviso.
@@ -65,19 +105,33 @@ export const messagesApi = {
   ): Promise<WhatsAppMessage[]> {
     const ids = Array.isArray(conversationId) ? conversationId : [conversationId];
     if (ids.length === 0) return [];
-    let q = supabase.from(MSG_TABLE).select(MSG_COLUMNS);
-    q = ids.length === 1 ? q.eq('conversation_id', ids[0]) : q.in('conversation_id', ids);
-    if (opts?.before) q = q.lt('wa_timestamp', opts.before);
     const limit = opts?.limit ?? 0;
-    if (limit > 0) {
-      // Busca os N mais recentes em ordem DESC, depois inverte para exibição ASC.
-      q = q.order('wa_timestamp', { ascending: false }).limit(limit);
-    } else {
-      q = q.order('wa_timestamp', { ascending: true });
+    // A lista de colunas passa a ser escolhida em tempo de execução, e com isso o
+    // supabase-js perde a tipagem do retorno (ele a deriva do TEXTO da consulta).
+    // O `as unknown` abaixo é o preço, e ele é pago uma vez, aqui: o array já era
+    // convertido para `WhatsAppMessage[]` na linha seguinte de qualquer forma.
+    const montar = (colunas: string) => {
+      let q = supabase.from(MSG_TABLE).select(colunas);
+      q = ids.length === 1 ? q.eq('conversation_id', ids[0]) : q.in('conversation_id', ids);
+      if (opts?.before) q = q.lt('wa_timestamp', opts.before);
+      if (limit > 0) {
+        // Busca os N mais recentes em ordem DESC, depois inverte para exibição ASC.
+        return q.order('wa_timestamp', { ascending: false }).limit(limit);
+      }
+      return q.order('wa_timestamp', { ascending: true });
+    };
+
+    let { data, error } = await montar(colunasDeMensagem());
+    // Banco ainda sem a coluna: repete sem ela e não pergunta de novo. Ver a
+    // nota em `MSG_COLUMNS_COM_PAPEL` — sem esta rede, a thread vem VAZIA.
+    if (error && ehColunaInexistente(error) && bancoTemSenderRole !== false) {
+      bancoTemSenderRole = false;
+      ({ data, error } = await montar(MSG_COLUMNS));
+    } else if (!error && bancoTemSenderRole === null) {
+      bancoTemSenderRole = true;
     }
-    const { data, error } = await q;
     if (error) throw new Error(error.message);
-    const msgs = (data || []) as WhatsAppMessage[];
+    const msgs = ((data || []) as unknown) as WhatsAppMessage[];
     if (limit > 0) msgs.reverse();
     await attachSignedUrls(msgs);
     return msgs;

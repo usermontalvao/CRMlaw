@@ -179,6 +179,29 @@ export const agentLabel = (s?: Partial<StaffOption> | null, shortNameOverride?: 
 /** Cargo mostrado ao lado da assinatura: o escolhido pelo agente ou o do perfil. */
 export const agentRoleLabel = (s?: Partial<StaffOption> | null) =>
   (s?.role_label || '').trim() || s?.role || null;
+
+/**
+ * A mensagem saiu como INTERVENÇÃO — ou não saiu de uma pessoa?
+ *
+ * `sender_role` é carimbado pelo banco (`wa_log_supervisor_reply`) quando quem
+ * enviou não era o responsável pelo atendimento — o "Responder sem assumir" do
+ * Modo supervisão. Sem esta marca na bolha, a resposta de um supervisor ficava
+ * igual à do responsável, e os dois só descobriam o atropelo pelo cliente.
+ *
+ * `'ai'` é carimbado pela Edge Function `whatsapp-ai-agent` no que o agente
+ * envia. Antes a mensagem da IA saía sem remetente nenhum (`sender_user_id`
+ * nulo) e chegava à tela idêntica à de um atendente sem cargo: quem lia o
+ * histórico não conseguia dizer o que foi escrito pelo agente e o que foi
+ * escrito por gente — e o resumo do caso depende dessa distinção.
+ *
+ * Devolve o rótulo a mostrar, ou `null` quando foi envio normal de uma pessoa.
+ */
+export const intervencaoLabel = (senderRole?: string | null): string | null => {
+  if (senderRole === 'admin') return 'Administrador';
+  if (senderRole === 'supervisor') return 'Supervisor';
+  if (senderRole === 'ai') return 'IA';
+  return null;
+};
 export const greetingByHour = () => {
   const h = new Date().getHours();
   return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';

@@ -290,15 +290,120 @@ export const conversationsApi = {
    * Validação: só o destinatário designado (ou membro do setor de destino,
    * quando não há pessoa-alvo) pode aceitar — evita "roubo" por terceiros.
    */
-  async acceptTransfer(conversationId: string): Promise<void> {
+  async acceptTransfer(conversationId: string, transferId?: string | null): Promise<void> {
     // Antes da RPC: a linha nova volta pelo realtime em milissegundos, e a
     // marca precisa já estar de pé quando ela chegar — senão o sistema avisa a
     // pessoa do clique que ela mesma acabou de dar.
     suprimirAvisoDeTransferencia(conversationId);
-    const { error } = await supabase.rpc('wa_accept_contact_transfer', {
+    // `p_transfer_id` é o caminho preferido: ele diz QUAL convite está sendo
+    // aceito. Sem ele, a RPC resolve a transferência pendente destinada a quem
+    // chamou — e não havendo nenhuma, recusa (antes ela seguia em frente e
+    // atribuía a conversa assim mesmo, que era "assumir" disfarçado de aceitar).
+    let { error } = await supabase.rpc('wa_accept_contact_transfer', {
       p_conversation_id: conversationId,
+      p_transfer_id: transferId ?? null,
+    });
+    // Banco anterior à migration `whatsapp_transferencias_e_supervisao`: a RPC
+    // existe, mas só com `p_conversation_id`. Migration e front-end sobem
+    // separados neste projeto — sem esta queda, aceitar transferência pararia
+    // de funcionar no intervalo entre os dois deploys.
+    if (error && (error.code === 'PGRST202' || /function/i.test(error.message))) {
+      ({ error } = await supabase.rpc('wa_accept_contact_transfer', {
+        p_conversation_id: conversationId,
+      }));
+    }
+    if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Recusa a transferência. A conversa VOLTA para quem a passou — nunca fica
+   * no nome de quem recusou, e nunca some da fila.
+   */
+  async rejectTransfer(transferId: string, reason?: string): Promise<void> {
+    const { error } = await supabase.rpc('wa_reject_contact_transfer', {
+      p_transfer_id: transferId,
+      p_reason: reason || null,
     });
     if (error) throw new Error(error.message);
+  },
+
+  /** Cancela a transferência que EU mandei (ou, como supervisor, a do canal). */
+  async cancelTransfer(transferId: string, reason?: string): Promise<void> {
+    const { error } = await supabase.rpc('wa_cancel_contact_transfer', {
+      p_transfer_id: transferId,
+      p_reason: reason || null,
+    });
+    if (error) throw new Error(error.message);
+  },
+
+  /**
+   * As transferências PENDENTES endereçadas a mim. É o que a tela usa para
+   * saber que existe um convite — e é a única forma de o histórico de
+   * transferências conceder acesso hoje.
+   */
+  async listMyPendingTransfers(): Promise<Array<{
+    id: string; conversationId: string; fromUserId: string | null; note: string | null; createdAt: string;
+  }>> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+    const { data, error } = await supabase
+      .from(TRANSFER_TABLE)
+      .select('id, conversation_id, from_user_id, note, created_at')
+      .eq('status', 'pending')
+      .eq('to_user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (error) return [];
+    return (data ?? []).map((t: any) => ({
+      id: t.id,
+      conversationId: t.conversation_id,
+      fromUserId: t.from_user_id ?? null,
+      note: t.note ?? null,
+      createdAt: t.created_at,
+    }));
+  },
+
+  /**
+   * Empresta a conversa a um colega — acesso a ELA, com prazo, sem abrir o
+   * canal. É o meio-termo que faltava entre "transferir e perder o caso" e
+   * "inscrever a pessoa no canal inteiro".
+   */
+  async grantCollaborator(
+    conversationId: string, userId: string, hours = 24, reason?: string,
+  ): Promise<void> {
+    const { error } = await supabase.rpc('wa_grant_conversation_collaborator', {
+      p_conversation_id: conversationId,
+      p_user_id: userId,
+      p_hours: hours,
+      p_reason: reason || null,
+    });
+    if (error) throw new Error(error.message);
+  },
+
+  /** Encerra o empréstimo antes do prazo. */
+  async revokeCollaborator(conversationId: string, userId: string): Promise<void> {
+    const { error } = await supabase
+      .from('whatsapp_conversation_collaborators')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('conversation_id', conversationId)
+      .eq('user_id', userId)
+      .is('revoked_at', null);
+    if (error) throw new Error(error.message);
+  },
+
+  /** As conversas que me foram emprestadas e ainda valem. */
+  async listMyCollaborations(): Promise<string[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+    const { data, error } = await supabase
+      .from('whatsapp_conversation_collaborators')
+      .select('conversation_id, expires_at')
+      .eq('user_id', user.id)
+      .is('revoked_at', null);
+    if (error) return [];
+    const agora = Date.now();
+    return (data ?? [])
+      .filter((c: any) => !c.expires_at || Date.parse(c.expires_at) > agora)
+      .map((c: any) => c.conversation_id as string);
   },
 
   /**

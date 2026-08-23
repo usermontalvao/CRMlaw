@@ -37,6 +37,53 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.7',
+    date: '23/08/2026',
+    summary: 'Nasce o Modo supervisão: abrir a conversa de um colega para conferir deixou de mexer no atendimento dele. E transferir ganhou o que faltava — recusar, cancelar, e a garantia de que o destino consegue receber.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Olhar a conversa de um colega parou de atropelar o trabalho dele',
+            description: 'Antes, abrir a conversa de outra pessoa já era intervir: o contador de não lidas dela zerava, a pendência sumia da tela de quem tinha de agir, e responder tomava o atendimento sem perguntar. Supervisionar e atropelar eram o mesmo gesto. Agora quem chega como supervisor entra em "Apenas acompanhar" — que não marca como lida, não assume e não escreve — e trocar de modo é um clique explícito, numa faixa que diz de quem é aquele atendimento. Na sua própria conversa, na da fila e na que foi transferida para você não há faixa nenhuma: a operação normal não ganhou passo a mais.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Responder sem assumir, e a mensagem chega marcada',
+            description: 'Existe o meio-termo entre olhar e tomar: responder uma vez, para destravar, sem virar o responsável pelo caso. E a mensagem enviada assim chega à conversa marcada como intervenção — "Supervisor", "Administrador" —, porque uma resposta de supervisor indistinguível da do responsável fazia os dois descobrirem o atropelo pelo cliente.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Botão que responderia "não pode" não aparece mais',
+            description: 'Assumir, transferir, encerrar, reabrir e devolver à fila deixaram de aparecer para quem não pode usá-los naquela conversa. Botão cinza que nunca destrava vira ruído permanente; e o campo de mensagem, no modo "apenas acompanhar", dá lugar ao aviso do que fazer para poder responder — em vez de deixar a pessoa escrever a resposta inteira para só então descobrir que não podia mandá-la.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Aceitar uma transferência exige que ela exista',
+            description: 'Sem nenhuma transferência pendente, "aceitar" simplesmente atribuía a conversa a quem clicou — era um segundo "assumir", sem o convite. E o carimbo do aceite marcava junto as transferências irmãs do mesmo contato, inclusive as destinadas a outras pessoas e a outros setores. Agora aceitar exige o convite, marca só ele, e pode ser repetido sem estragar nada.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Recusar e cancelar uma transferência',
+            description: 'Faltavam as duas pontas. Recusar devolve a conversa a quem a passou — ela nunca fica no nome de quem recusou, e nunca some da fila. Cancelar é para quem mandou (ou para o supervisor do canal) desfazer um convite que ainda não foi aceito.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Distribuir conversa virou ato de supervisor, e o destino é conferido',
+            description: 'Qualquer atendente jogava qualquer conversa no colo de qualquer colega — inclusive de um colega que não enxerga aquele canal, e aí a conversa sumia: sem dono efetivo, sem aparecer para ninguém. Passar adiante o que É seu continua sendo de todos (é o que a transferência dentro da ligação faz); distribuir o que é dos outros passou a ser de supervisor. E todo destino é conferido antes.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Agir na conversa de uma pessoa não abre as conversas dela nos outros canais',
+            description: 'As ações de atendimento conferiam a conversa selecionada e, em seguida, agiam sobre todas as conversas do MESMO contato — sem conferir nenhuma delas. Como o agrupamento é por pessoa e não por canal, bastava ter acesso à conversa dela num canal aberto para assumir, encerrar, reabrir e marcar como lida a conversa dela no canal restrito. A conferência existia; ela só olhava para a linha errada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.6',
     date: '23/08/2026',
     summary: 'A IA da conversa ganhou uma faixa que sempre diz em que pé ela está, controles com um dono só, e registro no histórico do caso. Pausar, retomar e limpar a memória passaram a ser de quem responde pelo atendimento.',

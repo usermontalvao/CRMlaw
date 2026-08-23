@@ -927,7 +927,12 @@ async function assumirAtendimento(call: WaCall): Promise<void> {
     if (rota?.assignedUserId) return;
     const me = await currentUserId();
     if (!me) return;
-    await whatsappService.assignConversation(conversationId, me, 'Assumiu ao atender a chamada');
+    // `assumeConversation`, e não `assignConversation`: atribuir a TERCEIRO
+    // virou ato de supervisor, e atender a própria chamada não é isso — é
+    // assumir o que estava na fila. A RPC de assumir cobre exatamente este
+    // caso (conversa sem dono, quem chamou vira responsável) e continua
+    // valendo para o atendente comum.
+    await whatsappService.assumeConversation(conversationId);
     waCallsLog('atendimento assumido por quem atendeu', { callId: call.callId });
   } catch {
     // A ligação vale mais que o registro do responsável.
