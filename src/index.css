@@ -2154,8 +2154,8 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
     color: #60a5fa !important;
   }
   
-  .dark .text-emerald-600,
-  .dark .text-green-600 {
+  .dark .text-emerald-600:not([class*="dark:text-"]),
+  .dark .text-green-600:not([class*="dark:text-"]) {
     color: #34d399 !important;
   }
   
@@ -2296,7 +2296,7 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   }
   
   /* Status badges específicos */
-  .dark .text-emerald-600 {
+  .dark .text-emerald-600:not([class*="dark:text-"]) {
     color: #34d399 !important;
   }
   
@@ -2645,20 +2645,29 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
     color: #93c5fd !important;
   }
   
-  /* Ícones em cards de detalhes */
-  .dark [class*="text-blue-600"],
-  .dark [class*="text-emerald-600"],
-  .dark [class*="text-cyan-600"] {
+  /* Ícones em cards de detalhes.
+   *
+   * Pinta de azul TUDO que é 600 nessas três famílias — inclusive o verde. Quem
+   * declarou `dark:text-…` fica de fora, senão "assina" e "assinatura
+   * posicionada" saem azuis no tema escuro. */
+  .dark [class*="text-blue-600"]:not([class*="dark:text-"]),
+  .dark [class*="text-emerald-600"]:not([class*="dark:text-"]),
+  .dark [class*="text-cyan-600"]:not([class*="dark:text-"]) {
     color: #60a5fa !important;
   }
   
-  /* Texto em cards brancos */
-  .dark [class*="bg-[#f8f7f5]"] p,
-  .dark [class*="bg-[#f8f7f5]"] span,
-  .dark [class*="bg-[#f8f7f5]"] h1,
-  .dark [class*="bg-[#f8f7f5]"] h2,
-  .dark [class*="bg-[#f8f7f5]"] h3,
-  .dark [class*="bg-[#f8f7f5]"] h4 {
+  /* Texto em cards brancos.
+   *
+   * Rede de segurança para o card creme que nunca ganhou tema escuro. Quem JÁ
+   * declarou `dark:text-…` fica de fora: era isso que apagava o verde de
+   * "assinatura posicionada" e o laranja de "sem posição de assinatura",
+   * pintando tudo de zinc-200 por cima de um !important. */
+  .dark [class*="bg-[#f8f7f5]"] p:not([class*="dark:text-"]),
+  .dark [class*="bg-[#f8f7f5]"] span:not([class*="dark:text-"]),
+  .dark [class*="bg-[#f8f7f5]"] h1:not([class*="dark:text-"]),
+  .dark [class*="bg-[#f8f7f5]"] h2:not([class*="dark:text-"]),
+  .dark [class*="bg-[#f8f7f5]"] h3:not([class*="dark:text-"]),
+  .dark [class*="bg-[#f8f7f5]"] h4:not([class*="dark:text-"]) {
     color: #e4e4e7 !important;
   }
   
@@ -2756,14 +2765,20 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   
   /* ===== BACKGROUNDS ESPECÍFICOS ===== */
   
-  /* Qualquer bg-50 ou bg-100 */
-  .dark [class*="bg-"][class*="-50"],
-  .dark [class*="bg-"][class*="-100"] {
+  /* Qualquer bg-50 ou bg-100.
+   *
+   * O casamento é por SUBSTRING: "-50" também casa com "-500", e "-100" com
+   * "-1000". Sem as exceções abaixo, qualquer botão `bg-<cor>-500` — a cor
+   * cheia da marca — virava #171717 no tema escuro, e a única saída era
+   * escrever a cor em `style` inline (foi o que o botão de gerar documento
+   * fazia). As tintas claras, que são o alvo real da regra, seguem cobertas. */
+  .dark [class*="bg-"][class*="-50"]:not([class*="-500"]):not([class*="dark:bg-"]),
+  .dark [class*="bg-"][class*="-100"]:not([class*="-1000"]):not([class*="dark:bg-"]) {
     background-color: #171717 !important;
   }
   
   /* Qualquer bg-200 */
-  .dark [class*="bg-"][class*="-200"] {
+  .dark [class*="bg-"][class*="-200"]:not([class*="dark:bg-"]) {
     background-color: #1f1f1f !important;
   }
   

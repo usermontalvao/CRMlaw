@@ -23,6 +23,7 @@ import {
   GripVertical,
   AlertTriangle,
   Check,
+  MoreHorizontal,
 } from 'lucide-react';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
@@ -43,6 +44,7 @@ import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import TemplateFilesManager from './TemplateFilesManager';
+import TemplateCard from './documents/TemplateCard';
 import CustomFieldsManager from './CustomFieldsManager';
 import StandardPetitionsModule from './StandardPetitionsModule';
 import type { DocumentTemplate, CreateDocumentTemplateDTO, TemplateCustomField, UpsertTemplateCustomFieldDTO, CustomField } from '../types/document.types';
@@ -111,6 +113,14 @@ const extractPlaceholdersFromText = (content: string): string[] => {
     found.push(raw);
   }
   return found;
+};
+
+// Um arquivo "assina" quando tem ao menos uma posição de assinatura gravada.
+// A coluna aceita objeto, lista ou nulo, e a lista pode vir vazia.
+const hasSignatureConfig = (config: unknown): boolean => {
+  if (!config) return false;
+  if (Array.isArray(config)) return config.length > 0;
+  return true;
 };
 
 const formatDate = (value?: string | null) => {
@@ -315,7 +325,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [templateFillLinkCopied, setTemplateFillLinkCopied] = useState(false);
   const [creatingTemplateFillLinkId, setCreatingTemplateFillLinkId] = useState<string | null>(null);
 
-  const [templateFilesSummary, setTemplateFilesSummary] = useState<Record<string, { count: number; firstFileName?: string }>>({});
+  const [templateFilesSummary, setTemplateFilesSummary] = useState<Record<string, { count: number; firstFileName?: string; signedCount: number }>>({});
+
+  // Menu "⋯" do cartão do modelo: as ações que não são "usar" moram aqui, para
+  // sobrar um alvo principal por cartão em vez de sete do mesmo peso.
+  const [openCardMenuId, setOpenCardMenuId] = useState<string | null>(null);
 
   const [templateExtraPlaceholders, setTemplateExtraPlaceholders] = useState<string[]>([]);
   const [templateExtraValues, setTemplateExtraValues] = useState<Record<string, string>>({});
@@ -327,6 +341,13 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [templateFormConfigError, setTemplateFormConfigError] = useState<string | null>(null);
   const [templateFormConfigFields, setTemplateFormConfigFields] = useState<UpsertTemplateCustomFieldDTO[]>([]);
   const templateFormConfigDragIndexRef = useRef<number | null>(null);
+
+  // O botão de gerar existe em duas cópias (desktop e mobile sticky). A cor
+  // saía de dois blocos `style` inline idênticos; agora é uma classe só.
+  const canGenerateDocx = !generatingDocx && !!selectedClientId && !!selectedTemplateId;
+  const generateButtonClass = canGenerateDocx
+    ? 'bg-primary-500 text-white hover:bg-primary-600 hover:shadow-md active:shadow-sm cursor-pointer'
+    : 'bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-zinc-800 dark:text-zinc-500';
 
   const currentDate = useMemo(() => getManausNow(), []);
 
@@ -508,7 +529,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
         const { data, error } = await supabase
           .from('template_files')
-          .select('template_id, file_name, order')
+          .select('template_id, file_name, order, signature_field_config')
           .in('template_id', ids)
           .order('order', { ascending: true });
 
@@ -517,15 +538,18 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           return;
         }
 
-        const byTemplate: Record<string, { count: number; firstFileName?: string }> = {};
+        const byTemplate: Record<string, { count: number; firstFileName?: string; signedCount: number }> = {};
         for (const row of data ?? []) {
           const templateId = (row as any).template_id as string;
           const fileName = (row as any).file_name as string | undefined;
           if (!templateId) continue;
           if (!byTemplate[templateId]) {
-            byTemplate[templateId] = { count: 0, firstFileName: fileName };
+            byTemplate[templateId] = { count: 0, firstFileName: fileName, signedCount: 0 };
           }
           byTemplate[templateId].count += 1;
+          if (hasSignatureConfig((row as any).signature_field_config)) {
+            byTemplate[templateId].signedCount += 1;
+          }
           if (!byTemplate[templateId].firstFileName && fileName) {
             byTemplate[templateId].firstFileName = fileName;
           }
@@ -569,6 +593,28 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       clearTimeout(handler);
     };
   }, [clientSearchTerm]);
+
+  // Fecha o menu "⋯" ao clicar fora ou apertar Esc. Sem isto o menu de um
+  // cartão fica aberto por cima dos vizinhos até alguém clicar nele de novo.
+  useEffect(() => {
+    if (!openCardMenuId) return;
+
+    const closeOnOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[data-template-card-menu]')) return;
+      setOpenCardMenuId(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpenCardMenuId(null);
+    };
+
+    document.addEventListener('mousedown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [openCardMenuId]);
 
   useEffect(() => {
     let isActive = true;
@@ -1080,6 +1126,16 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       setGenerationError(err.message || 'Não foi possível gerar o documento.');
       return null;
     }
+  };
+
+  // A ação principal do cartão: escolher o modelo e cair na tela de gerar já
+  // com ele selecionado. Antes esse caminho simplesmente não existia — para
+  // usar um modelo era preciso voltar de aba e procurá-lo de novo na lista.
+  const handleUseTemplate = (template: DocumentTemplate) => {
+    setOpenCardMenuId(null);
+    setSelectedTemplateId(template.id);
+    setTemplateSearchQuery('');
+    setActiveView('new-doc');
   };
 
   const handleDownloadTemplate = async (template: DocumentTemplate) => {
@@ -1750,14 +1806,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       )}
 
       {/* Header com tabs */}
-      <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5]">
-                <div className="flex flex-col gap-2 border-b border-[#e7e5df] px-4 py-3 @sm:flex-row @sm:px-6">
+      <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex flex-col gap-2 border-b border-[#e7e5df] px-4 py-3 @sm:flex-row @sm:px-6 dark:border-zinc-800">
           <button
             onClick={() => setActiveView('new-doc')}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
               activeView === 'new-doc'
-                ? 'bg-slate-900 text-white'
-                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50'
+                ? 'bg-primary-500 text-white'
+                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'
             }`}
           >
             <Plus className="h-4 w-4" />
@@ -1767,8 +1823,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             onClick={() => setActiveView('manage')}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
               activeView === 'manage'
-                ? 'bg-slate-900 text-white'
-                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50'
+                ? 'bg-primary-500 text-white'
+                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'
             }`}
           >
             <Settings className="h-4 w-4" />
@@ -1778,8 +1834,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             onClick={() => setActiveView('petitions')}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
               activeView === 'petitions'
-                ? 'bg-slate-900 text-white'
-                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50'
+                ? 'bg-primary-500 text-white'
+                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'
             }`}
           >
             <BookOpen className="h-4 w-4" />
@@ -1794,19 +1850,19 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           {/* Coluna esquerda: Seleção de template */}
           <div className="hidden @lg:block @lg:col-span-2 space-y-4">
             <div>
-              <h4 className="text-sm font-semibold text-slate-900 mb-1">Escolha o template</h4>
-              <p className="text-xs text-slate-500">Selecione o modelo para gerar o documento</p>
+              <h4 className="text-sm font-semibold text-slate-900 mb-1 dark:text-zinc-100">Escolha o template</h4>
+              <p className="text-xs text-slate-500 dark:text-zinc-400">Selecione o modelo para gerar o documento</p>
             </div>
 
             {loading ? (
               <ModuleSkeleton variant="list" rows={5} />
             ) : newDocTemplates.length === 0 ? (
-              <div className="rounded-xl border-2 border-dashed border-[#e7e5df] bg-slate-50 p-6 text-center">
-                <FileText className="mx-auto h-8 w-8 text-slate-300" />
-                <p className="mt-2 text-sm text-slate-500">Nenhum template disponível</p>
+              <div className="rounded-xl border-2 border-dashed border-[#e7e5df] bg-slate-50 p-6 text-center dark:border-zinc-700 dark:bg-zinc-900">
+                <FileText className="mx-auto h-8 w-8 text-slate-300 dark:text-zinc-600" />
+                <p className="mt-2 text-sm text-slate-500 dark:text-zinc-400">Nenhum template disponível</p>
                 <button
                   onClick={() => setActiveView('manage')}
-                  className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+                  className="mt-3 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                 >
                   Criar template →
                 </button>
@@ -1821,11 +1877,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       value={templateSearchQuery}
                       onChange={(e) => setTemplateSearchQuery(e.target.value)}
                       placeholder="Buscar modelo..."
-                      className="w-full rounded-xl border border-[#e7e5df] bg-[#f8f7f5] pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="w-full rounded-xl border border-[#e7e5df] bg-[#f8f7f5] pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                     />
                   </div>
                   {templateSearchQuery.trim() && filteredNewDocTemplates.length === 0 && (
-                    <p className="mt-2 text-xs text-slate-500">Nenhum template encontrado.</p>
+                    <p className="mt-2 text-xs text-slate-500 dark:text-zinc-400">Nenhum template encontrado.</p>
                   )}
                 </div>
 
@@ -1842,21 +1898,21 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       onClick={() => setSelectedTemplateId(template.id)}
                       className={`w-full text-left p-3 rounded-xl border-2 transition ${
                         isSelected
-                          ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500/20'
-                          : 'border-[#e7e5df] bg-[#f8f7f5] hover:border-slate-300 hover:bg-slate-50'
+                          ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-500/20 dark:bg-primary-500/10'
+                          : 'border-[#e7e5df] bg-[#f8f7f5] hover:border-slate-300 hover:bg-slate-50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700 dark:hover:bg-zinc-800'
                       }`}
                     >
                       <div className="flex items-start gap-3">
                         <div className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
-                          isSelected ? 'bg-indigo-100' : 'bg-slate-100'
+                          isSelected ? 'bg-primary-100 dark:bg-primary-500/20' : 'bg-slate-100 dark:bg-zinc-800'
                         }`}>
-                          <FileText className={`h-4 w-4 ${isSelected ? 'text-indigo-600' : 'text-slate-500'}`} />
+                          <FileText className={`h-4 w-4 ${isSelected ? 'text-primary-600 dark:text-primary-400' : 'text-slate-500 dark:text-zinc-400'}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium truncate ${isSelected ? 'text-indigo-900' : 'text-slate-900'}`}>
+                          <p className={`text-sm font-medium truncate ${isSelected ? 'text-primary-900 dark:text-primary-200' : 'text-slate-900 dark:text-zinc-100'}`}>
                             {template.name}
                           </p>
-                          <p className="text-xs text-slate-500 mt-0.5">
+                          <p className="text-xs text-slate-500 mt-0.5 dark:text-zinc-400">
                             {template.file_path
                               ? filesCount > 0
                                 ? `1 doc + ${filesCount} anexo(s)`
@@ -1866,7 +1922,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                         </div>
                         {isSelected && (
                           <div className="flex-shrink-0">
-                            <div className="w-5 h-5 rounded-full bg-indigo-500 flex items-center justify-center">
+                            <div className="w-5 h-5 rounded-full bg-primary-500 flex items-center justify-center">
                               <Check className="h-3 w-3 text-white" />
                             </div>
                           </div>
@@ -1882,20 +1938,20 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
           {/* Coluna direita: Formulário */}
           <div className="lg:col-span-3">
-            <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-5 sm:p-6">
+            <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-5 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
                   <FileDown className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <h4 className="text-base font-semibold text-slate-900">Gerar Documento</h4>
-                  <p className="text-xs text-slate-500">Preencha os dados e gere o Word</p>
+                  <h4 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Gerar Documento</h4>
+                  <p className="text-xs text-slate-500 dark:text-zinc-400">Preencha os dados e gere o Word</p>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <div className="lg:hidden">
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">
                     Template *
                   </label>
                   <div className="relative mb-2">
@@ -1905,14 +1961,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       value={templateSearchQuery}
                       onChange={(e) => setTemplateSearchQuery(e.target.value)}
                       placeholder="Buscar modelo..."
-                      className="w-full rounded-lg border border-[#e7e5df] bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                     />
                   </div>
                   <select
                     value={selectedTemplateId}
                     onChange={(e) => setSelectedTemplateId(e.target.value)}
                     disabled={loading || newDocTemplates.length === 0}
-                    className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:bg-slate-100 disabled:text-slate-400"
+                    className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:bg-slate-100 disabled:text-slate-400"
                   >
                     <option value="">Selecione um template...</option>
                     {filteredNewDocTemplates.map((template) => (
@@ -1924,7 +1980,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 </div>
                 {/* Cliente */}
                 <div>
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">
                     Cliente *
                   </label>
                   <ClientSearchSelect
@@ -1942,8 +1998,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
                 {/* Template selecionado (resumo) */}
                 {selectedTemplateId && (
-                  <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-3">
-                    <div className="flex items-center gap-2 text-xs text-indigo-700">
+                  <div className="rounded-lg bg-primary-50 border border-primary-100 p-3 dark:border-primary-500/30 dark:bg-primary-500/10">
+                    <div className="flex items-center gap-2 text-xs text-primary-700 dark:text-primary-300">
                       <FileText className="h-3.5 w-3.5" />
                       <span className="font-medium">Template:</span>
                       <span>{templates.find(t => t.id === selectedTemplateId)?.name}</span>
@@ -1954,12 +2010,12 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 {/* Réu */}
                 {shouldShowDefendantField && (
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">
                       Réu / Parte contrária <span className="text-slate-400 font-normal">(opcional)</span>
                     </label>
                     <input
                       type="text"
-                      className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                       placeholder="Ex: Empresa XPTO Ltda"
                       value={defendantInput}
                       onChange={(e) => setDefendantInput(normalizeDefendantValue(e.target.value))}
@@ -1969,12 +2025,12 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
                 {/* Campos do Modelo (dinâmicos) */}
                 {templateExtraPlaceholders.length > 0 && (
-                  <div className="rounded-xl border border-[#e7e5df] bg-slate-50 p-4">
+                  <div className="rounded-xl border border-[#e7e5df] bg-slate-50 p-4 dark:border-zinc-800 dark:bg-zinc-800/60">
                     <div className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-slate-500" />
-                      <p className="text-sm font-semibold text-slate-900">Campos do Modelo</p>
+                      <Sparkles className="h-4 w-4 text-slate-500 dark:text-zinc-400" />
+                      <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Campos do Modelo</p>
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
                       Preencha os campos específicos do template selecionado.
                     </p>
 
@@ -1996,20 +2052,20 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
                         return (
                           <div key={ph}>
-                            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">
                               {ph}
                             </label>
                             {isLong ? (
                               <textarea
                                 rows={3}
-                                className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                                 placeholder={`Preencher ${ph}...`}
                                 {...commonProps}
                               />
                             ) : (
                               <input
                                 type={isDate ? 'text' : isNumber ? 'number' : 'text'}
-                                className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
                                 placeholder={`Preencher ${ph}...`}
                                 {...commonProps}
                               />
@@ -2023,13 +2079,13 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
                 {/* Mensagens de erro/sucesso */}
                 {generationError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
                     <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                     <span>{generationError}</span>
                   </div>
                 )}
                 {generationSuccess && (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-start gap-2">
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-start gap-2 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
                     <Check className="h-4 w-4 flex-shrink-0 mt-0.5" />
                     <span>{generationSuccess}</span>
                   </div>
@@ -2039,15 +2095,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 <button
                   onClick={handleGenerateDocx}
                   disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
-                  className="hidden @sm:inline-flex w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition items-center justify-center gap-2 shadow-sm hover:shadow-md active:shadow-sm"
-                  style={{
-                    backgroundColor: (generatingDocx || !selectedClientId || !selectedTemplateId) ? '#e2e8f0' : '#4f46e5',
-                    backgroundImage: (generatingDocx || !selectedClientId || !selectedTemplateId)
-                      ? 'none'
-                      : 'linear-gradient(135deg, #4f46e5 0%, #4338ca 55%, #3730a3 100%)',
-                    color: (generatingDocx || !selectedClientId || !selectedTemplateId) ? '#94a3b8' : '#ffffff',
-                    cursor: (generatingDocx || !selectedClientId || !selectedTemplateId) ? 'not-allowed' : 'pointer',
-                  }}
+                  className={`hidden @sm:inline-flex w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition items-center justify-center gap-2 shadow-sm ${generateButtonClass}`}
                 >
                   {generatingDocx ? (
                     <>
@@ -2063,19 +2111,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 </button>
 
                 {/* Botão gerar (mobile sticky) */}
-                <div className="sm:hidden sticky bottom-0 -mx-5 px-5 pb-5 pt-3 bg-[#f8f7f5]/95 backdrop-blur border-t border-[#e7e5df]">
+                <div className="sm:hidden sticky bottom-0 -mx-5 px-5 pb-5 pt-3 bg-[#f8f7f5]/95 backdrop-blur border-t border-[#e7e5df] dark:border-zinc-800 dark:bg-zinc-900/95">
                   <button
                     onClick={handleGenerateDocx}
                     disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
-                    className="w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition inline-flex items-center justify-center gap-2 shadow-sm hover:shadow-md active:shadow-sm"
-                    style={{
-                      backgroundColor: (generatingDocx || !selectedClientId || !selectedTemplateId) ? '#e2e8f0' : '#4f46e5',
-                      backgroundImage: (generatingDocx || !selectedClientId || !selectedTemplateId)
-                        ? 'none'
-                        : 'linear-gradient(135deg, #4f46e5 0%, #4338ca 55%, #3730a3 100%)',
-                      color: (generatingDocx || !selectedClientId || !selectedTemplateId) ? '#94a3b8' : '#ffffff',
-                      cursor: (generatingDocx || !selectedClientId || !selectedTemplateId) ? 'not-allowed' : 'pointer',
-                    }}
+                    className={`w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition inline-flex items-center justify-center gap-2 shadow-sm ${generateButtonClass}`}
                   >
                     {generatingDocx ? (
                       <>
@@ -2093,7 +2133,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
                 {/* Dica */}
                 {!selectedTemplateId && (
-                  <p className="text-xs text-slate-400 text-center">
+                  <p className="text-xs text-slate-400 text-center dark:text-zinc-500">
                     ← Selecione um template ao lado para continuar
                   </p>
                 )}
@@ -2109,13 +2149,13 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           {/* Header com ações globais */}
           <div className="flex flex-col gap-3 @sm:flex-row @sm:items-center @sm:justify-between">
             <div>
-              <h4 className="text-lg font-semibold text-slate-900">Meus Templates</h4>
-              <p className="text-sm text-slate-500">{manageTemplates.length} template(s) cadastrado(s)</p>
+              <h4 className="text-lg font-semibold text-slate-900 dark:text-zinc-100">Meus Templates</h4>
+              <p className="text-sm text-slate-500 dark:text-zinc-400">{manageTemplates.length} template(s) cadastrado(s)</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setCustomFieldsManagerOpen(true)}
-                className="inline-flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
                 <Settings className="h-4 w-4" />
                 <span className="hidden @sm:inline">Campos Personalizados</span>
@@ -2123,7 +2163,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
               </button>
               <button
                 onClick={handleOpenModal}
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                className="inline-flex items-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-600"
               >
                 <Plus className="h-4 w-4" />
                 Novo Template
@@ -2135,9 +2175,9 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           {loading ? (
             <ModuleSkeleton variant="cards" rows={6} />
           ) : manageTemplates.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-[#e7e5df] bg-slate-50 py-12 text-center">
-              <FileText className="mx-auto h-10 w-10 text-slate-300" />
-              <p className="mt-3 text-sm text-slate-500">Nenhum template cadastrado</p>
+            <div className="rounded-2xl border-2 border-dashed border-[#e7e5df] bg-slate-50 py-12 text-center dark:border-zinc-700 dark:bg-zinc-900">
+              <FileText className="mx-auto h-10 w-10 text-slate-300 dark:text-zinc-600" />
+              <p className="mt-3 text-sm text-slate-500 dark:text-zinc-400">Nenhum template cadastrado</p>
               <button
                 onClick={handleOpenModal}
                 className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
@@ -2150,127 +2190,36 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             <div className="grid gap-4 @sm:grid-cols-2 @md:grid-cols-3">
               {manageTemplates.map((template) => {
                 const summary = templateFilesSummary[template.id];
-                const attachmentsCount = summary?.count ?? 0;
-                const filesLabel = template.file_path
-                  ? attachmentsCount > 0
-                    ? `1 principal + ${attachmentsCount} anexo(s)`
-                    : '1 arquivo'
-                  : attachmentsCount > 0
-                    ? `${attachmentsCount} arquivo(s)`
-                    : 'Sem arquivos';
-
                 return (
-                  <div
+                  <TemplateCard
                     key={template.id}
-                    className="group relative rounded-xl border border-[#e7e5df] bg-[#f8f7f5] p-4 transition hover:border-slate-300 hover:shadow-sm"
-                  >
-                    {/* Cabeçalho do card */}
-                    <div className="mb-3">
-                      <h5 className="font-semibold text-slate-900 truncate" title={template.name}>
-                        {template.name}
-                      </h5>
-                      {template.description && (
-                        <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{template.description}</p>
-                      )}
-                    </div>
-
-                    {/* Info do arquivo */}
-                    <div className="mb-4 flex items-center gap-2 text-xs text-slate-500">
-                      <FileText className="h-3.5 w-3.5 text-slate-400" />
-                      <span className="truncate">{filesLabel}</span>
-                    </div>
-
-                    {/* Ações principais */}
-                    <div className="flex flex-wrap gap-1.5 mb-3">
-                      <button
-                        onClick={() => handleGenerateTemplateFillLink(template)}
-                        disabled={creatingTemplateFillLinkId === template.id}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-50 px-2.5 py-2 text-xs font-medium text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-60"
-                        title="Gerar link público para preenchimento"
-                      >
-                        {creatingTemplateFillLinkId === template.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Link2 className="h-3.5 w-3.5" />
-                        )}
-                        Link
-                      </button>
-                      <button
-                        onClick={() => {
-                          setFilesManagerTemplate(template);
-                          setFilesManagerOpen(true);
-                        }}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-200"
-                        title="Documento principal e anexos"
-                      >
-                        <FileText className="h-3.5 w-3.5" />
-                        Documentos
-                      </button>
-                      <button
-                        onClick={() => handleDownloadTemplate(template)}
-                        disabled={downloadingTemplateId === template.id}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
-                        title="Baixar arquivo"
-                      >
-                        {downloadingTemplateId === template.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <FileDown className="h-3.5 w-3.5" />
-                        )}
-                        Baixar
-                      </button>
-                    </div>
-
-                    {/* Ações secundárias */}
-                    <div className="flex flex-wrap gap-1.5 pt-3 border-t border-slate-100">
-                      <button
-                        onClick={() => handleOpenEditModal(template)}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100"
-                        title="Editar template"
-                      >
-                        <Pencil className="h-3 w-3" />
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleOpenTemplateFormConfig(template)}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-slate-600 transition hover:bg-slate-100"
-                        title="Configurar campos do formulário"
-                      >
-                        <Settings className="h-3 w-3" />
-                        Formulário
-                      </button>
-                      <button
-                        onClick={() => {
-                          setFilesManagerTemplate(template);
-                          setFilesManagerOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-emerald-600 transition hover:bg-emerald-50"
-                        title="Configurar assinaturas do principal e dos anexos"
-                      >
-                        <PenTool className="h-3 w-3" />
-                        Assinatura
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTemplate(template)}
-                        disabled={deletingTemplateId === template.id}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60 ml-auto"
-                        title="Remover template"
-                      >
-                        {deletingTemplateId === template.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-3 w-3" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                    template={template}
+                    attachmentsCount={summary?.count ?? 0}
+                    signs={hasSignatureConfig(template.signature_field_config) || (summary?.signedCount ?? 0) > 0}
+                    menuOpen={openCardMenuId === template.id}
+                    creatingLink={creatingTemplateFillLinkId === template.id}
+                    downloading={downloadingTemplateId === template.id}
+                    deleting={deletingTemplateId === template.id}
+                    onToggleMenu={() => setOpenCardMenuId(openCardMenuId === template.id ? null : template.id)}
+                    onUse={() => handleUseTemplate(template)}
+                    onGenerateLink={() => { setOpenCardMenuId(null); handleGenerateTemplateFillLink(template); }}
+                    onOpenFiles={() => {
+                      setOpenCardMenuId(null);
+                      setFilesManagerTemplate(template);
+                      setFilesManagerOpen(true);
+                    }}
+                    onDownload={() => { setOpenCardMenuId(null); handleDownloadTemplate(template); }}
+                    onEdit={() => { setOpenCardMenuId(null); handleOpenEditModal(template); }}
+                    onFormConfig={() => { setOpenCardMenuId(null); handleOpenTemplateFormConfig(template); }}
+                    onDelete={() => { setOpenCardMenuId(null); handleDeleteTemplate(template); }}
+                  />
                 );
               })}
             </div>
           )}
 
           {templateActionError && (
-            <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
               {templateActionError}
             </div>
           )}

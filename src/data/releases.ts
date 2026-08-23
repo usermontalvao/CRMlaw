@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.12',
+    date: '23/08/2026',
+    summary: 'O módulo Documentos ganha a cor da casa, funciona no tema escuro e o cartão do modelo passa a ter uma ação clara: usar.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'O cartão do modelo tem uma ação: Usar modelo',
+            description: 'Cada modelo mostrava sete botões do mesmo tamanho — Link, Documentos, Baixar, Editar, Formulário, Assinatura e Excluir — e nenhum era o principal. Agora o cartão abre com "Usar modelo", que leva direto à tela de gerar já com o modelo escolhido; o resto ficou no menu "⋯", com Excluir longe do polegar. O cartão também passou a dizer se o modelo é DOCX ou texto e se ele tem assinatura configurada.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Documentos e anexos dizem o que são e o que falta',
+            description: 'Cada linha tinha cinco ícones sem rótulo. Agora ela diz o papel do arquivo (principal ou anexo, em ordem), o tamanho e se a assinatura já foi posicionada — e quando não foi, "Posicionar" aparece como botão em vez de ficar escondido atrás de um ícone. Baixar, substituir e remover foram para o menu, e a área de arrastar desceu para o fim da lista, onde o arquivo novo cai.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A cor da casa e o tema escuro chegaram ao módulo',
+            description: 'As telas de gerar documento e gerenciar modelos usavam indigo e não tinham tema escuro: no escuro elas continuavam claras, e só os modais mudavam. Agora seguem o laranja da marca e acompanham o tema.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Cor cheia deixou de sumir no tema escuro',
+            description: 'Uma regra antiga pintava de cinza-escuro qualquer elemento cujo nome de classe contivesse "-50" — e "-500", a cor cheia da marca, contém. Outras regras apagavam verde e laranja de textos e ícones. Agora quem declara a própria cor para o tema escuro tem preferência sobre essas regras gerais, o que corrige botões e selos apagados em vários módulos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.11',
     date: '23/08/2026',
     summary: 'A régua de cargos alcança a Nuvem, os Documentos, as Petições, o E-mail e os cadastros do WhatsApp — e o que o banco recusa para de aparecer como feito.',

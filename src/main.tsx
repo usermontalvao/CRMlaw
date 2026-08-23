@@ -215,6 +215,15 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: bancada do módulo Documentos (?docspreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('docspreview')) {
+    const { default: DocumentsPreview } = await import('./dev/DocumentsPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <DocumentsPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: bancada do trilho de canais do painel (?chatrailpreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('chatrailpreview')) {
     const { default: ChatChannelRailPreview } = await import('./dev/ChatChannelRailPreview');
