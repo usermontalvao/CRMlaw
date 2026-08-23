@@ -569,14 +569,18 @@ export class ClientService {
    */
   async deleteClient(id: string): Promise<void> {
     try {
-      const { error } = await supabase
+      const { data: deleted, error } = await supabase
         .from(this.tableName)
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
 
       if (error) {
         console.error('Erro ao deletar cliente:', error);
         throw new Error(`Erro ao deletar cliente: ${error.message}`);
+      }
+      if (!deleted?.length) {
+        throw new Error('O cliente não foi excluído. Ele não existe ou seu cargo não possui permissão.');
       }
 
       this.invalidateCache();

@@ -8054,6 +8054,7 @@ Regras:
                                       entityName: petition.title || 'Sem título',
                                       message: `Deseja excluir a petição "${petition.title || 'Sem título'}"${petition.client_name ? ` vinculada ao cliente ${petition.client_name}` : ''}?`,
                                       confirmLabel: 'Excluir',
+                                      permission: { module: 'peticoes', action: 'delete' },
                                     });
                                     if (!confirmed) return;
                                     try {

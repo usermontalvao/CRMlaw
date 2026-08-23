@@ -79,12 +79,14 @@ class RepresentativeService {
   }
 
   async deleteRepresentative(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from('representatives')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!deleted?.length) throw new Error('O correspondente não foi excluído. Verifique sua permissão.');
   }
 
   // =====================================================
@@ -213,12 +215,14 @@ class RepresentativeService {
   }
 
   async deleteAppointment(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from('representative_appointments')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!deleted?.length) throw new Error('O vínculo não foi removido. Verifique sua permissão.');
   }
 
   // =====================================================

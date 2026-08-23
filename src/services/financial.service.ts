@@ -195,10 +195,18 @@ class FinancialService {
 
   async deleteAgreement(id: string): Promise<void> {
     // Deletar parcelas primeiro
-    await supabase.from('installments').delete().eq('agreement_id', id);
+    const { error: installmentsError } = await supabase.from('installments').delete().eq('agreement_id', id);
+    if (installmentsError) throw installmentsError;
     
-    const { error } = await supabase.from('agreements').delete().eq('id', id);
+    const { data: deleted, error } = await supabase
+      .from('agreements')
+      .delete()
+      .eq('id', id)
+      .select('id');
     if (error) throw error;
+    if (!deleted?.length) {
+      throw new Error('O lançamento não foi excluído. Ele não existe ou seu cargo não possui permissão.');
+    }
   }
 
   async getAgreement(id: string): Promise<Agreement> {
@@ -415,8 +423,16 @@ class FinancialService {
       old_value: entry ? { status: entry.status, paid_value: entry.paid_value, payment_date: entry.payment_date, entry_type: 'avulso' } : undefined,
       new_value: { deleted: true },
     });
-    const { error } = await supabase.from('installments').delete().eq('id', id).eq('entry_type', 'avulso');
+    const { data: deleted, error } = await supabase
+      .from('installments')
+      .delete()
+      .eq('id', id)
+      .eq('entry_type', 'avulso')
+      .select('id');
     if (error) throw error;
+    if (!deleted?.length) {
+      throw new Error('A entrada não foi excluída. Ela não existe ou seu cargo não possui permissão.');
+    }
     await this.checkAndUpdateAgreementStatus(agreementId);
   }
 

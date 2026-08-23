@@ -388,6 +388,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       title: 'Excluir Correspondente',
       entityName: rep.full_name,
       message: 'Todos os vínculos com compromissos também serão removidos.',
+      permission: { module: 'agenda', action: 'delete' },
     });
     if (!confirmed) return;
 
@@ -510,6 +511,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     const confirmed = await confirmDelete({
       title: 'Remover Vínculo',
       message: `Remover ${apt.representative?.full_name} do compromisso?`,
+      permission: { module: 'agenda', action: 'delete' },
     });
     if (!confirmed) return;
 

@@ -377,18 +377,22 @@ class DeadlineService {
    * do banco, então a coluna "Baixado por" do histórico responde sozinha.
    */
   async deleteDeadline(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from(this.tableName)
       .update({
         status: 'excluido',
         deleted_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) {
       console.error('Erro ao excluir prazo:', error);
       throw new Error(error.message);
+    }
+    if (!updated?.length) {
+      throw new Error('O prazo não foi excluído. Ele não existe ou seu cargo não possui permissão.');
     }
 
     this.invalidateCache();

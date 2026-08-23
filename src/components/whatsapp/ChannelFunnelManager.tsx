@@ -381,6 +381,7 @@ const ChannelFunnelManager: React.FC<ChannelFunnelManagerProps> = ({
       sensitivity: 'high', title: 'Salvar funil do canal',
       description: `Confirme com seu PIN as etapas do canal “${channel.name || channel.instance_name}”.`,
       actionLabel: 'Salvar funil',
+      permission: { module: 'whatsapp', action: 'edit' },
     }) : true;
     if (!pinOk) return;
 

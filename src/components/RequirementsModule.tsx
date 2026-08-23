@@ -1523,6 +1523,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       entityName: templateToDelete?.name,
       message: 'Deseja remover permanentemente este modelo MS? Esta ação não pode ser desfeita.',
       confirmLabel: 'Remover',
+      permission: { module: 'requerimentos', action: 'delete' },
     });
 
     if (!confirmed) return;
@@ -1769,6 +1770,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     const confirmed = await confirmDelete({
       title: 'Excluir documento',
       message: 'Tem certeza que deseja excluir este documento do requerimento? Esta ação não pode ser desfeita.',
+      permission: { module: 'requerimentos', action: 'delete' },
     });
     if (!confirmed) return;
 
@@ -2523,6 +2525,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       entityName: req?.protocol || req?.beneficiary || undefined,
       message: 'Deseja realmente remover este requerimento? Essa ação é irreversível.',
       confirmLabel: 'Excluir',
+      permission: { module: 'requerimentos', action: 'delete' },
     });
     if (!confirmed) return;
 
@@ -2544,6 +2547,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         entityName: req?.protocol || req?.beneficiary || undefined,
         message: 'Deseja arquivar este requerimento? Ele ficará visível na seção "Arquivados" e poderá ser restaurado a qualquer momento.',
         confirmLabel: 'Arquivar',
+        permission: { module: 'requerimentos', action: 'edit' },
       });
       if (!confirmed) return;
     }
@@ -2730,6 +2734,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       title: 'Excluir nota',
       message: 'Tem certeza que deseja excluir esta nota? Esta ação não pode ser desfeita.',
       confirmLabel: 'Excluir',
+      permission: { module: 'requerimentos', action: 'edit' },
     });
     if (!confirmed) return;
 
@@ -3089,6 +3094,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       title: 'Arquivar selecionados',
       message: `Deseja arquivar ${selectedIds.size} requerimento(s) selecionado(s)?`,
       confirmLabel: 'Arquivar',
+      permission: { module: 'requerimentos', action: 'edit' },
     });
     if (!confirmed) return;
     setIsBulkActioning(true);
@@ -4286,6 +4292,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                                           title: 'Ver senha INSS',
                                           description: 'Informe o PIN de segurança para revelar a senha INSS deste beneficiário.',
                                           actionLabel: 'Revelar senha',
+                                          permission: { module: 'requerimentos', action: 'view' },
                                           onVerified: async () => {
                                             if (selectedRequirementForView.inss_password_enc) {
                                               const plain = await requirementService.decryptInssPassword(selectedRequirementForView.inss_password_enc);
@@ -4314,6 +4321,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                                             title: 'Copiar senha INSS',
                                             description: 'Informe o PIN para copiar a senha INSS para a área de transferência.',
                                             actionLabel: 'Copiar senha',
+                                            permission: { module: 'requerimentos', action: 'view' },
                                             onVerified: () => handleCopyDetailField('senha', passwordToCopy),
                                           });
                                         }}

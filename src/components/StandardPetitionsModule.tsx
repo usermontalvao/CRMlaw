@@ -342,6 +342,7 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
       entityName: petition.name,
       message: 'Tem certeza que deseja excluir esta petição?',
       confirmLabel: 'Excluir Petição',
+      permission: { module: 'peticoes', action: 'delete' },
     });
     if (!confirmed) return;
     try {

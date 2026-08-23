@@ -965,6 +965,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       title: `Excluir ${selectedIds.size} prazo(s)`,
       message: `Os ${selectedIds.size} prazo(s) selecionado(s) saem da fila e vão para o Histórico de Prazos, de onde podem ser restaurados.`,
       confirmLabel: 'Excluir todos',
+      permission: { module: 'prazos', action: 'delete' },
     });
     if (!confirmed) return;
     setBulkActionLoading(true);
@@ -2240,6 +2241,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       entityName: deadline?.title || undefined,
       message: 'O prazo sai da fila de tarefas e vai para o Histórico de Prazos, de onde pode ser consultado e restaurado.',
       confirmLabel: 'Excluir',
+      permission: { module: 'prazos', action: 'delete' },
     });
     if (!confirmed) return;
 

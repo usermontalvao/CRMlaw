@@ -7,6 +7,7 @@ import { settingsService } from '../services/settings.service';
 import type { Lead, LeadStage, CreateLeadDTO } from '../types/lead.types';
 import { openWhatsAppChat } from '../utils/whatsappChat';
 import { LAYER } from '../styles/layers';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 
 /**
  * O telefone do lead é um botão de conversa, não um link para fora.
@@ -62,6 +63,7 @@ interface LeadsModuleProps {
 const DEFAULT_LEAD_SOURCES = ['Indicação', 'Site', 'Instagram', 'Google', 'WhatsApp', 'Outro'];
 
 const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead, embedded = false, onOpenConversation, channelFilter = '' }) => {
+  const { confirmDelete } = useDeleteConfirm();
   const [stages, setStages] = useState(STAGES);
   const [leadSources, setLeadSources] = useState<string[]>(DEFAULT_LEAD_SOURCES);
 
@@ -237,7 +239,15 @@ const LeadsModule: React.FC<LeadsModuleProps> = ({ onConvertLead, embedded = fal
   };
 
   const handleDeleteLead = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este lead?')) return;
+    const lead = leads.find(item => item.id === id);
+    const confirmed = await confirmDelete({
+      title: 'Excluir lead',
+      entityName: lead?.name,
+      message: 'Tem certeza que deseja excluir este lead?',
+      confirmLabel: 'Excluir',
+      permission: { module: 'leads', action: 'delete' },
+    });
+    if (!confirmed) return;
     try {
       await leadService.deleteLead(id);
       await loadData();

@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.10',
+    date: '23/08/2026',
+    summary: 'A matriz de permissões por cargo deixa de ser decoração: avisa antes de pedir o PIN e passa a valer também no banco.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Ação sem permissão avisa antes, em vez de pedir o PIN à toa',
+            description: 'Excluir usuário, esvaziar a lixeira do e-mail, remover requerimento, revelar senha do INSS: quando o cargo não permite, a resposta chega na hora e com o motivo. Antes a pessoa digitava o PIN para só então esbarrar na recusa — ou, pior, para ver um "pronto" que não tinha acontecido.',
+          },
+          {
+            type: 'security' as const,
+            title: 'A matriz de permissões passa a valer no banco, não só na tela',
+            description: 'Clientes, leads, processos, prazos, tarefas e os demais cadastros do núcleo tinham uma regra única: funcionário autenticado podia tudo. A tela respeitava o cargo; o banco, não — e a tela nunca é a autoridade final. Cada tabela passou a seguir as quatro colunas do cargo em Papéis e módulos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.9',
     date: '23/08/2026',
     summary: 'O PIN para ver valores virou escolha do escritório, e os métodos de pagamento deixaram de ser uma lista fechada de seis.',

@@ -617,6 +617,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       title: 'Excluir clientes selecionados',
       message: `Você tem certeza que deseja excluir ${selectedClientIds.size} cliente(s)? Essa ação removerá os cadastros permanentemente.`,
       confirmLabel: 'Excluir',
+      permission: { module: 'clientes', action: 'delete' },
     });
     if (!confirmed) return;
 
@@ -768,6 +769,7 @@ const ClientsModule: React.FC<ClientsModuleProps> = ({
       entityName: client?.full_name || undefined,
       message: 'Tem certeza que deseja excluir este cliente? Essa ação removerá o cadastro permanentemente.',
       confirmLabel: 'Excluir',
+      permission: { module: 'clientes', action: 'delete' },
     });
     if (!confirmed) return;
 

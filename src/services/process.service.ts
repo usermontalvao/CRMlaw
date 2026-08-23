@@ -247,14 +247,18 @@ class ProcessService {
   }
 
   async deleteProcess(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from(this.tableName)
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) {
       console.error('Erro ao deletar processo:', error);
       throw new Error(error.message);
+    }
+    if (!deleted?.length) {
+      throw new Error('O processo não foi excluído. Ele não existe ou seu cargo não possui permissão.');
     }
 
     // Invalidate cache on delete

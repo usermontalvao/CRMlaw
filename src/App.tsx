@@ -1357,10 +1357,11 @@ const MainApp: React.FC = () => {
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const logoutCleanupDoneRef = useRef(false);
 
-  const canAccessConfig = useMemo(() => 
-    ['admin', 'administrador', 'advogado'].includes((profile.role || '').toLowerCase()),
-    [profile.role]
-  );
+  // Configurações também segue a matriz de `role_permissions`. Antes, todo
+  // Advogado entrava pela lista fixa de cargos mesmo com `can_view=false`; a
+  // tela abria, pedia PIN e só a gravação era barrada — exatamente a falsa
+  // sensação de autorização que queremos eliminar.
+  const canAccessConfig = isAdmin || canView('configuracoes');
 
   const permissionGuardedModules = useMemo<ModuleName[]>(() => [
     'leads',
@@ -1387,6 +1388,9 @@ const MainApp: React.FC = () => {
   const canAccessModule = useCallback((moduleKey: ModuleName) => {
     if (isAdmin) return true;
     if (moduleKey === 'configuracoes') return canAccessConfig;
+    // A chave persistida no banco é `emails` (plural); a rota/módulo do React é
+    // `email` (singular). Sem esta ponte, uma permissão válida nunca era lida.
+    if (moduleKey === 'email') return canView('emails');
     if (moduleKey === 'cloud' || moduleKey === 'nextcloud') return canView('cloud') || canView('documentos');
     return canView(moduleKey);
   }, [isAdmin, canAccessConfig, canView]);

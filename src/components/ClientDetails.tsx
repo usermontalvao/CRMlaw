@@ -3728,7 +3728,13 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                 </button>
                                 <button
                                   onClick={async () => {
-                                    const ok = await confirmDelete({ title: 'Excluir petição', entityName: p.title ?? '', message: `Deseja excluir "${p.title}"?`, confirmLabel: 'Excluir' });
+                                    const ok = await confirmDelete({
+                                      title: 'Excluir petição',
+                                      entityName: p.title ?? '',
+                                      message: `Deseja excluir "${p.title}"?`,
+                                      confirmLabel: 'Excluir',
+                                      permission: { module: 'peticoes', action: 'delete' },
+                                    });
                                     if (!ok) return;
                                     await petitionEditorService.deletePetition(p.id);
                                     notifyDeleted(p.title ?? undefined);

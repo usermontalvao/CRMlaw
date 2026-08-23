@@ -1947,6 +1947,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       entityName: eventTitle || undefined,
       message: 'Deseja realmente excluir este compromisso?',
       confirmLabel: 'Excluir',
+      permission: { module: 'agenda', action: 'delete' },
     });
     if (!confirmed) return;
 
@@ -1982,6 +1983,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
       entityName: newEventForm.title || undefined,
       message: 'Deseja realmente excluir este compromisso?',
       confirmLabel: 'Excluir',
+      permission: { module: 'agenda', action: 'delete' },
     });
     if (!confirmed) return;
 

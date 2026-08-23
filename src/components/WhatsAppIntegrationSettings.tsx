@@ -263,6 +263,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     const pinOk = await requirePin({
       action: 'update_whatsapp_server', resourceType: 'setting', sensitivity: 'critical',
       title: 'Salvar servidor Evolution', description: 'Confirme com seu PIN para salvar as credenciais do servidor.',
+      permission: { module: 'configuracoes', action: 'edit' },
     });
     if (!pinOk) return;
     setSavingServer(true);
@@ -340,7 +341,17 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   }, [qrFor?.id, qrFor?.status]);
 
   const removeChannel = async (ch: WhatsAppChannel) => {
-    if (!confirm(`Excluir o canal "${ch.name || ch.instance_name}"? As conversas ficam, mas o canal sai.`)) return;
+    const pinOk = await requirePin({
+      action: 'delete_whatsapp_channel',
+      resourceType: 'whatsapp_channel',
+      resourceId: ch.id,
+      sensitivity: 'critical',
+      title: 'Excluir canal',
+      description: `Excluir o canal "${ch.name || ch.instance_name}"? As conversas ficam, mas o canal sai.`,
+      actionLabel: 'Excluir canal',
+      permission: { module: 'configuracoes', action: 'edit' },
+    });
+    if (!pinOk) return;
     try {
       await whatsappService.deleteChannel(ch.id);
       await reload();
@@ -364,6 +375,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       description: nextUserId
         ? `Confirme com seu PIN para direcionar novas mensagens de ${ch.name || ch.instance_name} para ${selected?.name || 'o usuário selecionado'}.`
         : `Confirme com seu PIN para desativar a atribuição inicial automática de ${ch.name || ch.instance_name}.`,
+      permission: { module: 'configuracoes', action: 'edit' },
     });
     if (!pinOk) return;
 
@@ -401,7 +413,17 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   };
 
   const removeDepartment = async (d: WhatsAppDepartment) => {
-    if (!confirm(`Excluir o departamento "${d.name}"?`)) return;
+    const pinOk = await requirePin({
+      action: 'delete_whatsapp_department',
+      resourceType: 'whatsapp_department',
+      resourceId: d.id,
+      sensitivity: 'critical',
+      title: 'Excluir departamento',
+      description: `Excluir o departamento "${d.name}"?`,
+      actionLabel: 'Excluir departamento',
+      permission: { module: 'configuracoes', action: 'edit' },
+    });
+    if (!pinOk) return;
     try {
       await whatsappService.deleteDepartment(d.id);
       await reload();
@@ -453,6 +475,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       sensitivity: 'high',
       title: 'Salvar copys do WhatsApp',
       description: 'Confirme com seu PIN para salvar os textos padrão do módulo WhatsApp.',
+      permission: { module: 'configuracoes', action: 'edit' },
     });
     if (!pinOk) return;
     setSavingCopy(true);
@@ -506,6 +529,7 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       sensitivity: 'high',
       title: 'Salvar roteamento de canais',
       description: 'Confirme com seu PIN para salvar departamentos permitidos e padrão por canal.',
+      permission: { module: 'configuracoes', action: 'edit' },
     });
     if (!pinOk) return;
     setSavingRouting(true);
@@ -528,7 +552,17 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
   };
 
   const removeTemplate = async (t: WhatsAppTemplate) => {
-    if (!confirm(`Excluir o modelo "${t.name}"?`)) return;
+    const pinOk = await requirePin({
+      action: 'delete_whatsapp_template',
+      resourceType: 'whatsapp_template',
+      resourceId: t.id,
+      sensitivity: 'critical',
+      title: 'Excluir modelo',
+      description: `Excluir o modelo "${t.name}"?`,
+      actionLabel: 'Excluir modelo',
+      permission: { module: 'configuracoes', action: 'edit' },
+    });
+    if (!pinOk) return;
     try {
       await whatsappService.deleteTemplate(t.id);
       await reload();

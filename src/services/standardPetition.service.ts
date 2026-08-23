@@ -201,9 +201,16 @@ class StandardPetitionService {
     // Delete fields first
     await supabase.from(this.fieldsTableName).delete().eq('petition_id', id);
 
-    const { error } = await supabase.from(this.tableName).delete().eq('id', id);
+    const { data: deleted, error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!deleted?.length) {
+      throw new Error('A petição padrão não foi excluída. Ela não existe ou seu cargo não possui permissão.');
+    }
   }
 
   async downloadPetitionFile(petition: StandardPetition): Promise<Blob> {

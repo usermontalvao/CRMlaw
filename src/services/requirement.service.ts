@@ -268,14 +268,18 @@ class RequirementService {
   }
 
   async deleteRequirement(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from(this.tableName)
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) {
       console.error('Erro ao deletar requerimento:', error);
       throw new Error(error.message);
+    }
+    if (!deleted?.length) {
+      throw new Error('O requerimento não foi excluído. Ele não existe ou seu cargo não possui permissão.');
     }
 
     this.invalidateCache();

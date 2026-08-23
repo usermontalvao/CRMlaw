@@ -72,6 +72,7 @@ import { addMinutesToWallTime } from '../utils/officeTime';
 import { detectIntimationOutcome, type IntimationOutcomeKind } from '../utils/intimationOutcome';
 import { dataInternaDoPrazo, prioridadePorUrgencia } from '../utils/intimationDeadline';
 import { LAYER } from '../styles/layers';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 
 interface ModuleSettings {
   defaultGroupByProcess: boolean;
@@ -157,6 +158,7 @@ interface IntimationsModuleProps {
 
 const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModule }) => {
   const toast = useToastContext();
+  const { confirmDelete } = useDeleteConfirm();
   const { user } = useAuth();
   const { navigateTo } = useNavigation();
   
@@ -354,7 +356,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       return;
     }
 
-    const confirmed = window.confirm(`Remover ${ids.length} intimação(ões) selecionada(s)? Esta ação é irreversível.`);
+    const confirmed = await confirmDelete({
+      title: 'Remover intimações',
+      message: `Remover ${ids.length} intimação(ões) selecionada(s)? Esta ação é irreversível.`,
+      confirmLabel: 'Remover',
+      permission: { module: 'intimacoes', action: 'delete' },
+    });
     if (!confirmed) return;
 
     try {
@@ -369,7 +376,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
   const handleDeleteRead = async () => {
     setShowClearMenu(false);
-    const confirmed = window.confirm('Remover todas as intimações marcadas como lidas? Esta ação é irreversível.');
+    const confirmed = await confirmDelete({
+      title: 'Remover intimações lidas',
+      message: 'Remover todas as intimações marcadas como lidas? Esta ação é irreversível.',
+      confirmLabel: 'Remover',
+      permission: { module: 'intimacoes', action: 'delete' },
+    });
     if (!confirmed) return;
 
     try {
@@ -1010,9 +1022,12 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
   const handleClearAllIntimations = async () => {
     if (clearingAll) return;
 
-    const confirmed = window.confirm(
-      'Tem certeza que deseja remover todas as intimações sincronizadas? Esta ação não pode ser desfeita.'
-    );
+    const confirmed = await confirmDelete({
+      title: 'Remover todas as intimações',
+      message: 'Tem certeza que deseja remover todas as intimações sincronizadas? Esta ação não pode ser desfeita.',
+      confirmLabel: 'Remover todas',
+      permission: { module: 'intimacoes', action: 'delete' },
+    });
 
     if (!confirmed) {
       return;

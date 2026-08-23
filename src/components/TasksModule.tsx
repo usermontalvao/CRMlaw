@@ -24,6 +24,7 @@ import { formatDate, formatTime } from '../utils/formatters';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { ModuleSkeleton } from './ui';
 import { TaskFormModal } from './TaskFormModal';
+import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 
 interface TasksModuleProps {
   focusNewTask?: boolean;
@@ -43,6 +44,7 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
   const [taskSearch, setTaskSearch] = useState('');
   const { user } = useAuth();
   const { navigateTo } = useNavigation();
+  const { confirmDelete } = useDeleteConfirm();
 
   // Prioridades configuráveis
   const [priorities, setPriorities] = useState<TaskPriorityConfig[]>(TASK_MODULE_DEFAULTS.priorities);
@@ -113,7 +115,15 @@ const TasksModule = ({ focusNewTask = false, onParamConsumed, onPendingTasksChan
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente excluir esta tarefa?')) return;
+    const task = tasks.find(item => item.id === id);
+    const confirmed = await confirmDelete({
+      title: 'Excluir tarefa',
+      entityName: task?.title,
+      message: 'Deseja realmente excluir esta tarefa?',
+      confirmLabel: 'Excluir',
+      permission: { module: 'tarefas', action: 'delete' },
+    });
+    if (!confirmed) return;
     try {
       await taskService.deleteTask(id);
       await loadTasks();

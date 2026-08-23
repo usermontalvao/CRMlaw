@@ -1598,6 +1598,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       entityName: template.name,
       message: 'Tem certeza que deseja excluir este template?',
       confirmLabel: 'Excluir Template',
+      permission: { module: 'documentos', action: 'delete' },
     });
 
     if (!confirmed) return;

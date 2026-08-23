@@ -1762,6 +1762,7 @@ Não use outros títulos além de "Próximo Passo Recomendado". Sem sufixos entr
       entityName: proc?.process_code || undefined,
       message: 'Deseja realmente remover este processo? Essa ação é irreversível.',
       confirmLabel: 'Excluir',
+      permission: { module: 'processos', action: 'delete' },
     });
     if (!confirmed) return;
 
@@ -2271,6 +2272,7 @@ Regras:
       title: 'Excluir nota',
       message: 'Tem certeza que deseja excluir esta nota? Esta ação não pode ser desfeita.',
       confirmLabel: 'Excluir',
+      permission: { module: 'processos', action: 'edit' },
     });
     if (!confirmed) return;
 

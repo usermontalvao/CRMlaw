@@ -669,12 +669,16 @@ class PetitionEditorService {
   }
 
   async deletePetition(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from(this.petitionsTable)
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!deleted?.length) {
+      throw new Error('A petição não foi excluída. Ela não existe ou seu cargo não possui permissão.');
+    }
   }
 
   async deleteAllPetitions(): Promise<void> {

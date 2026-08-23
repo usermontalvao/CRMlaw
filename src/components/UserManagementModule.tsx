@@ -147,6 +147,11 @@ export const UserManagementModule: React.FC = () => {
       title: 'Criar usuário',
       description: `Confirme seu PIN para criar o usuário "${nameSnapshot}".`,
       actionLabel: 'Criar usuário',
+      permission: {
+        module: 'usuarios',
+        action: 'create',
+        deniedMessage: 'Seu cargo não possui permissão para criar usuários.',
+      },
       onVerified: async () => {
         setCreating(true);
         setError(null);
@@ -177,6 +182,11 @@ export const UserManagementModule: React.FC = () => {
       title: 'Excluir usuário',
       description: `Confirme seu PIN para excluir permanentemente "${userName}". Esta ação não pode ser desfeita.`,
       actionLabel: 'Excluir permanentemente',
+      permission: {
+        module: 'usuarios',
+        action: 'delete',
+        deniedMessage: 'Seu cargo não possui permissão para excluir usuários.',
+      },
       onVerified: async () => {
         setDeleting(userId);
         try {
@@ -217,6 +227,11 @@ export const UserManagementModule: React.FC = () => {
       title: 'Resetar PIN',
       description: `O PIN de "${name}" será removido. O usuário precisará criar um novo PIN na próxima ação sensível.`,
       actionLabel: 'Resetar PIN',
+      permission: {
+        module: 'usuarios',
+        action: 'edit',
+        deniedMessage: 'Seu cargo não possui permissão para resetar o PIN de outros usuários.',
+      },
       onVerified: async () => {
         setResettingPin(true);
         try {
@@ -244,6 +259,11 @@ export const UserManagementModule: React.FC = () => {
       title: 'Alterar cargo',
       description: `Confirme seu PIN para alterar o cargo de "${targetName}" para "${editRole}".`,
       actionLabel: 'Salvar cargo',
+      permission: {
+        module: 'usuarios',
+        action: 'edit',
+        deniedMessage: 'Seu cargo não possui permissão para alterar cargos de usuários.',
+      },
       onVerified: async () => {
         setSaving(true);
         setError(null);
@@ -280,6 +300,11 @@ export const UserManagementModule: React.FC = () => {
       title: activate ? 'Reativar acesso' : 'Desativar acesso',
       description: `Confirme seu PIN para ${activate ? 'reativar' : 'desativar'} o acesso de "${profile.name}".`,
       actionLabel: activate ? 'Reativar acesso' : 'Desativar acesso',
+      permission: {
+        module: 'usuarios',
+        action: 'edit',
+        deniedMessage: 'Seu cargo não possui permissão para alterar o acesso de usuários.',
+      },
       onVerified: async () => {
         setToggling(targetUserId);
         try {

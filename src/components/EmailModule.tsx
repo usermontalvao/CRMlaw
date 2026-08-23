@@ -1096,7 +1096,21 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
 
   const onEmptyTrash = async () => {
     const labels = { all: 'TODOS os itens', read: 'os itens LIDOS', unread: 'os itens NÃO LIDOS' };
-    if (!window.confirm(`Esvaziar lixeira: excluir permanentemente ${labels[trashScope]}? Esta ação não pode ser desfeita.`)) return;
+    const pinOk = await requirePin({
+      action: 'email_empty_trash',
+      resourceType: 'email_folder',
+      resourceId: `trash:${trashScope}`,
+      sensitivity: 'critical',
+      title: 'Esvaziar lixeira',
+      description: `Excluir permanentemente ${labels[trashScope]}? Esta ação não pode ser desfeita.`,
+      actionLabel: 'Excluir permanentemente',
+      permission: {
+        module: 'emails',
+        action: 'delete',
+        deniedMessage: 'Seu cargo não possui permissão para excluir e-mails permanentemente.',
+      },
+    });
+    if (!pinOk) return;
     setEmptyingTrash(true);
     try {
       const n = await emailService.emptyTrash(trashScope);
@@ -1223,6 +1237,7 @@ export default function EmailModule({ params }: EmailModuleProps = {}) {
       sensitivity: 'high',
       title: 'Marcar todas como lidas',
       description: `Confirme com seu PIN para marcar ${pendentes} e-mail(s) não lido(s) como lidos. Esta ação não pode ser desfeita automaticamente.`,
+      permission: { module: 'emails', action: 'edit' },
     });
     if (!pinOk) return;
     const n = await emailService.markAllRead(folder);

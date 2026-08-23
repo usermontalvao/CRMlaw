@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext } from 'react';
-import { useSecurityPin } from './SecurityPinContext';
+import { useSecurityPin, type PinPermissionRequirement } from './SecurityPinContext';
 import { useToastContext } from './ToastContext';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
@@ -12,6 +12,8 @@ type ConfirmOptions = {
   cancelLabel?: string;  // aceito por compatibilidade, não usado no fluxo PIN
   sensitivity?: 'high' | 'critical';
   successMessage?: string;
+  /** Permissão necessária, validada antes de qualquer solicitação de PIN. */
+  permission?: PinPermissionRequirement;
 };
 
 type DeleteConfirmContextType = {
@@ -43,6 +45,7 @@ export const DeleteConfirmProvider: React.FC<{ children: React.ReactNode }> = ({
       description,
       entityName:   opts?.entityName,
       actionLabel:  opts?.confirmLabel || 'Excluir',
+      permission:   opts?.permission,
     };
   };
 

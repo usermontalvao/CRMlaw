@@ -139,11 +139,18 @@ class CalendarService {
   }
 
   async deleteEvent(id: string): Promise<void> {
-    const { error } = await supabase.from(this.tableName).delete().eq('id', id);
+    const { data: deleted, error } = await supabase
+      .from(this.tableName)
+      .delete()
+      .eq('id', id)
+      .select('id');
 
     if (error) {
       console.error('Erro ao excluir evento do calendário:', error);
       throw new Error(error.message);
+    }
+    if (!deleted?.length) {
+      throw new Error('O compromisso não foi excluído. Ele não existe ou seu cargo não possui permissão.');
     }
     syncBus.emit('calendar');
   }

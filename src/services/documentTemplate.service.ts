@@ -246,14 +246,20 @@ class DocumentTemplateService {
 
   async deleteTemplate(id: string): Promise<void> {
     const existing = await this.getTemplate(id);
-    if (!existing) return;
+    if (!existing) {
+      throw new Error('O template não foi encontrado ou seu cargo não possui permissão para visualizá-lo.');
+    }
 
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from(this.tableName)
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw new Error(error.message);
+    if (!deleted?.length) {
+      throw new Error('O template não foi excluído. Seu cargo não possui permissão para esta ação.');
+    }
 
     if (existing.file_path) {
       await supabase.storage.from(STORAGE_BUCKET).remove([existing.file_path]);

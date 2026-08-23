@@ -134,12 +134,14 @@ export const taskService = {
   },
 
   async deleteTask(id: string): Promise<void> {
-    const { error } = await supabase
+    const { data: deleted, error } = await supabase
       .from('tasks')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
 
     if (error) throw error;
+    if (!deleted?.length) throw new Error('A tarefa não foi excluída. Verifique sua permissão.');
   },
 
   async updateTaskPositions(updates: { id: string; position: number }[]): Promise<void> {
