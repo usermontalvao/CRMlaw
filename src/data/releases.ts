@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.4',
+    date: '23/08/2026',
+    summary: 'Abrir "Nova conversa" parou de baixar a carteira inteira de clientes: vem uma página, e a busca vai ao servidor a partir da segunda letra.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'A agenda de "Nova conversa" não vem mais inteira de uma vez',
+            description: 'Cada abertura do painel baixava nome e telefone de TODO cliente não arquivado do escritório, numa resposta só, para depois peneirar no navegador — e baixava tudo de novo na abertura seguinte. Isso fica caro justamente quando a carteira cresce. Agora vem a primeira página em ordem alfabética, que é o que dá o filtro instantâneo enquanto se digita, e a partir de duas letras uma busca no servidor traz o que está além dela, por nome ou pelos dígitos do telefone. Os dois conjuntos aparecem juntos, na mesma lista.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Nada quebra se a busca falhar',
+            description: 'A busca no servidor é silenciosa de propósito: se ela falhar, a página já carregada continua respondendo, e digitar o número completo continua abrindo a conversa mesmo sem agenda nenhuma.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.3',
     date: '23/08/2026',
     summary: 'O aviso instantâneo de mensagem nova passou a respeitar o canal: cada aba só é avisada do que ela pode abrir.',

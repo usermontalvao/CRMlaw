@@ -208,7 +208,38 @@ export const NewConversationPanel: React.FC<{
     setChannelId(atual => (ids.includes(atual) ? atual : pickInitialChannel(preferred, ids)));
   }, [channels, preferred]);
 
-  const filtrados = useMemo(() => filterContacts(agenda || [], query), [agenda, query]);
+  // ── A rede para além da primeira página ──────────────────────────────────
+  //
+  // A abertura traz uma PÁGINA da agenda (ver `listContactBook`), e o filtro
+  // continua acontecendo no navegador — é o que mantém a resposta no mesmo
+  // quadro em que se digita. O que a página não alcança vem daqui: a partir de
+  // 2 caracteres, uma busca no servidor, com folga para não disparar a cada
+  // tecla. Os dois conjuntos são unidos por telefone.
+  //
+  // Silencioso de propósito: falhar esta busca não pode esvaziar o que já está
+  // na tela — a página local continua valendo, e digitar o número completo
+  // continua abrindo a conversa mesmo sem agenda nenhuma.
+  const [remotos, setRemotos] = useState<ContactEntry[]>([]);
+  useEffect(() => {
+    const termo = query.trim();
+    if (termo.length < 2) { setRemotos([]); return; }
+    let vivo = true;
+    const timer = window.setTimeout(() => {
+      whatsappService.listContactBook(termo, 200)
+        .then(lista => { if (vivo) setRemotos(lista); })
+        .catch(() => { /* a página local já responde */ });
+    }, 250);
+    return () => { vivo = false; window.clearTimeout(timer); };
+  }, [query]);
+
+  const filtrados = useMemo(() => {
+    const locais = filterContacts(agenda || [], query);
+    if (remotos.length === 0) return locais;
+    const vistos = new Set(locais.map(c => `${c.clientId}:${c.phone}`));
+    const extras = remotos.filter(c => !vistos.has(`${c.clientId}:${c.phone}`));
+    if (extras.length === 0) return locais;
+    return [...locais, ...extras].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [agenda, query, remotos]);
   const secoes = useMemo(() => groupByLetter(filtrados), [filtrados]);
 
   // Rolar de volta ao topo a cada peneirada: sem isto, apagar a busca deixava a

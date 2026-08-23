@@ -97,8 +97,29 @@ export const client360Api = {
    * (`useClientPhotos`), e são pouquíssimos cadastros com retrato — não paga
    * arrastar tudo isso para dentro deste painel.
    */
-  async listContactBook(): Promise<WhatsAppContactBookEntry[]> {
-    const { data, error } = await supabase.rpc('whatsapp_contact_book');
+  /**
+   * @param query  2+ caracteres pedem a BUSCA no servidor (nome ou dígitos do
+   *               telefone). Vazio devolve a primeira página em ordem
+   *               alfabética — que é o que o painel carrega na abertura para o
+   *               filtro instantâneo continuar existindo.
+   * @param limit  Teto da resposta. Não é trava de segurança (essa é o
+   *               `is_office_staff()` dentro da função): é o ponto em que a
+   *               resposta deixa de ser instantânea.
+   */
+  async listContactBook(query?: string | null, limit = 500): Promise<WhatsAppContactBookEntry[]> {
+    // `whatsapp_contact_book` só aceita parâmetros depois da migration
+    // `whatsapp_agenda_paginada`; antes dela a assinatura é sem argumento, e o
+    // PostgREST responde PGRST202 ("função não encontrada"). Migration e
+    // front-end sobem separados neste projeto, então a chamada nova tem de
+    // saber cair na antiga — senão "Nova conversa" abre com erro no dia em que
+    // o front sobe primeiro.
+    let { data, error } = await supabase.rpc('whatsapp_contact_book', {
+      p_query: (query ?? '').trim() || null,
+      p_limit: limit,
+    });
+    if (error && (error.code === 'PGRST202' || /function/i.test(error.message))) {
+      ({ data, error } = await supabase.rpc('whatsapp_contact_book'));
+    }
     if (error) throw new Error(error.message);
     const rows = (data || []) as {
       client_id: string; full_name: string;
