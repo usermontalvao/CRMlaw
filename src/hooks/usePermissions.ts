@@ -20,6 +20,66 @@ interface ModuleOverride {
   expires_at: string | null;
 }
 
+/**
+ * RETRATO LOCAL DAS PERMISSÕES — por que ele existe.
+ *
+ * Este hook é montado do zero em CADA janela do produto. O CRM é uma; o Editor
+ * de petições, aberto em janela/PWA própria (`/editor`), é outra; o mesmo vale
+ * para qualquer aba nova. Em cada uma delas o cargo e as permissões eram
+ * buscados outra vez — duas idas ao servidor —, e durante esse intervalo
+ * `loading` valia `true`.
+ *
+ * Quem paga essa espera é o usuário: `ensurePermission` (SecurityPinContext)
+ * responde "Verificando suas permissões — aguarde um instante e tente
+ * novamente" enquanto o carregamento não termina, e no Editor isso acontecia
+ * logo na abertura, antes de a pessoa ter feito qualquer coisa.
+ *
+ * O retrato resolve a corrida: o que foi lido da última vez fica guardado por
+ * usuário, e a janela seguinte já nasce sabendo. A revalidação continua
+ * acontecendo sempre, em segundo plano — o retrato só encurta a espera do
+ * primeiro quadro, nunca substitui a leitura do servidor.
+ *
+ * Não é controle de acesso. A trava de verdade é a RLS do banco; isto aqui só
+ * decide qual botão a tela mostra e quando ela pergunta o PIN.
+ */
+const SNAPSHOT_KEY = 'jurius_permissions_snapshot_v1';
+/** Depois disso o retrato é velho demais para valer o primeiro quadro. */
+const SNAPSHOT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface PermissionsSnapshot {
+  userId: string;
+  savedAt: number;
+  role: string;
+  permissions: PermissionsCache;
+  overrides: ModuleOverride[];
+}
+
+function readSnapshot(userId: string): PermissionsSnapshot | null {
+  try {
+    const raw = window.localStorage.getItem(SNAPSHOT_KEY);
+    if (!raw) return null;
+    const snap = JSON.parse(raw) as PermissionsSnapshot;
+    if (!snap || snap.userId !== userId) return null;
+    if (!Number.isFinite(snap.savedAt) || Date.now() - snap.savedAt > SNAPSHOT_TTL_MS) return null;
+    return {
+      ...snap,
+      permissions: snap.permissions ?? {},
+      // Override vencido não volta do retrato: ele é temporário por definição.
+      overrides: (snap.overrides ?? []).filter(ov => !ov.expires_at || new Date(ov.expires_at) > new Date()),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeSnapshot(snap: PermissionsSnapshot) {
+  try {
+    window.localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+  } catch {
+    /* cota cheia ou modo privado: seguir sem retrato é só voltar ao que era */
+  }
+}
+
 export const usePermissions = () => {
   const { user } = useAuth();
   const [userRole, setUserRole] = useState<string>('');
@@ -36,59 +96,87 @@ export const usePermissions = () => {
 
   // Carrega o cargo do usuário atual
   useEffect(() => {
-    const loadUserRole = async () => {
+    let vivo = true;
+
+    if (!user?.id) {
+      setUserRole('');
+      setPermissions({});
+      setOverrides([]);
+      setLoading(false);
+      return;
+    }
+
+    const userId = user.id;
+
+    // Primeiro quadro: o que foi lido da última vez, se ainda vale. É isto que
+    // faz a janela do Editor abrir já sabendo quem pode o quê, em vez de
+    // recusar a primeira ação com "Verificando suas permissões".
+    const retrato = readSnapshot(userId);
+    if (retrato) {
+      setUserRole(retrato.role);
+      setPermissions(retrato.permissions);
+      setOverrides(retrato.overrides);
+      setLoading(false);
+    } else {
       setLoading(true);
       setUserRole('');
       setPermissions({});
+    }
 
-      if (!user?.id) {
-        setLoading(false);
-        return;
-      }
-
+    (async () => {
       try {
         const { data: profile } = await supabase
           .from('profiles')
           .select('role')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .single();
 
         const roleValue = profile?.role || '';
-        setUserRole(roleValue);
 
-        await Promise.all([
-          roleValue ? loadPermissions(normalizeRole(roleValue)) : Promise.resolve(),
-          loadOverrides(user.id),
+        const [perms, ovs] = await Promise.all([
+          roleValue ? fetchPermissions(normalizeRole(roleValue)) : Promise.resolve<PermissionsCache>({}),
+          fetchOverrides(userId),
         ]);
+
+        if (!vivo) return;
+        setUserRole(roleValue);
+        setPermissions(perms);
+        setOverrides(ovs);
+        writeSnapshot({ userId, savedAt: Date.now(), role: roleValue, permissions: perms, overrides: ovs });
       } catch (err) {
         console.error('Erro ao carregar cargo do usuário:', err);
+        if (!vivo) return;
+        // Havendo retrato, ele continua valendo: uma queda de rede não pode
+        // virar "este usuário não pode nada" numa tela que já estava de pé.
+        if (retrato) return;
         setUserRole('');
         setPermissions({});
         setOverrides([]);
       } finally {
-        setLoading(false);
+        if (vivo) setLoading(false);
       }
-    };
+    })();
 
-    loadUserRole();
+    return () => { vivo = false; };
   }, [user?.id]);
 
-  // Carrega overrides individuais do usuário (acesso extra concedido pelo admin)
+  // Overrides individuais do usuário (acesso extra concedido pelo admin)
+  const fetchOverrides = async (userId: string): Promise<ModuleOverride[]> => {
+    const { data, error } = await supabase
+      .from('user_module_overrides')
+      .select('module, can_view, expires_at')
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    // Filtrar overrides expirados
+    const now = new Date();
+    return (data ?? []).filter(ov => !ov.expires_at || new Date(ov.expires_at) > now) as ModuleOverride[];
+  };
+
   const loadOverrides = async (userId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('user_module_overrides')
-        .select('module, can_view, expires_at')
-        .eq('user_id', userId);
-
-      if (error) throw error;
-
-      // Filtrar overrides expirados
-      const now = new Date();
-      const active = (data ?? []).filter(ov =>
-        !ov.expires_at || new Date(ov.expires_at) > now
-      );
-      setOverrides(active as ModuleOverride[]);
+      setOverrides(await fetchOverrides(userId));
     } catch (err) {
       console.error('Erro ao carregar overrides de módulo:', err);
       setOverrides([]);
@@ -131,29 +219,24 @@ export const usePermissions = () => {
   }, [overrides, user?.id]);
 
   // Carrega todas as permissões do cargo
-  const loadPermissions = async (role: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('role_permissions')
-        .select('module, can_view, can_create, can_edit, can_delete')
-        .eq('role', role);
+  const fetchPermissions = async (role: string): Promise<PermissionsCache> => {
+    const { data, error } = await supabase
+      .from('role_permissions')
+      .select('module, can_view, can_create, can_edit, can_delete')
+      .eq('role', role);
 
-      if (error) throw error;
+    if (error) throw error;
 
-      const cache: PermissionsCache = {};
-      data?.forEach((perm) => {
-        cache[perm.module] = {
-          can_view: perm.can_view,
-          can_create: perm.can_create,
-          can_edit: perm.can_edit,
-          can_delete: perm.can_delete,
-        };
-      });
-
-      setPermissions(cache);
-    } catch (err) {
-      console.error('Erro ao carregar permissões:', err);
-    }
+    const cache: PermissionsCache = {};
+    data?.forEach((perm) => {
+      cache[perm.module] = {
+        can_view: perm.can_view,
+        can_create: perm.can_create,
+        can_edit: perm.can_edit,
+        can_delete: perm.can_delete,
+      };
+    });
+    return cache;
   };
 
   // Verifica se o usuário é administrador (tem todas as permissões)

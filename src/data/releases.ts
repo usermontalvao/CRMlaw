@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.8',
+    date: '24/08/2026',
+    summary: 'Novas janelas do CRM e do editor passam a reconhecer as permissões do usuário imediatamente.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Permissões disponíveis desde o primeiro instante',
+            description: 'O último retrato válido das permissões fica disponível localmente enquanto o CRM confirma os dados no servidor em segundo plano. Isso evita a mensagem “Verificando suas permissões” e o falso bloqueio da primeira ação ao abrir o editor ou outra janela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.7',
     date: '24/08/2026',
     summary: 'O compartilhamento de chaves do Authenticator ficou mais rápido e passou a avisar o destinatário sem repetir notificações.',
