@@ -1,10 +1,21 @@
 import { supabase } from '../config/supabase';
 import { profileService, type Profile } from './profile.service';
 import { userNotificationService } from './userNotification.service';
-import { matchesNormalizedSearch } from '../utils/search';
+import { buildSearchTextVariants, matchesNormalizedSearch } from '../utils/search';
 import { formatCurrency } from '../utils/formatters';
 
 const FEED_ATTACHMENT_BUCKET = 'anexos_chat';
+
+function postgrestIlikePattern(raw: string): string {
+  const escaped = raw.replace(/[\\"]/g, (char) => `\\${char}`);
+  return `"%${escaped}%"`;
+}
+
+function accentInsensitiveOr(search: string, columns: readonly string[]): string {
+  return buildSearchTextVariants(search)
+    .flatMap((variant) => columns.map((column) => `${column}.ilike.${postgrestIlikePattern(variant)}`))
+    .join(',');
+}
 
 // Tipos para referências de entidades
 export interface EntityReference {
@@ -1140,7 +1151,7 @@ class FeedPostsService {
 
       case 'cliente': {
         // Buscar clientes
-        const query = supabase
+        let query = supabase
           .from('clients')
           .select('id, full_name, cpf_cnpj, phone, status')
           .eq('status', 'ativo')
@@ -1148,7 +1159,7 @@ class FeedPostsService {
           .limit(limit);
         
         if (search) {
-          query.ilike('full_name', `%${search}%`);
+          query = query.or(accentInsensitiveOr(search, ['full_name', 'cpf_cnpj', 'phone']));
         }
         
         const { data } = await query;
@@ -1319,14 +1330,14 @@ class FeedPostsService {
       }
 
       case 'documento': {
-        const query = supabase
+        let query = supabase
           .from('generated_petition_documents')
           .select('id, file_name, petition_name, client_name')
           .order('created_at', { ascending: false })
           .limit(limit);
 
         if (search) {
-          query.ilike('file_name', `%${search}%`);
+          query = query.or(accentInsensitiveOr(search, ['file_name', 'petition_name', 'client_name']));
         }
 
         const { data, error } = await query;
@@ -1367,14 +1378,14 @@ class FeedPostsService {
       }
 
       case 'peticao': {
-        const query = supabase
+        let query = supabase
           .from('saved_petitions')
           .select('id, title, client_name, updated_at')
           .order('updated_at', { ascending: false })
           .limit(limit);
 
         if (search) {
-          query.or(`title.ilike.%${search}%,client_name.ilike.%${search}%`);
+          query = query.or(accentInsensitiveOr(search, ['title', 'client_name']));
         }
 
         const { data, error } = await query;
@@ -1412,14 +1423,14 @@ class FeedPostsService {
       }
 
       case 'assinatura': {
-        const query = supabase
+        let query = supabase
           .from('signature_requests')
           .select('id, document_name, client_name, status, created_at')
           .order('created_at', { ascending: false })
           .limit(limit);
 
         if (search) {
-          query.or(`document_name.ilike.%${search}%,client_name.ilike.%${search}%`);
+          query = query.or(accentInsensitiveOr(search, ['document_name', 'client_name']));
         }
 
         const { data, error } = await query;
@@ -1461,14 +1472,14 @@ class FeedPostsService {
       }
 
       case 'requerimento': {
-        const query = supabase
+        let query = supabase
           .from('requirements')
           .select('id, protocol, beneficiary, benefit_type, status, created_at')
           .order('created_at', { ascending: false })
           .limit(limit);
 
         if (search) {
-          query.or(`protocol.ilike.%${search}%,beneficiary.ilike.%${search}%,benefit_type.ilike.%${search}%`);
+          query = query.or(accentInsensitiveOr(search, ['protocol', 'beneficiary', 'benefit_type']));
         }
 
         const { data, error } = await query;
@@ -1538,7 +1549,7 @@ class FeedPostsService {
         const { data } = await supabase
           .from('processes')
           .select('id, process_code')
-          .or(`process_code.ilike.%${search}%`)
+          .or(accentInsensitiveOr(search, ['process_code']))
           .limit(limit);
         if (data) {
           for (const p of data) results.push({ type: 'process', id: p.id, name: (p as any).process_code });
@@ -1550,7 +1561,7 @@ class FeedPostsService {
         const { data } = await supabase
           .from('deadlines')
           .select('id, title, due_date')
-          .ilike('title', `%${search}%`)
+          .or(accentInsensitiveOr(search, ['title']))
           .limit(limit);
         if (data) {
           for (const d of data) results.push({ type: 'deadline', id: d.id, name: (d as any).title });
@@ -1562,7 +1573,7 @@ class FeedPostsService {
         const { data } = await supabase
           .from('calendar_events')
           .select('id, title, start_at')
-          .ilike('title', `%${search}%`)
+          .or(accentInsensitiveOr(search, ['title']))
           .limit(limit);
         if (data) {
           for (const e of data) results.push({ type: 'calendar', id: e.id, name: (e as any).title });
@@ -1574,7 +1585,7 @@ class FeedPostsService {
         const { data, error } = await supabase
           .from('generated_petition_documents')
           .select('id, file_name, petition_name')
-          .ilike('file_name', `%${search}%`)
+          .or(accentInsensitiveOr(search, ['file_name', 'petition_name']))
           .limit(limit);
         if (error) {
           console.warn('Erro ao buscar entidades para tag documento:', error);

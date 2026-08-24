@@ -10,6 +10,7 @@ import { whatsappService, renderTemplate } from '../../services/whatsapp.service
 import { useToastContext } from '../../contexts/ToastContext';
 import type { WhatsAppTemplate } from '../../types/whatsapp.types';
 import type { WhatsAppConversation } from '../../types/whatsapp.types';
+import { matchesNormalizedSearch } from '../../utils/search';
 
 // ── Seletor de templates/macros (Fase 8) ──
 export const TemplatePickerModal: React.FC<{
@@ -36,7 +37,7 @@ export const TemplatePickerModal: React.FC<{
   useEffect(() => { load(); }, [load]);
 
   const filtered = (templates || []).filter(t =>
-    !q.trim() || t.name.toLowerCase().includes(q.toLowerCase()) || (t.category || '').toLowerCase().includes(q.toLowerCase()));
+    !q.trim() || matchesNormalizedSearch(q, [t.name, t.category]));
 
   const createNew = async () => {
     if (!newName.trim() || !newBody.trim()) return;

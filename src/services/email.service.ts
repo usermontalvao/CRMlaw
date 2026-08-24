@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase';
 import type { EmailMessage, EmailFolder, SendEmailDTO, EmailSignature, EmailSpamRule, SpamRuleKind, SpamRuleMatch, EmailSearchFilters } from '../types/email.types';
 import { patchForInbox, patchForSpam } from '../utils/email.transitions';
+import { buildSearchTextVariants } from '../utils/search';
 
 const TABLE = 'email_messages';
 const EMPTY_FILTERS: EmailSearchFilters = {
@@ -57,10 +58,11 @@ function ilikePattern(raw: string): string {
   return `"%${escaped}%"`;
 }
 
-/** `col1.ilike."%term%",col2.ilike."%term%",…` para um `.or(...)`. */
-function orIlike(term: string, columns: readonly string[]): string {
-  const pattern = ilikePattern(term);
-  return columns.map((col) => `${col}.ilike.${pattern}`).join(',');
+/** Repete o ILIKE pelas alternativas acentuadas sem perder a paginação no banco. */
+function orIlikeAccentInsensitive(term: string, columns: readonly string[]): string {
+  return buildSearchTextVariants(term)
+    .flatMap((variant) => columns.map((col) => `${col}.ilike.${ilikePattern(variant)}`))
+    .join(',');
 }
 
 function folderFilter(query: any, folder: EmailFolder) {
@@ -117,19 +119,19 @@ class EmailService {
 
     // Remetente: casa em from_text OU from_address.
     const fromTerm = activeFilters.from.trim();
-    if (fromTerm) query = query.or(orIlike(fromTerm, ['from_text', 'from_address']));
+    if (fromTerm) query = query.or(orIlikeAccentInsensitive(fromTerm, ['from_text', 'from_address']));
 
     // Destinatário: casa em to/cc/bcc.
     const toTerm = activeFilters.to.trim();
-    if (toTerm) query = query.or(orIlike(toTerm, ['to_text', 'cc_text', 'bcc_text']));
+    if (toTerm) query = query.or(orIlikeAccentInsensitive(toTerm, ['to_text', 'cc_text', 'bcc_text']));
 
     // Assunto (parcial).
     const subjectTerm = activeFilters.subject.trim();
-    if (subjectTerm) query = query.ilike('subject', `%${subjectTerm}%`);
+    if (subjectTerm) query = query.or(orIlikeAccentInsensitive(subjectTerm, ['subject']));
 
     // Busca global: assunto, remetente, destinatários e corpo.
     const searchTerm = search?.trim() || '';
-    if (searchTerm) query = query.or(orIlike(searchTerm, SEARCH_COLUMNS));
+    if (searchTerm) query = query.or(orIlikeAccentInsensitive(searchTerm, SEARCH_COLUMNS));
 
     const from = Math.max(0, offset);
     const to = from + Math.max(1, limit) - 1;

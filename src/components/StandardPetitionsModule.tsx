@@ -212,14 +212,10 @@ const StandardPetitionsModule: React.FC<StandardPetitionsModuleProps> = ({ onNav
 
   const filteredModelsByCategory = useMemo(() => {
     if (!selectedCategory) return [];
-    const q = modelSearchQuery.trim().toLowerCase();
+    const q = modelSearchQuery.trim();
     const base = activePetitions.filter((p) => p.category === selectedCategory);
     if (!q) return base;
-    return base.filter((p) => {
-      const name = (p.name || '').toLowerCase();
-      const desc = (p.description || '').toLowerCase();
-      return name.includes(q) || desc.includes(q);
-    });
+    return base.filter((p) => matchesNormalizedSearch(q, [p.name, p.description]));
   }, [activePetitions, modelSearchQuery, selectedCategory]);
 
   useEffect(() => {

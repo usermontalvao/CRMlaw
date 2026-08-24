@@ -605,7 +605,7 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
   }, [selectedProcessForView]);
 
   const filteredProcesses = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    const term = normalizeSearchText(searchTerm);
 
     const baseList =
       statusFilter === 'todos'
@@ -633,10 +633,9 @@ const ProcessesModule: React.FC<ProcessesModuleProps> = ({ forceCreate, entityId
         process.notes,
       ]
         .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+        .join(' ');
 
-      return composite.includes(term);
+      return normalizeSearchText(composite).includes(term);
     });
   }, [processes, statusFilter, searchTerm, allClientsMap]);
 
@@ -2716,7 +2715,7 @@ Regras:
 
   const filteredStageMapProcesses = useMemo(() => {
     const base = stageMapSelectedStatus ? processesByStatus[stageMapSelectedStatus] || [] : [];
-    const q = stageMapSearch.trim().toLowerCase();
+    const q = normalizeSearchText(stageMapSearch);
     if (!q) return base;
 
     return base.filter((process) => {
@@ -2731,9 +2730,8 @@ Regras:
         process.notes,
       ]
         .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return composite.includes(q);
+        .join(' ');
+      return normalizeSearchText(composite).includes(q);
     });
   }, [stageMapSelectedStatus, stageMapSearch, processesByStatus, allClientsMap]);
 

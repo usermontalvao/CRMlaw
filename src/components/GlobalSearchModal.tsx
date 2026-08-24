@@ -1156,7 +1156,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ open, onCl
       .filter(c => !q ||
         nrm(c.label).includes(nrm(q)) ||
         nrm(c.description).includes(nrm(q)) ||
-        c.keywords.some(k => k.includes(q))
+        c.keywords.some(k => nrm(k).includes(nrm(q)))
       );
   }, [commandQuery, canSeeModule]);
 

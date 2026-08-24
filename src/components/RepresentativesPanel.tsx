@@ -54,6 +54,7 @@ import type { CalendarEvent } from '../types/calendar.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import { zc } from '../styles/layers';
+import { matchesNormalizedSearch } from '../utils/search';
 
 // Labels inline para evitar problemas de importação
 const SERVICE_STATUS_LABELS_MAP: Record<ServiceStatus, string> = {
@@ -222,13 +223,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     return representatives.filter((rep) => {
       if (rep.status !== 'ativo') return false;
       if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        return (
-          rep.full_name.toLowerCase().includes(term) ||
-          rep.cpf?.toLowerCase().includes(term) ||
-          rep.phone?.toLowerCase().includes(term) ||
-          rep.email?.toLowerCase().includes(term)
-        );
+        return matchesNormalizedSearch(searchTerm, [rep.full_name, rep.cpf, rep.phone, rep.email]);
       }
       return true;
     });
@@ -238,10 +233,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     return appointments.filter((apt) => {
       if (!apt.is_archived) return false;
       if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        const repName = apt.representative?.full_name?.toLowerCase() || '';
-        const eventTitle = apt.calendar_event?.title?.toLowerCase() || '';
-        return repName.includes(term) || eventTitle.includes(term);
+        return matchesNormalizedSearch(searchTerm, [apt.representative?.full_name, apt.calendar_event?.title]);
       }
       return true;
     });
@@ -251,13 +243,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
     return representatives.filter((rep) => {
       if (rep.status !== 'inativo') return false;
       if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        return (
-          rep.full_name.toLowerCase().includes(term) ||
-          rep.cpf?.toLowerCase().includes(term) ||
-          rep.phone?.toLowerCase().includes(term) ||
-          rep.email?.toLowerCase().includes(term)
-        );
+        return matchesNormalizedSearch(searchTerm, [rep.full_name, rep.cpf, rep.phone, rep.email]);
       }
       return true;
     });
@@ -270,10 +256,7 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
       if (serviceStatusFilter !== 'all' && apt.service_status !== serviceStatusFilter) return false;
       if (paymentStatusFilter !== 'all' && apt.payment_status !== paymentStatusFilter) return false;
       if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        const repName = apt.representative?.full_name?.toLowerCase() || '';
-        const eventTitle = apt.calendar_event?.title?.toLowerCase() || '';
-        return repName.includes(term) || eventTitle.includes(term);
+        return matchesNormalizedSearch(searchTerm, [apt.representative?.full_name, apt.calendar_event?.title]);
       }
       return true;
     });
@@ -284,15 +267,12 @@ const RepresentativesPanel: React.FC<RepresentativesPanelProps> = ({
   }, [representatives]);
 
   const filteredModalRepresentatives = useMemo(() => {
-    const term = representativeModalSearchTerm.trim().toLowerCase();
+    const term = representativeModalSearchTerm.trim();
     if (!term) return [];
 
-    return availableActiveRepresentatives.filter((rep) => (
-      rep.full_name.toLowerCase().includes(term)
-      || rep.cpf?.toLowerCase().includes(term)
-      || rep.phone?.toLowerCase().includes(term)
-      || rep.email?.toLowerCase().includes(term)
-    )).slice(0, 8);
+    return availableActiveRepresentatives
+      .filter((rep) => matchesNormalizedSearch(term, [rep.full_name, rep.cpf, rep.phone, rep.email]))
+      .slice(0, 8);
   }, [availableActiveRepresentatives, representativeModalSearchTerm]);
 
   const selectedAppointmentRepresentative = useMemo(() => {

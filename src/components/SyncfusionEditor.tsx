@@ -31,6 +31,7 @@ import {
   registerProofTokens,
 } from '../services/proofContextBudget';
 import { resetSyncfusionHistoryAfterDocumentLoad } from '../utils/syncfusionHistory';
+import { buildSearchTextVariants } from '../utils/search';
 import { aiService } from '../services/ai.service';
 import { supabase } from '../config/supabase';
 import {
@@ -3166,7 +3167,20 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           const findOption = options?.matchCase
             ? (options?.wholeWord ? 'CaseSensitiveWholeWord' : 'CaseSensitive')
             : (options?.wholeWord ? 'WholeWord' : 'None');
-          search.findAll?.(value, findOption);
+          const candidates = buildSearchTextVariants(value).map((candidate) => {
+            if (!options?.matchCase) return candidate;
+            return Array.from(candidate).map((char, index) => {
+              const source = Array.from(value)[index] || '';
+              return source && source === source.toLocaleUpperCase('pt-BR') && source !== source.toLocaleLowerCase('pt-BR')
+                ? char.toLocaleUpperCase('pt-BR')
+                : char;
+            }).join('');
+          });
+          for (const candidate of candidates) {
+            search.searchResults.clear?.();
+            search.findAll?.(candidate, findOption);
+            if (Number(search.searchResults.length || 0) > 0) break;
+          }
           const count = Number(search.searchResults.length || 0);
           const index = Number(search.searchResults.index ?? -1);
           return { count, current: count > 0 ? Math.max(0, index) + 1 : 0 };
@@ -3229,8 +3243,20 @@ const SyncfusionEditor = forwardRef<SyncfusionEditorRef, SyncfusionEditorProps>(
           // (search.replaceAll direto é método interno com outra assinatura e
           // lança exceção quando chamado com (texto, substituto).)
           if (search.searchResults && typeof search.findAll === 'function') {
-            search.searchResults.clear?.();
-            search.findAll(s, findOption);
+            const candidates = buildSearchTextVariants(s).map((candidate) => {
+              if (!options?.matchCase) return candidate;
+              return Array.from(candidate).map((char, index) => {
+                const source = Array.from(s)[index] || '';
+                return source && source === source.toLocaleUpperCase('pt-BR') && source !== source.toLocaleLowerCase('pt-BR')
+                  ? char.toLocaleUpperCase('pt-BR')
+                  : char;
+              }).join('');
+            });
+            for (const candidate of candidates) {
+              search.searchResults.clear?.();
+              search.findAll(candidate, findOption);
+              if (Number(search.searchResults.length || 0) > 0) break;
+            }
             const count = Number(search.searchResults.length || 0);
             const replaced = count > 0;
             if (replaced) search.searchResults.replaceAll(r);

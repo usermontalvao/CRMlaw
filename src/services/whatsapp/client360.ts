@@ -17,6 +17,7 @@ import type { SignatureRequestWithSigners } from '../../types/signature.types';
 import type { Agreement } from '../../types/financial.types';
 import type { WhatsAppClientLite, WhatsAppContactBookEntry, WhatsAppContactProbe } from '../../types/whatsapp.types';
 import type { ClientSchedule, ScheduleDeadline, ClientPendings, ClientDocRequest, ClientOverview, ClientTemplateFillLink, ClientTrackedSignatureStatus } from './shared';
+import { matchesNormalizedSearch, normalizeSearchText } from '../../utils/search';
 
 /**
  * Até quantos dias depois do vencimento um prazo pendente ainda é mostrado no
@@ -75,9 +76,22 @@ export const client360Api = {
   async searchClients(query: string): Promise<WhatsAppClientLite[]> {
     const q = query.trim();
     if (q.length < 2) return [];
-    const { data, error } = await supabase.rpc('whatsapp_search_clients', { p_query: q });
+    const { data, error } = await supabase
+      .from('clients')
+      .select('id, full_name, cpf_cnpj, phone, mobile, photo_path, email, status, client_type, address_city, address_state, is_pre_cadastro')
+      .neq('status', 'arquivado')
+      .is('merged_into_client_id', null)
+      .order('full_name', { ascending: true });
     if (error) throw new Error(error.message);
-    return (data || []) as WhatsAppClientLite[];
+    const normalizedQuery = normalizeSearchText(q);
+    const digits = q.replace(/\D/g, '');
+    return ((data || []) as WhatsAppClientLite[])
+      .filter((client) =>
+        matchesNormalizedSearch(normalizedQuery, [client.full_name, client.email]) ||
+        (Boolean(digits) && [client.cpf_cnpj, client.phone, client.mobile]
+          .some((value) => String(value || '').replace(/\D/g, '').includes(digits)))
+      )
+      .slice(0, 20);
   },
 
   /**

@@ -47,7 +47,7 @@ import { processService } from '../services/process.service';
 import { deadlineService } from '../services/deadline.service';
 import { calendarService } from '../services/calendar.service';
 import { profileService } from '../services/profile.service';
-import { matchesNormalizedSearch } from '../utils/search';
+import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { formatDate as formatDateValue, formatDateLong, formatDateTime as formatDateTimeValue } from '../utils/formatters';
 import { settingsService, type DjenConfig, DEADLINE_MODULE_DEFAULTS } from '../services/settings.service';
 import { userNotificationService } from '../services/userNotification.service';
@@ -1249,17 +1249,17 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
 
     // Busca (melhorada para normalizar número do processo e incluir cliente)
     if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
+      const term = normalizeSearchText(searchTerm);
       const termDigits = normalizeDigits(term);
       filtered = filtered.filter(
         (i) => {
           const processId = (i as any).process_id as string | null | undefined;
           const processCode = processId ? processCodeById.get(processId) : undefined;
-          const processCodeLower = processCode?.toLowerCase();
+          const processCodeLower = normalizeSearchText(processCode);
           const processCodeDigits = processCode ? normalizeDigits(processCode) : '';
 
-          const numeroProcessoLower = i.numero_processo?.toLowerCase();
-          const numeroProcessoMascaraLower = i.numero_processo_mascara?.toLowerCase();
+          const numeroProcessoLower = normalizeSearchText(i.numero_processo);
+          const numeroProcessoMascaraLower = normalizeSearchText(i.numero_processo_mascara);
           const numeroProcessoDigits = i.numero_processo ? normalizeDigits(i.numero_processo) : '';
           const numeroProcessoMascaraDigits = i.numero_processo_mascara ? normalizeDigits(i.numero_processo_mascara) : '';
 
@@ -1268,9 +1268,9 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
           const clientMatch = matchesNormalizedSearch(term, [clientName || '']);
 
           return (
-            numeroProcessoLower?.includes(term) ||
-            numeroProcessoMascaraLower?.includes(term) ||
-            processCodeLower?.includes(term) ||
+            numeroProcessoLower.includes(term) ||
+            numeroProcessoMascaraLower.includes(term) ||
+            processCodeLower.includes(term) ||
             matchesNormalizedSearch(term, [i.texto || '']) ||
             matchesNormalizedSearch(term, [i.nome_orgao || '']) ||
             clientMatch ||
@@ -1316,12 +1316,8 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
       f = f.filter((i) => new Date(i.data_disponibilizacao) <= end);
     }
     if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
-      f = f.filter((i) =>
-        i.numero_processo?.toLowerCase().includes(term) ||
-        i.numero_processo_mascara?.toLowerCase().includes(term) ||
-        i.texto?.toLowerCase().includes(term)
-      );
+      const term = searchTerm.trim();
+      f = f.filter((i) => matchesNormalizedSearch(term, [i.numero_processo, i.numero_processo_mascara, i.texto]));
     }
     return f;
   }, [intimations, tribunalFilter, urgencyFilter, dateFilter, customDateStart, customDateEnd, searchTerm, aiAnalysis]);
@@ -2790,14 +2786,13 @@ const IntimationsModule: React.FC<IntimationsModuleProps> = ({ onNavigateToModul
                   </div>
 
                   {processDropdownOpen && selectedClientId && !selectedProcessId && (() => {
-                    const term = processSearchTerm.toLowerCase().replace(/\D/g, '');
+                    const term = processSearchTerm.replace(/\D/g, '');
                     const filtered = processes
                       .filter(p => p.client_id === selectedClientId)
                       .filter(p => {
                         if (!processSearchTerm) return true;
-                        const code = p.process_code.toLowerCase();
                         const digits = p.process_code.replace(/\D/g, '');
-                        return code.includes(processSearchTerm.toLowerCase()) || (term && digits.includes(term));
+                        return matchesNormalizedSearch(processSearchTerm, [p.process_code]) || (term && digits.includes(term));
                       });
                     return (
                       <div className="absolute z-50 mt-1 w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-[2px] shadow-lg max-h-52 overflow-y-auto">

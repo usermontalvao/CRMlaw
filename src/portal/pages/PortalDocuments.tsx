@@ -7,6 +7,7 @@ import {
 import { useClientAuth } from '../contexts/ClientAuthContext';
 import { clientPortalService } from '../services/clientPortal.service';
 import { EmptyState, SkeletonCard, formatFileSize, formatDate, formatRelative } from '../components/PortalUI';
+import { matchesNormalizedSearch } from '../../utils/search';
 
 interface DocumentItem {
   id: string;
@@ -76,11 +77,11 @@ export const PortalDocuments: React.FC = () => {
   }, [docs]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     return docs.filter((d) => {
       if (filter !== 'all' && classify(d) !== filter) return false;
       if (!q) return true;
-      return `${d.name || ''} ${d.filename || ''} ${d.description || ''}`.toLowerCase().includes(q);
+      return matchesNormalizedSearch(q, [d.name, d.filename, d.description]);
     });
   }, [docs, search, filter]);
 

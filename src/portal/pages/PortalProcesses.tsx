@@ -5,6 +5,7 @@ import { usePortalRouter } from '../hooks/usePortalRouter';
 import { clientPortalService } from '../services/clientPortal.service';
 import { EmptyState, SkeletonCard, formatDate, formatRelative } from '../components/PortalUI';
 import { statusMeta, TONE_CLASSES } from '../lib/domain';
+import { matchesNormalizedSearch } from '../../utils/search';
 
 interface ProcessItem {
   id: string;
@@ -49,18 +50,13 @@ export const PortalProcesses: React.FC = () => {
   }), [processes]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     return processes.filter((p) => {
       if (filter === 'andamento' && p.status === 'arquivado') return false;
       if (filter === 'arquivado' && p.status !== 'arquivado') return false;
       if (!q) return true;
       const m = statusMeta(p.status);
-      return (
-        p.process_code?.toLowerCase().includes(q) ||
-        p.court?.toLowerCase().includes(q) ||
-        p.practice_area?.toLowerCase().includes(q) ||
-        m.label.toLowerCase().includes(q)
-      );
+      return matchesNormalizedSearch(q, [p.process_code, p.court, p.practice_area, m.label]);
     });
   }, [processes, search, filter]);
 

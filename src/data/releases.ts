@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.17',
+    date: '24/08/2026',
+    summary: 'Procurar sem digitar acento passou a funcionar em todo o sistema — inclusive nas buscas que acontecem no servidor.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Buscar "jose" encontra "José" em qualquer tela',
+            description: 'A comparação sem acento saiu de cada tela e virou uma peça única. Clientes, processos, prazos, intimações, agenda, Nuvem, e-mails, petições, assinaturas, Feed, WhatsApp, portal do cliente e a pesquisa global passaram todos a usar a mesma regra, com maiúsculas e minúsculas tratadas em português.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A busca sem acento agora também vale no servidor',
+            description: 'Parte das buscas não acontece no navegador: ela é feita pelo banco ou pelo Nextcloud, e nenhum dos dois ignora acento sozinho. Agora o sistema monta um punhado de variações do que foi digitado — jose, josé, josê — e pergunta por todas de uma vez, sem transformar isso numa consulta gigante.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.16',
     date: '23/08/2026',
     summary: 'Os cartões de modelo foram redesenhados, o menu deles diz o que cada opção faz — e agora dá para duplicar um kit inteiro.',

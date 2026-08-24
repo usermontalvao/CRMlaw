@@ -37,6 +37,7 @@ import RepresentativesPanel from './RepresentativesPanel';
 import { Modal, ModalBody, ModuleSkeleton } from './ui';
 import { useSyncTick } from '../lib/syncBus';
 import { matchesCalendarSearch } from '../utils/calendarSearch.utils';
+import { matchesNormalizedSearch } from '../utils/search';
 import { intlTimeZonePlugin } from '../utils/fullCalendarTimeZone';
 import { LAYER, layerStack, zc } from '../styles/layers';
 import {
@@ -442,11 +443,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
 
   // Busca de clientes no campo unificado
   useEffect(() => {
-    const term = clientSearchTerm.trim().toLowerCase();
+    const term = clientSearchTerm.trim();
     if (term.length < 1) { setClientSearchResults([]); return; }
-    const results = clients.filter(c =>
-      c.full_name?.toLowerCase().includes(term) || c.cpf_cnpj?.includes(term)
-    ).slice(0, 6);
+    const results = clients
+      .filter(c => matchesNormalizedSearch(term, [c.full_name, c.cpf_cnpj]))
+      .slice(0, 6);
     setClientSearchResults(results);
   }, [clientSearchTerm, clients]);
 

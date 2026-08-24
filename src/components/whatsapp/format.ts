@@ -8,6 +8,7 @@ import type {
 import type { StaffOption } from '../../services/whatsapp.service';
 import type { ElapsedMinutes } from './businessTime';
 import { nomeProprio } from './nomeProprio';
+import { matchesNormalizedSearch } from '../../utils/search';
 
 export const formatTime = (iso: string | null) => {
   if (!iso) return '';
@@ -54,13 +55,12 @@ export const conversationName = (c: {
  * Busca da inbox: casa contra os DOIS nomes (cadastro e WhatsApp) além do
  * telefone. Quem procura por "Vicente" continua achando a conversa mesmo que a
  * lista agora exiba "Vicente da Costa Pereira", e vice-versa. `q` já vem em
- * minúsculas do chamador.
+ * qualquer caixa ou acentuação do chamador.
  */
 export const matchesConversationSearch = (
   c: { client_name?: string | null; contact_name: string | null; contact_phone: string },
   q: string,
-) => [c.client_name, c.contact_name].some(name => (name || '').toLowerCase().includes(q))
-  || c.contact_phone.includes(q);
+) => matchesNormalizedSearch(q, [c.client_name, c.contact_name, c.contact_phone]);
 
 export const formatBytes = (n: number | null) => {
   if (!n) return '';

@@ -77,6 +77,7 @@ import { useNextcloudSelection } from '../hooks/useNextcloudSelection';
 import { useNextcloudClipboard } from '../hooks/useNextcloudClipboard';
 import { useNextcloudPresence, type EditingPeer } from '../hooks/useNextcloudPresence';
 import { isCollabEnabled } from '../services/syncfusionCollab.service';
+import { matchesNormalizedSearch } from '../utils/search';
 import EditingNowPeopleModal from './EditingNowPeopleModal';
 import EditingNowBadge from './EditingNowBadge';
 import { setLocalPdfWorker } from '../utils/pdfWorker';
@@ -1495,9 +1496,9 @@ const NextcloudBrowser: React.FC = () => {
   };
 
   const filteredClients = useMemo(() => {
-    const q = clientSearch.trim().toLowerCase();
+    const q = clientSearch.trim();
     if (!q) return clients.slice(0, 50);
-    return clients.filter((c) => (c.full_name || '').toLowerCase().includes(q)).slice(0, 50);
+    return clients.filter((c) => matchesNormalizedSearch(q, [c.full_name])).slice(0, 50);
   }, [clients, clientSearch]);
 
   // Vinculação automática: varre as pastas da pasta atual, aplica sozinho os

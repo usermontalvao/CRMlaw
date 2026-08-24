@@ -68,6 +68,65 @@ function authHeader(user: string, pass: string): string {
   return 'Basic ' + btoa(`${user}:${pass}`);
 }
 
+const SEARCH_DIACRITIC_OPTIONS: Record<string, readonly string[]> = {
+  a: ['ã', 'á', 'â', 'à'],
+  e: ['é', 'ê'],
+  i: ['í'],
+  o: ['ó', 'ô', 'õ'],
+  u: ['ú', 'ü'],
+  c: ['ç'],
+  n: ['ñ'],
+};
+
+/** Alternativas compactas para o SEARCH WebDAV, que pode diferenciar acentos. */
+function searchTextVariants(value: string, maxVariants = 24): string[] {
+  const raw = String(value || '').trim().toLocaleLowerCase('pt-BR');
+  const base = raw.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+  if (!base) return [];
+
+  const variants: string[] = [];
+  const seen = new Set<string>();
+  const add = (candidate: string) => {
+    if (!candidate || seen.has(candidate) || variants.length >= maxVariants) return;
+    seen.add(candidate);
+    variants.push(candidate);
+  };
+  add(raw);
+  add(base);
+
+  const substitutions: Array<{ index: number; value: string }> = [];
+  const preferredSubstitutions: Array<{ index: number; value: string }> = [];
+  Array.from(base).forEach((char, index) => {
+    const options = SEARCH_DIACRITIC_OPTIONS[char] || [];
+    if (options[0]) preferredSubstitutions.push({ index, value: options[0] });
+    for (const option of options) substitutions.push({ index, value: option });
+  });
+  const replaceAt = (replacements: Array<{ index: number; value: string }>) => {
+    const chars = Array.from(base);
+    for (const replacement of replacements) chars[replacement.index] = replacement.value;
+    return chars.join('');
+  };
+  for (const substitution of preferredSubstitutions) add(replaceAt([substitution]));
+  for (let first = 0; first < preferredSubstitutions.length && variants.length < maxVariants; first += 1) {
+    for (let second = first + 1; second < preferredSubstitutions.length && variants.length < maxVariants; second += 1) {
+      add(replaceAt([preferredSubstitutions[first], preferredSubstitutions[second]]));
+    }
+  }
+  for (const substitution of substitutions) add(replaceAt([substitution]));
+  for (let first = 0; first < substitutions.length && variants.length < maxVariants; first += 1) {
+    for (let second = first + 1; second < substitutions.length && variants.length < maxVariants; second += 1) {
+      if (substitutions[first].index === substitutions[second].index) continue;
+      add(replaceAt([substitutions[first], substitutions[second]]));
+    }
+  }
+  return variants;
+}
+
+function webDavOr(conditions: string[]): string {
+  if (conditions.length <= 1) return conditions[0] || '';
+  return `<d:or>${conditions[0]}${webDavOr(conditions.slice(1))}</d:or>`;
+}
+
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
@@ -364,13 +423,16 @@ Deno.serve(async (req: Request) => {
         const scopeSegs = base ? base.split('/').filter(Boolean).map((s) => encodeURIComponent(s)).join('/') : '';
         const scopeHref = `/files/${encodeURIComponent(user)}${scopeSegs ? '/' + scopeSegs : ''}`;
         const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const nameConditions = searchTextVariants(query).map(
+          (variant) => `<d:like><d:prop><d:displayname/></d:prop><d:literal>%${esc(variant)}%</d:literal></d:like>`,
+        );
         const searchBody =
           '<?xml version="1.0" encoding="UTF-8"?>' +
           '<d:searchrequest xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">' +
           '<d:basicsearch>' +
           '<d:select><d:prop><d:getcontentlength/><d:getcontenttype/><d:getlastmodified/><d:resourcetype/></d:prop></d:select>' +
           `<d:from><d:scope><d:href>${esc(scopeHref)}</d:href><d:depth>infinity</d:depth></d:scope></d:from>` +
-          `<d:where><d:like><d:prop><d:displayname/></d:prop><d:literal>%${esc(query)}%</d:literal></d:like></d:where>` +
+          `<d:where>${webDavOr(nameConditions)}</d:where>` +
           '<d:orderby/>' +
           '</d:basicsearch></d:searchrequest>';
         const res = await fetch(`${url.replace(/\/+$/, '')}/remote.php/dav/`, {

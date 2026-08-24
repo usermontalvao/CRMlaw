@@ -14,6 +14,7 @@ import { requirementService } from '../services/requirement.service';
 import { financialService } from '../services/financial.service';
 import { calendarService } from '../services/calendar.service';
 import { documentTemplateService } from '../services/documentTemplate.service';
+import { matchesNormalizedSearch } from '../utils/search';
 import { templateFillPermalinkService } from '../services/templateFillPermalink.service';
 import { clientService } from '../services/client.service';
 import { deadlineService } from '../services/deadline.service';
@@ -587,7 +588,7 @@ const WaTemplateLinkModal: React.FC<{
   }, []);
 
   const filtered = templates.filter(t =>
-    !search || t.name.toLowerCase().includes(search.toLowerCase())
+    !search || matchesNormalizedSearch(search, [t.name])
   );
 
   // Link PÚBLICO de preenchimento/assinatura (/#/p/<slug>) — o cliente preenche e

@@ -6906,11 +6906,11 @@ Regras:
   };
 
   const filteredClients = useMemo(() => {
-    const q = (clientSearch || '').trim().toLowerCase();
+    const q = normalizeSearchText(clientSearch || '');
     if (!q) return clients;
     return clients.filter((client) => {
-      const name = (client.full_name || '').toLowerCase();
-      const doc = (client.cpf_cnpj || '').toLowerCase();
+      const name = normalizeSearchText(client.full_name || '');
+      const doc = normalizeSearchText(client.cpf_cnpj || '');
       return name.includes(q) || doc.includes(q);
     });
   }, [clients, clientSearch]);
@@ -7125,14 +7125,14 @@ Regras:
   ]);
 
   const recentDocuments = useMemo<RecentDocumentItem[]>(() => {
-    const normalizedSearch = recentDocumentSearch.trim().toLocaleLowerCase('pt-BR');
+    const normalizedSearch = normalizeSearchText(recentDocumentSearch);
     return recentDocumentsAll
       .filter((item) => recentDocumentSource === 'all' || item.source === recentDocumentSource)
       .filter((item) => {
         if (!normalizedSearch) return true;
         return [item.title, item.clientName, item.location]
           .filter(Boolean)
-          .some((value) => String(value).toLocaleLowerCase('pt-BR').includes(normalizedSearch));
+          .some((value) => normalizeSearchText(String(value)).includes(normalizedSearch));
       })
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 40);

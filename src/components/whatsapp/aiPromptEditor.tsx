@@ -21,6 +21,7 @@ import {
   type WaAiActionDef,
 } from '../../utils/waAiActionCatalog';
 import type { WhatsAppAiActionRef, WhatsAppAiTargetOption } from '../../types/whatsapp.types';
+import { matchesNormalizedSearch, normalizeSearchText } from '../../utils/search';
 
 /** Caret DENTRO dos parênteses de uma expressão em construção. */
 const OPEN_TARGET_RE = /a[çc][ãa]o\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(([^()\n]*)$/;
@@ -145,20 +146,19 @@ export const AiPromptEditor: React.FC<Props> = ({
 
   const actionOptions = useMemo(() => {
     if (menu.kind !== 'action') return [];
-    const q = menu.query.toLowerCase();
+    const q = normalizeSearchText(menu.query);
     return WA_AI_ACTIONS.filter(a =>
-      !q || a.alias.includes(q) || a.name.includes(q) || a.title.toLowerCase().includes(q));
+      !q || matchesNormalizedSearch(q, [a.alias, a.name, a.title]));
   }, [menu]);
 
   const targetOptions = useMemo(() => {
     if (menu.kind !== 'target') return [];
-    const q = menu.query.trim().toLowerCase();
+    const q = normalizeSearchText(menu.query);
     const accepts = menu.action.targetSource === 'document_template'
       ? (t: WhatsAppAiTargetOption) => t.type === 'document_template'
       : (t: WhatsAppAiTargetOption) => t.type === 'user' || t.type === 'department';
     return targets
-      .filter(t => accepts(t)
-        && (!q || t.label.toLowerCase().includes(q) || (t.hint || '').toLowerCase().includes(q)))
+      .filter(t => accepts(t) && (!q || matchesNormalizedSearch(q, [t.label, t.hint])))
       .slice(0, 30);
   }, [menu, targets]);
 

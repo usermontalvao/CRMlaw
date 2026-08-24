@@ -52,6 +52,7 @@ import type { ProcessPracticeArea } from '../types/process.types';
 import type { Client } from '../types/client.types';
 import { Modal, ModalBody, SignatureSkeleton } from './ui';
 import { LAYER, zc, zcStack } from '../styles/layers';
+import { matchesNormalizedSearch } from '../utils/search';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -3938,13 +3939,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                     <div className="space-y-1 max-h-56 overflow-y-auto pr-0.5">
                       {generatedDocuments
                         .filter((doc) => {
-                          const q = genDocsSearchTerm.trim().toLowerCase();
+                          const q = genDocsSearchTerm.trim();
                           if (!q) return true;
-                          return (
-                            (doc.file_name || '').toLowerCase().includes(q) ||
-                            (doc.template_name || '').toLowerCase().includes(q) ||
-                            (doc.client_name || '').toLowerCase().includes(q)
-                          );
+                          return matchesNormalizedSearch(q, [doc.file_name, doc.template_name, doc.client_name]);
                         })
                         .map((doc) => {
                           const selIdx = selectedGenDocIds.indexOf(doc.id);
@@ -3982,13 +3979,9 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                           );
                         })}
                       {generatedDocuments.filter((doc) => {
-                        const q = genDocsSearchTerm.trim().toLowerCase();
+                        const q = genDocsSearchTerm.trim();
                         if (!q) return true;
-                        return (
-                          (doc.file_name || '').toLowerCase().includes(q) ||
-                          (doc.template_name || '').toLowerCase().includes(q) ||
-                          (doc.client_name || '').toLowerCase().includes(q)
-                        );
+                        return matchesNormalizedSearch(q, [doc.file_name, doc.template_name, doc.client_name]);
                       }).length === 0 && (
                         <p className="text-xs text-slate-400 text-center py-3">Nenhum documento encontrado</p>
                       )}
@@ -5882,10 +5875,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 </div>
               ) : (() => {
                 const filteredArchived = trashSearch.trim()
-                  ? archivedList.filter(r =>
-                      (r.document_name || '').toLowerCase().includes(trashSearch.toLowerCase()) ||
-                      (r.client_name || '').toLowerCase().includes(trashSearch.toLowerCase())
-                    )
+                  ? archivedList.filter(r => matchesNormalizedSearch(trashSearch, [r.document_name, r.client_name]))
                   : archivedList;
                 if (filteredArchived.length === 0) return (
                   <div style={{ padding: '40px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>

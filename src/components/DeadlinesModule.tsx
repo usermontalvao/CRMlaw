@@ -321,6 +321,12 @@ const CANCEL_REASON_SUGGESTIONS = [
 ];
 
 const isArchivedDeadline = (deadline: Deadline) => ARCHIVED_STATUSES.includes(deadline.status);
+
+// Encerrado é o prazo que não pede mais nada — cumprido, cancelado ou excluído.
+// Vencido fica de fora de propósito: ele é arquivado para efeito de fila, mas
+// continua cobrando ação e por isso não pode aparecer apagado.
+const CLOSED_STATUSES: DeadlineStatus[] = ['cumprido', 'cancelado', 'excluido'];
+const isClosedDeadline = (deadline: Deadline) => CLOSED_STATUSES.includes(deadline.status);
 // Data em que o prazo foi encerrado. A exclusão vem primeiro: um prazo cumprido
 // e depois excluído foi encerrado quando saiu, não quando foi cumprido.
 const getArchivedAt = (deadline: Deadline) =>
@@ -1274,17 +1280,34 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
   const mentionSuggestions = useMemo(() => {
     if (mentionQuery === null) return [];
     return members
-      .filter((mem) => (mem.name || '').toLowerCase().includes(mentionQuery))
+      .filter((mem) => matchesNormalizedSearch(mentionQuery, [mem.name]))
       .slice(0, 6);
   }, [mentionQuery, members]);
+
+  const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
+  const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
+  const processMap = useMemo(() => new Map(processes.map((process) => [process.id, process])), [processes]);
 
   // Filtros secundários (busca, tipo, prioridade, responsável) — exclui a aba de status.
   // Centraliza a regra para que lista, cartões de estatística e alertas usem exatamente
   // o mesmo critério e nunca exibam números divergentes.
   const matchesSecondaryFilters = useCallback(
     (deadline: Deadline) => {
-      if (filterSearch.trim() && !matchesNormalizedSearch(filterSearch, [deadline.title, deadline.description || ''])) {
-        return false;
+      if (filterSearch.trim()) {
+        // A busca cobre o que a linha mostra: quem procura por "Kézia" está
+        // pensando na cliente, não no texto do título — e o mesmo vale para o
+        // responsável e para o número do processo.
+        const client = deadline.client_id ? clientMap.get(deadline.client_id) : null;
+        const responsible = deadline.responsible_id ? memberMap.get(deadline.responsible_id) : null;
+        const process = deadline.process_id ? processMap.get(deadline.process_id) : null;
+        const matches = matchesNormalizedSearch(filterSearch, [
+          deadline.title,
+          deadline.description || '',
+          client?.full_name,
+          responsible?.name,
+          process?.process_code,
+        ]);
+        if (!matches) return false;
       }
       if (filterType && deadline.type !== filterType) return false;
       if (filterPriority && deadline.priority !== filterPriority) return false;
@@ -1295,7 +1318,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       }
       return true;
     },
-    [filterSearch, filterType, filterPriority, filterResponsible],
+    [filterSearch, filterType, filterPriority, filterResponsible, clientMap, memberMap, processMap],
   );
 
   const filteredDeadlines = useMemo(() => {
@@ -1303,9 +1326,14 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
 
     if (activeStatusTab !== 'todos') {
       filtered = filtered.filter((deadline) => deadline.status === activeStatusTab);
-    } else {
+    } else if (!filterSearch.trim()) {
       // A fila mostra só o que ainda pede ação — cumpridos, vencidos e cancelados
       // vão para o histórico no rodapé do módulo.
+      //
+      // Quem digita na busca, porém, está procurando UM prazo pelo nome, e não
+      // sabe (nem tem por que saber) se ele já foi encerrado. Por isso o recorte
+      // da fila cai enquanto há texto na busca: o encerrado aparece junto, com o
+      // status na própria linha, em vez de sumir sem explicação.
       filtered = filtered.filter((deadline) => !isArchivedDeadline(deadline));
     }
 
@@ -1316,7 +1344,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       if (a.status !== 'pendente' && b.status === 'pendente') return 1;
       return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
     });
-  }, [deadlines, activeStatusTab, matchesSecondaryFilters]);
+  }, [deadlines, activeStatusTab, matchesSecondaryFilters, filterSearch]);
 
   // O kanban mostra uma coluna por status e por isso ignora o recorte da fila.
   const kanbanDeadlines = useMemo(
@@ -1537,21 +1565,18 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     [internalCalendarMonth, internalCalendarYear],
   );
 
-  const memberMap = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
-  const clientMap = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
-
   // ── Histórico filtrado ────────────────────────────────────────────────────
   const filteredHistory = useMemo(() => {
     let base = isPastMonth ? monthlyArchived : archivedDeadlines;
 
     if (historyStatus) base = base.filter((d) => d.status === historyStatus);
     if (historySearch.trim()) {
-      const term = historySearch.trim().toLowerCase();
-      base = base.filter((d) =>
-        d.title.toLowerCase().includes(term) ||
-        (d.description || '').toLowerCase().includes(term) ||
-        (d.client_id ? (clientMap.get(d.client_id)?.full_name || '').toLowerCase().includes(term) : false)
-      );
+      const term = historySearch.trim();
+      base = base.filter((d) => matchesNormalizedSearch(term, [
+        d.title,
+        d.description,
+        d.client_id ? clientMap.get(d.client_id)?.full_name : '',
+      ]));
     }
     if (historyMonth !== '') {
       base = base.filter((d) => new Date(getArchivedAt(d)).getMonth() === historyMonth);
@@ -1886,14 +1911,18 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
     }
   }, [permissionsLoading, isAdmin, currentUser]);
 
+  // A lista de clientes é carregada inteira, uma vez só. Antes ela era recarregada
+  // a cada letra digitada no seletor do formulário, e o resultado dessa busca
+  // virava a lista inteira do módulo — o que apagava o nome do cliente da fila,
+  // do histórico e da exportação enquanto o modal estava aberto. O recorte por
+  // termo é feito localmente, em `filteredClients`.
   useEffect(() => {
     let active = true;
     setClientsLoading(true);
 
-    const handler = setTimeout(async () => {
+    (async () => {
       try {
-        const term = clientSearchTerm.trim();
-        const data = await clientService.listClients(term ? { search: term } : undefined);
+        const data = await clientService.listClients();
         if (!active) return;
         setClients(data);
       } catch (err) {
@@ -1905,13 +1934,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
           setClientsLoading(false);
         }
       }
-    }, 300);
+    })();
 
     return () => {
       active = false;
-      clearTimeout(handler);
     };
-  }, [clientSearchTerm]);
+  }, []);
 
 
   useEffect(() => {
@@ -2879,13 +2907,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       : processes;
 
     if (!processSearchTerm.trim()) return scopedProcesses.slice(0, 10);
-    const term = processSearchTerm.trim().toLowerCase();
+    const term = processSearchTerm.trim();
     return scopedProcesses
-      .filter((p) => {
-        const processCode = (p.process_code ?? '').toLowerCase();
-        const court = (p.court ?? '').toLowerCase();
-        return processCode.includes(term) || court.includes(term);
-      })
+      .filter((p) => matchesNormalizedSearch(term, [p.process_code, p.court]))
       .slice(0, 10);
   }, [processes, processSearchTerm, formData.client_id]);
 
@@ -2895,24 +2919,22 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
       : requirements;
 
     if (!requirementSearchTerm.trim()) return scopedRequirements.slice(0, 10);
-    const term = requirementSearchTerm.trim().toLowerCase();
+    const term = requirementSearchTerm.trim();
     return scopedRequirements
-      .filter((r) => {
-        const protocol = (r.protocol ?? '').toLowerCase();
-        const beneficiary = (r.beneficiary ?? '').toLowerCase();
-        return protocol.includes(term) || beneficiary.includes(term);
-      })
+      .filter((r) => matchesNormalizedSearch(term, [r.protocol, r.beneficiary]))
       .slice(0, 10);
   }, [requirements, requirementSearchTerm, formData.client_id]);
 
   const filteredClients = useMemo(() => {
     if (!clientSearchTerm.trim()) return clients.slice(0, 10);
-    const term = clientSearchTerm.trim().toLowerCase();
+    const term = clientSearchTerm.trim();
+    const digits = term.replace(/\D/g, '');
     return clients
       .filter((client) => {
-        const name = (client.full_name || '').toLowerCase();
-        const cpf = (client.cpf_cnpj || '').replace(/\D/g, '');
-        return name.includes(term) || cpf.includes(term);
+        // Nome pelo texto sem acento — quem digita "kezia" tem de achar "Kézia".
+        if (matchesNormalizedSearch(term, [client.full_name])) return true;
+        if (!digits) return false;
+        return (client.cpf_cnpj || '').replace(/\D/g, '').includes(digits);
       })
       .slice(0, 10);
   }, [clients, clientSearchTerm]);
@@ -4195,7 +4217,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
             <input
               type="text"
               value={filterSearch}
-              onChange={(e) => setFilterSearch(e.target.value)}
+              onChange={(e) => { setFilterSearch(e.target.value); setCurrentPage(1); }}
               placeholder="Buscar prazo..."
               aria-label="Buscar prazo"
               className="w-full h-9 pl-8 pr-3 bg-white border border-[#e7e5df] rounded-lg text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
@@ -4765,16 +4787,25 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
               const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
               const responsibleItem = deadline.responsible_id ? memberMap.get(deadline.responsible_id) : null;
 
+              const closed = isClosedDeadline(deadline);
+
               return (
-                <div key={deadline.id} className={`p-3 sm:p-4 ${dueSoon && deadline.status === 'pendente' ? 'bg-red-50/70' : ''}`}>
+                <div
+                  key={deadline.id}
+                  className={`p-3 sm:p-4 ${
+                    closed ? 'bg-slate-50/60' : dueSoon && deadline.status === 'pendente' ? 'bg-red-50/70' : ''
+                  }`}
+                >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-semibold text-gray-900 truncate">{deadline.title}</h3>
+                      <h3 className={`text-sm font-semibold truncate ${
+                        closed ? 'text-slate-400' : 'text-gray-900'
+                      }`}>{deadline.title}</h3>
                       {deadline.description && (
                         <p className="text-xs text-slate-500 mt-1 line-clamp-2">{deadline.description}</p>
                       )}
                     </div>
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold flex-shrink-0 ${getPriorityBadge(deadline.priority)}`}>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold flex-shrink-0 ${closed ? 'bg-slate-100 text-slate-400' : getPriorityBadge(deadline.priority)}`}>
                       {priorityConfig && <priorityConfig.icon className="w-3 h-3" />}
                       {getPriorityLabel(deadline.priority)}
                     </span>
@@ -4783,12 +4814,12 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   <div className="grid grid-cols-2 gap-2 text-xs mb-3">
                     <div>
                       <span className="text-slate-500">Vencimento:</span>
-                      <p className="font-medium text-gray-900">{formatDate(deadline.due_date)}</p>
+                      <p className={`font-medium ${closed ? 'text-slate-400' : 'text-gray-900'}`}>{formatDate(deadline.due_date)}</p>
                     </div>
                     <div>
                       <span className="text-slate-500">Situação:</span>
                       {deadline.status === 'cancelado' ? (
-                        <p className="font-medium text-red-600">Cancelado</p>
+                        <p className="font-medium text-slate-400">Cancelado</p>
                       ) : deadline.status === 'cumprido' ? (
                         (() => {
                           const onTime = (() => {
@@ -4797,7 +4828,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             if (!due || !completed) return daysUntil >= 0;
                             return completed.getTime() <= due.getTime();
                           })();
-                          return <p className={`font-medium ${onTime ? 'text-emerald-600' : 'text-amber-600'}`}>{onTime ? '✓ No prazo' : '✓ Com atraso'}</p>;
+                          return <p className="font-medium text-slate-400">{onTime ? '✓ No prazo' : '✓ Com atraso'}</p>;
                         })()
                       ) : daysUntil >= 0 ? (
                         <p className={`font-medium ${dueSoon ? 'text-red-600' : 'text-gray-900'}`}>
@@ -4809,11 +4840,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                     </div>
                     <div>
                       <span className="text-slate-500">Cliente:</span>
-                      <p className="font-medium text-gray-900 truncate">{clientItem ? clientItem.full_name : 'N/A'}</p>
+                      <p className={`font-medium truncate ${closed ? 'text-slate-400' : 'text-gray-900'}`}>{clientItem ? clientItem.full_name : 'N/A'}</p>
                     </div>
                     <div>
                       <span className="text-slate-500">Tipo:</span>
-                      <p className="font-medium text-gray-900">{getTypeLabel(deadline.type)}</p>
+                      <p className={`font-medium ${closed ? 'text-slate-400' : 'text-gray-900'}`}>{getTypeLabel(deadline.type)}</p>
                     </div>
                   </div>
 
@@ -4915,12 +4946,18 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                   const dueSoon = isDueSoon(deadline.due_date);
                   const clientItem = deadline.client_id ? clientMap.get(deadline.client_id) : null;
                   const linkedProcess = deadline.process_id ? processes.find(p => p.id === deadline.process_id) : null;
+                  // O encerrado só aparece na fila quando a busca o traz de volta.
+                  // A linha INTEIRA fica cinza — data, contagem, cliente,
+                  // prioridade e status — porque uma cor viva em qualquer célula
+                  // ainda lê como "isto pede alguma coisa".
+                  const closed = isClosedDeadline(deadline);
 
                   return (
                     <tr
                       key={deadline.id}
                       className={`group relative hover:bg-slate-50 transition-colors ${
                         selectedIds.has(deadline.id) ? 'bg-blue-50/50' :
+                        closed ? 'bg-slate-50/60' :
                         dueSoon && deadline.status === 'pendente' ? 'bg-red-50/30' : ''
                       }`}
                     >
@@ -4940,7 +4977,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                             type="button"
                             onClick={() => handleViewDeadline(deadline)}
                             title={deadline.title}
-                            className="block w-full text-left text-sm font-semibold text-blue-600 hover:text-blue-700 hover:underline truncate"
+                            className={`block w-full text-left text-sm font-semibold truncate hover:underline ${
+                              closed ? 'text-slate-400 hover:text-slate-600' : 'text-blue-600 hover:text-blue-700'
+                            }`}
                           >
                             {deadline.title}
                           </button>
@@ -4955,7 +4994,7 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       
                       {/* Coluna VENCIMENTO */}
                       <td className="px-4 py-3">
-                        <span className="text-sm text-slate-700 tabular-nums whitespace-nowrap">{formatDate(deadline.due_date)}</span>
+                        <span className={`text-sm tabular-nums whitespace-nowrap ${closed ? 'text-slate-400' : 'text-slate-700'}`}>{formatDate(deadline.due_date)}</span>
                       </td>
                       
                       {/* Coluna DIAS */}
@@ -4972,7 +5011,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                               return completed.getTime() <= due.getTime();
                             })();
                             return (
-                              <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${onTime ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
+                                closed ? 'bg-slate-100 text-slate-400' : onTime ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
                                 {onTime ? '✓ No prazo' : '✓ Com atraso'}
                               </span>
                             );
@@ -4993,11 +5034,11 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       {/* Coluna CLIENTE / PRIORIDADE */}
                       <td className="px-4 py-3 max-w-[16rem]">
                         <div className="flex flex-col items-start gap-1 min-w-0">
-                          <span className="text-sm text-slate-800 truncate max-w-full" title={clientItem?.full_name}>
+                          <span className={`text-sm truncate max-w-full ${closed ? 'text-slate-400' : 'text-slate-800'}`} title={clientItem?.full_name}>
                             {clientItem ? clientItem.full_name : '—'}
                           </span>
                           {/* Badge vem das configurações do módulo, igual ao card e ao kanban. */}
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${getPriorityBadge(deadline.priority)}`}>
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${closed ? 'bg-slate-100 text-slate-400' : getPriorityBadge(deadline.priority)}`}>
                             {priorityConfig && <priorityConfig.icon className="w-2.5 h-2.5" />}
                             {getPriorityLabel(deadline.priority)}
                           </span>
@@ -5007,7 +5048,9 @@ const DeadlinesModule: React.FC<DeadlinesModuleProps> = ({ forceCreate, entityId
                       {/* Coluna STATUS — badge configurável que também troca o status. */}
                       <td className="px-4 py-3">
                         <span
-                          className={`relative inline-flex items-center rounded-md text-xs font-semibold transition focus-within:ring-2 focus-within:ring-blue-500/30 ${getStatusBadge(deadline.status)} ${isUpdating ? 'opacity-50' : ''}`}
+                          className={`relative inline-flex items-center rounded-md text-xs font-semibold transition focus-within:ring-2 focus-within:ring-blue-500/30 ${
+                            closed ? 'bg-slate-100 text-slate-500' : getStatusBadge(deadline.status)
+                          } ${isUpdating ? 'opacity-50' : ''}`}
                         >
                           <select
                             value={deadline.status}

@@ -7,6 +7,7 @@
  */
 import React from 'react';
 import type { NextcloudChangeEvent, NextcloudEntry } from '../services/nextcloud.service';
+import { matchesNormalizedSearch } from '../utils/search';
 
 const now = Date.now();
 const iso = (daysAgo: number) => new Date(now - daysAgo * 86_400_000).toISOString();
@@ -36,9 +37,8 @@ export const nextcloudService = {
   ping: async () => ({ ok: true, root: '/' }),
   list: async (path = '') => TREE[path] ?? [],
   search: async (query: string, path = '') => {
-    const term = query.toLocaleLowerCase('pt-BR');
     return Object.values(TREE).flat().filter((entry) =>
-      entry.path.startsWith(path) && entry.name.toLocaleLowerCase('pt-BR').includes(term));
+      entry.path.startsWith(path) && matchesNormalizedSearch(query, [entry.name]));
   },
   readFile: async () => new Blob([new Uint8Array()]),
   stat: async () => ({ exists: false }),

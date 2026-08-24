@@ -78,6 +78,7 @@ import { events, SYSTEM_EVENTS } from '../utils/events';
 import type { Client } from '../types/client.types';
 import type { CloudActivityLog, CloudFile, CloudFolder, CloudFolderShare } from '../types/cloud.types';
 import { zc, zcStack } from '../styles/layers';
+import { matchesNormalizedSearch, normalizeSearchText, replaceNormalizedSearch } from '../utils/search';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -1847,9 +1848,9 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
   useEffect(() => {
     if (viewMode !== 'cards') return;
 
-    const term = searchTerm.trim().toLowerCase();
+    const term = normalizeSearchText(searchTerm);
     const previewFiles = (hasGlobalSearch ? allFiles : files)
-      .filter((file) => !term || file.original_name.toLowerCase().includes(term))
+      .filter((file) => !term || matchesNormalizedSearch(term, [file.original_name]))
       .filter((file) => isImageFile(file.mime_type) || isPdfFile(file.mime_type, file.original_name));
     if (previewFiles.length === 0) {
       setCardPreviewUrls({});
@@ -1920,11 +1921,11 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       : isTrashView
         ? folders.filter((item) => Boolean(item.delete_scheduled_for))
         : folders;
-    const term = searchTerm.trim().toLowerCase();
+    const term = normalizeSearchText(searchTerm);
 
     return sourceFolders
       .filter((item) => {
-        const matchesTerm = !term || item.name.toLowerCase().includes(term);
+        const matchesTerm = !term || matchesNormalizedSearch(term, [item.name]);
         const matchesClient = !searchFilters.clientId || (item.client_id || '') === searchFilters.clientId;
         const matchesLabel = !searchFilters.labelId || folderLabelAssignments[item.id] === searchFilters.labelId;
 
@@ -1953,7 +1954,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
             return !parentFolder?.archived_at;
           })
         : files;
-    const term = searchTerm.trim().toLowerCase();
+    const term = normalizeSearchText(searchTerm);
 
     return sourceFiles.filter((item) => {
       const parentFolder = allFolders.find((folder) => folder.id === item.folder_id) ?? null;
@@ -1969,7 +1970,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
       }
 
       const matchesTerm = !term || [item.original_name, parentFolder?.name || '', folderPath.join(' / ')]
-        .some((value) => value.toLowerCase().includes(term));
+        .some((value) => matchesNormalizedSearch(term, [value]));
       const matchesExtension = !searchFilters.extension || (item.extension || '').toLowerCase() === searchFilters.extension.toLowerCase();
       const matchesClient = !searchFilters.clientId || (item.client_id || '') === searchFilters.clientId;
       const matchesLabel = !searchFilters.labelId || (parentFolder ? folderLabelAssignments[parentFolder.id] === searchFilters.labelId : false);
@@ -4179,7 +4180,7 @@ const CloudModule: React.FC<CloudModuleProps> = ({ onNavigateToModule, initialFo
     const buildName = (name: string) => {
       let nextName = name;
       if (bulkRenameSearch) {
-        nextName = nextName.split(bulkRenameSearch).join(bulkRenameReplace);
+        nextName = replaceNormalizedSearch(nextName, bulkRenameSearch, bulkRenameReplace);
       }
       return `${bulkRenamePrefix}${nextName}${bulkRenameSuffix}`.trim();
     };

@@ -5,6 +5,7 @@ import { usePortalRouter } from '../hooks/usePortalRouter';
 import { clientPortalService } from '../services/clientPortal.service';
 import { EmptyState, SkeletonCard, formatRelative } from '../components/PortalUI';
 import { statusMeta, TONE_CLASSES, requirementMeta, BENEFIT_TYPE_LABELS } from '../lib/domain';
+import { matchesNormalizedSearch } from '../../utils/search';
 
 // -- Tipos ----
 
@@ -78,14 +79,14 @@ export const PortalCasos: React.FC = () => {
     processesLoading || requirementsLoading;
 
   const items = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
 
     const procs = processes
       .filter(p => {
         if (tab === 'requerimentos') return false;
         if (!q) return true;
         const meta = statusMeta(p.status);
-        return p.process_code?.toLowerCase().includes(q) || p.practice_area?.toLowerCase().includes(q) || p.court?.toLowerCase().includes(q) || meta.label.toLowerCase().includes(q);
+        return matchesNormalizedSearch(q, [p.process_code, p.practice_area, p.court, meta.label]);
       })
       .map(p => ({ kind: 'process' as CaseKind, id: p.id, sortKey: p.last_movement?.data_hora || p.last_movement?.data || '', item: p }));
 
@@ -95,7 +96,7 @@ export const PortalCasos: React.FC = () => {
         if (!q) return true;
         const label = BENEFIT_TYPE_LABELS[r.benefit_type] || r.benefit_type;
         const meta  = requirementMeta(r.status);
-        return r.protocol?.toLowerCase().includes(q) || r.beneficiary?.toLowerCase().includes(q) || label.toLowerCase().includes(q) || meta.label.toLowerCase().includes(q);
+        return matchesNormalizedSearch(q, [r.protocol, r.beneficiary, label, meta.label]);
       })
       .map(r => ({ kind: 'requirement' as CaseKind, id: r.id, sortKey: r.updated_at, item: r }));
 

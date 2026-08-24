@@ -44,6 +44,7 @@ import type { SavedPetition } from '../types/petitionEditor.types';
 import type { CloudFolder } from '../types/cloud.types';
 import type { ChatRoom } from '../types/chat.types';
 import { zc, zcStack } from '../styles/layers';
+import { matchesNormalizedSearch } from '../utils/search';
 
 // Assinaturas virou seção da aba Documentos (as duas liam a mesma
 // `signature_requests`) e Atendimento virou seção da aba Portal — eram dez abas
@@ -2805,21 +2806,15 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
               {structuredTimeline.length === 0 ? (
                 <Empty icon={Clock} title="Nenhuma atividade registrada" hint="O histórico se preenche sozinho conforme processos, prazos e documentos acontecem." />
               ) : (() => {
-                const q = historySearch.trim().toLowerCase();
+                const q = historySearch.trim();
                 const roots = q
                   ? structuredTimeline
                       .map((r) => ({
                         ...r,
-                        leaves: r.leaves.filter((l) =>
-                          l.title.toLowerCase().includes(q) ||
-                          l.label.toLowerCase().includes(q) ||
-                          (l.actor ?? '').toLowerCase().includes(q)
-                        ),
+                        leaves: r.leaves.filter((l) => matchesNormalizedSearch(q, [l.title, l.label, l.actor])),
                       }))
                       .filter((r) =>
-                        r.title.toLowerCase().includes(q) ||
-                        (r.subtitle ?? '').toLowerCase().includes(q) ||
-                        (r.actor ?? '').toLowerCase().includes(q) ||
+                        matchesNormalizedSearch(q, [r.title, r.subtitle, r.actor]) ||
                         r.leaves.length > 0
                       )
                   : structuredTimeline;

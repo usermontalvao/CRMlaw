@@ -24,6 +24,7 @@ import type { Process } from '../types/process.types';
 import type { Requirement } from '../types/requirement.types';
 import { addMinutesToWallTime } from '../utils/officeTime';
 import { LAYER } from '../styles/layers';
+import { matchesNormalizedSearch } from '../utils/search';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -250,7 +251,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   const selectedReq        = clientRequirements.find(r => r.id === form.requirement_id);
 
   const clientSearchResults = clientSearch.trim().length >= 1
-    ? allClients.filter(c => c.full_name.toLowerCase().includes(clientSearch.toLowerCase())).slice(0, 8)
+    ? allClients.filter(c => matchesNormalizedSearch(clientSearch, [c.full_name])).slice(0, 8)
     : [];
 
   const visibleTypes = eventTypeKeys.filter(t => !inactiveKeys.has(t));

@@ -1370,7 +1370,7 @@ const ChatModule: React.FC = () => {
   const mentionSuggestions = useMemo(() => {
     if (mentionQuery === null) return [];
     return members
-      .filter((mem) => mem.user_id !== user?.id && (mem.name || '').toLowerCase().includes(mentionQuery))
+      .filter((mem) => mem.user_id !== user?.id && matchesNormalizedSearch(mentionQuery, [mem.name]))
       .slice(0, 6);
   }, [mentionQuery, members, user?.id]);
 

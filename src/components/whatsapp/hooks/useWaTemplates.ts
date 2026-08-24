@@ -16,6 +16,7 @@ import type { StaffOption } from '../../../services/whatsapp.service';
 import type { WhatsAppConversation, WhatsAppMessage, WhatsAppTemplate } from '../../../types/whatsapp.types';
 import type { DocumentTemplate } from '../../../types/document.types';
 import type { WhatsAppModuleConfig } from '../../../services/settings.service';
+import { matchesNormalizedSearch } from '../../../utils/search';
 
 export type SlashKitItem = {
   kind: 'kit';
@@ -138,7 +139,7 @@ export function useWaTemplates({
           template: t,
         })),
         ...kitTemplates,
-      ].filter((item) => item.name.toLowerCase().includes(slashQuery)).slice(0, 6)
+      ].filter((item) => matchesNormalizedSearch(slashQuery, [item.name])).slice(0, 6)
     : [];
   const slashActive = slashResults.length > 0;
   const slashIdx = Math.min(slashIndex, Math.max(0, slashResults.length - 1));
