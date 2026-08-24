@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.14',
+    date: '23/08/2026',
+    summary: 'A tela de gerar documento passou a mostrar a folha pronta ao lado, com o kit inteiro e o que ainda falta preencher em destaque.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'A folha aparece ao lado, preenchida, enquanto você digita',
+            description: 'Antes você preenchia às cegas: digitava comarca e finalidade sem ver onde caíam, e só descobria o resultado no Word já baixado. Agora o documento aparece à direita com a formatação do próprio arquivo — negrito, centralização, tabela, margem. O que veio da ficha do cliente fica marcado em azul; o que ainda falta, em laranja, com a contagem no alto ("faltam 2 campos").',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A prévia mostra o kit inteiro, não só o primeiro documento',
+            description: 'Modelos com anexos geram vários arquivos de uma vez. A prévia percorre todos, na mesma ordem da geração, com o nome de cada um acima da folha — dá para conferir se o quinto anexo também ficou completo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.13',
     date: '23/08/2026',
     summary: 'O link do cliente virou a ação principal do modelo, com dois links à escolha — e a espera antes da janela deixou de abrir preta.',

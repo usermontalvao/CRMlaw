@@ -9,11 +9,13 @@
 //
 // O fundo imita a tela do CRM (creme #f8f7f5 no claro, zinc-950 no escuro): é
 // sobre ela que os cartões precisam continuar sendo peças, e não recortes.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import TemplateCard from '../components/documents/TemplateCard';
 import TemplateFileRow from '../components/documents/TemplateFileRow';
 import TemplateFillLinkPanel, { type TemplateFillLinkKind } from '../components/documents/TemplateFillLinkPanel';
 import LinkGenerationOverlay from '../components/documents/LinkGenerationOverlay';
+import DocumentLivePreview, { type PreviewDocument } from '../components/documents/DocumentLivePreview';
+import { AlignmentType, Document as DocxDocument, Packer, Paragraph, TextRun } from 'docx';
 import type { DocumentTemplate } from '../types/document.types';
 
 const modelo = (over: Partial<DocumentTemplate>): DocumentTemplate => ({
@@ -57,6 +59,80 @@ const MODELOS: Array<{ template: DocumentTemplate; anexos: number; assina: boole
   },
 ];
 
+// A prévia desenha .docx de verdade, então a bancada precisa de arquivos de
+// verdade — montados aqui com a mesma biblioteca `docx` que o CRM já usa, para
+// dar o que conferir: título centralizado em negrito, corpo justificado e os
+// `[[campos]]` no meio do texto.
+const montarDocxDeExemplo = async (titulo: string, corpo: string[]): Promise<Blob> => {
+  const doc = new DocxDocument({
+    sections: [
+      {
+        properties: {},
+        children: [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            children: [new TextRun({ text: titulo, bold: true, size: 26 })],
+          }),
+          new Paragraph({ children: [] }),
+          ...corpo.map(
+            (linha) =>
+              new Paragraph({
+                alignment: AlignmentType.JUSTIFIED,
+                children: [new TextRun({ text: linha, size: 24 })],
+              }),
+          ),
+        ],
+      },
+    ],
+  });
+  return Packer.toBlob(doc);
+};
+
+const VALORES_DA_FICHA: Record<string, string> = {
+  'NOME COMPLETO': 'MARIA APARECIDA DA SILVA',
+  nacionalidade: 'brasileira',
+  'estado civil': 'casada',
+  'profissão': 'costureira',
+  CPF: '034.567.890-12',
+  'endereço': 'Rua das Acácias, nº 148, Bairro Coxipó',
+  cidade: 'Cuiabá',
+  estado: 'MT',
+  CEP: '78090-000',
+  comarca: 'Cuiabá — MT',
+  data: '23 de agosto de 2026',
+};
+
+const useDocumentosDeExemplo = () => {
+  const [docs, setDocs] = useState<PreviewDocument[]>([]);
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      const principal = await montarDocxDeExemplo('PROCURAÇÃO AD JUDICIA ET EXTRA', [
+        '[[NOME COMPLETO]], [[nacionalidade]], [[estado civil]], [[profissão]], inscrita no CPF sob o nº [[CPF]], residente e domiciliada na [[endereço]], [[cidade]] – [[estado]], CEP [[CEP]], nomeia e constitui seu bastante procurador o advogado abaixo assinado.',
+        'Outorga-lhe os poderes da cláusula ad judicia et extra, para o foro em geral, na comarca de [[comarca]], podendo propor as ações competentes e defendê-la nas contrárias, em especial para [[finalidade]], inclusive em face de [[reu]].',
+        '',
+        '[[cidade]] – [[estado]], [[data]].',
+        '',
+        '[[ASSINATURA]]',
+        '[[NOME COMPLETO]]',
+      ]);
+      const anexo = await montarDocxDeExemplo('DECLARAÇÃO DE HIPOSSUFICIÊNCIA', [
+        'Eu, [[NOME COMPLETO]], inscrita no CPF sob o nº [[CPF]], declaro, sob as penas da lei, não ter condições de arcar com as custas do processo sem prejuízo do próprio sustento.',
+        '',
+        '[[cidade]] – [[estado]], [[data]].',
+        '[[ASSINATURA_2]]',
+      ]);
+      if (!ativo) return;
+      setDocs([
+        { id: 'principal', name: 'procuracao-ad-judicia.docx', blob: principal, role: 'principal' },
+        { id: 'anexo-1', name: 'declaracao-hipossuficiencia.docx', blob: anexo, role: 'anexo' },
+      ]);
+    })();
+    return () => { ativo = false; };
+  }, []);
+  return docs;
+};
+
 const Bloco: React.FC<{ titulo: string; nota: string; children: React.ReactNode }> = ({ titulo, nota, children }) => (
   <section className="flex flex-col gap-3">
     <div>
@@ -71,6 +147,7 @@ const Palco: React.FC<{ escuro?: boolean }> = ({ escuro = false }) => {
   const [cardMenu, setCardMenu] = useState<string | null>('b');
   const [rowMenu, setRowMenu] = useState<string | null>(null);
   const [copiado, setCopiado] = useState<TemplateFillLinkKind | null>('unique');
+  const documentosDeExemplo = useDocumentosDeExemplo();
   const nada = () => {};
 
   return (
@@ -153,6 +230,19 @@ const Palco: React.FC<{ escuro?: boolean }> = ({ escuro = false }) => {
               onPosition={nada}
               onDownload={nada}
               onRemove={nada}
+            />
+          </div>
+        </Bloco>
+
+        <Bloco
+          titulo="Novo documento — a folha ao vivo"
+          nota="Azul veio da ficha do cliente; laranja é o que ainda falta. Faltam finalidade e réu."
+        >
+          <div className="max-w-2xl rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <DocumentLivePreview
+              documents={documentosDeExemplo}
+              resolve={(chave) => VALORES_DA_FICHA[chave] ?? ''}
+              loading={documentosDeExemplo.length === 0}
             />
           </div>
         </Bloco>

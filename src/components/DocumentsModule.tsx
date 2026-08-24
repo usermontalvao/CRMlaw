@@ -46,6 +46,7 @@ import { useSecurityPin } from '../contexts/SecurityPinContext';
 import TemplateFilesManager from './TemplateFilesManager';
 import TemplateCard from './documents/TemplateCard';
 import TemplateFillLinkPanel from './documents/TemplateFillLinkPanel';
+import DocumentLivePreview, { type PreviewDocument } from './documents/DocumentLivePreview';
 import LinkGenerationOverlay, {
   DURACAO_DO_FECHO_MS,
   DURACAO_MINIMA_ANIMACAO_MS,
@@ -358,6 +359,13 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   // Menu "⋯" do cartão do modelo: as ações que não são "usar" moram aqui, para
   // sobrar um alvo principal por cartão em vez de sete do mesmo peso.
   const [openCardMenuId, setOpenCardMenuId] = useState<string | null>(null);
+
+  // Arquivos do modelo para a folha ao vivo: o principal e TODOS os anexos, na
+  // ordem em que são gerados. Conferir só o primeiro não diz nada sobre os
+  // outros cinco de um kit.
+  const [livePreviewDocs, setLivePreviewDocs] = useState<PreviewDocument[]>([]);
+  const [livePreviewLoading, setLivePreviewLoading] = useState(false);
+  const [livePreviewError, setLivePreviewError] = useState<string | null>(null);
 
   const [templateExtraPlaceholders, setTemplateExtraPlaceholders] = useState<string[]>([]);
   const [templateExtraValues, setTemplateExtraValues] = useState<Record<string, string>>({});
@@ -691,6 +699,66 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     [templates, selectedTemplateId],
   );
 
+  // Baixa os arquivos do modelo escolhido para a folha ao vivo. Trocar de
+  // modelo cancela o carregamento anterior.
+  useEffect(() => {
+    if (!selectedTemplate) {
+      setLivePreviewDocs([]);
+      setLivePreviewError(null);
+      return;
+    }
+
+    let ativo = true;
+    setLivePreviewLoading(true);
+    setLivePreviewError(null);
+
+    (async () => {
+      try {
+        const arquivos: PreviewDocument[] = [];
+
+        if (selectedTemplate.file_path) {
+          const blob = await documentTemplateService.downloadTemplateFile(selectedTemplate);
+          arquivos.push({
+            id: `principal-${selectedTemplate.id}`,
+            name: selectedTemplate.file_name || `${selectedTemplate.name}.docx`,
+            blob,
+            role: 'principal',
+          });
+        }
+
+        const anexos = await documentTemplateService.listTemplateFiles(selectedTemplate.id);
+        for (const anexo of anexos) {
+          const ehDocx = anexo.file_name.toLowerCase().endsWith('.docx')
+            || anexo.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          if (!ehDocx) continue;
+          try {
+            const blob = await documentTemplateService.downloadTemplateFileById(anexo.id);
+            arquivos.push({ id: anexo.id, name: anexo.file_name, blob, role: 'anexo' });
+          } catch (err) {
+            console.warn(`Anexo fora da prévia (${anexo.file_name}):`, err);
+          }
+        }
+
+        if (!ativo) return;
+        setLivePreviewDocs(arquivos);
+        if (arquivos.length === 0) {
+          setLivePreviewError('Este modelo não tem arquivo .docx para desenhar.');
+        }
+      } catch (err) {
+        console.warn('Não foi possível carregar os arquivos da prévia:', err);
+        if (!ativo) return;
+        setLivePreviewDocs([]);
+        setLivePreviewError('Não foi possível abrir os arquivos deste modelo.');
+      } finally {
+        if (ativo) setLivePreviewLoading(false);
+      }
+    })();
+
+    return () => {
+      ativo = false;
+    };
+  }, [selectedTemplate]);
+
   const isRequirementsMsTemplate = (template: DocumentTemplate) => {
     const name = removeDiacritics((template.name || '').toString()).toUpperCase();
     const description = removeDiacritics((template.description || '').toString()).toUpperCase();
@@ -879,6 +947,19 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     });
     return result;
   };
+
+  // Resolve um campo com o MESMO mapa que a geração usa, para a folha não
+  // mostrar uma coisa e o arquivo sair com outra.
+  const resolveLivePreviewField = useMemo(() => {
+    const mapa = selectedClient ? buildPlaceholderMap(selectedClient) : {};
+    return (chave: string) => {
+      const direto = mapa[chave];
+      if (direto) return direto;
+      const semAcento = removeDiacritics(chave);
+      return mapa[chave.toUpperCase()] || mapa[semAcento] || mapa[semAcento.toUpperCase()] || '';
+    };
+    // `buildPlaceholderMap` lê o réu e os campos digitados; ambos entram aqui.
+  }, [selectedClient, defendantInput, templateExtraValues, shouldShowDefendantField, currentDate]);
 
   const createDocxFromContent = async (content: string) => {
     const paragraphs = content.split(/\n/g).map(
@@ -1781,9 +1862,9 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
       {/* Novo documento */}
       {activeView === 'new-doc' && (
-        <div className="grid gap-6 @lg:grid-cols-5">
+        <div className="grid gap-6 @lg:grid-cols-12">
           {/* Coluna esquerda: Seleção de template */}
-          <div className="hidden @lg:block @lg:col-span-2 space-y-4">
+          <div className="hidden @lg:block @lg:col-span-3 space-y-4">
             <div>
               <h4 className="text-sm font-semibold text-slate-900 mb-1 dark:text-zinc-100">Escolha o template</h4>
               <p className="text-xs text-slate-500 dark:text-zinc-400">Selecione o modelo para gerar o documento</p>
@@ -1872,7 +1953,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           </div>
 
           {/* Coluna direita: Formulário */}
-          <div className="lg:col-span-3">
+          <div className="@lg:col-span-4">
             <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-5 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-center gap-3 mb-5">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
@@ -2073,6 +2154,18 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   </p>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Coluna direita: a folha, preenchida enquanto se digita */}
+          <div className="@lg:col-span-5">
+            <div className="h-full rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-4 sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
+              <DocumentLivePreview
+                documents={livePreviewDocs}
+                resolve={resolveLivePreviewField}
+                loading={livePreviewLoading}
+                error={livePreviewError}
+              />
             </div>
           </div>
         </div>
