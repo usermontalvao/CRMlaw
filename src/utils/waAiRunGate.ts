@@ -273,15 +273,7 @@ export function buildWaAiPromptMessages(
     // O texto digitado/legenda vence. Na ausência dele, a transcrição já pronta
     // é a fala do cliente — não um metadado que o modelo deva ignorar.
     let text = (msg.content || msg.transcriptionText || '').trim();
-    if (!text) {
-      const marker = msg.type === 'audio' ? '[áudio]'
-        : msg.type === 'image' ? '[imagem]'
-        : msg.type === 'video' ? '[vídeo]'
-        : msg.type === 'document' ? '[documento]'
-        : msg.type === 'sticker' ? '[figurinha]'
-        : '[mensagem sem texto]';
-      text = marker;
-    }
+    if (!text) text = waAiEmptyMessageMarker(msg.type);
     if (text.length > WA_AI_HISTORY_MESSAGE_MAX_CHARS) {
       text = `${text.slice(0, WA_AI_HISTORY_MESSAGE_MAX_CHARS - 1)}…`;
     }
@@ -289,4 +281,71 @@ export function buildWaAiPromptMessages(
   }
 
   return out;
+}
+
+// ── Mídia não é fala ────────────────────────────────────────────────────────
+//
+// Uma mensagem sem texto entra no prompt como MARCADOR ("[imagem]"): o modelo
+// precisa saber que o cliente mandou algo, mas não recebe a imagem — nenhum
+// arquivo é enviado ao provedor neste agente.
+//
+// Em 24/08/2026, na campanha de rescisão indireta, um contato mandou UMA foto e
+// mais nada. A fase de extração recebeu a única fala do cliente — a string
+// `[imagem]` — junto da lista inteira de campos do roteiro e da instrução
+// "extraia TODAS as informações, inclusive as antecipadas". O modelo preencheu
+// os 21 campos: nome, função (babá), início 01/2020, saída 12/2022, R$ 1.200
+// por mês, testemunhas, honorários aceitos. Nada disso foi dito.
+//
+// O estrago não parou na memória. Os cortes são DETERMINÍSTICOS sobre os fatos
+// (`evaluateWaAiCuts`), então a saída inventada em 12/2022 disparou o corte
+// `prazo_2_anos` e, 25 segundos depois da foto, o lead recebeu por escrito que
+// o escritório não seguiria com o atendimento.
+//
+// A regra abaixo fecha essa porta na entrada: sem fala em TEXTO, não há o que
+// extrair. Sem extração não entram fatos, e sem fatos nenhum corte dispara — a
+// conversa simplesmente continua na pergunta em que estava.
+export const WA_AI_EMPTY_MESSAGE_MARKERS = [
+  '[áudio]', '[imagem]', '[vídeo]', '[documento]', '[figurinha]', '[mensagem sem texto]',
+] as const;
+
+/** O marcador de uma mensagem que chegou sem texto nem transcrição. */
+export function waAiEmptyMessageMarker(type: string): string {
+  return type === 'audio' ? '[áudio]'
+    : type === 'image' ? '[imagem]'
+    : type === 'video' ? '[vídeo]'
+    : type === 'document' ? '[documento]'
+    : type === 'sticker' ? '[figurinha]'
+    : '[mensagem sem texto]';
+}
+
+/**
+ * A rodada atual: tudo que veio DEPOIS da última fala do agente.
+ *
+ * É o recorte que a extração lê — o resto da janela já foi lido nos turnos
+ * anteriores e está condensado no estado.
+ */
+export function waAiCurrentBundle(messages: readonly WaAiPromptMessage[]): WaAiPromptMessage[] {
+  const lista = messages || [];
+  let inicio = 0;
+  for (let i = 0; i < lista.length; i++) {
+    if (lista[i].role === 'assistant') inicio = i;
+  }
+  return lista.slice(inicio).filter(m => m.role === 'user');
+}
+
+/**
+ * O cliente disse alguma coisa em TEXTO nestas mensagens?
+ *
+ * Marcador de mídia não conta: ele diz que algo chegou, não o que foi dito.
+ * Áudio transcrito conta — a transcrição já entrou como texto lá em cima.
+ */
+export function waAiCustomerSaidSomething(messages: readonly WaAiPromptMessage[]): boolean {
+  for (const msg of (messages || [])) {
+    if (msg.role !== 'user') continue;
+    const texto = String(msg.content || '').trim();
+    if (!texto) continue;
+    if ((WA_AI_EMPTY_MESSAGE_MARKERS as readonly string[]).indexOf(texto) !== -1) continue;
+    return true;
+  }
+  return false;
 }

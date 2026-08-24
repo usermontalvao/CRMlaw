@@ -414,9 +414,17 @@ test('sem nome e sem pendência a retomada ainda é uma frase inteira', () => {
 
 test('a retomada respeita o teto de 1200 caracteres da tabela', () => {
   const texto = buildWaAiFollowupMessage({
-    firstName: 'Pedro', lastQuestion: null, pendingItems: ['x'.repeat(2000)], attempt: 1,
+    firstName: 'Pedro', lastQuestion: 'x'.repeat(2000), pendingItems: [], attempt: 1,
   });
   assert.equal(texto.length, WA_AI_FOLLOWUP_MESSAGE_MAX);
+});
+
+test('pendência gigante é descartada, não truncada — meia instrução não vira frase', () => {
+  const texto = buildWaAiFollowupMessage({
+    firstName: 'Pedro', lastQuestion: null, pendingItems: ['x'.repeat(2000)], attempt: 1,
+  });
+  assert.doesNotMatch(texto, /x{10}/);
+  assert.match(texto, /Se ainda fizer sentido/);
 });
 
 // ── A memória que o backend garante ─────────────────────────────────────────
@@ -466,4 +474,27 @@ test('o pedido do cliente para parar vem antes de qualquer política', () => {
   });
   assert.equal(envio.send, false);
   assert.match(envio.send === false ? envio.reason : '', /não receber mais/i);
+});
+
+test('pendência que é manual do atendente não vai para o cliente', () => {
+  // O `ask` real do roteiro de rescisão indireta em produção: 577 caracteres de
+  // instrução ramificada. Ele orienta o modelo, mas não é frase de WhatsApp.
+  const manual = 'se possui a prova mais adequada ao que relatou. Se for FGTS, pergunte de modo '
+    + 'natural se consultou o extrato do FGTS e quais meses aparecem sem depósito. Se for salário, '
+    + 'pergunte por holerite, extrato bancário ou mensagens.';
+  const texto = buildWaAiFollowupMessage({
+    firstName: 'Rita', lastQuestion: 'Você tem alguma coisa que ajude a mostrar isso?',
+    pendingItems: [manual], attempt: 1,
+  });
+  assert.doesNotMatch(texto, /Se for FGTS/);
+  // Sem pendência legível, a retomada repete a pergunta — nunca fica genérica.
+  assert.match(texto, /Você tem alguma coisa que ajude a mostrar isso\?/);
+});
+
+test('pendência curta continua sendo nomeada', () => {
+  const texto = buildWaAiFollowupMessage({
+    firstName: 'Rita', lastQuestion: 'Qual é o seu nome?',
+    pendingItems: ['o seu nome', 'para quem você trabalhou (empresa ou pessoa)'], attempt: 1,
+  });
+  assert.match(texto, /Ficou faltando o seu nome e para quem você trabalhou/);
 });

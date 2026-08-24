@@ -10,6 +10,9 @@ import {
   mergeWaAiMemory,
   normalizeWaAiMemory,
   renderWaAiMemoryForPrompt,
+  waAiCurrentBundle,
+  waAiCustomerSaidSomething,
+  waAiEmptyMessageMarker,
   waAiFollowupIdempotencyKey,
   waAiIdempotencyKey,
   type WaAiHistoryMessage,
@@ -267,4 +270,56 @@ test('limite inválido cai no padrão em vez de esvaziar o histórico', () => {
   const todas = Array.from({ length: 20 }, (_, i) => msg(String(i), 'in', `m${i}`, i));
   assert.equal(buildWaAiPromptMessages(todas, 0).length, 12);
   assert.equal(buildWaAiPromptMessages(todas, 999).length, 20);
+});
+
+// ── Mídia não é fala ────────────────────────────────────────────────────────
+
+test('marcador cobre cada tipo sem texto, e o desconhecido tem o seu', () => {
+  assert.equal(waAiEmptyMessageMarker('image'), '[imagem]');
+  assert.equal(waAiEmptyMessageMarker('audio'), '[áudio]');
+  assert.equal(waAiEmptyMessageMarker('video'), '[vídeo]');
+  assert.equal(waAiEmptyMessageMarker('document'), '[documento]');
+  assert.equal(waAiEmptyMessageMarker('sticker'), '[figurinha]');
+  assert.equal(waAiEmptyMessageMarker('location'), '[mensagem sem texto]');
+});
+
+test('só a foto: o cliente não disse nada — é o caso que inventou a triagem', () => {
+  const out = buildWaAiPromptMessages([msg('1', 'in', null, 1, 'image')], 10);
+  assert.equal(out[0].content, '[imagem]');
+  assert.equal(waAiCustomerSaidSomething(out), false);
+});
+
+test('legenda na foto é fala', () => {
+  const out = buildWaAiPromptMessages([msg('1', 'in', 'Trabalhei 3 anos sem registro', 1, 'image')], 10);
+  assert.equal(waAiCustomerSaidSomething(out), true);
+});
+
+test('áudio transcrito é fala', () => {
+  const audio = { ...msg('1', 'in', null, 1, 'audio'), transcriptionText: 'Comecei em 2020' };
+  assert.equal(waAiCustomerSaidSomething(buildWaAiPromptMessages([audio], 10)), true);
+});
+
+test('o que o AGENTE escreveu não conta como fala do cliente', () => {
+  assert.equal(waAiCustomerSaidSomething([{ role: 'assistant', content: 'Qual é o seu nome?' }]), false);
+});
+
+test('a rodada atual é o que veio depois da última fala do agente', () => {
+  const bundle = waAiCurrentBundle([
+    { role: 'user', content: 'Olá' },
+    { role: 'assistant', content: 'Para começar, qual é o seu nome?' },
+    { role: 'user', content: '[imagem]' },
+    { role: 'user', content: '[imagem]' },
+  ]);
+  assert.equal(bundle.length, 2);
+  assert.equal(waAiCustomerSaidSomething(bundle), false);
+});
+
+test('fala antiga não faz a rodada de agora virar fala', () => {
+  const historico = [
+    { role: 'user' as const, content: 'Edvania' },
+    { role: 'assistant' as const, content: 'Para qual empresa você trabalhou?' },
+    { role: 'user' as const, content: '[figurinha]' },
+  ];
+  assert.equal(waAiCustomerSaidSomething(historico), true);
+  assert.equal(waAiCustomerSaidSomething(waAiCurrentBundle(historico)), false);
 });

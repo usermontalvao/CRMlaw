@@ -116,7 +116,7 @@ test('a conversa de 12/08/2026 chega ao fim com o período gravado', () => {
   assert.equal(estado.stage, 'vinculo');
   // A pendência que voltava sozinha para a fila.
   assert.equal(estado.pending.indexOf('mês e ano de início'), -1);
-  assert.equal(estado.pending.indexOf('mês e ano da saída'), -1);
+  assert.equal(estado.pending.indexOf('o mês e o ano em que você saiu'), -1);
 });
 
 test('o modelo esquece de preencher e a conversa salva o período mesmo assim', () => {
@@ -137,7 +137,7 @@ test('o modelo esquece de preencher e a conversa salva o período mesmo assim', 
 
   assert.equal(estado.facts.inicio, '01/2020');
   assert.equal(estado.facts.ainda_trabalha, 'não');
-  assert.equal(estado.pending[0], 'mês e ano da saída');
+  assert.equal(estado.pending[0], 'o mês e o ano em que você saiu');
 });
 
 test('o que o modelo anota errado perde para o que o cliente disse', () => {
@@ -316,7 +316,7 @@ test('resposta fora do formato ainda fala com o cliente, mas fica marcada', () =
   assert.equal(estado.reply, 'Certo, Ana! E para quem você trabalhou?');
   assert.equal(estado.degraded, true);
   // O que ela não trouxe continua pendente — a queda não inventa dado.
-  assert.equal(estado.pending[0], 'para quem trabalhou (empresa ou pessoa)');
+  assert.equal(estado.pending[0], 'para quem você trabalhou (empresa ou pessoa)');
 });
 
 test('JSON quebrado não vira mensagem: nada sai, e o estado sobrevive', () => {
@@ -340,7 +340,7 @@ test('o modelo não consegue mais inventar nome de campo', () => {
   // `empresa`, `data_inicio` e `nome_do_cliente` não existem no roteiro: a
   // leitura as descarta antes de qualquer mesclagem. Só `nome` entra.
   assert.deepEqual(Object.keys(estado.facts), ['nome']);
-  assert.equal(estado.pending[0], 'para quem trabalhou (empresa ou pessoa)');
+  assert.equal(estado.pending[0], 'para quem você trabalhou (empresa ou pessoa)');
 });
 
 test('a triagem inteira, do começo ao fim, sem sobra e sem pendência', () => {

@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.11',
+    date: '24/08/2026',
+    summary: 'A triagem por IA deixa de inventar respostas a partir de mídias sem texto e passa a confirmar datas antes de aplicar cortes.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'Foto ou arquivo sem texto não vira resposta inventada',
+            description: 'Uma mídia sem legenda ou transcrição continua aparecendo para o agente, mas não é tratada como fala do cliente nem alimenta a extração de fatos. Nenhuma triagem pode ser encerrada ou recusada antes de existir uma resposta textual real.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Ano não informado permanece como pergunta pendente',
+            description: 'Se a pessoa disser apenas o dia ou o mês, a IA não pode completar um ano por conta própria. Datas relativas, como “ano passado” ou “faz três anos”, continuam aceitas; nos demais casos, o roteiro pergunta novamente antes de avaliar prazos.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Retomadas mais naturais e sem instruções internas',
+            description: 'Textos longos usados para orientar o agente deixam de aparecer nas mensagens de retomada. As perguntas dos roteiros também passam a falar diretamente com a pessoa, usando “você”.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.10',
     date: '24/08/2026',
     summary: 'A busca da agenda do WhatsApp voltou a filtrar corretamente e a limpeza da conversa ficou em um local mais seguro.',

@@ -454,6 +454,24 @@ const WA_AI_FOLLOWUP_OPENINGS: ((nome: string | null) => string)[] = [
   nome => `${nome || 'Olá'}, ainda dá para seguirmos com o seu atendimento.`,
 ];
 
+/**
+ * Até onde uma pendência ainda é uma frase que se lê no WhatsApp.
+ *
+ * A pendência vem do campo `ask` do roteiro, e esse campo tem dois patrões: ele
+ * orienta o MODELO a perguntar e, aqui, entra na frase que o CLIENTE lê
+ * ("Ficou faltando ..."). Enquanto o texto é curto os dois usos convivem. Mas
+ * em produção o roteiro de rescisão indireta guarda em `ask` um parágrafo de
+ * 577 caracteres com instruções ramificadas ("Se for FGTS, pergunte de modo
+ * natural se consultou o extrato..."). Mandar isso para o cliente é entregar a
+ * ele o manual do atendente.
+ *
+ * Acima deste limite a pendência é DESCARTADA da frase — não truncada, porque
+ * meia instrução é tão ruim quanto a instrução inteira. Sobrando nenhuma, a
+ * retomada repete a última pergunta feita, que é a segunda melhor coisa a
+ * dizer e continua sendo específica.
+ */
+export const WA_AI_PENDING_ITEM_READABLE_MAX = 120;
+
 export interface WaAiFollowupMessageInput {
   firstName: string | null;
   /** A última pergunta da IA, se houver. */
@@ -477,7 +495,7 @@ export function buildWaAiFollowupMessage(input: WaAiFollowupMessageInput): strin
 
   const pendencias = (input.pendingItems || [])
     .map(item => String(item || '').replace(/\s+/g, ' ').trim())
-    .filter(item => item.length > 0)
+    .filter(item => item.length > 0 && item.length <= WA_AI_PENDING_ITEM_READABLE_MAX)
     .slice(0, 3);
 
   let complemento: string;

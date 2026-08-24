@@ -16,6 +16,7 @@ import {
   normalizeWaAiPlaybook,
   normalizeWaAiPlaybookValue,
   resolveWaAiPlaybookBindings,
+  waAiDateSaidByCustomer,
   waAiPlaybookField,
   waAiPlaybookFieldKeys,
   waAiPlaybookInstructions,
@@ -368,7 +369,7 @@ test('a conversa começa pela primeira etapa, uma pergunta por vez', () => {
   const p = progresso({});
   assert.equal(p.stage, 'identificacao');
   assert.equal(p.nextField, 'nome');
-  assert.equal(p.pending[0], 'o nome do cliente');
+  assert.equal(p.pending[0], 'o seu nome');
   assert.equal(p.complete, false);
 });
 
@@ -534,8 +535,8 @@ test('o corte chega ao modelo como ordem, não como conta a fazer', () => {
 test('o bloco lista só o que falta, na ordem', () => {
   const bloco = waAiPlaybookPromptBlock(ROTEIRO, progresso({ nome: 'Ana' }));
   assert.match(bloco, /Etapa atual: Quem é e para quem trabalhou/);
-  assert.match(bloco, /- para quem trabalhou/);
-  assert.doesNotMatch(bloco, /o nome do cliente/);
+  assert.match(bloco, /- para quem você trabalhou/);
+  assert.doesNotMatch(bloco, /o seu nome/);
 });
 
 // ── O prompt montado a partir do roteiro ────────────────────────────────────
@@ -555,7 +556,7 @@ test('campo sem pergunta escrita não inventa aspas no prompt', () => {
   };
   const p = computeWaAiTriageProgress({ playbook: semPergunta, facts: {}, now: HOJE, timeZone: TZ });
   const bloco = waAiPlaybookPromptBlock(semPergunta, p);
-  assert.match(bloco, /o nome do cliente/);
+  assert.match(bloco, /o seu nome/);
   assert.doesNotMatch(bloco, /A pergunta desta vez/);
 });
 
@@ -848,4 +849,67 @@ test('onlyWhen com lista rejeita valor de fora, e sem o dono não se aplica', ()
   );
   // Sem a rota decidida, o campo ainda não vale — não é para perguntar.
   assert.equal(waAiPlaybookOnlyWhenSatisfied(playbook, campo, {}), false);
+});
+
+// ── Sem fala, sem veredito ──────────────────────────────────────────────────
+
+test('corte não dispara quando o cliente não disse nada (a triagem da foto)', () => {
+  // Os fatos que o modelo inventou a partir de um único "[imagem]".
+  const inventados = { inicio: '01/2020', saida: '12/2022', ainda_trabalha: false };
+  const comFala = computeWaAiTriageProgress({
+    playbook: WA_AI_PLAYBOOK_SEM_REGISTRO, facts: inventados,
+    now: new Date('2026-08-24T12:10:00Z'),
+  });
+  assert.equal(comFala.cut?.id, 'prazo_2_anos');
+
+  const semFala = computeWaAiTriageProgress({
+    playbook: WA_AI_PLAYBOOK_SEM_REGISTRO, facts: inventados,
+    now: new Date('2026-08-24T12:10:00Z'), customerSpoke: false,
+  });
+  assert.equal(semFala.cut, null);
+  // E a conversa continua: há pendência para perguntar, não um fim.
+  assert.ok(semFala.missing.length > 0);
+});
+
+test('customerSpoke omitido não muda nada do que já valia', () => {
+  const facts = { inicio: '01/2020', saida: '12/2022', ainda_trabalha: false };
+  const agora = new Date('2026-08-24T12:10:00Z');
+  assert.equal(
+    computeWaAiTriageProgress({ playbook: WA_AI_PLAYBOOK_SEM_REGISTRO, facts, now: agora }).cut?.id,
+    computeWaAiTriageProgress({
+      playbook: WA_AI_PLAYBOOK_SEM_REGISTRO, facts, now: agora, customerSpoke: true,
+    }).cut?.id,
+  );
+});
+
+// ── Ano dito, não chutado ───────────────────────────────────────────────────
+
+test('"Dia 1 setembro" não sustenta 09/2023 — o ano foi inventado', () => {
+  assert.equal(waAiDateSaidByCustomer('09/2023', 'Dia 1 setembro'), false);
+});
+
+test('ano escrito por extenso sustenta a data', () => {
+  assert.equal(waAiDateSaidByCustomer('09/2023', 'comecei em setembro de 2023'), true);
+});
+
+test('duração dita pelo cliente sustenta a conta do ano', () => {
+  assert.equal(waAiDateSaidByCustomer('02/2025', 'Tenho 1ano e 6 meses'), true);
+  assert.equal(waAiDateSaidByCustomer('08/2023', 'faz 3 anos que trabalho lá'), true);
+  assert.equal(waAiDateSaidByCustomer('12/2025', 'sai ano passado'), true);
+});
+
+test('data escrita com ano curto sustenta', () => {
+  assert.equal(waAiDateSaidByCustomer('09/2024', 'foi 01/09/24'), true);
+  assert.equal(waAiDateSaidByCustomer('09/2024', 'foi 09/24'), true);
+});
+
+test('valor sem ano não é conferido, e fala vazia nunca sustenta', () => {
+  assert.equal(waAiDateSaidByCustomer('', 'qualquer coisa'), true);
+  assert.equal(waAiDateSaidByCustomer('setembro', 'qualquer coisa'), true);
+  assert.equal(waAiDateSaidByCustomer('09/2023', ''), false);
+  assert.equal(waAiDateSaidByCustomer('09/2023', '[imagem]'), false);
+});
+
+test('valor em reais não vira prova de tempo', () => {
+  assert.equal(waAiDateSaidByCustomer('09/2023', 'recebia 1200 por mês'), false);
 });

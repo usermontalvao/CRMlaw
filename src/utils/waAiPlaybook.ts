@@ -698,12 +698,12 @@ export const WA_AI_PLAYBOOK_SEM_REGISTRO: WaAiPlaybook = {
     + 'caso sozinho.',
   fields: [
     {
-      key: 'nome', label: 'Nome', type: 'texto', required: true, ask: 'o nome do cliente',
+      key: 'nome', label: 'Nome', type: 'texto', required: true, ask: 'o seu nome',
       question: 'Para começar, qual é o seu nome?',
     },
     {
       key: 'empregador', label: 'Empregador', type: 'texto', required: true,
-      ask: 'para quem trabalhou (empresa ou pessoa)',
+      ask: 'para quem você trabalhou (empresa ou pessoa)',
       question: 'Para qual empresa ou pessoa você trabalhou sem registro?',
     },
     {
@@ -714,7 +714,7 @@ export const WA_AI_PLAYBOOK_SEM_REGISTRO: WaAiPlaybook = {
     },
     {
       key: 'inicio', label: 'Início', type: 'data_mes_ano', required: true,
-      ask: 'mês e ano em que começou',
+      ask: 'o mês e o ano em que você começou',
       question: 'Em que mês e ano você começou a trabalhar lá?',
     },
     {
@@ -724,18 +724,18 @@ export const WA_AI_PLAYBOOK_SEM_REGISTRO: WaAiPlaybook = {
     },
     {
       key: 'saida', label: 'Saída', type: 'data_mes_ano', required: true,
-      ask: 'mês e ano da saída',
+      ask: 'o mês e o ano em que você saiu',
       question: 'Em que mês e ano você saiu?',
       onlyWhen: { field: 'ainda_trabalha', value: 'não' },
     },
     {
       key: 'funcao', label: 'Função', type: 'texto', required: true,
-      ask: 'o que fazia no trabalho',
+      ask: 'o que você fazia no trabalho',
       question: 'O que você fazia nesse trabalho, no dia a dia?',
     },
     {
       key: 'pessoalidade', label: 'Tinha de ser ela', type: 'bool', required: true,
-      ask: 'se era ela mesma que precisava trabalhar ou podia mandar outra pessoa',
+      ask: 'se era você mesma quem precisava trabalhar ou se podia mandar outra pessoa',
       question: 'Era você mesmo que tinha que ir trabalhar ou, se quisesse, podia mandar outra pessoa no seu lugar?',
     },
     {
@@ -773,7 +773,7 @@ export const WA_AI_PLAYBOOK_SEM_REGISTRO: WaAiPlaybook = {
     },
     {
       key: 'provas', label: 'Quais provas', type: 'texto', required: true,
-      ask: 'quais provas ela tem',
+      ask: 'quais provas você tem',
       question: 'Quais dessas você tem guardadas?',
       onlyWhen: { field: 'tem_prova', value: 'sim' },
     },
@@ -1064,7 +1064,7 @@ export const WA_AI_PLAYBOOK_CONTA_BLOQUEADA: WaAiPlaybook = {
     + 'honorários aceitos.',
   fields: [
     {
-      key: 'nome', label: 'Nome', type: 'texto', required: true, ask: 'o nome do cliente',
+      key: 'nome', label: 'Nome', type: 'texto', required: true, ask: 'o seu nome',
       question: 'Para começar, qual é o seu nome?',
     },
     {
@@ -1241,7 +1241,7 @@ export const WA_AI_PLAYBOOK_CONTA_BLOQUEADA: WaAiPlaybook = {
     },
     {
       key: 'assunto_juridico_objetivo', label: 'Objetivo no outro assunto', type: 'texto', required: true,
-      ask: 'o que a pessoa precisa ou espera resolver',
+      ask: 'o que você precisa ou espera resolver',
       question: 'E o que você precisa ou espera conseguir resolver com essa situação?',
       onlyWhen: { field: 'tipo_atendimento', value: 'outro_assunto_juridico' },
     },
@@ -1530,7 +1530,7 @@ export const WA_AI_PLAYBOOK_RESCISAO_INDIRETA: WaAiPlaybook = {
     },
     {
       key: 'data_saida', label: 'Saída', type: 'data_mes_ano', required: true,
-      ask: 'mês e ano em que saiu da empresa',
+      ask: 'o mês e o ano em que você saiu da empresa',
       question: 'Em que mês e ano você saiu de lá?',
       onlyWhen: { field: 'vinculo_atual', value: 'não' },
     },
@@ -1557,7 +1557,7 @@ export const WA_AI_PLAYBOOK_RESCISAO_INDIRETA: WaAiPlaybook = {
         'nenhum_desses',
       ],
       required: true,
-      ask: 'qual dos pontos da lista se parece com a situação dela',
+      ask: 'qual dos pontos da lista se parece com a sua situação',
       question: 'A sua situação envolve algum destes pontos? Salário atrasado ou não pago; FGTS não '
         + 'depositado; assédio, humilhação ou ameaça; risco à saúde ou à segurança; redução de '
         + 'salário; outro descumprimento importante do combinado. Pode me dizer qual mais se parece '
@@ -1565,18 +1565,18 @@ export const WA_AI_PLAYBOOK_RESCISAO_INDIRETA: WaAiPlaybook = {
     },
     {
       key: 'provas', label: 'Possíveis provas', type: 'texto', required: true,
-      ask: 'o que ela tem que possa mostrar o que aconteceu',
+      ask: 'o que você tem que possa mostrar o que aconteceu',
       question: 'Você tem alguma coisa que ajude a mostrar isso? Pode ser conversa, holerite, '
         + 'extrato, foto, documento ou alguém que tenha visto. Se não tiver nada, também pode me dizer.',
     },
     {
       key: 'cidade_estado', label: 'Cidade e estado', type: 'texto', required: true,
-      ask: 'em qual cidade e estado ela trabalha',
+      ask: 'em qual cidade e estado você trabalha',
       question: 'Em qual cidade e estado fica esse trabalho?',
     },
     {
       key: 'nome', label: 'Nome', type: 'texto', required: true,
-      ask: 'o nome da pessoa',
+      ask: 'o seu nome',
       question: 'Para finalizar, qual é o seu nome?',
     },
   ],
@@ -1641,6 +1641,46 @@ export function normalizeWaAiPlaybookValue(field: WaAiPlaybookField, value: unkn
   }
 
   return bruto;
+}
+
+/**
+ * Jeitos de dizer QUANDO sem dizer o ano. Existem para não transformar a regra
+ * abaixo numa repergunta eterna: "ano passado" e "faz três anos" são respostas
+ * legítimas, e delas o ano é uma conta, não um chute.
+ */
+const RE_TEMPO_RELATIVO = new RegExp(
+  '(ano passado|ano retrasado|(este|esse) ano|ano que passou|mes passado|semana passada'
+  // Qualquer quantidade de tempo dita pelo cliente: "faz 3 anos", "tenho 1ano
+  // e 6 meses", "trabalhei 8 meses". Daí o ano é conta, não chute.
+  + '|\\d+\\s*(anos?|mes|meses)\\b)',
+);
+
+/**
+ * O ANO desta data foi dito pelo cliente, ou o modelo o inventou?
+ *
+ * Em 24/08/2026, na campanha de rescisão indireta, a cliente respondeu "Dia 1
+ * setembro" — sem ano — e a extração gravou `inicio = 09/2023`, que contradizia
+ * o "1 ano e 6 meses" que ela mesma tinha dito minutos antes. Ninguém percebeu,
+ * porque um ano inventado tem exatamente a mesma cara de um ano informado: MM/AAAA.
+ *
+ * Isso não é detalhe de cadastro. É de `inicio` e `saida` que sai o corte dos
+ * dois anos — um ano chutado decide se o caso é aceito ou dispensado.
+ *
+ * A regra: o ano só entra se aparecer na fala (por extenso ou nos dois últimos
+ * dígitos de uma data escrita) ou se a fala disser o tempo de forma relativa.
+ * Recusado, o campo continua pendente e o roteiro pergunta de novo — que é o
+ * que um atendente humano faria ao ouvir "dia 1 de setembro".
+ */
+export function waAiDateSaidByCustomer(value: string, customerText: string): boolean {
+  const ano = /(?:^|\/)((?:19|20)\d{2})$/.exec(String(value || '').trim());
+  if (!ano) return true; // valor sem ano: não há o que conferir
+  const texto = simples(customerText);
+  if (!texto) return false;
+  if (texto.indexOf(ano[1]) !== -1) return true;
+  // "09/24", "1/9/24" — o ano curto só vale dentro de uma data escrita.
+  if (new RegExp('\\b\\d{1,2}[\\/.-]\\d{1,2}(?:[\\/.-]' + ano[1].slice(2) + ')\\b').test(texto)) return true;
+  if (new RegExp('\\b\\d{1,2}[\\/.-]' + ano[1].slice(2) + '\\b').test(texto)) return true;
+  return RE_TEMPO_RELATIVO.test(texto);
 }
 
 /** Valor tipado que pode ser persistido em `known_facts`. Null = inválido/vazio. */
@@ -1907,13 +1947,33 @@ export function computeWaAiTriageProgress(input: {
   facts: Record<string, unknown> | null | undefined;
   now?: Date;
   timeZone?: string;
+  /**
+   * O cliente chegou a dizer alguma coisa em texto? `false` desliga os cortes.
+   *
+   * Corte é veredito, e veredito precisa de fala. Em 24/08/2026 um contato da
+   * campanha mandou UMA foto — nada escrito — e recebeu, 25 segundos depois,
+   * que o escritório não seguiria com o atendimento: a fase de extração havia
+   * inventado a triagem inteira a partir do marcador `[imagem]`, e o corte, que
+   * é determinístico sobre os fatos, apenas obedeceu.
+   *
+   * A causa foi fechada na entrada (a extração não roda sem fala — ver
+   * `waAiCustomerSaidSomething`). Este é o cinto: mesmo que um fato inventado
+   * já esteja gravado de antes, ninguém é dispensado sem ter falado. As
+   * pendências continuam sendo calculadas normalmente, então a conversa segue
+   * na pergunta em que estava, em vez de terminar.
+   *
+   * Omitido vale `true` — o comportamento de sempre.
+   */
+  customerSpoke?: boolean;
 }): WaAiTriageProgress {
   const playbook = input.playbook;
   const facts = input.facts || {};
   const agora = input.now instanceof Date ? input.now : new Date();
   const timeZone = input.timeZone || 'America/Cuiaba';
 
-  const cut = evaluateWaAiCuts(playbook, facts, agora, timeZone);
+  const cut = input.customerSpoke === false
+    ? null
+    : evaluateWaAiCuts(playbook, facts, agora, timeZone);
   if (cut) {
     return {
       stage: null, stageLabel: null, missing: [], pending: [], nextField: null, cut, complete: false,

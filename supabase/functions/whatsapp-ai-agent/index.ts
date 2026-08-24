@@ -66,6 +66,8 @@ import {
   mergeWaAiMemory,
   normalizeWaAiMemory,
   renderWaAiMemoryForPrompt,
+  waAiCurrentBundle,
+  waAiCustomerSaidSomething,
   waAiFollowupIdempotencyKey,
   waAiIdempotencyKey,
   type WaAiHistoryMessage,
@@ -81,6 +83,7 @@ import {
   normalizeWaAiPlaybook,
   normalizeWaAiPlaybookFactValue,
   normalizeWaAiPlaybookValue,
+  waAiDateSaidByCustomer,
   waAiPlaybookField,
   waAiPlaybookOnlyWhenSatisfied,
   waAiPlaybookFieldKeys,
@@ -418,7 +421,15 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
 
   let turnMemory = normalizeWaAiMemory(memory);
   let extractionDegraded: string | null = null;
-  if (playbook && extractionSchema && body.trigger !== 'followup') {
+  // A mesma regra do atendimento real: sem fala em texto, não se extrai nada
+  // (ver `waAiCustomerSaidSomething`). A prévia existe para mostrar o que
+  // aconteceria — divergir aqui esconderia justamente o caso da foto sozinha.
+  const janelaDaPrevia = buildWaAiPromptMessages(history, assistant.history_limit);
+  const rodadaDaPrevia = waAiCurrentBundle(janelaDaPrevia);
+  const falaDoClienteNaPrevia = waAiCustomerSaidSomething(rodadaDaPrevia);
+  const clienteJaFalouNaPrevia = waAiCustomerSaidSomething(janelaDaPrevia);
+  const falaDaRodada = rodadaDaPrevia.map(m => m.content).join(' ');
+  if (playbook && extractionSchema && body.trigger !== 'followup' && falaDoClienteNaPrevia) {
     try {
       const extraction = await callModel(
         assistant.provider, assistant.model,
@@ -427,7 +438,7 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
       );
       const patch = parseWaAiTriagePatch(extraction.text, fieldKeys);
       if (!patch.ok) extractionDegraded = patch.reason || 'extração factual inválida';
-      else turnMemory = applyTriagePatch(playbook, turnMemory, patch);
+      else turnMemory = applyTriagePatch(playbook, turnMemory, patch, falaDaRodada);
     } catch (err) {
       extractionDegraded = String(err instanceof Error ? err.message : err).slice(0, 300);
     }
@@ -450,7 +461,7 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   turnMemory.pendingItems = estadoAntesDaResposta.pendingItems;
 
   const progressoAntes = playbook
-    ? computeWaAiTriageProgress({ playbook, facts: turnMemory.knownFacts, timeZone: assistant.timezone })
+    ? computeWaAiTriageProgress({ playbook, facts: turnMemory.knownFacts, timeZone: assistant.timezone, customerSpoke: clienteJaFalouNaPrevia })
     : null;
   const latestCustomerText = history.find(item => item.direction === 'in');
   const nextAction = playbook && progressoAntes
@@ -656,7 +667,7 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   nextMemory.pendingItems = estadoPrevia.pendingItems;
 
   const progressoPrevia = playbook
-    ? computeWaAiTriageProgress({ playbook, facts: nextMemory.knownFacts, timeZone: assistant.timezone })
+    ? computeWaAiTriageProgress({ playbook, facts: nextMemory.knownFacts, timeZone: assistant.timezone, customerSpoke: clienteJaFalouNaPrevia })
     : null;
   if (progressoPrevia) nextMemory.pendingItems = progressoPrevia.pending;
 
@@ -1983,7 +1994,20 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // patch, invalida dependências e decide o estado ANTES de qualquer mensagem.
   let turnMemory = normalizeWaAiMemory(memory);
   let extractionDegraded: string | null = null;
-  if (playbook && extractionSchema && !opts.followupInstruction) {
+  // MÍDIA NÃO É FALA. Sem texto do cliente nesta rodada não há o que extrair —
+  // e deixar a extração rodar assim mesmo é o que produziu, em 24/08/2026, uma
+  // triagem inteira inventada a partir de uma única foto (ver o cabeçalho de
+  // `waAiCustomerSaidSomething`). Sem fatos novos, nenhum corte dispara e a
+  // conversa continua na pergunta em que estava.
+  const janelaDoPrompt = buildWaAiPromptMessages(history, Number(assistant.history_limit) || 12);
+  const rodadaAtual = waAiCurrentBundle(janelaDoPrompt);
+  const falaDoCliente = waAiCustomerSaidSomething(rodadaAtual);
+  // O texto desta rodada, que é contra o que a data extraída é conferida.
+  const falaDaRodada = rodadaAtual.map(m => m.content).join(' ');
+  // E o cinto: ninguém é dispensado sem ter falado, mesmo que um fato inventado
+  // de antes já esteja gravado. Ver `computeWaAiTriageProgress.customerSpoke`.
+  const clienteJaFalou = waAiCustomerSaidSomething(janelaDoPrompt);
+  if (playbook && extractionSchema && !opts.followupInstruction && falaDoCliente) {
     try {
       const extraction = await callModel(
         assistant.provider, assistant.model,
@@ -1994,7 +2018,7 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
       );
       const patch = parseWaAiTriagePatch(extraction.text, fieldKeys);
       if (!patch.ok) extractionDegraded = patch.reason || 'extração factual inválida';
-      else turnMemory = applyTriagePatch(playbook, turnMemory, patch);
+      else turnMemory = applyTriagePatch(playbook, turnMemory, patch, falaDaRodada);
     } catch (err) {
       extractionDegraded = String(err instanceof Error ? err.message : err).slice(0, 500);
     }
@@ -2017,7 +2041,9 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   turnMemory.pendingItems = estadoAntesDaResposta.pendingItems;
 
   const progressoAntes = playbook
-    ? computeWaAiTriageProgress({ playbook, facts: turnMemory.knownFacts, timeZone: assistant.timezone })
+    ? computeWaAiTriageProgress({
+        playbook, facts: turnMemory.knownFacts, timeZone: assistant.timezone, customerSpoke: clienteJaFalou,
+      })
     : null;
   const latestCustomerText = history.find(item => item.direction === 'in');
   const nextAction = playbook && progressoAntes
@@ -2404,7 +2430,9 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // que não sabe que dia é hoje foi o que fez nascer `waAiDateBlock`, e ainda
   // assim ele tocou a triagem de quem tinha saído havia mais de dois anos.
   const progresso = playbook
-    ? computeWaAiTriageProgress({ playbook, facts: nextMemory.knownFacts, timeZone: assistant.timezone })
+    ? computeWaAiTriageProgress({
+        playbook, facts: nextMemory.knownFacts, timeZone: assistant.timezone, customerSpoke: clienteJaFalou,
+      })
     : null;
   if (progresso) nextMemory.pendingItems = progresso.pending;
 
@@ -2667,6 +2695,7 @@ function buildTriageExtractionMessages(
 
 function applyTriagePatch(
   playbook: WaAiPlaybook, previous: WaAiMemory, patch: WaAiTriagePatch,
+  customerText = '',
 ): WaAiMemory {
   const next = normalizeWaAiMemory(previous);
 
@@ -2677,7 +2706,13 @@ function applyTriagePatch(
     const field = waAiPlaybookField(playbook, key);
     if (!field) continue;
     const value = normalizeWaAiPlaybookFactValue(field, raw);
-    if (value !== null) next.knownFacts[field.key] = value;
+    if (value === null) continue;
+    // Ano que o cliente não disse não entra — ver `waAiDateSaidByCustomer`. O
+    // campo continua pendente e o roteiro pergunta de novo, em vez de guardar
+    // um chute que mais adiante decide o corte dos dois anos.
+    if (field.type === 'data_mes_ano'
+      && !waAiDateSaidByCustomer(String(value), customerText)) continue;
+    next.knownFacts[field.key] = value;
   }
 
   // Dependência falsa torna o fato subordinado inaplicável. Isso remove a saída
