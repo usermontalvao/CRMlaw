@@ -266,8 +266,15 @@ class AuthenticatorService {
    * reconhece o caso e dispensa o MANAGE, porque tirar o próprio acesso é a
    * única direção em que a pessoa só perde poder. Fica com nome próprio aqui
    * para a tela não parecer estar revogando o acesso de outra pessoa.
+   *
+   * Quem é "eu" sai da sessão do Supabase, e não de um contexto React de
+   * propósito: pedir `useAuth` ao componente o prenderia ao `AuthProvider`, e
+   * a bancada de `src/dev/` monta o modal sem provider nenhum.
    */
-  leaveShare(id: string, meuUserId: string) {
+  async leaveShare(id: string) {
+    const { data } = await supabase.auth.getUser();
+    const meuUserId = data.user?.id;
+    if (!meuUserId) throw new VaultApiError(401, 'Sua sessão expirou. Entre novamente no CRM.');
     return this.revokeShare(id, meuUserId);
   }
 

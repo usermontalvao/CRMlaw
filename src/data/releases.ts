@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.3',
+    date: '24/08/2026',
+    summary: 'Na tela de gerenciar chaves, as suas e as que compartilharam com você ficam em grupos separados e identificados.',
+    modules: [
+      {
+        moduleId: 'authenticator',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Suas chaves e as recebidas ficam em grupos com título',
+            description: 'As duas listas já vinham separadas, mas só a de baixo tinha nome. Agora, quando você tem chaves próprias e recebidas, cada grupo aparece com seu título e sua contagem. Com um grupo só, o título não aparece — não haveria o que separar.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Some o "selecionar todas" quando não há o que selecionar',
+            description: 'Quem só tem chaves recebidas via "Selecionar todas · 0 selecionada(s)" sobre uma lista em que nada é selecionável, e um rodapé pedindo para escolher chaves que não existiam. O rodapé agora diz o que dá para fazer ali: usar as chaves ou sair delas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.2',
     date: '24/08/2026',
     summary: 'Quem recebe uma chave passa a vê-la na tela de gerenciar — e pode sair dela quando não precisar mais.',

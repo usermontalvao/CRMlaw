@@ -9,7 +9,6 @@ import {
   type VaultShareSummary,
 } from '../services/authenticator.service';
 import { zc } from '../styles/layers';
-import { useAuth } from '../contexts/AuthContext';
 import AuthenticatorCredentialAccessModal from './AuthenticatorCredentialAccessModal';
 import AuthenticatorCreateCredentialModal from './AuthenticatorCreateCredentialModal';
 
@@ -51,7 +50,6 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
   const [sharesLoaded, setSharesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ message: string; type: 'ok' | 'error' } | null>(null);
-  const { user } = useAuth();
 
   const mine = useMemo(
     () => credentials
@@ -154,10 +152,6 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
    * chave em si não é tocada; some da lista de quem saiu, e mais nada.
    */
   const sairDaChave = async (credential: VaultCredentialSummary) => {
-    if (!user?.id) {
-      notify('Sua sessão expirou. Entre novamente no CRM.', 'error');
-      return;
-    }
     if (!window.confirm(
       `Sair de "${credential.name}"?\n\nVocê deixa de gerar os códigos desta chave. `
       + `A chave NÃO é excluída — ela continua com ${credential.owner_name ?? 'o proprietário'}, `
@@ -165,7 +159,7 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
     )) return;
     setProcessing(true);
     try {
-      await authenticatorService.leaveShare(credential.id, user.id);
+      await authenticatorService.leaveShare(credential.id);
       notify(`Você saiu de "${credential.name}".`);
       await onChanged('revoked', [credential.id]);
     } catch (cause: any) {
@@ -453,7 +447,10 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
                   <button type="button" onClick={() => { tentouCarregarShares.current = false; void loadShares(); }} disabled={sharesLoading} className="flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" title="Atualizar compartilhamentos" aria-label="Atualizar compartilhamentos"><RefreshCw size={14} className={sharesLoading ? 'animate-spin' : ''} /></button>
                 )}
               </div>
-              {activeTab === 'mine' && (
+              {/* A seleção em lote só serve às chaves PRÓPRIAS. Para quem só
+                  tem recebidas ela aparecia como "Selecionar todas · 0
+                  selecionada(s)" sobre uma lista onde nada é selecionável. */}
+              {activeTab === 'mine' && visible.length > 0 && (
                 <div className="flex items-center justify-between gap-3 pb-3">
                   <label className="flex cursor-pointer items-center gap-2 text-[11.5px] font-medium text-slate-600">
                     <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible} className="h-4 w-4 rounded border-slate-300 accent-amber-600" />
@@ -476,7 +473,20 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
                       <p className="mt-2 text-[12.5px] font-medium text-slate-500">{query ? 'Nenhuma chave encontrada.' : 'Você ainda não tem nenhuma chave.'}</p>
                       {!query && canCreate && <button type="button" onClick={() => setCreating(true)} className="mt-3 text-[12px] font-semibold text-amber-700 hover:text-amber-800">Adicionar minha primeira chave</button>}
                     </div>
-                  ) : visible.map((credential) => {
+                  ) : (<>
+                  {/* Título só quando há os DOIS grupos. Sozinho, ele repetiria
+                      o nome da aba logo acima — e um título que não separa nada
+                      de nada é ruído. */}
+                  {visible.length > 0 && recebidas.length > 0 && (
+                    <div className="mb-1 flex items-center gap-2 px-2">
+                      <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+                        Suas chaves
+                      </span>
+                      <span className="h-px flex-1 bg-slate-100" />
+                      <span className="text-[10.5px] text-slate-400">{visible.length}</span>
+                    </div>
+                  )}
+                  {visible.map((credential) => {
                     const checked = selectedIds.has(credential.id);
                     return (
                       <div key={credential.id} className={`flex items-center gap-2 rounded-xl px-2 py-1 transition-colors ${checked ? 'bg-amber-50/80' : 'hover:bg-slate-50'}`}>
@@ -492,6 +502,7 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
                       </div>
                     );
                   })}
+                  </>)}
 
                   {recebidas.length > 0 && (
                     <>
@@ -537,7 +548,15 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
 
                 <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-3">
                   {error && <p className="mb-2 flex gap-1.5 text-[11.5px] text-red-600"><AlertTriangle size={13} className="mt-0.5 flex-none" />{error}</p>}
-                  {selectedCredentials.length === 0 ? <p className="text-center text-[11.5px] text-slate-400">Selecione uma ou mais chaves para compartilhar ou excluir.</p> : (
+                  {selectedCredentials.length === 0 ? (
+                    <p className="text-center text-[11.5px] text-slate-400">
+                      {/* Pedir para selecionar o que não existe é mandar a pessoa
+                          procurar um botão que não está lá. */}
+                      {visible.length === 0
+                        ? 'Estas chaves são de outras pessoas. Você pode usá-las ou sair delas.'
+                        : 'Selecione uma ou mais chaves para compartilhar ou excluir.'}
+                    </p>
+                  ) : (
                     <div className="flex items-center gap-2">
                       {selectedCredentials.length === 1 && <button type="button" onClick={() => setOpenedCredential(selectedCredentials[0])} className="mr-auto rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11.5px] font-semibold text-slate-600 hover:bg-slate-50">Detalhes</button>}
                       <div className="flex-1" />
