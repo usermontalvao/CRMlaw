@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, ArrowLeft, Check, ChevronRight, KeyRound, Loader2, Search,
   Plus, RefreshCw, Share2, Trash2, UserMinus, Users, X,
@@ -105,7 +105,24 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
     window.setTimeout(() => setNotice(null), 3200);
   };
 
+  /**
+   * Uma tentativa automática, e só uma.
+   *
+   * `sharesLoaded` marca SUCESSO, então ele não serve de freio: quando a
+   * chamada falhava, ele continuava `false`, o efeito abaixo via "ainda não
+   * carregou, não está carregando" e pedia de novo — e de novo, e de novo. Em
+   * produção deu cinco chamadas em menos de dois segundos, para sempre, com a
+   * tela presa em "Carregando acessos…" e a mensagem de erro nunca aparecendo.
+   *
+   * Esta ref registra que a tentativa ACONTECEU, dando ou não certo. Falhou,
+   * o erro aparece na tela e quem quiser tentar de novo usa o botão de
+   * atualizar, que zera a marca — repetir sozinho é decisão de quem está
+   * olhando, não do componente.
+   */
+  const tentouCarregarShares = useRef(false);
+
   const loadShares = async () => {
+    tentouCarregarShares.current = true;
     setSharesLoading(true);
     setError(null);
     try {
@@ -120,7 +137,9 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
   };
 
   useEffect(() => {
-    if (activeTab === 'shared' && canManage && !sharesLoaded && !sharesLoading) void loadShares();
+    if (activeTab === 'shared' && canManage && !sharesLoaded && !sharesLoading && !tentouCarregarShares.current) {
+      void loadShares();
+    }
   }, [activeTab, canManage, sharesLoaded, sharesLoading]);
 
   const toggleOne = (id: string) => {
@@ -375,7 +394,7 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
                   <button type="button" onClick={() => setCreating(true)} className="flex flex-none items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-2.5 text-[12px] font-semibold text-white hover:bg-amber-700"><Plus size={14} /> Adicionar</button>
                 )}
                 {activeTab === 'shared' && (
-                  <button type="button" onClick={() => void loadShares()} disabled={sharesLoading} className="flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" title="Atualizar compartilhamentos" aria-label="Atualizar compartilhamentos"><RefreshCw size={14} className={sharesLoading ? 'animate-spin' : ''} /></button>
+                  <button type="button" onClick={() => { tentouCarregarShares.current = false; void loadShares(); }} disabled={sharesLoading} className="flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-50" title="Atualizar compartilhamentos" aria-label="Atualizar compartilhamentos"><RefreshCw size={14} className={sharesLoading ? 'animate-spin' : ''} /></button>
                 )}
               </div>
               {activeTab === 'mine' && (
@@ -432,7 +451,24 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
               <>
                 <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50/40 p-3">
                   {sharesLoading && !sharesLoaded ? <div className="flex items-center justify-center gap-2 py-12 text-[12px] text-slate-400"><Loader2 size={16} className="animate-spin" /> Carregando acessos…</div>
-                    : sharedGroups.length === 0 ? (
+                    /* Falhou: diz o que houve e oferece a saída. Cair no vazio
+                       de "nenhuma chave está compartilhada" seria pior que o
+                       spinner eterno — o spinner ao menos não afirma nada. */
+                    : (error && !sharesLoaded) ? (
+                      <div className="px-4 py-12 text-center">
+                        <AlertTriangle size={23} className="mx-auto text-amber-400" />
+                        <p className="mt-2 text-[12.5px] font-medium text-slate-600">Não foi possível carregar os acessos.</p>
+                        <p className="mt-1 text-[11px] text-slate-400">{error}</p>
+                        <button
+                          type="button"
+                          onClick={() => { tentouCarregarShares.current = false; void loadShares(); }}
+                          disabled={sharesLoading}
+                          className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11.5px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Tentar de novo
+                        </button>
+                      </div>
+                    ) : sharedGroups.length === 0 ? (
                       <div className="px-4 py-12 text-center"><Users size={23} className="mx-auto text-slate-300" /><p className="mt-2 text-[12.5px] font-medium text-slate-500">{query ? 'Nenhum compartilhamento encontrado.' : 'Nenhuma chave está compartilhada.'}</p><p className="mt-1 text-[11px] text-slate-400">Quando você compartilhar uma chave, os acessos aparecerão aqui.</p></div>
                     ) : sharedGroups.map(([credentialId, group]) => (
                       <section key={credentialId} className="mb-3 overflow-hidden rounded-xl border border-slate-200 bg-white last:mb-0">

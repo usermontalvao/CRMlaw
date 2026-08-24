@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.1',
+    date: '24/08/2026',
+    summary: 'A aba "Chaves compartilhadas" do cofre ficava carregando para sempre. Ela volta a abrir — e, quando algo falha, passa a dizer o que houve.',
+    modules: [
+      {
+        moduleId: 'authenticator',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A aba "Chaves compartilhadas" não fica mais carregando eternamente',
+            description: 'A tela pedia a lista, não recebia resposta e pedia de novo, várias vezes por segundo, sem nunca desistir nem mostrar o motivo. Agora ela tenta uma vez: se der certo, mostra os acessos; se não, explica o que houve e oferece tentar de novo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.0',
     date: '24/08/2026',
     summary: 'Os códigos 2FA do escritório ganharam um cofre: dá para compartilhar uma chave sem entregar o segredo dela. E duas brechas do WhatsApp foram fechadas.',
