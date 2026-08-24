@@ -687,7 +687,7 @@ function atualizarContadores() {
   if (doRelogio) {
     const restante = Math.max(0, Math.ceil((doRelogio.expiraEm - agora) / 1000));
     relogio.classList.remove('oculto');
-    relogio.classList.toggle('urgente', restante <= 5);
+    relogio.classList.toggle('urgente', restante <= 7);
     $('#relogio-seg').textContent = `${restante}s`;
     regras.push(`#relogio-barra{width:${((restante / estado.periodoDoRelogio) * 100).toFixed(2)}%}`);
   } else {
@@ -724,10 +724,10 @@ function atualizarContadores() {
     }));
     codigo.classList.remove('indisponivel');
 
-    // Nos últimos segundos o código esmaece: vale mais esperar o próximo do que
-    // digitar um que vira no meio do caminho.
-    item.classList.toggle('esvai', restante <= 5);
-    item.classList.toggle('urgente', restante <= 5);
+    // Nos 7 segundos finais, o código fica vermelho: vale mais esperar o
+    // próximo do que digitar um que vira no meio do caminho.
+    item.classList.toggle('esvai', restante <= 7);
+    item.classList.toggle('urgente', restante <= 7);
     preencher.disabled = false;
     copiar.disabled = false;
 
@@ -754,13 +754,14 @@ function atualizarContadores() {
       }));
       codigo.classList.remove('indisponivel');
       palco.classList.remove('oculto');
-      $('#detalhe-aro').classList.toggle('urgente', restante <= 5);
+      palco.classList.toggle('urgente', restante <= 7);
+      $('#detalhe-aro').classList.toggle('urgente', restante <= 7);
       const sobra = CIRCUNFERENCIA_DO_PALCO * (1 - restante / (dados.period || 30));
       regras.push(`#detalhe-aro .aro-frente{stroke-dashoffset:${sobra.toFixed(2)}}`);
     } else if (dados?.erro) {
       codigo.textContent = dados.erro;
       codigo.classList.add('indisponivel');
-      palco.classList.remove('oculto');
+      palco.classList.remove('oculto', 'urgente');
     } else {
       palco.classList.add('oculto');
     }

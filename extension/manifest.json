@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Jurius Authenticator",
   "short_name": "Authenticator",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Códigos 2FA do escritório, com as mesmas contas e permissões do CRM Jurius.",
   "default_locale": "pt_BR",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3M34VNcyldhlc/sDfk703TRzvSJbH2+LB7i4HkmvIR/3kAG93UBNeUt3hTWm8FjZy6YErEVua3Gd+02dGcrHLL2FUrcvvc/ougjrQ5RHg43zAW3iLayD/XP2hfk8E2VAK5ybutS6wbe/4lmdymeavEeSjiKjEOn4KI8MykDSXJALNyr5THrPtBbjh5h0aD6gECFie9eY7CfyYPcdyW1nJiJzf6QNEdLYJhtg7Hf/iz0Rx32/NDyfvhH3+/s4m3FGUV5Qgx7jPm3ZZXmZIdp7s9QTu0FdsFZV1yx56NtItEmM6dLkMErFwCC/7jdEy8K4IZYHH1Z7WkozJvllE6WsCwIDAQAB",

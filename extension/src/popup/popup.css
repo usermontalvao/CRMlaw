@@ -39,6 +39,7 @@
   --texto-suave: #8B7E74;
 
   --acento: #F97316;
+  --codigo: #2563EB;
   --perigo: #C93B3B;
   --sucesso: #15803D;
 
@@ -58,6 +59,7 @@
   --e-texto-medio: #B9AEA4;
   --e-texto-suave: #8E8177;
   --e-acento: #FB923C;
+  --e-codigo: #60A5FA;
   --e-perigo: #F07171;
   --e-sucesso: #4ADE80;
 
@@ -82,13 +84,13 @@
  * ────────────────────────────────────────────────────────────────────────── */
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-tema="claro"]) { --papel: var(--e-papel); --marfim: var(--e-marfim); --afundado: var(--e-afundado); --borda: var(--e-borda); --fio: var(--e-fio); --texto: var(--e-texto); --texto-medio: var(--e-texto-medio); --texto-suave: var(--e-texto-suave); --acento: var(--e-acento); --perigo: var(--e-perigo); --sucesso: var(--e-sucesso); }
+  :root:not([data-tema="claro"]) { --papel: var(--e-papel); --marfim: var(--e-marfim); --afundado: var(--e-afundado); --borda: var(--e-borda); --fio: var(--e-fio); --texto: var(--e-texto); --texto-medio: var(--e-texto-medio); --texto-suave: var(--e-texto-suave); --acento: var(--e-acento); --codigo: var(--e-codigo); --perigo: var(--e-perigo); --sucesso: var(--e-sucesso); }
   /* O botão primário é tinta: no claro ele é preto e clareia no hover; no
      escuro ele é claro, e clarear de novo não daria retorno nenhum. */
   :root:not([data-tema="claro"]) .botao:hover:not(:disabled) { filter: brightness(.92); }
 }
 
-:root[data-tema="escuro"] { --papel: var(--e-papel); --marfim: var(--e-marfim); --afundado: var(--e-afundado); --borda: var(--e-borda); --fio: var(--e-fio); --texto: var(--e-texto); --texto-medio: var(--e-texto-medio); --texto-suave: var(--e-texto-suave); --acento: var(--e-acento); --perigo: var(--e-perigo); --sucesso: var(--e-sucesso); }
+:root[data-tema="escuro"] { --papel: var(--e-papel); --marfim: var(--e-marfim); --afundado: var(--e-afundado); --borda: var(--e-borda); --fio: var(--e-fio); --texto: var(--e-texto); --texto-medio: var(--e-texto-medio); --texto-suave: var(--e-texto-suave); --acento: var(--e-acento); --codigo: var(--e-codigo); --perigo: var(--e-perigo); --sucesso: var(--e-sucesso); }
 :root[data-tema="escuro"] .botao:hover:not(:disabled) { filter: brightness(.92); }
 
 /* O `color-scheme` também tem de obedecer: é ele que pinta barra de rolagem,
@@ -222,11 +224,11 @@ html, body {
   grid-area: codigo; margin-top: 2px;
   font-size: 27px; font-weight: 600; line-height: 1.14; letter-spacing: .004em;
   display: flex; align-items: baseline; gap: .31em;   /* o respiro entre os trios */
-  white-space: nowrap;
+  white-space: nowrap; color: var(--codigo); transition: color 300ms ease;
 }
 .item-codigo.indisponivel { font-size: 12.5px; font-weight: 500; color: var(--perigo); letter-spacing: 0; }
-/* Nos últimos segundos o código esmaece: vale mais esperar o próximo. */
-.item.esvai .item-codigo { color: var(--texto-suave); }
+/* Nos 7 segundos finais, vermelho avisa que vale esperar o próximo. */
+.item.esvai .item-codigo { color: var(--perigo); }
 
 /* Confirmação no lugar do código, sem toast flutuante. */
 .item-feito {
@@ -476,8 +478,9 @@ html, body {
 }
 .palco-codigo {
   font-size: 36px; font-weight: 600; line-height: 1; letter-spacing: .004em;
-  display: flex; align-items: baseline; gap: .3em;
+  display: flex; align-items: baseline; gap: .3em; color: var(--codigo); transition: color 300ms ease;
 }
+.palco.urgente .palco-codigo { color: var(--perigo); }
 .palco-codigo.indisponivel { font-size: 13px; font-weight: 500; color: var(--perigo); letter-spacing: 0; }
 .palco-aro { width: 34px; height: 34px; flex: none; margin-left: auto; }
 .palco-aro circle { fill: none; stroke-width: 3; }

@@ -237,6 +237,13 @@ class AuthenticatorService {
     return chamar<{ ok: true }>(`/credentials/${id}`, { method: 'PATCH', body: dados });
   }
 
+  favorite(id: string, favorite: boolean) {
+    return chamar<{ ok: true; favorite: boolean }>(`/credentials/${id}/favorite`, {
+      method: 'POST',
+      body: { favorite },
+    });
+  }
+
   remove(id: string, motivo: string) {
     return chamar<{ ok: true }>(`/credentials/${id}`, { method: 'DELETE', body: { reason: motivo } });
   }

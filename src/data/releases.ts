@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.13',
+    date: '24/08/2026',
+    summary: 'O Authenticator do CRM agora acompanha a experiência visual da extensão sem perder os atalhos e funções do gerenciador.',
+    modules: [
+      {
+        moduleId: 'authenticator',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Painel do CRM alinhado à extensão',
+            description: 'O atalho continua usando o ícone de chave, enquanto o painel adota a mesma largura, relógio compartilhado, busca, agrupamento e hierarquia visual da extensão. A logo oficial aparece apenas na confirmação do PIN e na animação Halo.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Favoritos disponíveis diretamente na lista',
+            description: 'A estrela permite favoritar ou desfavoritar uma chave sem abrir outra tela. As favoritas permanecem destacadas e são reorganizadas automaticamente no primeiro grupo.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Códigos azuis avisam em vermelho antes de expirar',
+            description: 'Os códigos ficam azuis durante o uso normal e passam suavemente para vermelho nos sete segundos finais. A extensão para download também recebeu o mesmo comportamento na versão 1.1.1.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.12',
     date: '24/08/2026',
     summary: 'Colar uma imagem e escrever pelo widget flutuante do WhatsApp ficaram mais rápidos, sem cliques extras.',
