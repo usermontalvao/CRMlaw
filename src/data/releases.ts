@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.5',
+    date: '24/08/2026',
+    summary: 'O convite para baixar a extensão do Authenticator passa a olhar o navegador em que você está, e não a sua conta.',
+    modules: [
+      {
+        moduleId: 'authenticator',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O convite para baixar a extensão some no navegador errado',
+            description: 'O cofre decidia mostrar o convite olhando se a SUA CONTA já tinha usado a extensão em algum lugar. Bastava tê-la no Chrome do escritório para o convite sumir também no notebook de casa, no celular e em qualquer outro navegador — justamente onde ele era necessário. Agora a página confere se a extensão está instalada NESTE navegador, e o convite aparece sempre que ela não estiver.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Nova versão da extensão para baixar (1.0.2)',
+            description: 'A extensão passou a expor um único arquivo ao endereço do CRM: o ícone de 16 pixels. É por ele que a página descobre que a extensão existe no navegador — nenhum script lê a página, nenhum dado é trocado. Quem já usa precisa baixar de novo pelo cofre e recarregar no Chrome; até fazer isso, o convite continua aparecendo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.4',
     date: '24/08/2026',
     summary: 'Na extensão do Chrome, a barra de tempo dos códigos voltou a andar e a lista parou de acusar erro.',

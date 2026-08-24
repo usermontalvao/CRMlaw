@@ -45,7 +45,18 @@ test('manifest é V3 e pede o mínimo', () => {
     !(manifest.host_permissions ?? []).some((h: string) => !h.includes('/functions/v1/totp-vault/')),
     'host_permissions só pode conter o cofre — com site aqui, activeTab deixaria de ser "só quando clicam"',
   );
-  assert.ok(!manifest.web_accessible_resources, 'nenhum arquivo da extensão é exposto a páginas');
+  // O CRM precisa de UM marcador para saber se a extensão existe neste
+  // navegador. É só o ícone pequeno, restrito às origens do próprio produto;
+  // nenhum script, HTML, token ou arquivo de dados fica público.
+  assert.deepEqual(manifest.web_accessible_resources, [{
+    resources: ['icons/icon-16.png'],
+    matches: [
+      'https://jurius.com.br/*',
+      'https://www.jurius.com.br/*',
+      'http://localhost/*',
+      'http://127.0.0.1/*',
+    ],
+  }]);
   assert.ok(!manifest.externally_connectable, 'nenhum site conversa com a extensão');
 });
 

@@ -5,6 +5,7 @@ import {
   type VaultCredentialSummary,
 } from '../services/authenticator.service';
 import { zc } from '../styles/layers';
+import { detectarExtensaoAuthenticator } from '../utils/authenticatorExtension';
 import AuthenticatorCredentialsManagerModal from './AuthenticatorCredentialsManagerModal';
 
 /**
@@ -45,21 +46,18 @@ const AuthenticatorQuickPanel: React.FC<{ canCreate: boolean; canManage: boolean
   const [gerenciamentoAberto, setGerenciamentoAberto] = useState(false);
 
   /**
-   * A extensão já está em uso nesta conta?
+   * A extensão está instalada NESTE navegador?
    *
    * `null` = ainda não sei, e é DIFERENTE de `false`. Enquanto não sei, o
    * convite de baixar não aparece: mostrá-lo por um instante para quem já tem a
    * extensão é oferecer o que a pessoa já fez, e some sozinho — o pior tipo de
    * piscada, porque parece defeito.
    *
-   * O sinal é a SESSÃO de extensão viva no cofre (`kind === 'extension'`), não
-   * uma detecção no navegador: a extensão não expõe nada à página (sem content
-   * script, sem `web_accessible_resources`), e inventar essa exposição só para
-   * esconder um link seria abrir uma janela para fechar uma porta.
-   *
-   * O preço é conhecido: quem instalou a extensão e ainda não entrou nela uma
-   * vez continua vendo o convite. É o lado certo de errar — o convite sobra
-   * para quem não terminou de instalar, e nunca falta para quem precisa dele.
+   * Antes isto olhava as sessões da CONTA. Bastava usar a extensão no Chrome
+   * do trabalho para o convite sumir também no Safari, no Edge e em qualquer
+   * outro computador. Agora a página tenta carregar somente o ícone público
+   * que o manifest libera ao domínio do CRM. Não há content script, leitura da
+   * página, token ou troca de mensagens nessa detecção.
    */
   const [temExtensao, setTemExtensao] = useState<boolean | null>(null);
 
@@ -148,16 +146,14 @@ const AuthenticatorQuickPanel: React.FC<{ canCreate: boolean; canManage: boolean
   }, []);
 
   /**
-   * Uma vez por destravamento, em segundo plano. Falhar aqui deixa `temExtensao`
-   * em `null` — o convite some, e é assim que tem de ser: não conseguir
-   * perguntar não é motivo para empurrar um download.
+   * Uma vez por destravamento, em segundo plano. A resposta pertence a este
+   * navegador; nenhuma sessão da conta em outro dispositivo interfere nela.
    */
   const conferirExtensao = useCallback(async () => {
     try {
-      const { sessions } = await authenticatorService.sessions();
-      setTemExtensao(sessions.some((s) => s.kind === 'extension' && !s.revoked_at));
+      setTemExtensao(await detectarExtensaoAuthenticator());
     } catch {
-      setTemExtensao(null);
+      setTemExtensao(false);
     }
   }, []);
 
