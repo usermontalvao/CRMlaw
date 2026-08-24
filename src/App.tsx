@@ -1048,14 +1048,19 @@ const MainApp: React.FC = () => {
     return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', close); };
   }, [sidebarCtx]);
 
-  // Seção inicial das Configurações (deep-link via moduleParams.section)
+  // Seção inicial das Configurações (deep-link via moduleParams.section, ou via
+  // `?section=` na URL — é por onde a extensão do Authenticator manda a pessoa
+  // direto para a aba dela, sem obrigar a caçar no menu lateral).
   const settingsInitialSection = useMemo(() => {
     const params = moduleParams['configuracoes'];
     try {
-      return params ? (JSON.parse(params).section as string | undefined) : undefined;
+      const daNavegacao = params ? (JSON.parse(params).section as string | undefined) : undefined;
+      if (daNavegacao) return daNavegacao;
     } catch {
-      return undefined;
+      // parâmetro corrompido não pode derrubar a tela: cai para a URL abaixo.
     }
+    if (typeof window === 'undefined') return undefined;
+    return new URLSearchParams(window.location.search).get('section') ?? undefined;
   }, [moduleParams]);
   const [cloudMobileSearchTerm, setCloudMobileSearchTerm] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);

@@ -229,20 +229,32 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [bulkSharing, selectedCredentials, userQuery]);
 
+  /**
+   * O lote vai numa chamada só — e isso é decisão de PRODUTO, não de rede.
+   *
+   * Uma chamada por chave fazia o backend avisar uma vez por chave: doze chaves
+   * compartilhadas de uma vez chegavam do outro lado como doze notificações e
+   * doze e-mails. O laço saiu daqui para o backend, que conhece a lista inteira
+   * e manda um recado só, com todos os nomes.
+   */
   const shareSelected = async () => {
     if (!selectedUser || !canShareSelection) return;
     setProcessing(true);
     setError(null);
-    const succeeded: string[] = [];
-    const failed: string[] = [];
-    for (const credential of selectedCredentials) {
-      try {
-        await authenticatorService.share(credential.id, selectedUser.user_id, level);
-        succeeded.push(credential.id);
-      } catch {
-        failed.push(credential.id);
-      }
+
+    const ids = selectedCredentials.map((credential) => credential.id);
+    let failed: string[] = [];
+    let succeeded: string[] = [];
+    try {
+      const resultado = await authenticatorService.shareMany(ids, selectedUser.user_id, level);
+      failed = resultado.failed ?? [];
+      succeeded = ids.filter((id) => !failed.includes(id));
+    } catch (cause: any) {
+      setProcessing(false);
+      setError(cause?.message ?? 'Não foi possível compartilhar as chaves.');
+      return;
     }
+
     if (succeeded.length > 0) await onChanged('shared', succeeded);
     setProcessing(false);
     if (failed.length > 0) {

@@ -578,6 +578,147 @@ async function notifyUser(
   }
 }
 
+
+// ── aviso por e-mail ────────────────────────────────────────────────────────
+
+/**
+ * O aviso que sai do CRM.
+ *
+ * O sino resolve para quem já está com o sistema aberto. Chave 2FA, porém, é
+ * quase sempre recebida por quem NÃO está: alguém pede acesso ao painel do
+ * banco, do provedor, do tribunal, e precisa saber que já pode entrar. O
+ * e-mail é o único aviso que alcança essa pessoa fora do CRM.
+ *
+ * **Um e-mail por RAJADA, não por chave.** Compartilhar doze chaves de uma vez
+ * é uma decisão só — mandar doze e-mails transformaria um aviso útil em spam,
+ * e o destinatário leria o último e apagaria o resto sem ler. Por isso quem
+ * concede em lote passa por `POST /permissions/bulk`, que conhece a lista
+ * inteira e escreve UMA mensagem com todos os nomes.
+ *
+ * **Nunca vai segredo.** O e-mail carrega o NOME da chave e quem compartilhou.
+ * Nem o segredo TOTP nem o código de 6 dígitos passam por aqui — caixa de
+ * entrada não é cofre. Ver [[cofre-totp-nao-e-so-permissao]].
+ *
+ * **Fail-soft, como o sino.** Vem depois da auditoria estrita e do INSERT da
+ * permissão; falhar aqui não desfaz um compartilhamento legítimo já gravado.
+ */
+async function resendSender(ctx: Ctx): Promise<{ key: string; from: string } | null> {
+  try {
+    const [{ data: notif }, { data: emailCfg }] = await Promise.all([
+      ctx.db.from('system_settings').select('value').eq('key', 'notification_config').maybeSingle(),
+      ctx.db.from('system_settings').select('value').eq('key', 'email_integration_config').maybeSingle(),
+    ]);
+
+    // Mesma ordem do weekly-digest: a chave configurada na tela vence a do
+    // ambiente, porque é ela que o escritório troca sem deploy.
+    const key = String((notif?.value as any)?.weekly_digest_resend_key ?? '').trim()
+      || (Deno.env.get('RESEND_API_KEY') ?? '').trim();
+    if (!key) return null;
+
+    const fromName = String((emailCfg?.value as any)?.from_name ?? '').trim();
+    const fromEmail = String((emailCfg?.value as any)?.from_email ?? '').trim();
+    const from = fromName && fromEmail
+      ? `${fromName} <${fromEmail}>`
+      : 'Jurius CRM <noreply@jurius.com.br>';
+
+    return { key, from };
+  } catch {
+    return null;
+  }
+}
+
+/** Escapa o que vai para dentro do HTML — nome de chave é texto de usuário. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+const PERMISSION_LABEL: Record<string, string> = {
+  USE: 'gerar os códigos',
+  MANAGE: 'gerar os códigos e compartilhar com outras pessoas',
+  EXPORT: 'gerar os códigos, compartilhar e exportar a chave',
+};
+
+async function emailSharedCredentials(
+  ctx: Ctx,
+  params: {
+    userId: string;
+    actorName: string;
+    credentialNames: string[];
+    permission: VaultPermission;
+  },
+): Promise<void> {
+  if (!params.userId || params.userId === ctx.actor?.userId) return;
+  if (params.credentialNames.length === 0) return;
+
+  try {
+    const profile = await loadProfile(ctx.db, params.userId);
+    const to = (profile?.email ?? '').trim();
+    if (!to) return;
+
+    const sender = await resendSender(ctx);
+    if (!sender) {
+      // Sem Resend configurado o sino continua valendo; só o e-mail não sai.
+      safeError(SCOPE, 'e-mail de compartilhamento não enviado', 'Resend não configurado');
+      return;
+    }
+
+    const varias = params.credentialNames.length > 1;
+    const primeiroNome = (profile?.name ?? '').trim().split(/\s+/)[0] || '';
+    const assunto = varias
+      ? `${params.actorName} compartilhou ${params.credentialNames.length} chaves de acesso com você`
+      : `${params.actorName} compartilhou uma chave de acesso com você`;
+
+    const itens = params.credentialNames
+      .map((nome) => `<li style="margin:0 0 6px 0;">${escapeHtml(nome)}</li>`)
+      .join('');
+
+    const html = `
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f8f7f5;padding:24px;">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e7e5df;border-radius:12px;padding:24px;">
+    <p style="margin:0 0 16px 0;font-size:15px;color:#0f172a;">
+      ${primeiroNome ? `Olá, ${escapeHtml(primeiroNome)}.` : 'Olá.'}
+    </p>
+    <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#334155;">
+      <strong>${escapeHtml(params.actorName)}</strong> compartilhou
+      ${varias ? `<strong>${params.credentialNames.length} chaves</strong>` : 'uma chave'}
+      de autenticação em dois fatores com você no Jurius.
+    </p>
+    <p style="margin:0 0 8px 0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;">
+      ${varias ? 'Chaves' : 'Chave'}
+    </p>
+    <ul style="margin:0 0 18px 0;padding-left:18px;font-size:14px;line-height:1.6;color:#0f172a;">
+      ${itens}
+    </ul>
+    <p style="margin:0 0 18px 0;font-size:14px;line-height:1.6;color:#334155;">
+      Com esse acesso você pode ${escapeHtml(PERMISSION_LABEL[params.permission] ?? 'usar a chave')}.
+      Abra o <strong>Authenticator</strong> no Jurius (ou a extensão do navegador) para ver os códigos.
+    </p>
+    <p style="margin:0;font-size:12px;line-height:1.6;color:#94a3b8;">
+      Este e-mail não contém nenhum código nem o segredo das chaves — eles só
+      aparecem dentro do cofre. Se você não esperava este acesso, avise a
+      administração do escritório.
+    </p>
+  </div>
+</div>`.trim();
+
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${sender.key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: sender.from, to: [to], subject: assunto, html }),
+    });
+
+    if (!res.ok) {
+      safeError(SCOPE, 'falha ao enviar e-mail de compartilhamento', await res.text());
+    }
+  } catch (error) {
+    safeError(SCOPE, 'falha ao enviar e-mail de compartilhamento', error);
+  }
+}
+
 /** O nome que a pessoa reconhece na lista, sem o segredo junto. */
 function credentialLabel(row: { name: string; issuer?: string | null }): string {
   return row.issuer && !row.name.includes(row.issuer) ? `${row.issuer} — ${row.name}` : row.name;
@@ -1766,27 +1907,27 @@ async function handleListPermissions(ctx: Ctx, credentialId: string): Promise<Re
   });
 }
 
-async function handleGrantPermission(ctx: Ctx, credentialId: string): Promise<Response> {
-  const actor = requireActor(ctx);
+/**
+ * Conceder acesso a UMA chave. É o miolo compartilhado pelo compartilhamento
+ * avulso e pelo em lote — a régua (`share`, `canGrant`) e a auditoria estrita
+ * são as mesmas nos dois caminhos, e ficar em um lugar só é o que impede que o
+ * lote vire uma porta mais larga que a porta avulsa.
+ *
+ * Devolve o rótulo da chave, que é o que os avisos precisam saber.
+ */
+async function grantOneCredential(
+  ctx: Ctx,
+  actor: Actor,
+  credentialId: string,
+  targetUserId: string,
+  permission: VaultPermission,
+): Promise<string> {
   const { row, acl } = await loadAuthorized(ctx, actor, credentialId, 'share', METADATA_COLUMNS);
 
-  const targetUserId = String(ctx.body.user_id ?? '').trim();
-  const permission = String(ctx.body.permission ?? 'USE').toUpperCase() as VaultPermission;
-
-  if (!['USE', 'MANAGE', 'EXPORT'].includes(permission)) throw new HttpError(400, 'Permissão inválida.');
-  if (!targetUserId) throw new HttpError(400, 'Escolha um usuário.');
   if (targetUserId === row.owner_user_id) throw new HttpError(400, 'O proprietário já tem acesso total.');
   if (!canGrant(acl, permission)) {
     throw new HttpError(403, 'Você não pode conceder um nível acima do seu.');
   }
-
-  // Nunca "criar" um usuário a partir de e-mail digitado: o destino tem de ser
-  // um perfil ativo que já existe no CRM.
-  const profile = await loadProfile(ctx.db, targetUserId);
-  if (!profile || profile.is_active !== true) throw new HttpError(400, 'Usuário inválido ou desativado.');
-
-  // EXPORT é privilégio sério: exige step-up de quem concede.
-  if (permission === 'EXPORT') await requireStepUp(ctx, actor, ctx.body.step_up_token);
 
   const { error } = await ctx.db.from('totp_permissions').upsert(
     { credential_id: row.id, user_id: targetUserId, permission, created_by: actor.userId },
@@ -1801,20 +1942,107 @@ async function handleGrantPermission(ctx: Ctx, credentialId: string): Promise<Re
     metadata_safe: { permission },
   });
 
-  const chave = credentialLabel(row);
+  return credentialLabel(row);
+}
+
+/** Teto do lote. Acima disso não é compartilhamento, é exportação de cofre. */
+const MAX_BULK_GRANT = 50;
+
+/**
+ * Compartilhar uma ou várias chaves com a MESMA pessoa, no mesmo nível.
+ *
+ * O lote não existe por desempenho: existe para que o aviso seja um só. Quando
+ * o frontend concedia uma chave por vez, doze chaves viravam doze notificações
+ * e doze e-mails — e o que era um único ato do gerente chegava do outro lado
+ * como uma enxurrada. Aqui o backend conhece a lista inteira e fala uma vez.
+ *
+ * Falha parcial NÃO é desfeita: cada concessão já foi gravada e auditada. A
+ * resposta diz quais ficaram para trás, e a tela mantém essas selecionadas.
+ */
+async function grantCredentials(ctx: Ctx, credentialIds: string[]): Promise<Response> {
+  const actor = requireActor(ctx);
+
+  const targetUserId = String(ctx.body.user_id ?? '').trim();
+  const permission = String(ctx.body.permission ?? 'USE').toUpperCase() as VaultPermission;
+
+  if (!['USE', 'MANAGE', 'EXPORT'].includes(permission)) throw new HttpError(400, 'Permissão inválida.');
+  if (!targetUserId) throw new HttpError(400, 'Escolha um usuário.');
+
+  const ids = Array.from(new Set(credentialIds.filter((id) => typeof id === 'string' && id.trim())));
+  if (ids.length === 0) throw new HttpError(400, 'Escolha ao menos uma chave.');
+  if (ids.length > MAX_BULK_GRANT) throw new HttpError(400, `Compartilhe no máximo ${MAX_BULK_GRANT} chaves por vez.`);
+
+  // Nunca "criar" um usuário a partir de e-mail digitado: o destino tem de ser
+  // um perfil ativo que já existe no CRM.
+  const profile = await loadProfile(ctx.db, targetUserId);
+  if (!profile || profile.is_active !== true) throw new HttpError(400, 'Usuário inválido ou desativado.');
+
+  // EXPORT é privilégio sério: exige step-up de quem concede. Um step-up cobre
+  // o lote inteiro — é o mesmo ato, na mesma janela de 5 minutos.
+  if (permission === 'EXPORT') await requireStepUp(ctx, actor, ctx.body.step_up_token);
+
+  const concedidas: { id: string; label: string }[] = [];
+  const falhas: string[] = [];
+  let primeiroErro: unknown = null;
+
+  for (const id of ids) {
+    try {
+      const label = await grantOneCredential(ctx, actor, id, targetUserId, permission);
+      concedidas.push({ id, label });
+    } catch (error) {
+      falhas.push(id);
+      if (!primeiroErro) primeiroErro = error;
+    }
+  }
+
+  const chaves = concedidas.map((c) => c.label);
+
+  // Nada passou: o erro real vale mais do que um "0 de 3 compartilhadas".
+  if (chaves.length === 0 && primeiroErro) throw primeiroErro;
+
   const quem = await actorDisplayName(ctx, actor);
+  const varias = chaves.length > 1;
+
   await notifyUser(ctx, {
     userId: targetUserId,
     type: 'totp_shared',
-    title: `${quem} compartilhou uma chave com você`,
-    message: permission === 'USE'
-      ? `Você já pode gerar os códigos de "${chave}" no Authenticator.`
-      : `Você recebeu acesso ${permission} a "${chave}" no Authenticator.`,
-    metadata: { credential_id: row.id, credential_name: chave, permission, granted_by: actor.userId },
+    title: varias
+      ? `${quem} compartilhou ${chaves.length} chaves com você`
+      : `${quem} compartilhou uma chave com você`,
+    message: varias
+      ? `${chaves.join(', ')} — ${permission === 'USE' ? 'você já pode gerar os códigos' : `acesso ${permission}`} no Authenticator.`
+      : permission === 'USE'
+        ? `Você já pode gerar os códigos de "${chaves[0]}" no Authenticator.`
+        : `Você recebeu acesso ${permission} a "${chaves[0]}" no Authenticator.`,
+    metadata: {
+      credential_ids: concedidas.map((c) => c.id),
+      credential_names: chaves,
+      permission,
+      granted_by: actor.userId,
+    },
+  });
+
+  await emailSharedCredentials(ctx, {
+    userId: targetUserId,
+    actorName: quem,
+    credentialNames: chaves,
+    permission,
   });
 
   if (permission === 'EXPORT') await consumeStepUp(ctx, actor);
-  return json(ctx.origin, { ok: true });
+
+  return json(ctx.origin, { ok: true, granted: chaves.length, failed: falhas });
+}
+
+async function handleGrantPermission(ctx: Ctx, credentialId: string): Promise<Response> {
+  return grantCredentials(ctx, [credentialId]);
+}
+
+/** `POST /permissions/bulk` — várias chaves, uma pessoa, um aviso só. */
+async function handleGrantPermissionsBulk(ctx: Ctx): Promise<Response> {
+  const raw = ctx.body.credential_ids;
+  const ids = Array.isArray(raw) ? raw.map((v) => String(v ?? '').trim()) : [];
+  return grantCredentials(ctx, ids);
 }
 
 async function handleRevokePermission(ctx: Ctx, credentialId: string, targetUserId: string): Promise<Response> {
@@ -2786,6 +3014,7 @@ async function route(ctx: Ctx): Promise<Response> {
 
   if (first === 'codes' && (method === 'GET' || method === 'POST')) return handleCodes(ctx);
   if (first === 'shares' && method === 'GET') return handleListShares(ctx);
+  if (first === 'permissions' && second === 'bulk' && method === 'POST') return handleGrantPermissionsBulk(ctx);
   if (first === 'import' && method === 'POST') return handleImport(ctx);
   if (first === 'users' && second === 'search' && method === 'GET') return handleUserSearch(ctx);
 

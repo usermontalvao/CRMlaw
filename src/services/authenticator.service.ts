@@ -255,6 +255,24 @@ class AuthenticatorService {
     });
   }
 
+  /**
+   * Compartilhar VÁRIAS chaves com a mesma pessoa, numa chamada só.
+   *
+   * Não é economia de rede: é economia de AVISO. Uma chamada por chave fazia o
+   * backend avisar uma vez por chave — doze chaves viravam doze notificações e
+   * (agora que existe e-mail) doze e-mails. O lote existe para que o outro lado
+   * receba um recado só, com a lista inteira. Ver o cabeçalho de
+   * `grantCredentials` na Edge Function.
+   *
+   * `failed` traz o que não passou; as demais já estão concedidas e auditadas.
+   */
+  shareMany(ids: string[], userId: string, permission: VaultPermission, stepUpToken?: string) {
+    return chamar<{ ok: true; granted: number; failed: string[] }>('/permissions/bulk', {
+      method: 'POST',
+      body: { credential_ids: ids, user_id: userId, permission, step_up_token: stepUpToken },
+    });
+  }
+
   revokeShare(id: string, userId: string) {
     return chamar<{ ok: true }>(`/credentials/${id}/permissions/${userId}`, { method: 'DELETE' });
   }

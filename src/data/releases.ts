@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.7',
+    date: '24/08/2026',
+    summary: 'O compartilhamento de chaves do Authenticator ficou mais rápido e passou a avisar o destinatário sem repetir notificações.',
+    modules: [
+      {
+        moduleId: 'authenticator',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Um aviso para várias chaves compartilhadas',
+            description: 'Ao compartilhar várias chaves com a mesma pessoa, o CRM agora processa o lote de uma vez e envia uma única notificação e um único e-mail com os nomes das chaves. Nenhum código ou segredo é incluído no e-mail.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Atalho direto para as configurações do Authenticator',
+            description: 'Os links abertos pela extensão levam diretamente à seção correta das configurações, sem exigir que a pessoa procure o Authenticator no menu.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.6',
     date: '24/08/2026',
     summary: 'A extensão do Authenticator ganhou uma interface mais limpa e uma abertura leve com a marca oficial do Jurius.',
