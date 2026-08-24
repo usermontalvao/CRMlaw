@@ -4,6 +4,16 @@
 export const VAULT_BASE_URL =
   'https://uajwkqipbyxzvwjpitxl.supabase.co/functions/v1/totp-vault';
 
+/**
+ * Onde o CRM mora — usado só para ABRIR uma aba, nunca para falar com ele.
+ *
+ * A extensão não tem (e não quer) permissão de host para este endereço: abrir
+ * aba não exige nenhuma, e é por isso que o link para as configurações não
+ * custou permissão nova. Tudo que é dado continua saindo e entrando pelo cofre.
+ */
+export const CRM_BASE_URL = 'https://jurius.com.br';
+export const CRM_AUTHENTICATOR_URL = `${CRM_BASE_URL}/configuracoes?section=authenticator`;
+
 /** Renova o access antes de ele vencer, para o popup nunca abrir num 401. */
 export const ACCESS_REFRESH_MARGIN_SECONDS = 60;
 

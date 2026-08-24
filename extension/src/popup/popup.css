@@ -1,41 +1,100 @@
-/* Jurius Authenticator — o código é o elemento principal da tela.
-   Tudo o mais (nome, contador, botão) é apoio. */
+/* Jurius Authenticator — a folha do popup.
+ *
+ * A regra que organiza tudo aqui: o CÓDIGO é a única coisa que a pessoa veio
+ * ver. Nome, contagem, botões e cromo são apoio, e apoio não grita.
+ *
+ * Três decisões que explicam o resto:
+ *
+ * 1. UM RELÓGIO, NÃO UM POR LINHA. Todo código TOTP de 30s vira no MESMO
+ *    instante — é a mesma janela do mesmo relógio universal. Uma barra por
+ *    linha repetia seis vezes a mesma informação. Virou uma linha fina sob o
+ *    cabeçalho. Chave com período diferente (60s, 15s) é a exceção, e só ela
+ *    ganha um anel próprio — por isso o anel, quando aparece, significa algo.
+ *
+ * 2. O LARANJA É RESERVADO. Ele só existe no relógio, no traço da linha ativa
+ *    e no foco do campo. Botão primário é tinta. Quando tudo era laranja, nada
+ *    era destaque.
+ *
+ * 3. AS AÇÕES SÓ APARECEM NA LINHA SOB O CURSOR. Cinco chaves não podem
+ *    significar dez botões disputando a tela com os códigos.
+ *
+ * A pilha de fontes é a MESMA de src/index.css do CRM, de propósito: assim a
+ * extensão resolve para a mesma fonte que o CRM resolve na mesma máquina. Não
+ * há .woff2 embarcado — a CSP proíbe buscar fonte remota, e embarcar um binário
+ * de ~300 kB numa extensão de segurança só para repetir o que o sistema já
+ * entrega não se paga.
+ */
 
 :root {
   color-scheme: light dark;
 
-  --laranja: #E45C12;
-  --laranja-claro: #F2843E;
-  --tinta: #1A1613;
-  --marfim: #FBF8F5;
+  --papel: #FFFFFF;
+  --marfim: #FAF7F4;
+  --afundado: #F4F0EC;
+  --borda: #EDE7E1;
+  --fio: #F4EFEA;
 
-  --fundo: var(--marfim);
-  --fundo-cartao: #FFFFFF;
-  --fundo-suave: #F3EEE9;
-  --borda: #E7DDD4;
-  --texto: #1A1613;
-  --texto-suave: #7A6A5D;
-  --acento: var(--laranja);
-  --perigo: #B42318;
-  --sucesso: #0F7B4F;
+  --texto: #15120F;
+  --texto-medio: #5C5148;
+  --texto-suave: #8B7E74;
+
+  --acento: #F97316;
+  --perigo: #C93B3B;
+  --sucesso: #15803D;
+
+  /* options.css e scan.css leem estes dois nomes. */
+  --fundo: var(--papel);
+  --fundo-cartao: var(--papel);
+  --fundo-suave: var(--afundado);
+
+  /* A paleta escura, definida uma vez. Quem a aplica são os dois blocos logo
+     abaixo — um para "seguir o sistema", outro para a escolha explícita. */
+  --e-papel: #151312;
+  --e-marfim: #1B1816;
+  --e-afundado: #211D1A;
+  --e-borda: #2A2522;
+  --e-fio: #221E1B;
+  --e-texto: #F6F2EE;
+  --e-texto-medio: #B9AEA4;
+  --e-texto-suave: #8E8177;
+  --e-acento: #FB923C;
+  --e-perigo: #F07171;
+  --e-sucesso: #4ADE80;
 
   --raio: 12px;
-  --transicao: 140ms cubic-bezier(.2,.8,.3,1);
+  --raio-p: 9px;
+  --transicao: 130ms cubic-bezier(.2, .8, .3, 1);
+
+  --pilha-fonte: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+                 'Segoe UI', system-ui, 'Helvetica Neue', sans-serif;
 }
 
+/* ── claro, escuro, ou o que o sistema mandar ────────────────────────────────
+ *
+ * O padrão é seguir o sistema. Quem quiser decidir escolhe em "Sua conta →
+ * Aparência", e a escolha vira `data-tema` no <html> — que vence a consulta de
+ * mídia nos dois sentidos: força o escuro num sistema claro, e força o claro
+ * num sistema escuro.
+ *
+ * Os VALORES da paleta escura moram num lugar só (`--e-*`, logo acima). Os dois
+ * blocos abaixo apenas apontam para eles, então não existe risco de uma cor ser
+ * corrigida num caminho e ficar velha no outro.
+ * ────────────────────────────────────────────────────────────────────────── */
+
 @media (prefers-color-scheme: dark) {
-  :root {
-    --fundo: #17130F;
-    --fundo-cartao: #211B16;
-    --fundo-suave: #2B231D;
-    --borda: #3A302A;
-    --texto: #F5EFE9;
-    --texto-suave: #A9998B;
-    --acento: var(--laranja-claro);
-    --perigo: #F97066;
-    --sucesso: #4ADE80;
-  }
+  :root:not([data-tema="claro"]) { --papel: var(--e-papel); --marfim: var(--e-marfim); --afundado: var(--e-afundado); --borda: var(--e-borda); --fio: var(--e-fio); --texto: var(--e-texto); --texto-medio: var(--e-texto-medio); --texto-suave: var(--e-texto-suave); --acento: var(--e-acento); --perigo: var(--e-perigo); --sucesso: var(--e-sucesso); }
+  /* O botão primário é tinta: no claro ele é preto e clareia no hover; no
+     escuro ele é claro, e clarear de novo não daria retorno nenhum. */
+  :root:not([data-tema="claro"]) .botao:hover:not(:disabled) { filter: brightness(.92); }
 }
+
+:root[data-tema="escuro"] { --papel: var(--e-papel); --marfim: var(--e-marfim); --afundado: var(--e-afundado); --borda: var(--e-borda); --fio: var(--e-fio); --texto: var(--e-texto); --texto-medio: var(--e-texto-medio); --texto-suave: var(--e-texto-suave); --acento: var(--e-acento); --perigo: var(--e-perigo); --sucesso: var(--e-sucesso); }
+:root[data-tema="escuro"] .botao:hover:not(:disabled) { filter: brightness(.92); }
+
+/* O `color-scheme` também tem de obedecer: é ele que pinta barra de rolagem,
+   caixa de seleção e o fundo que o navegador desenha antes da folha valer. */
+:root[data-tema="claro"] { color-scheme: light; }
+:root[data-tema="escuro"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 
@@ -43,322 +102,627 @@ html, body {
   margin: 0;
   width: 380px;
   max-height: 600px;
-  font-family: 'Space Grotesk', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background: var(--fundo);
+  /* O corpo de cada tela é o ÚNICO que rola. Sem isto o <body> também rolava, e
+     o rodapé fixo passava por cima do fim da lista em vez de ficar abaixo. */
+  overflow: hidden;
+  font-family: var(--pilha-fonte);
+  font-size: 13px;
+  background: var(--papel);
   color: var(--texto);
-  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
 
-.app { display: flex; flex-direction: column; min-height: 240px; }
+.app { display: flex; flex-direction: column; min-height: 260px; }
+.etapa { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .oculto { display: none !important; }
-
 .tela { display: flex; flex-direction: column; max-height: 600px; }
 
-/* ── cabeçalho ─────────────────────────────────────────────────────────── */
+/* Números que não dançam a cada segundo, e zero que não vira letra O. */
+.num { font-variant-numeric: tabular-nums slashed-zero; }
+
+/* ── cabeçalho ──────────────────────────────────────────────────────────── */
 
 .cabecalho {
-  display: flex; align-items: center; gap: 8px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--borda);
-  background: var(--fundo-cartao);
-  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; gap: 3px;
+  padding: 13px 14px 0;
 }
-.cabecalho--centro { flex-direction: column; gap: 4px; padding: 22px 18px 16px; text-align: center; }
-.marca { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; flex: 1; }
-.cabecalho--centro .marca { font-size: 18px; }
-.sub { margin: 0; color: var(--texto-suave); font-size: 12.5px; }
-.cabecalho-acoes { display: flex; gap: 4px; }
+.marca {
+  flex: 1; margin: 0;
+  font-size: 13.5px; font-weight: 600; letter-spacing: -.012em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.marca em { font-style: normal; font-weight: 450; color: var(--texto-suave); }
 
 .icone {
-  width: 30px; height: 30px; display: grid; place-items: center;
-  border: 0; border-radius: 8px; background: transparent; cursor: pointer;
-  color: var(--texto-suave); transition: background var(--transicao), color var(--transicao);
+  width: 28px; height: 28px; flex: none;
+  display: grid; place-items: center;
+  border: 0; border-radius: 8px; background: none;
+  color: var(--texto-suave); cursor: pointer;
+  transition: background var(--transicao), color var(--transicao);
 }
-.icone:hover { background: var(--fundo-suave); color: var(--texto); }
-.icone svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
-.icone svg path[d^="M15 5"] { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icone:hover, .icone.ativo { background: var(--afundado); color: var(--texto); }
+.icone:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+.icone svg {
+  width: 17px; height: 17px;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 
-/* ── busca ─────────────────────────────────────────────────────────────── */
+/* ── o relógio compartilhado ────────────────────────────────────────────── */
 
-.busca { position: relative; padding: 10px 14px; border-bottom: 1px solid var(--borda); background: var(--fundo-cartao); }
-.busca-icone { position: absolute; left: 24px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; fill: var(--texto-suave); }
+.relogio { display: flex; align-items: center; gap: 9px; padding: 11px 14px 10px; }
+.relogio-trilho { flex: 1; height: 2px; border-radius: 2px; background: var(--borda); overflow: hidden; }
+/* A largura muda a cada segundo e é escrita pela folha adotada do popup.js —
+   `width: 0` aqui garante que a barra não nasça cheia antes do primeiro tique. */
+.relogio-trilho i { display: block; width: 0; height: 100%; border-radius: 2px; background: var(--acento); }
+.relogio-seg { font-size: 10.5px; font-weight: 500; color: var(--texto-suave); letter-spacing: .02em; }
+.relogio.urgente .relogio-trilho i { background: var(--perigo); }
+.relogio.urgente .relogio-seg { color: var(--perigo); }
+
+/* ── busca (fechada até alguém pedir) ───────────────────────────────────── */
+
+.busca { position: relative; padding: 0 14px 10px; }
+.busca-icone {
+  position: absolute; left: 25px; top: 9px;
+  width: 14px; height: 14px;
+  fill: none; stroke: var(--texto-suave); stroke-width: 2;
+  stroke-linecap: round; pointer-events: none;
+}
 .busca input {
-  width: 100%; padding: 8px 10px 8px 32px; border-radius: 9px;
-  border: 1px solid var(--borda); background: var(--fundo); color: var(--texto); font: inherit;
+  width: 100%; height: 32px;
+  padding: 0 10px 0 31px;
+  border: 1px solid var(--borda); border-radius: var(--raio-p);
+  background: var(--marfim); color: var(--texto);
+  font: inherit; font-size: 12.5px;
 }
-.busca input:focus { outline: 2px solid var(--acento); outline-offset: -1px; border-color: transparent; }
+.busca input::placeholder { color: var(--texto-suave); }
+.busca input:focus { outline: none; border-color: var(--texto-suave); background: var(--papel); }
 
-/* ── corpo ─────────────────────────────────────────────────────────────── */
+/* ── corpo e listas ─────────────────────────────────────────────────────── */
 
-.corpo { flex: 1; overflow-y: auto; padding: 8px 0; min-height: 90px; }
-.corpo.formulario, .formulario { padding: 14px; display: flex; flex-direction: column; gap: 11px; }
+.corpo { flex: 1; overflow-y: auto; min-height: 96px; }
+.corpo.formulario, .formulario { padding: 16px; display: flex; flex-direction: column; gap: 13px; }
 
-/* ── cartão de código ──────────────────────────────────────────────────── */
+.grupo-titulo {
+  padding: 9px 14px 3px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--texto-suave); opacity: .72;
+}
+
+/* ── a linha de uma chave ───────────────────────────────────────────────── */
 
 .item {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr auto;
-  grid-template-areas: "nome contador" "codigo acoes" "barra barra";
-  gap: 2px 10px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--borda);
-  cursor: default;
+  grid-template-areas: "meta lado" "codigo lado";
+  align-items: center; column-gap: 10px;
+  padding: 8px 14px 10px;
+  cursor: pointer;
+  transition: background var(--transicao);
 }
-.item:hover { background: var(--fundo-cartao); }
-
-.item-nome {
-  grid-area: nome; display: flex; align-items: center; gap: 6px;
-  font-size: 12.5px; color: var(--texto-suave); font-weight: 500;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.item:hover, .item:focus-visible, .item.ativa { background: var(--marfim); outline: none; }
+/* O traço laranja diz "é esta a linha que o teclado e o ⌘C vão usar". */
+.item:hover::before, .item:focus-visible::before, .item.ativa::before {
+  content: ''; position: absolute; left: 0; top: 4px; bottom: 4px;
+  width: 2px; border-radius: 0 2px 2px 0; background: var(--acento);
 }
-.item-nome .badge { font-size: 10px; padding: 1px 5px; border-radius: 5px; background: var(--fundo-suave); color: var(--texto-suave); }
 
-/* O código é o que a pessoa vem ver. Ele precisa ser lido de relance e
-   digitado sem erro, então: números de largura fixa (para não "dançar" a cada
-   segundo), zero com corte (para não virar letra O) e um respiro entre os dois
-   trios, que é como a gente lê seis dígitos. */
+.item-meta {
+  grid-area: meta; min-width: 0;
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: var(--texto-suave);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.item-meta b { flex: none; font-weight: 500; color: var(--texto-medio); }
+.item-meta .corte { overflow: hidden; text-overflow: ellipsis; }
+.item-meta svg { flex: none; width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+
 .item-codigo {
-  grid-area: codigo;
-  font-family: ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, 'Cascadia Mono',
-               'JetBrains Mono', 'Roboto Mono', Consolas, monospace;
-  font-size: 29px;
-  font-weight: 620;
-  letter-spacing: 0.02em;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums slashed-zero;
-  font-feature-settings: 'tnum' 1, 'zero' 1, 'ss01' 1;
-  color: var(--texto);
-  display: flex;
-  align-items: baseline;
-  gap: 0.34em;                 /* o respiro entre os trios */
+  grid-area: codigo; margin-top: 2px;
+  font-size: 27px; font-weight: 600; line-height: 1.14; letter-spacing: .004em;
+  display: flex; align-items: baseline; gap: .31em;   /* o respiro entre os trios */
   white-space: nowrap;
 }
-.item-codigo .trio { display: inline-block; }
-.item-codigo.indisponivel { font-size: 13px; font-weight: 400; color: var(--perigo); letter-spacing: 0; }
+.item-codigo.indisponivel { font-size: 12.5px; font-weight: 500; color: var(--perigo); letter-spacing: 0; }
+/* Nos últimos segundos o código esmaece: vale mais esperar o próximo. */
+.item.esvai .item-codigo { color: var(--texto-suave); }
 
-.item-contador {
-  grid-area: contador; align-self: center;
-  font-size: 12px; color: var(--texto-suave); font-variant-numeric: tabular-nums;
+/* Confirmação no lugar do código, sem toast flutuante. */
+.item-feito {
+  grid-area: codigo; margin-top: 2px;
+  display: flex; align-items: center; gap: 9px;
+  color: var(--sucesso); font-size: 15px; font-weight: 500; line-height: 1.14;
 }
-.item-contador.urgente { color: var(--perigo); font-weight: 600; }
+.item-feito svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 
-.item-acoes {
-  grid-area: acoes; align-self: center;
-  display: flex; gap: 6px; justify-content: flex-end;
+.item-lado { grid-area: lado; display: flex; align-items: center; gap: 2px; }
+
+.item-acao {
+  width: 27px; height: 27px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 8px; background: none;
+  color: var(--texto-suave); cursor: pointer; opacity: 0;
+  transition: opacity var(--transicao), background var(--transicao), color var(--transicao);
+}
+.item-acao svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.item-acao:hover { background: var(--afundado); color: var(--texto); }
+.item-acao.marcada { color: var(--acento); }
+.item-acao.marcada svg { fill: currentColor; }
+
+.item-preencher {
+  border: 1px solid var(--borda); border-radius: 8px;
+  background: var(--papel); color: var(--texto);
+  font: inherit; font-size: 11.5px; font-weight: 500;
+  padding: 6px 11px; white-space: nowrap; cursor: pointer; opacity: 0;
+  transition: opacity var(--transicao), background var(--transicao), color var(--transicao), border-color var(--transicao);
+}
+.item-preencher:hover:not(:disabled) { background: var(--texto); color: var(--papel); border-color: var(--texto); }
+.item-preencher:disabled { cursor: default; }
+
+.item:hover .item-acao, .item:hover .item-preencher,
+.item:focus-visible .item-acao, .item:focus-visible .item-preencher,
+.item.ativa .item-acao, .item.ativa .item-preencher,
+.item:focus-within .item-acao, .item:focus-within .item-preencher { opacity: 1; }
+
+/* O anel só existe para a chave cujo período foge do relógio de cima. */
+.item-aro { width: 22px; height: 22px; flex: none; margin-left: 4px; }
+.item-aro circle { fill: none; stroke-width: 2.6; }
+.item-aro .aro-fundo { stroke: var(--borda); }
+.item-aro .aro-frente {
+  stroke: var(--acento); stroke-linecap: round;
+  transform: rotate(-90deg); transform-origin: 50% 50%;
+  /* dasharray fixo: o raio é sempre 8. Quem muda a cada segundo é o offset,
+     escrito pela folha adotada. */
+  stroke-dasharray: 50.27;
+  stroke-dashoffset: 50.27;
+}
+.item.urgente .item-aro .aro-frente { stroke: var(--perigo); }
+
+/* ── rodapé de estado ───────────────────────────────────────────────────── */
+
+.rodape-barra {
+  border-top: 1px solid var(--fio);
+  padding: 9px 14px;
+  display: flex; align-items: center; gap: 7px;
+  font-size: 10.5px; color: var(--texto-suave);
+}
+.selo-ponto { width: 5px; height: 5px; border-radius: 50%; background: var(--sucesso); flex: none; }
+.atalhos { margin-left: auto; display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+.atalhos kbd {
+  font: 500 9.5px var(--pilha-fonte);
+  border: 1px solid var(--borda); border-radius: 4px;
+  padding: 1.5px 4px; color: var(--texto-suave);
 }
 
-.item-preencher,
-.item-copiar {
-  align-self: center;
-  border: 1px solid var(--borda); background: var(--fundo-cartao); color: var(--acento);
-  font: inherit; font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
-  padding: 6px 11px; border-radius: 8px; cursor: pointer;
-  transition: background var(--transicao), color var(--transicao), border-color var(--transicao);
-}
-.item-copiar:hover { background: var(--acento); color: #fff; border-color: var(--acento); }
-.item-copiar.copiado { background: var(--sucesso); border-color: var(--sucesso); color: #fff; }
-
-.item-barra { grid-area: barra; height: 3px; margin-top: 7px; border-radius: 2px; background: var(--fundo-suave); overflow: hidden; }
-/* `width: 0` é obrigatório: sem ele um <span> de bloco ocupa a linha toda e
-   a barra nasce CHEIA, até o primeiro tique corrigi-la. Quem a enche é a
-   folha adotada do popup.js, cujo seletor é mais específico que este. */
-.item-barra span { display: block; width: 0; height: 100%; background: var(--acento); border-radius: 2px; transition: width 1s linear; }
-.item-barra span.urgente { background: var(--perigo); }
-
-.item-estrela { border: 0; background: none; cursor: pointer; padding: 0 2px; color: var(--texto-suave); line-height: 1; font-size: 13px; }
-.item-estrela.ativa { color: var(--acento); }
-.item-abrir { border: 0; background: none; cursor: pointer; color: var(--texto-suave); padding: 0 2px; font-size: 15px; line-height: 1; }
-
-/* ── esqueleto e vazio ─────────────────────────────────────────────────── */
+/* ── esqueleto e vazio ──────────────────────────────────────────────────── */
 
 .esqueleto {
-  height: 62px; margin: 8px 14px; border-radius: var(--raio);
-  background: linear-gradient(90deg, var(--fundo-suave) 25%, var(--fundo-cartao) 50%, var(--fundo-suave) 75%);
+  height: 58px; margin: 10px 14px; border-radius: var(--raio);
+  background: linear-gradient(90deg, var(--afundado) 25%, var(--marfim) 50%, var(--afundado) 75%);
   background-size: 300% 100%;
   animation: brilho 1.3s ease-in-out infinite;
 }
 @keyframes brilho { 0% { background-position: 130% 0; } 100% { background-position: -30% 0; } }
 @media (prefers-reduced-motion: reduce) { .esqueleto { animation: none; } }
 
-.vazio { padding: 34px 24px; text-align: center; color: var(--texto-suave); }
-.vazio strong { display: block; color: var(--texto); margin-bottom: 5px; font-size: 14px; }
+.vazio { padding: 34px 26px; text-align: center; color: var(--texto-suave); font-size: 12.5px; line-height: 1.5; }
+.vazio strong { display: block; color: var(--texto); font-size: 14px; font-weight: 600; margin-bottom: 5px; }
 
-/* ── formulários ───────────────────────────────────────────────────────── */
+/* ── títulos de tela e formulários ──────────────────────────────────────── */
 
-.campo { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--texto-suave); flex: 1; }
-.campo input, .campo select, .campo textarea {
-  padding: 9px 10px; border-radius: 9px; border: 1px solid var(--borda);
-  background: var(--fundo-cartao); color: var(--texto); font: inherit; font-size: 13.5px;
-  width: 100%; resize: vertical;
+.cabecalho-tela {
+  display: flex; align-items: center; gap: 8px;
+  padding: 13px 14px 11px;
+  border-bottom: 1px solid var(--fio);
 }
-.campo input:focus, .campo select:focus, .campo textarea:focus { outline: 2px solid var(--acento); outline-offset: -1px; border-color: transparent; }
+.cabecalho-tela h1 { flex: 1; margin: 0; font-size: 13.5px; font-weight: 600; letter-spacing: -.012em; }
+
+.titulo-tela { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.02em; }
+.lead { margin: 5px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--texto-suave); }
+
+.campo { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
+.campo > span { font-size: 11px; font-weight: 500; color: var(--texto-suave); letter-spacing: .01em; }
+.campo input, .campo select, .campo textarea {
+  width: 100%; padding: 9px 11px;
+  border: 1px solid var(--borda); border-radius: var(--raio-p);
+  background: var(--papel); color: var(--texto);
+  font: inherit; font-size: 13.5px; resize: vertical;
+  transition: border-color var(--transicao), box-shadow var(--transicao);
+}
+.campo input::placeholder, .campo textarea::placeholder { color: var(--texto-suave); opacity: .75; }
+.campo input:focus, .campo select:focus, .campo textarea:focus {
+  outline: none;
+  border-color: var(--texto);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acento) 20%, transparent);
+}
 .linha { display: flex; gap: 8px; }
 
 .botao {
-  padding: 10px 14px; border-radius: 10px; border: 1px solid var(--borda);
-  background: var(--fundo-cartao); color: var(--texto); font: inherit; font-weight: 600; font-size: 13.5px;
-  cursor: pointer; transition: filter var(--transicao), background var(--transicao);
+  width: 100%; padding: 11px 14px;
+  border: 1px solid var(--texto); border-radius: 10px;
+  background: var(--texto); color: var(--papel);
+  font: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: filter var(--transicao), background var(--transicao), color var(--transicao);
 }
-.botao:hover { filter: brightness(0.97); }
-.botao:disabled { opacity: .5; cursor: not-allowed; }
-.botao--primario { background: var(--acento); border-color: var(--acento); color: #fff; }
-.botao--perigo { background: transparent; border-color: var(--perigo); color: var(--perigo); }
-.link { border: 0; background: none; color: var(--acento); font: inherit; font-size: 12.5px; cursor: pointer; padding: 0; }
+.botao:hover:not(:disabled) { filter: brightness(1.25); }
+.botao:disabled { opacity: .45; cursor: not-allowed; }
+.botao--sec {
+  background: var(--papel); color: var(--texto);
+  border-color: var(--borda); font-weight: 500;
+}
+.botao--sec:hover:not(:disabled) { filter: none; background: var(--marfim); }
+.botao--perigo {
+  background: var(--papel); color: var(--perigo); border-color: var(--borda); font-weight: 500;
+}
+.botao--perigo:hover:not(:disabled) { filter: none; background: color-mix(in srgb, var(--perigo) 7%, transparent); }
 
-.erro { margin: 0; color: var(--perigo); font-size: 12.5px; line-height: 1.4; }
-.dica { margin: 0; color: var(--texto-suave); font-size: 12px; line-height: 1.45; }
-.rodape-nota { margin: 2px 0 0; color: var(--texto-suave); font-size: 11px; line-height: 1.4; }
-.aviso { margin: 0 0 10px; padding: 9px 11px; border-radius: 9px; background: var(--fundo-suave); color: var(--texto-suave); font-size: 12px; line-height: 1.45; }
+/* Botão que leva para FORA da extensão: a setinha avisa antes do clique. */
+.botao--saida { display: flex; align-items: center; justify-content: center; gap: 7px; }
+.botao--saida svg {
+  width: 14px; height: 14px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; opacity: .65;
+}
 
-.rodape { padding: 11px 14px; border-top: 1px solid var(--borda); background: var(--fundo-cartao); display: flex; flex-direction: column; gap: 8px; }
-.rodape .botao { width: 100%; }
-.rodape--coluna { gap: 10px; }
+.link {
+  border: 0; background: none; padding: 0;
+  color: var(--texto-medio); font: inherit; font-size: 12px; font-weight: 500;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+}
+.link:hover { color: var(--texto); }
+.link--perigo { color: var(--texto-suave); text-decoration: none; }
+.link--perigo:hover { color: var(--perigo); text-decoration: underline; }
+.link--espacado { margin-top: 12px; }
 
-/* ── abas ──────────────────────────────────────────────────────────────── */
+.erro { margin: 0; color: var(--perigo); font-size: 12px; line-height: 1.45; }
+.dica { margin: 0; color: var(--texto-suave); font-size: 12px; line-height: 1.5; }
+.nota { margin: 0; color: var(--texto-suave); font-size: 10.5px; line-height: 1.5; }
+.nota b, .nota strong { color: var(--texto-medio); font-weight: 600; }
 
-.abas { display: flex; border-bottom: 1px solid var(--borda); background: var(--fundo-cartao); }
-.aba { flex: 1; padding: 10px 6px; border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 500; color: var(--texto-suave); cursor: pointer; border-bottom: 2px solid transparent; }
-.aba.ativa { color: var(--acento); border-bottom-color: var(--acento); font-weight: 600; }
+.rodape {
+  margin-top: auto; padding: 12px 16px;
+  border-top: 1px solid var(--fio);
+  display: flex; flex-direction: column; gap: 9px;
+}
 
-/* ── importação ────────────────────────────────────────────────────────── */
+/* ── PIN em seis casas ──────────────────────────────────────────────────── */
 
-.barra-selecao { display: flex; gap: 14px; padding: 9px 14px; border-bottom: 1px solid var(--borda); background: var(--fundo-cartao); }
-.importar-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-bottom: 1px solid var(--borda); }
-.importar-item input[type=checkbox] { margin-top: 3px; accent-color: var(--acento); }
-.importar-item .info { flex: 1; min-width: 0; }
-.importar-item .titulo { font-weight: 600; font-size: 13.5px; }
-.importar-item .meta { color: var(--texto-suave); font-size: 11.5px; margin-top: 2px; }
-.importar-item .dup { color: var(--perigo); font-size: 11.5px; margin-top: 3px; }
-.importar-item input[type=text] { width: 100%; margin-top: 5px; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--borda); background: var(--fundo-cartao); color: var(--texto); font: inherit; font-size: 12.5px; }
+.pin-caixas { display: flex; gap: 7px; }
+.pin-caixas input {
+  flex: 1; width: 100%; height: 46px; padding: 0;
+  border: 1px solid var(--borda); border-radius: 10px;
+  background: var(--papel); color: var(--texto);
+  font: inherit; font-size: 20px; font-weight: 600; text-align: center;
+  -webkit-text-security: disc;      /* vira bolinha sem deixar de ser um dígito */
+  transition: border-color var(--transicao), box-shadow var(--transicao);
+}
+.pin-caixas input:focus {
+  outline: none; border-color: var(--texto);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acento) 20%, transparent);
+}
 
-.area-qr {
-  border: 2px dashed var(--borda); border-radius: var(--raio);
-  padding: 26px 16px; text-align: center; color: var(--texto-suave);
-  display: flex; flex-direction: column; align-items: center; gap: 7px;
+.quem-entra {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid var(--borda); border-radius: 11px;
+  background: var(--marfim);
+}
+.quem-entra .avatar { width: 30px; height: 30px; }
+.quem-entra b { display: block; font-size: 12.5px; font-weight: 600; }
+.quem-entra small { display: block; font-size: 11px; color: var(--texto-suave); margin-top: 1px; }
+
+/* ── controle segmentado (era "abas") ───────────────────────────────────── */
+
+.segmentado {
+  display: flex; gap: 3px; margin: 14px 16px 0; padding: 3px;
+  background: var(--afundado); border-radius: 10px;
+}
+.segmentado button {
+  flex: 1; padding: 7px 6px;
+  border: 0; border-radius: 8px; background: none;
+  color: var(--texto-suave); font: inherit; font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transicao), color var(--transicao);
+}
+.segmentado button.ativa {
+  background: var(--papel); color: var(--texto); font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .09);
+}
+/* O mesmo controle, quando mora dentro de um bloco em vez de sob o cabeçalho. */
+.segmentado--bloco { margin: 0; }
+
+/* ── "mostrar mais" do formulário manual ────────────────────────────────── */
+
+.mais {
+  align-self: flex-start;
+  display: flex; align-items: center; gap: 6px;
+  border: 0; background: none; padding: 2px 0;
+  color: var(--texto-suave); font: inherit; font-size: 12px; font-weight: 500;
+  cursor: pointer;
+}
+.mais:hover { color: var(--texto); }
+.mais svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--transicao); }
+.mais.aberta svg { transform: rotate(180deg); }
+
+/* ── área do QR ─────────────────────────────────────────────────────────── */
+
+.alvo {
+  border: 1.5px dashed var(--borda); border-radius: 14px;
+  background: var(--marfim);
+  padding: 26px 18px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
   transition: border-color var(--transicao), background var(--transicao);
 }
-.area-qr.sobre { border-color: var(--acento); background: var(--fundo-suave); }
-.area-qr p { margin: 0; font-size: 12.5px; }
-.qr-icone { width: 34px; height: 34px; fill: var(--texto-suave); }
+.alvo.sobre { border-color: var(--acento); background: color-mix(in srgb, var(--acento) 7%, transparent); }
+.alvo b { font-size: 13px; font-weight: 600; }
+.alvo p { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--texto-suave); }
+.alvo-glifo { width: 36px; height: 36px; fill: var(--texto-suave); opacity: .5; }
+.alvo-acoes { display: flex; gap: 8px; width: 100%; margin-top: 5px; }
+.alvo-acoes .botao { flex: 1; width: auto; padding: 9px 12px; font-size: 12px; }
+.tecla {
+  font: 500 10px var(--pilha-fonte);
+  border: 1px solid var(--borda); border-radius: 4px; padding: 1px 4px;
+  color: var(--texto-suave);
+}
 
-/* ── detalhe / conta ───────────────────────────────────────────────────── */
+/* ── detalhe da chave ───────────────────────────────────────────────────── */
 
-.bloco { padding: 12px 14px; border-bottom: 1px solid var(--borda); }
-.bloco h2 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--texto-suave); font-weight: 600; }
-.pessoa { display: flex; align-items: center; gap: 9px; padding: 7px 0; }
-.pessoa .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--fundo-suave); display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--texto-suave); flex: none; }
+.palco {
+  display: flex; align-items: center; gap: 14px;
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid var(--fio);
+}
+.palco-codigo {
+  font-size: 36px; font-weight: 600; line-height: 1; letter-spacing: .004em;
+  display: flex; align-items: baseline; gap: .3em;
+}
+.palco-codigo.indisponivel { font-size: 13px; font-weight: 500; color: var(--perigo); letter-spacing: 0; }
+.palco-aro { width: 34px; height: 34px; flex: none; margin-left: auto; }
+.palco-aro circle { fill: none; stroke-width: 3; }
+.palco-aro .aro-fundo { stroke: var(--borda); }
+.palco-aro .aro-frente {
+  stroke: var(--acento); stroke-linecap: round;
+  transform: rotate(-90deg); transform-origin: 50% 50%;
+  stroke-dasharray: 87.96;   /* raio 14 */
+  stroke-dashoffset: 87.96;
+}
+.palco-aro.urgente .aro-frente { stroke: var(--perigo); }
+
+.bloco { padding: 12px 16px; border-bottom: 1px solid var(--fio); }
+.bloco h2 {
+  margin: 0 0 9px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--texto-suave); opacity: .72;
+}
+.linha-info { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 12.5px; }
+.linha-info__chave { color: var(--texto-suave); }
+.linha-info__valor { font-weight: 500; text-align: right; word-break: break-word; }
+
+.pessoa { display: flex; align-items: center; gap: 9px; padding: 6px 0; }
+.avatar {
+  width: 26px; height: 26px; flex: none;
+  border-radius: 50%; background: var(--afundado);
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 700; color: var(--texto-medio);
+}
 .pessoa .quem { flex: 1; min-width: 0; }
-.pessoa .quem b { display: block; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pessoa .quem small { color: var(--texto-suave); font-size: 11.5px; }
-.pessoa .nivel { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; color: var(--texto-suave); background: var(--fundo-suave); padding: 2px 6px; border-radius: 5px; }
-.pessoa.selecionavel { cursor: pointer; border-radius: 9px; padding: 7px 8px; }
-.pessoa.selecionavel:hover { background: var(--fundo-suave); }
-.pessoa.selecionada { background: var(--fundo-suave); outline: 2px solid var(--acento); }
-.acoes-detalhe { display: flex; flex-direction: column; gap: 7px; padding: 12px 14px; }
+.pessoa .quem b { display: block; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pessoa .quem small { display: block; font-size: 11px; color: var(--texto-suave); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pessoa .nivel {
+  flex: none; font-size: 9.5px; font-weight: 600; letter-spacing: .05em;
+  color: var(--texto-suave); border: 1px solid var(--borda);
+  padding: 2px 6px; border-radius: 5px;
+}
+.pessoa.selecionavel { cursor: pointer; border-radius: 10px; padding: 6px 8px; }
+.pessoa.selecionavel:hover { background: var(--marfim); }
+.pessoa.selecionada { background: var(--marfim); box-shadow: inset 0 0 0 1.5px var(--texto); }
 
-.niveis { border: 1px solid var(--borda); border-radius: var(--raio); padding: 9px 11px; margin: 0; }
-.niveis legend { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-suave); padding: 0 4px; }
-.niveis label { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; cursor: pointer; }
-.niveis input { margin-top: 3px; accent-color: var(--acento); }
+.acoes-detalhe { padding: 12px 16px; display: flex; flex-direction: column; gap: 7px; }
+
+/* ── níveis de permissão ────────────────────────────────────────────────── */
+
+.niveis { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.niveis legend {
+  padding: 0 0 6px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--texto-suave); opacity: .72;
+}
+.niveis label {
+  display: flex; gap: 9px; align-items: flex-start;
+  padding: 9px 11px; cursor: pointer;
+  border: 1px solid var(--borda); border-radius: 11px;
+  transition: border-color var(--transicao), background var(--transicao);
+}
+.niveis label:hover { background: var(--marfim); }
+.niveis label:has(input:checked) { border-color: var(--texto); background: var(--marfim); }
+.niveis input { margin: 2px 0 0; accent-color: var(--acento); flex: none; }
 .niveis strong { display: block; font-size: 12.5px; font-weight: 600; }
-.niveis small { color: var(--texto-suave); font-size: 11px; }
+.niveis small { display: block; color: var(--texto-suave); font-size: 11px; margin-top: 1px; }
 
-.segredo-caixa { background: var(--fundo-suave); border-radius: 9px; padding: 11px; margin-bottom: 8px; word-break: break-all; }
-.segredo-caixa code { font-family: 'SF Mono', ui-monospace, monospace; font-size: 15px; letter-spacing: .05em; }
-.segredo-caixa--uri code { font-size: 11px; letter-spacing: 0; color: var(--texto-suave); }
+/* ── importação ─────────────────────────────────────────────────────────── */
 
-/* ── brinde (toast) ────────────────────────────────────────────────────── */
+.barra-selecao {
+  display: flex; gap: 14px; align-items: center;
+  padding: 10px 16px; border-bottom: 1px solid var(--fio);
+}
+.importar-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 11px 16px; border-bottom: 1px solid var(--fio);
+}
+.importar-item input[type=checkbox] { margin-top: 3px; accent-color: var(--acento); flex: none; }
+.importar-item .info { flex: 1; min-width: 0; }
+.importar-item .titulo { font-size: 13px; font-weight: 600; }
+.importar-item .titulo--apagado { color: var(--texto-suave); font-weight: 500; }
+.importar-item .meta { color: var(--texto-suave); font-size: 11px; margin-top: 2px; }
+.importar-item .dup { color: var(--perigo); font-size: 11px; margin-top: 4px; line-height: 1.45; }
+.importar-item input[type=text] {
+  width: 100%; margin-top: 6px; padding: 7px 9px;
+  border: 1px solid var(--borda); border-radius: 8px;
+  background: var(--papel); color: var(--texto);
+  font: inherit; font-size: 12.5px;
+}
+.importar-item input[type=text]:focus {
+  outline: none; border-color: var(--texto);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acento) 20%, transparent);
+}
+
+/* ── segredo revelado ───────────────────────────────────────────────────── */
+
+.alerta {
+  margin: 0; padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--perigo) 24%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--perigo) 8%, transparent);
+  color: var(--perigo); font-size: 11.5px; line-height: 1.5;
+}
+.contagem { display: flex; align-items: center; gap: 9px; font-size: 11.5px; color: var(--texto-suave); }
+.contagem .trilho { flex: 1; height: 2px; border-radius: 2px; background: var(--borda); overflow: hidden; }
+.contagem .trilho i { display: block; width: 100%; height: 100%; border-radius: 2px; background: var(--perigo); }
+
+.cofre { border: 1px solid var(--borda); border-radius: 12px; background: var(--marfim); padding: 13px 14px; }
+.cofre h2 {
+  margin: 0 0 7px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--texto-suave); opacity: .72;
+}
+.cofre code {
+  display: block; word-break: break-all;
+  font-family: ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 15px; font-weight: 600; line-height: 1.55; letter-spacing: .06em;
+}
+.cofre code.mini { font-size: 10.5px; font-weight: 400; letter-spacing: 0; color: var(--texto-suave); }
+.cofre .botao { margin-top: 10px; padding: 8px 12px; font-size: 12px; }
+
+/* ── abertura: Halo ─────────────────────────────────────────────────────────
+ *
+ * A marca oficial permanece imóvel. O halo respira devagar e os três pontos
+ * acendem em sequência, sem saltos nem rotações. É o mínimo de movimento
+ * necessário para comunicar que o cofre ainda está respondendo.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.abertura {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px;
+  background:
+    radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--acento) 7%, transparent) 0, transparent 104px),
+    var(--papel);
+  opacity: 1;
+  transition: opacity 180ms ease, transform 180ms cubic-bezier(.2, .8, .3, 1);
+}
+
+.abertura-marca {
+  position: relative; width: 72px; height: 72px;
+  display: grid; place-items: center;
+}
+
+.abertura-marca img {
+  position: relative; z-index: 1;
+  display: block; width: 72px; height: 72px;
+  border-radius: 17px;
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--acento) 18%, transparent));
+  animation: abertura-marca-entra 380ms cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.abertura-halo {
+  position: absolute; inset: -25px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--acento) 17%, transparent), transparent 68%);
+  animation: abertura-halo 2.8s ease-in-out infinite;
+}
+
+.abertura-pontos {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  height: 9px;
+}
+
+.abertura-pontos i {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--acento);
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--acento) 22%, transparent);
+  animation: abertura-ponto 1.35s ease-in-out infinite;
+}
+.abertura-pontos i:nth-child(2) { animation-delay: 170ms; }
+.abertura-pontos i:nth-child(3) { animation-delay: 340ms; }
+
+@keyframes abertura-marca-entra {
+  from { opacity: 0; transform: translateY(4px) scale(.94); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes abertura-halo {
+  0%, 100% { opacity: .34; transform: scale(.82); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+@keyframes abertura-ponto {
+  0%, 62%, 100% { opacity: .22; transform: scale(.7); }
+  30% { opacity: 1; transform: scale(1.08); }
+}
+
+.abertura.saindo {
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .abertura { transition: opacity 120ms ease; }
+  .abertura-marca img, .abertura-halo, .abertura-pontos i { animation: none; }
+  .abertura-halo { opacity: .55; transform: none; }
+  .abertura-pontos i { opacity: .35; transform: none; }
+  .abertura-pontos i:nth-child(2) { opacity: .68; }
+  .abertura-pontos i:nth-child(3) { opacity: 1; }
+}
+
+/* ── autofill do Chrome ──────────────────────────────────────────────────────
+ *
+ * Quando o gerenciador de senhas preenche um campo, o Chrome tenta pintá-lo com
+ * um estilo INLINE — e a CSP da extensão (`style-src 'self'`) recusa, deixando
+ * no console o aviso "Applying inline style violates...". O aviso é do
+ * navegador, não do nosso código: o valor entra no campo do mesmo jeito, só a
+ * pintura dele é barrada. Afrouxar a CSP por causa de cor de fundo seria abrir
+ * a porta do estilo injetado por causa de estética.
+ *
+ * A saída é pintar nós mesmos: com estas regras o campo preenchido já fica com
+ * a cara certa e não sobra nada para o navegador querer sobrescrever. A sombra
+ * interna é o truque conhecido para cobrir o amarelo — `background-color` sozinho
+ * perde para o estilo de agente do usuário.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.campo input:-webkit-autofill,
+.campo input:-webkit-autofill:hover,
+.campo input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--texto);
+  -webkit-box-shadow: 0 0 0 40px var(--papel) inset;
+  box-shadow: 0 0 0 40px var(--papel) inset;
+  caret-color: var(--texto);
+  /* Transição longuíssima: é assim que se impede a cor de agente do usuário de
+     aparecer no primeiro quadro, antes da regra acima valer. */
+  transition: background-color 100000s ease-out 0s;
+}
+
+/* ── brinde (toast) ─────────────────────────────────────────────────────── */
 
 .brinde {
-  position: fixed; left: 50%; bottom: 16px; transform: translate(-50%, 14px);
-  background: var(--tinta); color: #fff; padding: 8px 15px; border-radius: 999px;
-  font-size: 12.5px; font-weight: 600; opacity: 0; pointer-events: none;
-  transition: opacity var(--transicao), transform var(--transicao); z-index: 20;
+  position: fixed; left: 50%; bottom: 16px;
+  transform: translate(-50%, 14px);
+  padding: 8px 15px; border-radius: 999px;
+  background: var(--texto); color: var(--papel);
+  font-size: 12px; font-weight: 500;
+  opacity: 0; pointer-events: none; z-index: 20;
+  transition: opacity var(--transicao), transform var(--transicao);
 }
 .brinde.visivel { opacity: 1; transform: translate(-50%, 0); }
-.brinde.erro-toast { background: var(--perigo); }
+.brinde.erro-toast { background: var(--perigo); color: #fff; }
 
-/* ── QR: a câmera dividindo espaço com o arquivo ──────────────────────────── */
+/* ── ajustes de uso pontual ─────────────────────────────────────────────── */
 
-.qr-acoes { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; }
-.qr-acoes .botao { flex: 0 1 auto; }
-
-/* Preencher é a ação principal — quem abre o popup num site de login quer o
-   código NO campo, não na área de transferência. Copiar continua ali para
-   quando a página não coopera. */
-.item-preencher {
-  border: 1px solid var(--acento); background: var(--acento); color: #fff;
-  font: inherit; font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
-  padding: 6px 11px; border-radius: 8px; cursor: pointer;
-  white-space: nowrap;
-}
-.item-preencher:hover:not(:disabled) { filter: brightness(.94); }
-.item-preencher:disabled { opacity: .45; cursor: default; }
-.item-preencher.copiado { background: var(--ok, #1c7c3c); border-color: var(--ok, #1c7c3c); }
-
-/* ── identidade ───────────────────────────────────────────────────────────── */
-
-.marca-logo {
-  display: block; margin: 0 auto 10px;
-  border-radius: 11px;
-}
-.marca-logo--pequena { margin: 0 8px 0 0; border-radius: 5px; }
-
-.campo-pin {
-  letter-spacing: .42em;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.rodape-nota a { color: var(--acento); text-decoration: none; }
-.rodape-nota a:hover { text-decoration: underline; }
-
-.rodape-marca {
-  border-top: 1px solid var(--borda);
-  padding: 9px 14px;
-  display: flex; align-items: center; gap: 6px;
-  font-size: 11px; color: var(--texto-suave);
-}
-.rodape-marca a { color: var(--acento); text-decoration: none; margin-left: auto; }
-.rodape-marca a:hover { text-decoration: underline; }
-
-/* Nota que precisa de um respiro do campo acima. Existe como classe, e não
-   como `style=`, porque a CSP da extensão (`style-src 'self'`) recusa atributo
-   de estilo no HTML — e recusar é o certo: é a mesma porta por onde entraria
-   estilo injetado. */
-.rodape-nota--solta { margin-top: 8px; }
-
-/* ─────────────────────────────────────────────────────────────────────────
-   O QUE ANTES ERA `elemento.style.…` NO JAVASCRIPT
-
-   A CSP da extensão é `style-src 'self'`, e ela não recusa só o atributo
-   `style=` escrito no HTML: recusa também o que o JavaScript escreve por
-   `elemento.style.alguma-coisa`. O popup fazia isso em dezoito lugares, e o
-   navegador bloqueava calado — texto sem corte, barra parada, cor de perigo
-   que nunca chegava, e o console cheio de "Applying inline style violates...".
-
-   Cada um virou classe. A largura da barra do contador, que muda a cada
-   segundo e não cabe numa classe, mora numa folha ADOTADA criada pelo
-   `popup.js` — CSSOM programático não é estilo inline, então passa pela CSP
-   sem afrouxá-la.
-   ───────────────────────────────────────────────────────────────────────── */
-
-/* Texto do aviso: o <p> já vem espaçado pelo bloco que o contém. */
-.aviso-texto { margin: 0; }
-
-/* Botão de link que precisa se afastar do que veio antes. */
-.link--espacado { margin-top: 10px; }
-
-/* Ação que destrói algo — remover acesso, revogar dispositivo. */
-.link--perigo { color: var(--perigo); }
-
-/* Nome da chave na lista: corta com reticências em vez de empurrar o resto. */
-.item-nome-texto { overflow: hidden; text-overflow: ellipsis; }
-
-/* Título de item que está fora de jogo (o que a importação vai pular). */
-.titulo--apagado { color: var(--texto-suave); }
-
-/* Par rótulo/valor das telas de detalhe. */
-.linha-info { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 13px; }
-.linha-info__chave { color: var(--texto-suave); }
-.linha-info__valor { text-align: right; word-break: break-word; }
+/* A CSP (`style-src 'self'`) recusa `style=` no HTML E `elemento.style.x` no
+   JavaScript. Tudo que antes era inline mora aqui como classe; só o que muda a
+   cada segundo (largura do relógio, offset dos anéis) vai para a folha ADOTADA
+   criada pelo popup.js, que é CSSOM programático e passa pela CSP sem
+   afrouxá-la. */
+.aviso-texto { margin: 6px 0 0; }
+.nota--solta { margin-top: 8px; }
+.campo--oculto { display: none; }

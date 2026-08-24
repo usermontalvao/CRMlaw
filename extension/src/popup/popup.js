@@ -3,9 +3,13 @@
 //
 // Toda escrita de texto vindo do servidor usa `textContent`. Não há um único
 // `innerHTML` com dado de usuário — é assim que um nome de chave com
-// `<img onerror=…>` continua sendo só um nome esquisito.
+// `<img onerror=…>` continua sendo só um nome esquisito. Pelo mesmo motivo os
+// ícones nascem de `createElementNS` e de uma tabela de paths fixa, e não de
+// um trecho de HTML montado em string.
 
 import { lerQrDeImagem, juntarPayload } from '../lib/qr.js';
+import { aplicarTemaGuardado, salvarTema } from '../lib/tema.js';
+import { CRM_AUTHENTICATOR_URL } from '../lib/config.js';
 
 // ── ponte com o service worker ──────────────────────────────────────────────
 
@@ -25,13 +29,49 @@ async function pedir(acao, dados) {
 const $ = (seletor, raiz = document) => raiz.querySelector(seletor);
 const $$ = (seletor, raiz = document) => [...raiz.querySelectorAll(seletor)];
 
+const NS_SVG = 'http://www.w3.org/2000/svg';
+
+/** Ícones como dados, nunca como HTML montado em string. */
+const ICONES = {
+  copiar: [
+    ['rect', { x: 9, y: 9, width: 11, height: 11, rx: 2.5 }],
+    ['path', { d: 'M15 5.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 5.5 15' }],
+  ],
+  seta: [['path', { d: 'm9 5 7 7-7 7' }]],
+  estrela: [['path', { d: 'M12 3.6 14.6 9l5.8.85-4.2 4.1 1 5.75L12 16.9l-5.2 2.8 1-5.75-4.2-4.1L9.4 9 12 3.6Z' }]],
+  gente: [
+    ['circle', { cx: 9, cy: 8, r: 3 }],
+    ['path', { d: 'M3 19c.5-2.8 2.9-4.3 6-4.3M16.5 6.2a3 3 0 0 1 0 5.6M18 19c-.2-1.6-.9-2.8-2-3.6' }],
+  ],
+  certo: [['path', { d: 'm4 12.5 5.5 5.5L20 6.5' }]],
+  saida: [
+    ['path', { d: 'M14 4h6v6' }],
+    ['path', { d: 'M20 4 11 13' }],
+    ['path', { d: 'M18 14.5V19a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 19V8a1.5 1.5 0 0 1 1.5-1.5H10' }],
+  ],
+};
+
+function icone(nome) {
+  const svg = document.createElementNS(NS_SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const [tag, atributos] of ICONES[nome]) {
+    const el = document.createElementNS(NS_SVG, tag);
+    for (const [chave, valor] of Object.entries(atributos)) el.setAttribute(chave, String(valor));
+    svg.append(el);
+  }
+  return svg;
+}
+
 const pilha = [];
 
 function ir(nome, { empilhar = true } = {}) {
   const atual = $('.tela:not(.oculto)')?.dataset.tela;
   if (empilhar && atual && atual !== nome) pilha.push(atual);
   $$('.tela').forEach((tela) => tela.classList.toggle('oculto', tela.dataset.tela !== nome));
-  const foco = $(`[data-tela="${nome}"] input, [data-tela="${nome}"] textarea`);
+  if (nome === 'lista') return;
+  const foco = $$(`[data-tela="${nome}"] input, [data-tela="${nome}"] textarea`)
+    .find((campo) => campo.type !== 'file' && campo.type !== 'hidden' && campo.offsetParent !== null);
   if (foco) setTimeout(() => foco.focus(), 30);
 }
 
@@ -67,14 +107,41 @@ function iniciais(nome) {
   return String(nome || '?').trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('') || '?';
 }
 
+const NO_MAC = navigator.userAgent.includes('Mac');
+
+// ── abertura ────────────────────────────────────────────────────────────────
+//
+// O loader cobre trabalho real. Um piso curto evita um clarão caso a resposta
+// venha no mesmo quadro, sem obrigar a pessoa a assistir a uma coreografia.
+
+const ABERTA_EM = performance.now();
+const PISO_DA_ABERTURA = 360;
+
+function fecharAbertura() {
+  const abertura = $('#abertura');
+  if (!abertura || abertura.classList.contains('saindo')) return;
+
+  const falta = Math.max(0, PISO_DA_ABERTURA - (performance.now() - ABERTA_EM));
+  setTimeout(() => {
+    abertura.classList.add('saindo');
+    setTimeout(() => {
+      abertura.remove();
+    }, 220);
+  }, falta);
+}
+
 // ── estado do popup ─────────────────────────────────────────────────────────
 
 const estado = {
   credenciais: [],
   codigos: new Map(),      // id → { code, period, expiresAt (ms), digits }
   deltaRelogio: 0,         // servidor − navegador, em ms
+  periodoDoRelogio: 30,    // o período que a barra do topo representa
+  tema: 'sistema',         // sistema | claro | escuro
   filtro: '',
+  linhaAtiva: null,        // a chave que o teclado e o ⌘C usam
   detalheId: null,
+  detalhePeriodo: 30,
   compartilharId: null,
   compartilharUsuario: null,
   importacao: null,
@@ -86,11 +153,21 @@ let recargaTimer = null;
 // ── autenticação ────────────────────────────────────────────────────────────
 
 async function iniciar() {
+  // Antes de tudo: se a pessoa escolheu claro ou escuro, a tela já nasce assim.
+  estado.tema = await aplicarTemaGuardado();
+
+  $('#tecla-copiar').textContent = NO_MAC ? '⌘C' : 'Ctrl+C';
+  $('#tecla-colar').textContent = NO_MAC ? '⌘V' : 'Ctrl+V';
+
   try {
     const { autenticado } = await pedir('estado');
-    if (!autenticado) return ir('login', { empilhar: false });
+    if (!autenticado) {
+      ir('login', { empilhar: false });
+      return fecharAbertura();
+    }
     ir('lista', { empilhar: false });
     await carregarLista();
+    fecharAbertura();
 
     // A janela da câmera não consegue abrir o popup (isso exige gesto do
     // usuário no ícone). Ela deixa a análise pronta e quem chega aqui a
@@ -104,6 +181,7 @@ async function iniciar() {
   } catch (erro) {
     ir('login', { empilhar: false });
     mostrarErro('login-erro', erro.message);
+    fecharAbertura();
   }
 }
 
@@ -115,32 +193,74 @@ async function iniciar() {
 // PIN — e pedir os dois de uma vez esconde qual dos dois falhou. O servidor já
 // confere nessa ordem e responde 428 ("falta o PIN") só depois de a senha
 // passar, então é ele quem decide quando a segunda etapa começa.
-let etapaPin = false;
 
 function irParaEtapaPin(email) {
-  etapaPin = true;
   $('#login-etapa-conta').classList.add('oculto');
   $('#login-etapa-pin').classList.remove('oculto');
-  $('#login-voltar').classList.remove('oculto');
-  $('#login-conferido').textContent = `Entrando como ${email}`;
-  $('#login-enviar').textContent = 'Entrar';
-  $('#login-nota').textContent = 'O PIN é pedido uma vez, ao ligar este dispositivo. Depois a extensão não pergunta mais.';
-  $('#login-pin').required = true;
-  setTimeout(() => $('#login-pin').focus(), 40);
+  $('#login-nome').textContent = email.split('@')[0] ?? email;
+  $('#login-conferido').textContent = email;
+  $('#login-iniciais').textContent = iniciais(email.split('@')[0]?.replace(/[._-]+/g, ' '));
+  limparPin();
+  setTimeout(() => caixasDoPin[0].focus(), 40);
 }
 
 function voltarParaConta() {
-  etapaPin = false;
   $('#login-etapa-conta').classList.remove('oculto');
   $('#login-etapa-pin').classList.add('oculto');
-  $('#login-voltar').classList.add('oculto');
-  $('#login-enviar').textContent = 'Continuar';
-  $('#login-pin').required = false;
-  $('#login-pin').value = '';
+  limparPin();
   $('#login-senha').value = '';
   limparErro('login-erro');
+  limparErro('pin-erro');
   setTimeout(() => $('#login-email').focus(), 40);
 }
+
+// ── PIN em seis casas ───────────────────────────────────────────────────────
+//
+// Seis casas, e não um campo só: o PIN do CRM tem exatamente seis dígitos
+// (src/services/securityPin.service.ts), então a forma do campo pode dizer
+// isso sem precisar de texto. Cada casa é `type=text` com `-webkit-text-
+// security` no CSS — `type=password` recusaria a colagem dígito a dígito.
+
+const caixasDoPin = $$('#pin-caixas input');
+
+function lerPin() {
+  return caixasDoPin.map((caixa) => caixa.value).join('');
+}
+
+function limparPin() {
+  caixasDoPin.forEach((caixa) => { caixa.value = ''; });
+}
+
+caixasDoPin.forEach((caixa, indice) => {
+  caixa.addEventListener('input', () => {
+    caixa.value = caixa.value.replace(/\D/g, '').slice(0, 1);
+    if (caixa.value && indice < caixasDoPin.length - 1) caixasDoPin[indice + 1].focus();
+    if (lerPin().length === caixasDoPin.length) $('#form-pin').requestSubmit();
+  });
+
+  caixa.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Backspace' && !caixa.value && indice > 0) {
+      evento.preventDefault();
+      caixasDoPin[indice - 1].focus();
+      caixasDoPin[indice - 1].value = '';
+    }
+    if (evento.key === 'ArrowLeft' && indice > 0) caixasDoPin[indice - 1].focus();
+    if (evento.key === 'ArrowRight' && indice < caixasDoPin.length - 1) caixasDoPin[indice + 1].focus();
+  });
+
+  // Colar o PIN inteiro numa casa espalha pelas seis.
+  caixa.addEventListener('paste', (evento) => {
+    const digitos = (evento.clipboardData?.getData('text') ?? '').replace(/\D/g, '');
+    if (!digitos) return;
+    evento.preventDefault();
+    for (let i = 0; i < caixasDoPin.length - indice; i += 1) {
+      caixasDoPin[indice + i].value = digitos[i] ?? '';
+    }
+    const ultima = Math.min(indice + digitos.length, caixasDoPin.length - 1);
+    caixasDoPin[ultima].focus();
+    if (lerPin().length === caixasDoPin.length) $('#form-pin').requestSubmit();
+  });
+});
 
 $('#login-voltar').addEventListener('click', voltarParaConta);
 
@@ -150,39 +270,58 @@ $('#form-login').addEventListener('submit', async (evento) => {
 
   const botao = $('#login-enviar');
   const campoSenha = $('#login-senha');
-  const campoPin = $('#login-pin');
   const email = $('#login-email').value;
 
   botao.disabled = true;
-  botao.textContent = etapaPin ? 'Entrando…' : 'Conferindo…';
+  botao.textContent = 'Conferindo…';
 
   try {
-    await pedir('entrar', {
-      email,
-      senha: campoSenha.value,
-      // Na etapa 1 o PIN vai vazio de propósito: é o 428 do servidor que diz
-      // "a senha está certa, agora peça o PIN".
-      pin: etapaPin ? campoPin.value : '',
-    });
-
-    // Senha e PIN somem do DOM assim que deixam de ser necessários.
+    // Na etapa 1 o PIN vai vazio de propósito: é o 428 do servidor que diz
+    // "a senha está certa, agora peça o PIN".
+    await pedir('entrar', { email, senha: campoSenha.value, pin: '' });
     campoSenha.value = '';
-    campoPin.value = '';
     voltarParaConta();
     ir('lista', { empilhar: false });
     await carregarLista();
   } catch (erro) {
-    if (erro.status === 428 && !etapaPin) {
-      // Senha aceita. Só falta o PIN.
-      irParaEtapaPin(email);
+    if (erro.status === 428) {
+      irParaEtapaPin(email);          // senha aceita; só falta o PIN
     } else {
-      campoPin.value = '';
-      if (!etapaPin) campoSenha.value = '';
+      campoSenha.value = '';
       mostrarErro('login-erro', erro.message);
     }
   } finally {
     botao.disabled = false;
-    botao.textContent = etapaPin ? 'Entrar' : 'Continuar';
+    botao.textContent = 'Continuar';
+  }
+});
+
+$('#form-pin').addEventListener('submit', async (evento) => {
+  evento.preventDefault();
+  limparErro('pin-erro');
+
+  const pin = lerPin();
+  if (pin.length !== caixasDoPin.length) return mostrarErro('pin-erro', 'Digite os seis dígitos do PIN.');
+
+  const botao = $('#pin-enviar');
+  const campoSenha = $('#login-senha');
+  botao.disabled = true;
+  botao.textContent = 'Entrando…';
+
+  try {
+    await pedir('entrar', { email: $('#login-email').value, senha: campoSenha.value, pin });
+    // Senha e PIN somem do DOM assim que deixam de ser necessários.
+    campoSenha.value = '';
+    voltarParaConta();
+    ir('lista', { empilhar: false });
+    await carregarLista();
+  } catch (erro) {
+    limparPin();
+    caixasDoPin[0].focus();
+    mostrarErro('pin-erro', erro.message);
+  } finally {
+    botao.disabled = false;
+    botao.textContent = 'Autorizar';
   }
 });
 
@@ -229,12 +368,37 @@ async function carregarCodigos() {
         expiraEm: Date.now() + estado.deltaRelogio + item.expires_in * 1000,
       });
     }
+    estado.periodoDoRelogio = periodoDominante();
     agendarRecarga();
   } catch (erro) {
     if (erro.status === 401) throw erro;
     estado.codigos = new Map();
     brinde('Cofre indisponível. Os códigos voltam quando a conexão voltar.', 'erro');
   }
+}
+
+/**
+ * QUAL PERÍODO A BARRA DE CIMA REPRESENTA.
+ *
+ * Todo código TOTP de 30s vira no mesmo instante — é a mesma janela do mesmo
+ * relógio universal —, então um contador por linha repetia a mesma informação
+ * uma vez por chave. A barra do topo é esse contador único, e ela segue o
+ * período MAIS COMUM da lista. Chave que foge dele (60s, 15s) mostra o anel
+ * próprio na linha, e é justamente por serem raras que os anéis significam
+ * alguma coisa quando aparecem.
+ */
+function periodoDominante() {
+  const contagem = new Map();
+  for (const dados of estado.codigos.values()) {
+    if (!dados.period) continue;
+    contagem.set(dados.period, (contagem.get(dados.period) ?? 0) + 1);
+  }
+  let dominante = 30;
+  let maior = 0;
+  for (const [periodo, quantas] of contagem) {
+    if (quantas > maior) { dominante = periodo; maior = quantas; }
+  }
+  return dominante;
 }
 
 /** Recarrega quando o código mais próximo virar — nunca antes, nunca depois. */
@@ -275,20 +439,13 @@ function semAcento(texto) {
 function renderizarLista() {
   const alvo = $('#lista');
   const termo = semAcento(estado.filtro);
-  const visiveis = estado.credenciais
-    .filter((c) => {
-      if (!termo) return true;
-      return semAcento(`${c.name} ${c.issuer ?? ''} ${c.account_label ?? ''}`).includes(termo);
-    })
-    // Favorito primeiro, e dentro de cada grupo em ordem alfabética. Quem
-    // marcou uma estrela quer aquela chave à mão — não rolando a lista.
-    .sort((a, b) => {
-      if (Boolean(a.favorite) !== Boolean(b.favorite)) return a.favorite ? -1 : 1;
-      return semAcento(a.name).localeCompare(semAcento(b.name), 'pt-BR');
-    });
+  const visiveis = estado.credenciais.filter((c) => {
+    if (!termo) return true;
+    return semAcento(`${c.name} ${c.issuer ?? ''} ${c.account_label ?? ''}`).includes(termo);
+  });
 
   if (estado.credenciais.length === 0) {
-    alvo.replaceChildren(vazio('Nenhuma chave ainda', 'Cadastre a primeira em "+ Nova chave" ou importe do Google Authenticator.'));
+    alvo.replaceChildren(vazio('Nenhuma chave ainda', 'Cadastre a primeira no + do cabeçalho, ou importe do Google Authenticator.'));
     return;
   }
   if (visiveis.length === 0) {
@@ -296,23 +453,94 @@ function renderizarLista() {
     return;
   }
 
-  alvo.replaceChildren(...visiveis.map(cartao));
+  // Favorito primeiro, e dentro de cada grupo em ordem alfabética. Quem marcou
+  // uma estrela quer aquela chave à mão — não rolando a lista. Os títulos de
+  // grupo substituem a estrela repetida em toda linha.
+  const ordenar = (a, b) => semAcento(a.name).localeCompare(semAcento(b.name), 'pt-BR');
+  const favoritas = visiveis.filter((c) => c.favorite).sort(ordenar);
+  const demais = visiveis.filter((c) => !c.favorite).sort(ordenar);
+
+  const filhos = [];
+  if (favoritas.length) {
+    filhos.push(tituloDeGrupo('Favoritas'), ...favoritas.map(cartao));
+    if (demais.length) filhos.push(tituloDeGrupo('Todas as chaves'));
+  }
+  filhos.push(...demais.map(cartao));
+
+  alvo.replaceChildren(...filhos);
+  if (!visiveis.some((c) => c.id === estado.linhaAtiva)) estado.linhaAtiva = visiveis[0]?.id ?? null;
   atualizarContadores();
+}
+
+function tituloDeGrupo(texto) {
+  const el = document.createElement('div');
+  el.className = 'grupo-titulo';
+  el.textContent = texto;
+  return el;
 }
 
 function cartao(credencial) {
   const item = document.createElement('div');
   item.className = 'item';
   item.dataset.id = credencial.id;
+  item.tabIndex = 0;
+  item.setAttribute('role', 'button');
+  item.setAttribute('aria-label', `Preencher o código de ${credencial.name}`);
 
-  const nome = document.createElement('div');
-  nome.className = 'item-nome';
+  // ── a linha de cima: quem é a chave ──
+  const meta = document.createElement('div');
+  meta.className = 'item-meta';
+
+  const nome = document.createElement('b');
+  nome.textContent = credencial.name;
+  meta.append(nome);
+
+  const conta = credencial.account_label || credencial.issuer;
+  if (conta) {
+    meta.append(separador(), textoCortado(conta));
+  }
+  if (credencial.shared || !credencial.is_owner) {
+    meta.append(separador(), icone('gente'));
+    const quantas = document.createElement('span');
+    quantas.textContent = credencial.is_owner
+      ? String(credencial.shared_count ?? '')
+      : `de ${credencial.owner_name ?? 'outro'}`;
+    meta.append(quantas);
+  }
+
+  const dados = estado.codigos.get(credencial.id);
+  const periodoProprio = dados?.period && dados.period !== estado.periodoDoRelogio;
+  if (periodoProprio) {
+    meta.append(separador(), Object.assign(document.createElement('span'), { textContent: `${dados.period}s` }));
+  }
+
+  // ── a linha de baixo: o código ──
+  const codigo = document.createElement('div');
+  codigo.className = 'item-codigo num';
+  codigo.dataset.papel = 'codigo';
+
+  const feito = document.createElement('div');
+  feito.className = 'item-feito oculto';
+  feito.dataset.papel = 'feito';
+  feito.append(icone('certo'), Object.assign(document.createElement('span'), { textContent: 'Preenchido na página' }));
+
+  // ── o lado direito: só aparece na linha sob o cursor ──
+  const preencher = document.createElement('button');
+  preencher.className = 'item-preencher';
+  preencher.type = 'button';
+  preencher.textContent = 'Preencher';
+  preencher.dataset.papel = 'preencher';
+  preencher.title = 'Escrever o código no campo da página aberta';
+  preencher.addEventListener('click', (evento) => { evento.stopPropagation(); preencherCom(credencial.id, item); });
 
   const estrela = document.createElement('button');
-  estrela.className = `item-estrela${credencial.favorite ? ' ativa' : ''}`;
-  estrela.textContent = credencial.favorite ? '★' : '☆';
+  estrela.className = `item-acao${credencial.favorite ? ' marcada' : ''}`;
+  estrela.type = 'button';
   estrela.title = credencial.favorite ? 'Remover dos favoritos' : 'Favoritar';
-  estrela.addEventListener('click', async () => {
+  estrela.setAttribute('aria-label', estrela.title);
+  estrela.append(icone('estrela'));
+  estrela.addEventListener('click', async (evento) => {
+    evento.stopPropagation();
     try {
       await pedir('favoritar', { id: credencial.id, favorito: !credencial.favorite });
       credencial.favorite = !credencial.favorite;
@@ -320,185 +548,245 @@ function cartao(credencial) {
     } catch (erro) { brinde(erro.message, 'erro'); }
   });
 
-  const texto = document.createElement('span');
-  texto.textContent = credencial.name;
-  texto.className = 'item-nome-texto';
-  nome.append(estrela, texto);
-
-  if (credencial.shared || !credencial.is_owner) {
-    const badge = document.createElement('span');
-    badge.className = 'badge';
-    badge.textContent = credencial.is_owner ? `👥 ${credencial.shared_count}` : `👥 de ${credencial.owner_name ?? 'outro'}`;
-    badge.title = credencial.is_owner ? 'Compartilhada por você' : 'Compartilhada com você';
-    nome.append(badge);
-  }
+  const copiar = document.createElement('button');
+  copiar.className = 'item-acao';
+  copiar.type = 'button';
+  copiar.title = 'Copiar código';
+  copiar.setAttribute('aria-label', `Copiar o código de ${credencial.name}`);
+  copiar.dataset.papel = 'copiar';
+  copiar.append(icone('copiar'));
+  copiar.addEventListener('click', (evento) => { evento.stopPropagation(); copiarCodigo(credencial.id); });
 
   const abrir = document.createElement('button');
-  abrir.className = 'item-abrir';
-  abrir.textContent = '›';
+  abrir.className = 'item-acao';
+  abrir.type = 'button';
   abrir.title = 'Detalhes';
   abrir.setAttribute('aria-label', `Detalhes de ${credencial.name}`);
-  abrir.addEventListener('click', () => abrirDetalhe(credencial.id));
-  nome.append(abrir);
+  abrir.append(icone('seta'));
+  abrir.addEventListener('click', (evento) => { evento.stopPropagation(); abrirDetalhe(credencial.id); });
 
-  const codigo = document.createElement('div');
-  codigo.className = 'item-codigo';
-  codigo.dataset.papel = 'codigo';
+  const lado = document.createElement('div');
+  lado.className = 'item-lado';
+  lado.append(preencher, estrela, copiar, abrir);
+  if (periodoProprio) lado.append(anel(credencial.id));
 
-  const contador = document.createElement('div');
-  contador.className = 'item-contador';
-  contador.dataset.papel = 'contador';
+  item.append(meta, codigo, feito, lado);
 
-  const copiar = document.createElement('button');
-  copiar.className = 'item-copiar';
-  copiar.textContent = 'COPIAR';
-  copiar.dataset.papel = 'copiar';
-  // Só vai para a área de transferência com clique. Não existe cópia
-  // automática, nem leitura de página, nem monitoramento de formulário.
-  copiar.addEventListener('click', async () => {
-    const atual = estado.codigos.get(credencial.id);
-    if (!atual?.code) return brinde('Código indisponível.', 'erro');
-    try {
-      await navigator.clipboard.writeText(atual.code);
-      copiar.textContent = '✓ COPIADO';
-      copiar.classList.add('copiado');
-      brinde('Código copiado');
-      setTimeout(() => { copiar.textContent = 'COPIAR'; copiar.classList.remove('copiado'); }, 1400);
-    } catch (_) {
-      brinde('O navegador bloqueou a cópia.', 'erro');
+  // A linha inteira é o botão principal: quem abre o popup num site de login
+  // quer o código NO campo, não na área de transferência.
+  item.addEventListener('click', () => preencherCom(credencial.id, item));
+  item.addEventListener('mouseenter', () => { estado.linhaAtiva = credencial.id; });
+  item.addEventListener('focus', () => { estado.linhaAtiva = credencial.id; });
+  item.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Enter' || evento.key === ' ') {
+      evento.preventDefault();
+      preencherCom(credencial.id, item);
     }
   });
 
-  const preencher = document.createElement('button');
-  preencher.className = 'item-preencher';
-  preencher.textContent = 'PREENCHER';
-  preencher.dataset.papel = 'preencher';
-  preencher.title = 'Escrever o código no campo da página aberta';
-  // O popup não toca na aba: ele pede, e quem escreve é o service worker —
-  // que também é quem busca um código novo, para não preencher um vencido.
-  preencher.addEventListener('click', async () => {
-    preencher.disabled = true;
-    const antes = preencher.textContent;
-    preencher.textContent = '…';
-    try {
-      await pedir('preencher', { id: credencial.id });
-      preencher.textContent = '✓ PREENCHIDO';
-      preencher.classList.add('copiado');
-      brinde('Código preenchido na página');
-      setTimeout(() => window.close(), 500);
-    } catch (erro) {
-      preencher.textContent = antes;
-      brinde(erro.message, 'erro');
-    } finally {
-      preencher.disabled = false;
-    }
-  });
-
-  const acoes = document.createElement('div');
-  acoes.className = 'item-acoes';
-  acoes.append(preencher, copiar);
-
-  const barra = document.createElement('div');
-  barra.className = 'item-barra';
-  const preenchimento = document.createElement('span');
-  preenchimento.dataset.papel = 'barra';
-  preenchimento.dataset.barraDe = credencial.id;
-  barra.append(preenchimento);
-
-  item.append(nome, codigo, contador, acoes, barra);
   return item;
 }
 
-/**
- * A LARGURA DA BARRA, SEM ATRIBUTO DE ESTILO.
- *
- * A CSP da extensão é `style-src 'self'`, e ela recusa estilo inline —
- * inclusive o que é escrito por `elemento.style.width`, que era como esta
- * barra andava. O resultado era o console cheio de "Applying inline style
- * violates..." e a barra parada, porque a atribuição era simplesmente
- * bloqueada.
- *
- * Afrouxar a CSP com `unsafe-inline` resolveria numa linha e abriria a porta
- * por onde entraria estilo injetado — a mesma porta que o resto da extensão
- * mantém fechada de propósito. Uma folha ADOTADA é a saída certa: é CSSOM
- * programático, não estilo inline, então a CSP não tem o que barrar. Regra de
- * bolso: valor fixo vira classe; valor que muda a cada segundo vira regra numa
- * folha como esta.
- *
- * As larguras são acumuladas e escritas UMA vez por tique. Chamar `replaceSync`
- * por barra faria o trabalho crescer com o quadrado do número de chaves.
- */
-const folhaDasBarras = new CSSStyleSheet();
-document.adoptedStyleSheets = [...document.adoptedStyleSheets, folhaDasBarras];
-const largurasDasBarras = new Map();
-
-function marcarLarguraDaBarra(id, porcentagem) {
-  const limitada = Math.min(100, Math.max(0, porcentagem));
-  largurasDasBarras.set(id, limitada);
+function separador() {
+  const el = document.createElement('span');
+  el.textContent = '·';
+  return el;
 }
 
-function aplicarLargurasDasBarras() {
-  const regras = [];
-  for (const [id, largura] of largurasDasBarras) {
-    // `.item-barra span[...]` (0,2,1) e não `[...]` (0,1,0): o seletor tem de
-    // ganhar de `.item-barra span { width: 0 }`, senão a barra nunca enche.
-    regras.push(`.item-barra span[data-barra-de="${CSS.escape(id)}"]{width:${largura.toFixed(2)}%}`);
+function textoCortado(texto) {
+  const el = document.createElement('span');
+  el.className = 'corte';
+  el.textContent = texto;
+  return el;
+}
+
+/** O anel da linha — só para a chave cujo período foge do relógio de cima. */
+function anel(id) {
+  const svg = document.createElementNS(NS_SVG, 'svg');
+  svg.setAttribute('viewBox', '0 0 22 22');
+  svg.setAttribute('class', 'item-aro');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const classe of ['aro-fundo', 'aro-frente']) {
+    const circulo = document.createElementNS(NS_SVG, 'circle');
+    circulo.setAttribute('cx', '11');
+    circulo.setAttribute('cy', '11');
+    circulo.setAttribute('r', '8');
+    circulo.setAttribute('class', classe);
+    if (classe === 'aro-frente') circulo.dataset.aroDe = id;
+    svg.append(circulo);
   }
-  folhaDasBarras.replaceSync(regras.join('\n'));
+  return svg;
 }
 
-/** Anima contador e barra localmente, sem ir ao servidor a cada segundo. */
+// ── ações de uma chave ──────────────────────────────────────────────────────
+
+async function copiarCodigo(id) {
+  const atual = estado.codigos.get(id);
+  if (!atual?.code) return brinde('Código indisponível.', 'erro');
+  try {
+    // Só vai para a área de transferência com clique ou atalho. Não existe
+    // cópia automática, nem leitura de página, nem vigia de formulário.
+    await navigator.clipboard.writeText(atual.code);
+    brinde('Código copiado');
+  } catch (_) {
+    brinde('O navegador bloqueou a cópia.', 'erro');
+  }
+}
+
+async function preencherCom(id, item) {
+  const preencher = $('[data-papel="preencher"]', item);
+  const codigo = $('[data-papel="codigo"]', item);
+  const feito = $('[data-papel="feito"]', item);
+  if (preencher.disabled) return;
+
+  preencher.disabled = true;
+  try {
+    // O popup não toca na aba: ele pede, e quem escreve é o service worker —
+    // que também é quem busca um código novo, para não preencher um vencido.
+    await pedir('preencher', { id });
+    codigo.classList.add('oculto');
+    feito.classList.remove('oculto');
+    setTimeout(() => window.close(), 650);
+  } catch (erro) {
+    brinde(erro.message, 'erro');
+  } finally {
+    preencher.disabled = false;
+  }
+}
+
+// ── o que muda a cada segundo ───────────────────────────────────────────────
+//
+// A CSP da extensão é `style-src 'self'`, e ela não recusa só o atributo
+// `style=` escrito no HTML: recusa também o que o JavaScript escreve por
+// `elemento.style.alguma-coisa`. Afrouxá-la com `unsafe-inline` resolveria numa
+// linha e abriria a porta por onde entraria estilo injetado.
+//
+// A saída certa é uma folha ADOTADA: CSSOM programático não é estilo inline,
+// então a CSP não tem o que barrar. Regra de bolso: valor fixo vira classe;
+// valor que muda a cada segundo vira regra nesta folha. Tudo é acumulado e
+// escrito UMA vez por tique — uma chamada de `replaceSync` por elemento faria o
+// trabalho crescer com o quadrado do número de chaves.
+
+const folhaViva = new CSSStyleSheet();
+document.adoptedStyleSheets = [...document.adoptedStyleSheets, folhaViva];
+
+const CIRCUNFERENCIA_DO_ANEL = 2 * Math.PI * 8;    // raio 8, o anel da linha
+const CIRCUNFERENCIA_DO_PALCO = 2 * Math.PI * 14;  // raio 14, o anel do detalhe
+
+function escrever(regras) {
+  folhaViva.replaceSync(regras.join('\n'));
+}
+
 function atualizarContadores() {
   const agora = Date.now() + estado.deltaRelogio;
+  const regras = [];
 
+  // ── o relógio compartilhado ──
+  const doRelogio = [...estado.codigos.values()].find((c) => c.period === estado.periodoDoRelogio && c.expiraEm);
+  const relogio = $('#relogio');
+  if (doRelogio) {
+    const restante = Math.max(0, Math.ceil((doRelogio.expiraEm - agora) / 1000));
+    relogio.classList.remove('oculto');
+    relogio.classList.toggle('urgente', restante <= 5);
+    $('#relogio-seg').textContent = `${restante}s`;
+    regras.push(`#relogio-barra{width:${((restante / estado.periodoDoRelogio) * 100).toFixed(2)}%}`);
+  } else {
+    relogio.classList.add('oculto');
+  }
+
+  // ── as linhas ──
   for (const item of $$('.item')) {
     const dados = estado.codigos.get(item.dataset.id);
     const codigo = $('[data-papel="codigo"]', item);
-    const contador = $('[data-papel="contador"]', item);
-    const barra = $('[data-papel="barra"]', item);
-    const copiar = $('[data-papel="copiar"]', item);
     const preencher = $('[data-papel="preencher"]', item);
+    const copiar = $('[data-papel="copiar"]', item);
 
-    if (!dados) {
-      codigo.replaceChildren('······');
-      contador.textContent = '';
-      marcarLarguraDaBarra(item.dataset.id, 0);
-      copiar.disabled = true;
+    item.classList.toggle('ativa', item.dataset.id === estado.linhaAtiva);
+
+    if (!dados || dados.erro) {
+      codigo.replaceChildren(dados?.erro ?? '······');
+      codigo.classList.toggle('indisponivel', Boolean(dados?.erro));
       preencher.disabled = true;
-      continue;
-    }
-    if (dados.erro) {
-      codigo.replaceChildren(dados.erro);
-      codigo.classList.add('indisponivel');
-      contador.textContent = '';
-      marcarLarguraDaBarra(item.dataset.id, 0);
       copiar.disabled = true;
-      preencher.disabled = true;
       continue;
     }
 
     const restante = Math.max(0, Math.ceil((dados.expiraEm - agora) / 1000));
+
     // Dois trios em elementos separados, para o CSS controlar o respiro entre
-    // eles. Um espaço solto no texto sairia com a largura da fonte mono, larga
-    // demais, e é o que fazia o código parecer quebrado ao meio.
+    // eles. Um espaço solto no texto sairia com a largura de um espaço comum,
+    // larga demais, e é o que fazia o código parecer quebrado ao meio.
     const meio = Math.ceil(dados.code.length / 2);
     codigo.replaceChildren(...[dados.code.slice(0, meio), dados.code.slice(meio)].map((parte) => {
       const trio = document.createElement('span');
-      trio.className = 'trio';
       trio.textContent = parte;
       return trio;
     }));
     codigo.classList.remove('indisponivel');
-    contador.textContent = `${restante}s`;
-    contador.classList.toggle('urgente', restante <= 5);
-    marcarLarguraDaBarra(item.dataset.id, (restante / dados.period) * 100);
-    barra.classList.toggle('urgente', restante <= 5);
-    copiar.disabled = false;
+
+    // Nos últimos segundos o código esmaece: vale mais esperar o próximo do que
+    // digitar um que vira no meio do caminho.
+    item.classList.toggle('esvai', restante <= 5);
+    item.classList.toggle('urgente', restante <= 5);
     preencher.disabled = false;
+    copiar.disabled = false;
+
+    const aro = $('.aro-frente[data-aro-de]', item);
+    if (aro) {
+      const sobra = CIRCUNFERENCIA_DO_ANEL * (1 - restante / dados.period);
+      // `.item-aro .aro-frente[…]` (0,3,0) vence `.item-aro .aro-frente` (0,2,0).
+      regras.push(`.item-aro .aro-frente[data-aro-de="${CSS.escape(item.dataset.id)}"]{stroke-dashoffset:${sobra.toFixed(2)}}`);
+    }
   }
 
-  aplicarLargurasDasBarras();
+  // ── o palco do detalhe, se estiver aberto ──
+  if ($('.tela:not(.oculto)')?.dataset.tela === 'detalhe' && estado.detalheId) {
+    const dados = estado.codigos.get(estado.detalheId);
+    const palco = $('#detalhe-palco');
+    const codigo = $('#detalhe-codigo');
+    if (dados?.code) {
+      const restante = Math.max(0, Math.ceil((dados.expiraEm - agora) / 1000));
+      const meio = Math.ceil(dados.code.length / 2);
+      codigo.replaceChildren(...[dados.code.slice(0, meio), dados.code.slice(meio)].map((parte) => {
+        const trio = document.createElement('span');
+        trio.textContent = parte;
+        return trio;
+      }));
+      codigo.classList.remove('indisponivel');
+      palco.classList.remove('oculto');
+      $('#detalhe-aro').classList.toggle('urgente', restante <= 5);
+      const sobra = CIRCUNFERENCIA_DO_PALCO * (1 - restante / (dados.period || 30));
+      regras.push(`#detalhe-aro .aro-frente{stroke-dashoffset:${sobra.toFixed(2)}}`);
+    } else if (dados?.erro) {
+      codigo.textContent = dados.erro;
+      codigo.classList.add('indisponivel');
+      palco.classList.remove('oculto');
+    } else {
+      palco.classList.add('oculto');
+    }
+  }
+
+  if (regraDoSegredo) regras.push(regraDoSegredo);
+  escrever(regras);
 }
+
+// ── busca ───────────────────────────────────────────────────────────────────
+
+function alternarBusca(abrir) {
+  const caixa = $('#caixa-busca');
+  const querAbrir = abrir ?? caixa.classList.contains('oculto');
+  caixa.classList.toggle('oculto', !querAbrir);
+  $('#abrir-busca').classList.toggle('ativo', querAbrir);
+  if (querAbrir) {
+    $('#busca').focus();
+  } else if (estado.filtro) {
+    $('#busca').value = '';
+    estado.filtro = '';
+    renderizarLista();
+  }
+}
+
+$('#abrir-busca').addEventListener('click', () => alternarBusca());
 
 $('#busca').addEventListener('input', (evento) => {
   estado.filtro = evento.target.value;
@@ -510,6 +798,8 @@ $('#busca').addEventListener('input', (evento) => {
 async function abrirDetalhe(id) {
   estado.detalheId = id;
   ir('detalhe');
+  $('#detalhe-palco').classList.add('oculto');
+  $('#detalhe-copiar').classList.add('oculto');
   const corpo = $('#detalhe-corpo');
   corpo.replaceChildren(Object.assign(document.createElement('div'), { className: 'esqueleto' }));
 
@@ -520,12 +810,13 @@ async function abrirDetalhe(id) {
     ]);
 
     $('#detalhe-nome').textContent = credential.name;
+    $('#detalhe-copiar').classList.toggle('oculto', !estado.codigos.get(id)?.code);
     corpo.replaceChildren();
+    atualizarContadores();
 
     const info = document.createElement('div');
     info.className = 'bloco';
-    info.append(rotulo('Identificação'));
-    info.append(linhaInfo('Nome', credential.name));
+    info.append(rotulo('A chave'));
     if (credential.issuer) info.append(linhaInfo('Emissor', credential.issuer));
     if (credential.account_label) info.append(linhaInfo('Conta', credential.account_label));
     info.append(linhaInfo('Formato', `${credential.algorithm} · ${credential.digits} dígitos · ${credential.period}s`));
@@ -537,7 +828,7 @@ async function abrirDetalhe(id) {
       const bloco = document.createElement('div');
       bloco.className = 'bloco';
       bloco.append(rotulo('Quem tem acesso'));
-      bloco.append(pessoa(permissoes.owner.name ?? permissoes.owner.email, permissoes.owner.email, 'OWNER'));
+      bloco.append(pessoa(permissoes.owner.name ?? permissoes.owner.email, permissoes.owner.email, 'DONO'));
       for (const p of permissoes.permissions) {
         const linha = pessoa(p.name ?? p.email, p.email, p.permission);
         if (credential.can_manage) {
@@ -562,7 +853,7 @@ async function abrirDetalhe(id) {
     acoes.className = 'acoes-detalhe';
 
     if (credential.can_manage) {
-      acoes.append(botao('+ Compartilhar', () => abrirCompartilhar(id)));
+      acoes.append(botao('Compartilhar com alguém', () => abrirCompartilhar(id)));
       acoes.append(botao(credential.status === 'archived' ? 'Reativar' : 'Arquivar', async () => {
         try {
           await pedir('atualizar', { id, dados: { status: credential.status === 'archived' ? 'active' : 'archived' } });
@@ -573,7 +864,7 @@ async function abrirDetalhe(id) {
     }
 
     if (credential.can_export) {
-      acoes.append(botao('Exportar segredo', async () => {
+      const exportar = botao('Exportar o segredo…', async () => {
         const confirmacao = await pedirConfirmacao({
           texto: 'Exportar o segredo original desta chave é registrado na auditoria. Diga por que precisa dele e confirme com a sua senha.',
           pedirMotivo: true,
@@ -581,9 +872,12 @@ async function abrirDetalhe(id) {
         if (!confirmacao) return;
         try {
           const resultado = await pedir('exportar', { id, motivo: confirmacao.motivo, stepUpToken: confirmacao.token });
-          mostrarSegredo(resultado);
+          mostrarSegredo(resultado, credential.name);
         } catch (erro) { brinde(erro.message, 'erro'); }
-      }));
+      });
+      exportar.classList.remove('botao--sec');
+      exportar.classList.add('botao--perigo');
+      acoes.append(exportar);
     }
 
     if (credential.is_owner) {
@@ -598,6 +892,7 @@ async function abrirDetalhe(id) {
           carregarLista();
         } catch (erro) { brinde(erro.message, 'erro'); }
       });
+      excluir.classList.remove('botao--sec');
       excluir.classList.add('botao--perigo');
       acoes.append(excluir);
     }
@@ -607,6 +902,8 @@ async function abrirDetalhe(id) {
     corpo.replaceChildren(vazio('Não foi possível abrir', erro.message));
   }
 }
+
+$('#detalhe-copiar').addEventListener('click', () => copiarCodigo(estado.detalheId));
 
 function rotulo(texto) {
   const h = document.createElement('h2');
@@ -649,7 +946,8 @@ function pessoa(nome, email, nivel) {
 
 function botao(texto, aoClicar) {
   const el = document.createElement('button');
-  el.className = 'botao';
+  el.className = 'botao botao--sec';
+  el.type = 'button';
   el.textContent = texto;
   el.addEventListener('click', aoClicar);
   return el;
@@ -697,18 +995,32 @@ $('#form-confirmar').addEventListener('submit', async (evento) => {
 // ── segredo revelado ────────────────────────────────────────────────────────
 
 let segredoTimer = null;
+let regraDoSegredo = null;    // a barra da contagem, escrita na folha viva
 
-function mostrarSegredo({ secret, uri }) {
+const SEGUNDOS_DO_SEGREDO = 120;
+
+function mostrarSegredo({ secret, uri }, nomeDaChave) {
+  $('#segredo-titulo').textContent = nomeDaChave ? `Segredo · ${nomeDaChave}` : 'Segredo';
   $('#segredo-valor').textContent = secret;
   $('#segredo-uri').textContent = uri;
   ir('segredo');
 
-  let restante = 120;
-  $('#segredo-contador').textContent = restante;
+  let restante = SEGUNDOS_DO_SEGREDO;
   clearInterval(segredoTimer);
+
+  const pintar = () => {
+    const minutos = Math.floor(Math.max(0, restante) / 60);
+    const segundos = Math.max(0, restante) % 60;
+    $('#segredo-contador').textContent = `${minutos}:${String(segundos).padStart(2, '0')}`;
+    regraDoSegredo = `#segredo-trilho{width:${((Math.max(0, restante) / SEGUNDOS_DO_SEGREDO) * 100).toFixed(2)}%}`;
+  };
+
+  pintar();
+  atualizarContadores();
+
   segredoTimer = setInterval(() => {
     restante -= 1;
-    $('#segredo-contador').textContent = Math.max(0, restante);
+    pintar();
     if (restante <= 0) {
       clearInterval(segredoTimer);
       // O segredo sai do DOM — não fica esperando alguém reabrir o popup.
@@ -736,11 +1048,19 @@ $('#abrir-nova').addEventListener('click', () => {
   ir('nova');
 });
 
-$$('.aba').forEach((aba) => {
+$$('.segmentado button').forEach((aba) => {
   aba.addEventListener('click', () => {
-    $$('.aba').forEach((a) => a.classList.toggle('ativa', a === aba));
+    $$('.segmentado button').forEach((a) => a.classList.toggle('ativa', a === aba));
     $$('[data-painel]').forEach((p) => p.classList.toggle('oculto', p.dataset.painel !== aba.dataset.aba));
   });
+});
+
+// 99% das chaves são SHA1 · 6 · 30s: três selects logo de cara só atrapalham.
+$('#abrir-avancado').addEventListener('click', () => {
+  const botaoMais = $('#abrir-avancado');
+  const aberto = $('#avancado').classList.toggle('oculto') === false;
+  botaoMais.classList.toggle('aberta', aberto);
+  botaoMais.setAttribute('aria-expanded', String(aberto));
 });
 
 $('#form-manual').addEventListener('submit', async (evento) => {
@@ -1081,7 +1401,7 @@ $('#abrir-dispositivos').addEventListener('click', async () => {
       linha.className = 'pessoa';
       const avatar = document.createElement('div');
       avatar.className = 'avatar';
-      avatar.textContent = sessao.kind === 'web' ? '🖥' : '🧩';
+      avatar.textContent = sessao.kind === 'web' ? 'CRM' : 'EXT';
       const quem = document.createElement('div');
       quem.className = 'quem';
       const b = document.createElement('b');
@@ -1113,16 +1433,94 @@ $('#abrir-dispositivos').addEventListener('click', async () => {
     blocoSeguranca.append(rotulo('Segurança'));
     blocoSeguranca.append(linhaInfo('PIN de segurança', perfil.admin_pin_configured ? 'Configurado' : 'Não configurado'));
     const nota = document.createElement('p');
-    nota.className = 'rodape-nota';
+    nota.className = 'nota nota--solta';
     nota.textContent = perfil.user.is_admin
       ? 'É o mesmo PIN do CRM, cadastrado em Meu Perfil → Segurança. Foi ele que você digitou ao ligar este dispositivo.'
       : 'Recuperação de segredo é operação administrativa e não passa por esta extensão.';
     blocoSeguranca.append(nota);
     corpo.append(blocoSeguranca);
+
+    corpo.append(blocoDeAparencia());
+    corpo.append(blocoDoCrm());
   } catch (erro) {
     corpo.replaceChildren(vazio('Não foi possível carregar', erro.message));
   }
 });
+
+/**
+ * Aparência: seguir o sistema, ou não.
+ *
+ * O padrão continua sendo o sistema — é o que acerta sozinho para quase todo
+ * mundo. Mas quem trabalha o dia inteiro num CRM claro não quer um popup preto
+ * saltando na frente só porque o macOS virou o tema às 18h, e essa pessoa
+ * precisa de um lugar para dizer isso.
+ */
+function blocoDeAparencia() {
+  const bloco = document.createElement('div');
+  bloco.className = 'bloco';
+  bloco.append(rotulo('Aparência'));
+
+  const seletor = document.createElement('div');
+  seletor.className = 'segmentado segmentado--bloco';
+  seletor.setAttribute('role', 'radiogroup');
+  seletor.setAttribute('aria-label', 'Tema da extensão');
+
+  for (const [valor, texto] of [['sistema', 'Sistema'], ['claro', 'Claro'], ['escuro', 'Escuro']]) {
+    const opcao = document.createElement('button');
+    opcao.type = 'button';
+    opcao.textContent = texto;
+    opcao.setAttribute('role', 'radio');
+    opcao.classList.toggle('ativa', estado.tema === valor);
+    opcao.setAttribute('aria-checked', String(estado.tema === valor));
+    opcao.addEventListener('click', async () => {
+      estado.tema = await salvarTema(valor);
+      for (const irma of seletor.children) {
+        const ativa = irma === opcao;
+        irma.classList.toggle('ativa', ativa);
+        irma.setAttribute('aria-checked', String(ativa));
+      }
+    });
+    seletor.append(opcao);
+  }
+
+  bloco.append(seletor);
+  const nota = document.createElement('p');
+  nota.className = 'nota nota--solta';
+  nota.textContent = 'Com "Sistema", a extensão acompanha o tema do seu computador.';
+  bloco.append(nota);
+  return bloco;
+}
+
+/**
+ * A ponte para o CRM.
+ *
+ * O que não cabe num popup de 380px — auditoria, recuperação por administrador,
+ * quem instalou a extensão em qual máquina — mora nas Configurações do CRM. Em
+ * vez de repetir tudo aqui, o popup manda a pessoa direto para a aba certa
+ * (`?section=authenticator`), e não para a raiz do sistema.
+ *
+ * Abrir aba não custa permissão nenhuma no manifest: `chrome.tabs.create` já
+ * vale sem `tabs`, que serve para LER aba — coisa que esta extensão não faz.
+ */
+function blocoDoCrm() {
+  const bloco = document.createElement('div');
+  bloco.className = 'bloco';
+  bloco.append(rotulo('No CRM'));
+
+  const abrir = botao('Configurações do Authenticator', () => {
+    chrome.tabs.create({ url: CRM_AUTHENTICATOR_URL });
+    window.close();
+  });
+  abrir.append(icone('saida'));
+  abrir.classList.add('botao--saida');
+  bloco.append(abrir);
+
+  const nota = document.createElement('p');
+  nota.className = 'nota nota--solta';
+  nota.textContent = 'Auditoria de acessos, recuperação por administrador e a lista de quem usa o cofre ficam lá.';
+  bloco.append(nota);
+  return bloco;
+}
 
 function formatarData(iso) {
   if (!iso) return '—';
@@ -1143,7 +1541,7 @@ $('#sair').addEventListener('click', async () => {
   ir('login', { empilhar: false });
 });
 
-// ── navegação e ciclo de vida ───────────────────────────────────────────────
+// ── navegação e teclado ─────────────────────────────────────────────────────
 
 $$('[data-voltar]').forEach((botaoVoltar) => botaoVoltar.addEventListener('click', () => {
   if (confirmacaoPendente) {
@@ -1154,9 +1552,52 @@ $$('[data-voltar]').forEach((botaoVoltar) => botaoVoltar.addEventListener('click
   voltar();
 }));
 
+function digitando(alvo) {
+  return alvo instanceof HTMLInputElement || alvo instanceof HTMLTextAreaElement || alvo instanceof HTMLSelectElement;
+}
+
 document.addEventListener('keydown', (evento) => {
-  if (evento.key === 'Escape' && $('.tela:not(.oculto)')?.dataset.tela !== 'lista') voltar();
+  const naLista = $('.tela:not(.oculto)')?.dataset.tela === 'lista';
+
+  if (evento.key === 'Escape') {
+    if (naLista && !$('#caixa-busca').classList.contains('oculto')) return alternarBusca(false);
+    if (!naLista) return voltar();
+    return;
+  }
+
+  if (!naLista) return;
+
+  // "/" abre a busca sem precisar de mouse.
+  if (evento.key === '/' && !digitando(evento.target)) {
+    evento.preventDefault();
+    return alternarBusca(true);
+  }
+
+  // ⌘C (Ctrl+C no Windows) copia o código da linha ativa — a que está sob o
+  // cursor, ou a que tem o foco. Só quando não há texto selecionado, senão
+  // atrapalharia a cópia normal.
+  if ((evento.metaKey || evento.ctrlKey) && evento.key.toLowerCase() === 'c') {
+    if (digitando(evento.target)) return;
+    if (!window.getSelection()?.isCollapsed) return;
+    if (!estado.linhaAtiva) return;
+    evento.preventDefault();
+    return copiarCodigo(estado.linhaAtiva);
+  }
+
+  if (evento.key === 'ArrowDown' || evento.key === 'ArrowUp') {
+    const linhas = $$('.item');
+    if (linhas.length === 0) return;
+    evento.preventDefault();
+    const atual = linhas.findIndex((l) => l.dataset.id === estado.linhaAtiva);
+    const passo = evento.key === 'ArrowDown' ? 1 : -1;
+    const proxima = linhas[Math.min(linhas.length - 1, Math.max(0, (atual === -1 ? 0 : atual + passo)))];
+    estado.linhaAtiva = proxima.dataset.id;
+    proxima.focus();
+    atualizarContadores();
+  }
 });
+
+// ── ciclo de vida ───────────────────────────────────────────────────────────
 
 tickTimer = setInterval(atualizarContadores, 1000);
 window.addEventListener('unload', () => {

@@ -4,20 +4,21 @@
 
 body {
   margin: 0;
-  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #1c1c1e;
+  font: 13px/1.45 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+        'Segoe UI', system-ui, sans-serif;
+  color: #15120F;
   background: #fff;
   padding: 14px;
 }
 
 header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-h1 { font-size: 14px; margin: 0; flex: 1; }
+h1 { font-size: 14px; font-weight: 600; letter-spacing: -.012em; margin: 0; flex: 1; }
 
 #fechar {
   border: 0; background: transparent; font-size: 22px; line-height: 1;
-  color: #8e8e93; cursor: pointer; padding: 0 4px;
+  color: #8B7E74; cursor: pointer; padding: 0 4px;
 }
-#fechar:hover { color: #1c1c1e; }
+#fechar:hover { color: #15120F; }
 
 .palco {
   position: relative;
@@ -49,10 +50,10 @@ video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .estado.achou { background: rgba(48, 209, 88, .92); font-weight: 600; }
 
 .camera-escolha { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; }
-.camera-escolha span { color: #6c6c70; }
+.camera-escolha span { color: #8B7E74; }
 select {
   flex: 1; padding: 5px 7px; border-radius: 7px;
-  border: 1px solid #d1d1d6; background: #fff; font: inherit;
+  border: 1px solid #EDE7E1; background: #fff; font: inherit;
 }
 
 .erro {
@@ -60,7 +61,7 @@ select {
   background: #fff2f2; border: 1px solid #ffc9c9; color: #c92a2a; font-size: 12px;
 }
 
-.rodape { margin: 12px 0 0; font-size: 11px; color: #8e8e93; }
+.rodape { margin: 12px 0 0; font-size: 11px; line-height: 1.5; color: #8B7E74; }
 
 .oculto { display: none !important; }
 
@@ -78,9 +79,9 @@ select {
 
 .botao {
   flex: 1; padding: 8px 12px; border-radius: 9px; cursor: pointer;
-  border: 1px solid #d1d1d6; background: #fff; color: #1c1c1e;
-  font: inherit; font-size: 12.5px; font-weight: 600;
+  border: 1px solid #EDE7E1; background: #fff; color: #15120F;
+  font: inherit; font-size: 12.5px; font-weight: 500;
 }
-.botao:hover { background: #f7f7f8; }
-.botao.primario { background: #1c7c3c; border-color: #1c7c3c; color: #fff; }
-.botao.primario:hover { background: #17672f; }
+.botao:hover { background: #FAF7F4; }
+.botao.primario { background: #15120F; border-color: #15120F; color: #fff; font-weight: 600; }
+.botao.primario:hover { background: #33291F; }

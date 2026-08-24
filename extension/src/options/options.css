@@ -5,12 +5,13 @@
  * `style=`. A regra é boa: é a mesma porta por onde entraria estilo injetado.
  */
 
-html, body { width: auto; max-width: 720px; margin: 0 auto; padding: 28px 22px 60px; max-height: none; }
-    h1 { font-size: 20px; margin: 0 0 4px; }
-    h2 { font-size: 12px; margin: 26px 0 8px; }
-    ul { margin: 0; padding-left: 18px; color: var(--texto-suave); font-size: 13px; line-height: 1.65; }
-    ul strong { color: var(--texto); }
-    .cartao { background: var(--fundo-cartao); border: 1px solid var(--borda); border-radius: var(--raio); padding: 16px 18px; margin-bottom: 14px; }
+html, body { background: var(--marfim); width: auto; max-width: 720px; margin: 0 auto; padding: 28px 22px 60px; max-height: none; }
+h1 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin: 0 0 4px; }
+h2 { font-size: 13px; font-weight: 600; letter-spacing: -.01em; margin: 0 0 10px; text-transform: none; color: var(--texto); opacity: 1; }
+ul { margin: 0; padding-left: 18px; color: var(--texto-suave); font-size: 13px; line-height: 1.65; }
+ul strong { color: var(--texto); font-weight: 600; }
+ul code { font-size: 12px; background: var(--afundado); padding: 1px 5px; border-radius: 5px; }
+    .cartao { background: var(--fundo-cartao); border: 1px solid var(--borda); border-radius: 14px; padding: 18px 20px; margin-bottom: 12px; }
 
 .cabecalho-sobre { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
 .logo-sobre { border-radius: 10px; }

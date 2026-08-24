@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.6',
+    date: '24/08/2026',
+    summary: 'A extensão do Authenticator ganhou uma interface mais limpa e uma abertura leve com a marca oficial do Jurius.',
+    modules: [
+      {
+        moduleId: 'authenticator',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Carregamento mais leve, com a marca oficial',
+            description: 'A antiga sequência de anéis, órbita, pulso e cortina foi substituída pela logo real do Jurius, um halo discreto e três pontos laranja que acendem em sequência. A abertura continua cobrindo apenas o tempo necessário para o cofre responder.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Visual renovado e aparência configurável na extensão 1.1.0',
+            description: 'O popup, a câmera e as configurações ficaram mais claros e consistentes. Também é possível seguir a aparência do sistema ou escolher os temas claro e escuro. Quem já usa a extensão precisa baixar novamente pelo cofre e recarregá-la no Chrome.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.5',
     date: '24/08/2026',
     summary: 'O convite para baixar a extensão do Authenticator passa a olhar o navegador em que você está, e não a sua conta.',

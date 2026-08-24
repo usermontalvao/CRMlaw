@@ -22,8 +22,8 @@
       <li><strong>A sua senha não fica guardada.</strong> Ela existe apenas dentro da requisição de login e é descartada em seguida.</li>
       <li><strong>Nada vai para <code>chrome.storage.sync</code>.</strong> O token curto fica na memória da sessão; só o token de renovação persiste, no armazenamento local da extensão.</li>
       <li><strong>QR é lido aqui dentro.</strong> A imagem não é enviada a serviço nenhum e não fica guardada.</li>
-      <li><strong>Nada acontece sozinho.</strong> O código só vai para a área de transferência, ou para o campo da página, quando você clica em COPIAR ou PREENCHER.</li>
-      <li><strong>Nenhuma página é lida.</strong> Não há script de conteúdo e nada roda em segundo plano nas suas abas. Ao clicar em PREENCHER, a extensão escreve o código no campo da aba atual e sai — não lê o conteúdo da página, não envia nada de volta e não submete o formulário.</li>
+      <li><strong>Nada acontece sozinho.</strong> O código só vai para a área de transferência, ou para o campo da página, quando você clica em <strong>Preencher</strong>, no ícone de copiar ou no atalho de cópia.</li>
+      <li><strong>Nenhuma página é lida.</strong> Não há script de conteúdo e nada roda em segundo plano nas suas abas. Ao pedir <strong>Preencher</strong>, a extensão escreve o código no campo da aba atual e sai — não lê o conteúdo da página, não envia nada de volta e não submete o formulário.</li>
       <li><strong>O PIN é pedido uma vez.</strong> Ao ligar este dispositivo, entram senha e PIN. Depois disso a extensão não pergunta mais — quem pede o PIN a cada abertura é o atalho do CRM, porque o navegador do escritório fica aberto na mesa.</li>
     </ul>
   </div>
@@ -33,7 +33,7 @@
     <ul>
       <li><code>storage</code> — guardar o token de renovação e o identificador deste dispositivo.</li>
       <li><code>alarms</code> — renovar a sessão antes de ela vencer, para o popup abrir instantâneo.</li>
-      <li><code>activeTab</code> + <code>scripting</code> — escrever o código no campo quando você clica em PREENCHER. O <code>activeTab</code> vale para <strong>uma</strong> aba, concedido por aquele clique, e caduca quando a aba navega. Não há permissão para site nenhum: sem o seu clique, a extensão não alcança página alguma.</li>
+      <li><code>activeTab</code> + <code>scripting</code> — escrever o código no campo quando você pede <strong>Preencher</strong>. O <code>activeTab</code> vale para <strong>uma</strong> aba, concedido por aquele clique, e caduca quando a aba navega. Não há permissão para site nenhum: sem o seu clique, a extensão não alcança página alguma.</li>
       <li>Acesso a <code>…supabase.co/functions/v1/totp-vault/*</code> — o endereço do cofre, e só ele.</li>
     </ul>
   </div>
