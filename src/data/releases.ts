@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.2',
+    date: '24/08/2026',
+    summary: 'Quem recebe uma chave passa a vê-la na tela de gerenciar — e pode sair dela quando não precisar mais.',
+    modules: [
+      {
+        moduleId: 'authenticator',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'As chaves compartilhadas com você aparecem em "Minhas chaves"',
+            description: 'A tela só mostrava as chaves das quais a pessoa é dona. Quem usava chaves recebidas de outra pessoa via "Minhas chaves 0" e um convite para adicionar a primeira — mesmo usando várias todos os dias. Agora elas aparecem numa seção própria, com o nome de quem compartilhou e o que você pode fazer com cada uma.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Sair de uma chave que compartilharam com você',
+            description: 'Antes só o dono conseguia remover um acesso, então quem não queria mais uma chave precisava pedir. Agora há o botão "Sair" na própria chave. A chave não é excluída: ela continua com o dono, que é avisado da saída e pode compartilhar de novo se você voltar a precisar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.1',
     date: '24/08/2026',
     summary: 'A aba "Chaves compartilhadas" do cofre ficava carregando para sempre. Ela volta a abrir — e, quando algo falha, passa a dizer o que houve.',

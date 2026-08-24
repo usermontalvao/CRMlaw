@@ -9,6 +9,7 @@ import {
   type VaultShareSummary,
 } from '../services/authenticator.service';
 import { zc } from '../styles/layers';
+import { useAuth } from '../contexts/AuthContext';
 import AuthenticatorCredentialAccessModal from './AuthenticatorCredentialAccessModal';
 import AuthenticatorCreateCredentialModal from './AuthenticatorCreateCredentialModal';
 
@@ -50,6 +51,7 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
   const [sharesLoaded, setSharesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ message: string; type: 'ok' | 'error' } | null>(null);
+  const { user } = useAuth();
 
   const mine = useMemo(
     () => credentials
@@ -58,13 +60,36 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
     [credentials],
   );
 
-  const visible = useMemo(() => {
-    const term = query.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (!term) return mine;
-    return mine.filter((credential) =>
-      `${credential.name} ${credential.issuer ?? ''} ${credential.owner_name ?? ''}`
-        .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term));
-  }, [mine, query]);
+  const combina = (credential: VaultCredentialSummary, term: string) =>
+    !term || `${credential.name} ${credential.issuer ?? ''} ${credential.owner_name ?? ''}`
+      .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(term);
+
+  const termoBusca = query.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  const visible = useMemo(
+    () => mine.filter((credential) => combina(credential, termoBusca)),
+    [mine, termoBusca],
+  );
+
+  /**
+   * As chaves que compartilharam COM esta pessoa.
+   *
+   * Faltavam na tela inteira: quem s\u00f3 tem USE via "Minhas chaves 0" e o convite
+   * para adicionar a primeira chave, enquanto usava treze todos os dias. A
+   * lista dizia respeito ao que a pessoa ADMINISTRA, n\u00e3o ao que ela tem \u2014 e
+   * quem recebeu uma chave tem a chave.
+   *
+   * Ficam numa se\u00e7\u00e3o pr\u00f3pria, sem caixa de sele\u00e7\u00e3o: as a\u00e7\u00f5es em lote s\u00e3o
+   * compartilhar e excluir, e nenhuma das duas se aplica a uma chave de outra
+   * pessoa. O que se pode fazer aqui \u00e9 sair dela.
+   */
+  const recebidas = useMemo(
+    () => credentials
+      .filter((credential) => !credential.is_owner)
+      .filter((credential) => combina(credential, termoBusca))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+    [credentials, termoBusca],
+  );
 
   const selectedCredentials = useMemo(
     () => mine.filter((credential) => selectedIds.has(credential.id)),
@@ -120,6 +145,35 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
    * olhando, não do componente.
    */
   const tentouCarregarShares = useRef(false);
+
+  /**
+   * Sair de uma chave que compartilharam comigo.
+   *
+   * Pede confirmação porque é irreversível do lado de cá: quem sai não se
+   * reconvida — o acesso volta a depender de o dono compartilhar de novo. E a
+   * chave em si não é tocada; some da lista de quem saiu, e mais nada.
+   */
+  const sairDaChave = async (credential: VaultCredentialSummary) => {
+    if (!user?.id) {
+      notify('Sua sessão expirou. Entre novamente no CRM.', 'error');
+      return;
+    }
+    if (!window.confirm(
+      `Sair de "${credential.name}"?\n\nVocê deixa de gerar os códigos desta chave. `
+      + `A chave NÃO é excluída — ela continua com ${credential.owner_name ?? 'o proprietário'}, `
+      + 'que precisará compartilhá-la de novo se você voltar a precisar.',
+    )) return;
+    setProcessing(true);
+    try {
+      await authenticatorService.leaveShare(credential.id, user.id);
+      notify(`Você saiu de "${credential.name}".`);
+      await onChanged('revoked', [credential.id]);
+    } catch (cause: any) {
+      notify(cause?.message ?? 'Não foi possível sair desta chave.', 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   const loadShares = async () => {
     tentouCarregarShares.current = true;
@@ -377,7 +431,9 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
             <div className="border-b border-slate-100 px-5 pt-3">
               <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Áreas do gerenciamento">
                 <button type="button" role="tab" aria-selected={activeTab === 'mine'} onClick={() => { setActiveTab('mine'); setQuery(''); setError(null); }} className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold transition-colors ${activeTab === 'mine' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                  <KeyRound size={13} /> Minhas chaves <span className="text-[10px] font-normal text-slate-400">{mine.length}</span>
+                  {/* O contador é tudo o que a pessoa TEM, próprio e recebido.
+                      Contar só as próprias mostrava "0" a quem usa treze. */}
+                  <KeyRound size={13} /> Minhas chaves <span className="text-[10px] font-normal text-slate-400">{credentials.length}</span>
                 </button>
                 {canManage && (
                   <button type="button" role="tab" aria-selected={activeTab === 'shared'} onClick={() => { setActiveTab('shared'); setSelectedIds(new Set()); setQuery(''); setError(null); }} className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-semibold transition-colors ${activeTab === 'shared' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
@@ -411,10 +467,13 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
             {activeTab === 'mine' ? (
               <>
                 <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                  {visible.length === 0 ? (
+                  {/* O vazio só é vazio quando não há NADA — nem própria, nem
+                      recebida. Antes ele olhava só para as próprias e dizia
+                      "você ainda não adicionou uma chave" a quem tinha treze. */}
+                  {visible.length === 0 && recebidas.length === 0 ? (
                     <div className="px-4 py-10 text-center">
                       <KeyRound size={22} className="mx-auto text-slate-300" />
-                      <p className="mt-2 text-[12.5px] font-medium text-slate-500">{query ? 'Nenhuma chave encontrada.' : 'Você ainda não adicionou uma chave.'}</p>
+                      <p className="mt-2 text-[12.5px] font-medium text-slate-500">{query ? 'Nenhuma chave encontrada.' : 'Você ainda não tem nenhuma chave.'}</p>
                       {!query && canCreate && <button type="button" onClick={() => setCreating(true)} className="mt-3 text-[12px] font-semibold text-amber-700 hover:text-amber-800">Adicionar minha primeira chave</button>}
                     </div>
                   ) : visible.map((credential) => {
@@ -433,6 +492,47 @@ export const AuthenticatorCredentialsManagerModal: React.FC<{
                       </div>
                     );
                   })}
+
+                  {recebidas.length > 0 && (
+                    <>
+                      <div className="mb-1 mt-4 flex items-center gap-2 px-2 first:mt-0">
+                        <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+                          Compartilhadas com você
+                        </span>
+                        <span className="h-px flex-1 bg-slate-100" />
+                        <span className="text-[10.5px] text-slate-400">{recebidas.length}</span>
+                      </div>
+                      {recebidas.map((credential) => (
+                        <div key={credential.id} className="flex items-center gap-2 rounded-xl px-2 py-1 transition-colors hover:bg-slate-50">
+                          {/* Sem caixa de seleção: as ações em lote são
+                              compartilhar e excluir, e nenhuma vale para a
+                              chave de outra pessoa. O recuo alinha com as de
+                              cima, para as duas listas lerem como uma só. */}
+                          <span className="ml-[25px] flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-500"><KeyRound size={16} /></span>
+                          <span className="min-w-0 flex-1 py-2">
+                            <span className="block truncate text-[13px] font-semibold text-slate-800">{credential.name}</span>
+                            <span className="mt-0.5 block truncate text-[10.5px] text-slate-500">
+                              De {credential.owner_name ?? 'outro usuário'}
+                              {credential.role === 'USE' ? ' · você pode usar'
+                                : credential.role === 'MANAGE' ? ' · você pode usar e compartilhar'
+                                : credential.role === 'EXPORT' ? ' · você pode usar, compartilhar e exportar'
+                                : ''}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            disabled={processing}
+                            onClick={() => void sairDaChave(credential)}
+                            className="flex flex-none items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10.5px] font-semibold text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:opacity-45"
+                            title={`Sair de ${credential.name}`}
+                          >
+                            <UserMinus size={12} /> Sair
+                          </button>
+                          <button type="button" onClick={() => setOpenedCredential(credential)} className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-transparent text-slate-400 hover:bg-white hover:text-amber-700" title="Abrir detalhes" aria-label={`Abrir detalhes de ${credential.name}`}><ChevronRight size={16} /></button>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
 
                 <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-3">

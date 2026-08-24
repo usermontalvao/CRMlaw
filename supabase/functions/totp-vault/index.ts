@@ -1820,11 +1820,23 @@ async function handleGrantPermission(ctx: Ctx, credentialId: string): Promise<Re
 async function handleRevokePermission(ctx: Ctx, credentialId: string, targetUserId: string): Promise<Response> {
   const actor = requireActor(ctx);
 
-  // Revogar é a ação que o administrador PODE fazer sem break-glass: é tirar
-  // acesso, não ganhar. Por isso o caminho alternativo aqui.
+  // Sair de uma chave é direito de quem recebeu.
+  //
+  // Só MANAGE revogava, e isso deixava quem tem USE preso a um acesso que não
+  // pediu: para largar a chave era preciso pedir ao dono. Mas tirar o PRÓPRIO
+  // acesso não é escalada — é a única direção em que a pessoa só perde poder,
+  // e por isso não passa pela régua de `share`.
+  //
+  // Vem antes de tudo porque é o caso mais restrito: alvo e ator são a mesma
+  // pessoa. O dono não cabe aqui — ele não tem linha em `totp_permissions`, e
+  // largar a própria chave é transferir ou apagar, não revogar.
+  const saindoDaPropriaChave = targetUserId === actor.userId;
+
   let row: { id: string; owner_user_id: string; name: string };
   try {
-    const authorized = await loadAuthorized(ctx, actor, credentialId, 'share', METADATA_COLUMNS);
+    // Para sair, basta enxergar a chave: quem tem USE já a enxerga.
+    const acao = saindoDaPropriaChave ? 'read_metadata' : 'share';
+    const authorized = await loadAuthorized(ctx, actor, credentialId, acao, METADATA_COLUMNS);
     row = authorized.row;
   } catch (error) {
     if (!(error instanceof HttpError) || !adminCan(actor.isActive, actor.isAdmin, 'revoke_share')) throw error;
@@ -1835,6 +1847,15 @@ async function handleRevokePermission(ctx: Ctx, credentialId: string, targetUser
       .maybeSingle();
     if (!data) throw new HttpError(404, 'Credencial não encontrada.');
     row = data as { id: string; owner_user_id: string; name: string };
+  }
+
+  // FORA do try de propósito: dentro dele, o catch de administrador engoliria
+  // esta recusa e um admin dono da chave passaria batido por ela.
+  if (saindoDaPropriaChave && row.owner_user_id === actor.userId) {
+    throw new HttpError(
+      400,
+      'Esta chave é sua. Para deixar de tê-la, transfira a propriedade ou exclua a chave.',
+    );
   }
 
   const { error } = await ctx.db
@@ -1848,18 +1869,36 @@ async function handleRevokePermission(ctx: Ctx, credentialId: string, targetUser
     event_type: 'ACCESS_REVOKED',
     credential_id: row.id,
     target_user_id: targetUserId,
-    metadata_safe: { by_admin: row.owner_user_id !== actor.userId && actor.isAdmin },
+    metadata_safe: {
+      by_admin: !saindoDaPropriaChave && row.owner_user_id !== actor.userId && actor.isAdmin,
+      // Sem isto, sair da chave e ser expulso dela ficam iguais no registro —
+      // e são fatos diferentes na hora de entender o que aconteceu.
+      self_removed: saindoDaPropriaChave,
+    },
   });
 
-  // Avisar também quando o acesso SAI. Descobrir que uma chave sumiu bem na
-  // hora de usá-la é pior do que saber antes que ela foi retirada.
-  await notifyUser(ctx, {
-    userId: targetUserId,
-    type: 'totp_revoked',
-    title: 'Seu acesso a uma chave foi removido',
-    message: `Você não gera mais os códigos de "${row.name}" no Authenticator.`,
-    metadata: { credential_id: row.id, credential_name: row.name, revoked_by: actor.userId },
-  });
+  if (saindoDaPropriaChave) {
+    // Quem saiu já sabe que saiu. Quem precisa saber é o DONO: para ele, um
+    // acesso que ele concedeu simplesmente deixou de existir, e descobrir isso
+    // só ao conferir a lista é descobrir tarde.
+    await notifyUser(ctx, {
+      userId: row.owner_user_id,
+      type: 'totp_revoked',
+      title: `${await actorDisplayName(ctx, actor)} saiu de uma chave sua`,
+      message: `A pessoa removeu o próprio acesso a "${row.name}". Se ela precisar de novo, compartilhe outra vez.`,
+      metadata: { credential_id: row.id, credential_name: row.name, left_by: actor.userId },
+    });
+  } else {
+    // Avisar também quando o acesso SAI. Descobrir que uma chave sumiu bem na
+    // hora de usá-la é pior do que saber antes que ela foi retirada.
+    await notifyUser(ctx, {
+      userId: targetUserId,
+      type: 'totp_revoked',
+      title: 'Seu acesso a uma chave foi removido',
+      message: `Você não gera mais os códigos de "${row.name}" no Authenticator.`,
+      metadata: { credential_id: row.id, credential_name: row.name, revoked_by: actor.userId },
+    });
+  }
 
   // A revogação vale AGORA: a extensão não guarda segredo, e o código só sai
   // depois de o backend reconsultar a ACL. Não há cache para esperar vencer.

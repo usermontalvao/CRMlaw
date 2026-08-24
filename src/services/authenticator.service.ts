@@ -259,6 +259,18 @@ class AuthenticatorService {
     return chamar<{ ok: true }>(`/credentials/${id}/permissions/${userId}`, { method: 'DELETE' });
   }
 
+  /**
+   * Sair de uma chave que compartilharam com você.
+   *
+   * É a MESMA rota de revogar, com o alvo apontando para si — e é o backend que
+   * reconhece o caso e dispensa o MANAGE, porque tirar o próprio acesso é a
+   * única direção em que a pessoa só perde poder. Fica com nome próprio aqui
+   * para a tela não parecer estar revogando o acesso de outra pessoa.
+   */
+  leaveShare(id: string, meuUserId: string) {
+    return this.revokeShare(id, meuUserId);
+  }
+
   /** Compartilhamentos das chaves que a pessoa pode gerenciar (sem segredos). */
   listShares() {
     return chamar<{ shares: VaultShareSummary[] }>('/shares');
