@@ -127,19 +127,34 @@ export const client360Api = {
     // front-end sobem separados neste projeto, então a chamada nova tem de
     // saber cair na antiga — senão "Nova conversa" abre com erro no dia em que
     // o front sobe primeiro.
+    const termo = (query ?? '').trim();
+    let peneirarAqui = false;
     let { data, error } = await supabase.rpc('whatsapp_contact_book', {
-      p_query: (query ?? '').trim() || null,
+      p_query: termo || null,
       p_limit: limit,
     });
     if (error && (error.code === 'PGRST202' || /function/i.test(error.message))) {
+      // A antiga devolve a AGENDA INTEIRA, sem saber do termo. Sem a peneira
+      // abaixo, quem pediu uma busca recebia todo mundo de volta — e o painel,
+      // que junta a resposta desta chamada com a página local, mostrava a
+      // agenda completa a cada tecla. Era esse o "filtro que não filtra".
+      peneirarAqui = termo.length > 0;
       ({ data, error } = await supabase.rpc('whatsapp_contact_book'));
     }
     if (error) throw new Error(error.message);
-    const rows = (data || []) as {
+    let rows = (data || []) as {
       client_id: string; full_name: string;
       phone: string; phone_kind: 'mobile' | 'phone';
       wa_avatar_path: string | null; is_pre_cadastro: boolean | null;
     }[];
+
+    if (peneirarAqui) {
+      const alvo = normalizeSearchText(termo);
+      const digitos = termo.replace(/\D/g, '');
+      rows = rows
+        .filter(r => normalizeSearchText(r.full_name).includes(alvo) || (digitos !== '' && r.phone.includes(digitos)))
+        .slice(0, limit);
+    }
 
     // `attachAvatarUrls` assina em lote e é o dono do cache; emprestamos a ele
     // o formato que ele conhece em vez de abrir um segundo caminho de assinatura.

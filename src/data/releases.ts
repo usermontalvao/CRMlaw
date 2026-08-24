@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.10',
+    date: '24/08/2026',
+    summary: 'A busca da agenda do WhatsApp voltou a filtrar corretamente e a limpeza da conversa ficou em um local mais seguro.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Busca da agenda realmente filtra os contatos',
+            description: 'Quando o servidor ainda usa a versão anterior da busca, o CRM agora aplica o filtro de nome e telefone localmente. Digitar na busca deixa de devolver a agenda inteira.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Limpar conversa fica ao lado da opção de baixar o histórico',
+            description: 'A ação irreversível saiu da barra de uso diário e foi para o painel de detalhes, logo abaixo de “Baixar tudo da conversa”, com um aviso claro para fazer o backup antes de apagar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.9',
     date: '24/08/2026',
     summary: 'Reabrir um link de preenchimento concluído agora continua o documento na assinatura ou na verificação.',

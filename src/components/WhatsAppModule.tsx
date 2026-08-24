@@ -3004,13 +3004,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                     <CheckCircle2 size={16} />
                   </button>
                 ))}
-                {/* Limpar conversa (apaga as mensagens; mantém a conversa) */}
-                {perms.canBlock && messages.length > 0 && (
-                  <button onClick={handleClearConversation} title="Limpar conversa"
-                    className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-red-50 text-slate-600 hover:text-red-600 flex items-center justify-center transition">
-                    <Trash2 size={16} />
-                  </button>
-                )}
+                {/* A lixeira saiu daqui. "Limpar conversa" apaga o histórico
+                    inteiro e não tem volta — não é vizinha de Transferir e
+                    Encerrar, que são o trabalho de todo dia. Ela vive no painel
+                    de detalhes, logo abaixo de "Baixar tudo da conversa": quem
+                    vai apagar quase sempre quer o arquivo antes, e essa ordem
+                    põe o backup no caminho da mão. */}
                 {!panelDocked && (
                   <button onClick={() => setMobilePanelOpen(true)} title="Detalhes do contato"
                     className="flex-shrink-0 w-9 h-9 rounded-lg bg-[#f3f2ef] hover:bg-amber-50 text-slate-600 hover:text-amber-700 flex items-center justify-center transition">
@@ -3083,9 +3082,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                           )) : (acoes.encerrar && (
                             <button className={item} onClick={run(openCloseConversation)}><CheckCircle2 size={16} className="text-emerald-500" /> Encerrar atendimento</button>
                           ))}
-                          {perms.canBlock && messages.length > 0 && (
-                            <button className={`${item} text-red-600 hover:bg-red-50`} onClick={run(handleClearConversation)}><Trash2 size={16} /> Limpar conversa</button>
-                          )}
+                          {/* "Limpar conversa" não está aqui: é destrutiva e
+                              mora no painel de detalhes, abaixo do arquivo da
+                              conversa (o item acima abre esse painel). */}
                         </div>
                       </>
                     );
@@ -3764,6 +3763,27 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
             conversationIds={threadIds.length > 0 ? threadIds : [selected.id]}
             contactName={conversationName(selected)}
           />
+
+          {/* Limpar a conversa (apaga as mensagens; a conversa continua).
+              Desceu da barra do cabeçalho para cá, logo abaixo do arquivo: é
+              destrutiva e sem volta, e ficar a um pixel de "Encerrar" fazia dela
+              um clique de rotina. Aqui, o passo anterior na coluna é justamente
+              baixar tudo — a ordem sugere o backup antes do apagar. */}
+          {perms.canBlock && messages.length > 0 && (
+            <div className="space-y-1.5">
+              <button
+                onClick={handleClearConversation}
+                title="Apaga as mensagens desta conversa para o escritório. A conversa e o contato continuam."
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#f3f2ef] py-2 text-[11.5px] font-semibold text-slate-600 transition hover:bg-red-50 hover:text-red-600"
+              >
+                <Trash2 size={13} />
+                Limpar conversa
+              </button>
+              <p className="px-0.5 text-[10px] leading-snug text-slate-400">
+                Apaga o histórico de mensagens. Não tem volta — baixe o arquivo antes.
+              </p>
+            </div>
+          )}
 
           {/* Assunto detectado pela IA (somente leitura; preenchido ao encerrar o atendimento) */}
           {selected.contact_reason && (
