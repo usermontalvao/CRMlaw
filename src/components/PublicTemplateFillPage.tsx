@@ -1,10 +1,10 @@
 import PizZip from 'pizzip';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, AlertCircle, MessageCircle, Mail } from 'lucide-react';
-import { templateFillService } from '../services/templateFill.service';
+import { templateFillService, type TemplateFillBundle } from '../services/templateFill.service';
 import type { CustomField, TemplateCustomField } from '../types/document.types';
 import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
-import { buildPublicSigningUrl } from '../utils/publicAppUrl';
+import { buildPublicSigningUrl, buildPublicVerificationUrl } from '../utils/publicAppUrl';
 import PublicFlowLoader from './PublicFlowLoader';
 
 interface PublicTemplateFillPageProps {
@@ -230,7 +230,10 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [bundle, setBundle] = useState<Awaited<ReturnType<typeof templateFillService.getBundle>> | null>(null);
+  const [bundle, setBundle] = useState<TemplateFillBundle | null>(null);
+  // Levando a pessoa para a assinatura/verificação: a animação fica de pé até o
+  // navegador trocar de página, senão pisca "link indisponível" no caminho.
+  const [redirecting, setRedirecting] = useState(false);
   const [placeholders, setPlaceholders] = useState<string[]>([]);
   const [officeContact, setOfficeContact] = useState<Awaited<ReturnType<typeof templateFillService.getOfficeContact>> | null>(null);
   const heartbeatStartedRef = useRef(false);
@@ -319,6 +322,21 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
         setLoading(true);
         setError(null);
         const b = await templateFillService.getBundle(token);
+
+        // O link já cumpriu o preenchimento: em vez da tela de "indisponível",
+        // ele leva ao passo seguinte do mesmo kit — assinar, ou ver o que já
+        // foi assinado. A animação continua de pé até o navegador trocar de
+        // página; não há nada para mostrar aqui no meio-tempo.
+        if ('redirect' in b) {
+          const destino = b.redirect.kind === 'verify'
+            ? buildPublicVerificationUrl(b.redirect.token)
+            : buildPublicSigningUrl(b.redirect.token);
+          clearDraft(token);
+          setRedirecting(true);
+          window.location.replace(destino);
+          return;
+        }
+
         setBundle(b);
         const d = readDraft(token);
         const prefill = b.prefill ?? {};
@@ -900,7 +918,7 @@ const PublicTemplateFillPage: React.FC<PublicTemplateFillPageProps> = ({ token }
     submitNow();
   }, [activeStep, submitting, result]);
 
-  if (loading) {
+  if (loading || redirecting) {
     return <PublicFlowLoader />;
   }
 

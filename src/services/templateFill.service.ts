@@ -16,14 +16,33 @@ export type OfficeContact = {
   logo_url: string | null;
 };
 
+/**
+ * O que o link de preenchimento devolve quando o kit JÁ ANDOU.
+ *
+ * `sign`   → o formulário já foi enviado; o token é o do signatário.
+ * `verify` → já foi assinado; o token é o código de verificação do documento.
+ *
+ * Só o token vem do servidor: a URL é montada aqui, por quem conhece o domínio
+ * público (ver `publicAppUrl.ts`).
+ */
+export type TemplateFillRedirect = { kind: 'sign' | 'verify'; token: string };
+
 class TemplateFillService {
-  async getBundle(token: string): Promise<TemplateFillBundle> {
+  /**
+   * Devolve o kit para preencher — ou, quando o link já cumpriu seu papel, para
+   * onde a pessoa deve ir em vez de ver "link indisponível".
+   */
+  async getBundle(token: string): Promise<TemplateFillBundle | { redirect: TemplateFillRedirect }> {
     const { data, error } = await supabase.functions.invoke('template-fill', {
       body: { action: 'get', token },
     });
 
     if (error) throw new Error(error.message);
     if (!data?.success) throw new Error(data?.error || 'Erro ao carregar link');
+
+    if (data.redirect?.token && (data.redirect.kind === 'sign' || data.redirect.kind === 'verify')) {
+      return { redirect: data.redirect as TemplateFillRedirect };
+    }
 
     return data as TemplateFillBundle;
   }

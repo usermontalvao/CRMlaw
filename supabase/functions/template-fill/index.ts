@@ -176,6 +176,60 @@ Deno.serve(async (req) => {
     if (linkError) throw new Error(linkError.message);
     if (!link) throw new Error('Link não encontrado');
 
+    // ── Link já preenchido não é link morto: é link ADIANTADO ────────────────
+    //
+    // Antes, reabrir o link de preenchimento depois de enviado dava "Este link
+    // não está mais disponível" — a mesma frase de um link expirado. Só que
+    // quem reabre esse link quase nunca quer preencher de novo: quer CONTINUAR.
+    // Fechou a aba antes de assinar, voltou do WhatsApp, clicou de novo no
+    // histórico da conversa. Mandar essa pessoa pedir um link novo ao
+    // escritório é perder uma assinatura que já estava pronta para acontecer.
+    //
+    // Então o link passa a apontar para o passo seguinte do MESMO kit:
+    //   · preenchido e ainda não assinado → a página de assinatura;
+    //   · já assinado → a verificação, onde estão os documentos e o código.
+    //
+    // O redirecionamento devolve só o TOKEN/CÓDIGO. Quem monta a URL é a tela
+    // pública (`buildPublicSigningUrl`/`buildPublicVerificationUrl`), que é
+    // quem sabe o domínio — a Edge Function não tem essa informação e
+    // adivinhá-la geraria link quebrado no dia em que o domínio mudasse.
+    if (action === 'get' && link.status === 'submitted' && link.signature_request_id) {
+      const { data: signers } = await admin
+        .from('signature_signers')
+        .select('public_token, status, verification_hash, order')
+        .eq('signature_request_id', link.signature_request_id)
+        .order('order', { ascending: true });
+
+      const lista = (signers ?? []) as Array<{
+        public_token: string | null;
+        status: string | null;
+        verification_hash: string | null;
+      }>;
+
+      // Quem ainda tem trabalho a fazer vem primeiro. "Recusado" também vai
+      // para a página de assinatura: é lá que a recusa está explicada.
+      const pendente = lista.find((s) => s.status !== 'signed' && s.public_token);
+      const assinado = lista.find((s) => s.status === 'signed' && s.verification_hash);
+
+      const destino = pendente
+        ? { kind: 'sign' as const, token: pendente.public_token as string }
+        : assinado
+          ? { kind: 'verify' as const, token: assinado.verification_hash as string }
+          // Assinado sem código de verificação (modelo por documento, em que o
+          // código mora em cada arquivo): a própria página de assinatura já
+          // mostra o estado "assinado" com os documentos finais.
+          : lista.find((s) => s.public_token)
+            ? { kind: 'sign' as const, token: lista.find((s) => s.public_token)!.public_token as string }
+            : null;
+
+      if (destino) {
+        return new Response(
+          JSON.stringify({ success: true, redirect: destino }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+    }
+
     if (link.status !== 'pending') {
       throw new Error('Este link não está mais disponível');
     }

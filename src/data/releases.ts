@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.9',
+    date: '24/08/2026',
+    summary: 'Reabrir um link de preenchimento concluído agora continua o documento na assinatura ou na verificação.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Link preenchido continua no passo seguinte',
+            description: 'Depois de enviar o formulário, reabrir o mesmo link deixa de mostrar “link indisponível”. Se ainda falta assinar, a pessoa é levada à assinatura; se o documento já foi assinado, segue para a verificação e os arquivos finais.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.8',
     date: '24/08/2026',
     summary: 'Novas janelas do CRM e do editor passam a reconhecer as permissões do usuário imediatamente.',
