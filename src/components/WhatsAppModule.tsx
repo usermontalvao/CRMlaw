@@ -1235,24 +1235,26 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
 
   // Abrir uma conversa já deixa o cursor no compositor: no WhatsApp você clica no
   // contato e digita. Sem isso era preciso um segundo clique na barra.
-  // Só no desktop — no celular o foco automático abriria o teclado por cima da
-  // conversa antes de o atendente ler qualquer coisa. Também não rouba o foco
-  // quando a conversa não aceita escrita (bloqueada) ou quando o clique veio de
-  // dentro de um campo (busca da inbox, por exemplo).
+  // Só fora de uma tela física pequena — no celular o foco automático abriria
+  // o teclado por cima da conversa antes de o atendente ler qualquer coisa. O
+  // widget usa layout "mobile" por ser estreito, mas continua no desktop: nele
+  // o foco é justamente o comportamento esperado. No módulo cheio também não
+  // roubamos o foco quando o clique veio de outro campo (busca, por exemplo);
+  // no widget, selecionar uma conversa encerra a busca e o compositor vence.
   // `conversations` fica fora das dependências de propósito: ele muda a cada
   // evento de realtime, e reagir a isso roubaria o foco do atendente no meio de
   // uma frase toda vez que qualquer conversa recebesse mensagem.
   const conversationsRef = useRef(conversations);
   conversationsRef.current = conversations;
   useEffect(() => {
-    if (!selectedId || isMobile) return;
+    if (!selectedId || rawIsMobile) return;
     if (conversationsRef.current.find(c => c.id === selectedId)?.is_blocked) return;
     const active = document.activeElement;
-    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+    if (!embedded && (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)) return;
     // Espera o commit da thread: focar antes faz o navegador rolar a lista.
     const id = window.setTimeout(() => draftRef.current?.focus({ preventScroll: true }), 0);
     return () => window.clearTimeout(id);
-  }, [selectedId, isMobile]);
+  }, [selectedId, rawIsMobile, embedded]);
 
   // Marca como lida ao abrir a conversa E a cada mensagem que chega com ela
   // aberta. A segunda metade é o que faltava: o contador de não-lidas vem do

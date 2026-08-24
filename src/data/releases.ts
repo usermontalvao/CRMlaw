@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.12',
+    date: '24/08/2026',
+    summary: 'Colar uma imagem e escrever pelo widget flutuante do WhatsApp ficaram mais rápidos, sem cliques extras.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Enter envia a imagem colada',
+            description: 'A prévia de uma imagem colada agora recebe o foco automaticamente. Pressionar Enter confirma o envio; Shift+Enter continua criando uma nova linha na legenda.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Conversa do widget já abre pronta para digitar',
+            description: 'Ao selecionar uma conversa no widget flutuante em um computador, o cursor entra automaticamente no campo de mensagem. Em telas móveis, o teclado continua fechado até a pessoa tocar no campo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.11',
     date: '24/08/2026',
     summary: 'A triagem por IA deixa de inventar respostas a partir de mídias sem texto e passa a confirmar datas antes de aplicar cortes.',

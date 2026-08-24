@@ -43,6 +43,7 @@ export const AttachmentPreviewModal: React.FC<{
   const [caption, setCaption] = useState(initialCaption);
   const [urls, setUrls] = useState<(string | null)[]>([]);
   const addInputRef = useRef<HTMLInputElement>(null);
+  const captionInputRef = useRef<HTMLTextAreaElement>(null);
   // A legenda atual em um ref: o `onClose` é chamado de lugares que não
   // re-assinam a cada tecla (atalho de teclado, clique no fundo), e é o texto
   // digitado AGORA que precisa voltar para o compositor.
@@ -50,6 +51,14 @@ export const AttachmentPreviewModal: React.FC<{
   captionRef.current = caption;
   /** Sai do preview devolvendo a legenda — ela vira o texto do compositor. */
   const fechar = useCallback(() => onClose(captionRef.current), [onClose]);
+
+  // A imagem colada já abre pronta para confirmar: o próximo Enter pertence à
+  // legenda/prévia, não ao compositor que ficou escondido atrás do modal. O
+  // requestAnimationFrame espera o portal terminar de montar antes do foco.
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => captionInputRef.current?.focus({ preventScroll: true }));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   // ── Anotação ──────────────────────────────────────────────────────────
   // Por índice de item: trocar de imagem na tira não pode perder o que já foi
@@ -477,7 +486,7 @@ export const AttachmentPreviewModal: React.FC<{
           {/* Legenda também é mensagem: mesma maiúscula automática do compositor.
               O cursor é reposto depois do render porque o campo é CONTROLADO —
               React reescreve o valor e jogaria o cursor para o fim. */}
-          <textarea value={caption}
+          <textarea ref={captionInputRef} autoFocus value={caption}
             onChange={e => {
               const el = e.currentTarget;
               const cursor = el.selectionStart ?? el.value.length;
