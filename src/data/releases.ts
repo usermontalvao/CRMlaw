@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.15',
+    date: '23/08/2026',
+    summary: 'Gerar documento virou um passo a passo lateral: cada etapa resolvida vira um trilho e devolve a tela para a próxima, até sobrar só o documento.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Uma etapa por vez, e a etapa resolvida encolhe para o lado',
+            description: 'Ao entrar em "Novo documento" só aparece a escolha do modelo, na largura toda. Escolheu: ela vira um trilho estreito à esquerda, com o nome do modelo escrito na vertical, e os dados abrem no espaço liberado. Confirmou os dados: eles também viram trilho, e o documento fica com a tela. Qualquer trilho reabre a etapa com um clique.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A prévia só carrega quando você manda',
+            description: 'Escolher o cliente ou preencher um campo não abre mais a prévia sozinho — nada é baixado enquanto você digita. A folha só é montada quando você clica em "Continuar para a prévia", que fica desabilitado enquanto houver campo obrigatório em branco e mostra o nome do que falta.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O documento ganhou a tela inteira',
+            description: 'A folha agora acompanha a largura da coluna em vez de ficar travada num tamanho fixo, e os botões saíram de cima dela: gerar, baixar em Word ou PDF e enviar para assinatura ficam numa barra flutuante sobre o documento. A lista de modelos também cresce até o rodapé, com a rolagem só dentro dela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.14',
     date: '23/08/2026',
     summary: 'A tela de gerar documento passou a mostrar a folha pronta ao lado, com o kit inteiro e o que ainda falta preencher em destaque.',

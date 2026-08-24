@@ -15,6 +15,7 @@ import TemplateFileRow from '../components/documents/TemplateFileRow';
 import TemplateFillLinkPanel, { type TemplateFillLinkKind } from '../components/documents/TemplateFillLinkPanel';
 import LinkGenerationOverlay from '../components/documents/LinkGenerationOverlay';
 import DocumentLivePreview, { type PreviewDocument } from '../components/documents/DocumentLivePreview';
+import SidePanel from '../components/documents/SidePanel';
 import { AlignmentType, Document as DocxDocument, Packer, Paragraph, TextRun } from 'docx';
 import type { DocumentTemplate } from '../types/document.types';
 
@@ -133,6 +134,129 @@ const useDocumentosDeExemplo = () => {
   return docs;
 };
 
+// A faixa de etapas da tela de gerar, nos três momentos. O conteúdo aqui é de
+// mentira; o que importa é o movimento: a etapa resolvida vira trilho em pé e
+// devolve a largura para a seguinte.
+const FaixaDeEtapas: React.FC<{ etapa: 'template' | 'data' | 'preview'; gerado?: boolean }> = ({ etapa, gerado }) => {
+  const [ativa, setAtiva] = useState(etapa);
+  const abreModelo = ativa === 'template';
+  const abreDados = ativa === 'data';
+  const abrePrevia = ativa === 'preview';
+  const mostraDados = etapa !== 'template';
+
+  return (
+    <div className="@container">
+      <div className="flex min-h-[420px] flex-col gap-4 @lg:flex-row @lg:items-stretch">
+        <SidePanel
+          step={1}
+          title="Escolha o modelo"
+          hint="O documento que vai ser gerado"
+          summary="KIT AUX. POR INCAPACIDADE TEMPORÁRIA"
+          open={abreModelo}
+          onToggle={() => setAtiva('template')}
+          done={!abreModelo}
+        >
+          <div className="space-y-2">
+            {['Procuração ad judicia', 'Contrato de honorários', 'Hipossuficiência', 'KIT AUX. POR INCAPACIDADE', 'KIT TRABALHISTA', 'KIT CONSUMIDOR'].map((nome, i) => (
+              <div
+                key={nome}
+                className={`flex items-start gap-3 rounded-xl border-2 p-3 text-sm ${
+                  i === 3
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/10'
+                    : 'border-[#e7e5df] bg-[#f8f7f5] dark:border-zinc-800 dark:bg-zinc-900'
+                }`}
+              >
+                <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-xs ${
+                  i === 3 ? 'bg-primary-100 dark:bg-primary-500/20' : 'bg-slate-100 dark:bg-zinc-800'
+                }`}>📄</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium text-slate-900 dark:text-zinc-100">{nome}</span>
+                  <span className="block text-xs text-slate-500 dark:text-zinc-400">1 doc + 2 anexos</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </SidePanel>
+
+        {mostraDados && (
+          <SidePanel
+            step={2}
+            title="Dados do documento"
+            hint="Cliente e os campos que o modelo pede"
+            summary="Maria Aparecida da Silva · 2 campos em branco"
+            open={abreDados}
+            onToggle={() => setAtiva('data')}
+            done={!!gerado}
+          >
+            <div className="flex flex-col gap-3">
+              <div>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Cliente *</p>
+                <div className="rounded-lg border border-[#e7e5df] bg-white px-4 py-2.5 text-sm text-slate-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100">
+                  Maria Aparecida da Silva
+                </div>
+              </div>
+              <div>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Finalidade</p>
+                <div className="rounded-lg border border-primary-300 bg-primary-50 px-4 py-2.5 text-sm text-primary-800 dark:border-primary-500/40 dark:bg-primary-500/10 dark:text-primary-300">
+                  Preencher finalidade...
+                </div>
+              </div>
+              <button
+                onClick={() => setAtiva('preview')}
+                className="mt-1 w-full rounded-xl bg-primary-500 px-6 py-3 text-sm font-semibold text-white"
+              >
+                Continuar para a prévia →
+              </button>
+            </div>
+          </SidePanel>
+        )}
+
+        {mostraDados && (
+          <SidePanel
+            step={3}
+            title="Prévia do documento"
+            hint="Confira antes de gerar"
+            summary={abrePrevia ? 'Documento conferido' : 'Ainda não revisado'}
+            open={abrePrevia}
+            onToggle={() => setAtiva('preview')}
+            done={!!gerado}
+          >
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              <div className="min-h-[260px] flex-1 overflow-hidden rounded-xl bg-slate-100/70 p-3 dark:bg-zinc-950/40">
+                <div className="mx-auto max-w-[420px] rounded-sm bg-white p-8 shadow-sm">
+                  <p className="mb-4 text-center text-sm font-bold">PROCURAÇÃO AD JUDICIA</p>
+                  <div className="space-y-2">
+                    {[96, 100, 92, 88, 100, 74, 90, 62].map((w, i) => (
+                      <div key={i} className="h-2 rounded bg-sky-100" style={{ width: `${w}%` }} />
+                    ))}
+                    <div className="h-2 w-1/3 rounded bg-primary-300" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 pb-3">
+                <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-full border border-[#e7e5df] bg-white/95 p-1.5 shadow-[0_12px_32px_-12px_rgba(15,23,42,.45)] backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
+                  <span className="rounded-full bg-primary-500 px-5 py-2.5 text-sm font-semibold text-white">
+                    {gerado ? 'Gerar de novo' : 'Gerar documentos'}
+                  </span>
+                  {gerado && (
+                    <>
+                      <span className="mx-0.5 h-6 w-px bg-[#e7e5df] dark:bg-zinc-700" />
+                      <span className="rounded-full px-3 py-2 text-xs font-medium text-slate-700 dark:text-zinc-200">Word</span>
+                      <span className="rounded-full px-3 py-2 text-xs font-medium text-slate-700 dark:text-zinc-200">PDF</span>
+                      <span className="rounded-full bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white">Assinatura</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </SidePanel>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const Bloco: React.FC<{ titulo: string; nota: string; children: React.ReactNode }> = ({ titulo, nota, children }) => (
   <section className="flex flex-col gap-3">
     <div>
@@ -231,6 +355,17 @@ const Palco: React.FC<{ escuro?: boolean }> = ({ escuro = false }) => {
               onDownload={nada}
               onRemove={nada}
             />
+          </div>
+        </Bloco>
+
+        <Bloco
+          titulo="Novo documento — as etapas encolhem para o lado"
+          nota="Accordion: uma etapa por vez. 1) só o modelo · 2) escolheu, ele vira trilho e os dados abrem · 3) só depois de 'Continuar para a prévia' a folha aparece."
+        >
+          <div className="flex flex-col gap-5">
+            <FaixaDeEtapas etapa="template" />
+            <FaixaDeEtapas etapa="data" />
+            <FaixaDeEtapas etapa="preview" gerado />
           </div>
         </Bloco>
 

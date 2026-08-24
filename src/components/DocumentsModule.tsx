@@ -6,12 +6,9 @@ import {
   Loader2,
   Trash2,
   FileDown,
-  BarChart3,
-  Users,
   BookOpen,
   X,
   Sparkles,
-  ArrowRight,
   CheckCircle2,
   Link2,
   Copy,
@@ -23,6 +20,7 @@ import {
   GripVertical,
   AlertTriangle,
   Check,
+  ChevronRight,
   MoreHorizontal,
 } from 'lucide-react';
 import PizZip from 'pizzip';
@@ -47,6 +45,7 @@ import TemplateFilesManager from './TemplateFilesManager';
 import TemplateCard from './documents/TemplateCard';
 import TemplateFillLinkPanel from './documents/TemplateFillLinkPanel';
 import DocumentLivePreview, { type PreviewDocument } from './documents/DocumentLivePreview';
+import SidePanel from './documents/SidePanel';
 import LinkGenerationOverlay, {
   DURACAO_DO_FECHO_MS,
   DURACAO_MINIMA_ANIMACAO_MS,
@@ -59,6 +58,13 @@ import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { SignerAuthMethod } from '../types/signature.types';
 import { LAYER } from '../styles/layers';
+import {
+  getBuiltInTemplateField,
+  humanizeTemplatePlaceholder,
+  isBuiltInTemplatePlaceholder,
+  mergeTemplateFieldDefinitions,
+  normalizeTemplateFieldKey,
+} from '../utils/documentTemplateFields';
 
 
 const defaultTemplateContent = `[[NOME COMPLETO]], [[nacionalidade]], [[estado civil]], [[profissão]], inscrito(a) no CPF sob o nº [[CPF]], residente e domiciliado(a) na [[endereço]], nº [[número]], [[complemento]], Bairro [[bairro]], [[cidade]] – [[estado]], CEP [[CEP]], telefone/WhatsApp [[celular]]
@@ -212,6 +218,54 @@ const extractPlaceholdersFromDocxZip = (zip: PizZip): string[] => {
   }
 };
 
+interface TemplatePlaceholderInventory {
+  placeholders: string[];
+  filesByKey: Record<string, string[]>;
+}
+
+/** Varre o documento principal e todos os DOCX anexos do kit. */
+const inspectTemplatePlaceholders = async (template: DocumentTemplate): Promise<TemplatePlaceholderInventory> => {
+  const byKey = new Map<string, { placeholder: string; files: Set<string> }>();
+
+  const register = (placeholder: string, fileName: string) => {
+    const key = normalizeTemplateFieldKey(placeholder);
+    const current = byKey.get(key) ?? { placeholder, files: new Set<string>() };
+    current.files.add(fileName);
+    byKey.set(key, current);
+  };
+
+  const inspectBlob = async (blob: Blob, fileName: string) => {
+    const zip = new PizZip(await blob.arrayBuffer());
+    extractPlaceholdersFromDocxZip(zip).forEach((placeholder) => register(placeholder, fileName));
+  };
+
+  if (template.file_path) {
+    const mainFileName = template.file_name || `${template.name}.docx`;
+    await inspectBlob(await documentTemplateService.downloadTemplateFile(template), mainFileName);
+  } else {
+    extractPlaceholdersFromText(template.content || '').forEach((placeholder) => register(placeholder, 'Conteúdo do template'));
+  }
+
+  const attachments = await documentTemplateService.listTemplateFiles(template.id);
+  for (const attachment of attachments) {
+    const isDocx = attachment.file_name.toLocaleLowerCase('pt-BR').endsWith('.docx')
+      || attachment.mime_type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (!isDocx) continue;
+    try {
+      await inspectBlob(await documentTemplateService.downloadTemplateFileById(attachment.id), attachment.file_name);
+    } catch (error) {
+      console.warn(`Não foi possível analisar os campos de ${attachment.file_name}:`, error);
+    }
+  }
+
+  const filesByKey: Record<string, string[]> = {};
+  for (const [key, item] of byKey) filesByKey[key] = Array.from(item.files);
+  return {
+    placeholders: Array.from(byKey.values()).map((item) => item.placeholder),
+    filesByKey,
+  };
+};
+
 const formatMaritalStatus = (status?: string | null) => {
   if (!status) return '';
   const map: Record<string, string> = {
@@ -360,14 +414,21 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   // sobrar um alvo principal por cartão em vez de sete do mesmo peso.
   const [openCardMenuId, setOpenCardMenuId] = useState<string | null>(null);
 
+  // A tela de gerar tem três painéis e uma largura só. Conforme cada etapa é
+  // resolvida, o painel dela encolhe numa faixa e devolve o espaço para a
+  // folha — que é o que a pessoa precisa olhar no fim.
+  const [activeStep, setActiveStep] = useState<'template' | 'data' | 'preview'>('template');
+  // A prévia só carrega quando a etapa 3 abre — e ela só abre por clique.
+  const [previewStatus, setPreviewStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+
   // Arquivos do modelo para a folha ao vivo: o principal e TODOS os anexos, na
   // ordem em que são gerados. Conferir só o primeiro não diz nada sobre os
   // outros cinco de um kit.
   const [livePreviewDocs, setLivePreviewDocs] = useState<PreviewDocument[]>([]);
-  const [livePreviewLoading, setLivePreviewLoading] = useState(false);
   const [livePreviewError, setLivePreviewError] = useState<string | null>(null);
 
-  const [templateExtraPlaceholders, setTemplateExtraPlaceholders] = useState<string[]>([]);
+  const [templateExtraFields, setTemplateExtraFields] = useState<UpsertTemplateCustomFieldDTO[]>([]);
+  const [templateExtraFieldsLoading, setTemplateExtraFieldsLoading] = useState(false);
   const [templateExtraValues, setTemplateExtraValues] = useState<Record<string, string>>({});
 
   const [showTemplateFormConfigModal, setShowTemplateFormConfigModal] = useState(false);
@@ -376,14 +437,19 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [templateFormConfigSaving, setTemplateFormConfigSaving] = useState(false);
   const [templateFormConfigError, setTemplateFormConfigError] = useState<string | null>(null);
   const [templateFormConfigFields, setTemplateFormConfigFields] = useState<UpsertTemplateCustomFieldDTO[]>([]);
+  const [templateFormDetectedKeys, setTemplateFormDetectedKeys] = useState<string[]>([]);
+  const [templateFormExistingKeys, setTemplateFormExistingKeys] = useState<string[]>([]);
+  const [templateFormNewCustomKeys, setTemplateFormNewCustomKeys] = useState<string[]>([]);
+  const [templateFormFilesByKey, setTemplateFormFilesByKey] = useState<Record<string, string[]>>({});
+  const [showNewTemplateFieldForm, setShowNewTemplateFieldForm] = useState(false);
+  const [newTemplateField, setNewTemplateField] = useState({
+    name: '',
+    placeholder: '',
+    field_type: 'text' as UpsertTemplateCustomFieldDTO['field_type'],
+    required: true,
+    description: '',
+  });
   const templateFormConfigDragIndexRef = useRef<number | null>(null);
-
-  // O botão de gerar existe em duas cópias (desktop e mobile sticky). A cor
-  // saía de dois blocos `style` inline idênticos; agora é uma classe só.
-  const canGenerateDocx = !generatingDocx && !!selectedClientId && !!selectedTemplateId;
-  const generateButtonClass = canGenerateDocx
-    ? 'bg-primary-500 text-white hover:bg-primary-600 hover:shadow-md active:shadow-sm cursor-pointer'
-    : 'bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-zinc-800 dark:text-zinc-500';
 
   const currentDate = useMemo(() => getManausNow(), []);
 
@@ -393,101 +459,60 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       setShowTemplateFormConfigModal(true);
       setTemplateFormConfigLoading(true);
       setTemplateFormConfigError(null);
+      setShowNewTemplateFieldForm(false);
+      setNewTemplateField({ name: '', placeholder: '', field_type: 'text', required: true, description: '' });
 
-      const [existingConfig, globalCustomFields] = await Promise.all([
+      const [existingConfig, globalCustomFields, inventory] = await Promise.all([
         documentTemplateService.listTemplateCustomFields(template.id),
         documentTemplateService.listCustomFields(),
+        inspectTemplatePlaceholders(template),
       ]);
 
-      const existingByKey = new Map<string, TemplateCustomField>();
-      for (const tcf of existingConfig ?? []) {
-        existingByKey.set(normalizeKey(tcf.placeholder), tcf);
-      }
-
-      const globalByKey = new Map<string, CustomField>();
-      for (const cf of globalCustomFields ?? []) {
-        globalByKey.set(normalizeKey(cf.placeholder), cf);
-      }
-
-      let placeholders: string[] = [];
-      if (template.file_path) {
-        const file = await documentTemplateService.downloadTemplateFile(template);
-        const arrayBuffer = await file.arrayBuffer();
-        const zip = new PizZip(arrayBuffer);
-        placeholders = extractPlaceholdersFromDocxZip(zip);
-      } else {
-        const content = (template.content || template.description || '').toString();
-        const found = new Set<string>();
-        const re = /\[\[([^\]]+)\]\]/g;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(content))) {
-          const raw = (m[1] || '').trim();
-          if (!raw) continue;
-          if (/^ASSINATURA(_\d+)?$/i.test(raw)) continue;
-          found.add(raw);
-        }
-        placeholders = Array.from(found);
-      }
-
-      const builtInDefaults: Array<{ placeholder: string; label: string }> = [
-        { label: 'Nome completo', placeholder: 'NOME COMPLETO' },
-        { label: 'Nacionalidade', placeholder: 'nacionalidade' },
-        { label: 'Estado civil', placeholder: 'estado civil' },
-        { label: 'Profissão', placeholder: 'profissão' },
-        { label: 'CPF/CNPJ', placeholder: 'CPF' },
-        { label: 'Endereço (rua)', placeholder: 'endereço' },
-        { label: 'Número', placeholder: 'número' },
-        { label: 'Complemento', placeholder: 'complemento' },
-        { label: 'Bairro', placeholder: 'bairro' },
-        { label: 'Cidade', placeholder: 'cidade' },
-        { label: 'Estado', placeholder: 'estado' },
-        { label: 'CEP', placeholder: 'CEP' },
-        { label: 'Telefone', placeholder: 'telefone' },
-        { label: 'Celular/WhatsApp', placeholder: 'celular' },
-        { label: 'Réu/Parte contrária', placeholder: 'réu' },
-      ];
-      const builtInByKey = new Map<string, { placeholder: string; label: string }>();
-      for (const bi of builtInDefaults) builtInByKey.set(normalizeKey(bi.placeholder), bi);
-
-      const fields: UpsertTemplateCustomFieldDTO[] = placeholders
-        .map((ph, idx) => {
-          const k = normalizeKey(ph);
-          const existing = existingByKey.get(k);
-          const bi = builtInByKey.get(k);
-          const g = globalByKey.get(k);
-
-          const inferredType = ((): any => {
-            if (existing?.field_type) return existing.field_type;
-            if (g?.field_type && ['text', 'number', 'date', 'select', 'textarea'].includes(g.field_type)) return g.field_type;
-            if (k === 'DATA' || k.startsWith('DATA ') || k.startsWith('DATA_')) return 'date';
-            if (k === 'NOME COMPLETO' || k === 'NOME') return 'name';
-            if (k === 'CPF') return 'cpf';
-            if (k === 'TELEFONE' || k === 'CELULAR') return 'phone';
-            if (k === 'CEP') return 'cep';
-            return 'text';
-          })();
-
-          return {
-            name: existing?.name ?? g?.name ?? bi?.label ?? ph,
-            placeholder: ph,
-            field_type: inferredType,
-            enabled: existing?.enabled ?? true,
-            required: existing?.required ?? (g ? !!g.required : true),
-            default_value: existing?.default_value ?? (g?.default_value ?? null),
-            options: (existing?.options as any) ?? (g?.options as any) ?? null,
-            description: existing?.description ?? (g?.description ?? null),
-            order: existing?.order ?? idx,
-          };
-        })
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-
-      setTemplateFormConfigFields(fields);
+      const merged = mergeTemplateFieldDefinitions(inventory.placeholders, existingConfig, globalCustomFields);
+      setTemplateFormConfigFields(merged.fields);
+      setTemplateFormDetectedKeys(inventory.placeholders.map(normalizeTemplateFieldKey));
+      setTemplateFormExistingKeys(existingConfig.map((field) => normalizeTemplateFieldKey(field.placeholder)));
+      setTemplateFormNewCustomKeys(merged.newCustomFieldKeys);
+      setTemplateFormFilesByKey(inventory.filesByKey);
     } catch (err: any) {
       console.error(err);
       setTemplateFormConfigError(err?.message || 'Erro ao carregar configuração do formulário.');
     } finally {
       setTemplateFormConfigLoading(false);
     }
+  };
+
+  const handleAddTemplateCustomField = () => {
+    const name = newTemplateField.name.trim();
+    const placeholder = newTemplateField.placeholder.trim().replace(/^\[\[|\]\]$/g, '').trim();
+    if (!name || !placeholder) {
+      setTemplateFormConfigError('Informe o nome e o placeholder do campo personalizado.');
+      return;
+    }
+    const key = normalizeTemplateFieldKey(placeholder);
+    if (templateFormConfigFields.some((field) => normalizeTemplateFieldKey(field.placeholder) === key)) {
+      setTemplateFormConfigError(`O placeholder [[${placeholder}]] já está configurado neste template.`);
+      return;
+    }
+
+    setTemplateFormConfigError(null);
+    setTemplateFormConfigFields((current) => [
+      ...current,
+      {
+        name,
+        placeholder,
+        field_type: newTemplateField.field_type,
+        enabled: true,
+        required: newTemplateField.required,
+        default_value: null,
+        options: null,
+        description: newTemplateField.description.trim() || null,
+        order: current.length,
+      },
+    ]);
+    setTemplateFormNewCustomKeys((current) => Array.from(new Set([...current, key])));
+    setNewTemplateField({ name: '', placeholder: '', field_type: 'text', required: true, description: '' });
+    setShowNewTemplateFieldForm(false);
   };
 
   const handleSaveTemplateFormConfig = async () => {
@@ -508,10 +533,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
       await documentTemplateService.replaceTemplateCustomFields(templateFormConfigTemplate.id, payload);
-      toast.success('Formulário configurado', 'As configurações do link público foram salvas.');
+      toast.success('Campos configurados', 'Os campos do template foram salvos para o formulário e para a geração interna.');
       setShowTemplateFormConfigModal(false);
       setTemplateFormConfigTemplate(null);
       setTemplateFormConfigFields([]);
+      setTemplateFormDetectedKeys([]);
+      setTemplateFormExistingKeys([]);
+      setTemplateFormNewCustomKeys([]);
+      setTemplateFormFilesByKey({});
     } catch (err: any) {
       console.error(err);
       setTemplateFormConfigError(err?.message || 'Erro ao salvar configuração do formulário.');
@@ -699,17 +728,63 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     [templates, selectedTemplateId],
   );
 
-  // Baixa os arquivos do modelo escolhido para a folha ao vivo. Trocar de
-  // modelo cancela o carregamento anterior.
-  useEffect(() => {
-    if (!selectedTemplate) {
-      setLivePreviewDocs([]);
-      setLivePreviewError(null);
+  // O que ainda impede de seguir para a prévia. O réu é opcional por definição
+  // do próprio modelo e não entra na conta.
+  const camposPendentes = useMemo(() => {
+    const pendentes: string[] = [];
+    if (!selectedClientId) pendentes.push('Cliente');
+    templateExtraFields.forEach((field) => {
+      if (field.required && !(templateExtraValues[field.placeholder] || '').trim()) pendentes.push(field.name || field.placeholder);
+    });
+    return pendentes;
+  }, [selectedClientId, templateExtraFields, templateExtraValues]);
+
+  const dadosCompletos = !templateExtraFieldsLoading && camposPendentes.length === 0;
+
+  // O que a etapa 2 mostra quando está encolhida.
+  const resumoDosDados = useMemo(() => {
+    const partes = [selectedClient?.full_name || 'Sem cliente'];
+    if (camposPendentes.length === 1) partes.push('1 campo em branco');
+    else if (camposPendentes.length > 1) partes.push(`${camposPendentes.length} campos em branco`);
+    return partes.join(' · ');
+  }, [selectedClient, camposPendentes]);
+
+  // O botão de gerar existe em duas cópias (desktop e mobile sticky). A cor
+  // saía de dois blocos `style` inline idênticos; agora é uma classe só.
+  const canGenerateDocx = !generatingDocx && !!selectedClientId && !!selectedTemplateId && dadosCompletos;
+  const generateButtonClass = canGenerateDocx
+    ? 'bg-primary-500 text-white hover:bg-primary-600 hover:shadow-md active:shadow-sm cursor-pointer'
+    : 'bg-slate-200 text-slate-400 cursor-not-allowed dark:bg-zinc-800 dark:text-zinc-500';
+
+  // A ÚNICA porta para a etapa 3. Nenhum efeito abre a prévia sozinho.
+  const handleContinuarParaPrevia = () => {
+    if (!dadosCompletos) {
+      setActiveStep('data');
       return;
     }
+    setActiveStep('preview');
+  };
+
+  // Trocar de modelo invalida o que já foi conferido e devolve o usuário aos
+  // dados — os campos compatíveis são preservados pelo efeito que recalcula
+  // `templateExtraValues`.
+  const handleSelectTemplate = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    setLivePreviewDocs([]);
+    setPreviewStatus('idle');
+    setGeneratedDocBlob(null);
+    setGenerationSuccess(null);
+    setGenerationError(null);
+    setActiveStep('data');
+  };
+
+  // Baixa os arquivos do modelo APENAS quando a etapa da prévia está aberta.
+  // Enquanto o usuário escolhe cliente e preenche campos, nada é baixado.
+  useEffect(() => {
+    if (!selectedTemplate || activeStep !== 'preview') return;
 
     let ativo = true;
-    setLivePreviewLoading(true);
+    setPreviewStatus('loading');
     setLivePreviewError(null);
 
     (async () => {
@@ -743,21 +818,23 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         setLivePreviewDocs(arquivos);
         if (arquivos.length === 0) {
           setLivePreviewError('Este modelo não tem arquivo .docx para desenhar.');
+          setPreviewStatus('error');
+        } else {
+          setPreviewStatus('ready');
         }
       } catch (err) {
         console.warn('Não foi possível carregar os arquivos da prévia:', err);
         if (!ativo) return;
         setLivePreviewDocs([]);
         setLivePreviewError('Não foi possível abrir os arquivos deste modelo.');
-      } finally {
-        if (ativo) setLivePreviewLoading(false);
+        setPreviewStatus('error');
       }
     })();
 
     return () => {
       ativo = false;
     };
-  }, [selectedTemplate]);
+  }, [selectedTemplate, activeStep]);
 
   const isRequirementsMsTemplate = (template: DocumentTemplate) => {
     const name = removeDiacritics((template.name || '').toString()).toUpperCase();
@@ -789,66 +866,84 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   }, [shouldShowDefendantField]);
 
   useEffect(() => {
-    if (!selectedTemplateId || !selectedTemplate || selectedTemplate.file_path) {
-      setTemplateExtraPlaceholders([]);
+    if (!selectedTemplateId || !selectedTemplate) {
+      setTemplateExtraFields([]);
       setTemplateExtraValues({});
       return;
     }
 
-    const placeholders = extractPlaceholdersFromText(selectedTemplate.content || '');
+    let active = true;
+    setTemplateExtraFieldsLoading(true);
 
-    const builtInKeys = new Set(
-      [
-        'NOME COMPLETO',
-        'NACIONALIDADE',
-        'ESTADO CIVIL',
-        'PROFISSÃO',
-        'RG',
-        'DATA_NASCIMENTO',
-        'CPF',
-        'ENDEREÇO',
-        'NÚMERO',
-        'COMPLEMENTO',
-        'BAIRRO',
-        'CIDADE',
-        'ESTADO',
-        'CEP',
-        'ENDERECO_COMPLETO',
-        'TELEFONE',
-        'CELULAR',
-        'RÉU',
-        'REU',
-        'DATA',
-      ].map((p) => normalizeKey(p)),
-    );
+    (async () => {
+      try {
+        const [existingConfig, globalCustomFields, inventory] = await Promise.all([
+          documentTemplateService.listTemplateCustomFields(selectedTemplate.id),
+          documentTemplateService.listCustomFields(),
+          inspectTemplatePlaceholders(selectedTemplate),
+        ]);
+        if (!active) return;
 
-    const extras = placeholders.filter((p) => !builtInKeys.has(normalizeKey(p)));
-    setTemplateExtraPlaceholders(extras);
+        const detectedKeys = new Set(inventory.placeholders.map(normalizeTemplateFieldKey));
+        const merged = mergeTemplateFieldDefinitions(inventory.placeholders, existingConfig, globalCustomFields);
+        const extraFields = merged.fields.filter((field) =>
+          field.enabled !== false
+          && !isBuiltInTemplatePlaceholder(field.placeholder)
+          && detectedKeys.has(normalizeTemplateFieldKey(field.placeholder)),
+        );
+        setTemplateExtraFields(extraFields);
 
-    const now = new Date();
-    const defaults: Record<string, string> = {
-      DATA_ATUAL_EXTENSO: formatDateLong(now),
-      SUBSECAO_JUDICIARIA: 'BALSAS',
-      UF_SUBSECAO: 'MA',
-      CIDADE_REFERENCIA_INSS: selectedClient?.address_city || 'CUIABÁ',
-      UF_REFERENCIA_INSS: selectedClient?.address_state || 'MT',
+        const defaults: Record<string, string> = {
+          DATA_ATUAL_EXTENSO: formatDateLong(new Date()),
+          SUBSECAO_JUDICIARIA: 'BALSAS',
+          UF_SUBSECAO: 'MA',
+          CIDADE_REFERENCIA_INSS: selectedClient?.address_city || 'CUIABÁ',
+          UF_REFERENCIA_INSS: selectedClient?.address_state || 'MT',
+        };
+
+        setTemplateExtraValues((previous) => {
+          const next: Record<string, string> = {};
+          for (const field of extraFields) {
+            const key = normalizeTemplateFieldKey(field.placeholder);
+            const previousKey = Object.keys(previous).find((candidate) => normalizeTemplateFieldKey(candidate) === key);
+            const defaultKey = Object.keys(defaults).find((candidate) => normalizeTemplateFieldKey(candidate) === key);
+            next[field.placeholder] = previousKey
+              ? previous[previousKey]
+              : (field.default_value || (defaultKey ? defaults[defaultKey] : '') || '');
+          }
+          return next;
+        });
+      } catch (error) {
+        console.error('Erro ao carregar campos específicos do template:', error);
+        if (!active) return;
+        setTemplateExtraFields([]);
+        setTemplateExtraValues({});
+        setGenerationError('Não foi possível carregar os campos personalizados deste template.');
+      } finally {
+        if (active) setTemplateExtraFieldsLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
     };
+  }, [selectedTemplateId, selectedTemplate]);
 
-    setTemplateExtraValues((prev) => {
-      const next: Record<string, string> = {};
-      for (const ph of extras) {
-        const key = normalizeKey(ph);
-        const prevKey = Object.keys(prev).find((k) => normalizeKey(k) === key);
-        if (prevKey) {
-          next[ph] = prev[prevKey];
-          continue;
-        }
-        const defKey = Object.keys(defaults).find((k) => normalizeKey(k) === key);
-        next[ph] = defKey ? defaults[defKey] : '';
+  useEffect(() => {
+    if (!selectedClient) return;
+    const clientDefaults: Record<string, string> = {
+      CIDADE_REFERENCIA_INSS: selectedClient.address_city || 'CUIABÁ',
+      UF_REFERENCIA_INSS: selectedClient.address_state || 'MT',
+    };
+    setTemplateExtraValues((current) => {
+      const next = { ...current };
+      for (const field of templateExtraFields) {
+        const key = normalizeTemplateFieldKey(field.placeholder);
+        if (!next[field.placeholder]?.trim() && clientDefaults[key]) next[field.placeholder] = clientDefaults[key];
       }
       return next;
     });
-  }, [selectedTemplateId, selectedTemplate, selectedClient]);
+  }, [selectedClient, templateExtraFields]);
 
   const handleOpenModal = () => {
     if (!ensurePermission({ module: 'documentos', action: 'create' })) return;
@@ -888,10 +983,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         enable_defendant: enableDefendantInput,
       };
 
-      await documentTemplateService.createTemplateWithFile(payload, fileInput);
+      const createdTemplate = await documentTemplateService.createTemplateWithFile(payload, fileInput);
       const data = await documentTemplateService.listTemplates();
       setTemplates(data);
       handleCloseModal();
+      await handleOpenTemplateFormConfig(createdTemplate);
     } catch (err: any) {
       setUploadError(err.message);
     } finally {
@@ -912,6 +1008,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     };
 
     registerPlaceholder('NOME COMPLETO', client.full_name);
+    registerPlaceholder('NOME', client.full_name);
     registerPlaceholder('nacionalidade', client.nationality);
     registerPlaceholder('estado civil', formatMaritalStatus(client.marital_status));
     registerPlaceholder('profissão', client.profession);
@@ -924,16 +1021,20 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     registerPlaceholder('bairro', client.address_neighborhood);
     registerPlaceholder('cidade', client.address_city);
     registerPlaceholder('estado', client.address_state);
+    registerPlaceholder('UF', client.address_state);
     registerPlaceholder('CEP', client.address_zip_code);
     registerPlaceholder('ENDERECO_COMPLETO', buildFullAddress(client));
     const primaryPhone = client.phone || client.mobile || '';
     registerPlaceholder('telefone', primaryPhone);
     registerPlaceholder('celular', primaryPhone);
+    registerPlaceholder('email', client.email);
     registerPlaceholder('réu', shouldShowDefendantField ? normalizeDefendantValue(defendantInput) : '');
     registerPlaceholder('data', formatDate(currentDate.toISOString()));
+    registerPlaceholder('DATA_ATUAL', formatDate(currentDate.toISOString()));
 
     Object.entries(templateExtraValues).forEach(([key, value]) => {
-      registerPlaceholder(key, value);
+      const field = templateExtraFields.find((candidate) => normalizeTemplateFieldKey(candidate.placeholder) === normalizeTemplateFieldKey(key));
+      registerPlaceholder(key, field?.field_type === 'date' ? formatDate(value) : value);
     });
 
     return placeholders;
@@ -959,7 +1060,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       return mapa[chave.toUpperCase()] || mapa[semAcento] || mapa[semAcento.toUpperCase()] || '';
     };
     // `buildPlaceholderMap` lê o réu e os campos digitados; ambos entram aqui.
-  }, [selectedClient, defendantInput, templateExtraValues, shouldShowDefendantField, currentDate]);
+  }, [selectedClient, defendantInput, templateExtraFields, templateExtraValues, shouldShowDefendantField, currentDate]);
 
   const createDocxFromContent = async (content: string) => {
     const paragraphs = content.split(/\n/g).map(
@@ -1162,6 +1263,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     try {
       setEditSaving(true);
       setEditError(null);
+      const shouldInspectFields = !!editFile || (!editingTemplate.file_path && editContent !== (editingTemplate.content || ''));
 
       const basePayload: Partial<CreateDocumentTemplateDTO> = {
         name: trimmedName,
@@ -1173,15 +1275,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         basePayload.content = editContent || '';
       }
 
-      if (editFile) {
-        await documentTemplateService.updateTemplateWithFile(editingTemplate, basePayload, editFile);
-      } else {
-        await documentTemplateService.updateTemplate(editingTemplate.id, basePayload);
-      }
+      const updatedTemplate = editFile
+        ? await documentTemplateService.updateTemplateWithFile(editingTemplate, basePayload, editFile)
+        : await documentTemplateService.updateTemplate(editingTemplate.id, basePayload);
 
       const data = await documentTemplateService.listTemplates();
       setTemplates(data);
       handleCloseEditModal();
+      if (shouldInspectFields) await handleOpenTemplateFormConfig(updatedTemplate);
     } catch (err: any) {
       console.error(err);
       setEditError(err.message || 'Não foi possível salvar as alterações.');
@@ -1242,7 +1343,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   // usar um modelo era preciso voltar de aba e procurá-lo de novo na lista.
   const handleUseTemplate = (template: DocumentTemplate) => {
     setOpenCardMenuId(null);
-    setSelectedTemplateId(template.id);
+    handleSelectTemplate(template.id);
     setTemplateSearchQuery('');
     setActiveView('new-doc');
   };
@@ -1815,14 +1916,14 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const templatesWithFile = templates.filter((template) => template.file_path).length;
 
   return (
-    <div className="@container space-y-6">
+    <div className="@container flex h-full min-h-0 flex-col gap-4 sm:gap-6">
       {/* Espera entre o clique e o modal — branca, com os três tempos do trabalho. */}
       {linkOverlayPhase && (
         <LinkGenerationOverlay phase={linkOverlayPhase} templateName={linkOverlayTemplateName} />
       )}
 
       {/* Header com tabs */}
-      <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex-none rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex flex-col gap-2 border-b border-[#e7e5df] px-4 py-3 @sm:flex-row @sm:px-6 dark:border-zinc-800">
           <button
             onClick={() => setActiveView('new-doc')}
@@ -1860,16 +1961,23 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         </div>
       </div>
 
-      {/* Novo documento */}
+      {/* Novo documento — uma faixa horizontal: a etapa resolvida vira um trilho
+          em pé à esquerda e devolve a largura para a próxima, e no fim para a
+          prévia. Em tela estreita as etapas se empilham. */}
+      {/* Novo documento — accordion estrito: uma etapa aberta por vez, e o
+          avanço para a prévia só acontece por clique, nunca por efeito. */}
       {activeView === 'new-doc' && (
-        <div className="grid gap-6 @lg:grid-cols-12">
-          {/* Coluna esquerda: Seleção de template */}
-          <div className="hidden @lg:block @lg:col-span-3 space-y-4">
-            <div>
-              <h4 className="text-sm font-semibold text-slate-900 mb-1 dark:text-zinc-100">Escolha o template</h4>
-              <p className="text-xs text-slate-500 dark:text-zinc-400">Selecione o modelo para gerar o documento</p>
-            </div>
-
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto @lg:flex-row @lg:items-stretch @lg:overflow-visible">
+          <SidePanel
+            step={1}
+            title="Escolha o modelo"
+            hint="O documento que vai ser gerado"
+            summary={selectedTemplate?.name}
+            open={activeStep === 'template'}
+            onToggle={() => setActiveStep('template')}
+            done={!!selectedTemplateId}
+          >
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
             {loading ? (
               <ModuleSkeleton variant="list" rows={5} />
             ) : newDocTemplates.length === 0 ? (
@@ -1901,7 +2009,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   )}
                 </div>
 
-                <div className="space-y-2 sm:max-h-[360px] sm:overflow-y-auto sm:pr-1">
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                 {filteredNewDocTemplates.map((template) => {
                   const isSelected = selectedTemplateId === template.id;
                   const summary = templateFilesSummary[template.id];
@@ -1911,7 +2019,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                     <button
                       key={template.id}
                       type="button"
-                      onClick={() => setSelectedTemplateId(template.id)}
+                      onClick={() => handleSelectTemplate(template.id)}
                       className={`w-full text-left p-3 rounded-xl border-2 transition ${
                         isSelected
                           ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-500/20 dark:bg-primary-500/10'
@@ -1950,50 +2058,20 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 </div>
               </div>
             )}
-          </div>
+            </div>
+          </SidePanel>
 
-          {/* Coluna direita: Formulário */}
-          <div className="@lg:col-span-4">
-            <div className="rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-5 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
-                  <FileDown className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <h4 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Gerar Documento</h4>
-                  <p className="text-xs text-slate-500 dark:text-zinc-400">Preencha os dados e gere o Word</p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="lg:hidden">
-                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">
-                    Template *
-                  </label>
-                  <div className="relative mb-2">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      value={templateSearchQuery}
-                      onChange={(e) => setTemplateSearchQuery(e.target.value)}
-                      placeholder="Buscar modelo..."
-                      className="w-full rounded-lg border border-[#e7e5df] bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-                    />
-                  </div>
-                  <select
-                    value={selectedTemplateId}
-                    onChange={(e) => setSelectedTemplateId(e.target.value)}
-                    disabled={loading || newDocTemplates.length === 0}
-                    className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:bg-slate-100 disabled:text-slate-400"
-                  >
-                    <option value="">Selecione um template...</option>
-                    {filteredNewDocTemplates.map((template) => (
-                      <option key={template.id} value={template.id}>
-                        {template.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+          {selectedTemplateId && (
+            <SidePanel
+              step={2}
+              title="Dados do documento"
+              hint="Cliente e os campos que o modelo pede"
+              summary={resumoDosDados}
+              open={activeStep === 'data'}
+              onToggle={() => setActiveStep('data')}
+              done={dadosCompletos}
+            >
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
                 {/* Cliente */}
                 <div>
                   <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">
@@ -2039,52 +2117,63 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   </div>
                 )}
 
-                {/* Campos do Modelo (dinâmicos) */}
-                {templateExtraPlaceholders.length > 0 && (
+                {templateExtraFieldsLoading && (
+                  <div className="flex items-center gap-2 rounded-xl border border-[#e7e5df] bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-zinc-800 dark:bg-zinc-800/60 dark:text-zinc-400">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Analisando os campos deste template e dos anexos…
+                  </div>
+                )}
+
+                {/* Campos específicos cadastrados ou detectados no template. */}
+                {!templateExtraFieldsLoading && templateExtraFields.length > 0 && (
                   <div className="rounded-xl border border-[#e7e5df] bg-slate-50 p-4 dark:border-zinc-800 dark:bg-zinc-800/60">
                     <div className="flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-slate-500 dark:text-zinc-400" />
-                      <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Campos do Modelo</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Campos personalizados</p>
                     </div>
                     <p className="mt-1 text-xs text-slate-500 dark:text-zinc-400">
                       Preencha os campos específicos do template selecionado.
                     </p>
 
                     <div className="mt-3 grid grid-cols-1 gap-3">
-                      {templateExtraPlaceholders.map((ph) => {
-                        const value = templateExtraValues[ph] ?? '';
-                        const key = normalizeKey(ph);
-                        const isLong = key.includes('ENDERECO') || key.includes('OBS') || key.includes('DESCR') || key.includes('TEXTO');
-                        const isNumber = key.includes('DIAS') || key.includes('NUM') || key.includes('VALOR');
-                        const isDate = key.startsWith('DATA');
-
-                        const commonProps = {
-                          value,
-                          onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-                            const nextValue = e.target.value;
-                            setTemplateExtraValues((prev) => ({ ...prev, [ph]: nextValue }));
-                          },
-                        };
+                      {templateExtraFields.map((field) => {
+                        const value = templateExtraValues[field.placeholder] ?? '';
+                        const updateValue = (nextValue: string) =>
+                          setTemplateExtraValues((previous) => ({ ...previous, [field.placeholder]: nextValue }));
+                        const inputClass = 'w-full rounded-lg border border-[#e7e5df] bg-white px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20';
 
                         return (
-                          <div key={ph}>
+                          <div key={normalizeTemplateFieldKey(field.placeholder)}>
                             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">
-                              {ph}
+                              {field.name || humanizeTemplatePlaceholder(field.placeholder)}
+                              {field.required ? <span className="text-primary-500"> *</span> : <span className="font-normal normal-case text-slate-400"> (opcional)</span>}
                             </label>
-                            {isLong ? (
+                            {field.field_type === 'textarea' ? (
                               <textarea
                                 rows={3}
-                                className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-                                placeholder={`Preencher ${ph}...`}
-                                {...commonProps}
+                                className={inputClass}
+                                placeholder={field.description || `Preencher ${field.name || field.placeholder}…`}
+                                value={value}
+                                onChange={(event) => updateValue(event.target.value)}
                               />
+                            ) : field.field_type === 'select' ? (
+                              <select className={inputClass} value={value} onChange={(event) => updateValue(event.target.value)}>
+                                <option value="">Selecione…</option>
+                                {(field.options || []).map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
                             ) : (
                               <input
-                                type={isDate ? 'text' : isNumber ? 'number' : 'text'}
-                                className="w-full rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-4 py-2.5 text-sm text-slate-900 transition hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-zinc-600 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-                                placeholder={`Preencher ${ph}...`}
-                                {...commonProps}
+                                type={field.field_type === 'date' ? 'date' : field.field_type === 'number' ? 'number' : 'text'}
+                                className={inputClass}
+                                placeholder={field.description || `Preencher ${field.name || field.placeholder}…`}
+                                value={value}
+                                onChange={(event) => updateValue(event.target.value)}
                               />
+                            )}
+                            {field.description && field.field_type === 'select' && (
+                              <p className="mt-1 text-xs text-slate-400 dark:text-zinc-500">{field.description}</p>
                             )}
                           </div>
                         );
@@ -2093,87 +2182,123 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   </div>
                 )}
 
-                {/* Mensagens de erro/sucesso */}
-                {generationError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
-                    <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                    <span>{generationError}</span>
-                  </div>
-                )}
-                {generationSuccess && (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-start gap-2 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-                    <Check className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                    <span>{generationSuccess}</span>
-                  </div>
-                )}
+              </div>
 
-                {/* Botão gerar (desktop) */}
+              <div className="mt-4 flex flex-none flex-col gap-2 border-t border-[#e7e5df] pt-4 dark:border-zinc-800">
+                {camposPendentes.length > 0 && (
+                  <div className="flex items-start gap-2 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-xs text-primary-800 dark:border-primary-500/40 dark:bg-primary-500/10 dark:text-primary-300">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                    <span>
+                      {camposPendentes.length === 1 ? 'Falta preencher: ' : `Faltam ${camposPendentes.length} campos: `}
+                      <b>{camposPendentes.join(', ')}</b>
+                    </span>
+                  </div>
+                )}
                 <button
-                  onClick={handleGenerateDocx}
-                  disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
-                  className={`hidden @sm:inline-flex w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition items-center justify-center gap-2 shadow-sm ${generateButtonClass}`}
+                  onClick={handleContinuarParaPrevia}
+                  disabled={!dadosCompletos}
+                  className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold transition ${
+                    dadosCompletos
+                      ? 'bg-primary-500 text-white hover:bg-primary-600'
+                      : 'cursor-not-allowed bg-slate-200 text-slate-400 dark:bg-zinc-800 dark:text-zinc-500'
+                  }`}
                 >
-                  {generatingDocx ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Gerando documento...
-                    </>
-                  ) : (
-                    <>
-                      <FileDown className="h-4 w-4" />
-                      Gerar documentos
-                    </>
-                  )}
+                  Continuar para a prévia
+                  <ChevronRight className="h-4 w-4" />
                 </button>
+              </div>
+            </SidePanel>
+          )}
 
-                {/* Botão gerar (mobile sticky) */}
-                <div className="sm:hidden sticky bottom-0 -mx-5 px-5 pb-5 pt-3 bg-[#f8f7f5]/95 backdrop-blur border-t border-[#e7e5df] dark:border-zinc-800 dark:bg-zinc-900/95">
-                  <button
-                    onClick={handleGenerateDocx}
-                    disabled={generatingDocx || !selectedClientId || !selectedTemplateId}
-                    className={`w-full rounded-xl px-6 py-3.5 text-sm font-semibold transition inline-flex items-center justify-center gap-2 shadow-sm ${generateButtonClass}`}
-                  >
-                    {generatingDocx ? (
+          {selectedTemplateId && (
+            <SidePanel
+              step={3}
+              title="Prévia do documento"
+              hint="Confira antes de gerar"
+              summary={previewStatus === 'ready' ? 'Documento conferido' : 'Ainda não revisado'}
+              open={activeStep === 'preview'}
+              onToggle={handleContinuarParaPrevia}
+              done={!!generatedDocBlob}
+            >
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                {(generationError || generationSuccess) && (
+                  <div className="mb-3 flex flex-none flex-col gap-2">
+                    {generationError && (
+                      <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                        <span>{generationError}</span>
+                      </div>
+                    )}
+                    {generationSuccess && (
+                      <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                        <Check className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                        <span>{generationSuccess}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <DocumentLivePreview
+                  documents={livePreviewDocs}
+                  resolve={resolveLivePreviewField}
+                  loading={previewStatus === 'loading'}
+                  error={previewStatus === 'error' ? livePreviewError : null}
+                />
+
+                {/* Barra flutuante sobre o documento: as ações não podem tomar
+                    altura da folha, que é o que a pessoa veio ver. */}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-3 pb-3">
+                  <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-2 rounded-full border border-[#e7e5df] bg-white/95 p-1.5 shadow-[0_12px_32px_-12px_rgba(15,23,42,.45)] backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
+                    <button
+                      onClick={handleGenerateDocx}
+                      disabled={!canGenerateDocx}
+                      className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition ${
+                        canGenerateDocx
+                          ? 'bg-primary-500 text-white hover:bg-primary-600'
+                          : 'cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-zinc-800 dark:text-zinc-500'
+                      }`}
+                    >
+                      {generatingDocx ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                      {generatingDocx ? 'Gerando...' : generatedDocBlob ? 'Gerar de novo' : 'Gerar documentos'}
+                    </button>
+
+                    {generatedDocBlob && (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Gerando documento...
-                      </>
-                    ) : (
-                      <>
-                        <FileDown className="h-4 w-4" />
-                        Gerar documento
+                        <span className="mx-0.5 h-6 w-px bg-[#e7e5df] dark:bg-zinc-700" />
+                        <button
+                          onClick={handleDownloadWord}
+                          className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                        >
+                          <FileDown className="h-3.5 w-3.5" />
+                          Word
+                        </button>
+                        <button
+                          onClick={handleDownloadPdf}
+                          className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                        >
+                          <FileDown className="h-3.5 w-3.5" />
+                          PDF
+                        </button>
+                        <button
+                          onClick={handleSendForSignature}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
+                        >
+                          <PenTool className="h-3.5 w-3.5" />
+                          Assinatura
+                        </button>
                       </>
                     )}
-                  </button>
+                  </div>
                 </div>
-
-                {/* Dica */}
-                {!selectedTemplateId && (
-                  <p className="text-xs text-slate-400 text-center dark:text-zinc-500">
-                    ← Selecione um template ao lado para continuar
-                  </p>
-                )}
               </div>
-            </div>
-          </div>
-
-          {/* Coluna direita: a folha, preenchida enquanto se digita */}
-          <div className="@lg:col-span-5">
-            <div className="h-full rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] p-4 sm:p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <DocumentLivePreview
-                documents={livePreviewDocs}
-                resolve={resolveLivePreviewField}
-                loading={livePreviewLoading}
-                error={livePreviewError}
-              />
-            </div>
-          </div>
+            </SidePanel>
+          )}
         </div>
       )}
 
       {/* Gerenciar templates */}
       {activeView === 'manage' && (
-        <div className="space-y-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pb-2">
           {/* Header com ações globais */}
           <div className="flex flex-col gap-3 @sm:flex-row @sm:items-center @sm:justify-between">
             <div>
@@ -2256,7 +2381,9 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
       {/* Petições Padrões */}
       {activeView === 'petitions' && (
-        <StandardPetitionsModule onNavigateToModule={onNavigateToModule} />
+        <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+          <StandardPetitionsModule onNavigateToModule={onNavigateToModule} />
+        </div>
       )}
 
       {/* Novo template modal */}
@@ -2708,8 +2835,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         }
       }}
       title={templateFormConfigTemplate?.name ?? ''}
-      eyebrow="Configuração do link público"
-      subtitle="Edite o título, a descrição e se o campo é obrigatório no formulário público."
+      eyebrow="Campos do template"
+      subtitle="O sistema analisou o documento principal e todos os anexos. Configure os campos adicionais antes de gerar documentos."
       size="lg"
       zIndex={LAYER.MODAL_NESTED + 1}
       headerActions={
@@ -2767,6 +2894,109 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           </div>
         )}
 
+        {!templateFormConfigLoading && (
+          <div className="mb-4 space-y-3">
+            {templateFormNewCustomKeys.length > 0 && (
+              <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                <div>
+                  <p className="font-semibold">
+                    {templateFormNewCustomKeys.length === 1
+                      ? 'Foi encontrado 1 campo adicional ainda não cadastrado.'
+                      : `Foram encontrados ${templateFormNewCustomKeys.length} campos adicionais ainda não cadastrados.`}
+                  </p>
+                  <p className="mt-0.5 text-xs opacity-80">Revise o título e o tipo. Ao salvar, eles ficarão disponíveis somente neste template.</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2 rounded-xl border border-[#e7e5df] bg-white p-4 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800 dark:bg-zinc-900">
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Campos personalizados</p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-zinc-400">Cadastre um dado específico deste template ou deixe o sistema identificá-lo pelo placeholder.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewTemplateFieldForm((current) => !current)}
+                className="inline-flex flex-none items-center justify-center gap-2 rounded-lg border border-[#e7e5df] bg-[#f8f7f5] px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+              >
+                {showNewTemplateFieldForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                {showNewTemplateFieldForm ? 'Cancelar' : 'Adicionar campo'}
+              </button>
+            </div>
+
+            {showNewTemplateFieldForm && (
+              <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-4 dark:border-primary-500/30 dark:bg-primary-500/10">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Nome do campo</span>
+                    <input
+                      value={newTemplateField.name}
+                      onChange={(event) => setNewTemplateField((current) => ({ ...current, name: event.target.value }))}
+                      placeholder="Ex: Nome do menor"
+                      className="mt-1 h-[36px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Placeholder</span>
+                    <input
+                      value={newTemplateField.placeholder}
+                      onChange={(event) => setNewTemplateField((current) => ({ ...current, placeholder: event.target.value.toLocaleUpperCase('pt-BR').replace(/\s+/g, '_') }))}
+                      placeholder="NOME_MENOR"
+                      className="mt-1 h-[36px] w-full rounded-lg border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Tipo</span>
+                    <select
+                      value={newTemplateField.field_type}
+                      onChange={(event) => setNewTemplateField((current) => ({ ...current, field_type: event.target.value as UpsertTemplateCustomFieldDTO['field_type'] }))}
+                      className="mt-1 h-[36px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    >
+                      <option value="text">Texto</option>
+                      <option value="name">Nome</option>
+                      <option value="cpf">CPF</option>
+                      <option value="phone">Telefone</option>
+                      <option value="cep">CEP</option>
+                      <option value="textarea">Texto longo</option>
+                      <option value="number">Número</option>
+                      <option value="date">Data</option>
+                      <option value="select">Seleção</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400">Descrição</span>
+                    <input
+                      value={newTemplateField.description}
+                      onChange={(event) => setNewTemplateField((current) => ({ ...current, description: event.target.value }))}
+                      placeholder="Orientação para o preenchimento"
+                      className="mt-1 h-[36px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+                    />
+                  </label>
+                </div>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-zinc-200">
+                    <input
+                      type="checkbox"
+                      checked={newTemplateField.required}
+                      onChange={(event) => setNewTemplateField((current) => ({ ...current, required: event.target.checked }))}
+                    />
+                    Obrigatório
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddTemplateCustomField}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-600"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Adicionar ao template
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {templateFormConfigLoading ? (
           <div className="flex items-center justify-center py-10">
             <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
@@ -2804,8 +3034,40 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                   <div className="min-w-0">
                     <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold">Placeholder</p>
                     <p className="font-mono text-sm text-slate-800 dark:text-white break-all">[[{f.placeholder}]]</p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                      {isBuiltInTemplatePlaceholder(f.placeholder) ? (
+                        <span className="rounded-full bg-slate-200 px-2 py-0.5 font-medium text-slate-600 dark:bg-zinc-700 dark:text-zinc-300">Campo do sistema</span>
+                      ) : templateFormNewCustomKeys.includes(normalizeTemplateFieldKey(f.placeholder))
+                        && !templateFormExistingKeys.includes(normalizeTemplateFieldKey(f.placeholder)) ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">Novo campo detectado</span>
+                      ) : (
+                        <span className="rounded-full bg-primary-100 px-2 py-0.5 font-medium text-primary-700 dark:bg-primary-500/20 dark:text-primary-300">Campo personalizado</span>
+                      )}
+                      {templateFormDetectedKeys.includes(normalizeTemplateFieldKey(f.placeholder)) ? (
+                        <span className="text-slate-500 dark:text-zinc-400">
+                          Encontrado em {(templateFormFilesByKey[normalizeTemplateFieldKey(f.placeholder)] || []).join(', ')}
+                        </span>
+                      ) : (
+                        <span className="font-medium text-amber-600 dark:text-amber-300">Não encontrado nos arquivos do kit</span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {!isBuiltInTemplatePlaceholder(f.placeholder)
+                      && !templateFormDetectedKeys.includes(normalizeTemplateFieldKey(f.placeholder)) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const key = normalizeTemplateFieldKey(f.placeholder);
+                          setTemplateFormConfigFields((current) => templateFormConfigRecomputeOrder(current.filter((_, fieldIndex) => fieldIndex !== idx)));
+                          setTemplateFormNewCustomKeys((current) => current.filter((candidate) => candidate !== key));
+                        }}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                        title="Remover campo personalizado"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                     <div className="text-slate-400 dark:text-slate-500 cursor-grab active:cursor-grabbing select-none">
                       <GripVertical className="w-5 h-5" />
                     </div>

@@ -2574,8 +2574,8 @@ useEffect(() => {
 
         {/* Main Content Area */}
       <div
-        className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950 ${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' || activeModule === 'nextcloud' ? 'overflow-hidden' : ''}`}
-        style={activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' || activeModule === 'nextcloud'
+        className={`flex min-w-0 flex-1 flex-col overflow-x-hidden transition-all duration-300 bg-[#f5f5f3] dark:bg-zinc-950 ${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' || activeModule === 'nextcloud' || activeModule === 'documentos' ? 'overflow-hidden' : ''}`}
+        style={activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' || activeModule === 'nextcloud' || activeModule === 'documentos'
           ? { height: `calc(100dvh - ${hasVisibleFloatingWindows ? TASKBAR_H : 0}px)` }
           : undefined}
       >
@@ -2857,7 +2857,7 @@ useEffect(() => {
         </header>
 
         {/* Main Content */}
-        <main className={`${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-3 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : activeModule === 'nextcloud' ? 'flex flex-col overflow-hidden px-3 sm:px-4 lg:px-6 xl:px-8' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'py-0' : activeModule === 'cloud' ? 'py-2 sm:py-2' : activeModule === 'nextcloud' ? 'pt-4 pb-0 sm:pt-6 sm:pb-0' : 'py-4 sm:py-6'}`}>
+        <main className={`${activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'px-0 py-0 space-y-0 overflow-hidden' : activeModule === 'cloud' ? 'px-3 sm:px-1 lg:px-2 xl:px-3 space-y-2 sm:space-y-3' : activeModule === 'nextcloud' ? 'flex flex-col overflow-hidden px-3 sm:px-4 lg:px-6 xl:px-8' : activeModule === 'documentos' ? 'flex flex-col overflow-hidden px-3 sm:px-4 lg:px-6 xl:px-8' : 'px-3 sm:px-4 lg:px-6 xl:px-8 space-y-4 sm:space-y-6'} flex-1 min-h-0 ${activeModule === 'agenda' ? 'py-0' : activeModule === 'chat' || activeModule === 'whatsapp' || activeModule === 'email' ? 'py-0' : activeModule === 'cloud' ? 'py-2 sm:py-2' : activeModule === 'nextcloud' ? 'pt-4 pb-0 sm:pt-6 sm:pb-0' : 'py-4 sm:py-6'}`}>
           {profileBanner && (
             <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm shadow-sm">
               <CheckCheck className="w-4 h-4 flex-shrink-0 text-emerald-500" />

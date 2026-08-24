@@ -25,6 +25,13 @@ import { AlertTriangle, FileText, Loader2 } from 'lucide-react';
 /** Largura de uma folha A4 no CSS do docx-preview, usada para calcular a escala. */
 const LARGURA_DA_FOLHA_PX = 794;
 
+// A folha ACOMPANHA a coluna: encolhe quando o espaço é pouco e cresce quando
+// sobra. Travar em 1× deixava um documento de 794 px perdido no meio de uma
+// coluna de 1.600, com a letra pequena e metade da área vazia. O teto existe só
+// para o texto não virar cartaz em telas muito largas.
+const ESCALA_MINIMA = 0.4;
+const ESCALA_MAXIMA = 1.8;
+
 // Sentinelas invisíveis. Sobrevivem ao docxtemplater e ao docx-preview porque
 // são só texto, e não aparecem para quem lê caso alguma escape da marcação.
 const MARCA_PREENCHIDO = '⁣';
@@ -210,6 +217,7 @@ const DocumentLivePreview: React.FC<DocumentLivePreviewProps> = ({
       alvo.innerHTML = '';
       while (fora.firstChild) alvo.appendChild(fora.firstChild);
       setFaltando(pendentes);
+      // scrollHeight é medido ANTES da escala: a caixa externa multiplica.
       setAlturaDesenhada(alvo.scrollHeight);
     } catch (err) {
       console.warn('Prévia ao vivo falhou:', err);
@@ -235,7 +243,8 @@ const DocumentLivePreview: React.FC<DocumentLivePreviewProps> = ({
 
     const medir = () => {
       const disponivel = host.clientWidth - 24;
-      setEscala(Math.min(1, Math.max(0.35, disponivel / LARGURA_DA_FOLHA_PX)));
+      const bruta = disponivel / LARGURA_DA_FOLHA_PX;
+      setEscala(Math.min(ESCALA_MAXIMA, Math.max(ESCALA_MINIMA, bruta)));
       setAlturaDesenhada(paginasRef.current?.scrollHeight ?? 0);
     };
 
@@ -249,7 +258,7 @@ const DocumentLivePreview: React.FC<DocumentLivePreviewProps> = ({
   const problema = error || falha;
 
   return (
-    <div className="flex h-full flex-col gap-3">
+    <div className="relative flex h-full min-h-0 flex-col">
       <style>{`
         .dlp-fill { background: #e0f0ff; border-bottom: 1px solid #93c5fd; border-radius: 2px; padding: 0 1px; }
         .dlp-hole {
@@ -277,33 +286,24 @@ const DocumentLivePreview: React.FC<DocumentLivePreviewProps> = ({
         .dlp-pages .docx-wrapper > section.docx { margin: 0 0 12px; box-shadow: 0 2px 10px -4px rgba(15,23,42,.35); }
       `}</style>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <FileText className="h-4 w-4 text-slate-400 dark:text-zinc-500" />
-          <h4 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">Prévia do documento</h4>
-          {documents.length > 1 && (
-            <span className="text-xs text-slate-400 dark:text-zinc-500">
-              {documents.length} arquivos
-            </span>
-          )}
-        </div>
-        {!loading && !desenhando && !problema && !vazio && (
-          faltando > 0 ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 px-2.5 py-1 text-[11px] font-semibold text-primary-800 dark:border-primary-500/40 dark:bg-primary-500/10 dark:text-primary-300">
+      {!loading && !desenhando && !problema && !vazio && (
+        <div className="pointer-events-none absolute right-3 top-3 z-20">
+          {faltando > 0 ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary-200 bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-primary-800 shadow-sm backdrop-blur dark:border-primary-500/40 dark:bg-zinc-900/95 dark:text-primary-300">
               <AlertTriangle className="h-3 w-3" />
               {faltando === 1 ? 'falta 1 campo' : `faltam ${faltando} campos`}
             </span>
           ) : (
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-400">
+            <span className="rounded-full border border-emerald-200 bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 shadow-sm backdrop-blur dark:border-emerald-500/40 dark:bg-zinc-900/95 dark:text-emerald-400">
               tudo preenchido
             </span>
-          )
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       <div
         ref={hostRef}
-        className="relative min-h-[300px] flex-1 overflow-y-auto rounded-xl border border-[#e7e5df] bg-slate-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-950/40 @lg:max-h-[620px]"
+        className="relative min-h-[240px] flex-1 overflow-y-auto rounded-xl border border-[#e7e5df] bg-slate-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-950/40"
       >
         {(loading || desenhando) && (
           <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-slate-100/80 text-sm text-slate-500 backdrop-blur-[1px] dark:bg-zinc-950/70 dark:text-zinc-400">
@@ -327,7 +327,13 @@ const DocumentLivePreview: React.FC<DocumentLivePreviewProps> = ({
           </div>
         ) : null}
 
-        <div style={{ height: alturaDesenhada ? alturaDesenhada * escala : undefined }}>
+        <div
+          className="mx-auto"
+          style={{
+            height: alturaDesenhada ? alturaDesenhada * escala : undefined,
+            width: LARGURA_DA_FOLHA_PX * escala,
+          }}
+        >
           <div
             ref={paginasRef}
             className="dlp-pages origin-top-left"
@@ -336,13 +342,6 @@ const DocumentLivePreview: React.FC<DocumentLivePreviewProps> = ({
         </div>
       </div>
 
-      {!problema && !vazio && (
-        <p className="text-[11px] leading-snug text-slate-400 dark:text-zinc-500">
-          <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-sky-200 align-middle" /> veio da ficha ou dos campos ·
-          <span className="mx-1 inline-block h-2 w-2 rounded-sm bg-primary-400 align-middle" /> ainda em branco. A folha é
-          desenhada a partir do próprio .docx, com a formatação do Word.
-        </p>
-      )}
     </div>
   );
 };
