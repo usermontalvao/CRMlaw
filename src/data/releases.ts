@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.16',
+    date: '23/08/2026',
+    summary: 'Os cartões de modelo foram redesenhados, o menu deles diz o que cada opção faz — e agora dá para duplicar um kit inteiro.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Duplicar um modelo, com anexos, campos e assinaturas',
+            description: 'No menu "⋯" de cada modelo há "Duplicar": ele cria uma cópia completa — o .docx principal, todos os anexos, os campos do formulário e as posições de assinatura. Os arquivos são copiados de verdade, não compartilhados, então mexer na cópia não altera o original. Se algo falhar no meio, nada fica pela metade.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O menu do modelo passou a dizer o que cada opção faz',
+            description: 'As opções ficaram agrupadas — Usar, Arquivos, Campos, Este modelo — e cada uma ganhou uma linha de explicação. "Editar modelo" virou "Nome, descrição e texto", porque ele nunca abriu o .docx: quem quer trocar o arquivo vai em "Documentos e anexos". "Baixar arquivo" virou "Baixar o modelo em branco".',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Cartões redesenhados e um laranja só na tela',
+            description: 'O cartão ficou branco sobre o fundo creme, com ícone, nome em destaque e etiquetas de tipo, arquivos e assinatura. O botão do link do cliente deixou de ser laranja cheio — virou contorno — porque três botões laranja na mesma tela (a aba ativa, o "Novo modelo" e o link) competiam entre si em vez de criar hierarquia. As abas viraram um seletor discreto.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O menu do modelo não é mais cortado no rodapé',
+            description: 'Nos cartões de baixo, as últimas opções do menu — inclusive "Remover" — ficavam escondidas atrás da borda da lista. Agora o menu abre por cima de tudo, escolhe o lado com mais espaço e se ajusta à altura da janela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.15',
     date: '23/08/2026',
     summary: 'Gerar documento virou um passo a passo lateral: cada etapa resolvida vira um trilho e devolve a tela para a próxima, até sobrar só o documento.',

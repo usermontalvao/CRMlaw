@@ -186,6 +186,126 @@ class DocumentTemplateService {
     return data;
   }
 
+  /**
+   * Clona um modelo inteiro: a linha, o arquivo principal, todos os anexos e os
+   * campos do formulário.
+   *
+   * Os arquivos são COPIADOS no storage, não referenciados: dois modelos
+   * apontando para o mesmo objeto viram uma armadilha — trocar o .docx de um
+   * troca o do outro, e apagar um leva o arquivo do que ficou.
+   *
+   * A cópia é feita pelo `copy` do próprio storage quando ele existe, para não
+   * arrastar o arquivo até o navegador e de volta; se falhar, baixa e sobe.
+   */
+  async duplicateTemplate(templateId: string): Promise<DocumentTemplate> {
+    await this.ensureBucket();
+
+    const original = await this.getTemplate(templateId);
+    if (!original) throw new Error('Modelo não encontrado.');
+
+    const bucket = supabase.storage.from(STORAGE_BUCKET);
+
+    const copiarArquivo = async (origem: string, destino: string) => {
+      const { error: copyError } = await bucket.copy(origem, destino);
+      if (!copyError) return;
+
+      // Plano B: alguns projetos não têm o `copy` liberado na policy.
+      const { data: baixado, error: downloadError } = await bucket.download(origem);
+      if (downloadError || !baixado) {
+        throw new Error(downloadError?.message ?? 'Não foi possível copiar o arquivo do modelo.');
+      }
+      const { error: uploadError } = await bucket.upload(destino, baixado, {
+        contentType: baixado.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        upsert: false,
+      });
+      if (uploadError) throw new Error(uploadError.message);
+    };
+
+    // Guarda o que foi criado para poder desfazer se algum passo falhar.
+    const objetosCriados: string[] = [];
+    let novoId: string | null = null;
+
+    try {
+      let novoCaminhoPrincipal: string | null = null;
+      if (original.file_path) {
+        const extensao = original.file_path.split('.').pop() ?? 'docx';
+        novoCaminhoPrincipal = `${crypto.randomUUID()}.${extensao}`;
+        await copiarArquivo(original.file_path, novoCaminhoPrincipal);
+        objetosCriados.push(novoCaminhoPrincipal);
+      }
+
+      const { data: criado, error: insertError } = await supabase
+        .from(this.tableName)
+        .insert({
+          name: `${original.name} (cópia)`,
+          description: original.description ?? null,
+          content: original.content ?? '',
+          enable_defendant: original.enable_defendant ?? null,
+          signature_field_config: original.signature_field_config ?? null,
+          signature_model: original.signature_model ?? null,
+          file_path: novoCaminhoPrincipal,
+          file_name: original.file_name ?? null,
+          mime_type: original.mime_type ?? null,
+          file_size: original.file_size ?? null,
+        })
+        .select()
+        .single();
+
+      if (insertError || !criado) throw new Error(insertError?.message ?? 'Não foi possível criar a cópia.');
+      novoId = criado.id;
+
+      const anexos = await this.listTemplateFiles(templateId);
+      for (const anexo of anexos) {
+        const extensao = anexo.file_path.split('.').pop() ?? 'docx';
+        const destino = `${criado.id}/${crypto.randomUUID()}.${extensao}`;
+        await copiarArquivo(anexo.file_path, destino);
+        objetosCriados.push(destino);
+
+        const { error: anexoError } = await supabase.from('template_files').insert({
+          template_id: criado.id,
+          file_path: destino,
+          file_name: anexo.file_name,
+          mime_type: anexo.mime_type,
+          file_size: anexo.file_size,
+          order: anexo.order,
+          signature_field_config: anexo.signature_field_config ?? null,
+        });
+        if (anexoError) throw new Error(anexoError.message);
+      }
+
+      const campos = await this.listTemplateCustomFields(templateId);
+      if (campos.length > 0) {
+        await this.replaceTemplateCustomFields(
+          criado.id,
+          campos.map((campo) => ({
+            name: campo.name,
+            placeholder: campo.placeholder,
+            field_type: campo.field_type,
+            enabled: campo.enabled,
+            show_in_generation: campo.show_in_generation,
+            required: campo.required,
+            default_value: campo.default_value ?? null,
+            options: campo.options ?? null,
+            description: campo.description ?? null,
+            order: campo.order,
+          })),
+        );
+      }
+
+      return criado;
+    } catch (err) {
+      // Nada de cópia pela metade: desfaz o que já subiu.
+      if (novoId) {
+        await supabase.from('template_files').delete().eq('template_id', novoId);
+        await supabase.from(this.tableName).delete().eq('id', novoId);
+      }
+      if (objetosCriados.length > 0) {
+        await bucket.remove(objetosCriados);
+      }
+      throw err;
+    }
+  }
+
   async updateTemplate(id: string, payload: Partial<CreateDocumentTemplateDTO>): Promise<DocumentTemplate> {
     const { data, error } = await supabase
       .from(this.tableName)
@@ -691,6 +811,7 @@ class DocumentTemplateService {
       placeholder: f.placeholder,
       field_type: f.field_type,
       enabled: f.enabled,
+      show_in_generation: f.show_in_generation,
       required: f.required,
       default_value: f.default_value ?? null,
       options: f.options ?? null,

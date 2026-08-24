@@ -305,6 +305,8 @@ const Palco: React.FC<{ escuro?: boolean }> = ({ escuro = false }) => {
                 onDownload={nada}
                 onEdit={nada}
                 onFormConfig={nada}
+                onCustomFields={nada}
+                onDuplicate={nada}
                 onDelete={nada}
               />
             ))}

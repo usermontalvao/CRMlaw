@@ -128,6 +128,7 @@ export interface TemplateCustomField {
   placeholder: string;
   field_type: TemplateCustomFieldType;
   enabled: boolean;
+  show_in_generation: boolean;
   required: boolean;
   default_value?: string | null;
   options?: CustomFieldOption[] | null;
@@ -142,6 +143,7 @@ export interface UpsertTemplateCustomFieldDTO {
   placeholder: string;
   field_type: TemplateCustomFieldType;
   enabled: boolean;
+  show_in_generation: boolean;
   required: boolean;
   default_value?: string | null;
   options?: CustomFieldOption[] | null;

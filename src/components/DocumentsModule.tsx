@@ -53,17 +53,17 @@ import LinkGenerationOverlay, {
 } from './documents/LinkGenerationOverlay';
 import CustomFieldsManager from './CustomFieldsManager';
 import StandardPetitionsModule from './StandardPetitionsModule';
-import type { DocumentTemplate, CreateDocumentTemplateDTO, TemplateCustomField, UpsertTemplateCustomFieldDTO, CustomField } from '../types/document.types';
+import type { DocumentTemplate, CreateDocumentTemplateDTO, UpsertTemplateCustomFieldDTO } from '../types/document.types';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { SignerAuthMethod } from '../types/signature.types';
 import { LAYER } from '../styles/layers';
 import {
-  getBuiltInTemplateField,
   humanizeTemplatePlaceholder,
   isBuiltInTemplatePlaceholder,
   mergeTemplateFieldDefinitions,
   normalizeTemplateFieldKey,
+  selectActiveCustomTemplateFields,
 } from '../utils/documentTemplateFields';
 
 
@@ -152,6 +152,10 @@ const hasSignatureConfig = (config: unknown): boolean => {
 
 const formatDate = (value?: string | null) => {
   if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-');
+    return `${day}/${month}/${year}`;
+  }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString('pt-BR');
@@ -378,6 +382,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   // Estados para gerenciador de múltiplos arquivos
   const [filesManagerOpen, setFilesManagerOpen] = useState(false);
   const [filesManagerTemplate, setFilesManagerTemplate] = useState<DocumentTemplate | null>(null);
+  const [filesManagerChanged, setFilesManagerChanged] = useState(false);
 
   // Estados para gerenciador de campos personalizados (global)
   const [customFieldsManagerOpen, setCustomFieldsManagerOpen] = useState(false);
@@ -413,6 +418,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   // Menu "⋯" do cartão do modelo: as ações que não são "usar" moram aqui, para
   // sobrar um alvo principal por cartão em vez de sete do mesmo peso.
   const [openCardMenuId, setOpenCardMenuId] = useState<string | null>(null);
+  const [duplicatingTemplateId, setDuplicatingTemplateId] = useState<string | null>(null);
 
   // A tela de gerar tem três painéis e uma largura só. Conforme cada etapa é
   // resolvida, o painel dela encolhe numa faixa e devolve o espaço para a
@@ -432,6 +438,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [templateExtraValues, setTemplateExtraValues] = useState<Record<string, string>>({});
 
   const [showTemplateFormConfigModal, setShowTemplateFormConfigModal] = useState(false);
+  const [templateConfigMode, setTemplateConfigMode] = useState<'form' | 'custom'>('form');
   const [templateFormConfigTemplate, setTemplateFormConfigTemplate] = useState<DocumentTemplate | null>(null);
   const [templateFormConfigLoading, setTemplateFormConfigLoading] = useState(false);
   const [templateFormConfigSaving, setTemplateFormConfigSaving] = useState(false);
@@ -451,10 +458,21 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   });
   const templateFormConfigDragIndexRef = useRef<number | null>(null);
 
+  const templateConfigVisibleFields = useMemo(
+    () => templateFormConfigFields
+      .map((field, index) => ({ field, index }))
+      .filter(({ field }) => templateConfigMode === 'form' || !isBuiltInTemplatePlaceholder(field.placeholder)),
+    [templateConfigMode, templateFormConfigFields],
+  );
+
   const currentDate = useMemo(() => getManausNow(), []);
 
-  const handleOpenTemplateFormConfig = async (template: DocumentTemplate) => {
+  const handleOpenTemplateFormConfig = async (
+    template: DocumentTemplate,
+    mode: 'form' | 'custom' = 'form',
+  ) => {
     try {
+      setTemplateConfigMode(mode);
       setTemplateFormConfigTemplate(template);
       setShowTemplateFormConfigModal(true);
       setTemplateFormConfigLoading(true);
@@ -482,6 +500,23 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     }
   };
 
+  const handleOpenTemplateCustomFields = (template: DocumentTemplate) =>
+    handleOpenTemplateFormConfig(template, 'custom');
+
+  const openTemplateConfigWhenUnknownFieldsExist = async (template: DocumentTemplate) => {
+    try {
+      const [existingConfig, globalCustomFields, inventory] = await Promise.all([
+        documentTemplateService.listTemplateCustomFields(template.id),
+        documentTemplateService.listCustomFields(),
+        inspectTemplatePlaceholders(template),
+      ]);
+      const merged = mergeTemplateFieldDefinitions(inventory.placeholders, existingConfig, globalCustomFields);
+      if (merged.newCustomFieldKeys.length > 0) await handleOpenTemplateFormConfig(template);
+    } catch (error) {
+      console.warn('Não foi possível conferir os novos campos dos anexos:', error);
+    }
+  };
+
   const handleAddTemplateCustomField = () => {
     const name = newTemplateField.name.trim();
     const placeholder = newTemplateField.placeholder.trim().replace(/^\[\[|\]\]$/g, '').trim();
@@ -503,6 +538,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         placeholder,
         field_type: newTemplateField.field_type,
         enabled: true,
+        show_in_generation: true,
         required: newTemplateField.required,
         default_value: null,
         options: null,
@@ -510,7 +546,6 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         order: current.length,
       },
     ]);
-    setTemplateFormNewCustomKeys((current) => Array.from(new Set([...current, key])));
     setNewTemplateField({ name: '', placeholder: '', field_type: 'text', required: true, description: '' });
     setShowNewTemplateFieldForm(false);
   };
@@ -528,12 +563,18 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           name: (f.name || '').trim() || f.placeholder,
           description: (f.description || '').trim() || null,
           enabled: f.enabled !== false,
+          show_in_generation: f.show_in_generation !== false,
           order: typeof f.order === 'number' ? f.order : idx,
         }))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
       await documentTemplateService.replaceTemplateCustomFields(templateFormConfigTemplate.id, payload);
-      toast.success('Campos configurados', 'Os campos do template foram salvos para o formulário e para a geração interna.');
+      toast.success(
+        'Campos configurados',
+        templateConfigMode === 'form'
+          ? 'A coleta de dados do formulário foi salva.'
+          : 'A exibição dos campos personalizados na geração interna foi salva.',
+      );
       setShowTemplateFormConfigModal(false);
       setTemplateFormConfigTemplate(null);
       setTemplateFormConfigFields([]);
@@ -884,13 +925,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         ]);
         if (!active) return;
 
-        const detectedKeys = new Set(inventory.placeholders.map(normalizeTemplateFieldKey));
         const merged = mergeTemplateFieldDefinitions(inventory.placeholders, existingConfig, globalCustomFields);
-        const extraFields = merged.fields.filter((field) =>
-          field.enabled !== false
-          && !isBuiltInTemplatePlaceholder(field.placeholder)
-          && detectedKeys.has(normalizeTemplateFieldKey(field.placeholder)),
-        );
+        const extraFields = selectActiveCustomTemplateFields(merged.fields, inventory.placeholders);
         setTemplateExtraFields(extraFields);
 
         const defaults: Record<string, string> = {
@@ -1346,6 +1382,26 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
     handleSelectTemplate(template.id);
     setTemplateSearchQuery('');
     setActiveView('new-doc');
+  };
+
+  // Clonar um kit inteiro — arquivo principal, anexos, campos e posições de
+  // assinatura. O trabalho pesado (cópia no storage) está no serviço.
+  const handleDuplicateTemplate = async (template: DocumentTemplate) => {
+    if (!ensurePermission({ module: 'documentos', action: 'create' })) return;
+    try {
+      setDuplicatingTemplateId(template.id);
+      setTemplateActionError(null);
+      const copia = await documentTemplateService.duplicateTemplate(template.id);
+      setTemplates(await documentTemplateService.listTemplates());
+      toast.success(`"${copia.name}" criado a partir de ${template.name}`);
+    } catch (err: any) {
+      console.error('Erro ao duplicar modelo:', err);
+      const mensagem = err?.message || 'Não foi possível duplicar este modelo.';
+      setTemplateActionError(mensagem);
+      toast.error(mensagem);
+    } finally {
+      setDuplicatingTemplateId(null);
+    }
   };
 
   const handleDownloadTemplate = async (template: DocumentTemplate) => {
@@ -1924,13 +1980,13 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
       {/* Header com tabs */}
       <div className="flex-none rounded-2xl border border-[#e7e5df] bg-[#f8f7f5] dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex flex-col gap-2 border-b border-[#e7e5df] px-4 py-3 @sm:flex-row @sm:px-6 dark:border-zinc-800">
+        <div className="flex flex-col gap-1 border-b border-[#e7e5df] p-2 @sm:inline-flex @sm:flex-row @sm:m-3 @sm:mb-3 @sm:rounded-xl @sm:border @sm:border-[#e7e5df] @sm:bg-slate-100/70 @sm:p-1 dark:border-zinc-800 @sm:dark:bg-zinc-800/60">
           <button
             onClick={() => setActiveView('new-doc')}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
               activeView === 'new-doc'
-                ? 'bg-primary-500 text-white'
-                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'
+                ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5 dark:bg-zinc-900 dark:text-zinc-100'
+                : 'text-slate-500 hover:bg-white/70 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-900/60 dark:hover:text-zinc-100'
             }`}
           >
             <Plus className="h-4 w-4" />
@@ -1940,8 +1996,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             onClick={() => setActiveView('manage')}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
               activeView === 'manage'
-                ? 'bg-primary-500 text-white'
-                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'
+                ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5 dark:bg-zinc-900 dark:text-zinc-100'
+                : 'text-slate-500 hover:bg-white/70 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-900/60 dark:hover:text-zinc-100'
             }`}
           >
             <Settings className="h-4 w-4" />
@@ -1951,8 +2007,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
             onClick={() => setActiveView('petitions')}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
               activeView === 'petitions'
-                ? 'bg-primary-500 text-white'
-                : 'border border-[#e7e5df] text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800'
+                ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5 dark:bg-zinc-900 dark:text-zinc-100'
+                : 'text-slate-500 hover:bg-white/70 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-900/60 dark:hover:text-zinc-100'
             }`}
           >
             <BookOpen className="h-4 w-4" />
@@ -2359,11 +2415,15 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                     onOpenFiles={() => {
                       setOpenCardMenuId(null);
                       setFilesManagerTemplate(template);
+                      setFilesManagerChanged(false);
                       setFilesManagerOpen(true);
                     }}
                     onDownload={() => { setOpenCardMenuId(null); handleDownloadTemplate(template); }}
                     onEdit={() => { setOpenCardMenuId(null); handleOpenEditModal(template); }}
                     onFormConfig={() => { setOpenCardMenuId(null); handleOpenTemplateFormConfig(template); }}
+                    onCustomFields={() => { setOpenCardMenuId(null); handleOpenTemplateCustomFields(template); }}
+                    duplicating={duplicatingTemplateId === template.id}
+                    onDuplicate={() => { setOpenCardMenuId(null); handleDuplicateTemplate(template); }}
                     onDelete={() => { setOpenCardMenuId(null); handleDeleteTemplate(template); }}
                   />
                 );
@@ -2712,11 +2772,15 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       <TemplateFilesManager
         isOpen={filesManagerOpen}
         onClose={() => {
+          const changedTemplate = filesManagerChanged ? filesManagerTemplate : null;
           setFilesManagerOpen(false);
           setFilesManagerTemplate(null);
+          setFilesManagerChanged(false);
+          if (changedTemplate) void openTemplateConfigWhenUnknownFieldsExist(changedTemplate);
         }}
         template={filesManagerTemplate}
         onUpdate={async () => {
+          setFilesManagerChanged(true);
           // Recarregar templates
           const data = await documentTemplateService.listTemplates();
           setTemplates(data);
@@ -2835,8 +2899,10 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         }
       }}
       title={templateFormConfigTemplate?.name ?? ''}
-      eyebrow="Campos do template"
-      subtitle="O sistema analisou o documento principal e todos os anexos. Configure os campos adicionais antes de gerar documentos."
+      eyebrow={templateConfigMode === 'form' ? 'Campos do formulário' : 'Campos personalizados'}
+      subtitle={templateConfigMode === 'form'
+        ? 'Escolha quais dados serão coletados no formulário público enviado ao cliente.'
+        : 'Consulte os dados definidos no formulário e escolha apenas quais serão solicitados na geração interna.'}
       size="lg"
       zIndex={LAYER.MODAL_NESTED + 1}
       headerActions={
@@ -2894,7 +2960,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           </div>
         )}
 
-        {!templateFormConfigLoading && (
+        {!templateFormConfigLoading && templateConfigMode === 'form' && (
           <div className="mb-4 space-y-3">
             {templateFormNewCustomKeys.length > 0 && (
               <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
@@ -3001,16 +3067,21 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           <div className="flex items-center justify-center py-10">
             <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
           </div>
-        ) : templateFormConfigFields.length === 0 ? (
-          <p className="text-sm text-slate-600 dark:text-slate-400">Nenhum placeholder encontrado no template.</p>
+        ) : templateConfigVisibleFields.length === 0 ? (
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            {templateConfigMode === 'form'
+              ? 'Nenhum placeholder encontrado no template.'
+              : 'Nenhum campo personalizado foi cadastrado. Faça o cadastro em “Campos do formulário”.'}
+          </p>
         ) : (
           <div className="space-y-3">
-            {templateFormConfigFields.map((f, idx) => (
+            {templateConfigVisibleFields.map(({ field: f, index: idx }) => (
               <div
                 key={`${f.placeholder}-${idx}`}
                 className="rounded-xl border border-[#e7e5df] dark:border-zinc-800 bg-slate-50 dark:bg-zinc-800/40 p-4"
-                draggable={!templateFormConfigSaving && !templateFormConfigLoading}
+                draggable={templateConfigMode === 'form' && !templateFormConfigSaving && !templateFormConfigLoading}
                 onDragStart={() => {
+                  if (templateConfigMode !== 'form') return;
                   templateFormConfigDragIndexRef.current = idx;
                 }}
                 onDragOver={(e) => {
@@ -3018,6 +3089,7 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
+                  if (templateConfigMode !== 'form') return;
                   const from = templateFormConfigDragIndexRef.current;
                   templateFormConfigDragIndexRef.current = null;
                   if (from === null) return;
@@ -3043,6 +3115,15 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                       ) : (
                         <span className="rounded-full bg-primary-100 px-2 py-0.5 font-medium text-primary-700 dark:bg-primary-500/20 dark:text-primary-300">Campo personalizado</span>
                       )}
+                      {templateConfigMode === 'custom' && (
+                        <span className={`rounded-full px-2 py-0.5 font-semibold ${
+                          f.show_in_generation !== false
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300'
+                            : 'bg-slate-200 text-slate-500 dark:bg-zinc-700 dark:text-zinc-400'
+                        }`}>
+                          {f.show_in_generation !== false ? 'Exibido na geração' : 'Oculto na geração'}
+                        </span>
+                      )}
                       {templateFormDetectedKeys.includes(normalizeTemplateFieldKey(f.placeholder)) ? (
                         <span className="text-slate-500 dark:text-zinc-400">
                           Encontrado em {(templateFormFilesByKey[normalizeTemplateFieldKey(f.placeholder)] || []).join(', ')}
@@ -3053,7 +3134,8 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {!isBuiltInTemplatePlaceholder(f.placeholder)
+                    {templateConfigMode === 'form'
+                      && !isBuiltInTemplatePlaceholder(f.placeholder)
                       && !templateFormDetectedKeys.includes(normalizeTemplateFieldKey(f.placeholder)) && (
                       <button
                         type="button"
@@ -3068,39 +3150,47 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                         <Trash2 className="h-4 w-4" />
                       </button>
                     )}
-                    <div className="text-slate-400 dark:text-slate-500 cursor-grab active:cursor-grabbing select-none">
-                      <GripVertical className="w-5 h-5" />
-                    </div>
+                    {templateConfigMode === 'form' && (
+                      <div className="text-slate-400 dark:text-slate-500 cursor-grab active:cursor-grabbing select-none">
+                        <GripVertical className="w-5 h-5" />
+                      </div>
+                    )}
                   <div className="flex flex-col sm:items-end gap-2">
                     <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
                       <input
                         type="checkbox"
-                        checked={f.enabled !== false}
+                        checked={templateConfigMode === 'form' ? f.enabled !== false : f.show_in_generation !== false}
                         onChange={(e) =>
                           setTemplateFormConfigFields((prev) =>
-                            prev.map((p, i) => (i === idx ? { ...p, enabled: e.target.checked, required: e.target.checked ? p.required : false } : p)),
+                            prev.map((p, i) => i === idx
+                              ? templateConfigMode === 'form'
+                                ? { ...p, enabled: e.target.checked }
+                                : { ...p, show_in_generation: e.target.checked }
+                              : p),
                           )
                         }
                       />
-                      Ativo
+                      {templateConfigMode === 'form' ? 'Coletar no formulário' : 'Exibir na geração'}
                     </label>
-                    <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                      <input
-                        type="checkbox"
-                        checked={!!f.required}
-                        disabled={f.enabled === false}
-                        onChange={(e) =>
-                          setTemplateFormConfigFields((prev) =>
-                            prev.map((p, i) => (i === idx ? { ...p, required: e.target.checked } : p)),
-                          )
-                        }
-                      />
-                      Obrigatório
-                    </label>
+                    {templateConfigMode === 'form' && (
+                      <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                        <input
+                          type="checkbox"
+                          checked={!!f.required}
+                          onChange={(e) =>
+                            setTemplateFormConfigFields((prev) =>
+                              prev.map((p, i) => (i === idx ? { ...p, required: e.target.checked } : p)),
+                            )
+                          }
+                        />
+                        Obrigatório
+                      </label>
+                    )}
                   </div>
                   </div>
                 </div>
 
+                {templateConfigMode === 'form' ? (
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <label className="block">
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Título</span>
@@ -3118,7 +3208,6 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Tipo</span>
                     <select
                       value={f.field_type}
-                      disabled={f.enabled === false}
                       onChange={(e) => {
                         const nextType = e.target.value as any;
                         setTemplateFormConfigFields((prev) =>
@@ -3175,8 +3264,34 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                     />
                   </label>
                 </div>
+                ) : (
+                  <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2 dark:border-zinc-700 dark:bg-zinc-900/60">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Título</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">{f.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Tipo</p>
+                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">{{
+                        text: 'Texto',
+                        name: 'Nome',
+                        cpf: 'CPF',
+                        phone: 'Telefone',
+                        cep: 'CEP',
+                        textarea: 'Texto longo',
+                        number: 'Número',
+                        date: 'Data',
+                        select: 'Seleção',
+                      }[f.field_type]}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Descrição</p>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{f.description || 'Sem descrição cadastrada.'}</p>
+                    </div>
+                  </div>
+                )}
 
-                {f.field_type === 'select' && (
+                {templateConfigMode === 'form' && f.field_type === 'select' && (
                   <div className="mt-4">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Opções (1 por linha)</span>
@@ -3217,7 +3332,6 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
                     </div>
                     <textarea
                       value={templateFormConfigOptionsToText(f.options)}
-                      disabled={f.enabled === false}
                       onChange={(e) => {
                         const parsed = templateFormConfigParseOptions(e.target.value);
                         setTemplateFormConfigFields((prev) => prev.map((p, i) => (i === idx ? { ...p, options: parsed } : p)));

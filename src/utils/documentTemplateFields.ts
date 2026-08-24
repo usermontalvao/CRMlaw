@@ -107,6 +107,7 @@ export const mergeTemplateFieldDefinitions = (
       placeholder,
       field_type: existing?.field_type ?? builtIn?.fieldType ?? toTemplateFieldType(globalField),
       enabled: existing?.enabled ?? true,
+      show_in_generation: existing?.show_in_generation ?? true,
       required: existing?.required ?? globalField?.required ?? (!builtIn),
       default_value: existing?.default_value ?? globalField?.default_value ?? null,
       options: existing?.options ?? globalField?.options ?? null,
@@ -123,6 +124,7 @@ export const mergeTemplateFieldDefinitions = (
       placeholder: existing.placeholder,
       field_type: existing.field_type,
       enabled: existing.enabled,
+      show_in_generation: existing.show_in_generation ?? true,
       required: existing.required,
       default_value: existing.default_value ?? null,
       options: existing.options ?? null,
@@ -144,3 +146,15 @@ export const mergeTemplateFieldDefinitions = (
   };
 };
 
+/** Campos adicionais que realmente devem ser solicitados na geração. */
+export const selectActiveCustomTemplateFields = (
+  fields: UpsertTemplateCustomFieldDTO[],
+  detectedPlaceholders: string[],
+) => {
+  const detectedKeys = new Set(detectedPlaceholders.map(normalizeTemplateFieldKey));
+  return fields.filter((field) =>
+    field.show_in_generation !== false
+    && !isBuiltInTemplatePlaceholder(field.placeholder)
+    && detectedKeys.has(normalizeTemplateFieldKey(field.placeholder)),
+  );
+};
