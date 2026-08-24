@@ -159,7 +159,10 @@ html, body {
 .item-copiar.copiado { background: var(--sucesso); border-color: var(--sucesso); color: #fff; }
 
 .item-barra { grid-area: barra; height: 3px; margin-top: 7px; border-radius: 2px; background: var(--fundo-suave); overflow: hidden; }
-.item-barra span { display: block; height: 100%; background: var(--acento); border-radius: 2px; transition: width 1s linear; }
+/* `width: 0` é obrigatório: sem ele um <span> de bloco ocupa a linha toda e
+   a barra nasce CHEIA, até o primeiro tique corrigi-la. Quem a enche é a
+   folha adotada do popup.js, cujo seletor é mais específico que este. */
+.item-barra span { display: block; width: 0; height: 100%; background: var(--acento); border-radius: 2px; transition: width 1s linear; }
 .item-barra span.urgente { background: var(--perigo); }
 
 .item-estrela { border: 0; background: none; cursor: pointer; padding: 0 2px; color: var(--texto-suave); line-height: 1; font-size: 13px; }
@@ -324,3 +327,38 @@ html, body {
    de estilo no HTML — e recusar é o certo: é a mesma porta por onde entraria
    estilo injetado. */
 .rodape-nota--solta { margin-top: 8px; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   O QUE ANTES ERA `elemento.style.…` NO JAVASCRIPT
+
+   A CSP da extensão é `style-src 'self'`, e ela não recusa só o atributo
+   `style=` escrito no HTML: recusa também o que o JavaScript escreve por
+   `elemento.style.alguma-coisa`. O popup fazia isso em dezoito lugares, e o
+   navegador bloqueava calado — texto sem corte, barra parada, cor de perigo
+   que nunca chegava, e o console cheio de "Applying inline style violates...".
+
+   Cada um virou classe. A largura da barra do contador, que muda a cada
+   segundo e não cabe numa classe, mora numa folha ADOTADA criada pelo
+   `popup.js` — CSSOM programático não é estilo inline, então passa pela CSP
+   sem afrouxá-la.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Texto do aviso: o <p> já vem espaçado pelo bloco que o contém. */
+.aviso-texto { margin: 0; }
+
+/* Botão de link que precisa se afastar do que veio antes. */
+.link--espacado { margin-top: 10px; }
+
+/* Ação que destrói algo — remover acesso, revogar dispositivo. */
+.link--perigo { color: var(--perigo); }
+
+/* Nome da chave na lista: corta com reticências em vez de empurrar o resto. */
+.item-nome-texto { overflow: hidden; text-overflow: ellipsis; }
+
+/* Título de item que está fora de jogo (o que a importação vai pular). */
+.titulo--apagado { color: var(--texto-suave); }
+
+/* Par rótulo/valor das telas de detalhe. */
+.linha-info { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 13px; }
+.linha-info__chave { color: var(--texto-suave); }
+.linha-info__valor { text-align: right; word-break: break-word; }

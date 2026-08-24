@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.4',
+    date: '24/08/2026',
+    summary: 'Na extensão do Chrome, a barra de tempo dos códigos voltou a andar e a lista parou de acusar erro.',
+    modules: [
+      {
+        moduleId: 'authenticator',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A barra de tempo dos códigos volta a funcionar na extensão',
+            description: 'A extensão trabalha com uma regra de segurança que proíbe estilo escrito direto no elemento — e era assim que a barrinha de contagem, o corte dos nomes longos e a cor dos botões de remover eram aplicados. O navegador bloqueava tudo em silêncio. Agora esses estilos vêm da folha de estilo da extensão, sem afrouxar a regra.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Nova versão da extensão para baixar (1.0.1)',
+            description: 'Quem já usa a extensão precisa baixar de novo pelo cofre e recarregá-la no Chrome para receber a correção.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.3',
     date: '24/08/2026',
     summary: 'Na tela de gerenciar chaves, as suas e as que compartilharam com você ficam em grupos separados e identificados.',

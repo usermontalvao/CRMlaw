@@ -256,13 +256,12 @@ function vazio(titulo, texto, aoClicar) {
   forte.textContent = titulo;
   const p = document.createElement('p');
   p.textContent = texto;
-  p.style.margin = '0';
+  p.className = 'aviso-texto';
   el.append(forte, p);
   if (aoClicar) {
     const botao = document.createElement('button');
-    botao.className = 'link';
+    botao.className = 'link link--espacado';
     botao.textContent = 'Tentar de novo';
-    botao.style.marginTop = '10px';
     botao.addEventListener('click', aoClicar);
     el.append(botao);
   }
@@ -323,8 +322,7 @@ function cartao(credencial) {
 
   const texto = document.createElement('span');
   texto.textContent = credencial.name;
-  texto.style.overflow = 'hidden';
-  texto.style.textOverflow = 'ellipsis';
+  texto.className = 'item-nome-texto';
   nome.append(estrela, texto);
 
   if (credencial.shared || !credencial.is_owner) {
@@ -404,10 +402,49 @@ function cartao(credencial) {
   barra.className = 'item-barra';
   const preenchimento = document.createElement('span');
   preenchimento.dataset.papel = 'barra';
+  preenchimento.dataset.barraDe = credencial.id;
   barra.append(preenchimento);
 
   item.append(nome, codigo, contador, acoes, barra);
   return item;
+}
+
+/**
+ * A LARGURA DA BARRA, SEM ATRIBUTO DE ESTILO.
+ *
+ * A CSP da extensão é `style-src 'self'`, e ela recusa estilo inline —
+ * inclusive o que é escrito por `elemento.style.width`, que era como esta
+ * barra andava. O resultado era o console cheio de "Applying inline style
+ * violates..." e a barra parada, porque a atribuição era simplesmente
+ * bloqueada.
+ *
+ * Afrouxar a CSP com `unsafe-inline` resolveria numa linha e abriria a porta
+ * por onde entraria estilo injetado — a mesma porta que o resto da extensão
+ * mantém fechada de propósito. Uma folha ADOTADA é a saída certa: é CSSOM
+ * programático, não estilo inline, então a CSP não tem o que barrar. Regra de
+ * bolso: valor fixo vira classe; valor que muda a cada segundo vira regra numa
+ * folha como esta.
+ *
+ * As larguras são acumuladas e escritas UMA vez por tique. Chamar `replaceSync`
+ * por barra faria o trabalho crescer com o quadrado do número de chaves.
+ */
+const folhaDasBarras = new CSSStyleSheet();
+document.adoptedStyleSheets = [...document.adoptedStyleSheets, folhaDasBarras];
+const largurasDasBarras = new Map();
+
+function marcarLarguraDaBarra(id, porcentagem) {
+  const limitada = Math.min(100, Math.max(0, porcentagem));
+  largurasDasBarras.set(id, limitada);
+}
+
+function aplicarLargurasDasBarras() {
+  const regras = [];
+  for (const [id, largura] of largurasDasBarras) {
+    // `.item-barra span[...]` (0,2,1) e não `[...]` (0,1,0): o seletor tem de
+    // ganhar de `.item-barra span { width: 0 }`, senão a barra nunca enche.
+    regras.push(`.item-barra span[data-barra-de="${CSS.escape(id)}"]{width:${largura.toFixed(2)}%}`);
+  }
+  folhaDasBarras.replaceSync(regras.join('\n'));
 }
 
 /** Anima contador e barra localmente, sem ir ao servidor a cada segundo. */
@@ -425,7 +462,7 @@ function atualizarContadores() {
     if (!dados) {
       codigo.replaceChildren('······');
       contador.textContent = '';
-      barra.style.width = '0%';
+      marcarLarguraDaBarra(item.dataset.id, 0);
       copiar.disabled = true;
       preencher.disabled = true;
       continue;
@@ -434,7 +471,7 @@ function atualizarContadores() {
       codigo.replaceChildren(dados.erro);
       codigo.classList.add('indisponivel');
       contador.textContent = '';
-      barra.style.width = '0%';
+      marcarLarguraDaBarra(item.dataset.id, 0);
       copiar.disabled = true;
       preencher.disabled = true;
       continue;
@@ -454,11 +491,13 @@ function atualizarContadores() {
     codigo.classList.remove('indisponivel');
     contador.textContent = `${restante}s`;
     contador.classList.toggle('urgente', restante <= 5);
-    barra.style.width = `${Math.max(0, (restante / dados.period) * 100)}%`;
+    marcarLarguraDaBarra(item.dataset.id, (restante / dados.period) * 100);
     barra.classList.toggle('urgente', restante <= 5);
     copiar.disabled = false;
     preencher.disabled = false;
   }
+
+  aplicarLargurasDasBarras();
 }
 
 $('#busca').addEventListener('input', (evento) => {
@@ -503,9 +542,8 @@ async function abrirDetalhe(id) {
         const linha = pessoa(p.name ?? p.email, p.email, p.permission);
         if (credential.can_manage) {
           const remover = document.createElement('button');
-          remover.className = 'link';
+          remover.className = 'link link--perigo';
           remover.textContent = 'Remover';
-          remover.style.color = 'var(--perigo)';
           remover.addEventListener('click', async () => {
             try {
               await pedir('revogar', { id, userId: p.user_id });
@@ -578,17 +616,12 @@ function rotulo(texto) {
 
 function linhaInfo(chave, valor) {
   const el = document.createElement('div');
-  el.style.display = 'flex';
-  el.style.justifyContent = 'space-between';
-  el.style.gap = '12px';
-  el.style.padding = '3px 0';
-  el.style.fontSize = '13px';
+  el.className = 'linha-info';
   const k = document.createElement('span');
-  k.style.color = 'var(--texto-suave)';
+  k.className = 'linha-info__chave';
   k.textContent = chave;
   const v = document.createElement('span');
-  v.style.textAlign = 'right';
-  v.style.wordBreak = 'break-word';
+  v.className = 'linha-info__valor';
   v.textContent = valor;
   el.append(k, v);
   return el;
@@ -872,8 +905,7 @@ function renderizarImportacao() {
     const info = document.createElement('div');
     info.className = 'info';
     const titulo = document.createElement('div');
-    titulo.className = 'titulo';
-    titulo.style.color = 'var(--texto-suave)';
+    titulo.className = 'titulo titulo--apagado';
     titulo.textContent = pulado.name;
     const motivo = document.createElement('div');
     motivo.className = 'dup';
@@ -1061,8 +1093,7 @@ $('#abrir-dispositivos').addEventListener('click', async () => {
 
       if (!sessao.is_current) {
         const revogar = document.createElement('button');
-        revogar.className = 'link';
-        revogar.style.color = 'var(--perigo)';
+        revogar.className = 'link link--perigo';
         revogar.textContent = 'Revogar';
         revogar.addEventListener('click', async () => {
           try {
