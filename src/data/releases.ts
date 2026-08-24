@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.11.13',
+    date: '23/08/2026',
+    summary: 'O link do cliente virou a ação principal do modelo, com dois links à escolha — e a espera antes da janela deixou de abrir preta.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'O link do cliente é a ação principal do modelo',
+            description: 'O botão grande de cada modelo passou a ser "Link para o cliente", que é o que o escritório faz todo dia: mandar a pessoa preencher. Gerar o documento ali mesmo, sem link, continua disponível no menu "⋯".',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Dois links, e a janela diz para que serve cada um',
+            description: 'O de uso único vale 7 dias, serve a um preenchimento e nasce novo toda vez que a janela abre — assim o mesmo formulário nunca vai para dois clientes. O fixo continua sendo o mesmo endereço de sempre, para o site, a bio ou um envio em massa.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A espera antes da janela não abre mais preta',
+            description: 'A animação de "gerando link" seguia o tema do sistema operacional, não o do CRM: quem usa o computador no modo escuro via uma tela preta surgir por cima do sistema claro. Agora ela é branca, mostra o nome do modelo e marca os três passos do trabalho.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.12',
     date: '23/08/2026',
     summary: 'O módulo Documentos ganha a cor da casa, funciona no tema escuro e o cartão do modelo passa a ter uma ação clara: usar.',

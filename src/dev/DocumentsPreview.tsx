@@ -12,6 +12,8 @@
 import React, { useState } from 'react';
 import TemplateCard from '../components/documents/TemplateCard';
 import TemplateFileRow from '../components/documents/TemplateFileRow';
+import TemplateFillLinkPanel, { type TemplateFillLinkKind } from '../components/documents/TemplateFillLinkPanel';
+import LinkGenerationOverlay from '../components/documents/LinkGenerationOverlay';
 import type { DocumentTemplate } from '../types/document.types';
 
 const modelo = (over: Partial<DocumentTemplate>): DocumentTemplate => ({
@@ -68,6 +70,7 @@ const Bloco: React.FC<{ titulo: string; nota: string; children: React.ReactNode 
 const Palco: React.FC<{ escuro?: boolean }> = ({ escuro = false }) => {
   const [cardMenu, setCardMenu] = useState<string | null>('b');
   const [rowMenu, setRowMenu] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState<TemplateFillLinkKind | null>('unique');
   const nada = () => {};
 
   return (
@@ -84,7 +87,7 @@ const Palco: React.FC<{ escuro?: boolean }> = ({ escuro = false }) => {
 
         <Bloco
           titulo="Cartão do modelo — aba Gerenciar templates"
-          nota="Uma ação de primeiro nível; o segundo cartão está com o menu ⋯ aberto."
+          nota="A ação principal copia o link do cliente; o segundo cartão está com o menu ⋯ aberto."
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {MODELOS.map(({ template, anexos, assina }) => (
@@ -150,6 +153,34 @@ const Palco: React.FC<{ escuro?: boolean }> = ({ escuro = false }) => {
               onPosition={nada}
               onDownload={nada}
               onRemove={nada}
+            />
+          </div>
+        </Bloco>
+
+        <Bloco
+          titulo="A espera, entre o clique e o modal"
+          nota="Branca sempre: a antiga seguia o tema do sistema operacional e abria preta por cima do CRM claro."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl bg-[#faf9f7] dark:bg-zinc-900">
+              <LinkGenerationOverlay phase="working" variant="inline" templateName="KIT AUX. POR INCAPACIDADE TEMPORÁRIA" />
+            </div>
+            <div className="rounded-2xl bg-[#faf9f7] dark:bg-zinc-900">
+              <LinkGenerationOverlay phase="done" variant="inline" />
+            </div>
+          </div>
+        </Bloco>
+
+        <Bloco
+          titulo="Link de preenchimento — o que abre ao copiar"
+          nota="Dois links: o de uso único (novo a cada abertura) e o fixo de divulgação."
+        >
+          <div className="max-w-xl rounded-2xl border border-[#e7e5df] bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+            <TemplateFillLinkPanel
+              uniqueLink="https://jurius.com.br/#/preencher/fd2d328b-7856-4119-abb4-eae8891a122e"
+              permanentLink="https://jurius.com.br/#/p/kit-aux-por-incapacidade-temporaria-8c6k"
+              copiedKind={copiado}
+              onCopy={setCopiado}
             />
           </div>
         </Bloco>

@@ -45,6 +45,12 @@ import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import TemplateFilesManager from './TemplateFilesManager';
 import TemplateCard from './documents/TemplateCard';
+import TemplateFillLinkPanel from './documents/TemplateFillLinkPanel';
+import LinkGenerationOverlay, {
+  DURACAO_DO_FECHO_MS,
+  DURACAO_MINIMA_ANIMACAO_MS,
+  type LinkOverlayPhase,
+} from './documents/LinkGenerationOverlay';
 import CustomFieldsManager from './CustomFieldsManager';
 import StandardPetitionsModule from './StandardPetitionsModule';
 import type { DocumentTemplate, CreateDocumentTemplateDTO, TemplateCustomField, UpsertTemplateCustomFieldDTO, CustomField } from '../types/document.types';
@@ -113,6 +119,20 @@ const extractPlaceholdersFromText = (content: string): string[] => {
     found.push(raw);
   }
   return found;
+};
+
+const esperar = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// Copia sem quebrar quando o navegador recusa a área de transferência (Safari
+// costuma negar depois de um `await`). Devolve se conseguiu, para a tela poder
+// dizer "copiado" só quando foi verdade.
+const copyToClipboard = async (text: string): Promise<boolean> => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 // Um arquivo "assina" quando tem ao menos uma posição de assinatura gravada.
@@ -321,9 +341,17 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [preparingSignature, setPreparingSignature] = useState(false);
 
   const [showTemplateFillLinkModal, setShowTemplateFillLinkModal] = useState(false);
-  const [templateFillLink, setTemplateFillLink] = useState('');
-  const [templateFillLinkCopied, setTemplateFillLinkCopied] = useState(false);
+  // Dois links por modelo, e eles servem a coisas diferentes:
+  //   - o de uso único (/preencher/<token>) nasce NOVO a cada abertura do modal
+  //     e vale 7 dias. É o que vai para um cliente específico — mandar o mesmo
+  //     para duas pessoas é o problema que ele existe para evitar;
+  //   - o permalink (/p/<slug>) é fixo por modelo e serve para divulgação.
+  const [templateFillUniqueLink, setTemplateFillUniqueLink] = useState('');
+  const [templateFillPermanentLink, setTemplateFillPermanentLink] = useState('');
+  const [templateFillCopiedKind, setTemplateFillCopiedKind] = useState<'unique' | 'permanent' | null>(null);
   const [creatingTemplateFillLinkId, setCreatingTemplateFillLinkId] = useState<string | null>(null);
+  const [linkOverlayPhase, setLinkOverlayPhase] = useState<LinkOverlayPhase | null>(null);
+  const [linkOverlayTemplateName, setLinkOverlayTemplateName] = useState<string | undefined>(undefined);
 
   const [templateFilesSummary, setTemplateFilesSummary] = useState<Record<string, { count: number; firstFileName?: string; signedCount: number }>>({});
 
@@ -1552,8 +1580,11 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
   const handleGenerateTemplateFillLink = async (template: DocumentTemplate) => {
     if (!ensurePermission({ module: 'documentos', action: 'create' })) return;
+    const inicioDaCena = Date.now();
     try {
       setCreatingTemplateFillLinkId(template.id);
+      setLinkOverlayTemplateName(template.name);
+      setLinkOverlayPhase('working');
       setTemplateActionError(null);
 
       const { data: userData } = await supabase.auth.getUser();
@@ -1600,63 +1631,75 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
         }
       }
 
-      // Link fixo (permalink) - reutilizável
-      const fixedLink = permalinkSlug 
+      // Link fixo (permalink) — reutilizável; pode não existir se o insert falhou.
+      const fixedLink = permalinkSlug
         ? buildPublicPermalinkUrl(permalinkSlug)
-        : null;
+        : '';
 
-      // Mostrar o link fixo no modal (se disponível)
-      if (fixedLink) {
-        setTemplateFillLink(fixedLink);
-        setTemplateFillLinkCopied(false);
-        setShowTemplateFillLinkModal(true);
-        toast.success('Link fixo gerado - pode ser reutilizado!');
-      } else {
-        // Fallback: criar link único (comportamento antigo)
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      // Link de uso único — SEMPRE um novo, a cada abertura do modal. Reaproveitar
+      // um token já enviado deixaria dois clientes preenchendo o mesmo formulário.
+      let uniqueLink = '';
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: uniqueRow, error: uniqueError } = await supabase
+        .from('template_fill_links')
+        .insert({
+          template_id: template.id,
+          created_by: userData.user.id,
+          expires_at: expiresAt,
+          status: 'pending',
+        })
+        .select('public_token')
+        .single();
 
-        const { data, error } = await supabase
-          .from('template_fill_links')
-          .insert({
-            template_id: template.id,
-            created_by: userData.user.id,
-            expires_at: expiresAt,
-            status: 'pending',
-          })
-          .select('*')
-          .single();
-
-        if (error) throw new Error(error.message);
-        if (!data?.public_token) throw new Error('Erro ao gerar token do link');
-
-        const link = buildPublicFillUrl(data.public_token);
-        setTemplateFillLink(link);
-        setTemplateFillLinkCopied(false);
-        setShowTemplateFillLinkModal(true);
-        toast.success('Link de preenchimento gerado');
+      if (uniqueError) {
+        console.warn('Não foi possível criar link de uso único:', uniqueError.message);
+      } else if (uniqueRow?.public_token) {
+        uniqueLink = buildPublicFillUrl(uniqueRow.public_token);
       }
+
+      if (!uniqueLink && !fixedLink) {
+        throw new Error('Não foi possível gerar nenhum link para este modelo');
+      }
+
+      // Nada de copiar sozinho: quem escolhe qual dos dois links vai para a
+      // área de transferência é a pessoa, no botão de cada um.
+      setTemplateFillUniqueLink(uniqueLink);
+      setTemplateFillPermanentLink(fixedLink);
+      setTemplateFillCopiedKind(null);
+
+      // Piso de exibição da cena, para ela não virar um flash quando o banco
+      // responde em ~200 ms.
+      const restante = DURACAO_MINIMA_ANIMACAO_MS - (Date.now() - inicioDaCena);
+      if (restante > 0) await esperar(restante);
+      setLinkOverlayPhase('done');
+      await esperar(DURACAO_DO_FECHO_MS);
+
+      setShowTemplateFillLinkModal(true);
+      toast.success('Link pronto para enviar');
     } catch (err: any) {
       console.error('Erro ao gerar link de preenchimento:', err);
       toast.error(err?.message || 'Erro ao gerar link de preenchimento');
     } finally {
+      setLinkOverlayPhase(null);
       setCreatingTemplateFillLinkId(null);
     }
   };
 
-  const handleCopyTemplateFillLink = () => {
-    navigator.clipboard.writeText(templateFillLink).then(() => {
-      setTemplateFillLinkCopied(true);
-      setTimeout(() => setTemplateFillLinkCopied(false), 3000);
-    }).catch(() => {
+  const handleCopyTemplateFillLink = async (kind: 'unique' | 'permanent') => {
+    const value = kind === 'unique' ? templateFillUniqueLink : templateFillPermanentLink;
+    if (!value) return;
+
+    let copied = await copyToClipboard(value);
+    if (!copied) {
+      // Navegador antigo ou permissão negada: cai no truque do input escondido.
       const input = document.createElement('input');
-      input.value = templateFillLink;
+      input.value = value;
       document.body.appendChild(input);
       input.select();
-      document.execCommand('copy');
+      copied = document.execCommand('copy');
       document.body.removeChild(input);
-      setTemplateFillLinkCopied(true);
-      setTimeout(() => setTemplateFillLinkCopied(false), 3000);
-    });
+    }
+    if (copied) setTemplateFillCopiedKind(kind);
   };
 
   const handleDeleteTemplate = async (template: DocumentTemplate) => {
@@ -1692,117 +1735,9 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
 
   return (
     <div className="@container space-y-6">
-      {/* Overlay de geração de link — animação da marca */}
-      {creatingTemplateFillLinkId && (
-        <div className="tfl-gen-overlay" role="status" aria-live="polite" aria-label="Gerando link">
-          <style>{`
-            @keyframes tfl-gen-fade { from { opacity: 0; } to { opacity: 1; } }
-            @keyframes tfl-gen-pop {
-              0% { opacity: 0; transform: translateY(14px) scale(.94); }
-              100% { opacity: 1; transform: translateY(0) scale(1); }
-            }
-            @keyframes tfl-gen-ring {
-              0% { transform: scale(.55); opacity: .7; }
-              70% { opacity: .12; }
-              100% { transform: scale(1.55); opacity: 0; }
-            }
-            @keyframes tfl-gen-orb {
-              0%, 100% { transform: translateY(0) rotate(-6deg); }
-              50% { transform: translateY(-8px) rotate(6deg); }
-            }
-            @keyframes tfl-gen-glow {
-              0%, 100% { box-shadow: 0 12px 32px -8px rgba(245,158,11,.55), 0 0 0 0 rgba(251,191,36,.35); }
-              50% { box-shadow: 0 18px 44px -6px rgba(249,115,22,.7), 0 0 0 10px rgba(251,191,36,0); }
-            }
-            @keyframes tfl-gen-spark {
-              0% { transform: translate(0,0) scale(.4); opacity: 0; }
-              30% { opacity: 1; }
-              100% { transform: translate(var(--sx), var(--sy)) scale(1); opacity: 0; }
-            }
-            @keyframes tfl-gen-shimmer {
-              0% { transform: translateX(-120%); }
-              100% { transform: translateX(420%); }
-            }
-            @keyframes tfl-gen-dots {
-              0%, 20% { content: ''; }
-              40% { content: '.'; }
-              60% { content: '..'; }
-              80%, 100% { content: '...'; }
-            }
-            .tfl-gen-overlay {
-              position: fixed; inset: 0; z-index: 120;
-              display: flex; align-items: center; justify-content: center;
-              background: radial-gradient(120% 120% at 50% 38%, rgba(255,251,235,.92), rgba(255,237,213,.9));
-              backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-              animation: tfl-gen-fade .25s ease both;
-            }
-            @media (prefers-color-scheme: dark) {
-              .tfl-gen-overlay { background: radial-gradient(120% 120% at 50% 38%, rgba(28,25,23,.92), rgba(20,18,16,.94)); }
-              .tfl-gen-card { background: rgba(28,25,23,.7); border-color: rgba(245,158,11,.25); }
-              .tfl-gen-title { color: #fef3c7; }
-              .tfl-gen-sub { color: #d6c6a8; }
-            }
-            .tfl-gen-card {
-              display: flex; flex-direction: column; align-items: center;
-              gap: 26px; padding: 40px 48px;
-              border-radius: 28px; border: 1px solid rgba(245,158,11,.18);
-              background: rgba(255,255,255,.55);
-              box-shadow: 0 30px 80px -24px rgba(180,83,9,.35);
-              animation: tfl-gen-pop .45s cubic-bezier(.2,.8,.2,1) both;
-            }
-            .tfl-gen-stage { position: relative; width: 132px; height: 132px; display: flex; align-items: center; justify-content: center; }
-            .tfl-gen-ring {
-              position: absolute; inset: 0; margin: auto; width: 116px; height: 116px;
-              border-radius: 999px; border: 2px solid rgba(245,158,11,.5);
-              animation: tfl-gen-ring 2.4s ease-out infinite;
-            }
-            .tfl-gen-ring-2 { animation-delay: .8s; border-color: rgba(249,115,22,.5); }
-            .tfl-gen-ring-3 { animation-delay: 1.6s; border-color: rgba(251,191,36,.6); }
-            .tfl-gen-orb {
-              position: relative; width: 78px; height: 78px; border-radius: 24px;
-              display: flex; align-items: center; justify-content: center; color: #fff;
-              background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 45%, #f97316 100%);
-              animation: tfl-gen-orb 3s ease-in-out infinite, tfl-gen-glow 2.4s ease-in-out infinite;
-            }
-            .tfl-gen-spark { position: absolute; color: #f59e0b; opacity: 0; animation: tfl-gen-spark 1.8s ease-out infinite; }
-            .tfl-gen-spark-a { top: 14px; left: 22px; --sx: -18px; --sy: -16px; animation-delay: .1s; }
-            .tfl-gen-spark-b { top: 16px; right: 18px; --sx: 18px; --sy: -14px; animation-delay: .7s; color: #f97316; }
-            .tfl-gen-spark-c { bottom: 18px; left: 28px; --sx: -16px; --sy: 18px; animation-delay: 1.2s; color: #fbbf24; }
-            .tfl-gen-spark-d { bottom: 14px; right: 24px; --sx: 18px; --sy: 16px; animation-delay: 1.6s; }
-            .tfl-gen-text { text-align: center; }
-            .tfl-gen-title { font-size: 16px; font-weight: 700; color: #92400e; letter-spacing: -.01em; }
-            .tfl-gen-title::after { content: ''; display: inline-block; width: 14px; text-align: left; animation: tfl-gen-dots 1.4s steps(1) infinite; }
-            .tfl-gen-sub { margin-top: 4px; font-size: 12.5px; color: #b45309; }
-            .tfl-gen-bar { position: relative; width: 220px; height: 5px; border-radius: 999px; overflow: hidden; background: rgba(245,158,11,.18); }
-            .tfl-gen-bar > span {
-              position: absolute; top: 0; left: 0; height: 100%; width: 35%;
-              border-radius: 999px; background: linear-gradient(90deg, transparent, #fbbf24, #f97316, transparent);
-              animation: tfl-gen-shimmer 1.3s ease-in-out infinite;
-            }
-            @media (prefers-reduced-motion: reduce) {
-              .tfl-gen-ring, .tfl-gen-orb, .tfl-gen-spark, .tfl-gen-bar > span, .tfl-gen-title::after { animation-duration: .01ms; animation-iteration-count: 1; }
-            }
-          `}</style>
-          <div className="tfl-gen-card">
-            <div className="tfl-gen-stage">
-              <span className="tfl-gen-ring tfl-gen-ring-1" />
-              <span className="tfl-gen-ring tfl-gen-ring-2" />
-              <span className="tfl-gen-ring tfl-gen-ring-3" />
-              <Sparkles className="tfl-gen-spark tfl-gen-spark-a h-4 w-4" />
-              <Sparkles className="tfl-gen-spark tfl-gen-spark-b h-3.5 w-3.5" />
-              <Sparkles className="tfl-gen-spark tfl-gen-spark-c h-3 w-3" />
-              <Sparkles className="tfl-gen-spark tfl-gen-spark-d h-3.5 w-3.5" />
-              <div className="tfl-gen-orb">
-                <Link2 className="h-9 w-9" strokeWidth={2.2} />
-              </div>
-            </div>
-            <div className="tfl-gen-text">
-              <p className="tfl-gen-title">Gerando seu link</p>
-              <p className="tfl-gen-sub">Preparando o documento para preenchimento</p>
-            </div>
-            <div className="tfl-gen-bar"><span /></div>
-          </div>
-        </div>
+      {/* Espera entre o clique e o modal — branca, com os três tempos do trabalho. */}
+      {linkOverlayPhase && (
+        <LinkGenerationOverlay phase={linkOverlayPhase} templateName={linkOverlayTemplateName} />
       )}
 
       {/* Header com tabs */}
@@ -2662,50 +2597,12 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       }
     >
       <ModalBody className="px-5 py-4">
-        <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-          Envie este link para o cliente preencher os dados e seguir para a assinatura ao final do processo.
-        </p>
-
-        <div className="bg-slate-50 dark:bg-zinc-800 rounded-xl p-4 mb-4 border border-[#e7e5df] dark:border-zinc-700">
-          <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide font-semibold mb-2">Link para preenchimento:</p>
-          <div className="flex items-center gap-2 flex-col @sm:flex-row">
-            <input
-              type="text"
-              readOnly
-              value={templateFillLink}
-              className="flex-1 w-full rounded text-slate-900 dark:text-white border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] px-3 text-[13px] font-mono transition"
-            />
-            <button
-              type="button"
-              onClick={handleCopyTemplateFillLink}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-2 w-full sm:w-auto shadow-sm ring-1 ring-inset ${
-                templateFillLinkCopied
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-emerald-700'
-                  : 'bg-amber-500 hover:bg-amber-600 text-white ring-amber-600'
-              }`}
-              title="Copiar link"
-              aria-label="Copiar link"
-            >
-              {templateFillLinkCopied ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  Copiado!
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  Copiar
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
-          <p className="text-xs text-amber-700 dark:text-amber-300">
-            <strong>Dica:</strong> Você pode enviar por WhatsApp/e-mail. O cliente preenche e no final já recebe o link de assinatura.
-          </p>
-        </div>
+        <TemplateFillLinkPanel
+          uniqueLink={templateFillUniqueLink}
+          permanentLink={templateFillPermanentLink}
+          copiedKind={templateFillCopiedKind}
+          onCopy={handleCopyTemplateFillLink}
+        />
       </ModalBody>
     </Modal>
 

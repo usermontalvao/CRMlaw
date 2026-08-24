@@ -1,9 +1,12 @@
 // O cartão de um modelo na aba "Gerenciar templates".
 //
 // Vivia solto dentro de DocumentsModule com sete botões do mesmo peso — Link,
-// Documentos, Baixar, Editar, Formulário, Assinatura e Excluir — e sem o único
-// que importa no dia a dia: usar o modelo. Agora tem uma ação de primeiro nível
-// e um menu "⋯" para o resto.
+// Documentos, Baixar, Editar, Formulário, Assinatura e Excluir — e nenhum era o
+// principal.
+//
+// A ação de primeiro nível é o LINK do cliente, porque é o que o escritório faz
+// todo dia com um modelo: mandar a pessoa preencher. Gerar o documento aqui
+// mesmo, sem link, é o caso menos frequente e ficou no menu "⋯".
 //
 // Virou componente para poder ser visto fora do login, na bancada
 // `?docspreview=1`.
@@ -121,11 +124,12 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
       </div>
 
       <button
-        onClick={onUse}
-        className="mt-auto inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary-500 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-600"
+        onClick={onGenerateLink}
+        disabled={creatingLink}
+        className="mt-auto inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary-500 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-600 disabled:opacity-70"
       >
-        Usar modelo
-        <ArrowRight className="h-4 w-4" />
+        {creatingLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+        {creatingLink ? 'Gerando link...' : 'Link para o cliente'}
       </button>
 
       {menuOpen && (
@@ -133,10 +137,11 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
           role="menu"
           className="absolute right-3 top-11 z-20 w-56 overflow-hidden rounded-xl border border-[#e7e5df] bg-white p-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-800"
         >
-          <button role="menuitem" onClick={onGenerateLink} disabled={creatingLink} className={menuItemClass}>
-            {creatingLink ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
-            Gerar link público
+          <button role="menuitem" onClick={onUse} className={menuItemClass}>
+            <ArrowRight className="h-3.5 w-3.5" />
+            Gerar aqui, sem link
           </button>
+          <div className="my-1 h-px bg-[#e7e5df] dark:bg-zinc-700" />
           <button role="menuitem" onClick={onOpenFiles} className={menuItemClass}>
             <FileText className="h-3.5 w-3.5" />
             Documentos e anexos
