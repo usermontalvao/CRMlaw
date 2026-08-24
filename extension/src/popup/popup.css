@@ -1,0 +1,326 @@
+/* Jurius Authenticator — o código é o elemento principal da tela.
+   Tudo o mais (nome, contador, botão) é apoio. */
+
+:root {
+  color-scheme: light dark;
+
+  --laranja: #E45C12;
+  --laranja-claro: #F2843E;
+  --tinta: #1A1613;
+  --marfim: #FBF8F5;
+
+  --fundo: var(--marfim);
+  --fundo-cartao: #FFFFFF;
+  --fundo-suave: #F3EEE9;
+  --borda: #E7DDD4;
+  --texto: #1A1613;
+  --texto-suave: #7A6A5D;
+  --acento: var(--laranja);
+  --perigo: #B42318;
+  --sucesso: #0F7B4F;
+
+  --raio: 12px;
+  --transicao: 140ms cubic-bezier(.2,.8,.3,1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: #17130F;
+    --fundo-cartao: #211B16;
+    --fundo-suave: #2B231D;
+    --borda: #3A302A;
+    --texto: #F5EFE9;
+    --texto-suave: #A9998B;
+    --acento: var(--laranja-claro);
+    --perigo: #F97066;
+    --sucesso: #4ADE80;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 380px;
+  max-height: 600px;
+  font-family: 'Space Grotesk', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--fundo);
+  color: var(--texto);
+  font-size: 14px;
+}
+
+.app { display: flex; flex-direction: column; min-height: 240px; }
+.oculto { display: none !important; }
+
+.tela { display: flex; flex-direction: column; max-height: 600px; }
+
+/* ── cabeçalho ─────────────────────────────────────────────────────────── */
+
+.cabecalho {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--borda);
+  background: var(--fundo-cartao);
+  position: sticky; top: 0; z-index: 2;
+}
+.cabecalho--centro { flex-direction: column; gap: 4px; padding: 22px 18px 16px; text-align: center; }
+.marca { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; flex: 1; }
+.cabecalho--centro .marca { font-size: 18px; }
+.sub { margin: 0; color: var(--texto-suave); font-size: 12.5px; }
+.cabecalho-acoes { display: flex; gap: 4px; }
+
+.icone {
+  width: 30px; height: 30px; display: grid; place-items: center;
+  border: 0; border-radius: 8px; background: transparent; cursor: pointer;
+  color: var(--texto-suave); transition: background var(--transicao), color var(--transicao);
+}
+.icone:hover { background: var(--fundo-suave); color: var(--texto); }
+.icone svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+.icone svg path[d^="M15 5"] { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── busca ─────────────────────────────────────────────────────────────── */
+
+.busca { position: relative; padding: 10px 14px; border-bottom: 1px solid var(--borda); background: var(--fundo-cartao); }
+.busca-icone { position: absolute; left: 24px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; fill: var(--texto-suave); }
+.busca input {
+  width: 100%; padding: 8px 10px 8px 32px; border-radius: 9px;
+  border: 1px solid var(--borda); background: var(--fundo); color: var(--texto); font: inherit;
+}
+.busca input:focus { outline: 2px solid var(--acento); outline-offset: -1px; border-color: transparent; }
+
+/* ── corpo ─────────────────────────────────────────────────────────────── */
+
+.corpo { flex: 1; overflow-y: auto; padding: 8px 0; min-height: 90px; }
+.corpo.formulario, .formulario { padding: 14px; display: flex; flex-direction: column; gap: 11px; }
+
+/* ── cartão de código ──────────────────────────────────────────────────── */
+
+.item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "nome contador" "codigo acoes" "barra barra";
+  gap: 2px 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--borda);
+  cursor: default;
+}
+.item:hover { background: var(--fundo-cartao); }
+
+.item-nome {
+  grid-area: nome; display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--texto-suave); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.item-nome .badge { font-size: 10px; padding: 1px 5px; border-radius: 5px; background: var(--fundo-suave); color: var(--texto-suave); }
+
+/* O código é o que a pessoa vem ver. Ele precisa ser lido de relance e
+   digitado sem erro, então: números de largura fixa (para não "dançar" a cada
+   segundo), zero com corte (para não virar letra O) e um respiro entre os dois
+   trios, que é como a gente lê seis dígitos. */
+.item-codigo {
+  grid-area: codigo;
+  font-family: ui-monospace, 'SF Mono', 'SFMono-Regular', Menlo, 'Cascadia Mono',
+               'JetBrains Mono', 'Roboto Mono', Consolas, monospace;
+  font-size: 29px;
+  font-weight: 620;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: 'tnum' 1, 'zero' 1, 'ss01' 1;
+  color: var(--texto);
+  display: flex;
+  align-items: baseline;
+  gap: 0.34em;                 /* o respiro entre os trios */
+  white-space: nowrap;
+}
+.item-codigo .trio { display: inline-block; }
+.item-codigo.indisponivel { font-size: 13px; font-weight: 400; color: var(--perigo); letter-spacing: 0; }
+
+.item-contador {
+  grid-area: contador; align-self: center;
+  font-size: 12px; color: var(--texto-suave); font-variant-numeric: tabular-nums;
+}
+.item-contador.urgente { color: var(--perigo); font-weight: 600; }
+
+.item-acoes {
+  grid-area: acoes; align-self: center;
+  display: flex; gap: 6px; justify-content: flex-end;
+}
+
+.item-preencher,
+.item-copiar {
+  align-self: center;
+  border: 1px solid var(--borda); background: var(--fundo-cartao); color: var(--acento);
+  font: inherit; font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+  padding: 6px 11px; border-radius: 8px; cursor: pointer;
+  transition: background var(--transicao), color var(--transicao), border-color var(--transicao);
+}
+.item-copiar:hover { background: var(--acento); color: #fff; border-color: var(--acento); }
+.item-copiar.copiado { background: var(--sucesso); border-color: var(--sucesso); color: #fff; }
+
+.item-barra { grid-area: barra; height: 3px; margin-top: 7px; border-radius: 2px; background: var(--fundo-suave); overflow: hidden; }
+.item-barra span { display: block; height: 100%; background: var(--acento); border-radius: 2px; transition: width 1s linear; }
+.item-barra span.urgente { background: var(--perigo); }
+
+.item-estrela { border: 0; background: none; cursor: pointer; padding: 0 2px; color: var(--texto-suave); line-height: 1; font-size: 13px; }
+.item-estrela.ativa { color: var(--acento); }
+.item-abrir { border: 0; background: none; cursor: pointer; color: var(--texto-suave); padding: 0 2px; font-size: 15px; line-height: 1; }
+
+/* ── esqueleto e vazio ─────────────────────────────────────────────────── */
+
+.esqueleto {
+  height: 62px; margin: 8px 14px; border-radius: var(--raio);
+  background: linear-gradient(90deg, var(--fundo-suave) 25%, var(--fundo-cartao) 50%, var(--fundo-suave) 75%);
+  background-size: 300% 100%;
+  animation: brilho 1.3s ease-in-out infinite;
+}
+@keyframes brilho { 0% { background-position: 130% 0; } 100% { background-position: -30% 0; } }
+@media (prefers-reduced-motion: reduce) { .esqueleto { animation: none; } }
+
+.vazio { padding: 34px 24px; text-align: center; color: var(--texto-suave); }
+.vazio strong { display: block; color: var(--texto); margin-bottom: 5px; font-size: 14px; }
+
+/* ── formulários ───────────────────────────────────────────────────────── */
+
+.campo { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--texto-suave); flex: 1; }
+.campo input, .campo select, .campo textarea {
+  padding: 9px 10px; border-radius: 9px; border: 1px solid var(--borda);
+  background: var(--fundo-cartao); color: var(--texto); font: inherit; font-size: 13.5px;
+  width: 100%; resize: vertical;
+}
+.campo input:focus, .campo select:focus, .campo textarea:focus { outline: 2px solid var(--acento); outline-offset: -1px; border-color: transparent; }
+.linha { display: flex; gap: 8px; }
+
+.botao {
+  padding: 10px 14px; border-radius: 10px; border: 1px solid var(--borda);
+  background: var(--fundo-cartao); color: var(--texto); font: inherit; font-weight: 600; font-size: 13.5px;
+  cursor: pointer; transition: filter var(--transicao), background var(--transicao);
+}
+.botao:hover { filter: brightness(0.97); }
+.botao:disabled { opacity: .5; cursor: not-allowed; }
+.botao--primario { background: var(--acento); border-color: var(--acento); color: #fff; }
+.botao--perigo { background: transparent; border-color: var(--perigo); color: var(--perigo); }
+.link { border: 0; background: none; color: var(--acento); font: inherit; font-size: 12.5px; cursor: pointer; padding: 0; }
+
+.erro { margin: 0; color: var(--perigo); font-size: 12.5px; line-height: 1.4; }
+.dica { margin: 0; color: var(--texto-suave); font-size: 12px; line-height: 1.45; }
+.rodape-nota { margin: 2px 0 0; color: var(--texto-suave); font-size: 11px; line-height: 1.4; }
+.aviso { margin: 0 0 10px; padding: 9px 11px; border-radius: 9px; background: var(--fundo-suave); color: var(--texto-suave); font-size: 12px; line-height: 1.45; }
+
+.rodape { padding: 11px 14px; border-top: 1px solid var(--borda); background: var(--fundo-cartao); display: flex; flex-direction: column; gap: 8px; }
+.rodape .botao { width: 100%; }
+.rodape--coluna { gap: 10px; }
+
+/* ── abas ──────────────────────────────────────────────────────────────── */
+
+.abas { display: flex; border-bottom: 1px solid var(--borda); background: var(--fundo-cartao); }
+.aba { flex: 1; padding: 10px 6px; border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 500; color: var(--texto-suave); cursor: pointer; border-bottom: 2px solid transparent; }
+.aba.ativa { color: var(--acento); border-bottom-color: var(--acento); font-weight: 600; }
+
+/* ── importação ────────────────────────────────────────────────────────── */
+
+.barra-selecao { display: flex; gap: 14px; padding: 9px 14px; border-bottom: 1px solid var(--borda); background: var(--fundo-cartao); }
+.importar-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-bottom: 1px solid var(--borda); }
+.importar-item input[type=checkbox] { margin-top: 3px; accent-color: var(--acento); }
+.importar-item .info { flex: 1; min-width: 0; }
+.importar-item .titulo { font-weight: 600; font-size: 13.5px; }
+.importar-item .meta { color: var(--texto-suave); font-size: 11.5px; margin-top: 2px; }
+.importar-item .dup { color: var(--perigo); font-size: 11.5px; margin-top: 3px; }
+.importar-item input[type=text] { width: 100%; margin-top: 5px; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--borda); background: var(--fundo-cartao); color: var(--texto); font: inherit; font-size: 12.5px; }
+
+.area-qr {
+  border: 2px dashed var(--borda); border-radius: var(--raio);
+  padding: 26px 16px; text-align: center; color: var(--texto-suave);
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  transition: border-color var(--transicao), background var(--transicao);
+}
+.area-qr.sobre { border-color: var(--acento); background: var(--fundo-suave); }
+.area-qr p { margin: 0; font-size: 12.5px; }
+.qr-icone { width: 34px; height: 34px; fill: var(--texto-suave); }
+
+/* ── detalhe / conta ───────────────────────────────────────────────────── */
+
+.bloco { padding: 12px 14px; border-bottom: 1px solid var(--borda); }
+.bloco h2 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--texto-suave); font-weight: 600; }
+.pessoa { display: flex; align-items: center; gap: 9px; padding: 7px 0; }
+.pessoa .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--fundo-suave); display: grid; place-items: center; font-size: 11px; font-weight: 700; color: var(--texto-suave); flex: none; }
+.pessoa .quem { flex: 1; min-width: 0; }
+.pessoa .quem b { display: block; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pessoa .quem small { color: var(--texto-suave); font-size: 11.5px; }
+.pessoa .nivel { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; color: var(--texto-suave); background: var(--fundo-suave); padding: 2px 6px; border-radius: 5px; }
+.pessoa.selecionavel { cursor: pointer; border-radius: 9px; padding: 7px 8px; }
+.pessoa.selecionavel:hover { background: var(--fundo-suave); }
+.pessoa.selecionada { background: var(--fundo-suave); outline: 2px solid var(--acento); }
+.acoes-detalhe { display: flex; flex-direction: column; gap: 7px; padding: 12px 14px; }
+
+.niveis { border: 1px solid var(--borda); border-radius: var(--raio); padding: 9px 11px; margin: 0; }
+.niveis legend { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-suave); padding: 0 4px; }
+.niveis label { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; cursor: pointer; }
+.niveis input { margin-top: 3px; accent-color: var(--acento); }
+.niveis strong { display: block; font-size: 12.5px; font-weight: 600; }
+.niveis small { color: var(--texto-suave); font-size: 11px; }
+
+.segredo-caixa { background: var(--fundo-suave); border-radius: 9px; padding: 11px; margin-bottom: 8px; word-break: break-all; }
+.segredo-caixa code { font-family: 'SF Mono', ui-monospace, monospace; font-size: 15px; letter-spacing: .05em; }
+.segredo-caixa--uri code { font-size: 11px; letter-spacing: 0; color: var(--texto-suave); }
+
+/* ── brinde (toast) ────────────────────────────────────────────────────── */
+
+.brinde {
+  position: fixed; left: 50%; bottom: 16px; transform: translate(-50%, 14px);
+  background: var(--tinta); color: #fff; padding: 8px 15px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; opacity: 0; pointer-events: none;
+  transition: opacity var(--transicao), transform var(--transicao); z-index: 20;
+}
+.brinde.visivel { opacity: 1; transform: translate(-50%, 0); }
+.brinde.erro-toast { background: var(--perigo); }
+
+/* ── QR: a câmera dividindo espaço com o arquivo ──────────────────────────── */
+
+.qr-acoes { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; }
+.qr-acoes .botao { flex: 0 1 auto; }
+
+/* Preencher é a ação principal — quem abre o popup num site de login quer o
+   código NO campo, não na área de transferência. Copiar continua ali para
+   quando a página não coopera. */
+.item-preencher {
+  border: 1px solid var(--acento); background: var(--acento); color: #fff;
+  font: inherit; font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+  padding: 6px 11px; border-radius: 8px; cursor: pointer;
+  white-space: nowrap;
+}
+.item-preencher:hover:not(:disabled) { filter: brightness(.94); }
+.item-preencher:disabled { opacity: .45; cursor: default; }
+.item-preencher.copiado { background: var(--ok, #1c7c3c); border-color: var(--ok, #1c7c3c); }
+
+/* ── identidade ───────────────────────────────────────────────────────────── */
+
+.marca-logo {
+  display: block; margin: 0 auto 10px;
+  border-radius: 11px;
+}
+.marca-logo--pequena { margin: 0 8px 0 0; border-radius: 5px; }
+
+.campo-pin {
+  letter-spacing: .42em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.rodape-nota a { color: var(--acento); text-decoration: none; }
+.rodape-nota a:hover { text-decoration: underline; }
+
+.rodape-marca {
+  border-top: 1px solid var(--borda);
+  padding: 9px 14px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--texto-suave);
+}
+.rodape-marca a { color: var(--acento); text-decoration: none; margin-left: auto; }
+.rodape-marca a:hover { text-decoration: underline; }
+
+/* Nota que precisa de um respiro do campo acima. Existe como classe, e não
+   como `style=`, porque a CSP da extensão (`style-src 'self'`) recusa atributo
+   de estilo no HTML — e recusar é o certo: é a mesma porta por onde entraria
+   estilo injetado. */
+.rodape-nota--solta { margin-top: 8px; }

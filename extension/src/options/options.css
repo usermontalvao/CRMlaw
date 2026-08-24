@@ -1,0 +1,18 @@
+/* Estilos da página "Sobre".
+ *
+ * Arquivo próprio, e não um bloco <style> no HTML, porque a CSP da extensão é
+ * `style-src 'self'` — que recusa tanto `<style>` inline quanto atributo
+ * `style=`. A regra é boa: é a mesma porta por onde entraria estilo injetado.
+ */
+
+html, body { width: auto; max-width: 720px; margin: 0 auto; padding: 28px 22px 60px; max-height: none; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 12px; margin: 26px 0 8px; }
+    ul { margin: 0; padding-left: 18px; color: var(--texto-suave); font-size: 13px; line-height: 1.65; }
+    ul strong { color: var(--texto); }
+    .cartao { background: var(--fundo-cartao); border: 1px solid var(--borda); border-radius: var(--raio); padding: 16px 18px; margin-bottom: 14px; }
+
+.cabecalho-sobre { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.logo-sobre { border-radius: 10px; }
+.sem-margem { margin: 0; }
+.dica--sob-titulo { margin: 2px 0 0; }

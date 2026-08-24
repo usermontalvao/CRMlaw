@@ -117,6 +117,7 @@ import {
 } from './utils/events';
 import { openBlankEditorWindow } from './utils/openEditorWindow';
 import { useTheme } from './contexts/ThemeContext';
+import AuthenticatorQuickPanel from './components/AuthenticatorQuickPanel';
 import { useSidebarMode } from './contexts/SidebarModeContext';
 import { CacheProvider } from './contexts/CacheContext';
 import { profileService } from './services/profile.service';
@@ -2746,6 +2747,20 @@ useEffect(() => {
                     safeNavigateTo(moduleKey as any, params);
                   }}
                 />
+
+                {/*
+                  Authenticator também obedece à matriz de permissões:
+                  Ver = exibe o atalho; Editar = compartilhar/revogar;
+                  Excluir = apagar somente uma chave da qual a pessoa é dona.
+                  A ACL da Edge Function repete a autorização por credencial.
+                */}
+                {activeModule !== 'cloud' && !permissionsLoading && canView('authenticator') && (
+                  <AuthenticatorQuickPanel
+                    canCreate={canCreate('authenticator')}
+                    canManage={canEdit('authenticator')}
+                    canDelete={canDelete('authenticator')}
+                  />
+                )}
 
                 {/* Tema "” junto das demais ações, antes do divisor de identidade */}
                 {activeModule !== 'cloud' && (

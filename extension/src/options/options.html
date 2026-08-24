@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Jurius Authenticator — Sobre</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="cabecalho-sobre">
+    <img class="logo-sobre" src="../../icons/logo.png" alt="Jurius" width="42" height="42">
+    <div>
+      <h1 class="sem-margem">Jurius Authenticator</h1>
+      <p class="dica dica--sob-titulo">Cofre 2FA do escritório. Versão <span id="versao">—</span>.</p>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <h2>Como esta extensão trata o seu segredo</h2>
+    <ul>
+      <li><strong>O segredo nunca chega aqui.</strong> Para chaves que você usa, o servidor devolve só o código de 6 ou 8 dígitos.</li>
+      <li><strong>A sua senha não fica guardada.</strong> Ela existe apenas dentro da requisição de login e é descartada em seguida.</li>
+      <li><strong>Nada vai para <code>chrome.storage.sync</code>.</strong> O token curto fica na memória da sessão; só o token de renovação persiste, no armazenamento local da extensão.</li>
+      <li><strong>QR é lido aqui dentro.</strong> A imagem não é enviada a serviço nenhum e não fica guardada.</li>
+      <li><strong>Nada acontece sozinho.</strong> O código só vai para a área de transferência, ou para o campo da página, quando você clica em COPIAR ou PREENCHER.</li>
+      <li><strong>Nenhuma página é lida.</strong> Não há script de conteúdo e nada roda em segundo plano nas suas abas. Ao clicar em PREENCHER, a extensão escreve o código no campo da aba atual e sai — não lê o conteúdo da página, não envia nada de volta e não submete o formulário.</li>
+      <li><strong>O PIN é pedido uma vez.</strong> Ao ligar este dispositivo, entram senha e PIN. Depois disso a extensão não pergunta mais — quem pede o PIN a cada abertura é o atalho do CRM, porque o navegador do escritório fica aberto na mesa.</li>
+    </ul>
+  </div>
+
+  <div class="cartao">
+    <h2>Permissões que a extensão pede — e por quê</h2>
+    <ul>
+      <li><code>storage</code> — guardar o token de renovação e o identificador deste dispositivo.</li>
+      <li><code>alarms</code> — renovar a sessão antes de ela vencer, para o popup abrir instantâneo.</li>
+      <li><code>activeTab</code> + <code>scripting</code> — escrever o código no campo quando você clica em PREENCHER. O <code>activeTab</code> vale para <strong>uma</strong> aba, concedido por aquele clique, e caduca quando a aba navega. Não há permissão para site nenhum: sem o seu clique, a extensão não alcança página alguma.</li>
+      <li>Acesso a <code>…supabase.co/functions/v1/totp-vault/*</code> — o endereço do cofre, e só ele.</li>
+    </ul>
+  </div>
+
+  <div class="cartao">
+    <h2>Perdeu o acesso a uma chave?</h2>
+    <ul>
+      <li>Se você tem permissão <strong>EXPORT</strong>, exporte pelo próprio popup (pede a sua senha e fica auditado).</li>
+      <li>Se não tem, a recuperação é feita por um administrador no CRM, em <strong>Configurações → Authenticator</strong>, com PIN e motivo registrado.</li>
+      <li>O PIN é o <strong>mesmo do CRM</strong>, cadastrado em <strong>Meu Perfil → Segurança</strong>. O cofre não tem PIN separado.</li>
+    </ul>
+  </div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

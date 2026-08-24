@@ -35,6 +35,10 @@ ENV
 build
 *.tsbuildinfo
 
+# O .zip da extensão é artefato, não fonte: `npm run build` o regenera a partir
+# de extension/ (scripts/pack-authenticator-extension.mjs).
+public/downloads/jurius-authenticator.zip
+
 # OS files
 Thumbs.db
 
@@ -54,3 +58,14 @@ backups/
 # JURIUS_CALL_TOKEN; o token vive só na máquina de quem faz o deploy.
 server/jurius-call/deploy/*.yml
 server/jurius-call/deploy/token.secret
+
+# Authenticator (extensão Chrome): chave privada de assinatura do CRX e
+# segredos do cofre TOTP. A chave define o ID da extensão — perdê-la significa
+# publicar uma extensão diferente, que os usuários teriam de reinstalar.
+extension-signing-key.pem
+.env.totp-vault.local
+
+# Estado do teste ponta a ponta do cofre: guarda ids E tokens de sessão das
+# contas descartáveis. Some junto com as contas, mas não deve ser versionado —
+# um token commitado continua sendo um token commitado.
+scripts/authenticator-e2e/estado.json

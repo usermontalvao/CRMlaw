@@ -37,6 +37,63 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.12.0',
+    date: '24/08/2026',
+    summary: 'Os códigos 2FA do escritório ganharam um cofre: dá para compartilhar uma chave sem entregar o segredo dela. E duas brechas do WhatsApp foram fechadas.',
+    modules: [
+      {
+        moduleId: 'authenticator',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Um cofre para os códigos de dois fatores',
+            description: 'Os códigos que hoje moram no celular de alguém passam a viver no CRM, com dono, registro de quem usou e a mesma lista de usuários do sistema. O atalho fica na barra de cima: um PIN destrava por duas horas — a duração de um turno, não de um dia —, e quem quiser trancar antes tem o botão.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Compartilhar uma chave sem entregar a chave',
+            description: 'Ao compartilhar, a outra pessoa passa a ver o código de seis dígitos girando, mas nunca o segredo por trás dele — o cálculo acontece no servidor, que confere a permissão a cada pedido. Tirar o acesso vale na hora: não há cópia guardada em lugar nenhum para continuar funcionando.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Quem recebe uma chave agora fica sabendo',
+            description: 'O compartilhamento era silencioso: a pessoa só descobriria se resolvesse abrir o cofre por conta própria. Agora chega aviso no sino, com o nome da chave e quem compartilhou, e o clique abre o cofre direto. Também avisa quando o acesso é retirado, para ninguém descobrir isso na hora de usar.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'A extensão do Chrome se baixa pelo próprio CRM',
+            description: 'Quem preferir usar os códigos fora do sistema pode baixar a extensão ali mesmo, no rodapé do cofre. O convite desaparece sozinho depois que a extensão entra em uso.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A lista de chaves se atualiza ao abrir o cofre',
+            description: 'Uma chave compartilhada com você depois de o cofre já estar aberto não aparecia até recarregar a página inteira. Agora basta abrir o cofre de novo.',
+          },
+        ],
+      },
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'Conversa de canal restrito deixa de ser alcançável por atalho',
+            description: 'Havia um caminho pelo qual alguém do escritório conseguia abrir uma conversa de um canal a que não tem acesso, usando o histórico de transferências. Esse histórico não vale mais como permissão: só uma transferência de verdade, ainda pendente e dentro do prazo, dá acesso — e ela se encerra sozinha.',
+          },
+          {
+            type: 'security' as const,
+            title: 'Desligar alguém no CRM tira o acesso na hora',
+            description: 'Quem era desativado continuava lendo conversas, mensagens e ligações enquanto a sessão do navegador durasse, o que podia levar semanas. Agora o acesso acaba junto com a desativação.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O aviso de mensagem nova passa a respeitar o canal',
+            description: 'Todo mundo recebia o aviso de toda mensagem, de todo canal — sem o texto, mas o bastante para saber que existe uma conversa e em que ritmo ela anda. Agora o aviso vai só para quem tem o canal.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.11.17',
     date: '24/08/2026',
     summary: 'Procurar sem digitar acento passou a funcionar em todo o sistema — inclusive nas buscas que acontecem no servidor.',

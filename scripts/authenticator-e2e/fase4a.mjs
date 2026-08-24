@@ -1,0 +1,10 @@
+import { login, call, check } from './lib.mjs';
+import { readFileSync, writeFileSync } from 'node:fs';
+const arq = new URL('./estado.json', import.meta.url);
+const saida = JSON.parse(readFileSync(arq, 'utf8'));
+const pedro = await login('pedro');
+check('antes de desativar, Pedro acessa o cofre', (await call('/credentials', { token: pedro.access_token })).status === 200);
+saida.pedroAtivo = pedro.access_token;
+saida.pedroRefresh = pedro.refresh_token;
+writeFileSync(arq, JSON.stringify(saida, null, 2));
+console.log('token guardado');

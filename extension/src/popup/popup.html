@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jurius Authenticator</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app" class="app">
+
+    <!-- carregando -->
+    <section class="tela" data-tela="carregando">
+      <header class="cabecalho">
+        <img class="marca-logo marca-logo--pequena" src="../../icons/logo.png" alt="Jurius" width="20" height="20">
+        <h1 class="marca">Jurius Authenticator</h1>
+      </header>
+      <div class="corpo">
+        <div class="esqueleto"></div><div class="esqueleto"></div><div class="esqueleto"></div>
+      </div>
+    </section>
+
+    <!-- login -->
+    <section class="tela oculto" data-tela="login">
+      <header class="cabecalho cabecalho--centro">
+        <img class="marca-logo" src="../../icons/logo.png" alt="Jurius" width="52" height="52">
+        <h1 class="marca">Jurius Authenticator</h1>
+        <p class="sub">Cofre 2FA do escritório. Entre com a sua conta do CRM.</p>
+      </header>
+      <form class="corpo formulario" id="form-login" autocomplete="on">
+
+        <!-- etapa 1: quem é você -->
+        <div id="login-etapa-conta">
+          <label class="campo">
+            <span>E-mail</span>
+            <input type="email" id="login-email" required autocomplete="username" autofocus placeholder="voce@escritorio.com">
+          </label>
+          <label class="campo">
+            <span>Senha</span>
+            <input type="password" id="login-senha" required autocomplete="current-password" placeholder="••••••••">
+          </label>
+        </div>
+
+        <!-- etapa 2: é mesmo você -->
+        <div id="login-etapa-pin" class="oculto">
+          <p class="login-conferido" id="login-conferido"></p>
+          <label class="campo">
+            <span>PIN de segurança</span>
+            <input type="password" id="login-pin" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="••••••" class="campo-pin">
+          </label>
+          <p class="rodape-nota rodape-nota--solta">
+            É o mesmo PIN do CRM. Não tem? Cadastre em <strong>Meu Perfil → Segurança</strong>.
+          </p>
+        </div>
+
+        <p class="erro oculto" data-erro="login-erro" id="login-erro" role="alert"></p>
+        <button class="botao botao--primario" type="submit" id="login-enviar">Continuar</button>
+        <button class="link oculto" type="button" id="login-voltar">Usar outra conta</button>
+
+        <p class="rodape-nota" id="login-nota">
+          Senha e PIN existem só dentro da requisição de login e não ficam guardados.
+          O PIN é pedido uma vez, ao ligar este dispositivo.
+        </p>
+      </form>
+    </section>
+
+    <!-- lista -->
+    <section class="tela oculto" data-tela="lista">
+      <header class="cabecalho">
+        <img class="marca-logo marca-logo--pequena" src="../../icons/logo.png" alt="Jurius" width="20" height="20">
+        <h1 class="marca">Jurius Authenticator</h1>
+        <div class="cabecalho-acoes">
+          <button class="icone" id="abrir-dispositivos" title="Dispositivos e conta" aria-label="Dispositivos e conta">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4 0-7 2-7 4.5V21h14v-2.5C19 16 16 14 12 14Z"/></svg>
+          </button>
+        </div>
+      </header>
+      <div class="busca">
+        <svg class="busca-icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 1 0 3.5 10.9l4.3 4.3 1.4-1.4-4.3-4.3A6 6 0 0 0 10 4Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/></svg>
+        <input type="search" id="busca" placeholder="Buscar" aria-label="Buscar chave" autocomplete="off">
+      </div>
+      <div class="corpo" id="lista"></div>
+      <footer class="rodape">
+        <button class="botao botao--primario" id="abrir-nova">+ Nova chave</button>
+      </footer>
+    </section>
+
+    <!-- nova chave -->
+    <section class="tela oculto" data-tela="nova">
+      <header class="cabecalho">
+        <button class="icone" data-voltar aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg></button>
+        <h1 class="marca">Nova chave</h1>
+      </header>
+      <nav class="abas" role="tablist">
+        <button class="aba ativa" data-aba="manual" role="tab">Manual</button>
+        <button class="aba" data-aba="uri" role="tab">Colar URI</button>
+        <button class="aba" data-aba="qr" role="tab">QR Code</button>
+      </nav>
+      <div class="corpo">
+        <form class="formulario" id="form-manual" data-painel="manual">
+          <label class="campo"><span>Nome</span><input id="nova-nome" required maxlength="120" placeholder="Servidor Produção"></label>
+          <label class="campo"><span>Emissor</span><input id="nova-issuer" maxlength="120" placeholder="Cloudflare"></label>
+          <label class="campo"><span>Conta</span><input id="nova-conta" maxlength="200" placeholder="voce@escritorio.com"></label>
+          <label class="campo"><span>Segredo (base32)</span><input id="nova-secret" type="password" required autocomplete="off" spellcheck="false" placeholder="••••••••••••••••"></label>
+          <div class="linha">
+            <label class="campo"><span>Algoritmo</span>
+              <select id="nova-alg"><option>SHA1</option><option>SHA256</option><option>SHA512</option></select>
+            </label>
+            <label class="campo"><span>Dígitos</span>
+              <select id="nova-digitos"><option>6</option><option>8</option></select>
+            </label>
+            <label class="campo"><span>Período</span>
+              <input id="nova-periodo" type="number" min="10" max="300" value="30">
+            </label>
+          </div>
+          <p class="erro oculto" data-erro="nova" role="alert"></p>
+          <button class="botao botao--primario" type="submit">Salvar chave</button>
+          <p class="rodape-nota">Depois de salvar, o segredo não volta a aparecer na tela.</p>
+        </form>
+
+        <form class="formulario oculto" id="form-uri" data-painel="uri">
+          <label class="campo">
+            <span>URI otpauth</span>
+            <textarea id="uri-texto" rows="5" spellcheck="false" placeholder="otpauth://totp/Emissor:conta?secret=..."></textarea>
+          </label>
+          <p class="dica">Pode colar várias linhas, ou o <code>otpauth-migration://</code> exportado do Google Authenticator.</p>
+          <p class="erro oculto" data-erro="uri" role="alert"></p>
+          <button class="botao botao--primario" type="submit">Analisar</button>
+        </form>
+
+        <div class="formulario oculto" data-painel="qr">
+          <div class="area-qr" id="area-qr">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="qr-icone"><path d="M3 3h8v8H3V3Zm2 2v4h4V5H5Zm8-2h8v8h-8V3Zm2 2v4h4V5h-4ZM3 13h8v8H3v-8Zm2 2v4h4v-4H5Zm8-2h3v3h-3v-3Zm5 0h3v3h-3v-3Zm-5 5h3v3h-3v-3Zm5 0h3v3h-3v-3Z"/></svg>
+            <p><strong>Arraste a imagem do QR aqui</strong></p>
+            <p class="dica">ou cole com Ctrl+V, escolha um arquivo — ou aponte a câmera</p>
+            <input type="file" id="qr-arquivo" accept="image/*" hidden>
+            <div class="qr-acoes">
+              <button class="botao primario" type="button" id="qr-camera">Usar a câmera</button>
+              <button class="botao" type="button" id="qr-escolher">Escolher imagem</button>
+            </div>
+          </div>
+          <p class="rodape-nota">A imagem é lida aqui dentro do navegador. Nada é enviado para serviço externo e nada fica guardado.</p>
+          <p class="erro oculto" data-erro="qr" role="alert"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- revisão da importação -->
+    <section class="tela oculto" data-tela="importar">
+      <header class="cabecalho">
+        <button class="icone" data-voltar aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg></button>
+        <h1 class="marca" id="importar-titulo">Contas encontradas</h1>
+      </header>
+      <div class="barra-selecao">
+        <button class="link" id="importar-todas">Selecionar todas</button>
+        <button class="link" id="importar-nenhuma">Desmarcar</button>
+      </div>
+      <div class="corpo" id="importar-lista"></div>
+      <footer class="rodape">
+        <p class="erro oculto" data-erro="importar" role="alert"></p>
+        <button class="botao botao--primario" id="importar-confirmar">Importar selecionadas</button>
+      </footer>
+    </section>
+
+    <!-- detalhe -->
+    <section class="tela oculto" data-tela="detalhe">
+      <header class="cabecalho">
+        <button class="icone" data-voltar aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg></button>
+        <h1 class="marca" id="detalhe-nome">Chave</h1>
+      </header>
+      <div class="corpo" id="detalhe-corpo"></div>
+    </section>
+
+    <!-- compartilhar -->
+    <section class="tela oculto" data-tela="compartilhar">
+      <header class="cabecalho">
+        <button class="icone" data-voltar aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg></button>
+        <h1 class="marca">Compartilhar</h1>
+      </header>
+      <div class="busca">
+        <svg class="busca-icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4a6 6 0 1 0 3.5 10.9l4.3 4.3 1.4-1.4-4.3-4.3A6 6 0 0 0 10 4Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/></svg>
+        <input type="search" id="compartilhar-busca" placeholder="Buscar usuário do CRM" autocomplete="off">
+      </div>
+      <div class="corpo" id="compartilhar-resultados"></div>
+      <footer class="rodape rodape--coluna">
+        <fieldset class="niveis">
+          <legend>Permissão</legend>
+          <label><input type="radio" name="nivel" value="USE" checked> <span><strong>Usar código</strong><small>Vê o código. Nunca o segredo.</small></span></label>
+          <label><input type="radio" name="nivel" value="MANAGE"> <span><strong>Gerenciar</strong><small>Renomeia e compartilha.</small></span></label>
+          <label><input type="radio" name="nivel" value="EXPORT"> <span><strong>Exportar segredo</strong><small>Privilégio máximo. Pede sua senha.</small></span></label>
+        </fieldset>
+        <p class="erro oculto" data-erro="compartilhar" role="alert"></p>
+        <button class="botao botao--primario" id="compartilhar-confirmar" disabled>Compartilhar</button>
+      </footer>
+    </section>
+
+    <!-- confirmação de identidade (step-up) -->
+    <section class="tela oculto" data-tela="confirmar">
+      <header class="cabecalho">
+        <button class="icone" data-voltar aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg></button>
+        <h1 class="marca">Confirme sua identidade</h1>
+      </header>
+      <form class="corpo formulario" id="form-confirmar">
+        <p class="dica" id="confirmar-motivo-texto">Esta operação libera um segredo. Digite sua senha do CRM para continuar.</p>
+        <label class="campo" id="campo-motivo"><span>Motivo</span>
+          <textarea id="confirmar-motivo" rows="3" maxlength="500" placeholder="Ex.: reconfiguração do servidor de produção"></textarea>
+        </label>
+        <label class="campo"><span>Senha do CRM</span>
+          <input type="password" id="confirmar-senha" required autocomplete="current-password">
+        </label>
+        <p class="erro oculto" data-erro="confirmar" role="alert"></p>
+        <button class="botao botao--primario" type="submit">Confirmar</button>
+      </form>
+    </section>
+
+    <!-- segredo revelado -->
+    <section class="tela oculto" data-tela="segredo">
+      <header class="cabecalho">
+        <button class="icone" data-voltar aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg></button>
+        <h1 class="marca">Segredo</h1>
+      </header>
+      <div class="corpo">
+        <p class="aviso">Este segredo aparece uma vez e some da tela em <span id="segredo-contador">120</span>s. Ele foi registrado na auditoria.</p>
+        <div class="segredo-caixa"><code id="segredo-valor"></code></div>
+        <button class="botao" id="segredo-copiar">Copiar segredo</button>
+        <div class="segredo-caixa segredo-caixa--uri"><code id="segredo-uri"></code></div>
+        <button class="botao" id="segredo-copiar-uri">Copiar URI otpauth</button>
+      </div>
+    </section>
+
+    <!-- dispositivos / conta -->
+    <section class="tela oculto" data-tela="conta">
+      <header class="cabecalho">
+        <button class="icone" data-voltar aria-label="Voltar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg></button>
+        <h1 class="marca">Sua conta</h1>
+      </header>
+      <div class="corpo" id="conta-corpo"></div>
+      <footer class="rodape">
+        <button class="botao botao--perigo" id="sair">Sair desta extensão</button>
+      </footer>
+    </section>
+
+  </div>
+
+  <div class="brinde" id="brinde" role="status" aria-live="polite"></div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

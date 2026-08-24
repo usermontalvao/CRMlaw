@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Ler QR pela câmera</title>
+  <link rel="stylesheet" href="scan.css">
+</head>
+<body>
+  <header>
+    <h1>Aponte o QR para a câmera</h1>
+    <button id="fechar" type="button" aria-label="Fechar">&times;</button>
+  </header>
+
+  <div class="palco">
+    <video id="video" playsinline muted></video>
+    <div class="mira" aria-hidden="true"></div>
+    <p class="estado" id="estado" role="status">Pedindo acesso à câmera…</p>
+  </div>
+
+  <label class="camera-escolha oculto" id="camera-escolha">
+    <span>Câmera</span>
+    <select id="camera"></select>
+  </label>
+
+  <p class="erro oculto" id="erro" role="alert"></p>
+
+  <div class="pronto oculto" id="pronto">
+    <p id="pronto-texto"></p>
+    <div class="pronto-acoes">
+      <button class="botao" type="button" id="pronto-outro">Ler outro QR</button>
+      <button class="botao primario" type="button" id="pronto-fechar">Fechar</button>
+    </div>
+  </div>
+
+  <p class="rodape">
+    A imagem é lida <strong>aqui no seu computador</strong> e não é gravada nem enviada
+    para lugar nenhum. Só o conteúdo do QR segue para o cofre.
+  </p>
+
+  <script type="module" src="scan.js"></script>
+</body>
+</html>

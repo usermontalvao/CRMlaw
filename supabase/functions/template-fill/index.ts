@@ -3,6 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import PizZip from 'https://esm.sh/pizzip@3.2.0?target=deno';
 import Docxtemplater from 'https://esm.sh/docxtemplater@3.66.5?target=deno';
+import { matchWaAiClientsByPhone } from '../_shared/wa-ai-client-link.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -403,14 +404,17 @@ Deno.serve(async (req) => {
       }
 
       // 3. Telefone — é assim que se acha o pré-cadastro aberto no atendimento.
-      //    A RPC compara as variantes com e sem o 9º dígito, a MESMA regra que a
-      //    conversa usa para vincular. Só aceitamos quando ela devolve um único
-      //    candidato: com dois cadastros no mesmo número, atar o contrato a um
-      //    palpite seria pior do que abrir um registro novo.
+      //    A busca é interna à Edge Function e não depende da política de uma
+      //    RPC da inbox. Assim, uma mudança de permissão na interface não pode
+      //    voltar a criar um segundo cadastro para o mesmo telefone.
       if (!existingClient && signerPhone) {
-        const { data, error } = await admin.rpc('whatsapp_match_client_by_phone', { p_phone: signerPhone });
+        const { data, error } = await matchWaAiClientsByPhone(admin, signerPhone);
         const hits = Array.isArray(data) ? data : [];
-        if (!error && hits.length === 1 && hits[0]?.id) {
+        if (error) throw new Error(`Falha ao conferir o telefone: ${error.message || error}`);
+        if (hits.length > 1) {
+          throw new Error('O telefone corresponde a mais de um cadastro; a equipe precisa escolher o vínculo correto.');
+        }
+        if (hits.length === 1 && hits[0]?.id) {
           existingClient = await carregarCliente(hits[0].id);
         }
       }
@@ -467,10 +471,20 @@ Deno.serve(async (req) => {
           .insert(clientPayload)
           .select('id')
           .single();
-        if (!createError && created?.id) clientId = created.id;
+        if (createError || !created?.id) {
+          throw new Error(`Falha ao criar cliente: ${createError?.message || 'cadastro não retornado'}`);
+        }
+        clientId = created.id;
       }
     } catch (e) {
       console.warn('Falha ao criar/atualizar cliente automaticamente:', e);
+      // Sem identidade resolvida, continuar criaria o envelope sem vínculo e
+      // esconderia o problema até depois da assinatura. O link permanece
+      // pendente para a pessoa tentar novamente após a equipe corrigir o dado.
+      throw new Error(
+        (e as Error)?.message
+          || 'Não foi possível identificar o cadastro para este documento. Tente novamente.',
+      );
     }
 
     // Baixar DOCX principal

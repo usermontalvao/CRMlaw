@@ -18,6 +18,7 @@ import {
   PenTool,
   UserCheck,
   Mail,
+  KeyRound,
 } from 'lucide-react';
 import { userNotificationService } from '../services/userNotification.service';
 import { useAuth } from '../contexts/AuthContext';
@@ -80,10 +81,14 @@ const playTone = (
 const AVISOS_DE_TAREFA: ReadonlySet<string> = new Set([
   'deadline_assigned', 'appointment_assigned', 'deadline_reminder', 'appointment_reminder',
   'mention', 'access_request', 'poll_invite', 'signature_pending_self', 'profile_update_request',
+  'totp_shared', 'totp_transferred',
 ]);
 
 const AVISOS_DE_FALHA: ReadonlySet<string> = new Set([
   'intimation_new', 'intimation_urgent', 'requirement_alert', 'execution_pending',
+  // Perder o acesso a uma chave não é tarefa nova: é algo que deixou de
+  // funcionar. Quem ouve o toque de falha vai conferir, e é isso que se quer.
+  'totp_revoked',
 ]);
 
 type TomDoSino = 'default' | 'email' | 'task' | 'alert';
@@ -603,6 +608,17 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
       const emailId = notification.metadata?.email_id;
       console.log('➡️ Navegando para email, emailId:', emailId);
       onNavigateToModule('email', emailId ? { emailId: String(emailId) } : undefined);
+    } else if (
+      notification.type === 'totp_shared'
+      || notification.type === 'totp_revoked'
+      || notification.type === 'totp_transferred'
+    ) {
+      // O Authenticator não é um módulo do menu: é o painel da barra de cima.
+      // Por isso o clique não navega — pede ao painel que se abra, e ele
+      // recarrega a lista ao abrir, então a chave nova já aparece.
+      window.dispatchEvent(new CustomEvent('jurius:abrir-authenticator'));
+      setIsOpen(false);
+      return;
     } else if (notification.type === 'access_request') {
       // Admin recebeu solicitação de acesso → abre Configurações > Solicitações
       console.log('➡️ Navegando para configuracoes > access_requests');
@@ -814,6 +830,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
         return <UserCheck className="w-4 h-4 text-orange-500" />;
       case 'email_new':
         return <Mail className="w-4 h-4 text-amber-600" />;
+      case 'totp_shared':
+      case 'totp_transferred':
+        return <KeyRound className="w-4 h-4 text-amber-600" />;
+      case 'totp_revoked':
+        return <KeyRound className="w-4 h-4 text-slate-400" />;
       default:
         if (isSignatureNotification(notification)) {
           return <PenTool className="w-4 h-4 text-emerald-500" />;
@@ -826,6 +847,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigateTo
     const urgency = notification.metadata?.urgency;
     if (notification.type === 'profile_update_request') return 'bg-orange-100';
     if (notification.type === 'email_new') return 'bg-amber-100';
+    if (notification.type === 'totp_revoked') return 'bg-slate-100';
+    if (notification.type === 'totp_shared' || notification.type === 'totp_transferred') return 'bg-amber-100';
     if (isSignatureNotification(notification)) return 'bg-emerald-100';
     if (urgency === 'critica') return 'bg-red-100';
     if (urgency === 'alta') return 'bg-orange-100';

@@ -21,7 +21,12 @@ export type UserNotificationType =
   | 'access_request_resolved'
   | 'profile_update_request'
   | 'email_new'
-  | 'execution_pending';
+  | 'execution_pending'
+  // Cofre TOTP: acesso a uma chave 2FA mudou de mãos. Nunca carregam segredo
+  // nem código — só o nome da chave e quem mexeu.
+  | 'totp_shared'
+  | 'totp_revoked'
+  | 'totp_transferred';
 
 export interface UserNotification {
   id: string;

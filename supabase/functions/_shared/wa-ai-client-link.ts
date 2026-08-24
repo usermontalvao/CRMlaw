@@ -25,6 +25,62 @@ export function normalizeWaAiClientPhone(value: unknown): string | null {
   return digits.length === 12 || digits.length === 13 ? digits : null;
 }
 
+/**
+ * Formas equivalentes do celular brasileiro, com e sem o nono dígito.
+ *
+ * Esta versão vive no backend para que a vinculação não dependa da política
+ * de acesso de uma RPC voltada também à interface da equipe.
+ */
+export function waAiClientPhoneVariants(value: unknown): string[] {
+  const normalized = normalizeWaAiClientPhone(value);
+  if (!normalized) return [];
+
+  const out = new Set<string>([normalized]);
+  const match = normalized.match(/^55(\d{2})(\d+)$/);
+  if (!match) return [...out];
+
+  const [, ddd, local] = match;
+  if (local.length === 9 && local[0] === '9') out.add(`55${ddd}${local.slice(1)}`);
+  else if (local.length === 8) out.add(`55${ddd}9${local}`);
+  return [...out];
+}
+
+export type WaAiPhoneMatch = { id: string; phone?: string | null; mobile?: string | null };
+
+/**
+ * Casamento interno por telefone para Edge Functions.
+ *
+ * O sufixo de quatro dígitos limita a leitura no banco; a igualdade de verdade
+ * é refeita em memória sobre os números normalizados. Assim formatação,
+ * código do país e o nono dígito não criam duplicata, sem reabrir a RPC pública
+ * que protege dados pessoais da base.
+ */
+export async function matchWaAiClientsByPhone(
+  admin: any,
+  value: unknown,
+): Promise<{ data: WaAiPhoneMatch[]; error: any | null }> {
+  const variants = waAiClientPhoneVariants(value);
+  if (variants.length === 0) return { data: [], error: null };
+
+  const tail = variants[0].slice(-4);
+  const { data, error } = await admin
+    .from('clients')
+    .select('id, phone, mobile')
+    .neq('status', 'arquivado')
+    .is('merged_into_client_id', null)
+    .or(`phone.ilike.%${tail}%,mobile.ilike.%${tail}%`)
+    .limit(50);
+
+  if (error) return { data: [], error };
+
+  const wanted = new Set(variants);
+  const matches = ((data ?? []) as WaAiPhoneMatch[]).filter((row) =>
+    [...waAiClientPhoneVariants(row.phone), ...waAiClientPhoneVariants(row.mobile)]
+      .some((candidate) => wanted.has(candidate)),
+  );
+  return { data: matches, error: null };
+}
+
 function usableName(value: unknown, phone: string): string {
   const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   if (text && !/^\+?\d[\d\s().-]+$/.test(text)) return text.slice(0, 160);
@@ -51,8 +107,7 @@ export async function ensureWaAiConversationClient(
     return { ok: false, error: 'O contato não possui telefone válido para criar o pré-cadastro.' };
   }
 
-  const { data: candidates, error: matchError } = await admin
-    .rpc('whatsapp_match_client_by_phone', { p_phone: phone });
+  const { data: candidates, error: matchError } = await matchWaAiClientsByPhone(admin, phone);
   if (matchError) {
     return { ok: false, error: 'Não foi possível conferir se este telefone já possui cadastro.' };
   }

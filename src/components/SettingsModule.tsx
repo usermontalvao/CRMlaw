@@ -7,6 +7,7 @@ import {
   Building2,
   Users,
   Shield,
+  KeyRound,
   FileText,
   Bell,
   History,
@@ -75,6 +76,7 @@ import { profileService, type Profile } from '../services/profile.service';
 import UserManagementModule from './UserManagementModule';
 import WhatsAppIntegrationSettings from './WhatsAppIntegrationSettings';
 import { AccessRequestsAdmin } from './AccessRequestsAdmin';
+import AuthenticatorSettings from './AuthenticatorSettings';
 import { accessRequestService } from '../services/accessRequest.service';
 import { aiService } from '../services/ai.service';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
@@ -202,7 +204,8 @@ type SettingsSection =
   | 'responsibility'
   | 'menu_modules'
   | 'modules_petition_editor'
-  | 'form_builder';
+  | 'form_builder'
+  | 'authenticator';
 
 type SettingsGroupKey = 'geral' | 'modulos' | 'notificacoes' | 'integracoes' | 'administracao';
 
@@ -285,6 +288,7 @@ const SETTINGS_GROUPS: {
       { key: 'roles',               label: 'Permissões',               icon: Shield,     description: 'Papéis e módulos' },
       { key: 'menu_modules',        label: 'Menu — Módulos',           icon: Layers,     description: 'Mostrar/ocultar módulos no menu lateral' },
       { key: 'access_requests',     label: 'Solicitações',             icon: ShieldCheck, description: 'Pedidos de acesso' },
+      { key: 'authenticator',       label: 'Authenticator',            icon: KeyRound,   description: 'Cofre de códigos 2FA e extensão' },
       { key: 'portal',              label: 'Portal — Módulos',         icon: Smartphone, description: 'O que o cliente acessa' },
       { key: 'portal_customization', label: 'Portal — Aparência',      icon: Globe,      description: 'Cor, mensagem e rodapé do portal' },
       { key: 'portal_notifications', label: 'Portal — Notificações',   icon: Bell,       description: 'Eventos que alertam o cliente' },
@@ -383,6 +387,7 @@ const MODULES = [
   { key: 'emails', label: 'Email' },
   { key: 'usuarios', label: 'Usuários' },
   { key: 'monitor', label: 'Monitor' },
+  { key: 'authenticator', label: 'Authenticator' },
   { key: 'configuracoes', label: 'Configurações' },
 ];
 
@@ -2972,6 +2977,12 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                 {activeSection === 'access_requests' && (
                   <div className="px-8 py-6">
                     <AccessRequestsAdmin />
+                  </div>
+                )}
+
+                {activeSection === 'authenticator' && (
+                  <div className="px-8 py-6">
+                    <AuthenticatorSettings />
                   </div>
                 )}
 

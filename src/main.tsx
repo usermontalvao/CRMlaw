@@ -179,6 +179,15 @@ if (currentPath !== '/' && !keepPath) {
 async function renderRoot() {
   let rootElement: React.ReactNode;
 
+  // DEV-ONLY: gestão de compartilhamentos do Authenticator (?authenticatorpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('authenticatorpreview')) {
+    const { default: AuthenticatorManagementPreview } = await import('./dev/AuthenticatorManagementPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <AuthenticatorManagementPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: bancada do aviso flutuante (?avisopreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('avisopreview')) {
     const { default: AvisoFlutuantePreview } = await import('./dev/AvisoFlutuantePreview');

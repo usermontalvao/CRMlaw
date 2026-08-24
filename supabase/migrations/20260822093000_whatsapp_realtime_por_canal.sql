@@ -38,6 +38,19 @@
 -- recebendo o que sempre recebeu enquanto o novo não subiu.
 -- ============================================================================
 
+-- ── CORREÇÃO APLICADA EM 24/08/2026, ANTES DE ESTA MIGRATION SUBIR ──────────
+--
+-- O gatilho abaixo comparava `old.sender_role`/`new.sender_role`. Essa coluna
+-- NÃO existe em `whatsapp_messages` — a que existe é `sender_user_id`, e a
+-- versão em produção da função nunca a mencionou.
+--
+-- `create or replace function` de plpgsql não valida nome de coluna: a
+-- migration teria aplicado "com sucesso" e o erro só apareceria no primeiro
+-- UPDATE de mensagem, derrubando o gatilho de TODO o tráfego de WhatsApp.
+-- Trocado por `sender_user_id`. Ver [[deploy-parcial-derruba-edge-function]],
+-- que é a mesma classe de falha por outro caminho.
+-- ============================================================================
+
 begin;
 
 -- Resolve o `<instance_id>` do nome do tópico e devolve a mesma resposta que a
@@ -149,7 +162,7 @@ begin
       or old.file_name            is distinct from new.file_name
       or old.is_animated          is distinct from new.is_animated
       or old.reply_to_id          is distinct from new.reply_to_id
-      or old.sender_role          is distinct from new.sender_role
+      or old.sender_user_id       is distinct from new.sender_user_id
       or old.doc_intake_status    is distinct from new.doc_intake_status;
 
     payload := jsonb_build_object(

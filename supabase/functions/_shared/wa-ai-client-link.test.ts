@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ensureWaAiConversationClient,
+  matchWaAiClientsByPhone,
   normalizeWaAiClientPhone,
+  waAiClientPhoneVariants,
 } from './wa-ai-client-link.ts';
 
 const CLIENT = '11111111-1111-4111-8111-111111111111';
@@ -16,10 +18,6 @@ function fakeDb(opts: {
 } = {}) {
   const calls: { op: string; value?: unknown }[] = [];
   const admin = {
-    async rpc(name: string, args: unknown) {
-      calls.push({ op: `rpc:${name}`, value: args });
-      return { data: opts.matches || [], error: opts.matchError ? { message: 'falhou' } : null };
-    },
     from(table: string) {
       if (table === 'whatsapp_conversations') {
         return {
@@ -34,6 +32,24 @@ function fakeDb(opts: {
       }
       if (table === 'clients') {
         return {
+          select(value: unknown) {
+            calls.push({ op: 'clients:match:select', value });
+            return {
+              neq() { return this; },
+              is() { return this; },
+              or(value: unknown) { calls.push({ op: 'clients:match:or', value }); return this; },
+              async limit() {
+                return {
+                  data: (opts.matches || []).map((row) => ({
+                    ...row,
+                    mobile: '(65) 99999-1234',
+                    phone: null,
+                  })),
+                  error: opts.matchError ? { message: 'falhou' } : null,
+                };
+              },
+            };
+          },
           insert(value: unknown) {
             calls.push({ op: 'clients:insert', value });
             return { select() { return { async single() {
@@ -66,6 +82,21 @@ test('normaliza telefone nacional e preserva o que já tem DDI', () => {
   assert.equal(normalizeWaAiClientPhone('(65) 99999-1234'), '5565999991234');
   assert.equal(normalizeWaAiClientPhone('+55 65 99999-1234'), '5565999991234');
   assert.equal(normalizeWaAiClientPhone('123'), null);
+});
+
+test('gera variantes brasileiras com e sem o nono dígito', () => {
+  assert.deepEqual(
+    waAiClientPhoneVariants('(65) 99999-1234').sort(),
+    ['556599991234', '5565999991234'].sort(),
+  );
+});
+
+test('busca interna filtra a formatação e não depende da RPC de funcionário', async () => {
+  const { admin, calls } = fakeDb({ matches: [{ id: CLIENT }] });
+  const result = await matchWaAiClientsByPhone(admin, '+55 65 99999-1234');
+  assert.deepEqual(result.data.map((row) => row.id), [CLIENT]);
+  assert.ok(calls.some((call) => call.op === 'clients:match:or' && call.value === 'phone.ilike.%1234%,mobile.ilike.%1234%'));
+  assert.ok(!calls.some((call) => call.op.startsWith('rpc:')));
 });
 
 test('conversa já vinculada não consulta nem cria nada', async () => {

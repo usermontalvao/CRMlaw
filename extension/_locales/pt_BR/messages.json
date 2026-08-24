@@ -1,0 +1,4 @@
+{
+  "extensionName":        { "message": "Jurius Authenticator" },
+  "extensionDescription": { "message": "Códigos 2FA do escritório, com as mesmas contas e permissões do CRM Jurius." }
+}
