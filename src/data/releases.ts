@@ -37,6 +37,48 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.0',
+    date: '24/08/2026',
+    summary: 'O botão direito passa a valer nas mensagens do WhatsApp — com "Copiar", reações no topo do menu, toque prolongado no celular e o álbum de fotos finalmente respondendo como as outras mensagens.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Botão direito abre o menu da mensagem',
+            description: 'Clicar com o botão direito em qualquer mensagem abre o menu ali mesmo, na posição do ponteiro — como no WhatsApp Web. Perto das bordas ele vira sozinho para caber inteiro na tela, e a mensagem em que você clicou fica acesa enquanto o menu está aberto, para não restar dúvida sobre qual delas a ação vai atingir. A setinha do topo da bolha continua funcionando como antes.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Copiar mensagem',
+            description: 'O menu ganhou "Copiar". Vai para a área de transferência exatamente o que está escrito na bolha: sem os asteriscos e sublinhados da formatação e sem a linha de assinatura do atendente. Em áudio sem legenda, copia a transcrição. No modo privado, copia o texto já mascarado — o CPF e o telefone reais não saem da tela.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Reações no topo do menu',
+            description: 'O menu passa a mostrar a fileira de emojis no alto, com a sua reação atual destacada: clicar nela de novo remove, clicar em outra troca, e o "+" abre o catálogo inteiro.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Toque prolongado no celular',
+            description: 'Em tela de toque, segurar o dedo sobre a mensagem por meio segundo abre o mesmo menu. Rolar a conversa não dispara nada, e o menu não abre a foto por engano ao soltar o dedo.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Álbum de fotos deixou de ser um bloco mudo',
+            description: 'Fotos enviadas juntas apareciam agrupadas e sem nenhuma ação: não dava para responder, encaminhar, reagir nem apagar uma delas. Agora cada miniatura tem o próprio menu — pelo botão direito, pela setinha ou pelo toque prolongado —, e a ação vale para a foto que você clicou, não para a primeira do grupo.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Menu navegável pelo teclado',
+            description: 'Com o menu aberto dá para percorrer os itens com as setas, ir ao primeiro ou ao último com Home e End, acionar com Enter e fechar com Esc — que devolve o foco ao botão que abriu o menu.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.12.13',
     date: '24/08/2026',
     summary: 'O Authenticator do CRM agora acompanha a experiência visual da extensão sem perder os atalhos e funções do gerenciador.',

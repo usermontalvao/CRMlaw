@@ -2,7 +2,7 @@
 // Usa as bolhas reais para validar densidade, agrupamento, áudio e responsividade
 // sem depender de autenticação ou de dados de clientes.
 import React, { useEffect, useState } from 'react';
-import { MessageBubble } from '../components/whatsapp/messageBubble';
+import { MessageBubble, ImageAlbum } from '../components/whatsapp/messageBubble';
 import { EmojiPicker } from '../components/whatsapp/emojiPicker';
 import { DateDivider } from '../components/whatsapp/conversationListItem';
 import { DockedDetailsToggle } from '../components/whatsapp/DockedDetailsToggle';
@@ -18,7 +18,8 @@ import { ThreadCallEntry, type ThreadCall } from '../components/whatsapp/threadC
 import { seedContactProbes } from '../components/whatsapp/contactProbes';
 import { PreCadastroModal } from '../components/whatsapp/preCadastroModal';
 import { AiHandoffSummaryCard, AiHandoffSummaryStrip, useAiHandoffSummary } from '../components/whatsapp/aiHandoffSummary';
-import { ToastProvider } from '../contexts/ToastContext';
+import { ToastProvider, useToastContext } from '../contexts/ToastContext';
+import { copiarTexto } from '../utils/copyText';
 import type { FunnelLabel } from '../services/settings.service';
 import type { WhatsAppAiConversationState, WhatsAppConversation, WhatsAppMessage } from '../types/whatsapp.types';
 import { ArrowRightLeft, Download, History, MessageSquare, Mic, MoreVertical, Phone, Plus, Search, Smile, Sparkles, Video } from 'lucide-react';
@@ -207,6 +208,40 @@ const AUDIO_EMENDA_B = message({
   wa_timestamp: '2026-08-04T15:26:30.000Z',
   media_url: SILENT_WAV,
   media_mime: 'audio/wav',
+});
+
+// ── Álbum: três imagens enviadas juntas ──
+// Cada miniatura é uma MENSAGEM: o clique direito e a setinha têm de agir sobre
+// a que foi clicada, e não sobre o grupo.
+const ALBUM_ITENS = ['a', 'b', 'c', 'd', 'e'].map((sufixo, i) => message({
+  id: `album-${sufixo}`,
+  direction: 'out',
+  type: 'image',
+  wa_timestamp: `2026-08-04T15:27:0${i}.000Z`,
+  sender_user_id: 'pedro',
+  storage_path: `preview/album-${sufixo}.png`,
+  media_url: `data:image/svg+xml,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+      <rect width="600" height="600" fill="hsl(${i * 62}, 62%, 62%)"/>
+      <text x="300" y="340" font-size="180" font-family="system-ui" font-weight="bold" fill="#ffffff" text-anchor="middle">${i + 1}</text>
+    </svg>
+  `)}`,
+  content: i === 0 ? 'Fotos da perícia, doutor.' : null,
+  // A segunda imagem já tem reação NOSSA: clicar nela de novo tem de REMOVER.
+  reactions: i === 1
+    ? [{ emoji: '👍', from: 'out' as const, actor: 'office', name: 'Dr. Pedro', at: '2026-08-04T15:28:00.000Z' }]
+    : undefined,
+}));
+
+// Bolha COLADA NA BORDA DIREITA e no rodapé: é ela que revela se o menu do
+// clique direito sabe virar para cima e para dentro em vez de sair da tela.
+const BORDA_OUT = message({
+  id: 'borda-out',
+  direction: 'out',
+  type: 'text',
+  wa_timestamp: '2026-08-04T17:31:00.000Z',
+  content: 'Clique com o botão direito AQUI: o menu tem de virar para cima e caber inteiro.',
+  sender_user_id: 'pedro',
 });
 
 const LAST_OUT = message({
@@ -481,6 +516,9 @@ const bubbleActions = {
   // Como o resto da bancada, a reação aqui não vai a lugar nenhum: o que se
   // confere neste arquivo é o desenho (pastilha, barra rápida, catálogo).
   onReact: noop,
+  // Apagar existe só para o MENU ficar completo — nada some da bancada. Sem
+  // este callback o item nem apareceria, e era o menu que se queria conferir.
+  onDelete: noop,
 };
 
 /** O Provider precisa envolver ESTE componente: o resumo da IA é lido por um
@@ -494,7 +532,12 @@ export default function WhatsAppConversationPreview() {
 }
 
 function PreviewBench() {
+  const toast = useToastContext();
   const [detailsCollapsed, setDetailsCollapsed] = useState(false);
+  // Largura de celular: é onde o TOQUE PROLONGADO se confere (no navegador,
+  // com a emulação de toque ligada) e onde o menu do clique direito encosta
+  // nas duas bordas ao mesmo tempo.
+  const [movel, setMovel] = useState(false);
   const [emojiAberto, setEmojiAberto] = useState(false);
   const campoRef = React.useRef<HTMLTextAreaElement>(null);
   // Bancada das DUAS superfícies. O módulo cheio segue no bege com rabiscos; o
@@ -514,6 +557,20 @@ function PreviewBench() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   // Encaminhar: a bancada abre o modal de verdade, com conversas de mentira.
   const [forwardSource, setForwardSource] = useState<WhatsAppMessage | null>(null);
+  // Copiar é a ÚNICA ação da bancada que acontece de verdade: é o único jeito
+  // de conferir que o que sai é o texto visível (sem marcas, sem a assinatura)
+  // — basta colar em qualquer lugar depois de clicar.
+  const acoes = React.useMemo(() => ({
+    ...bubbleActions,
+    // O menu da bancada mostra o conjunto CHEIO — inclusive prazo e tarefa,
+    // que é onde ele fica mais alto e mais fácil de sair da tela.
+    canCreateFollowups: true,
+    onForward: setForwardSource,
+    onCopy: async (_m: WhatsAppMessage, texto: string) => {
+      if (await copiarTexto(texto)) toast.success('Mensagem copiada', texto.slice(0, 120));
+      else toast.error('Não foi possível copiar');
+    },
+  }), [toast]);
   const [preCadastroOpen, setPreCadastroOpen] = useState(false);
   // A bancada lê o handoff uma vez, como o módulo: a faixa fina na thread e o
   // cartão do painel saem do mesmo estado.
@@ -546,8 +603,18 @@ function PreviewBench() {
             {op === 'widget' ? 'Widget (creme liso)' : 'Módulo cheio (bege do app)'}
           </button>
         ))}
+        <button onClick={() => setMovel(v => !v)}
+          className={`rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
+            movel ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'
+          }`}>
+          {movel ? 'Largura de celular (390px)' : 'Largura cheia'}
+        </button>
+        <span className="ml-2 text-[11px] text-slate-500">
+          Botão direito na bolha · toque prolongado (emulação de toque) · Escape, setas, Home/End no menu
+        </span>
       </div>
-      <div className="relative mx-auto flex h-[calc(100vh-2rem)] max-w-[1180px] overflow-hidden rounded-xl bg-white shadow-2xl lg:h-[calc(100vh-4rem)]">
+      <div style={movel ? { width: 390 } : undefined}
+        className={`relative mx-auto flex h-[calc(100vh-2rem)] overflow-hidden rounded-xl bg-white shadow-2xl lg:h-[calc(100vh-4rem)] ${movel ? '' : 'max-w-[1180px]'}`}>
         <section data-preview-thread className="flex min-w-0 flex-1 flex-col">
         <header className={`flex items-center gap-3 border-b border-black/[0.06] ${molduraBg} px-4 py-2.5`}>
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#d9fdd3] text-sm font-bold text-[#008069]">LI</div>
@@ -571,25 +638,25 @@ function PreviewBench() {
                 outro; sem ele, "ONTEM" e "HOJE" se sobrepõem ao rolar. */}
             <div>
             <DateDivider label="Ontem" />
-            <MessageBubble m={{ ...OK, id: 'ontem-1', content: 'Doutor, mandei os documentos ontem à noite.' }} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
-            <MessageBubble m={{ ...OK, id: 'ontem-2', direction: 'out', sender_user_id: 'pedro', content: 'Recebido. Vou conferir e retorno amanhã.' }} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={{ ...OK, id: 'ontem-1', content: 'Doutor, mandei os documentos ontem à noite.' }} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} />
+            <MessageBubble m={{ ...OK, id: 'ontem-2', direction: 'out', sender_user_id: 'pedro', content: 'Recebido. Vou conferir e retorno amanhã.' }} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...acoes} />
             </div>
             <div>
             <DateDivider label="Hoje" />
-            <MessageBubble m={AUDIO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} onForward={setForwardSource} />
-            <MessageBubble m={FIRST_OUT} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd={false} {...bubbleActions} />
-            <MessageBubble m={SECOND_OUT} repliedTo={null} senderName={null} senderRole="Administrador" groupStart={false} groupEnd {...bubbleActions} />
-            <MessageBubble m={OK} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} onForward={setForwardSource} />
-            <MessageBubble m={{ ...PREVIEW_PHOTO, media_url: previewImageReady ? PREVIEW_IMAGE : null }} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
-            <MessageBubble m={PHONE_SHOT_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
-            <MessageBubble m={WIDE_SHOT_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={AUDIO} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} onForward={setForwardSource} />
+            <MessageBubble m={FIRST_OUT} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd={false} {...acoes} />
+            <MessageBubble m={SECOND_OUT} repliedTo={null} senderName={null} senderRole="Administrador" groupStart={false} groupEnd {...acoes} />
+            <MessageBubble m={OK} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} onForward={setForwardSource} />
+            <MessageBubble m={{ ...PREVIEW_PHOTO, media_url: previewImageReady ? PREVIEW_IMAGE : null }} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} />
+            <MessageBubble m={PHONE_SHOT_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} />
+            <MessageBubble m={WIDE_SHOT_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} />
             {/* Vídeo vertical seguido de figurinha: o par que mostrava a bolha
                 com faixas vazias e a figurinha grudada no player. */}
-            <MessageBubble m={{ ...PREVIEW_VIDEO, media_url: videoUrl }} repliedTo={null} senderName={null} groupStart groupEnd={false} {...bubbleActions} />
-            <MessageBubble m={STICKER_MSG} repliedTo={null} senderName={null} groupStart={false} groupEnd {...bubbleActions} />
-            <MessageBubble m={{ ...PDF_MSG, media_url: pdfUrl, storage_path: pdfUrl ? 'preview/contrato.pdf' : null }} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} onForward={setForwardSource} />
+            <MessageBubble m={{ ...PREVIEW_VIDEO, media_url: videoUrl }} repliedTo={null} senderName={null} groupStart groupEnd={false} {...acoes} />
+            <MessageBubble m={STICKER_MSG} repliedTo={null} senderName={null} groupStart={false} groupEnd {...acoes} />
+            <MessageBubble m={{ ...PDF_MSG, media_url: pdfUrl, storage_path: pdfUrl ? 'preview/contrato.pdf' : null }} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} onForward={setForwardSource} />
             {/* O mesmo PDF saindo do escritório: o cartão tem que vestir bem a bolha verde também. */}
-            <MessageBubble m={{ ...PDF_MSG, id: 'pdf-out', direction: 'out', sender_user_id: 'pedro', media_url: pdfUrl, storage_path: pdfUrl ? 'preview/contrato.pdf' : null, content: 'Segue o contrato para conferência.' }} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={{ ...PDF_MSG, id: 'pdf-out', direction: 'out', sender_user_id: 'pedro', media_url: pdfUrl, storage_path: pdfUrl ? 'preview/contrato.pdf' : null, content: 'Segue o contrato para conferência.' }} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...acoes} />
             {/* Mensagem que SAIU DE UM AGENDAMENTO: a marca é interna — existe
                 nesta tela e não no aparelho do contato. Fica na bancada porque
                 é ela que revela se o selo cabe na bolha sem empurrar o texto. */}
@@ -597,36 +664,44 @@ function PreviewBench() {
               m={{ ...OK, id: 'agendada-out', direction: 'out', sender_user_id: 'pedro',
                    content: 'Bom dia! Passando para lembrar da audiência de amanhã, às 14h.' }}
               repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd
-              scheduledAt={new Date(Date.now() - 3 * 60 * 60_000).toISOString()} {...bubbleActions} />
-            <MessageBubble m={AUDIO_TRANSCRITO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+              scheduledAt={new Date(Date.now() - 3 * 60 * 60_000).toISOString()} {...acoes} />
+            <MessageBubble m={AUDIO_TRANSCRITO} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} />
 
             {/* Os tipos nativos que viravam bolha branca. */}
             {CHAMADAS.map(c => (
               <ThreadCallEntry key={c.id} call={c} onCallBack={() => window.alert('ligaria de volta')} />
             ))}
-            <MessageBubble m={CONTATO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions}
+            <MessageBubble m={CONTATO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...acoes}
               onForward={setForwardSource}
               onOpenContactChat={(phone, name) => console.log('conversar', phone, name)}
               onCallContactPhone={(phone, name) => console.log('ligar', phone, name)}
               onLinkContactPhone={(phone, name) => console.log('vincular', phone, name)} />
-            <MessageBubble m={CONTATO_UM_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions}
+            <MessageBubble m={CONTATO_UM_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...acoes}
               onForward={setForwardSource}
               onOpenContactChat={(phone, name) => console.log('conversar', phone, name)}
               onCallContactPhone={(phone, name) => console.log('ligar', phone, name)}
               onLinkContactPhone={(phone, name) => console.log('vincular', phone, name)} />
-            <MessageBubble m={LOCALIZACAO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
-            <MessageBubble m={ENQUETE_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
-            <MessageBubble m={NAO_SUPORTADA_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
-            <MessageBubble m={TEXTO_VAZIO_LEGADO} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={LOCALIZACAO_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} />
+            <MessageBubble m={ENQUETE_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} />
+            <MessageBubble m={NAO_SUPORTADA_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} />
+            <MessageBubble m={TEXTO_VAZIO_LEGADO} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} />
 
             {/* Links clicáveis + nome de arquivo que NÃO pode virar link. */}
-            <MessageBubble m={LINKS_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...bubbleActions} />
+            <MessageBubble m={LINKS_MSG} repliedTo={null} senderName={null} groupStart groupEnd {...acoes} />
 
             {/* Dois áudios seguidos: o segundo emenda no fim do primeiro. */}
-            <MessageBubble m={AUDIO_EMENDA_A} repliedTo={null} senderName={null} groupStart groupEnd={false} nextAudioId={AUDIO_EMENDA_B.id} {...bubbleActions} />
-            <MessageBubble m={AUDIO_EMENDA_B} repliedTo={null} senderName={null} groupStart={false} groupEnd {...bubbleActions} />
+            <MessageBubble m={AUDIO_EMENDA_A} repliedTo={null} senderName={null} groupStart groupEnd={false} nextAudioId={AUDIO_EMENDA_B.id} {...acoes} />
+            <MessageBubble m={AUDIO_EMENDA_B} repliedTo={null} senderName={null} groupStart={false} groupEnd {...acoes} />
 
-            <MessageBubble m={LAST_OUT} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd {...bubbleActions} />
+            {/* ÁLBUM: clique direito (ou toque prolongado) em CADA miniatura.
+                A imagem 2 já tem reação nossa — clicar nela de novo remove. */}
+            <ImageAlbum items={ALBUM_ITENS} out senderName="Dr. Pedro" groupStart
+              privateMode={false} canCreateFollowups actions={acoes} onOpenImage={noop} />
+
+            {/* As duas últimas: coladas no rodapé e na borda direita. É onde o
+                menu precisa virar para cima e para dentro. */}
+            <MessageBubble m={BORDA_OUT} repliedTo={null} senderName="Dr. Pedro" senderRole="Administrador" groupStart groupEnd={false} {...acoes} />
+            <MessageBubble m={LAST_OUT} repliedTo={null} senderName={null} senderRole="Administrador" groupStart={false} groupEnd {...acoes} />
             </div>
           </div>
         </main>
@@ -651,22 +726,22 @@ function PreviewBench() {
         </footer>
         </section>
 
-        {!detailsCollapsed && (
+        {!movel && !detailsCollapsed && (
           <div onPointerDown={startPanelResize} role="separator" aria-orientation="vertical"
             className="relative w-1.5 shrink-0 touch-none cursor-col-resize bg-transparent">
             <DockedDetailsToggle collapsed={false} onToggle={() => setDetailsCollapsed(true)} />
           </div>
         )}
-        {detailsCollapsed && (
+        {!movel && detailsCollapsed && (
           <DockedDetailsToggle collapsed onToggle={() => setDetailsCollapsed(false)} />
         )}
 
         <aside
           data-preview-details
           data-testid="whatsapp-details-panel"
-          aria-hidden={detailsCollapsed}
-          style={{ width: detailsCollapsed ? 0 : panelWidth }}
-          className={`shrink-0 bg-white transition-[width,opacity,padding] duration-200 ${detailsCollapsed ? 'overflow-hidden p-0 opacity-0' : 'overflow-y-auto border-l border-[#e7e5df] p-3.5 opacity-100'}`}
+          aria-hidden={movel || detailsCollapsed}
+          style={{ width: movel || detailsCollapsed ? 0 : panelWidth }}
+          className={`shrink-0 bg-white transition-[width,opacity,padding] duration-200 ${movel || detailsCollapsed ? 'overflow-hidden p-0 opacity-0' : 'overflow-y-auto border-l border-[#e7e5df] p-3.5 opacity-100'}`}
         >
           {/* Espelha a ordem real do painel: quem é → como está o atendimento →
               o que eu faço agora → como está classificado. Usa os componentes de

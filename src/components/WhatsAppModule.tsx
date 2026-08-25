@@ -154,6 +154,7 @@ import type {
   WhatsAppDeleteScope, WhatsAppMediaLibraryItem,
 } from '../types/whatsapp.types';
 import { playWaActionSound } from '../utils/waActionSounds';
+import { copiarTexto } from '../utils/copyText';
 import type { Process, ProcessStatus, ProcessPracticeArea } from '../types/process.types';
 import { useAuth } from '../contexts/AuthContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
@@ -2139,6 +2140,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     forward: (m: WhatsAppMessage) => void;
     remove: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => void;
     react: (m: WhatsAppMessage, emoji: string) => void;
+    copy: (m: WhatsAppMessage, texto: string) => void;
     /** Ações do cartão de contato recebido (ver `contactMessageCard.tsx`). */
     openContactChat: (phone: string, name: string) => void;
     callContactPhone: (phone: string, name: string) => void;
@@ -2158,6 +2160,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     forward: (m) => setForwardSource(m),
     remove: (m, scope) => { void deleteMessage(m, scope); },
     react: (m, emoji) => { void reactToMessage(m, emoji); },
+    copy: (_m, texto) => { void copyMessageText(texto); },
     // Ligar para um número do cartão de contato. Vai pela MESMA porta da
     // ligação do cabeçalho: quem decide se aquilo é um número discável é
     // `resolveCallablePhone`, não a bolha.
@@ -2168,6 +2171,24 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
       });
     },
     linkContactPhone: (phone, name) => setContactLinkTarget({ phone, name }),
+  };
+
+  /**
+   * Copia para a área de transferência o texto que a bolha JÁ preparou.
+   *
+   * O texto chega pronto de propósito: quem sabe o que está escrito na tela é a
+   * bolha (ela é que esconde a assinatura, lê as marcas e — no modo privado —
+   * mascara). Aqui só resta entregar e dizer se deu certo. No modo privado o
+   * conteúdo real nem passa por este caminho, então nem o toast pode vazá-lo:
+   * ele anuncia o fato, nunca o texto.
+   */
+  const copyMessageText = async (texto: string) => {
+    if (await copiarTexto(texto)) {
+      toast.success('Mensagem copiada');
+      return;
+    }
+    playWaActionSound('error');
+    toast.error('Não foi possível copiar', 'O navegador bloqueou o acesso à área de transferência.');
   };
 
   /**
@@ -2308,6 +2329,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     onCreateTask: (m: WhatsAppMessage) => bubbleImplRef.current.createTask(m),
     onDelete: (m: WhatsAppMessage, scope: WhatsAppDeleteScope) => bubbleImplRef.current.remove(m, scope),
     onReact: (m: WhatsAppMessage, emoji: string) => bubbleImplRef.current.react(m, emoji),
+    onCopy: (m: WhatsAppMessage, texto: string) => bubbleImplRef.current.copy(m, texto),
     onOpenContactChat: (phone: string, name: string) => bubbleImplRef.current.openContactChat(phone, name),
     onCallContactPhone: (phone: string, name: string) => bubbleImplRef.current.callContactPhone(phone, name),
     onLinkContactPhone: (phone: string, name: string) => bubbleImplRef.current.linkContactPhone(phone, name),
@@ -3263,7 +3285,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                     : null;
                   const key = u.kind === 'album' ? `album-${head._tempId || head.id}` : (head._tempId || head.id);
                   return withChannel(u.kind === 'album' ? (
+                    // O álbum recebe as MESMAS ações da bolha: cada miniatura
+                    // ganha menu, clique direito, reação e exclusão sobre a
+                    // imagem clicada (ver `AlbumThumb`).
                     <ImageAlbum key={key} items={u.items} out={head.direction === 'out'} senderName={senderName} groupStart={groupStart} onOpenImage={setLightbox}
+                      privateMode={privateMode} canCreateFollowups actions={bubbleHandlers}
                       scheduledAt={u.items.map(i => scheduledSentMarks.get(i.id)).find(Boolean) ?? null} />
                   ) : (
                     <MessageBubble

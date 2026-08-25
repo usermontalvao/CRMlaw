@@ -3729,6 +3729,25 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   100% { background-color: transparent;              box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
 }
 
+/* Mensagem com o MENU ABERTO. Enquanto o menu está de pé, a bolha sobre a qual
+   ele vai agir fica acesa — é a resposta à única pergunta que o menu não
+   responde sozinho: "apagar QUAL?". Numa thread densa, com o menu por cima das
+   bolhas vizinhas, a mensagem de origem se perde; foi por isso que o clique
+   direito precisou do realce junto.
+   Mesmo halo do salto (`wa-msg-focus`), só que PARADO: aqui ele é um estado que
+   dura o tempo do menu, não um aviso que acende e apaga. E, como lá, a cor da
+   bolha não é tocada — verde/branco diz de quem é a mensagem, e não pode ser
+   emprestado para dizer "esta aqui". */
+.wa-msg-active {
+  border-radius: 12px;
+  background-color: rgba(245, 158, 11, 0.18);
+  box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.12);
+  transition: background-color 0.14s ease, box-shadow 0.14s ease;
+}
+/* No álbum não há linha em volta para acender: a miniatura é a mensagem, e o
+   realce vira um fio por dentro dela, acima das imagens vizinhas. */
+.wa-thumb-active { box-shadow: inset 0 0 0 3px rgba(245, 158, 11, 0.95); z-index: 2; }
+
 .wa-busy-dot { animation: wa-busy-pulse 2.4s ease-in-out infinite; }
 @keyframes wa-busy-pulse {
   0%, 100% { opacity: 1; }

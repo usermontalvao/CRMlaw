@@ -3,12 +3,10 @@
 // `MessageBubble` e `ImageAlbum` são consumidos pelo orquestrador; os demais
 // (`WaAudioPlayer`, `MediaContent`, `MediaPlaceholder`) são internos.
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
-  Pencil, RotateCcw, Calendar, ListTodo, CornerUpLeft, Loader2, AlertCircle,
-  CheckCheck, Check, X, Pause, Play, FileText, Download, ChevronDown, Forward,
-  Image as ImageIcon, Video as VideoIcon, Trash2, Ban,
-  UserRound, MapPin, BarChart3, Smile, SmilePlus, Plus, HelpCircle, MousePointerClick, Images, CalendarClock,
+  Loader2, AlertCircle, CheckCheck, Check, X, Pause, Play, FileText, Download, ChevronDown,
+  Image as ImageIcon, Video as VideoIcon, Ban,
+  UserRound, MapPin, BarChart3, Smile, SmilePlus, HelpCircle, MousePointerClick, Images, CalendarClock,
 } from 'lucide-react';
 import { formatTime, typeLabel, maskSensitive, fmtAudioTime, formatBytes } from './format';
 import { WaRichText } from './WaRichTextView';
@@ -17,18 +15,9 @@ import { WaPdfCard, isPdfMessage } from './pdfPreview';
 import { WaContactCard, type ContactCardActions } from './contactMessageCard';
 import { WaVideoLightbox } from './lightbox';
 import type { WhatsAppMessage, WhatsAppDeleteScope } from '../../types/whatsapp.types';
-import { ACTOR_ESCRITORIO, agruparReacoes, proximaReacao, reacaoDe } from '../../utils/waReactions';
-import { REACOES_RAPIDAS } from './emojiData';
-import { EmojiPicker } from './emojiPicker';
+import { ACTOR_ESCRITORIO, agruparReacoes } from '../../utils/waReactions';
+import { useMessageMenu, type MessageMenuActions } from './messageActionsMenu';
 import { applyOutputToElement } from '../../utils/audioDevices';
-import { LAYER } from '../../styles/layers';
-import { useModalLayer } from '../../styles/modalLayer';
-
-const WA_MESSAGE_MENU_EVENT = 'wa-message-menu-open';
-const WA_MESSAGE_MENU_WIDTH = 192;
-/** Barra de reação rápida: seis emojis + o botão que abre o catálogo inteiro. */
-const WA_REACT_BAR_WIDTH = 268;
-const WA_REACT_PICKER_WIDTH = 300;
 
 /** Dia e hora do agendamento, curtos — cabem na linha da marca interna. */
 const formatScheduleStamp = (iso: string): string =>
@@ -63,6 +52,12 @@ export const MessageBubble: React.FC<{
    * continua DESENHANDO as reações que já existem).
    */
   onReact?: (m: WhatsAppMessage, emoji: string) => void;
+  /**
+   * Copiar o conteúdo visível. Recebe o TEXTO JÁ PRONTO (sem marcas, sem a
+   * assinatura escondida, mascarado no modo privado) — a bolha não fala com o
+   * toast, quem anuncia é o host. Ausente = a ação não aparece no menu.
+   */
+  onCopy?: (m: WhatsAppMessage, texto: string) => void;
   /** Só para áudio: o áudio logo abaixo, que emenda quando este termina. */
   nextAudioId?: string | null;
   /**
@@ -79,56 +74,29 @@ export const MessageBubble: React.FC<{
   onOpenContactChat?: (phone: string, name: string) => void;
   onCallContactPhone?: (phone: string, name: string) => void;
   onLinkContactPhone?: (phone: string, name: string) => void;
-}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete, onReact, nextAudioId, scheduledAt, onOpenContactChat, onCallContactPhone, onLinkContactPhone }) => {
-  // O menu da mensagem sai em portal para o `body`: fora do widget é a camada
-  // dos menus; dentro dele, a faixa do widget (`styles/modalLayer`).
-  const camadaMenu = useModalLayer(LAYER.POPOVER);
+}> = React.memo(({ m, repliedTo, senderName, senderRole, groupStart = true, groupEnd = true, privateMode, canCreateFollowups, onReply, onEdit, onForward, onOpenImage, onRetry, onDiscard, onResend, uploadProgress, onCancel, onCreateDeadline, onCreateTask, onDelete, onReact, onCopy, nextAudioId, scheduledAt, onOpenContactChat, onCallContactPhone, onLinkContactPhone }) => {
   const out = m.direction === 'out';
   const failed = m._local === 'failed' || m.status === 'failed';
   const busy = m._local === 'uploading' || m._local === 'sending';
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
-  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
-  // Reagir: a barra rápida abre primeiro; o catálogo inteiro só quando pedem.
-  const [reactOpen, setReactOpen] = useState(false);
-  const [reactFull, setReactFull] = useState(false);
-  const [reactPosition, setReactPosition] = useState({ top: 0, left: 0 });
-  const reactTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const menuId = m._tempId || m.id;
-  // Reenvio rápido: só faz sentido para mídia já entregue (com objeto no storage).
-  const canResend = out && !busy && !failed && m.type !== 'text' && !!m.storage_path;
-  // Encaminhar: precisa de algo para reenviar — texto escrito ou arquivo que já
-  // está no storage (a mídia vai pelo caminho do storage, sem baixar e subir de
-  // novo). Mensagem ainda em envio ou falhada não é encaminhável.
-  // O cartão de contato não tem arquivo no storage, e por isso ficava fora do
-  // encaminhamento: a única mensagem que o escritório mais quer repassar (o
-  // número do perito, do despachante) era justamente a que não dava. Ele vai
-  // pelo texto do cartão, que é reenviado como CARTÃO (ver `sendContact`).
-  const canForward = !!onForward && !busy && !failed
-    && (m.type === 'text' || m.type === 'contact' ? !!m.content : !!m.storage_path);
+
+  // TODO O MENU DA MENSAGEM vem daqui: o que ela aceita, onde o painel cabe, o
+  // clique direito, o toque prolongado, o teclado e a faixa de reações. As
+  // regras continuam as mesmas — mudaram de endereço para o álbum poder usá-las
+  // também (ver `messageActionsMenu.tsx` e `messageMenu.ts`).
+  const menu = useMessageMenu({
+    m, out, privateMode, canCreateFollowups,
+    actions: {
+      onReply, onEdit, onForward, onResend, onCreateDeadline, onCreateTask,
+      onDelete, onReact, onCopy,
+    } satisfies MessageMenuActions,
+  });
 
   // ── Reações ──
   // A reação do escritório é UMA por mensagem, seja qual for o atendente que
   // clicou (ver `ACTOR_ESCRITORIO`): é o que o WhatsApp guarda por conta.
   const chipsDeReacao = agruparReacoes(m.reactions, ACTOR_ESCRITORIO);
-  const minhaReacao = reacaoDe(m.reactions, ACTOR_ESCRITORIO);
-  // Reagir precisa da chave da Evolution — mensagem em voo ou falhada não tem
-  // a que reagir do outro lado.
-  const canReact = !!onReact && !busy && !failed && !m._tempId && !!m.evolution_message_id;
-
-  // ── Apagar ──
+  const canReact = menu.caps.reagir;
   const deleted = !!m.deleted_at;
-  // "Apagar só aqui" vale para tudo que já existe no banco, inclusive mensagem
-  // recebida: o que ela faz é tirar da tela do escritório, e isso não depende do
-  // aparelho do contato. Fora: a mensagem ainda em voo (sem id no servidor, não
-  // há o que apagar) e a que já está apagada.
-  const canDeleteLocal = !!onDelete && !deleted && !busy && !m._tempId;
-  // "Apagar para todos" pede uma revogação à Evolution, e o WhatsApp só aceita
-  // revogar mensagem NOSSA que ainda tenha chave. A janela de tempo do WhatsApp
-  // não é conferida aqui de propósito: ela muda sem aviso e não é observável do
-  // client — quem responde por ela é a Evolution, e a recusa dela vira o toast
-  // que oferece apagar só aqui.
-  const canDeleteEveryone = canDeleteLocal && out && !failed && !!m.evolution_message_id;
   // Imagem/vídeo sem legenda/reply/nome → bolha sem moldura (igual WhatsApp):
   // a mídia "sangra" até a borda e a hora fica sobreposta num canto.
   // Reserva a bolha de mídia mesmo enquanto a URL assinada ainda não chegou.
@@ -137,98 +105,6 @@ export const MessageBubble: React.FC<{
   // Figurinha não usa bolha: no WhatsApp ela aparece solta sobre o fundo da
   // conversa, sem retângulo colorido nem sombra atrás.
   const stickerOnly = m.type === 'sticker' && mediaOnly;
-
-  // Cada bolha é um componente separado. Sem coordenação, seus estados locais
-  // permitiam vários menus abertos ao mesmo tempo. Este evento fecha todos os
-  // outros assim que um novo menu é acionado.
-  useEffect(() => {
-    const closeOtherMenu = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === menuId) return;
-      setMenuOpen(false);
-      setReactOpen(false);
-    };
-    window.addEventListener(WA_MESSAGE_MENU_EVENT, closeOtherMenu);
-    return () => window.removeEventListener(WA_MESSAGE_MENU_EVENT, closeOtherMenu);
-  }, [menuId]);
-
-  // O menu usa coordenadas da viewport e fecha quando a âncora deixa de ser
-  // confiável. Renderizado em portal, ele não disputa z-index com outras bolhas.
-  useEffect(() => {
-    if (!menuOpen && !reactOpen) return;
-    const close = () => { setMenuOpen(false); setReactOpen(false); };
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
-    return () => {
-      window.removeEventListener('resize', close);
-      window.removeEventListener('scroll', close, true);
-    };
-  }, [menuOpen, reactOpen]);
-
-  const toggleMenu = () => {
-    if (menuOpen) {
-      setMenuOpen(false);
-      return;
-    }
-    const trigger = menuTriggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    const actionCount = 1
-      + (canForward ? 1 : 0)
-      + (out && m.type === 'text' && m.evolution_message_id ? 1 : 0)
-      + (canResend ? 1 : 0)
-      + (canCreateFollowups && !m._tempId ? 2 : 0)
-      + (canDeleteLocal ? 1 : 0)
-      + (canDeleteEveryone ? 1 : 0);
-    const estimatedHeight = actionCount * 42 + (actionCount > 1 ? 14 : 8);
-    const below = rect.bottom + 6;
-    const top = below + estimatedHeight <= window.innerHeight - 8
-      ? below
-      : Math.max(8, rect.top - estimatedHeight - 6);
-    const preferredLeft = out ? rect.right - WA_MESSAGE_MENU_WIDTH : rect.left;
-    const left = Math.min(
-      window.innerWidth - WA_MESSAGE_MENU_WIDTH - 8,
-      Math.max(8, preferredLeft),
-    );
-    window.dispatchEvent(new CustomEvent(WA_MESSAGE_MENU_EVENT, { detail: menuId }));
-    setMenuPosition({ top, left });
-    setMenuOpen(true);
-  };
-
-  const runAction = (action: () => void) => {
-    setMenuOpen(false);
-    action();
-  };
-
-  /**
-   * Abre a barra de reação ancorada no botão, como o menu — em portal, com
-   * coordenadas de viewport. A largura muda conforme esteja mostrando os seis
-   * emojis rápidos ou o catálogo inteiro, e a altura decide se ela cai acima ou
-   * abaixo da bolha: numa mensagem no rodapé da conversa, abrir para baixo
-   * jogaria a barra para fora da tela.
-   */
-  const abrirReacoes = (comCatalogo: boolean) => {
-    const trigger = reactTriggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    const largura = comCatalogo ? WA_REACT_PICKER_WIDTH : WA_REACT_BAR_WIDTH;
-    const altura = comCatalogo ? 320 : 48;
-    const abaixo = rect.bottom + 6;
-    const top = abaixo + altura <= window.innerHeight - 8
-      ? abaixo
-      : Math.max(8, rect.top - altura - 6);
-    const preferido = out ? rect.right - largura : rect.left;
-    const left = Math.min(window.innerWidth - largura - 8, Math.max(8, preferido));
-    window.dispatchEvent(new CustomEvent(WA_MESSAGE_MENU_EVENT, { detail: menuId }));
-    setReactPosition({ top, left });
-    setReactFull(comCatalogo);
-    setReactOpen(true);
-  };
-
-  const reagir = (emoji: string) => {
-    setReactOpen(false);
-    setReactFull(false);
-    onReact?.(m, proximaReacao(minhaReacao, emoji));
-  };
 
   // ── Mensagem apagada ──
   // Sai antes de tudo: a bolha apagada não tem conteúdo, menu, mídia, resposta
@@ -262,110 +138,33 @@ export const MessageBubble: React.FC<{
     // `data-msg-id`: é por ele que a thread encontra uma mensagem para saltar
     // até ela (ver `jumpToMessage`). Fica na LINHA, e não na bolha, para o
     // realce cobrir o balão inteiro.
-    <div data-msg-id={m.id} className={`wa-message-row group flex items-end ${stickerOnly ? 'my-2.5' : groupStart ? 'mt-2' : 'mt-[2px]'} ${out ? 'justify-end' : 'justify-start'}`}>
-      <div className={`wa-bubble-in ${stickerOnly ? 'wa-sticker-bubble' : `wa-bubble ${out ? 'wa-bubble-out origin-bottom-right' : 'wa-bubble-incoming origin-bottom-left'} ${groupStart ? (out ? 'wa-bubble-tail-out' : 'wa-bubble-tail-in') : ''}`} ${out ? 'origin-bottom-right' : 'origin-bottom-left'} ${groupEnd ? '' : 'wa-bubble-continued'} relative text-[14px] leading-[1.36] text-slate-800 ${mediaOnly ? `wa-bubble-media max-w-[300px] p-0 ${stickerOnly ? '' : 'wa-bubble-media-surface'}` : 'wa-bubble-content px-[9px] pt-[6px] pb-[5px]'}`}>
+    <div data-msg-id={m.id} className={`wa-message-row group flex items-end ${stickerOnly ? 'my-2.5' : groupStart ? 'mt-2' : 'mt-[2px]'} ${out ? 'justify-end' : 'justify-start'} ${menu.menuAberto ? 'wa-msg-active' : ''}`}>
+      {/* A BOLHA INTEIRA é a superfície acionável: clique direito e toque
+          prolongado abrem o mesmo menu, como no WhatsApp Web. `WebkitTouchCallout`
+          cala o menu nativo do celular, que competiria com o nosso — no desktop
+          ele não existe, e a seleção de texto segue intacta (o toque prolongado
+          só escuta ponteiro de toque/caneta). */}
+      <div {...menu.surfaceProps} style={{ WebkitTouchCallout: 'none' }}
+        className={`wa-bubble-in ${stickerOnly ? 'wa-sticker-bubble' : `wa-bubble ${out ? 'wa-bubble-out origin-bottom-right' : 'wa-bubble-incoming origin-bottom-left'} ${groupStart ? (out ? 'wa-bubble-tail-out' : 'wa-bubble-tail-in') : ''}`} ${out ? 'origin-bottom-right' : 'origin-bottom-left'} ${groupEnd ? '' : 'wa-bubble-continued'} relative text-[14px] leading-[1.36] text-slate-800 ${mediaOnly ? `wa-bubble-media max-w-[300px] p-0 ${stickerOnly ? '' : 'wa-bubble-media-surface'}` : 'wa-bubble-content px-[9px] pt-[6px] pb-[5px]'}`}>
         {/* Reagir fica FORA do menu de propósito: no aplicativo a reação é um
             toque só, e enterrá-la atrás de "Ações da mensagem" transformaria o
-            gesto mais leve da conversa no mais burocrático. */}
+            gesto mais leve da conversa no mais burocrático. (No menu do clique
+            direito ela também aparece, no topo — como no WhatsApp Web.) */}
         {canReact && (
-          <button ref={reactTriggerRef} type="button" title="Reagir" aria-label="Reagir à mensagem" aria-expanded={reactOpen}
-            onClick={() => abrirReacoes(false)}
-            className={`wa-bubble-menu-trigger absolute z-10 top-1 right-8 w-6 h-6 rounded-full flex items-center justify-center text-slate-500 opacity-0 group-hover:opacity-100 ${reactOpen ? '!opacity-100' : ''}`}>
+          <button ref={menu.reactTriggerRef} type="button" title="Reagir" aria-label="Reagir à mensagem"
+            data-wa-controle aria-haspopup="menu" aria-expanded={menu.reacoesAbertas}
+            onClick={() => menu.abrirReacoesSoltas(false)}
+            className={`wa-bubble-menu-trigger absolute z-10 top-1 right-8 w-6 h-6 rounded-full flex items-center justify-center text-slate-500 opacity-0 group-hover:opacity-100 ${menu.reacoesAbertas ? '!opacity-100' : ''}`}>
             <SmilePlus size={14} strokeWidth={2.2} />
           </button>
         )}
-        {reactOpen && typeof document !== 'undefined' && createPortal(
-          <>
-            <button
-              type="button"
-              aria-label="Fechar reações"
-              className="fixed inset-0 cursor-default bg-transparent"
-              style={{ zIndex: camadaMenu }}
-              onClick={() => { setReactOpen(false); setReactFull(false); }}
-            />
-            <div style={{ top: reactPosition.top, left: reactPosition.left, zIndex: camadaMenu + 1 }}
-              className="fixed">
-              {reactFull ? (
-                <EmojiPicker compacto className="w-[300px]"
-                  onPick={reagir}
-                  onClose={() => { setReactOpen(false); setReactFull(false); }} />
-              ) : (
-                <div role="menu" aria-label="Reagir à mensagem"
-                  style={{ width: WA_REACT_BAR_WIDTH }}
-                  className="flex items-center gap-0.5 rounded-full bg-white p-1 shadow-[0_12px_38px_rgba(15,23,42,0.24)] ring-1 ring-black/[0.08]">
-                  {REACOES_RAPIDAS.map(emoji => (
-                    <button key={emoji} type="button" onClick={() => reagir(emoji)}
-                      title={minhaReacao === emoji ? 'Remover reação' : `Reagir com ${emoji}`}
-                      aria-label={`Reagir com ${emoji}`}
-                      className={`w-9 h-9 rounded-full text-[21px] leading-none flex items-center justify-center transition hover:scale-125 active:scale-95 ${
-                        minhaReacao === emoji ? 'bg-[#f0f2f5]' : ''}`}>
-                      {emoji}
-                    </button>
-                  ))}
-                  {/* O catálogo inteiro entra por aqui — o mesmo painel da barra
-                      de mensagem, em modo compacto. */}
-                  <button type="button" onClick={() => abrirReacoes(true)}
-                    title="Mais emojis" aria-label="Mais emojis"
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-slate-500 hover:bg-[#f0f2f5] transition">
-                    <Plus size={17} />
-                  </button>
-                </div>
-              )}
-            </div>
-          </>,
-          document.body,
-        )}
-        {!busy && (
-          <button ref={menuTriggerRef} type="button" title="Ações da mensagem" aria-label="Ações da mensagem" aria-expanded={menuOpen}
-            onClick={toggleMenu}
-            className={`wa-bubble-menu-trigger absolute z-10 top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center text-slate-500 opacity-0 group-hover:opacity-100 ${menuOpen ? '!opacity-100' : ''}`}>
+        {!busy && menu.itens.length > 0 && (
+          <button {...menu.triggerProps} type="button" title="Ações da mensagem" aria-label="Ações da mensagem"
+            className={`wa-bubble-menu-trigger absolute z-10 top-1 right-1 w-6 h-6 rounded-full flex items-center justify-center text-slate-500 opacity-0 group-hover:opacity-100 ${menu.menuAberto ? '!opacity-100' : ''}`}>
             <ChevronDown size={15} strokeWidth={2.2} />
           </button>
         )}
-        {menuOpen && typeof document !== 'undefined' && createPortal(
-          <>
-            <button
-              type="button"
-              aria-label="Fechar ações da mensagem"
-              className="fixed inset-0 cursor-default bg-transparent"
-              style={{ zIndex: camadaMenu }}
-              onClick={() => setMenuOpen(false)}
-            />
-            {/* Um fio acima do próprio fundo: os dois são irmãos no mesmo
-                portal, e empatados a ordem passaria a depender do JSX. */}
-            <div role="menu" aria-label="Ações da mensagem"
-              style={{ top: menuPosition.top, left: menuPosition.left, width: WA_MESSAGE_MENU_WIDTH, zIndex: camadaMenu + 1 }}
-              className="fixed overflow-hidden rounded-xl bg-white py-1.5 shadow-[0_12px_38px_rgba(15,23,42,0.24)] ring-1 ring-black/[0.08]">
-              <MessageAction icon={<CornerUpLeft size={15} />} label="Responder" onClick={() => runAction(() => onReply(m))} />
-              {canForward && <MessageAction icon={<Forward size={15} />} label="Encaminhar" onClick={() => runAction(() => onForward?.(m))} />}
-              {out && m.type === 'text' && m.evolution_message_id && (
-                <MessageAction icon={<Pencil size={15} />} label="Editar mensagem" onClick={() => runAction(() => onEdit(m))} />
-              )}
-              {canResend && <MessageAction icon={<RotateCcw size={15} />} label="Reenviar arquivo" onClick={() => runAction(() => onResend(m))} />}
-              {canCreateFollowups && !m._tempId && (
-                <>
-                  <div className="my-1 border-t border-slate-100" />
-                  <MessageAction icon={<Calendar size={15} />} label="Criar prazo" onClick={() => runAction(() => onCreateDeadline(m))} />
-                  <MessageAction icon={<ListTodo size={15} />} label="Criar tarefa" onClick={() => runAction(() => onCreateTask(m))} />
-                </>
-              )}
-              {/* Apagar por último e separado: é a única ação irreversível do
-                  menu, e no WhatsApp ela também mora no fim, em vermelho. */}
-              {canDeleteLocal && (
-                <>
-                  <div className="my-1 border-t border-slate-100" />
-                  {canDeleteEveryone && (
-                    <MessageAction danger icon={<Ban size={15} />} label="Apagar para todos"
-                      onClick={() => runAction(() => onDelete?.(m, 'everyone'))} />
-                  )}
-                  <MessageAction danger icon={<Trash2 size={15} />} label="Apagar só aqui"
-                    onClick={() => runAction(() => onDelete?.(m, 'me'))} />
-                </>
-              )}
-            </div>
-          </>,
-          document.body,
-        )}
+        {menu.portal}
 
         {/* Marca INTERNA de agendamento. Fica dentro da bolha, colada na
             mensagem, porque a pergunta que ela responde ("isto foi eu na hora
@@ -461,9 +260,9 @@ export const MessageBubble: React.FC<{
         {chipsDeReacao.length > 0 && (
           <div className={`flex flex-wrap items-center gap-1 ${mediaOnly ? 'absolute bottom-1.5 left-1.5 z-[2]' : 'mt-1'}`}>
             {chipsDeReacao.map(chip => (
-              <button key={chip.emoji} type="button"
+              <button key={chip.emoji} type="button" data-wa-controle
                 disabled={!canReact}
-                onClick={() => reagir(chip.emoji)}
+                onClick={() => menu.reagir(chip.emoji)}
                 title={`${chip.quem.join(', ')} · ${chip.minha ? 'toque para remover' : `reagir com ${chip.emoji}`}`}
                 className={`wa-reaction-chip flex items-center gap-0.5 h-[21px] px-1.5 rounded-full text-[13px] leading-none ${
                   chip.minha ? 'wa-reaction-chip-minha' : ''} ${canReact ? 'wa-reaction-chip-acionavel' : 'cursor-default'}`}>
@@ -478,7 +277,7 @@ export const MessageBubble: React.FC<{
 
         {/* Barra de progresso de upload + botão cancelar (Fase D) */}
         {m._local === 'uploading' && uploadProgress !== undefined && (
-          <div className="flex items-center gap-2 mt-1.5">
+          <div data-wa-controle className="flex items-center gap-2 mt-1.5">
             <div className="flex-1 h-1 rounded-full bg-emerald-600/20 overflow-hidden">
               <div className="h-full bg-emerald-500 rounded-full transition-[width] duration-300"
                 style={{ width: `${uploadProgress}%` }} />
@@ -495,7 +294,7 @@ export const MessageBubble: React.FC<{
 
         {/* Falha no envio: tentar de novo ou descartar da fila */}
         {failed && m._tempId && (
-          <span className="flex items-center gap-2 justify-end mt-1 text-[11px] font-semibold">
+          <span data-wa-controle className="flex items-center gap-2 justify-end mt-1 text-[11px] font-semibold">
             <span className="text-red-600">Não enviado</span>
             <button onClick={() => onRetry(m)} className="underline hover:no-underline text-emerald-700">Tentar de novo</button>
             <button onClick={() => onDiscard(m)} className="text-slate-500 hover:text-slate-700">Descartar</button>
@@ -506,14 +305,6 @@ export const MessageBubble: React.FC<{
   );
 });
 MessageBubble.displayName = 'MessageBubble';
-
-const MessageAction: React.FC<{ icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean }> = ({ icon, label, onClick, danger }) => (
-  <button type="button" onClick={onClick}
-    className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition ${danger ? 'text-red-600 hover:bg-red-50' : 'text-slate-700 hover:bg-[#f0f2f5]'}`}>
-    <span className={danger ? 'text-red-500' : 'text-slate-500'}>{icon}</span>
-    <span>{label}</span>
-  </button>
-);
 
 // ── Player de áudio estilo WhatsApp (play/pause + onda clicável + tempo/velocidade) ──
 //
@@ -574,7 +365,9 @@ const WaAudioPlayer: React.FC<{
   const progress = duration > 0 ? (current / duration) * 100 : 0;
 
   return (
-    <div className="flex items-center gap-2.5 select-none" style={{ minWidth: '250px', maxWidth: '330px' }}>
+    // `data-wa-controle`: dentro do player o toque prolongado é para arrastar a
+    // onda, não para abrir o menu da mensagem.
+    <div data-wa-controle className="flex items-center gap-2.5 select-none" style={{ minWidth: '250px', maxWidth: '330px' }}>
       <audio ref={audioRef} src={src} preload="metadata"
         onLoadedMetadata={e => setDuration(e.currentTarget.duration || 0)}
         onTimeUpdate={e => setCurrent(e.currentTarget.currentTime)}
@@ -933,12 +726,22 @@ const WaVideo: React.FC<{ src: string; cacheKey: string; autoLoop?: boolean; nam
 // ── Álbum de imagens (estilo WhatsApp) — agrupa imagens enviadas juntas ──
 // Mostra até 4 miniaturas num grid; "+N" no excedente. Legenda da 1ª imagem e
 // hora/status da última, como no WhatsApp. Cada célula abre o lightbox.
+//
+// CADA MINIATURA É UMA MENSAGEM DE VERDADE. O agrupamento é só desenho: o
+// clique direito, a setinha e o toque prolongado agem sobre a imagem clicada,
+// com as mesmas capacidades que ela teria numa bolha sozinha. O álbum NÃO vira
+// uma mensagem fictícia — não existe "responder ao álbum" no WhatsApp, e
+// inventar isso aqui faria a resposta citar uma mensagem que o contato não tem.
 export const ImageAlbum: React.FC<{
   items: WhatsAppMessage[]; out: boolean; senderName: string | null; groupStart?: boolean;
   onOpenImage: (url: string) => void;
   /** Horário do agendamento, quando alguma das imagens do álbum saiu da fila. */
   scheduledAt?: string | null;
-}> = React.memo(({ items, out, senderName, groupStart = true, onOpenImage, scheduledAt }) => {
+  privateMode?: boolean;
+  canCreateFollowups?: boolean;
+  /** As MESMAS ações da bolha, aplicadas à imagem clicada. */
+  actions?: MessageMenuActions;
+}> = React.memo(({ items, out, senderName, groupStart = true, onOpenImage, scheduledAt, privateMode, canCreateFollowups, actions }) => {
   const shown = items.slice(0, 4);
   const extra = items.length - shown.length;
   const last = items[items.length - 1];
@@ -953,18 +756,12 @@ export const ImageAlbum: React.FC<{
     <div className={`wa-msg-in group flex items-end ${groupStart ? 'mt-2' : 'mt-[2px]'} ${out ? 'justify-end' : 'justify-start'}`}>
       <div className="max-w-[280px]">
         <div className={`relative grid gap-1 w-64 ${shown.length === 1 ? 'grid-cols-1' : 'grid-cols-2'} rounded-2xl overflow-hidden shadow-sm`}>
-          {shown.map((m, i) => {
-            const overlay = i === shown.length - 1 && extra > 0;
-            return (
-              <button key={m._tempId || m.id} data-msg-id={m.id} onClick={() => m.media_url && onOpenImage(m.media_url)}
-                className="relative aspect-square overflow-hidden bg-black/10">
-                {m.media_url
-                  ? <AlbumImage key={m.media_url} src={m.media_url} alt={m.content || 'imagem'} />
-                  : <span className="wa-media-skeleton absolute inset-0 flex items-center justify-center"><Loader2 size={16} className="relative z-[1] animate-spin text-[#8696a0]" /></span>}
-                {overlay && <span className="absolute inset-0 bg-black/55 flex items-center justify-center text-white text-[18px] font-bold">+{extra}</span>}
-              </button>
-            );
-          })}
+          {shown.map((m, i) => (
+            <AlbumThumb key={m._tempId || m.id} m={m} out={out}
+              extra={i === shown.length - 1 ? extra : 0}
+              privateMode={privateMode} canCreateFollowups={canCreateFollowups}
+              onOpenImage={onOpenImage} actions={actions} />
+          ))}
           {senderName && (
             <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/45 text-white text-[10px] font-bold">{senderName}</span>
           )}
@@ -976,7 +773,7 @@ export const ImageAlbum: React.FC<{
               <CalendarClock size={10} className="shrink-0" /> Agendada · {formatScheduleStamp(scheduledAt)}
             </span>
           )}
-          <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/45 text-white text-[10px]">
+          <span className="absolute bottom-1.5 right-1.5 z-[2] flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/45 text-white text-[10px]">
             {busy && <Loader2 size={11} className="animate-spin" />}
             {formatTime(last.wa_timestamp)}
             {ticks}
@@ -988,6 +785,63 @@ export const ImageAlbum: React.FC<{
   );
 });
 ImageAlbum.displayName = 'ImageAlbum';
+
+/**
+ * Uma célula do álbum: a imagem, o menu dela e as reações que ela já tem.
+ *
+ * Componente próprio porque cada célula precisa do PRÓPRIO `useMessageMenu` —
+ * um hook por mensagem é o que garante que a ação clicada carregue a imagem
+ * certa, e não a primeira do grupo.
+ */
+const AlbumThumb: React.FC<{
+  m: WhatsAppMessage; out: boolean; extra: number;
+  privateMode?: boolean; canCreateFollowups?: boolean;
+  onOpenImage: (url: string) => void;
+  actions?: MessageMenuActions;
+}> = ({ m, out, extra, privateMode, canCreateFollowups, onOpenImage, actions }) => {
+  const menu = useMessageMenu({ m, out, privateMode, canCreateFollowups, actions: actions ?? {} });
+  const chips = agruparReacoes(m.reactions, ACTOR_ESCRITORIO);
+  return (
+    <div className={`group/thumb relative aspect-square overflow-hidden bg-black/10 ${menu.menuAberto ? 'wa-thumb-active' : ''}`}>
+      <button data-msg-id={m.id} {...menu.surfaceProps} style={{ WebkitTouchCallout: 'none' }}
+        onClick={() => m.media_url && onOpenImage(m.media_url)}
+        aria-label="Abrir imagem"
+        className="absolute inset-0 h-full w-full">
+        {m.media_url
+          ? <AlbumImage key={m.media_url} src={m.media_url} alt={m.content || 'imagem'} />
+          : <span className="wa-media-skeleton absolute inset-0 flex items-center justify-center"><Loader2 size={16} className="relative z-[1] animate-spin text-[#8696a0]" /></span>}
+      </button>
+      {extra > 0 && (
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55 text-[18px] font-bold text-white">+{extra}</span>
+      )}
+      {/* A setinha que faltava no álbum. Fica sobre a miniatura, no mesmo canto
+          da bolha comum, e acima do véu do "+N". */}
+      {menu.itens.length > 0 && (
+        <button {...menu.triggerProps} type="button" title="Ações da mensagem" aria-label="Ações da imagem"
+          className={`absolute right-1 top-1 z-[3] flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white transition hover:bg-black/70 ${
+            menu.menuAberto ? 'opacity-100' : 'opacity-0 group-hover/thumb:opacity-100 focus:opacity-100'}`}>
+          <ChevronDown size={14} strokeWidth={2.2} />
+        </button>
+      )}
+      {chips.length > 0 && (
+        <div className="absolute bottom-1 left-1 z-[2] flex flex-wrap items-center gap-1">
+          {chips.map(chip => (
+            <button key={chip.emoji} type="button" data-wa-controle
+              disabled={!menu.caps.reagir}
+              onClick={() => menu.reagir(chip.emoji)}
+              title={`${chip.quem.join(', ')} · ${chip.minha ? 'toque para remover' : `reagir com ${chip.emoji}`}`}
+              className={`wa-reaction-chip flex h-[19px] items-center gap-0.5 rounded-full px-1.5 text-[12px] leading-none ${
+                chip.minha ? 'wa-reaction-chip-minha' : ''} ${menu.caps.reagir ? 'wa-reaction-chip-acionavel' : 'cursor-default'}`}>
+              <span>{chip.emoji}</span>
+              {chip.total > 1 && <span className="text-[10px] font-semibold text-[#54656f] tabular-nums">{chip.total}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {menu.portal}
+    </div>
+  );
+};
 
 const AlbumImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
   const [state, setState] = useState<MediaLoadState>('loading');
