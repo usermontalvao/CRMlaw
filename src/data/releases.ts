@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.1',
+    date: '25/08/2026',
+    summary: 'O aviso ao cliente sobre o requerimento passa a dizer o que ele quer saber — a data do prazo, o dia da perícia, há quanto tempo o pedido está parado — e sai de qualquer lugar da lista, sem abrir a ficha.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'A mensagem leva a data, não só o assunto',
+            description: 'Os modelos de WhatsApp deixaram de ser genéricos: o de exigência informa até quando o cliente tem para atender, o de perícia diz o dia e a hora do agendamento e o de análise conta há quantos dias o pedido está no INSS. Quando o requerimento não tem essa data cadastrada, a frase inteira simplesmente não entra — a mensagem continua correta em vez de sair com um espaço em branco no lugar do prazo.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Avisar o cliente sem abrir a ficha',
+            description: 'O ícone do WhatsApp entrou na linha da tabela e no cartão do celular: dá para escolher o modelo e disparar direto da lista. Sem telefone cadastrado o botão fica apagado, com o motivo no próprio botão. Na ficha aberta, o antigo "WhatsApp" virou "Avisar cliente" e passa a abrir a mesma escolha de modelo, em vez de mandar o cliente para uma conversa em branco.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Tela mais quieta',
+            description: 'A lista de requerimentos tinha etiqueta pulsando, ícone quicando e ponto piscando ao mesmo tempo — no meio de uma triagem, isso cansa mais do que informa. As animações saíram e as cores ficaram: a urgência continua visível, sem a tela se mexer sozinha.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.0',
     date: '24/08/2026',
     summary: 'O botão direito passa a valer nas mensagens do WhatsApp — com "Copiar", reações no topo do menu, toque prolongado no celular e o álbum de fotos finalmente respondendo como as outras mensagens.',

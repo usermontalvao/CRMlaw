@@ -983,14 +983,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   // WhatsApp templates per status
   const WHATSAPP_TEMPLATES: Partial<Record<RequirementStatus, { label: string; text: string }[]>> = {
     em_exigencia: [
-      { label: 'Exigência pendente', text: 'Olá, *{nome}*! Informamos que seu requerimento (*{protocolo}*) está com exigência pendente no INSS e precisa ser atendida para dar continuidade ao processo. Entre em contato conosco para orientações. 🙏' },
+      { label: 'Exigência pendente', text: 'Olá, *{nome}*! Informamos que seu requerimento (*{protocolo}*) está com exigência pendente no INSS e precisa ser atendida para dar continuidade ao processo.{prazo_frase} Entre em contato conosco para orientações. 🙏' },
     ],
     em_analise: [
-      { label: 'Em análise', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está em análise no INSS. Assim que houver qualquer atualização, entrarei em contato. Qualquer dúvida, estou à disposição! 😊' },
+      { label: 'Em análise', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está em análise no INSS.{dias_frase} Assim que houver qualquer atualização, entrarei em contato. Qualquer dúvida, estou à disposição! 😊' },
       { label: 'Prazo próximo', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está em análise há mais de 45 dias. Caso não haja decisão em breve, podemos estudar medidas judiciais para garantir seu direito. Podemos conversar?' },
     ],
     aguardando_pericia: [
-      { label: 'Perícia agendada', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está aguardando perícia. Lembre-se de comparecer no dia e horário agendados com todos os documentos. Qualquer dúvida, estou à disposição!' },
+      { label: 'Perícia agendada', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está aguardando perícia.{pericia_frase} Lembre-se de comparecer com documento com foto e todos os laudos e exames. Qualquer dúvida, estou à disposição!' },
     ],
     aguardando_confeccao: [
       { label: 'Em preparação', text: 'Olá, *{nome}*! Seu processo (*{protocolo}*) está em preparação. Em breve daremos início ao protocolo junto ao INSS. Qualquer dúvida, estou à disposição! 👍' },
@@ -1006,9 +1006,33 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     ],
   };
 
-  const buildWAText = (text: string, req: Requirement) =>
-    text.replace(/{nome}/g, req.beneficiary ?? 'Beneficiário')
-        .replace(/{protocolo}/g, req.protocol ?? 'sem protocolo');
+  /**
+   * O aviso ao cliente só vale se disser o que ele quer saber: a data do
+   * prazo, o dia da perícia, há quanto tempo o pedido está parado. As frases
+   * abaixo entram inteiras ou não entram — sem data, o modelo continua correto
+   * em vez de mandar "prazo até _".
+   */
+  const buildWAText = (text: string, req: Requirement) => {
+    const periciaAt = getPericiaNextAt(req);
+    const analysisDays = getAnalysisDays(req);
+    const prazoFrase = req.exigency_due_date
+      ? ` O prazo para atendimento vai até *${formatDate(req.exigency_due_date)}*.`
+      : '';
+    const periciaFrase = periciaAt
+      ? ` Está agendada para *${formatDateTime(periciaAt)}*.`
+      : '';
+    const diasFrase = typeof analysisDays === 'number'
+      ? ` O pedido está em análise há *${analysisDays} dias*.`
+      : '';
+    return text
+      .replace(/{nome}/g, req.beneficiary ?? 'Beneficiário')
+      .replace(/{protocolo}/g, req.protocol ?? 'sem protocolo')
+      .replace(/{prazo_frase}/g, prazoFrase)
+      .replace(/{pericia_frase}/g, periciaFrase)
+      .replace(/{dias_frase}/g, diasFrase)
+      .replace(/ {2,}/g, ' ')
+      .trim();
+  };
 
   const handlePrintRequirement = (req: Requirement) => {
     const statusLabel  = getStatusLabel(req.status);
@@ -4038,7 +4062,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               </div>
             )}
             {showMandadoRisk && (
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-600 text-white animate-pulse">
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-red-600 text-white">
                 <AlertTriangle className="w-3 h-3" /> MS Risk
               </span>
             )}
@@ -4064,9 +4088,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
               Excluir
             </button>
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => handleWhatsApp(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition">
+              <button type="button" onClick={() => handleOpenWhatsAppTemplateModal(selectedRequirementForView)} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition">
                 <MessageSquare className="w-4 h-4" />
-                WhatsApp
+                Avisar cliente
               </button>
               {selectedRequirementForView.status !== 'em_analise' && (
                 <button type="button" onClick={handleQuickBackToAnalysis} className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 rounded-lg transition">
@@ -4679,7 +4703,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       {/* ── Painel de controle ─────────────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-2xl border border-[#e7e5df]/80 bg-[#f8f7f5] shadow-sm">
         {/* Barra de acento laranja no topo */}
-        <div className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-amber-400" />
+        <div className="h-1 w-full bg-orange-500/70" />
 
         <div className="p-4 sm:p-5">
           {/* Mobile toggle */}
@@ -4695,7 +4719,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
             </button>
             <button
               onClick={() => handleOpenModal(undefined)}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:from-orange-600 hover:to-orange-700 active:scale-95 transition-all"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-orange-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-orange-600 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" /> Novo
             </button>
@@ -4764,7 +4788,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                 </button>
                 <button
                   onClick={() => handleOpenModal(undefined)}
-                  className="hidden @sm:inline-flex h-8 items-center gap-1.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-3 text-[11px] font-bold text-white shadow-sm hover:from-orange-600 hover:to-orange-700 active:scale-95 transition-all"
+                  className="hidden @sm:inline-flex h-8 items-center gap-1.5 rounded-xl bg-orange-500 px-3 text-[11px] font-bold text-white hover:bg-orange-600 transition-colors"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Novo Requerimento
@@ -5066,9 +5090,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                         <div className="flex items-center gap-2">
                           {statusConfig?.icon && (
                             <statusConfig.icon className={`w-3.5 h-3.5 shrink-0 ${
-                              statusConfig.key === 'em_exigencia'       ? 'text-amber-500 animate-pulse'  :
-                              statusConfig.key === 'aguardando_pericia' ? 'text-cyan-500 animate-bounce'  :
-                              statusConfig.key === 'aguardando_confeccao' ? 'text-indigo-400 animate-pulse':
+                              statusConfig.key === 'em_exigencia'       ? 'text-amber-500'  :
+                              statusConfig.key === 'aguardando_pericia' ? 'text-cyan-500'  :
+                              statusConfig.key === 'aguardando_confeccao' ? 'text-indigo-400':
                               statusConfig.key === 'deferido'           ? 'text-green-500'                :
                               'text-slate-500'
                             }`} />
@@ -5149,10 +5173,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                                 <span className="relative inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-600 text-white border border-purple-700 shadow-sm shadow-purple-400/40 cursor-default select-none">
                                   <Scale className="w-2.5 h-2.5 shrink-0" />
                                   MS
-                                  <span className="relative flex h-1.5 w-1.5">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f8f7f5] opacity-75" />
-                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#f8f7f5]" />
-                                  </span>
+                                  <span className="inline-flex rounded-full h-1.5 w-1.5 bg-[#f8f7f5]" />
                                 </span>
                                 {/* Tooltip: pt-2 cria ponte invisível entre badge e painel */}
                                 <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 w-64 z-[200]
@@ -5213,6 +5234,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       {/* Ações */}
                       <td className="px-5 py-4 whitespace-nowrap">
                         <div className="flex items-center justify-end gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleOpenWhatsAppTemplateModal(requirement)}
+                            disabled={!requirement.phone}
+                            title={requirement.phone ? 'Avisar o cliente pelo WhatsApp' : 'Sem telefone cadastrado'}
+                            className="p-1.5 rounded-lg text-slate-500 hover:bg-green-50 hover:text-green-600 transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                          </button>
                           <button onClick={() => handleViewRequirement(requirement)} title="Detalhes" className="p-1.5 rounded-lg text-slate-500 hover:bg-orange-50 hover:text-orange-600 transition-all">
                             <Eye className="w-4 h-4" />
                           </button>
@@ -5301,10 +5330,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                               <span className="relative inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-600 text-white border border-purple-700 shadow-sm shadow-purple-400/40 cursor-default select-none">
                                 <Scale className="w-2.5 h-2.5 shrink-0" />
                                 MS
-                                <span className="relative flex h-1.5 w-1.5">
-                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f8f7f5] opacity-75" />
-                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#f8f7f5]" />
-                                </span>
+                                <span className="inline-flex rounded-full h-1.5 w-1.5 bg-[#f8f7f5]" />
                               </span>
                               {/* pt-2 = invisible bridge to keep hover alive when moving to tooltip */}
                               <div className="absolute top-full left-0 pt-2 w-64 z-[200]
@@ -5443,6 +5469,14 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                     </select>
 
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenWhatsAppTemplateModal(requirement)}
+                        disabled={!requirement.phone}
+                        title={requirement.phone ? 'Avisar o cliente pelo WhatsApp' : 'Sem telefone cadastrado'}
+                        className="p-1.5 rounded-lg text-slate-500 hover:bg-green-50 hover:text-green-600 transition-all disabled:opacity-30"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </button>
                       <button onClick={() => handleViewRequirement(requirement)} title="Detalhes" className="p-1.5 rounded-lg text-slate-500 hover:bg-orange-50 hover:text-orange-600 transition-all">
                         <Eye className="w-4 h-4" />
                       </button>
