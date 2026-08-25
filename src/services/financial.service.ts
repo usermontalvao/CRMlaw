@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import { syncBus } from '../lib/syncBus';
+import { buildInstallmentSchedule } from '../utils/installmentSchedule';
 import type {
   Agreement,
   AgreementStatus,
@@ -247,41 +248,27 @@ class FinancialService {
     firstDueDate: string,
     customInstallments?: CustomInstallmentInput[],
   ): Promise<void> {
-    const installments: Omit<Installment, 'id' | 'created_at' | 'updated_at'>[] = [];
+    // O cronograma sai sempre do mesmo lugar (utils/installmentSchedule) para
+    // que parcela e compromisso da agenda nasçam com a MESMA data.
+    const schedule = buildInstallmentSchedule({
+      paymentType: count > 1 ? 'installments' : 'upfront',
+      totalValue: Number((value * Math.max(1, count)).toFixed(2)),
+      installmentsCount: count,
+      firstDueDate,
+      customInstallments,
+    });
 
-    if (customInstallments && customInstallments.length) {
-      for (let i = 0; i < count; i++) {
-        const custom = customInstallments[i];
-        installments.push({
-          agreement_id: agreementId,
-          installment_number: i + 1,
-          due_date: (custom?.due_date || firstDueDate),
-          value: Number(custom?.value ?? value),
-          status: 'pendente',
-          payment_date: null,
-          payment_method: null,
-          paid_value: null,
-          notes: undefined,
-        });
-      }
-    } else {
-      const baseDate = new Date(firstDueDate);
-      for (let i = 0; i < count; i++) {
-        const dueDate = new Date(baseDate);
-        dueDate.setMonth(dueDate.getMonth() + i);
-        installments.push({
-          agreement_id: agreementId,
-          installment_number: i + 1,
-          due_date: dueDate.toISOString().split('T')[0],
-          value: Number(value.toFixed(2)),
-          status: 'pendente',
-          payment_date: null,
-          payment_method: null,
-          paid_value: null,
-          notes: undefined,
-        });
-      }
-    }
+    const installments: Omit<Installment, 'id' | 'created_at' | 'updated_at'>[] = schedule.map((item) => ({
+      agreement_id: agreementId,
+      installment_number: item.number,
+      due_date: item.dueDate,
+      value: item.value,
+      status: 'pendente',
+      payment_date: null,
+      payment_method: null,
+      paid_value: null,
+      notes: undefined,
+    }));
 
     const { error } = await supabase.from('installments').insert(installments);
     if (error) throw error;

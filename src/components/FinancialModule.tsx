@@ -53,6 +53,8 @@ import { settingsService, type OfficeIdentity, PAYMENT_METHOD_LABELS, buildPayme
 import { financialService } from '../services/financial.service';
 import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
+import { addMonthsToISODate, buildInstallmentSchedule } from '../utils/installmentSchedule';
+import { toOfficeDateKey } from '../utils/officeTime';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
 import { profileService, type Profile } from '../services/profile.service';
@@ -804,7 +806,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       }
 
       const installments = Array.from({ length: count }, (_, index) => ({
-        dueDate: index === 0 ? prev.firstDueDate : '',
+        dueDate: prev.firstDueDate ? addMonthsToISODate(prev.firstDueDate, index) : '',
         value: prev.totalValue && count ? (parseCurrencyToNumber(prev.totalValue) / count).toFixed(2) : '',
       }));
 
@@ -832,7 +834,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       return {
         ...prev,
         customInstallments: prev.customInstallments.map((item, index) => ({
-          dueDate: index === 0 ? prev.firstDueDate : (prev.customInstallments[index - 1]?.dueDate || prev.firstDueDate),
+          dueDate: prev.firstDueDate ? addMonthsToISODate(prev.firstDueDate, index) : item.dueDate,
           value: baseValue.toFixed(2),
         })),
       };
@@ -943,6 +945,8 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         custom_installments: customInstallmentsPayload,
       });
       const updatedInstallments = await financialService.listInstallments(updated.id);
+
+      await syncCalendarEventsWithInstallments(updated, updatedInstallments, calendarResponsibleId || null);
 
       if (updated.status === 'aguardando_definicao' || updated.status === 'cancelado') {
         await syncAgreementCalendarState(updated, updatedInstallments, 'cancelado');
@@ -1118,7 +1122,21 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         notes: formData.notes?.trim() || undefined,
       });
 
-      const schedule = buildScheduleFromForm();
+      // A agenda copia as parcelas gravadas; assim compromisso e vencimento
+      // não podem divergir por diferença de cálculo entre tela e servidor.
+      let schedule = buildScheduleFromForm();
+      try {
+        const createdInstallments = await financialService.listInstallments(createdAgreement.id);
+        if (createdInstallments.length) {
+          schedule = createdInstallments.map((installment) => ({
+            number: installment.installment_number,
+            dueDate: String(installment.due_date).slice(0, 10),
+            value: installment.value,
+          }));
+        }
+      } catch (_) {
+        // Sem as parcelas do servidor, cai no cronograma do formulário
+      }
       if (schedule.length) {
         await createCalendarEventsForInstallments(createdAgreement, schedule, calendarResponsibleId || null);
       }
@@ -2689,46 +2707,31 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
   };
 
   const buildScheduleFromForm = () => {
-    if (!formData.firstDueDate) {
+    if (!formData.firstDueDate && !formData.customInstallments.length) {
       return [] as { number: number; dueDate: string; value: number }[];
     }
 
-    if (formData.paymentType === 'upfront') {
-      return [
-        {
-          number: 1,
-          dueDate: formData.firstDueDate,
-          value: parseCurrencyToNumber(formData.totalValue),
-        },
-      ];
-    }
-
-    if (formData.customInstallments.length) {
-      return formData.customInstallments.map((item, index) => ({
-        number: index + 1,
-        dueDate: item.dueDate || formData.firstDueDate,
-        value: parseCurrencyToNumber(item.value),
-      }));
-    }
-
-    const schedule: { number: number; dueDate: string; value: number }[] = [];
-    const total = parseCurrencyToNumber(formData.totalValue);
-    const count = Number(formData.installmentsCount || '0') || 1;
-    const baseDate = new Date(formData.firstDueDate);
-    const installmentValue = count > 0 ? total / count : total;
-
-    for (let i = 0; i < count; i++) {
-      const dueDate = new Date(baseDate);
-      dueDate.setMonth(dueDate.getMonth() + i);
-      schedule.push({
-        number: i + 1,
-        dueDate: formatLocalISODate(dueDate),
-        value: Number(installmentValue.toFixed(2)),
-      });
-    }
-
-    return schedule;
+    return buildInstallmentSchedule({
+      paymentType: formData.paymentType === 'upfront' ? 'upfront' : 'installments',
+      totalValue: parseCurrencyToNumber(formData.totalValue),
+      installmentsCount: formData.paymentType === 'upfront' ? 1 : (Number(formData.installmentsCount || '0') || 1),
+      firstDueDate: formData.firstDueDate || formData.customInstallments[0]?.dueDate || '',
+      customInstallments: formData.customInstallments.length
+        ? formData.customInstallments.map((item) => ({
+            due_date: item.dueDate,
+            value: parseCurrencyToNumber(item.value),
+          }))
+        : undefined,
+    });
   };
+
+  const buildInstallmentEventDescription = (
+    agreement: Agreement,
+    item: { number: number; value: number },
+    total: number,
+  ) => (
+    `Lançamento: ${agreement.title}\nParcela ${item.number}/${total}\nValor: ${formatCurrency(isNaN(item.value) ? 0 : item.value)}\n[agreement_id:${agreement.id}] [installment:${item.number}]`
+  );
 
   const createCalendarEventsForInstallments = async (
     agreement: Agreement,
@@ -2743,7 +2746,7 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
         schedule.map((item) =>
           calendarService.createEvent({
             title: `Recebimento ${clientName} - Parcela ${item.number}`,
-            description: `Lançamento: ${agreement.title}\nParcela ${item.number}/${schedule.length}\nValor: ${formatCurrency(isNaN(item.value) ? 0 : item.value)}\n[agreement_id:${agreement.id}] [installment:${item.number}]`,
+            description: buildInstallmentEventDescription(agreement, item, schedule.length),
             event_type: 'payment',
             start_at: `${item.dueDate}T00:00:00`,
             notify_minutes_before: 60,
@@ -2755,6 +2758,80 @@ const FinancialModule: React.FC<FinancialModuleProps> = ({ entityId, mode, insta
       );
     } catch (error: any) {
       toast.error('Calendário', 'Não foi possível agendar os recebimentos');
+    }
+  };
+
+  /**
+   * Reescreve os compromissos de recebimento a partir das parcelas gravadas.
+   * Editar um lançamento apaga e recria as parcelas no banco; sem esta
+   * varredura os compromissos ficavam congelados no cronograma antigo — era
+   * o que empilhava vários recebimentos numa data só na agenda.
+   */
+  const syncCalendarEventsWithInstallments = async (
+    agreement: Agreement,
+    installmentsList: Installment[],
+    responsibleUserId?: string | null,
+  ) => {
+    if (!installmentsList.length) return;
+
+    try {
+      const events = await calendarService.listEvents(['payment']);
+      const pending = new Map<number, (typeof events)[number]>();
+      events
+        .filter((event) => event.description?.includes(`[agreement_id:${agreement.id}]`))
+        .forEach((event) => {
+          const match = event.description?.match(/\[installment:(\d+)\]/);
+          if (match) pending.set(Number(match[1]), event);
+        });
+
+      const clientName = getClientName(agreement.client_id);
+      const total = installmentsList.length;
+      const missing: { number: number; dueDate: string; value: number }[] = [];
+
+      for (const installment of installmentsList) {
+        // Parcela paga fica no dia em que o dinheiro entrou; as demais, no vencimento.
+        const targetDate = installment.status === 'pago' && installment.payment_date
+          ? String(installment.payment_date).slice(0, 10)
+          : String(installment.due_date).slice(0, 10);
+        const event = pending.get(installment.installment_number);
+
+        if (!event) {
+          missing.push({
+            number: installment.installment_number,
+            dueDate: targetDate,
+            value: installment.value,
+          });
+          continue;
+        }
+
+        pending.delete(installment.installment_number);
+        const currentDate = toOfficeDateKey(event.start_at);
+        const nextDescription = buildInstallmentEventDescription(
+          agreement,
+          { number: installment.installment_number, value: installment.value },
+          total,
+        );
+        const nextTitle = `Recebimento ${clientName} - Parcela ${installment.installment_number}`;
+        if (currentDate === targetDate && event.description === nextDescription && event.title === nextTitle) continue;
+
+        await calendarService.updateEvent(event.id, {
+          title: nextTitle,
+          start_at: `${targetDate}T00:00:00`,
+          description: nextDescription,
+        });
+      }
+
+      if (missing.length) {
+        await createCalendarEventsForInstallments(agreement, missing, responsibleUserId ?? null);
+      }
+
+      // Parcelas que deixaram de existir (o acordo foi reparcelado para menos)
+      // não podem continuar cobrando na agenda.
+      for (const orphan of pending.values()) {
+        await calendarService.deleteEvent(orphan.id);
+      }
+    } catch (_) {
+      // Silenciar erros de sincronização do calendário para não interromper o fluxo principal
     }
   };
 
@@ -5063,9 +5140,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                               customInstallments: prev.customInstallments.length
                                 ? []
                                 : Array.from({ length: Number(prev.installmentsCount || '0') }, (_, index) => ({
-                                    dueDate: prev.firstDueDate
-                                      ? (() => { const d = new Date(prev.firstDueDate + 'T12:00:00'); d.setMonth(d.getMonth() + index); return d.toISOString().split('T')[0]; })()
-                                      : '',
+                                    dueDate: prev.firstDueDate ? addMonthsToISODate(prev.firstDueDate, index) : '',
                                     value: prev.totalValue && prev.installmentsCount
                                       ? (parseCurrencyToNumber(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
                                       : '',
@@ -5147,9 +5222,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:#e8e8e8;color:#1a1a1a;-
                           setFormData((prev) => ({
                             ...prev,
                             customInstallments: prev.customInstallments.map((item, index) => ({
-                              dueDate: prev.firstDueDate
-                                ? (() => { const d = new Date(prev.firstDueDate + 'T12:00:00'); d.setMonth(d.getMonth() + index); return d.toISOString().split('T')[0]; })()
-                                : item.dueDate,
+                              dueDate: prev.firstDueDate ? addMonthsToISODate(prev.firstDueDate, index) : item.dueDate,
                               value:
                                 prev.totalValue && prev.installmentsCount
                                   ? (parseCurrencyToNumber(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

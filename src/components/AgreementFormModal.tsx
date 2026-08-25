@@ -13,6 +13,7 @@ import { settingsService, FINANCIAL_MODULE_DEFAULTS, type FinancialModuleConfig 
 import { financialService } from '../services/financial.service';
 import { clientService } from '../services/client.service';
 import { calendarService } from '../services/calendar.service';
+import { addMonthsToISODate, buildInstallmentSchedule } from '../utils/installmentSchedule';
 import { processService } from '../services/process.service';
 import { requirementService } from '../services/requirement.service';
 import { profileService, type Profile } from '../services/profile.service';
@@ -56,13 +57,6 @@ const benefitLabelMap: Record<string, string> = {
   pensao_morte: 'Pensão por Morte',
   salario_maternidade: 'Sal. Maternidade',
   outro: 'Outro',
-};
-
-const formatLocalISODate = (date: Date) => {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
 };
 
 const parseCurrencyToNumber = (value: string | number | undefined | null): number => {
@@ -252,28 +246,21 @@ export const AgreementFormModal: React.FC<AgreementFormModalProps> = ({
   };
 
   const buildScheduleFromForm = () => {
-    if (!formData.firstDueDate) return [] as { number: number; dueDate: string; value: number }[];
-    if (formData.paymentType === 'upfront') {
-      return [{ number: 1, dueDate: formData.firstDueDate, value: parseCurrencyToNumber(formData.totalValue) }];
+    if (!formData.firstDueDate && !formData.customInstallments.length) {
+      return [] as { number: number; dueDate: string; value: number }[];
     }
-    if (formData.customInstallments.length) {
-      return formData.customInstallments.map((item, index) => ({
-        number: index + 1,
-        dueDate: item.dueDate || formData.firstDueDate,
-        value: parseCurrencyToNumber(item.value),
-      }));
-    }
-    const schedule: { number: number; dueDate: string; value: number }[] = [];
-    const total = parseCurrencyToNumber(formData.totalValue);
-    const count = Number(formData.installmentsCount || '0') || 1;
-    const baseDate = new Date(formData.firstDueDate);
-    const installmentValue = count > 0 ? total / count : total;
-    for (let i = 0; i < count; i++) {
-      const dueDate = new Date(baseDate);
-      dueDate.setMonth(dueDate.getMonth() + i);
-      schedule.push({ number: i + 1, dueDate: formatLocalISODate(dueDate), value: Number(installmentValue.toFixed(2)) });
-    }
-    return schedule;
+    return buildInstallmentSchedule({
+      paymentType: formData.paymentType === 'upfront' ? 'upfront' : 'installments',
+      totalValue: parseCurrencyToNumber(formData.totalValue),
+      installmentsCount: formData.paymentType === 'upfront' ? 1 : (Number(formData.installmentsCount || '0') || 1),
+      firstDueDate: formData.firstDueDate || formData.customInstallments[0]?.dueDate || '',
+      customInstallments: formData.customInstallments.length
+        ? formData.customInstallments.map((item) => ({
+            due_date: item.dueDate,
+            value: parseCurrencyToNumber(item.value),
+          }))
+        : undefined,
+    });
   };
 
   const createCalendarEventsForInstallments = async (
@@ -330,7 +317,21 @@ export const AgreementFormModal: React.FC<AgreementFormModalProps> = ({
           : undefined,
         notes: formData.notes?.trim() || undefined,
       });
-      const schedule = buildScheduleFromForm();
+      // A agenda copia as parcelas gravadas, para compromisso e vencimento
+      // nunca divergirem.
+      let schedule = buildScheduleFromForm();
+      try {
+        const createdInstallments = await financialService.listInstallments(createdAgreement.id);
+        if (createdInstallments.length) {
+          schedule = createdInstallments.map((installment) => ({
+            number: installment.installment_number,
+            dueDate: String(installment.due_date).slice(0, 10),
+            value: installment.value,
+          }));
+        }
+      } catch (_) {
+        // Sem as parcelas do servidor, cai no cronograma do formulário
+      }
       if (schedule.length) {
         await createCalendarEventsForInstallments(createdAgreement, schedule, calendarResponsibleId || null);
       }
@@ -613,7 +614,7 @@ export const AgreementFormModal: React.FC<AgreementFormModalProps> = ({
                         onClick={() => setFormData((prev) => ({
                           ...prev,
                           customInstallments: prev.customInstallments.length ? [] : Array.from({ length: Number(prev.installmentsCount || '0') }, (_, index) => ({
-                            dueDate: prev.firstDueDate ? (() => { const d = new Date(prev.firstDueDate + 'T12:00:00'); d.setMonth(d.getMonth() + index); return d.toISOString().split('T')[0]; })() : '',
+                            dueDate: prev.firstDueDate ? addMonthsToISODate(prev.firstDueDate, index) : '',
                             value: prev.totalValue && prev.installmentsCount ? (parseCurrencyToNumber(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '',
                           })),
                         }))}
@@ -660,7 +661,7 @@ export const AgreementFormModal: React.FC<AgreementFormModalProps> = ({
                       onClick={() => setFormData((prev) => ({
                         ...prev,
                         customInstallments: prev.customInstallments.map((item, index) => ({
-                          dueDate: prev.firstDueDate ? (() => { const d = new Date(prev.firstDueDate + 'T12:00:00'); d.setMonth(d.getMonth() + index); return d.toISOString().split('T')[0]; })() : item.dueDate,
+                          dueDate: prev.firstDueDate ? addMonthsToISODate(prev.firstDueDate, index) : item.dueDate,
                           value: prev.totalValue && prev.installmentsCount ? (parseCurrencyToNumber(prev.totalValue) / Number(prev.installmentsCount)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : item.value,
                         })),
                       }))}

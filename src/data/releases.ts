@@ -37,6 +37,43 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.2',
+    date: '25/08/2026',
+    summary: 'Os recebimentos na agenda voltam a cair no vencimento de cada parcela: a agenda passa a copiar as parcelas gravadas e é reescrita quando o lançamento é editado.',
+    modules: [
+      {
+        moduleId: 'financeiro',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Editar o parcelamento agora acerta a agenda junto',
+            description: 'Ao editar um lançamento, as parcelas são apagadas e regravadas com as novas datas — mas os compromissos de recebimento continuavam no cronograma antigo, e um acordo remarcado aparecia com várias parcelas empilhadas na mesma semana. A edição passa a reescrever os compromissos: ajusta a data, o valor e o título, cria o que faltava e apaga o de parcela que deixou de existir.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Recebimento marcado um dia antes do vencimento',
+            description: 'A parcela vencia dia 10 e a agenda marcava dia 9. A data era montada em fuso de Londres e depois lida no fuso do escritório, e cada parcela perdia um dia no caminho. O cálculo passou a ser feito em data local pura, num módulo só, usado tanto pelo servidor quanto pelas duas telas de lançamento.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Parcelas personalizadas empilhadas numa data só',
+            description: 'Ao personalizar as parcelas de um lançamento já existente, as linhas da segunda em diante nasciam sem data e o botão "Recalcular" copiava a data da parcela anterior — o acordo inteiro acabava vencendo no mesmo dia. As datas agora nascem mês a mês, e o vencimento que cai em dia inexistente (31 de janeiro mais um mês) vai para o último dia do mês, em vez de pular para o seguinte.',
+          },
+        ],
+      },
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'O compromisso de recebimento espelha a parcela',
+            description: 'Ao criar um lançamento, os compromissos passam a ser montados a partir das parcelas realmente gravadas, e não de uma segunda conta feita na tela. Parcela paga continua marcada no dia em que o dinheiro entrou; as pendentes seguem o vencimento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.1',
     date: '25/08/2026',
     summary: 'O aviso ao cliente sobre o requerimento passa a dizer o que ele quer saber — a data do prazo, o dia da perícia, há quanto tempo o pedido está parado — e sai de qualquer lugar da lista, sem abrir a ficha.',
