@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.4',
+    date: '27/08/2026',
+    summary: 'A triagem do WhatsApp deixou de soar como formulário: as 18 perguntas foram reescritas na língua de quem responde. E descobrimos que editar o roteiro na tela não estava mudando nada nesta campanha.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'As perguntas da triagem foram reescritas em linguagem de gente',
+            description: 'Quem responde à campanha é gente que trabalha o dia inteiro e digita pouco — e a triagem perguntava como quem preenche ficha. Uma diarista que tinha acabado de dizer "casa de família" era perguntada se o trabalho era para a prefeitura; outra respondeu "ué, se eu trabalho, lógico que sim" quando o robô quis saber se ela recebia algum pagamento. As 18 perguntas foram reescritas: "Se num dia você não pudesse ir, dava para mandar outra pessoa no seu lugar?" no lugar do teste de pessoalidade, "Tinha alguém mandando no serviço?" no lugar do de subordinação, e a explicação dos honorários virou "a gente só recebe se você ganhar". A abertura passou a avisar que pode responder do jeito que der, inclusive por áudio.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Editar o roteiro desta campanha na tela não mudava nada',
+            description: 'O roteiro guardado no banco para a campanha "sem registro na carteira" tinha uma versão antiga, de 14 informações. Existe uma migração de leitura que atualiza roteiros antigos, e ela vinha substituindo as perguntas do banco pelas do sistema a cada atendimento — de forma silenciosa. Na prática, o texto que ia para o cliente nunca era o que estava salvo. As perguntas passaram a ser corrigidas onde elas realmente vivem. A abertura e as regras de estilo, essas sim, continuam saindo do que está salvo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.3',
     date: '27/08/2026',
     summary: 'A triagem automática do WhatsApp parou de dispensar quem não disse "não": um áudio de três segundos derrubou o melhor caso da campanha. Junto, a pergunta repetida e o lembrete que cobrava três coisas de uma vez.',

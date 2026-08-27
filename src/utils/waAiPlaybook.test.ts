@@ -536,7 +536,7 @@ test('o corte chega ao modelo como ordem, não como conta a fazer', () => {
 test('o bloco lista só o que falta, na ordem', () => {
   const bloco = waAiPlaybookPromptBlock(ROTEIRO, progresso({ nome: 'Ana' }));
   assert.match(bloco, /Etapa atual: Quem é e para quem trabalhou/);
-  assert.match(bloco, /- para quem você trabalhou/);
+  assert.match(bloco, /- para quem você trabalhava/);
   assert.doesNotMatch(bloco, /o seu nome/);
 });
 
@@ -544,7 +544,7 @@ test('o bloco lista só o que falta, na ordem', () => {
 
 test('a pergunta mora ao lado do campo que ela busca', () => {
   const bloco = waAiPlaybookPromptBlock(ROTEIRO, progresso({ nome: 'Ana' }));
-  assert.match(bloco, /Para qual empresa ou pessoa você trabalhou sem registro\?/);
+  assert.match(bloco, /E você trabalhava para quem\?/);
   // Só a da vez: listar as outras aqui seria devolver ao modelo a escolha que
   // o roteiro acabou de fazer por ele.
   assert.doesNotMatch(bloco, /Em que mês e ano você começou/);

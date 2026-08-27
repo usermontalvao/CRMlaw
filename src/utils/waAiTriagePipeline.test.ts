@@ -116,7 +116,7 @@ test('a conversa de 12/08/2026 chega ao fim com o período gravado', () => {
   assert.equal(estado.stage, 'vinculo');
   // A pendência que voltava sozinha para a fila.
   assert.equal(estado.pending.indexOf('mês e ano de início'), -1);
-  assert.equal(estado.pending.indexOf('o mês e o ano em que você saiu'), -1);
+  assert.equal(estado.pending.indexOf('quando você saiu'), -1);
 });
 
 test('o modelo esquece de preencher e a conversa salva o período mesmo assim', () => {
@@ -137,7 +137,7 @@ test('o modelo esquece de preencher e a conversa salva o período mesmo assim', 
 
   assert.equal(estado.facts.inicio, '01/2020');
   assert.equal(estado.facts.ainda_trabalha, 'não');
-  assert.equal(estado.pending[0], 'o mês e o ano em que você saiu');
+  assert.equal(estado.pending[0], 'quando você saiu');
 });
 
 test('o que o modelo anota errado perde para o que o cliente disse', () => {
@@ -155,7 +155,7 @@ test('o que o modelo anota errado perde para o que o cliente disse', () => {
 
 test('o corte de dois anos dispara no turno em que a data chega', () => {
   const conversa = fala([
-    ['out', 'Em que mês e ano você saiu?'],
+    ['out', 'E quando você saiu de lá?'],
     ['in', 'Julho de 2024'],
   ]);
   const antes = { nome: 'Ana', empregador: 'Todimo', tipo_empregador: 'particular', inicio: '01/2020' };
@@ -188,7 +188,7 @@ test('o caso real com "marcço de 2023" é cortado pelo relógio do backend, sem
 });
 
 test('um mês depois do corte o caso continua de pé', () => {
-  const conversa = fala([['out', 'Em que mês e ano você saiu?'], ['in', 'Agosto de 2024']]);
+  const conversa = fala([['out', 'E quando você saiu de lá?'], ['in', 'Agosto de 2024']]);
   const estado = turno(
     { nome: 'Ana', empregador: 'Todimo', tipo_empregador: 'particular', inicio: '01/2020' },
     resposta('Entendi.', { ainda_trabalha: 'não', saida: '08/2024' }), conversa);
@@ -270,7 +270,7 @@ test('cliente confuso não é reprovado: o campo continua pendente para reformul
     fala([['out', 'Tinha chefe ou alguém que dizia o que fazer?'], ['in', 'não entendi']]),
   );
   assert.equal(estado.cut, null);
-  assert.equal(estado.pending[0], 'se alguém passava as tarefas, cobrava o serviço ou definia o horário');
+  assert.equal(estado.pending[0], 'se alguém mandava no serviço');
 });
 
 test('fluxo qualificado completo sobrevive a gíria, erro de escrita e respostas curtas', () => {
@@ -316,7 +316,7 @@ test('resposta fora do formato ainda fala com o cliente, mas fica marcada', () =
   assert.equal(estado.reply, 'Certo, Ana! E para quem você trabalhou?');
   assert.equal(estado.degraded, true);
   // O que ela não trouxe continua pendente — a queda não inventa dado.
-  assert.equal(estado.pending[0], 'para quem você trabalhou (empresa ou pessoa)');
+  assert.equal(estado.pending[0], 'para quem você trabalhava');
 });
 
 test('JSON quebrado não vira mensagem: nada sai, e o estado sobrevive', () => {
@@ -340,7 +340,7 @@ test('o modelo não consegue mais inventar nome de campo', () => {
   // `empresa`, `data_inicio` e `nome_do_cliente` não existem no roteiro: a
   // leitura as descarta antes de qualquer mesclagem. Só `nome` entra.
   assert.deepEqual(Object.keys(estado.facts), ['nome']);
-  assert.equal(estado.pending[0], 'para quem você trabalhou (empresa ou pessoa)');
+  assert.equal(estado.pending[0], 'para quem você trabalhava');
 });
 
 test('a triagem inteira, do começo ao fim, sem sobra e sem pendência', () => {
