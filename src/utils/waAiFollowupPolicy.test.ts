@@ -375,26 +375,28 @@ test('a última pergunta da IA é extraída da resposta que ela enviou', () => {
   assert.equal(waAiLastQuestion(''), null);
 });
 
-test('a retomada nomeia o que ficou faltando, nunca "ainda tem interesse?"', () => {
+test('a retomada repete a pergunta que ficou no ar, nunca "ainda tem interesse?"', () => {
   const texto = buildWaAiFollowupMessage({
     firstName: 'Pedro',
     lastQuestion: 'Pode me dizer quando você saiu, Pedro?',
     pendingItems: ['você me dizer o mês e o ano em que saiu da empresa'],
     attempt: 1,
   });
-  assert.equal(texto,
-    'Oi, Pedro! Podemos continuar? Ficou faltando você me dizer o mês e o ano em que saiu da empresa.');
+  // A pergunta ganha da pendência: é ela que o cliente sabe responder. A
+  // pendência é vocabulário do roteiro.
+  assert.equal(texto, 'Oi, Pedro! Podemos continuar? Pode me dizer quando você saiu, Pedro?');
   assert.doesNotMatch(texto, /ainda tem interesse/i);
 });
 
-test('sem pendência anotada, a retomada repete a pergunta que ficou no ar', () => {
+test('sem pergunta no ar, a retomada nomeia a pendência anotada', () => {
   const texto = buildWaAiFollowupMessage({
     firstName: 'Pedro',
-    lastQuestion: 'Pode me dizer quando você saiu, Pedro?',
-    pendingItems: [],
+    lastQuestion: null,
+    pendingItems: ['você me dizer o mês e o ano em que saiu da empresa'],
     attempt: 1,
   });
-  assert.match(texto, /Ficou faltando você me responder: "Pode me dizer quando você saiu, Pedro\?"/);
+  assert.equal(texto,
+    'Oi, Pedro! Podemos continuar? Ficou faltando você me dizer o mês e o ano em que saiu da empresa.');
 });
 
 test('o texto muda entre as tentativas para não parecer robô travado', () => {
@@ -491,10 +493,28 @@ test('pendência que é manual do atendente não vai para o cliente', () => {
   assert.match(texto, /Você tem alguma coisa que ajude a mostrar isso\?/);
 });
 
-test('pendência curta continua sendo nomeada', () => {
+test('a retomada cobra UMA coisa, nunca a lista inteira de pendências', () => {
+  // O paredão real da campanha de 26/08/2026, mandado três e quatro vezes para
+  // a mesma pessoa: "Ficou faltando o seu nome, para quem você trabalhou
+  // (empresa ou pessoa) e se o empregador é particular ou órgão público."
+  // Ninguém respondeu a nenhum deles.
   const texto = buildWaAiFollowupMessage({
     firstName: 'Rita', lastQuestion: 'Qual é o seu nome?',
+    pendingItems: [
+      'o seu nome',
+      'para quem você trabalhou (empresa ou pessoa)',
+      'se o empregador é particular ou órgão público',
+    ],
+    attempt: 1,
+  });
+  assert.equal(texto, 'Oi, Rita! Podemos continuar? Qual é o seu nome?');
+  assert.doesNotMatch(texto, /para quem você trabalhou/);
+});
+
+test('sem pergunta no ar, a pendência que vai é só a primeira', () => {
+  const texto = buildWaAiFollowupMessage({
+    firstName: 'Rita', lastQuestion: null,
     pendingItems: ['o seu nome', 'para quem você trabalhou (empresa ou pessoa)'], attempt: 1,
   });
-  assert.match(texto, /Ficou faltando o seu nome e para quem você trabalhou/);
+  assert.equal(texto, 'Oi, Rita! Podemos continuar? Ficou faltando o seu nome.');
 });

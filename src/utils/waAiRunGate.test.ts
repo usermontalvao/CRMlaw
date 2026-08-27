@@ -11,6 +11,7 @@ import {
   normalizeWaAiMemory,
   renderWaAiMemoryForPrompt,
   waAiCurrentBundle,
+  waAiUnreadBundle,
   waAiCustomerSaidSomething,
   waAiEmptyMessageMarker,
   waAiFollowupIdempotencyKey,
@@ -322,4 +323,41 @@ test('fala antiga não faz a rodada de agora virar fala', () => {
   ];
   assert.equal(waAiCustomerSaidSomething(historico), true);
   assert.equal(waAiCustomerSaidSomething(waAiCurrentBundle(historico)), false);
+});
+
+// ── A fronteira da rodada é o que já foi LIDO ───────────────────────────────
+
+/** A corrida real de 26/08/2026, na ordem exata em que as mensagens gravaram. */
+const CORRIDA = [
+  { id: 'm1', direction: 'in' as const, type: 'text', content: 'Todos os dias',
+    waTimestamp: '2026-08-26T17:07:23.000Z' },
+  { id: 'm2', direction: 'in' as const, type: 'text', content: 'Segunda a sexta-feira',
+    waTimestamp: '2026-08-26T17:07:36.000Z' },
+  { id: 'm3', direction: 'out' as const, type: 'text',
+    content: 'Tinha alguém que passava o que você precisava fazer ou cobrava o serviço?',
+    waTimestamp: '2026-08-26T17:07:38.000Z' },
+];
+
+test('mensagem que chegou enquanto o agente pensava continua sendo rodada', () => {
+  // A fronteira antiga — a última fala do agente — deixa "Segunda a sexta-feira"
+  // do lado de fora, e o turno reenvia a mesma pergunta sem nunca ler a
+  // resposta. Foi assim que a Marcia recebeu a pergunta duas vezes.
+  assert.equal(waAiCurrentBundle(buildWaAiPromptMessages(CORRIDA, 12)).length, 0);
+  // A fronteira certa é a última mensagem PROCESSADA: 'm1' já foi lida no turno
+  // anterior, 'm2' não.
+  const rodada = waAiUnreadBundle(CORRIDA, 12, 'm1');
+  assert.deepEqual(rodada.map(m => m.content), ['Segunda a sexta-feira']);
+  assert.equal(waAiCustomerSaidSomething(rodada), true);
+});
+
+test('sem nada de novo depois do que já foi lido, a rodada fica vazia', () => {
+  assert.equal(waAiUnreadBundle(CORRIDA, 12, 'm2').length, 0);
+});
+
+test('sem mensagem processada, ou com uma fora da janela, vale a fronteira antiga', () => {
+  assert.equal(waAiUnreadBundle(CORRIDA, 12, null).length, 0);
+  assert.equal(waAiUnreadBundle(CORRIDA, 12, 'apagada-ha-meses').length, 0);
+  // E no primeiro turno, quando o agente ainda não falou, a rodada é a abertura.
+  const abertura = [CORRIDA[0]];
+  assert.deepEqual(waAiUnreadBundle(abertura, 12, null).map(m => m.content), ['Todos os dias']);
 });

@@ -484,9 +484,19 @@ export interface WaAiFollowupMessageInput {
 /**
  * A retomada determinística: usada quando o modelo não escreveu nenhuma.
  *
- * Nunca genérica. Ou nomeia a pendência anotada, ou repete a pergunta que ficou
- * sem resposta — porque uma retomada que não diz o que falta obriga o cliente a
- * rolar a conversa para descobrir, e ele simplesmente não rola.
+ * Nunca genérica. Ou repete a pergunta que ficou sem resposta, ou nomeia a
+ * pendência anotada — porque uma retomada que não diz o que falta obriga o
+ * cliente a rolar a conversa para descobrir, e ele simplesmente não rola.
+ *
+ * UMA COISA SÓ, E A PERGUNTA NA FRENTE. Até 26/08/2026 esta função listava até
+ * TRÊS pendências, e era esse paredão que a campanha mandava três e quatro
+ * vezes seguidas: "Ficou faltando o seu nome, para quem você trabalhou (empresa
+ * ou pessoa) e se o empregador é particular ou órgão público." Nenhuma das
+ * cinco pessoas que receberam isso respondeu. É a mesma regra que o backend já
+ * impõe à conversa (`waAiKeepOneQuestion`): a unidade é a RODADA, e uma rodada
+ * cobra uma coisa. E a pergunta real vem antes da lista porque é ela que se
+ * responde — a pendência é vocabulário do roteiro ("o nome do cliente"), a
+ * pergunta é o que um atendente diria.
  */
 export function buildWaAiFollowupMessage(input: WaAiFollowupMessageInput): string {
   const nome = input.firstName ? input.firstName.trim() : null;
@@ -496,14 +506,14 @@ export function buildWaAiFollowupMessage(input: WaAiFollowupMessageInput): strin
   const pendencias = (input.pendingItems || [])
     .map(item => String(item || '').replace(/\s+/g, ' ').trim())
     .filter(item => item.length > 0 && item.length <= WA_AI_PENDING_ITEM_READABLE_MAX)
-    .slice(0, 3);
+    .slice(0, 1);
 
+  const pergunta = String(input.lastQuestion || '').trim();
   let complemento: string;
-  if (pendencias.length > 0) {
+  if (pergunta) {
+    complemento = pergunta;
+  } else if (pendencias.length > 0) {
     complemento = `Ficou faltando ${juntarPt(pendencias)}.`;
-  } else if (input.lastQuestion) {
-    const pergunta = input.lastQuestion.trim();
-    complemento = `Ficou faltando você me responder: "${pergunta}"`;
   } else {
     complemento = 'Se ainda fizer sentido, é só me responder por aqui que eu sigo com o seu atendimento.';
   }

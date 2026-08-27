@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.3',
+    date: '27/08/2026',
+    summary: 'A triagem automática do WhatsApp parou de dispensar quem não disse "não": um áudio de três segundos derrubou o melhor caso da campanha. Junto, a pergunta repetida e o lembrete que cobrava três coisas de uma vez.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A recusa da triagem agora exige que o cliente tenha dito "não"',
+            description: 'Uma cliente contou que cozinhava, limpava, lavava e passava numa casa de família, de segunda a sexta, por R$ 1.600 por mês. Perguntada se alguém passava as tarefas ou cobrava o serviço, respondeu por áudio — a transcrição foi "Obrigada." — e a triagem leu isso como "não havia ninguém", encerrando o atendimento por escrito quinze segundos depois. A trava criada em agosto exigia que o cliente falasse antes de qualquer corte, e ela falou: o que faltou não foi fala, foi resposta. Agora um valor que fecha um critério de recusa só entra se a fala daquela rodada trouxer mesmo uma negativa ("não", "ninguém", "sozinha", "por minha conta"). Recusado, o campo continua pendente e a pergunta é refeita.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Duas mensagens seguidas não geram mais a pergunta repetida',
+            description: 'Cada mensagem do cliente abre o seu próprio turno, e um turno leva cerca de quinze segundos. Quando a segunda mensagem chegava nesse intervalo, ela era gravada antes da resposta do primeiro turno — e o segundo turno, que olhava para a última fala da IA como fronteira, concluía que não havia nada novo e repetia a pergunta que acabara de fazer. Pior: a mensagem atrasada nunca era lida por turno nenhum, e a resposta do cliente simplesmente se perdia. A fronteira passou a ser a última mensagem realmente processada.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O lembrete voltou a fazer uma pergunta só',
+            description: 'Depois de perguntar apenas o nome, o lembrete cobrava três coisas de uma vez ("ficou faltando o seu nome, para quem você trabalhou e se o empregador é particular ou órgão público") e voltava idêntico no dia seguinte, e no outro. Cinco pessoas receberam esse texto três e quatro vezes e nenhuma respondeu. Agora ele repete a pergunta que ficou no ar — a frase que a pessoa sabe responder — e cobra no máximo uma coisa.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.2',
     date: '25/08/2026',
     summary: 'Os recebimentos na agenda voltam a cair no vencimento de cada parcela: a agenda passa a copiar as parcelas gravadas e é reescrita quando o lançamento é editado.',

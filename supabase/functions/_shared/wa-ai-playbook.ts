@@ -1683,6 +1683,70 @@ export function waAiDateSaidByCustomer(value: string, customerText: string): boo
   return RE_TEMPO_RELATIVO.test(texto);
 }
 
+/**
+ * Jeitos de dizer NÃO. Lista fechada de propósito: é mais seguro deixar passar um
+ * "não" escrito de forma exótica (o roteiro pergunta de novo) do que aceitar um
+ * "não" que ninguém disse.
+ */
+const RE_NEGATIVA_DO_CLIENTE = new RegExp(
+  '(?:^|[^a-z0-9])(nao|n|nn|nops?|nem|nunca|jamais|ninguem|nenhum|nenhuma|nada'
+  + '|negativo|sozinha|sozinho|so eu|somente eu|apenas eu|por minha conta'
+  + '|conta propria|que nao|nao tinha|nao tem|nao havia)(?:[^a-z0-9]|$)',
+);
+
+/**
+ * Este campo, com este valor, DERRUBA o atendimento sozinho?
+ *
+ * Só os cortes `disqualify` contam: um corte de `handoff` manda para gente, e
+ * gente conserta engano. Quem dispensa o cliente por escrito é que precisa de
+ * prova.
+ */
+function valorDesqualifica(
+  playbook: WaAiPlaybook, key: string, valor: WaAiFactValue,
+): boolean {
+  const texto = simples(valor === true ? 'sim' : valor === false ? 'não' : String(valor));
+  for (const cut of (playbook.cuts || [])) {
+    if (cut.effect !== 'disqualify') continue;
+    const rule = cut.rule;
+    if (rule.kind === 'field_equals' && rule.field === key
+      && rule.values.some(v => simples(v) === texto)) return true;
+    if (rule.kind === 'all_equal' && rule.fields.indexOf(key) !== -1
+      && simples(rule.value) === texto) return true;
+  }
+  return false;
+}
+
+/**
+ * O "não" que dispensa o cliente foi dito por ele, ou o modelo o deduziu?
+ *
+ * Em 26/08/2026 a Marcia contou que cozinhava, limpava, lavava e passava numa
+ * casa de família, de segunda a sexta, por R$ 1.600 por mês. Perguntada se
+ * alguém passava as tarefas ou cobrava o serviço, mandou um áudio de três
+ * segundos: "Obrigada." A extração leu aquilo como resposta, gravou
+ * `subordinacao = false`, e o corte `sem_subordinacao` — determinístico sobre
+ * os fatos — dispensou por escrito a melhor lead do dia, quinze segundos
+ * depois. Uma doméstica diária com horário e salário é o caso-livro de
+ * subordinação; o modelo não desobedeceu nada, ele preencheu um campo que a
+ * cliente não respondeu.
+ *
+ * A trava de `waAiCustomerSaidSomething` não pega este caso: a cliente FALOU
+ * (o áudio foi transcrito). O que faltou não foi fala, foi RESPOSTA.
+ *
+ * A regra, na mesma linha de `waAiDateSaidByCustomer`: valor que fecha um corte
+ * `disqualify` só entra se a fala da rodada carregar uma negativa. Recusado, o
+ * campo continua pendente e o roteiro pergunta de novo — custa uma pergunta e
+ * evita dispensar quem tinha caso. Vale só para `bool`: em `enum` o modelo
+ * precisaria inventar vocabulário ("prefeitura", "de vez em quando"), que é
+ * outro tipo de erro, bem menos provável do que preencher um sim/não.
+ */
+export function waAiCutValueSaidByCustomer(
+  playbook: WaAiPlaybook, field: WaAiPlaybookField, valor: WaAiFactValue, customerText: string,
+): boolean {
+  if (field.type !== 'bool' || valor !== false) return true;
+  if (!valorDesqualifica(playbook, field.key, valor)) return true;
+  return RE_NEGATIVA_DO_CLIENTE.test(simples(customerText));
+}
+
 /** Valor tipado que pode ser persistido em `known_facts`. Null = inválido/vazio. */
 export function normalizeWaAiPlaybookFactValue(
   field: WaAiPlaybookField, value: unknown,

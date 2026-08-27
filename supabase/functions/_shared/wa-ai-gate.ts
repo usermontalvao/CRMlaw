@@ -334,6 +334,52 @@ export function waAiCurrentBundle(messages: readonly WaAiPromptMessage[]): WaAiP
 }
 
 /**
+ * A rodada de verdade: o que o cliente disse e AINDA NÃO FOI LIDO por turno
+ * nenhum.
+ *
+ * `waAiCurrentBundle` usa a última fala do agente como fronteira, e essa
+ * fronteira mente quando duas mensagens do cliente chegam coladas. Cada
+ * mensagem agenda o seu turno; o primeiro turno passa uns quinze segundos no
+ * modelo, e nesse intervalo a segunda mensagem chega e a resposta do primeiro é
+ * enviada — nesta ordem. O segundo turno então acorda vendo a fala do cliente
+ * ANTES da própria resposta, conclui que a rodada está vazia e repete a
+ * pergunta que acabou de fazer, sem nunca ler o que ele respondeu.
+ *
+ * Foi o que a Marcia recebeu duas vezes em 26/08/2026 ("Mais ou menos quanto
+ * você recebia..." e "Tinha alguém que passava..."), e as duas respostas dela
+ * que dispararam isso ("Né" e "Segunda a sexta-feira") não entraram em turno
+ * nenhum.
+ *
+ * A fronteira certa não é a fala do agente, é a última mensagem que o agente
+ * PROCESSOU — `whatsapp_ai_sessions.last_processed_message_id`. Fora da janela
+ * ou ausente (primeiro turno), vale a fronteira antiga.
+ */
+export function waAiUnreadBundle(
+  messages: WaAiHistoryMessage[],
+  limit: number,
+  lastProcessedMessageId: string | null,
+): WaAiPromptMessage[] {
+  const prompt = buildWaAiPromptMessages(messages, limit);
+  if (!lastProcessedMessageId) return waAiCurrentBundle(prompt);
+
+  const max = Number.isInteger(limit) && limit > 0 ? Math.min(40, limit) : 12;
+  const ordenadas = (messages || []).slice().sort((a, b) => {
+    const ta = new Date(a.waTimestamp).getTime();
+    const tb = new Date(b.waTimestamp).getTime();
+    if (ta !== tb) return ta - tb;
+    return String(a.id).localeCompare(String(b.id));
+  }).slice(-max);
+
+  const corte = ordenadas.findIndex(m => String(m.id) === String(lastProcessedMessageId));
+  if (corte === -1) return waAiCurrentBundle(prompt);
+
+  // `prompt` e `ordenadas` são a MESMA janela, na mesma ordem: o índice serve
+  // para as duas, e é assim que o texto já tratado (transcrição, marcador,
+  // truncagem) é reaproveitado sem reescrever a montagem.
+  return prompt.slice(corte + 1).filter(m => m.role === 'user');
+}
+
+/**
  * O cliente disse alguma coisa em TEXTO nestas mensagens?
  *
  * Marcador de mídia não conta: ele diz que algo chegou, não o que foi dito.

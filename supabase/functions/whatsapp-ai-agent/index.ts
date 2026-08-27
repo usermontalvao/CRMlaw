@@ -67,6 +67,7 @@ import {
   normalizeWaAiMemory,
   renderWaAiMemoryForPrompt,
   waAiCurrentBundle,
+  waAiUnreadBundle,
   waAiCustomerSaidSomething,
   waAiFollowupIdempotencyKey,
   waAiIdempotencyKey,
@@ -84,6 +85,7 @@ import {
   normalizeWaAiPlaybookFactValue,
   normalizeWaAiPlaybookValue,
   waAiDateSaidByCustomer,
+  waAiCutValueSaidByCustomer,
   waAiPlaybookField,
   waAiPlaybookOnlyWhenSatisfied,
   waAiPlaybookFieldKeys,
@@ -2000,13 +2002,30 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // `waAiCustomerSaidSomething`). Sem fatos novos, nenhum corte dispara e a
   // conversa continua na pergunta em que estava.
   const janelaDoPrompt = buildWaAiPromptMessages(history, Number(assistant.history_limit) || 12);
-  const rodadaAtual = waAiCurrentBundle(janelaDoPrompt);
+  // A fronteira da rodada é a última mensagem PROCESSADA, não a última fala do
+  // agente — ver `waAiUnreadBundle`. Duas mensagens coladas do cliente faziam a
+  // segunda cair fora de toda rodada e a pergunta sair repetida.
+  const rodadaAtual = waAiUnreadBundle(
+    history, Number(assistant.history_limit) || 12, session.last_processed_message_id || null,
+  );
   const falaDoCliente = waAiCustomerSaidSomething(rodadaAtual);
   // O texto desta rodada, que é contra o que a data extraída é conferida.
   const falaDaRodada = rodadaAtual.map(m => m.content).join(' ');
   // E o cinto: ninguém é dispensado sem ter falado, mesmo que um fato inventado
   // de antes já esteja gravado. Ver `computeWaAiTriageProgress.customerSpoke`.
   const clienteJaFalou = waAiCustomerSaidSomething(janelaDoPrompt);
+  // RODADA VAZIA NÃO GERA RESPOSTA. Com a fronteira certa, rodada vazia passa a
+  // significar uma coisa só: tudo que o cliente disse já foi lido por um turno
+  // anterior. Responder assim mesmo é reenviar a pergunta que acabou de sair —
+  // exatamente o que a Marcia recebeu duas vezes em 26/08/2026. Sem fala nova,
+  // não há turno.
+  if (!opts.followupInstruction && rodadaAtual.length === 0) {
+    await finishExecution(admin, executionId, {
+      status: 'skipped', error: 'rodada sem mensagem nova do cliente',
+      durationMs: Date.now() - opts.started,
+    });
+    return { ok: true, skipped: 'sem mensagem nova do cliente' };
+  }
   if (playbook && extractionSchema && !opts.followupInstruction && falaDoCliente) {
     try {
       const extraction = await callModel(
@@ -2712,6 +2731,10 @@ function applyTriagePatch(
     // um chute que mais adiante decide o corte dos dois anos.
     if (field.type === 'data_mes_ano'
       && !waAiDateSaidByCustomer(String(value), customerText)) continue;
+    // E o "não" que dispensa o cliente também precisa ter sido dito por ele —
+    // ver `waAiCutValueSaidByCustomer`, escrito depois do áudio "Obrigada." que
+    // custou uma doméstica diária em 26/08/2026.
+    if (!waAiCutValueSaidByCustomer(playbook, field, value, customerText)) continue;
     next.knownFacts[field.key] = value;
   }
 

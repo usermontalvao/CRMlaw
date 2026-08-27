@@ -17,6 +17,7 @@ import {
   normalizeWaAiPlaybookValue,
   resolveWaAiPlaybookBindings,
   waAiDateSaidByCustomer,
+  waAiCutValueSaidByCustomer,
   waAiPlaybookField,
   waAiPlaybookFieldKeys,
   waAiPlaybookInstructions,
@@ -908,6 +909,45 @@ test('valor sem ano não é conferido, e fala vazia nunca sustenta', () => {
   assert.equal(waAiDateSaidByCustomer('setembro', 'qualquer coisa'), true);
   assert.equal(waAiDateSaidByCustomer('09/2023', ''), false);
   assert.equal(waAiDateSaidByCustomer('09/2023', '[imagem]'), false);
+});
+
+// ── "Não" dito, não deduzido ────────────────────────────────────────────────
+
+const CAMPO_SUBORDINACAO = ROTEIRO.fields.find(f => f.key === 'subordinacao')!;
+const CAMPO_FUNCAO = ROTEIRO.fields.find(f => f.key === 'funcao')!;
+const CAMPO_AINDA = ROTEIRO.fields.find(f => f.key === 'ainda_trabalha')!;
+
+test('o "Obrigada." da Marcia não vira "não havia quem cobrasse o serviço"', () => {
+  // 26/08/2026: doméstica diária em casa de família, segunda a sexta, R$ 1.600.
+  // Perguntada sobre subordinação, mandou um áudio de três segundos dizendo
+  // "Obrigada." — e o corte `sem_subordinacao` a dispensou por escrito.
+  assert.equal(
+    waAiCutValueSaidByCustomer(ROTEIRO, CAMPO_SUBORDINACAO, false, 'Obrigada.'),
+    false,
+  );
+  assert.equal(
+    waAiCutValueSaidByCustomer(ROTEIRO, CAMPO_SUBORDINACAO, false, '[áudio]'),
+    false,
+  );
+});
+
+test('o "não" que o cliente disse mesmo continua valendo', () => {
+  for (const fala of [
+    'não', 'Não, ninguém mandava em mim', 'nao tinha ninguem cobrando',
+    'eu trabalhava sozinha, por minha conta', 'nunca teve ninguém me cobrando',
+  ]) {
+    assert.equal(
+      waAiCutValueSaidByCustomer(ROTEIRO, CAMPO_SUBORDINACAO, false, fala), true, fala);
+  }
+});
+
+test('a trava vale só para o "não" que desqualifica', () => {
+  // "sim" nunca fecha corte nenhum: passa sem conferência.
+  assert.equal(waAiCutValueSaidByCustomer(ROTEIRO, CAMPO_SUBORDINACAO, true, 'Obrigada.'), true);
+  // `ainda_trabalha = false` não é corte: quem saiu segue na triagem.
+  assert.equal(waAiCutValueSaidByCustomer(ROTEIRO, CAMPO_AINDA, false, 'Obrigada.'), true);
+  // E campo que não é sim/não fica fora: ali o erro tem outra cara.
+  assert.equal(waAiCutValueSaidByCustomer(ROTEIRO, CAMPO_FUNCAO, 'babá', 'Obrigada.'), true);
 });
 
 test('valor em reais não vira prova de tempo', () => {
