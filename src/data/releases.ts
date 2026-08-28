@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.6',
+    date: '27/08/2026',
+    summary: 'A triagem por IA parou de anotar o que o cliente não disse, e parou de repetir a mesma pergunta como se ele não tivesse escrito nada.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Nenhum dado é anotado sem o cliente ter dito',
+            description: 'Campos de texto que pedem identidade — nome, empresa, empregador, banco — passaram a exigir que a resposta do cliente realmente contenha aquilo. "Sim", "todos", "particular" e números soltos deixam de virar nome de empresa, e um valor que não tem nenhuma palavra em comum com o que a pessoa escreveu é descartado em vez de guardado. O prompt também ficou explícito: não inventar mês, ano, número, horário, nome, empresa nem conclusão.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A rodada lida e o marcador de leitura passaram a ser o mesmo cálculo',
+            description: 'A execução podia ser disparada por uma mensagem e, ao ler o histórico, encontrar já uma segunda — mas gravava a primeira como "última lida". O webhook seguinte então tratava a segunda como nova e repetia a pergunta. Agora o texto lido e o marcador saem do mesmo lugar. Junto com eles vai a última pergunta feita pelo robô: respostas curtas como "sim" e "não" só fazem sentido ao lado dela.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Quando a pergunta precisa mesmo se repetir, ela explica por quê',
+            description: 'Uma informação obrigatória que não veio continua sendo perguntada — mas, quando a pergunta sairia idêntica à anterior, ela passa a vir com a razão humana da repetição. A pergunta continua sendo uma só e o atendimento não avança sem o dado; o que some é a impressão de robô travado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.5',
     date: '27/08/2026',
     summary: 'O cartão de chamada perdida parou de cobrar de você as ligações que você mesmo recusou.',

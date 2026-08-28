@@ -187,6 +187,23 @@ test('quem ainda trabalha lá não ganha data de saída', () => {
   assert.deepEqual(facts, { ainda_trabalha: 'sim' });
 });
 
+test('“não saí” corrige a compreensão anterior em vez de confirmar uma saída', () => {
+  const turns = conversa([
+    ['out', 'Você ainda trabalha lá ou já saiu?'],
+    ['in', 'Fez eu sair de um serviço registrado pra trabalhar lá'],
+    ['out', 'Entendi que você já saiu de lá. Quando saiu?'],
+    ['in', 'Não saí'],
+  ]);
+  assert.deepEqual(extractWaAiPeriodFacts(turns), { ainda_trabalha: 'sim' });
+
+  const estado = reconcileWaAiTriageState({
+    knownFacts: { ainda_trabalha: 'não', saida: '07/2026' },
+    pendingItems: [], turns, playbookKeys: ['ainda_trabalha', 'saida'],
+  });
+  assert.equal(estado.knownFacts.ainda_trabalha, 'sim');
+  assert.equal(estado.knownFacts.saida, undefined);
+});
+
 test('a data confirmada pelo cliente conta', () => {
   const facts = extractWaAiPeriodFacts(conversa([
     ['out', 'Você saiu da Todimo em agosto de 2026, certo?'],

@@ -735,8 +735,8 @@ export const WA_AI_PLAYBOOK_SEM_REGISTRO: WaAiPlaybook = {
     },
     {
       key: 'pessoalidade', label: 'Tinha de ser ela', type: 'bool', required: true,
-      ask: 'se dava para mandar outra pessoa no seu lugar',
-      question: 'Se num dia você não pudesse ir, dava para mandar outra pessoa no seu lugar?',
+      ask: 'se precisava ser ela mesma trabalhando',
+      question: 'Precisava ser você mesma trabalhando, sem poder mandar outra pessoa no seu lugar?',
     },
     {
       key: 'recebia_pagamento', label: 'Recebia pelo trabalho', type: 'bool', required: true,

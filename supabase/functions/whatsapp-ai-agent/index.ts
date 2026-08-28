@@ -66,8 +66,7 @@ import {
   mergeWaAiMemory,
   normalizeWaAiMemory,
   renderWaAiMemoryForPrompt,
-  waAiCurrentBundle,
-  waAiUnreadBundle,
+  waAiUnreadTurn,
   waAiCustomerSaidSomething,
   waAiFollowupIdempotencyKey,
   waAiIdempotencyKey,
@@ -127,12 +126,18 @@ import {
   type WaAiCompletionExternalState,
 } from '../_shared/wa-ai-completion.ts';
 import { waAiAnnotateDates, waAiDateBlock } from '../_shared/wa-ai-now.ts';
-import { splitWaAiReply, waAiKeepOneQuestion, waAiPartPauseMs } from '../_shared/wa-ai-reply-parts.ts';
+import {
+  splitWaAiReply,
+  waAiContextualizeRepeatedQuestion,
+  waAiKeepOneQuestion,
+  waAiPartPauseMs,
+} from '../_shared/wa-ai-reply-parts.ts';
 import { ensureWaAiConversationClient } from '../_shared/wa-ai-client-link.ts';
 import {
   WA_AI_RESET_COMMANDS,
   resetWaAiConversationState,
 } from '../_shared/wa-ai-reset.ts';
+import { waAiFactHasCustomerEvidence } from '../_shared/wa-ai-turn-policy.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
@@ -423,11 +428,13 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
 
   let turnMemory = normalizeWaAiMemory(memory);
   let extractionDegraded: string | null = null;
+  let extractionAmbiguities: string[] = [];
   // A mesma regra do atendimento real: sem fala em texto, não se extrai nada
   // (ver `waAiCustomerSaidSomething`). A prévia existe para mostrar o que
   // aconteceria — divergir aqui esconderia justamente o caso da foto sozinha.
   const janelaDaPrevia = buildWaAiPromptMessages(history, assistant.history_limit);
-  const rodadaDaPrevia = waAiCurrentBundle(janelaDaPrevia);
+  const leituraDaPrevia = waAiUnreadTurn(history, assistant.history_limit, null);
+  const rodadaDaPrevia = leituraDaPrevia.messages;
   const falaDoClienteNaPrevia = waAiCustomerSaidSomething(rodadaDaPrevia);
   const clienteJaFalouNaPrevia = waAiCustomerSaidSomething(janelaDaPrevia);
   const falaDaRodada = rodadaDaPrevia.map(m => m.content).join(' ');
@@ -435,12 +442,17 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
     try {
       const extraction = await callModel(
         assistant.provider, assistant.model,
-        buildTriageExtractionMessages(playbook, turnMemory, history, assistant.history_limit),
+        buildTriageExtractionMessages(
+          playbook, turnMemory, rodadaDaPrevia, leituraDaPrevia.precedingAssistantMessage,
+        ),
         [], extractionSchema,
       );
       const patch = parseWaAiTriagePatch(extraction.text, fieldKeys);
       if (!patch.ok) extractionDegraded = patch.reason || 'extração factual inválida';
-      else turnMemory = applyTriagePatch(playbook, turnMemory, patch, falaDaRodada);
+      else {
+        extractionAmbiguities = patch.ambiguities;
+        turnMemory = applyTriagePatch(playbook, turnMemory, patch, falaDaRodada);
+      }
     } catch (err) {
       extractionDegraded = String(err instanceof Error ? err.message : err).slice(0, 300);
     }
@@ -482,7 +494,9 @@ async function handleSimulation(req: Request, body: Record<string, unknown>) {
   if (progressoAntes) turnMemory.pendingItems = progressoAntes.pending;
 
   const messages: any[] = [
-    { role: 'system', content: buildSystemPrompt(ctx, turnMemory, tools, playbook, progressoAntes, nextAction) },
+    { role: 'system', content: buildSystemPrompt(
+      ctx, turnMemory, tools, playbook, progressoAntes, nextAction, extractionAmbiguities,
+    ) },
     ...buildWaAiPromptMessages(history, assistant.history_limit),
   ];
   if (body.trigger === 'followup') {
@@ -1368,33 +1382,50 @@ async function runMessageTurn(
   if (debounce > 0) await sleep(debounce * 1000);
 
   // Releitura obrigatória: durante a espera o operador pode ter assumido a
-  // conversa, e o retrato de antes do debounce não sabe disso.
-  const ctx = await loadContext(admin, conversationId);
-  if (!ctx) return { ok: true, skipped: 'canal sem agente de IA' };
+  // conversa, e o retrato de antes do debounce não sabe disso. Se uma mensagem
+  // chega enquanto o turno anterior ainda está no modelo, a execução dela não
+  // morre ao ver a trava: aguarda e relê tudo. Se nesse meio-tempo chegar m3, a
+  // execução de m2 desiste normalmente pelo debounce e só m3 continua.
+  let ctx: TurnContext | null = null;
+  let lock: string | null = null;
+  for (let tentativa = 0; tentativa <= 45; tentativa++) {
+    ctx = await loadContext(admin, conversationId);
+    if (!ctx) return { ok: true, skipped: 'canal sem agente de IA' };
 
-  const { data: latestInbound } = await admin.from('whatsapp_messages')
-    .select('id').eq('conversation_id', conversationId).eq('direction', 'in')
-    .is('deleted_at', null)
-    .order('wa_timestamp', { ascending: false }).limit(1).maybeSingle();
+    const { data: latestInbound } = await admin.from('whatsapp_messages')
+      .select('id').eq('conversation_id', conversationId).eq('direction', 'in')
+      .is('deleted_at', null)
+      .order('wa_timestamp', { ascending: false }).limit(1).maybeSingle();
 
-  const decision = decideWaAiRun({
-    triggerMessageId,
-    latestInboundMessageId: latestInbound?.id ?? null,
-    lastProcessedMessageId: ctx.session.last_processed_message_id ?? null,
-    conversationStatus: String(ctx.conversation.status || 'open'),
-    conversationBlocked: ctx.conversation.is_blocked === true,
-    aiActive: ctx.session.ai_active !== false,
-    channelAiEnabled: ctx.channelAiEnabled,
-    assistantActive: ctx.assistant.is_active === true,
-    assignedUserId: ctx.conversation.assigned_user_id ?? null,
-    awaitingAccept: ctx.conversation.awaiting_accept === true,
-    lockedUntilIso: ctx.session.locked_until ?? null,
-    nowIso: new Date().toISOString(),
-  });
-  if (!decision.run) return { ok: true, skipped: decision.reason };
+    const decision = decideWaAiRun({
+      triggerMessageId,
+      latestInboundMessageId: latestInbound?.id ?? null,
+      lastProcessedMessageId: ctx.session.last_processed_message_id ?? null,
+      conversationStatus: String(ctx.conversation.status || 'open'),
+      conversationBlocked: ctx.conversation.is_blocked === true,
+      aiActive: ctx.session.ai_active !== false,
+      channelAiEnabled: ctx.channelAiEnabled,
+      assistantActive: ctx.assistant.is_active === true,
+      assignedUserId: ctx.conversation.assigned_user_id ?? null,
+      awaitingAccept: ctx.conversation.awaiting_accept === true,
+      lockedUntilIso: ctx.session.locked_until ?? null,
+      nowIso: new Date().toISOString(),
+    });
+    if (!decision.run) {
+      const esperandoTurnoAnterior = /execução em andamento/i.test(decision.reason);
+      if (!esperandoTurnoAnterior || tentativa === 45) {
+        return { ok: true, skipped: decision.reason };
+      }
+      await sleep(1000);
+      continue;
+    }
 
-  const lock = await acquireLock(admin, conversationId);
-  if (!lock) return { ok: true, skipped: 'outra execução em andamento' };
+    lock = await acquireLock(admin, conversationId);
+    if (lock) break;
+    if (tentativa === 45) return { ok: true, skipped: 'outra execução em andamento' };
+    await sleep(1000);
+  }
+  if (!ctx || !lock) return { ok: true, skipped: 'não foi possível reservar o turno' };
 
   try {
     return await executeTurn(admin, ctx, {
@@ -1996,6 +2027,7 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // patch, invalida dependências e decide o estado ANTES de qualquer mensagem.
   let turnMemory = normalizeWaAiMemory(memory);
   let extractionDegraded: string | null = null;
+  let extractionAmbiguities: string[] = [];
   // MÍDIA NÃO É FALA. Sem texto do cliente nesta rodada não há o que extrair —
   // e deixar a extração rodar assim mesmo é o que produziu, em 24/08/2026, uma
   // triagem inteira inventada a partir de uma única foto (ver o cabeçalho de
@@ -2003,11 +2035,12 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   // conversa continua na pergunta em que estava.
   const janelaDoPrompt = buildWaAiPromptMessages(history, Number(assistant.history_limit) || 12);
   // A fronteira da rodada é a última mensagem PROCESSADA, não a última fala do
-  // agente — ver `waAiUnreadBundle`. Duas mensagens coladas do cliente faziam a
+  // agente — ver `waAiUnreadTurn`. Duas mensagens coladas do cliente faziam a
   // segunda cair fora de toda rodada e a pergunta sair repetida.
-  const rodadaAtual = waAiUnreadBundle(
+  const leituraDaRodada = waAiUnreadTurn(
     history, Number(assistant.history_limit) || 12, session.last_processed_message_id || null,
   );
+  const rodadaAtual = leituraDaRodada.messages;
   const falaDoCliente = waAiCustomerSaidSomething(rodadaAtual);
   // O texto desta rodada, que é contra o que a data extraída é conferida.
   const falaDaRodada = rodadaAtual.map(m => m.content).join(' ');
@@ -2031,13 +2064,16 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
       const extraction = await callModel(
         assistant.provider, assistant.model,
         buildTriageExtractionMessages(
-          playbook, turnMemory, history, Number(assistant.history_limit) || 12,
+          playbook, turnMemory, rodadaAtual, leituraDaRodada.precedingAssistantMessage,
         ),
         [], extractionSchema,
       );
       const patch = parseWaAiTriagePatch(extraction.text, fieldKeys);
       if (!patch.ok) extractionDegraded = patch.reason || 'extração factual inválida';
-      else turnMemory = applyTriagePatch(playbook, turnMemory, patch, falaDaRodada);
+      else {
+        extractionAmbiguities = patch.ambiguities;
+        turnMemory = applyTriagePatch(playbook, turnMemory, patch, falaDaRodada);
+      }
     } catch (err) {
       extractionDegraded = String(err instanceof Error ? err.message : err).slice(0, 500);
     }
@@ -2101,7 +2137,9 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
     }
   }
 
-  const systemPrompt = buildSystemPrompt(ctx, turnMemory, tools, playbook, progressoAntes, nextAction);
+  const systemPrompt = buildSystemPrompt(
+    ctx, turnMemory, tools, playbook, progressoAntes, nextAction, extractionAmbiguities,
+  );
   const messages: any[] = [
     { role: 'system', content: systemPrompt },
     ...buildWaAiPromptMessages(history, Number(assistant.history_limit) || 12),
@@ -2370,6 +2408,14 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
   let reply = (customerMessageSent || statusDocumental.silence) ? '' : waAiKeepOneQuestion(
     playbook ? validated.reply : textoDoModelo.trim(),
   );
+  if (reply && replyAction?.type === 'ask_field') {
+    const ultimaPerguntaEnviada = history.find(item => item.direction === 'out'
+      && String(item.content || item.transcriptionText || '').indexOf('?') !== -1);
+    reply = waAiContextualizeRepeatedQuestion(
+      reply,
+      String(ultimaPerguntaEnviada?.content || ultimaPerguntaEnviada?.transcriptionText || ''),
+    );
+  }
 
   // Transferiu, tem de DIZER. Em 14/08/2026 o backend passou a conversa para a
   // fila humana e o cliente leu "aguarde um momento" — do lado dele o
@@ -2480,7 +2526,13 @@ async function executeTurn(admin: any, ctx: TurnContext, opts: TurnOptions) {
 
   try {
     await persistMemory(admin, conversation.id, nextMemory, {
-      lastProcessedMessageId: opts.triggerMessageId,
+      // Grava o último id que ESTE retrato realmente consumiu, não apenas o
+      // webhook que abriu a execução. Uma rajada pode trazer m2 antes de o
+      // histórico ser carregado por um turno disparado por m1; marcar só m1
+      // faria m2 ser extraída e depois processada de novo, repetindo pergunta.
+      lastProcessedMessageId: opts.followupInstruction
+        ? null
+        : (leituraDaRodada.lastInboundMessageId || opts.triggerMessageId),
       lastCustomerMessageAt: conversation.last_customer_message_at ?? null,
       handedOff: terminal,
       triage: progresso,
@@ -2682,19 +2734,15 @@ function triageTurns(history: WaAiHistoryMessage[]): WaAiTriageTurn[] {
 }
 
 function buildTriageExtractionMessages(
-  playbook: WaAiPlaybook, memory: WaAiMemory, history: WaAiHistoryMessage[], limit: number,
+  playbook: WaAiPlaybook,
+  memory: WaAiMemory,
+  currentBundle: { role: 'user' | 'assistant'; content: string }[],
+  precedingAssistantMessage: { role: 'user' | 'assistant'; content: string } | null,
 ): any[] {
   const fields = playbook.fields.map(field => ({
     key: field.key, type: field.type, options: field.options || null,
     only_when: field.onlyWhen || null,
   }));
-  const recent = buildWaAiPromptMessages(history, Math.min(8, Math.max(2, limit)));
-  let currentBundleStart = 0;
-  for (let index = 0; index < recent.length; index++) {
-    if (recent[index].role === 'assistant') currentBundleStart = index;
-  }
-  const currentBundle = recent.slice(currentBundleStart);
-
   return [
     {
       role: 'system',
@@ -2702,12 +2750,21 @@ function buildTriageExtractionMessages(
         '# Extração factual\n'
         + 'Leia somente o que o cliente informou nas mensagens mais recentes. Não escreva resposta ao '
         + 'cliente, não decida a próxima pergunta e não execute ações. Extraia TODAS as informações, '
-        + 'inclusive as antecipadas. Null significa que esta fala não alterou o campo. False é uma '
-        + 'resposta negativa real. Não invente mês, ano, número ou horário. Use remover_campos somente '
-        + 'quando o cliente corrigir explicitamente um fato anterior.\n\n'
+        + 'inclusive as antecipadas. As mensagens de cliente abaixo formam UMA fala só, mesmo que '
+        + 'tenham chegado em várias bolhas. Null significa que esta fala não alterou o campo. False é '
+        + 'uma resposta negativa real, não a palavra "não" solta sem saber qual proposição ela nega. '
+        + 'Não invente mês, ano, número, horário, nome, empresa ou conclusão. Uma duração ("um ano") '
+        + 'não é nome de empresa; uma categoria ("empresa", "madeira") não é o nome do empregador; '
+        + '"sim", "não", "todos" e pronomes não preenchem campos de texto sem referente inequívoco. '
+        + 'Se a fala puder responder a duas perguntas diferentes, deixe ambas null e descreva a dúvida '
+        + 'em ambiguidades. Use remover_campos quando o cliente corrigir ou contradizer um fato anterior; '
+        + 'a fala mais recente prevalece.\n\n'
         + `Campos permitidos:\n${JSON.stringify(fields, null, 2)}\n\n`
-        + `Estado anterior:\n${JSON.stringify(memory.knownFacts, null, 2)}`,
+        + `Estado anterior:\n${JSON.stringify(memory.knownFacts, null, 2)}\n\n`
+        + 'A mensagem de assistente abaixo, quando existir, é apenas a pergunta que dá contexto. '
+        + 'Extraia fatos SOMENTE das mensagens de cliente que vêm depois dela.',
     },
+    ...(precedingAssistantMessage ? [precedingAssistantMessage] : []),
     ...currentBundle,
   ];
 }
@@ -2726,15 +2783,32 @@ function applyTriagePatch(
     if (!field) continue;
     const value = normalizeWaAiPlaybookFactValue(field, raw);
     if (value === null) continue;
+    // Campo livre também precisa de lastro. Foi aqui que "Todos" virou nome
+    // de empregador e "Só pagamento" virou salário no atendimento reproduzido
+    // em 27/08/2026. A política é declarativa: olha o tipo e a pergunta do
+    // campo, portanto vale para qualquer roteiro criado no editor.
+    if (!waAiFactHasCustomerEvidence(field, value, customerText)) {
+      const aviso = `${field.label}: a fala não trouxe evidência suficiente para confirmar esse valor`;
+      if (patch.ambiguities.length < 12 && patch.ambiguities.indexOf(aviso) === -1) patch.ambiguities.push(aviso);
+      continue;
+    }
     // Ano que o cliente não disse não entra — ver `waAiDateSaidByCustomer`. O
     // campo continua pendente e o roteiro pergunta de novo, em vez de guardar
     // um chute que mais adiante decide o corte dos dois anos.
     if (field.type === 'data_mes_ano'
-      && !waAiDateSaidByCustomer(String(value), customerText)) continue;
+      && !waAiDateSaidByCustomer(String(value), customerText)) {
+      const aviso = `${field.label}: o ano extraído não foi informado pelo cliente`;
+      if (patch.ambiguities.length < 12 && patch.ambiguities.indexOf(aviso) === -1) patch.ambiguities.push(aviso);
+      continue;
+    }
     // E o "não" que dispensa o cliente também precisa ter sido dito por ele —
     // ver `waAiCutValueSaidByCustomer`, escrito depois do áudio "Obrigada." que
     // custou uma doméstica diária em 26/08/2026.
-    if (!waAiCutValueSaidByCustomer(playbook, field, value, customerText)) continue;
+    if (!waAiCutValueSaidByCustomer(playbook, field, value, customerText)) {
+      const aviso = `${field.label}: a resposta não confirma com segurança um valor que encerraria a triagem`;
+      if (patch.ambiguities.length < 12 && patch.ambiguities.indexOf(aviso) === -1) patch.ambiguities.push(aviso);
+      continue;
+    }
     next.knownFacts[field.key] = value;
   }
 
@@ -2909,6 +2983,7 @@ function buildSystemPrompt(
   ctx: TurnContext, memory: WaAiMemory, tools: WaAiToolSchema[],
   playbook: WaAiPlaybook | null = null, progress: WaAiTriageProgress | null = null,
   nextAction: WaAiTriageNextAction | null = null,
+  extractionAmbiguities: string[] = [],
 ): string {
   const { assistant, conversation } = ctx;
   const nome = conversation.contact_name || 'o cliente';
@@ -2978,6 +3053,15 @@ function buildSystemPrompt(
   }
 
   if (playbook && progress) parts.push(waAiPlaybookPromptBlock(playbook, progress, nextAction));
+  if (playbook && extractionAmbiguities.length > 0) {
+    parts.push(
+      '# O que ficou ambíguo nesta fala\n'
+      + 'O extrator recusou estes pontos porque o cliente não os confirmou com segurança:\n'
+      + extractionAmbiguities.map(item => `- ${String(item).slice(0, 200)}`).join('\n')
+      + '\nNão apresente nenhuma dessas leituras como fato. Acolha o que estiver claro e use a única '
+      + 'pergunta desta rodada para esclarecer o primeiro ponto que também seja o campo pendente.',
+    );
+  }
   if (playbook && progress && nextAction) {
     parts.push(
       '# Estado canônico deste turno\n'

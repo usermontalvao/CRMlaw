@@ -385,6 +385,10 @@ const MARCA_SAIDA = /\b(sai|saiu|saida|sair|deixei|deixou|termin\w*|encerr\w*|pa
 
 const RESPOSTA_SAIU = /\b(ja sai|sai de|sai da|sai em|sai no|nao trabalho mais|nao estou mais|nao trabalho la|fui demitid\w*|me demiti|pedi demissao|fui mandado embora|parei|encerrei|deixei|desligad\w*|ja nao|sai)\b/;
 const RESPOSTA_CONTINUA = /\b(ainda trabalho|continuo trabalhando|continuo la|trabalho ate hoje|estou trabalhando|ainda estou|sigo trabalhando|trabalho la ainda)\b/;
+// Correção curta muito comum depois de a pessoa perceber que foi entendida ao
+// contrário: "não saí". Sem esta precedência, o `sai` interno casava a regex de
+// saída e transformava a própria correção em confirmação do erro.
+const RESPOSTA_NAO_SAIU = /\b(nao sai|nao sai de la|nao fui demitid\w*|nao me demiti|nao pedi demissao)\b/;
 const CONFIRMACAO = /^(sim|isso|isso mesmo|exato|exatamente|correto|certo|positivo|e isso|verdade|confirmo)\b/;
 
 /** Onde cada assunto de período aparece na pergunta, na ordem em que foi feito. */
@@ -449,7 +453,9 @@ export function extractWaAiPeriodFacts(turns: WaAiTriageTurn[]): Partial<Record<
 
     const resposta = simples(texto);
     const topicos = topicosDaPergunta(pergunta);
-    const temSinal = RESPOSTA_SAIU.test(resposta) || RESPOSTA_CONTINUA.test(resposta);
+    const continua = RESPOSTA_CONTINUA.test(resposta) || RESPOSTA_NAO_SAIU.test(resposta);
+    const saiu = !continua && RESPOSTA_SAIU.test(resposta);
+    const temSinal = saiu || continua;
 
     // Os destinos que a pergunta abriu, na ordem em que ela os abriu.
     // 'ainda_trabalha' vira destino de DATA quando a resposta não traz sim nem
@@ -499,8 +505,12 @@ export function extractWaAiPeriodFacts(turns: WaAiTriageTurn[]): Partial<Record<
       if (naPergunta.length === 1) out[alvos[0]] = naPergunta[0].valor;
     }
 
-    if (RESPOSTA_CONTINUA.test(resposta)) out.ainda_trabalha = 'sim';
-    else if (RESPOSTA_SAIU.test(resposta)) out.ainda_trabalha = 'não';
+    if (continua) {
+      out.ainda_trabalha = 'sim';
+      // A fala mais nova corrige a compreensão anterior. Uma saída antiga não
+      // pode continuar forçando `ainda_trabalha = não` no final do laço.
+      delete out.saida;
+    } else if (saiu) out.ainda_trabalha = 'não';
     // Quem tem data de saída não trabalha mais lá — não é dedução, é o que a
     // data significa.
     if (out.saida) out.ainda_trabalha = 'não';
@@ -828,7 +838,8 @@ export function reconcileWaAiTriageState(input: {
   const declaradas = Array.isArray(input.playbookKeys) ? input.playbookKeys : null;
   const facts = canonicalizeWaAiFacts(input.knownFacts, declaradas);
 
-  for (const [campo, valor] of Object.entries(extractWaAiPeriodFacts(input.turns))) {
+  const periodo = extractWaAiPeriodFacts(input.turns);
+  for (const [campo, valor] of Object.entries(periodo)) {
     const limpo = String(valor ?? '').trim();
     if (!limpo) continue;
     // Com roteiro, a extração só escreve em campo que o roteiro declara. Ela lê
@@ -839,6 +850,11 @@ export function reconcileWaAiTriageState(input: {
     if (!(campo in facts) && Object.keys(facts).length >= WA_AI_TRIAGE_MAX_FACTS) continue;
     facts[campo] = limpo;
   }
+
+  // As duas afirmações não podem coexistir. A leitura determinística da fala
+  // mais recente ganha e remove uma data de saída que tenha vindo de um palpite
+  // anterior do modelo ou de uma resposta depois corrigida.
+  if (periodo.ainda_trabalha === 'sim') delete facts.saida;
 
   for (const [campo, valor] of Object.entries(extractWaAiDecisionFacts(input.turns))) {
     const limpo = String(valor ?? '').trim();

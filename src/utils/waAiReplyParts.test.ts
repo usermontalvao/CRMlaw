@@ -6,6 +6,7 @@ import {
   WA_AI_PART_PAUSE_MAX_MS,
   WA_AI_PART_PAUSE_MIN_MS,
   splitWaAiReply,
+  waAiContextualizeRepeatedQuestion,
   waAiKeepOneQuestion,
   waAiPartPauseMs,
 } from './waAiReplyParts.ts';
@@ -206,4 +207,19 @@ test('linha que vira vazia não deixa bolha fantasma', () => {
   const limpo = waAiKeepOneQuestion(bruto);
   assert.equal(limpo, 'Qual é o seu nome?');
   assert.equal(splitWaAiReply(limpo).length, 1);
+});
+
+test('pergunta idêntica volta com contexto, não como robô travado', () => {
+  const pergunta = 'E quando você saiu de lá? Mês e ano, se lembrar.';
+  const resposta = waAiContextualizeRepeatedQuestion(pergunta, pergunta);
+  assert.match(resposta, /Não consegui ligar sua resposta/i);
+  assert.equal((resposta.match(/\?/g) || []).length, 1);
+  assert.equal(splitWaAiReply(resposta).length, 2);
+});
+
+test('pergunta nova não recebe justificativa artificial', () => {
+  assert.equal(
+    waAiContextualizeRepeatedQuestion('Qual era sua função?', 'Quando você começou?'),
+    'Qual era sua função?',
+  );
 });

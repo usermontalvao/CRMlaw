@@ -25,6 +25,19 @@ test('uma resposta só pode encerrar mais de uma pendência', () => {
   assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /não autoriza perguntar os dois de uma vez/i);
 });
 
+test('fragmentos, ambiguidades e correções são tratados como conversa', () => {
+  assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /mensagens curtas consecutivas.*única fala/i);
+  assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /Nunca transforme uma fala ambígua em confirmação/i);
+  assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /correção mais recente.*prevalece/i);
+  assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /Não escreva “entendi que/i);
+});
+
+test('preocupação lateral relevante não é ignorada nem vira resposta do formulário', () => {
+  assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /doença.*falta de pagamento.*possível ilegalidade/i);
+  assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /não ignore/i);
+  assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /pare o formulário e transfira/i);
+});
+
 test('as regras mandam separar a resposta em blocos entregáveis', () => {
   assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /linha em branco/i);
   assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /mensagem separada/i);
@@ -50,4 +63,3 @@ test('as regras reduzem repetição e produzem handoff acionável', () => {
   assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /lacunas ainda existentes/i);
   assert.match(WA_AI_DIALOGUE_QUALITY_RULES, /próximo passo sugerido/i);
 });
-

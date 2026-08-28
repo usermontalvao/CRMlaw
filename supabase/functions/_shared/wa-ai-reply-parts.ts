@@ -244,3 +244,29 @@ export function waAiKeepOneQuestion(text: string): string {
 
   return saida.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
+
+/** Forma comparável da pergunta, sem fazer acento ou pontuação parecer mudança. */
+function perguntaComparavel(text: string): string {
+  const perguntas = String(text ?? '').match(/[^?]*\?/g) || [];
+  const ultima = perguntas.length > 0 ? perguntas[perguntas.length - 1] : '';
+  return ultima.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Uma pergunta necessária pode continuar pendente, mas nunca deve reaparecer
+ * como se o cliente não tivesse escrito nada.
+ *
+ * Quando o fallback determinístico produz exatamente a última pergunta
+ * enviada, acrescentamos a razão humana da repetição. A pergunta permanece uma
+ * só e o fluxo não avança sem dado; o que some é o efeito de robô travado.
+ */
+export function waAiContextualizeRepeatedQuestion(text: string, previousAssistantText: string): string {
+  const atual = String(text ?? '').trim();
+  const anterior = String(previousAssistantText ?? '').trim();
+  const perguntaAtual = perguntaComparavel(atual);
+  const perguntaAnterior = perguntaComparavel(anterior);
+  if (!perguntaAtual || perguntaAtual !== perguntaAnterior) return atual;
+  if (/não consegui (?:entender|encaixar|ligar)|só para confirmar/i.test(atual)) return atual;
+  return `Não consegui ligar sua resposta a essa parte.\n\n${atual}`;
+}

@@ -359,9 +359,30 @@ export function waAiUnreadBundle(
   limit: number,
   lastProcessedMessageId: string | null,
 ): WaAiPromptMessage[] {
-  const prompt = buildWaAiPromptMessages(messages, limit);
-  if (!lastProcessedMessageId) return waAiCurrentBundle(prompt);
+  return waAiUnreadTurn(messages, limit, lastProcessedMessageId).messages;
+}
 
+/**
+ * A rodada não lida, com o cursor exato que ela consumiu.
+ *
+ * O texto serve à extração; o id serve à persistência. Manter os dois no mesmo
+ * cálculo evita um erro sutil: a execução pode ter sido disparada por `m1`,
+ * mas já encontrar `m2` no histórico e ler as duas. Se gravar `m1`, o próximo
+ * webhook entende que `m2` continua virgem e repete a pergunta.
+ *
+ * `precedingAssistantMessage` é a última pergunta anterior à primeira entrada
+ * não lida. Respostas curtas como "sim" e "não" só têm sentido junto dela.
+ */
+export function waAiUnreadTurn(
+  messages: WaAiHistoryMessage[],
+  limit: number,
+  lastProcessedMessageId: string | null,
+): {
+  messages: WaAiPromptMessage[];
+  precedingAssistantMessage: WaAiPromptMessage | null;
+  lastInboundMessageId: string | null;
+} {
+  const prompt = buildWaAiPromptMessages(messages, limit);
   const max = Number.isInteger(limit) && limit > 0 ? Math.min(40, limit) : 12;
   const ordenadas = (messages || []).slice().sort((a, b) => {
     const ta = new Date(a.waTimestamp).getTime();
@@ -370,13 +391,37 @@ export function waAiUnreadBundle(
     return String(a.id).localeCompare(String(b.id));
   }).slice(-max);
 
-  const corte = ordenadas.findIndex(m => String(m.id) === String(lastProcessedMessageId));
-  if (corte === -1) return waAiCurrentBundle(prompt);
+  let corte = lastProcessedMessageId
+    ? ordenadas.findIndex(m => String(m.id) === String(lastProcessedMessageId))
+    : -1;
+  if (corte === -1) {
+    // Primeiro turno (ou cursor antigo fora da janela): a última fala do agente
+    // continua sendo a fronteira segura, como já era em `waAiCurrentBundle`.
+    corte = -1;
+    for (let i = 0; i < prompt.length; i++) {
+      if (prompt[i].role === 'assistant') corte = i;
+    }
+  }
+
+  const indices: number[] = [];
+  for (let i = corte + 1; i < prompt.length; i++) {
+    if (prompt[i].role === 'user') indices.push(i);
+  }
+  const primeiraEntrada = indices.length > 0 ? indices[0] : prompt.length;
+  let perguntaAnterior: WaAiPromptMessage | null = null;
+  for (let i = primeiraEntrada - 1; i >= 0; i--) {
+    if (prompt[i].role === 'assistant') { perguntaAnterior = prompt[i]; break; }
+  }
 
   // `prompt` e `ordenadas` são a MESMA janela, na mesma ordem: o índice serve
   // para as duas, e é assim que o texto já tratado (transcrição, marcador,
   // truncagem) é reaproveitado sem reescrever a montagem.
-  return prompt.slice(corte + 1).filter(m => m.role === 'user');
+  const ultima = indices.length > 0 ? indices[indices.length - 1] : -1;
+  return {
+    messages: indices.map(i => prompt[i]),
+    precedingAssistantMessage: perguntaAnterior,
+    lastInboundMessageId: ultima >= 0 ? String(ordenadas[ultima]?.id || '') || null : null,
+  };
 }
 
 /**

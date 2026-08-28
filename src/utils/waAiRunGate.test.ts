@@ -12,6 +12,7 @@ import {
   renderWaAiMemoryForPrompt,
   waAiCurrentBundle,
   waAiUnreadBundle,
+  waAiUnreadTurn,
   waAiCustomerSaidSomething,
   waAiEmptyMessageMarker,
   waAiFollowupIdempotencyKey,
@@ -348,6 +349,22 @@ test('mensagem que chegou enquanto o agente pensava continua sendo rodada', () =
   const rodada = waAiUnreadBundle(CORRIDA, 12, 'm1');
   assert.deepEqual(rodada.map(m => m.content), ['Segunda a sexta-feira']);
   assert.equal(waAiCustomerSaidSomething(rodada), true);
+});
+
+test('a rodada guarda o id da última entrada que realmente consumiu', () => {
+  const rodada = waAiUnreadTurn(CORRIDA, 12, 'm1');
+  assert.equal(rodada.lastInboundMessageId, 'm2');
+});
+
+test('a extração recebe a pergunta anterior à primeira entrada não lida', () => {
+  const historico = [
+    { id: 'q1', direction: 'out' as const, type: 'text', content: 'Você ia quais dias?',
+      waTimestamp: '2026-08-26T17:07:10.000Z' },
+    ...CORRIDA,
+  ];
+  const rodada = waAiUnreadTurn(historico, 12, 'm1');
+  assert.equal(rodada.precedingAssistantMessage?.content, 'Você ia quais dias?');
+  assert.deepEqual(rodada.messages.map(m => m.content), ['Segunda a sexta-feira']);
 });
 
 test('sem nada de novo depois do que já foi lido, a rodada fica vazia', () => {
