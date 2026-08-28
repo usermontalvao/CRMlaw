@@ -259,6 +259,19 @@ async function sendDeadlineEmail(
   deadlineId: string,
   assignedById: string | null,
   mode: 'assigned' | 'reminder' | 'overdue',
+  /**
+   * Para QUEM vai o e-mail, quando não for o responsável pelo prazo.
+   *
+   * O prazo VENCIDO precisa chegar também à administração: se ele estourou, a
+   * chance de o responsável resolver sozinho já foi. Todo o resto — atribuição,
+   * lembrete — continua indo só para quem responde pelo prazo, que é o padrão
+   * deste parâmetro estar ausente.
+   *
+   * O CORPO do e-mail continua sendo sobre o responsável ("Olá, Fulano"), e é
+   * proposital: o admin precisa saber de quem é o prazo, não receber uma cópia
+   * que finge ser dele.
+   */
+  recipientProfileId?: string | null,
 ) {
   const { data: deadline } = await supabase.from('deadlines').select('*').eq('id', deadlineId).single();
   if (!deadline?.responsible_id) return { success: false, error: 'Prazo sem responsavel' };
@@ -270,8 +283,9 @@ async function sendDeadlineEmail(
     .single();
   if (!responsible) return { success: false, error: 'Perfil nao encontrado' };
 
+  const destinoId = recipientProfileId || deadline.responsible_id;
   const { data: recipientEmail } = await supabase.rpc('get_email_by_profile_id', {
-    p_profile_id: deadline.responsible_id,
+    p_profile_id: destinoId,
   });
   if (!recipientEmail) return { success: false, error: 'Email nao encontrado' };
 
@@ -420,7 +434,7 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
     const payload = await req.json();
-    const { deadline_id, assigned_by_id, mode } = payload;
+    const { deadline_id, assigned_by_id, mode, recipient_profile_id } = payload;
 
     if (!deadline_id) {
       return jsonResponse({ success: false, error: 'deadline_id obrigatorio' }, 400);
@@ -431,6 +445,7 @@ Deno.serve(async (req: Request) => {
       deadline_id,
       assigned_by_id || null,
       mode || 'assigned',
+      recipient_profile_id || null,
     );
     return jsonResponse(result, result.success ? 200 : 500);
   } catch (error: any) {

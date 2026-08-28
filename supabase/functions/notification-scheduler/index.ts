@@ -3,9 +3,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   canalDaNotificacao,
   dentroDoHorarioDeAviso,
+  linkCobrancaWhatsApp,
   montarMensagemNotificacao,
   normalizarConfigWhatsApp,
   primeiroNome,
+  telefoneLegivel,
   templateDaNotificacao,
   type NotificacaoWhatsAppConfig,
 } from "../_shared/notificacao-whatsapp.ts";
@@ -143,9 +145,13 @@ async function loadWhatsAppConfig(): Promise<NotificacaoWhatsAppConfig> {
 
 /** O perfil de quem vai receber o aviso: nome para o tratamento, telefone para o envio. */
 interface PerfilDoAviso {
+  /** `profiles.id` — o que o e-mail e os vínculos de prazo usam. */
+  profileId: string;
   userId: string;
   nome: string;
   telefone: string | null;
+  /** Cargo em minúsculas, para achar quem é da administração. */
+  cargo: string;
 }
 
 /**
@@ -264,7 +270,7 @@ async function enviarAvisoWhatsApp(params: {
 async function carregarPerfisDoAviso(): Promise<Map<string, PerfilDoAviso>> {
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("id, user_id, name, phone")
+    .select("id, user_id, name, phone, role")
     .eq("is_active", true);
 
   const mapa = new Map<string, PerfilDoAviso>();
@@ -272,14 +278,38 @@ async function carregarPerfisDoAviso(): Promise<Map<string, PerfilDoAviso>> {
     if (!p.id || !p.user_id) continue;
     const telefone = String(p.phone ?? "").replace(/\D/g, "");
     mapa.set(p.id, {
+      profileId: p.id,
       userId: p.user_id,
       nome: String(p.name ?? ""),
       // Telefone curto demais não é telefone: mandar para ele é entregar o aviso
       // do escritório a um desconhecido.
       telefone: telefone.length >= 10 ? telefone : null,
+      cargo: String(p.role ?? "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, ""),
     });
   }
   return mapa;
+}
+
+/**
+ * QUEM É A ADMINISTRAÇÃO, para o aviso de prazo vencido.
+ *
+ * `advogado` entra junto de `admin` pela mesma razão que entra em toda a régua
+ * de permissões do CRM: quem assina a peça responde pelo prazo perdido tanto
+ * quanto quem administra o escritório.
+ *
+ * A comparação passa pela mesma normalização da tela (minúsculas, sem acento) e
+ * aceita as duas grafias. Não é preciosismo: no banco deste projeto o cargo está
+ * gravado como "Administrador", e um filtro por `=== "admin"` simplesmente NÃO
+ * ACHARIA o administrador — o aviso sairia sem nunca chegar a ele, e sem erro
+ * nenhum para denunciar a falta. `socio` entra pelo mesmo motivo que entra em
+ * `normalizeRoleKey`.
+ */
+function administracao(perfis: Map<string, PerfilDoAviso>): PerfilDoAviso[] {
+  const DA_CASA = new Set(["admin", "administrador", "socio", "advogado"]);
+  return [...perfis.values()].filter((p) => DA_CASA.has(p.cargo));
 }
 
 function isEnabled(rules: LoadedRules, trigger: string): boolean {
@@ -570,11 +600,20 @@ async function checkDeadlineReminders(
   }
 }
 
+/** Os canais do aviso à administração — evento separado, decisão separada. */
+interface CanaisDaAdministracao {
+  ativo: boolean;
+  push: boolean;
+  email: boolean;
+  whatsapp: boolean;
+}
+
 async function checkOverdueDeadlines(
   sendPush: boolean,
   sendEmail: boolean,
   waConfig: NotificacaoWhatsAppConfig,
   sendWhatsapp: boolean,
+  admin: CanaisDaAdministracao,
 ) {
   console.log("🚨 Verificando prazos vencidos...");
 
@@ -585,6 +624,12 @@ async function checkOverdueDeadlines(
     .from("deadlines")
     .select("id, title, due_date, status, priority, process_id, requirement_id, responsible_id, clients(full_name), processes(process_code)")
     .eq("status", "pendente")
+    // A exclusão grava `status='excluido'` E `deleted_at`, então o filtro de
+    // status já bastaria. O `deleted_at` fica junto porque é a mesma guarda que
+    // `checkPendingAssignmentNotices` usa, e porque este aviso agora insiste
+    // todo dia: se um dia a exclusão passar a mexer só numa das duas colunas,
+    // o erro aqui vira cobrança diária de um prazo que ninguém mais enxerga.
+    .is("deleted_at", null)
     .or(SOMENTE_VISIVEIS(now.toISOString()))
     .lt("due_date", now.toISOString());
 
@@ -599,14 +644,27 @@ async function checkOverdueDeadlines(
   const profileToUserId = new Map<string, string>();
   for (const [id, perfil] of perfis) profileToUserId.set(id, perfil.userId);
 
+  // ── O VENCIDO SOBE A ESCADA ────────────────────────────────────────────────
+  //
+  // Enquanto o prazo só está PARA vencer, quem pode agir é o responsável, e
+  // avisar mais gente seria ruído. Depois de vencido a conta muda: a chance de
+  // ele resolver sozinho já passou, e o escritório inteiro tem exposição. Por
+  // isso este aviso — e só este — vai também para a administração.
+  //
+  // O responsável que já é da administração recebe UMA vez: ele é filtrado da
+  // lista abaixo pelo `profileId`.
+  const admins = admin.ativo ? administracao(perfis) : [];
+
   for (const deadline of deadlines || []) {
     if (!deadline.responsible_id) continue;
     const responsibleUserId = profileToUserId.get(deadline.responsible_id);
     if (!responsibleUserId) continue;
+    const outrosDaAdministracao = admins.filter((a) => a.profileId !== deadline.responsible_id);
 
     const dueDate = new Date(deadline.due_date);
     const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
     const clientName = deadline.clients?.full_name || "";
+    const responsavelNome = perfis.get(deadline.responsible_id)?.nome ?? "";
     const dedupeKey = `deadline_overdue_${deadline.id}_${today}`;
 
     if (sendPush) {
@@ -630,6 +688,34 @@ async function checkOverdueDeadlines(
           metadata: { days_overdue: daysOverdue, dedupe_key: dedupeKey },
         });
       }
+
+      // A administração, um aviso por dia cada. A chave do dedupe leva o
+      // usuário: a consulta acima filtra por type + prazo + chave e NÃO por
+      // `user_id`, então uma chave compartilhada faria o aviso do responsável
+      // bloquear o de todo mundo. O texto também muda — dizer "seu prazo" para
+      // quem não é o responsável faria o admin procurar na própria lista.
+      for (const adm of admin.push ? outrosDaAdministracao : []) {
+        const chaveAdmin = `deadline_overdue_admin_${adm.userId}_${deadline.id}_${today}`;
+        const { data: jaAvisado } = await supabase
+          .from("user_notifications")
+          .select("id")
+          .eq("type", "deadline_overdue")
+          .eq("deadline_id", deadline.id)
+          .filter("metadata->>dedupe_key", "eq", chaveAdmin)
+          .limit(1);
+        if (jaAvisado && jaAvisado.length > 0) continue;
+
+        await supabase.from("user_notifications").insert({
+          user_id: adm.userId,
+          title: `🚨 Prazo vencido há ${daysOverdue} dia(s) — ${responsavelNome || "sem responsável"}`,
+          message: `${deadline.title}${clientName ? ` • ${clientName}` : ""} • Venceu ${dueDate.toLocaleDateString("pt-BR")}`,
+          type: "deadline_overdue",
+          deadline_id: deadline.id,
+          process_id: deadline.process_id ?? undefined,
+          requirement_id: deadline.requirement_id ?? undefined,
+          metadata: { days_overdue: daysOverdue, dedupe_key: chaveAdmin, para_administracao: true },
+        });
+      }
     }
 
     if (sendWhatsapp) {
@@ -649,6 +735,48 @@ async function checkOverdueDeadlines(
             titulo: deadline.title ?? "",
             vencimento: dueDate.toLocaleDateString("pt-BR"),
             quando: daysOverdue <= 0 ? "hoje" : daysOverdue === 1 ? "ontem" : `há ${daysOverdue} dias`,
+            cliente: clientName,
+            processo: (deadline as any).processes?.process_code ?? "",
+          },
+        });
+      }
+
+    }
+
+    // ── O aviso à administração é OUTRA mensagem ─────────────────────────────
+    //
+    // Não é o texto do responsável reenviado: o admin não é quem tem de cumprir
+    // o prazo, é quem tem de cobrar. Então o recado diz DE QUEM é o prazo, traz
+    // o telefone e um `wa.me` com a cobrança já escrita — falta apertar enviar.
+    //
+    // Sai pelo gatilho `deadline_overdue_admin`, com canal e modelo próprios em
+    // Configurações. Responsável sem telefone continua sendo avisado: some a
+    // linha do link, o resto do recado permanece.
+    if (admin.whatsapp) {
+      for (const adm of outrosDaAdministracao) {
+        const telefoneResp = perfis.get(deadline.responsible_id)?.telefone ?? "";
+        const quando = daysOverdue <= 0 ? "hoje" : daysOverdue === 1 ? "ontem" : `há ${daysOverdue} dias`;
+        const cobranca = [
+          `Olá${responsavelNome ? `, ${primeiroNome(responsavelNome)}` : ""}!`,
+          `O prazo "${deadline.title ?? ""}" venceu ${quando} (${dueDate.toLocaleDateString("pt-BR")})`
+            + `${clientName ? ` — cliente ${clientName}` : ""} e continua pendente no CRM.`,
+          "Consegue dar um retorno sobre ele?",
+        ].join("\n\n");
+
+        await enviarAvisoWhatsApp({
+          config: waConfig,
+          trigger: "deadline_overdue_admin",
+          perfil: adm,
+          deadlineId: deadline.id,
+          dedupeKey: `wa_deadline_overdue_admin_${adm.userId}_${deadline.id}_${today}`,
+          campos: {
+            primeiro_nome: primeiroNome(adm.nome),
+            responsavel: responsavelNome,
+            telefone_responsavel: telefoneLegivel(telefoneResp),
+            link_cobranca: linkCobrancaWhatsApp(telefoneResp, cobranca),
+            titulo: deadline.title ?? "",
+            vencimento: dueDate.toLocaleDateString("pt-BR"),
+            quando,
             cliente: clientName,
             processo: (deadline as any).processes?.process_code ?? "",
           },
@@ -697,7 +825,60 @@ async function checkOverdueDeadlines(
           console.error(`❌ Erro ao enviar email overdue: ${emailErr?.message}`);
         }
       }
+
+      // E-mail à administração. `recipient_profile_id` troca o DESTINATÁRIO sem
+      // mexer no corpo: a mensagem continua falando do responsável, que é o que
+      // o admin precisa saber. Um por dia cada, com chave própria.
+      for (const adm of admin.email ? outrosDaAdministracao : []) {
+        const chaveAdmin = `email_deadline_overdue_admin_${adm.userId}_${deadline.id}_${today}`;
+        const { data: jaMandado } = await supabase
+          .from("user_notifications")
+          .select("id")
+          .eq("type", "deadline_email_overdue")
+          .eq("deadline_id", deadline.id)
+          .filter("metadata->>dedupe_key", "eq", chaveAdmin)
+          .limit(1);
+        if (jaMandado && jaMandado.length > 0) continue;
+
+        try {
+          const resp = await fetch(`${supabaseUrl}/functions/v1/notify-deadline-assigned`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({
+              deadline_id: deadline.id,
+              assigned_by_id: null,
+              mode: "overdue",
+              recipient_profile_id: adm.profileId,
+            }),
+          });
+          const result = await resp.json();
+          if (!result.success) {
+            console.error(`❌ Falha email overdue (admin): ${result.error}`);
+            continue;
+          }
+          await supabase.from("user_notifications").insert({
+            user_id: adm.userId,
+            title: `📧 Email prazo vencido enviado`,
+            message: `${deadline.title} - vencido há ${daysOverdue} dia(s)`,
+            type: "deadline_email_overdue",
+            deadline_id: deadline.id,
+            read: true,
+            metadata: { dedupe_key: chaveAdmin, days_overdue: daysOverdue, para_administracao: true },
+            created_at: new Date().toISOString(),
+          });
+        } catch (emailErr: any) {
+          console.error(`❌ Erro ao enviar email overdue (admin): ${emailErr?.message}`);
+        }
+      }
     }
+
+    // Nada aqui carimba o prazo como "avisado": ele volta amanhã, e depois de
+    // amanhã, enquanto continuar `pendente` e vencido. É o pedido explícito —
+    // prazo estourado só para de cobrar quando alguém o cumpre, cancela ou
+    // exclui, porque só essas três coisas mudam o `status` e o tiram da busca.
   }
 }
 
@@ -1286,11 +1467,28 @@ Deno.serve(async (req: Request) => {
         checks.push(checkPendingAssignmentNotices(
           ch.includes("push"), ch.includes("email"), waConfig, ch.includes("whatsapp")));
     }
-    if (shouldSendTrigger(rules, "deadline_overdue")) {
-      const ch = getRuleChannels(rules, "deadline_overdue");
-      if (ch.includes("push") || ch.includes("email") || ch.includes("whatsapp"))
+    // O vencido tem DOIS gatilhos: o do responsável e o da administração. A
+    // varredura roda se qualquer um dos dois estiver ligado — desligar a cobrança
+    // ao responsável não pode calar o aviso ao escritório, nem o contrário.
+    {
+      const respLigado = shouldSendTrigger(rules, "deadline_overdue");
+      const admLigado = shouldSendTrigger(rules, "deadline_overdue_admin");
+      const chResp = respLigado ? getRuleChannels(rules, "deadline_overdue") : [];
+      const chAdm = admLigado ? getRuleChannels(rules, "deadline_overdue_admin") : [];
+      if (chResp.length > 0 || chAdm.length > 0) {
         checks.push(checkOverdueDeadlines(
-          ch.includes("push"), ch.includes("email"), waConfig, ch.includes("whatsapp")));
+          chResp.includes("push"),
+          chResp.includes("email"),
+          waConfig,
+          chResp.includes("whatsapp"),
+          {
+            ativo: admLigado,
+            push: chAdm.includes("push"),
+            email: chAdm.includes("email"),
+            whatsapp: chAdm.includes("whatsapp"),
+          },
+        ));
+      }
     }
     if (shouldSendTrigger(rules, "appointment_reminder") && getRuleChannels(rules, "appointment_reminder").includes("push"))
       checks.push(checkAppointmentReminders(thresholds));

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Modal, ModalBody } from './ui';
@@ -418,6 +418,38 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   // 'overview' = hub/visão geral (tela inicial). Sem deep-link, abre no hub.
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection ?? 'overview');
 
+  /**
+   * A JANELA DE CONFIRMAÇÃO POR SEÇÃO.
+   *
+   * O PIN protege as configurações do escritório, e isso não muda. O que mudou é
+   * a granularidade: ele era pedido A CADA gravação, e configurar um módulo é
+   * mexer em vários interruptores seguidos — ligar, desligar, trocar o canal,
+   * ligar de novo. Digitar o PIN seis vezes seguidas não protege mais que
+   * digitá-lo uma; só ensina a pessoa a desistir de configurar.
+   *
+   * Agora ele é pedido uma vez POR SEÇÃO. Três limites, todos deliberados:
+   *
+   *  · a janela expira em cinco minutos parado, e cada alteração a renova;
+   *  · TROCAR DE SEÇÃO zera a janela — quem confirmou em Notificações não
+   *    ganhou passe livre para Segurança;
+   *  · ela vive numa ref, não no armazenamento do navegador: recarregar a
+   *    página, fechar Configurações ou trocar de conta começa do zero.
+   *
+   * E ela dispensa apenas a AUTENTICAÇÃO. A permissão do cargo continua sendo
+   * conferida em toda gravação, dentro do `requirePin`.
+   *
+   * Ação irreversível não passa por aqui: quem chama `confirmSettingsMutation`
+   * sem `escopo` — remover usuário, por exemplo — pergunta sempre.
+   */
+  const PIN_GRACE_MS = 5 * 60 * 1000;
+  const pinGraceRef = useRef<{ escopo: string; expiraEm: number } | null>(null);
+
+  // Sair da seção fecha a janela. Sem isto, passear pelo menu e voltar deixaria
+  // a confirmação valendo por caminhos que ninguém pensou em conferir.
+  useEffect(() => {
+    pinGraceRef.current = null;
+  }, [activeSection]);
+
   // Consumir o param de seção inicial uma vez
   useEffect(() => {
     if (initialSection) {
@@ -836,6 +868,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       resourceType = 'setting',
       resourceId,
       sensitivity = 'critical',
+      escopo,
     }: {
       action: string;
       title: string;
@@ -843,8 +876,27 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       resourceType?: string;
       resourceId?: string;
       sensitivity?: 'medium' | 'high' | 'critical';
+      /**
+       * A seção de Configurações que esta alteração pertence. Quando informado,
+       * o PIN é pedido UMA VEZ por seção (ver `pinGraceRef`). Ação sem escopo
+       * pergunta sempre — é o caso das irreversíveis, como remover usuário.
+       */
+      escopo?: string;
     }) => {
-      return requirePin({
+      // Autorização continua sendo conferida a cada ação, dentro do `requirePin`.
+      // A janela abaixo dispensa apenas a AUTENTICAÇÃO repetida, nunca a
+      // permissão do cargo.
+      if (escopo) {
+        const atual = pinGraceRef.current;
+        if (atual && atual.escopo === escopo && Date.now() < atual.expiraEm) {
+          // Trabalho contínuo não deve ser interrompido: cada alteração dentro
+          // da janela a renova. Quem fica cinco minutos parado confirma de novo.
+          atual.expiraEm = Date.now() + PIN_GRACE_MS;
+          return true;
+        }
+      }
+
+      const ok = await requirePin({
         action,
         resourceType,
         resourceId,
@@ -857,6 +909,9 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
           deniedMessage: 'Seu cargo não possui permissão para alterar as configurações do sistema.',
         },
       });
+
+      if (ok && escopo) pinGraceRef.current = { escopo, expiraEm: Date.now() + PIN_GRACE_MS };
+      return ok;
     },
     [requirePin],
   );
@@ -870,26 +925,37 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         resourceType?: string;
         resourceId?: string;
         sensitivity?: 'medium' | 'high' | 'critical';
+        escopo?: string;
       },
       persist: () => Promise<void>,
     ) => {
-      const pinOk = await confirmSettingsMutation(options);
+      // A seção aberta é o escopo padrão de toda gravação comum de Configurações:
+      // são todas reversíveis (basta reeditar), e pedir o PIN a cada clique
+      // dentro da mesma tela transformava a proteção em obstáculo — quem
+      // configura um módulo mexe em vários interruptores seguidos.
+      const pinOk = await confirmSettingsMutation({ escopo: activeSection, ...options });
       if (!pinOk) return false;
       await persist();
       return true;
     },
-    [confirmSettingsMutation],
+    [confirmSettingsMutation, activeSection],
   );
 
   /**
    * Grava a configuração de WhatsApp das notificações.
    *
-   * Otimista de propósito: a tela reflete a escolha na hora e o PIN vem depois.
-   * Se o PIN for recusado, `notifWaConfig` fica à frente do banco até o próximo
-   * carregamento — o que é o comportamento das outras chaves desta tela, e a
-   * alternativa (piscar de volta) foi considerada pior por quem usa.
+   * Otimista com VOLTA ATRÁS. A tela reflete a escolha na hora — o interruptor
+   * responde ao clique, não ao banco —, mas se o PIN for recusado ou a gravação
+   * falhar, ela desfaz.
+   *
+   * A primeira versão não desfazia, e o resultado era o pior tipo de bug:
+   * cancelar o PIN deixava o interruptor LIGADO na tela e desligado no banco.
+   * A pessoa via "ativado", recarregava a página e encontrava tudo apagado, sem
+   * nenhuma pista de que a recusa do PIN tinha sido o motivo. Interruptor que
+   * mente sobre o próprio estado é pior que interruptor que demora.
    */
   const salvarConfigWa = useCallback(async (proxima: NotificacaoWhatsAppConfig): Promise<boolean> => {
+    const anterior = notifWaConfig;
     setNotifWaConfig(proxima);
     setNotifWaSaving(true);
     try {
@@ -902,11 +968,16 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         },
         () => settingsService.updateNotificationWhatsAppConfig(proxima, currentProfile?.name),
       );
+      if (!ok) setNotifWaConfig(anterior);
       return !!ok;
+    } catch (err: any) {
+      setNotifWaConfig(anterior);
+      setFeedback('error', err?.message || 'Não foi possível salvar a configuração de WhatsApp.');
+      return false;
     } finally {
       setNotifWaSaving(false);
     }
-  }, [runWithSettingsPin, currentProfile?.name]);
+  }, [runWithSettingsPin, currentProfile?.name, notifWaConfig]);
 
   const loadProfile = useCallback(async () => {
     if (!user) return;
@@ -1004,7 +1075,33 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setPortalLoginEnabled(portalLoginData ?? true);
       setFinancialConfig(finData);
       setEmailIntConfig(emailData);
-      setNotifRules(rulesData);
+      // ── O catálogo cresce; o que está salvo, não ────────────────────────
+      //
+      // `notification_rules` guarda a lista que foi gravada da última vez.
+      // Evento novo no catálogo não existe nela — e aí a tela e o scheduler
+      // discordam: a tela mostra o padrão de fábrica (ligado, digamos), e o
+      // scheduler, que só enxerga o JSON, conclui "não está na lista, então
+      // está desligado" e cala o aviso sem nada denunciar.
+      //
+      // Completar a lista aqui faz a próxima gravação levar o evento novo junto,
+      // com o padrão que a tela já está mostrando. Regra salva NUNCA é tocada:
+      // o que o escritório decidiu continua valendo.
+      const porGatilho = new Set(rulesData.map((r) => r.trigger));
+      const completas = [
+        ...rulesData,
+        ...NOTIFICATION_TRIGGERS
+          .filter((ev) => !porGatilho.has(ev.key))
+          .map((ev) => ({
+            id: `default_${ev.key}`,
+            name: ev.label,
+            enabled: ev.default_enabled,
+            trigger: ev.key,
+            channels: ev.default_channels,
+            recipients: ev.default_recipients,
+            respect_business_hours: true,
+          })),
+      ];
+      setNotifRules(completas);
       setProcessConfig(procData);
       setDeadlineConfig(deadlineData);
       setEmailTemplates(tmplData);
@@ -3834,17 +3931,25 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         updated = [...notifRules, { ...base, channels: newChannels }];
                       }
                     }
+                    // O retrato de ANTES, para poder voltar: PIN recusado não pode
+                    // deixar a bolinha verde na tela e a regra desligada no banco.
+                    const anteriores = notifRules;
                     setNotifRules(updated);
-                    const persisted = await runWithSettingsPin(
-                      {
-                        action: 'update_notification_rules',
-                        title: 'Salvar regras de notificação',
-                        description: 'Confirme com seu PIN para salvar as regras de notificação.',
-                        resourceType: 'notification_rules',
-                      },
-                      () => settingsService.updateNotificationRules(updated, currentProfile?.name),
-                    );
-                    if (!persisted) return;
+                    try {
+                      const persisted = await runWithSettingsPin(
+                        {
+                          action: 'update_notification_rules',
+                          title: 'Salvar regras de notificação',
+                          description: 'Confirme com seu PIN para salvar as regras de notificação.',
+                          resourceType: 'notification_rules',
+                        },
+                        () => settingsService.updateNotificationRules(updated, currentProfile?.name),
+                      );
+                      if (!persisted) setNotifRules(anteriores);
+                    } catch (err: any) {
+                      setNotifRules(anteriores);
+                      setFeedback('error', err?.message || 'Não foi possível salvar a regra.');
+                    }
                   };
 
                   return (

@@ -7,8 +7,11 @@ import {
   dentroDoHorarioDeAviso,
   eventoWhatsApp,
   montarMensagemNotificacao,
+  linkCobrancaWhatsApp,
   normalizarConfigWhatsApp,
   primeiroNome,
+  telefoneInternacional,
+  telefoneLegivel,
   templateDaNotificacao,
 } from './notificacaoWhatsapp.ts';
 
@@ -242,4 +245,65 @@ test('todo evento de WhatsApp é despachado pelo notification-scheduler', () => 
       `${ev.key} não tem envio por WhatsApp no scheduler`,
     );
   }
+});
+
+// ── O telefone do responsável, no aviso à administração ────────────────────
+
+test('telefone brasileiro sem país ganha o 55', () => {
+  assert.equal(telefoneInternacional('65999998888'), '5565999998888');
+  assert.equal(telefoneInternacional('(65) 99999-8888'), '5565999998888');
+  // Fixo de 10 dígitos também é telefone.
+  assert.equal(telefoneInternacional('6533334444'), '556533334444');
+});
+
+test('telefone que já veio completo não ganha 55 duas vezes', () => {
+  assert.equal(telefoneInternacional('5565999998888'), '5565999998888');
+  assert.equal(telefoneInternacional('+55 65 99999-8888'), '5565999998888');
+});
+
+test('o que não dá para reconhecer vira vazio, nunca um palpite', () => {
+  // Link errado abre conversa com OUTRA pessoa, e sem dar erro. Vazio some.
+  for (const lixo of ['', '999', '12345678901234', '4499999888', null, undefined]) {
+    if (lixo === '4499999888') continue; // 10 dígitos é válido; conferido acima
+    assert.equal(telefoneInternacional(lixo as any), '', `${lixo} não deveria virar telefone`);
+  }
+});
+
+test('telefone legível não mostra o 55 ao humano', () => {
+  assert.equal(telefoneLegivel('5565999998888'), '(65) 99999-8888');
+  assert.equal(telefoneLegivel('65999998888'), '(65) 99999-8888');
+  assert.equal(telefoneLegivel('556533334444'), '(65) 3333-4444');
+});
+
+test('o link do wa.me já leva a cobrança escrita', () => {
+  const link = linkCobrancaWhatsApp('65999998888', 'Prazo "Contestação" venceu. Pode dar retorno?');
+  assert.ok(link.startsWith('https://wa.me/5565999998888?text='));
+  // Aspas e acentos precisam sobreviver à URL, senão o WhatsApp corta o texto.
+  assert.ok(link.includes(encodeURIComponent('Contestação')));
+  assert.ok(!link.includes(' '));
+});
+
+test('sem telefone reconhecível não há link — e a linha some', () => {
+  assert.equal(linkCobrancaWhatsApp('', 'oi'), '');
+  assert.equal(linkCobrancaWhatsApp(null, 'oi'), '');
+  const texto = montarMensagemNotificacao(
+    templateDaNotificacao(normalizarConfigWhatsApp({}), 'deadline_overdue_admin'),
+    { primeiro_nome: 'Ana', responsavel: 'Pedro', telefone_responsavel: '', link_cobranca: '',
+      titulo: 'Contestação', vencimento: '27/08/2026', quando: 'ontem', cliente: 'Maria', processo: '' },
+  );
+  assert.ok(!texto.includes('Falar agora'));
+  assert.ok(!texto.includes('📞'));
+  // O essencial continua: qual prazo, de quem é, e quando venceu.
+  assert.ok(texto.includes('Contestação'));
+  assert.ok(texto.includes('Pedro'));
+  assert.ok(texto.includes('ontem'));
+});
+
+test('o aviso à administração diz de quem é o prazo; o do responsável não precisa', () => {
+  const padrao = normalizarConfigWhatsApp({});
+  const doAdmin = templateDaNotificacao(padrao, 'deadline_overdue_admin');
+  const doResponsavel = templateDaNotificacao(padrao, 'deadline_overdue');
+  assert.ok(doAdmin.includes('{responsavel}'), 'o admin precisa saber de quem é o prazo');
+  assert.ok(doAdmin.includes('{link_cobranca}'));
+  assert.ok(!doResponsavel.includes('{link_cobranca}'), 'ninguém precisa de link para si mesmo');
 });

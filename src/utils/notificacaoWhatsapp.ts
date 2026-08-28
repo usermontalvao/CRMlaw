@@ -108,6 +108,23 @@ Confira no CRM para não perder a data.`,
 Cumpra ou baixe o prazo no CRM.`,
   },
   {
+    key: 'deadline_overdue_admin',
+    label: 'Prazo vencido — aviso à administração',
+    grupo: 'Prazos',
+    destino: 'equipe',
+    campos: ['{primeiro_nome}', '{responsavel}', '{telefone_responsavel}', '{link_cobranca}', '{titulo}', '{vencimento}', '{quando}', '{cliente}', '{processo}'],
+    padrao: `*{primeiro_nome}*, um prazo do escritório venceu sem cumprimento.
+
+🚨 *{titulo}*
+📅 Venceu {quando} — {vencimento}
+👤 Cliente: {cliente}
+⚖️ Processo: {processo}
+
+🧑‍⚖️ Responsável: *{responsavel}*
+📞 {telefone_responsavel}
+➡️ Falar agora: {link_cobranca}`,
+  },
+  {
     key: 'pericia_reminder',
     label: 'Lembrete de perícia ao cliente',
     grupo: 'Requerimentos',
@@ -227,6 +244,53 @@ export function montarMensagemNotificacao(template: string, dados: Record<string
     .map((linha) => linha.replace(/[ \t]+$/, ''))
     .join('\n')
     .trim();
+}
+
+/**
+ * O telefone em formato internacional, só dígitos — o que o `wa.me` exige.
+ *
+ * Os telefones dos perfis são guardados como o brasileiro escreve: DDD + número,
+ * onze dígitos, sem país. O `wa.me` sem o 55 abre uma conversa com um número
+ * errado em OUTRO país, e o pior é que ele abre — não dá erro, dá a pessoa
+ * errada. Então:
+ *
+ *  · 10 ou 11 dígitos → é brasileiro sem país, entra o 55;
+ *  · 12 ou 13 começando em 55 → já veio completo;
+ *  · qualquer outra coisa → devolve vazio, e a linha do link some.
+ *
+ * Devolver vazio é a resposta certa para o que não se reconhece: um link que
+ * leva ao lugar errado é pior que link nenhum.
+ */
+export function telefoneInternacional(bruto: string | null | undefined): string {
+  const digitos = String(bruto ?? '').replace(/\D/g, '');
+  if (digitos.length === 10 || digitos.length === 11) return `55${digitos}`;
+  if ((digitos.length === 12 || digitos.length === 13) && digitos.startsWith('55')) return digitos;
+  return '';
+}
+
+/** "5565999998888" → "(65) 99999-8888". Fora do padrão, devolve o que recebeu. */
+export function telefoneLegivel(bruto: string | null | undefined): string {
+  const digitos = String(bruto ?? '').replace(/\D/g, '');
+  const local = digitos.startsWith('55') && digitos.length > 11 ? digitos.slice(2) : digitos;
+  if (local.length === 11) return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
+  if (local.length === 10) return `(${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
+  return String(bruto ?? '').trim();
+}
+
+/**
+ * O LINK QUE JÁ VAI COM A CONVERSA COMEÇADA.
+ *
+ * Avisar o admin de que um prazo venceu e deixar que ele procure o telefone do
+ * responsável na agenda é entregar metade do trabalho. O `wa.me` com `?text=`
+ * abre a conversa com a cobrança já escrita — resta apertar enviar.
+ *
+ * Telefone irreconhecível devolve vazio para que a linha inteira do link suma,
+ * pela mesma regra de todo campo vazio.
+ */
+export function linkCobrancaWhatsApp(telefone: string | null | undefined, texto: string): string {
+  const numero = telefoneInternacional(telefone);
+  if (!numero) return '';
+  return `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
 }
 
 /** "Pedro Rodrigues" → "Pedro". Vazio devolve vazio, sem inventar tratamento. */

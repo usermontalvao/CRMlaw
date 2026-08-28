@@ -37,6 +37,53 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.15',
+    date: '28/08/2026',
+    summary: 'O PIN das configurações deixou de ser pedido a cada clique — agora é uma vez por seção. O interruptor parou de mentir quando a confirmação é cancelada. E o prazo vencido passou a cobrar também a administração, todo dia, até alguém resolver.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O interruptor não mente mais',
+            description: 'Marcar um evento e cancelar o PIN deixava o botão ligado na tela e desligado no banco: você via "ativado", recarregava a página e encontrava tudo apagado, sem pista do motivo. Agora, PIN recusado ou falha ao salvar desfaz a mudança na hora.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O PIN é pedido uma vez por seção, não a cada clique',
+            description: 'Configurar um módulo é mexer em vários interruptores seguidos, e digitar o PIN seis vezes não protege mais do que digitá-lo uma — só cansa. A confirmação agora vale para a seção inteira em que você está. Trocar de seção pede de novo, cinco minutos parado também, e recarregar a página começa do zero. Ações irreversíveis, como remover um usuário, continuam perguntando sempre.',
+          },
+        ],
+      },
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Prazo vencido avisa também a administração',
+            description: 'Enquanto o prazo está só para vencer, quem pode agir é o responsável. Depois de vencido a conta muda, e o aviso passa a ir também para admin e advogados — no sino, no e-mail e no WhatsApp. O texto deles diz de quem é o prazo, para ninguém procurar na própria lista. Quem é responsável e administrador ao mesmo tempo recebe uma vez só.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O aviso do admin traz o telefone e o link para cobrar',
+            description: 'A mensagem que chega à administração é outra, não uma cópia da do responsável: ela diz de quem é o prazo, mostra o telefone dele e traz um link do WhatsApp com a cobrança já escrita — abre a conversa e falta apertar enviar. Responsável sem telefone cadastrado? A linha do link some e o resto do aviso continua.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Evento novo não nasce mudo',
+            description: 'Quando um evento novo entrava no catálogo, a tela o mostrava ligado e o robô o tratava como desligado, porque ele não constava da lista salva. Os avisos simplesmente não saíam, sem erro nenhum. Agora a lista se completa sozinha ao abrir as Configurações, sem mexer no que você já decidiu.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A cobrança do vencido não para sozinha',
+            description: 'O aviso de prazo vencido volta todo dia, e continua voltando enquanto o prazo estiver vencido e pendente. Ele só silencia quando alguém toma uma atitude — marcar como cumprido, cancelar ou excluir.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.14',
     date: '28/08/2026',
     summary: 'O WhatsApp virou canal de verdade da central de notificações: dá para escolher de qual número saem os avisos, editar o texto de cada um, e o módulo Prazos passou a avisar o responsável no telefone dele. O aviso ao time não entra na caixa de entrada, e nada sai de madrugada.',

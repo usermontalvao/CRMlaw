@@ -343,7 +343,12 @@ export const NOTIFICATION_TRIGGERS: NotificationEventDef[] = [
   // ── Prazos ──────────────────────────────────────────────────────────────
   { key: 'deadline_assigned',         label: 'Prazo atribuído',                     group: 'Prazos',      audience: ['colaborador'],             web: 'active',  email: 'active',  default_channels: ['push','email'], default_recipients: 'responsible',   default_enabled: true  },
   { key: 'deadline_due',              label: 'Prazo vencendo em breve',             group: 'Prazos',      audience: ['colaborador'],             web: 'active',  email: 'active',  default_channels: ['push','email'], default_recipients: 'responsible',   default_enabled: true  },
-  { key: 'deadline_overdue',          label: 'Prazo vencido sem cumprimento',       group: 'Prazos',      audience: ['colaborador','admin'],     web: 'active',  email: 'active',  default_channels: ['push','email'], default_recipients: 'responsible',   default_enabled: true  },
+  { key: 'deadline_overdue',          label: 'Prazo vencido sem cumprimento',       group: 'Prazos',      audience: ['colaborador'],             web: 'active',  email: 'active',  default_channels: ['push','email'], default_recipients: 'responsible',   default_enabled: true  },
+  // O MESMO fato, o OUTRO destinatário. É evento separado porque a decisão é
+  // separada: dá para querer cobrar o responsável todo dia sem despejar o mesmo
+  // aviso na administração, e o texto que vai para lá é outro — ele diz de quem
+  // é o prazo e traz o telefone com link para cobrar na hora.
+  { key: 'deadline_overdue_admin',    label: 'Prazo vencido — aviso à administração', group: 'Prazos',    audience: ['admin'],                   web: 'active',  email: 'active',  default_channels: ['push','email'], default_recipients: 'admin',         default_enabled: true  },
   // ── Intimações / Processos ──────────────────────────────────────────────
   { key: 'new_intimation',            label: 'Nova intimação recebida',             group: 'Intimações',  audience: ['colaborador'],             web: 'active',  email: 'active',  default_channels: ['push'],         default_recipients: 'all_lawyers',   default_enabled: true  },
   { key: 'intimation_urgent',         label: 'Intimação urgente',                   group: 'Intimações',  audience: ['colaborador'],             web: 'active',  email: 'planned', default_channels: ['push'],         default_recipients: 'all_lawyers',   default_enabled: true  },
