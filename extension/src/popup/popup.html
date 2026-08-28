@@ -12,7 +12,10 @@
     <!-- carregando -->
     <section class="tela" data-tela="carregando">
       <header class="cabecalho">
-        <h1 class="marca">Authenticator <em>· Jurius</em></h1>
+        <div class="marca">
+          <img class="marca-logo" src="../../icons/logo.png" alt="" width="32" height="32">
+          <span class="marca-texto"><strong>Jurius</strong><em>Authenticator</em></span>
+        </div>
       </header>
       <div class="relogio"><div class="relogio-trilho"><i></i></div></div>
       <div class="corpo">
@@ -26,9 +29,14 @@
       <!-- etapa 1: qual conta -->
       <div class="etapa" id="login-etapa-conta">
         <form class="corpo formulario" id="form-login" autocomplete="on">
+          <div class="login-marca" aria-hidden="true">
+            <img src="../../icons/logo.png" alt="" width="42" height="42">
+            <span class="login-texto"><strong>Jurius</strong><small>Authenticator</small></span>
+          </div>
           <div>
-            <h2 class="titulo-tela">Entrar no cofre</h2>
-            <p class="lead">Use a sua conta do CRM. As chaves ficam cifradas no servidor — este navegador só guarda a sessão.</p>
+            <span class="login-selo">Acesso seguro</span>
+            <h2 class="titulo-tela">Cofre corporativo</h2>
+            <p class="lead">Entre com sua conta do CRM para acessar as chaves de autenticação do escritório.</p>
           </div>
           <label class="campo">
             <span>E-mail</span>
@@ -86,7 +94,10 @@
     <!-- lista -->
     <section class="tela oculto" data-tela="lista">
       <header class="cabecalho">
-        <h1 class="marca">Authenticator <em>· Jurius</em></h1>
+        <div class="marca">
+          <img class="marca-logo" src="../../icons/logo.png" alt="" width="32" height="32">
+          <span class="marca-texto"><strong>Jurius</strong><em>Authenticator</em></span>
+        </div>
         <button class="icone" id="abrir-busca" title="Buscar (/)" aria-label="Buscar chave">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
         </button>
@@ -97,6 +108,18 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 20c.6-3.4 3.3-5.2 6.5-5.2s5.9 1.8 6.5 5.2"/></svg>
         </button>
       </header>
+
+      <div class="lista-intro">
+        <div>
+          <span class="lista-kicker">Cofre 2FA</span>
+          <h2>Códigos de acesso</h2>
+          <p id="lista-resumo">Carregando credenciais…</p>
+        </div>
+        <span class="lista-seguro">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.7 2.8 8.1 7 10 4.2-1.9 7-5.3 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+          Protegido
+        </span>
+      </div>
 
       <!-- UM relógio para a lista inteira: todo código de 30s vira no mesmo
            instante. Chave de período diferente ganha o anel dela na linha. -->
@@ -305,8 +328,8 @@
 
   </div>
 
-  <!-- A abertura cobre apenas o trabalho real da rede. A marca é o arquivo
-       oficial da extensão; o halo e os três pontos são o único movimento. -->
+  <!-- A abertura cobre apenas o trabalho real da rede. A marca oficial e os
+       três pontos são o único movimento. -->
   <div class="abertura" id="abertura" role="status" aria-label="Abrindo o cofre">
     <div class="abertura-marca">
       <span class="abertura-halo" aria-hidden="true"></span>

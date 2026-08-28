@@ -444,6 +444,12 @@ function renderizarLista() {
     return semAcento(`${c.name} ${c.issuer ?? ''} ${c.account_label ?? ''}`).includes(termo);
   });
 
+  const resumo = $('#lista-resumo');
+  if (resumo) {
+    const total = estado.credenciais.length;
+    resumo.textContent = total === 1 ? '1 credencial disponível' : `${total} credenciais disponíveis`;
+  }
+
   if (estado.credenciais.length === 0) {
     alvo.replaceChildren(vazio('Nenhuma chave ainda', 'Cadastre a primeira no + do cabeçalho, ou importe do Google Authenticator.'));
     return;
@@ -486,6 +492,11 @@ function cartao(credencial) {
   item.tabIndex = 0;
   item.setAttribute('role', 'button');
   item.setAttribute('aria-label', `Preencher o código de ${credencial.name}`);
+
+  const marca = document.createElement('div');
+  marca.className = 'item-marca';
+  marca.setAttribute('aria-hidden', 'true');
+  marca.textContent = iniciais(credencial.issuer || credencial.name).slice(0, 2);
 
   // ── a linha de cima: quem é a chave ──
   const meta = document.createElement('div');
@@ -570,7 +581,7 @@ function cartao(credencial) {
   lado.append(preencher, estrela, copiar, abrir);
   if (periodoProprio) lado.append(anel(credencial.id));
 
-  item.append(meta, codigo, feito, lado);
+  item.append(marca, meta, codigo, feito, lado);
 
   // A linha inteira é o botão principal: quem abre o popup num site de login
   // quer o código NO campo, não na área de transferência.

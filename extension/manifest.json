@@ -38,7 +38,7 @@
     "https://uajwkqipbyxzvwjpitxl.supabase.co/functions/v1/totp-vault/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'self' https://uajwkqipbyxzvwjpitxl.supabase.co; img-src 'self' data:; media-src 'self' blob:; style-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'self' https://uajwkqipbyxzvwjpitxl.supabase.co; img-src 'self' data:; media-src 'self' blob:; font-src 'self'; style-src 'self'"
   },
   "web_accessible_resources": [
     {

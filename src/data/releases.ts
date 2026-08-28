@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.12',
+    date: '28/08/2026',
+    summary: 'A lista do cofre de códigos ganhou a marca de cada serviço, a contagem de chaves e a fonte da casa embarcada na extensão.',
+    modules: [
+      {
+        moduleId: 'authenticator',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Cada chave com o rosto do serviço',
+            description: 'Na lista do popup, cada credencial passou a mostrar a marca com as iniciais do emissor. Numa coluna de códigos de seis dígitos todos parecidos, é o que diferencia uma linha da outra num relance.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Quantas chaves você tem',
+            description: 'O cabeçalho da lista diz o total de credenciais guardadas — antes só dava para saber contando na tela.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A fonte vai junto com a extensão',
+            description: 'A Manrope passou a ser empacotada dentro da extensão, com a licença ao lado, em vez de ser buscada na internet a cada abertura. O popup abre com a tipografia certa mesmo sem rede, e a política de segurança da extensão foi ajustada para permitir a fonte local.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.11',
     date: '28/08/2026',
     summary: 'A perícia social passou a vir antes da médica, cada perícia ganhou o campo Local, e o agendamento pode avisar o cliente pelo WhatsApp alguns dias antes.',
