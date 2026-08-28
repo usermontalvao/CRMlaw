@@ -283,6 +283,10 @@ export const automationApi = {
     // de herdar as horas que já tinham estourado o teto.
     const upd: Record<string, unknown> = {
       status: 'pending', error: null, sent_at: null, hold_reason: null, hold_since: null,
+      // Devolve a reserva do cron. Uma varredura que morreu no meio deixa
+      // `locked_until` no futuro, e sem limpar aqui o reenvio pedido à mão
+      // ficaria parado até o arrendamento vencer, sem nada na tela explicando.
+      locked_until: null,
     };
     if (patch?.text !== undefined) upd.body = patch.text.trim() || null;
     if (patch?.scheduledAt) {

@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.8',
+    date: '27/08/2026',
+    summary: 'Fechada a fresta que permitia a mesma mensagem agendada — ou o mesmo lembrete da IA — sair duas vezes.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Mensagem agendada e lembrete da IA agora são reservados antes de sair',
+            description: 'A rotina que dispara mensagens agendadas roda de minuto em minuto e só marcava a mensagem como enviada DEPOIS que ela saía — nesse intervalo, ela continuava aparecendo como pendente para a execução seguinte, que podia entregá-la de novo. Nunca chegou a acontecer (em 24 horas medidas, a rotina levou 1,1 segundo em média e no pior caso 24), mas o pior caso não vem do envio: vem da conferência de canais, que gasta até 10 segundos por número fora do ar. Meia dúzia de números caídos ao mesmo tempo chegaria lá sem nenhuma mensagem a mais na fila. Agora cada mensagem é reservada no mesmo instante em que é escolhida, e a reserva vence sozinha se a rotina morrer no meio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.7',
     date: '27/08/2026',
     summary: '"Cliente assinou" saiu de dentro da conversa aberta e apareceu na lista — e o documento assinado ficou à mão, com nome de gente em vez de código.',

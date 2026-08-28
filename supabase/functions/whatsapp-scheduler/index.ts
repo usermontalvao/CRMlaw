@@ -98,43 +98,59 @@ Deno.serve(async (req: Request) => {
   if (!await jobTokenOk('wa_scheduler_token', req)) return naoAutorizado();
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-  const nowIso = new Date().toISOString();
 
   await reconciliarCanais(admin).catch(() => {});
 
-  // Mensagens vencidas, com o estado de bloqueio da conversa-pai.
-  const { data: due, error } = await admin
-    .from('whatsapp_scheduled_messages')
-    .select('id, conversation_id, type, body, storage_path, mime_type, file_name, created_by, hold_since, whatsapp_conversations(is_blocked, status)')
-    .eq('status', 'pending')
-    .lte('scheduled_at', nowIso)
-    .order('scheduled_at', { ascending: true })
-    .limit(25);
+  // Mensagens vencidas, RESERVADAS no mesmo comando que as escolhe.
+  //
+  // Escolher com um SELECT e só marcar `sent` depois do envio deixava a linha
+  // `pending` durante toda a ida à Evolution. O pg_cron dispara este endereço de
+  // minuto em minuto sem esperar a resposta (`net.http_post`), então uma execução
+  // que passe de 60s encontra a seguinte já dentro do laço, lendo as mesmas
+  // linhas e mandando a mesma mensagem duas vezes. Medido em 27/08/2026, sobre
+  // 1.432 execuções de 24h: média de 1,1s e PICO DE 23,8s — ainda não aconteceu,
+  // mas 24s é quase metade do caminho, e o pico não vem do envio: vem da
+  // reconciliação, que gasta até 10s por canal calado antes de desistir. `wa_scheduled_due_claim` fecha a
+  // janela: `FOR UPDATE SKIP LOCKED` faz a segunda execução PULAR o que a
+  // primeira pegou, e o arrendamento em `locked_until` vence sozinho se a
+  // execução morrer no meio. O retrato que volta é o de DEPOIS da reserva, o que
+  // torna a releitura que existia aqui desnecessária.
+  const { data: due, error } = await admin.rpc('wa_scheduled_due_claim', {
+    p_limit: 25,
+    p_lease_seconds: 300,
+  });
 
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 
   let sent = 0, failed = 0, skipped = 0;
-  for (const candidate of (due || []) as any[]) {
-    // Revalida imediatamente antes de enviar. A inbox pode ter movido esta
-    // retenção para outro canal depois que a consulta do lote rodou; sem este
-    // segundo olhar, o cron ainda usaria o retrato velho e poderia entregar a
-    // mesma mensagem pelo número antigo enquanto a troca já a envia pelo novo.
+  for (const reservada of (due || []) as any[]) {
+    // A reserva já garantiu que ninguém mais vai enviar esta linha. A releitura
+    // resolve OUTRA coisa: entre reservar e enviar, o atendente pode ter
+    // cancelado, reescrito ou adiado o agendamento pela inbox — a linha
+    // continua `pending`, e sem este segundo olhar o cron entregaria o texto
+    // velho, ou entregaria algo que acabou de ser cancelado.
     const { data: latest, error: latestError } = await admin
       .from('whatsapp_scheduled_messages')
       .select('id, conversation_id, type, body, storage_path, mime_type, file_name, created_by, hold_since, whatsapp_conversations(is_blocked, status)')
-      .eq('id', candidate.id)
+      .eq('id', reservada.id)
       .eq('status', 'pending')
-      .lte('scheduled_at', nowIso)
+      .lte('scheduled_at', new Date().toISOString())
       .maybeSingle();
-    if (latestError || !latest) { skipped++; continue; }
+    if (latestError || !latest) {
+      // Saiu de baixo da varredura (cancelada, adiada, excluída): devolve a
+      // reserva, senão a linha adiada ficaria presa até o arrendamento vencer.
+      await admin.from('whatsapp_scheduled_messages')
+        .update({ locked_until: null }).eq('id', reservada.id).eq('status', 'pending');
+      skipped++; continue;
+    }
     const m = latest as any;
     const conv = m.whatsapp_conversations || {};
     // Conversa bloqueada → não envia; marca falha com motivo claro.
     if (conv.is_blocked) {
       await admin.from('whatsapp_scheduled_messages')
-        .update({ status: 'failed', error: 'Conversa bloqueada no momento do disparo.' })
+        .update({ status: 'failed', error: 'Conversa bloqueada no momento do disparo.', locked_until: null })
         .eq('id', m.id);
       failed++; continue;
     }
@@ -174,6 +190,7 @@ Deno.serve(async (req: Request) => {
           error: null,
           hold_reason: null,
           hold_since: null,
+          locked_until: null,
         })
         .eq('id', m.id);
       sent++;
@@ -199,6 +216,7 @@ Deno.serve(async (req: Request) => {
               // de vez e mais precisa de ação humana.
               hold_reason: 'reconnect',
               error: 'O canal ficou fora do ar por mais de 12h e a mensagem não foi enviada. Revalide o número em Configurações → Integrações → WhatsApp, ou envie por outro canal.',
+              locked_until: null,
             })
             .eq('id', m.id);
           failed++;
@@ -211,13 +229,16 @@ Deno.serve(async (req: Request) => {
             hold_since: new Date(desde).toISOString(),
             error: 'Aguardando reconexão automática do canal.',
             scheduled_at: new Date(Date.now() + proximaTentativaMs(espera)).toISOString(),
+            // Devolve a reserva: a linha continua `pending` e a próxima varredura
+            // (já com o novo horário) tem de poder pegá-la.
+            locked_until: null,
           })
           .eq('id', m.id);
         skipped++;
         continue;
       }
       await admin.from('whatsapp_scheduled_messages')
-        .update({ status: 'failed', error: message.slice(0, 500) })
+        .update({ status: 'failed', error: message.slice(0, 500), locked_until: null })
         .eq('id', m.id);
       failed++;
     }
@@ -398,13 +419,13 @@ async function processarFollowupsIA(admin: any) {
   const agora = new Date();
   let enviados = 0, cancelados = 0, adiados = 0, falhas = 0;
 
-  const { data: vencidos } = await admin
-    .from('whatsapp_ai_followups')
-    .select('id, conversation_id, assistant_id, attempt, scheduled_at, message, created_at')
-    .eq('status', 'pending')
-    .lte('scheduled_at', agora.toISOString())
-    .order('scheduled_at', { ascending: true })
-    .limit(20);
+  // Reservados no mesmo comando que os escolhe, como as agendadas: duas
+  // execuções cruzadas do cron nunca recebem o mesmo lembrete, e o arrendamento
+  // vence sozinho se esta morrer antes de concluir.
+  const { data: vencidos } = await admin.rpc('wa_ai_followup_due_claim', {
+    p_limit: 20,
+    p_lease_seconds: 300,
+  });
 
   for (const fu of (vencidos || []) as any[]) {
     const { data: conv } = await admin.from('whatsapp_conversations')
@@ -468,7 +489,8 @@ async function processarFollowupsIA(admin: any) {
     if (!isWithinFollowupWindow(agora, policy)) {
       const proximo = nextAllowedSlot(agora, policy);
       await admin.from('whatsapp_ai_followups')
-        .update({ scheduled_at: proximo.toISOString() }).eq('id', fu.id).eq('status', 'pending');
+        .update({ scheduled_at: proximo.toISOString(), locked_until: null })
+        .eq('id', fu.id).eq('status', 'pending');
       // A sessão promete o que a linha pendente marca: adiar uma sem a outra
       // deixa o painel anunciando um horário que já não existe.
       await sincronizarPromessa(admin, conv.id, proximo.toISOString());
@@ -487,7 +509,7 @@ async function processarFollowupsIA(admin: any) {
         if (j?.reconnect_pending === true) {
           const espera = new Date(Date.now() + 15 * 60_000).toISOString();
           await admin.from('whatsapp_ai_followups')
-            .update({ scheduled_at: espera })
+            .update({ scheduled_at: espera, locked_until: null })
             .eq('id', fu.id).eq('status', 'pending');
           await sincronizarPromessa(admin, conv.id, espera);
           adiados++; continue;
@@ -496,7 +518,7 @@ async function processarFollowupsIA(admin: any) {
       }
 
       await admin.from('whatsapp_ai_followups')
-        .update({ status: 'sent', sent_at: new Date().toISOString(), error: null })
+        .update({ status: 'sent', sent_at: new Date().toISOString(), error: null, locked_until: null })
         .eq('id', fu.id);
 
       // O agente registra o turno, avança o contador e cria a PRÓXIMA linha
@@ -523,7 +545,7 @@ async function processarFollowupsIA(admin: any) {
       enviados++;
     } catch (e) {
       await admin.from('whatsapp_ai_followups')
-        .update({ status: 'failed', error: String((e as Error).message || e).slice(0, 500) })
+        .update({ status: 'failed', error: String((e as Error).message || e).slice(0, 500), locked_until: null })
         .eq('id', fu.id);
       // Falhou: não há mais pendente, então não há mais promessa a fazer.
       await sincronizarPromessa(admin, conv.id, null);
@@ -612,7 +634,7 @@ async function avancarEscadaIA(admin: any, ctx: {
  */
 async function cancelarFollowup(admin: any, id: string, conversationId: string, motivo: string) {
   await admin.from('whatsapp_ai_followups')
-    .update({ status: 'cancelled', cancel_reason: motivo.slice(0, 300) })
+    .update({ status: 'cancelled', cancel_reason: motivo.slice(0, 300), locked_until: null })
     .eq('id', id).eq('status', 'pending');
   await admin.from('whatsapp_ai_sessions')
     .update({ next_followup_at: null })
