@@ -55,6 +55,10 @@ export const conversationsApi = {
       supabase
         .from(CONV_TABLE)
         .select('*')
+        // Aviso ao time não é atendimento: a conversa interna existe para
+        // guardar o que foi mandado, não para alguém responder. Ver
+        // `is_internal` na migration `wa_conversa_interna`.
+        .eq('is_internal', false)
         .order('last_message_at', { ascending: false, nullsFirst: false }),
       canaisPermitidosIds(),
     ]);
@@ -84,6 +88,9 @@ export const conversationsApi = {
    *   • duas linhas do mesmo contato (um por canal do escritório) são UMA
    *     pessoa, pelo mesmo `collapseContactThreads` que a lista usa.
    *
+   *   • INTERNA não conta — o lembrete de prazo que o CRM manda para o próprio
+   *     time não é gente esperando resposta, e o responsável já o lê no sino.
+   *
    * Silenciada CONTA: silenciar cala o aviso, não resolve o atendimento.
    *
    * A consulta traz só as linhas não lidas — é um punhado, não a inbox inteira —
@@ -96,6 +103,7 @@ export const conversationsApi = {
         .select('id, instance_id, contact_phone, remote_jid, client_id, status, unread_count, is_blocked')
         .gt('unread_count', 0)
         .eq('is_blocked', false)
+        .eq('is_internal', false)
         .neq('status', 'closed'),
       canaisPermitidosIds(),
     ]);

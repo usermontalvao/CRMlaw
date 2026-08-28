@@ -37,6 +37,68 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.14',
+    date: '28/08/2026',
+    summary: 'O WhatsApp virou canal de verdade da central de notificações: dá para escolher de qual número saem os avisos, editar o texto de cada um, e o módulo Prazos passou a avisar o responsável no telefone dele. O aviso ao time não entra na caixa de entrada, e nada sai de madrugada.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'WhatsApp entrou na central de notificações',
+            description: 'Em Configurações → Notificações → Regras existe agora a coluna WhatsApp, ao lado de Web e E-mail, e um interruptor geral "Saída por WhatsApp". Ele nasce desligado de propósito: enquanto estiver assim, nenhum aviso sai por WhatsApp, mesmo com o evento marcado.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'De qual número sai cada aviso',
+            description: 'Um canal padrão do escritório vale para tudo, e cada evento pode abrir exceção pelo ⚙️ da linha — útil quando o aviso ao cliente e o aviso ao time saem de números diferentes. Canal desconectado continua na lista, com a marca, porque o aviso fica retido na fila até ele voltar.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'O texto da mensagem é seu',
+            description: 'Cada evento tem o modelo editável, com os campos disponíveis listados ao lado e um botão de restaurar o padrão. A regra é a mesma do aviso de perícia: a linha some inteira quando o campo não tem valor — prazo sem processo vinculado não vira "Processo: —" no telefone de ninguém.',
+          },
+        ],
+      },
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'O prazo avisa no WhatsApp de quem responde por ele',
+            description: 'Os três momentos do prazo — quando entra na sua fila, quando está para vencer e quando venceu sem cumprimento — podem sair no WhatsApp, além do sino e do e-mail. Vai para o telefone cadastrado no perfil do responsável; quem não tem telefone no perfil simplesmente continua recebendo pelos outros canais.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Nada chega de madrugada',
+            description: 'A verificação roda de hora em hora, nas 24 horas do dia. Sino e e-mail podem esperar você abrir; uma mensagem de WhatsApp acorda. Por isso o aviso de prazo só sai de segunda a sexta, das 8h às 18h — e um lembrete por dia, não um por hora.',
+          },
+        ],
+      },
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Aviso ao time não entra na caixa de entrada',
+            description: 'Mandar mensagem pelo WhatsApp sempre cria uma conversa. As conversas de aviso interno nascem marcadas como tal e ficam fora da lista, do widget e do contador de não lidas — não há ninguém do outro lado esperando resposta. A marca só é posta em conversa sem cliente vinculado: quem é colaborador e também cliente não perde o próprio atendimento da lista.',
+          },
+        ],
+      },
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'O aviso de perícia obedece à central',
+            description: 'Ao marcar a perícia, o canal já vem sugerido pelo que o escritório definiu em Configurações, em vez do primeiro canal conectado da lista. O evento "Lembrete de perícia ao cliente" também aparece nas Regras e pode ser desligado por lá. Os dois textos (social e médica) continuam sendo editados em Requerimentos, porque as duas perícias pedem coisas diferentes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.13',
     date: '28/08/2026',
     summary: 'Os arquivos do cliente no Nextcloud passaram a abrir numa janela sobre a conversa, "Ver" abre a ficha 360 de verdade, os modais do WhatsApp encolheram para tamanho de aplicativo e o Esc voltou a fechar uma camada por vez.',

@@ -69,6 +69,7 @@ import {
   PERICIA_LABEL, PERICIA_AVISO_PADRAO, PERICIA_AVISO_CAMPOS, montarAvisoPericia,
   instanteDoAviso, dataPorExtenso, type PericiaKind, type PericiaAvisoTemplates,
 } from '../constants/periciaAviso';
+import { canalDaNotificacao } from '../utils/notificacaoWhatsapp';
 import { subscribeEditorDocSourceSaved } from '../utils/editorDocSourceEvents';
 import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { useAuth } from '../contexts/AuthContext';
@@ -1524,13 +1525,41 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     setPericiaForm((prev) => ({ ...prev, notifyClient: aberto }));
     if (!aberto || waChannels !== null) return;
     try {
-      const lista = await whatsappService.listChannels();
+      const [lista, waConfig, regras] = await Promise.all([
+        whatsappService.listChannels(),
+        // A central de notificações é quem manda: se o escritório já decidiu de
+        // qual número saem os avisos, o modal não pode discordar dela por conta
+        // do acaso da ordem da lista. Falha na leitura não trava o agendamento —
+        // cai no primeiro canal conectado, como era antes.
+        settingsService.getNotificationWhatsAppConfig().catch(() => null),
+        settingsService.getNotificationRules().catch(() => null),
+      ]);
+
+      // O liga/desliga do evento em Configurações → Notificações → Regras vale
+      // aqui. Só um `enabled: false` EXPLÍCITO desliga: regra ausente (o caso de
+      // toda instalação anterior a este recurso) mantém o aviso como sempre foi.
+      const regraDaPericia = regras?.find((r) => r.trigger === 'pericia_reminder');
+      if (regraDaPericia && !regraDaPericia.enabled) {
+        setWaChannels(lista);
+        setPericiaForm((prev) => ({ ...prev, notifyClient: false }));
+        toast.warning(
+          'O aviso de perícia está desligado',
+          'Ligue o evento "Lembrete de perícia ao cliente" em Configurações → Notificações → Regras.',
+        );
+        return;
+      }
+
       setWaChannels(lista);
+      const daCentral = waConfig ? canalDaNotificacao(waConfig, 'pericia_reminder') : null;
+      // O canal da central só vale se ele ainda existe: apontar para um canal
+      // removido deixaria o select vazio sem dizer por quê.
+      const preferido = daCentral && lista.some((c) => c.id === daCentral) ? daCentral : null;
       const conectados = lista.filter((c) => c.status === 'connected');
-      if (conectados.length > 0) {
+      const escolhido = preferido ?? conectados[0]?.id ?? null;
+      if (escolhido) {
         setPericiaForm((prev) => ({
           ...prev,
-          notifyChannelId: prev.notifyChannelId || conectados[0].id,
+          notifyChannelId: prev.notifyChannelId || escolhido,
         }));
       }
     } catch (err: any) {

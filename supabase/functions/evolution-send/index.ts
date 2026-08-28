@@ -2,6 +2,7 @@
  * evolution-send — envia mensagens pela Evolution e grava como outbound.
  *
  * action 'send' (padrão): { conversation_id?, phone?, channel_id?, type?, text?,
+ *   internal? (aviso ao time: a conversa nova nasce fora da caixa de entrada),
  *   storage_path?, mime_type?, file_name?, reply_to_id?, as_gif? }
  *   — type 'sticker' é o caminho do GIF: vira figurinha ANIMADA, porque a
  *   Evolution 2.3.7 não deixa passar `gifPlayback` em vídeo.
@@ -531,7 +532,7 @@ Deno.serve(async (req: Request) => {
       remote_jid: sendTarget,
       contact_phone: canonicalPhone,
     }, { onConflict: 'instance_id,remote_jid' })
-      .select('id, status, assigned_user_id')
+      .select('id, status, assigned_user_id, client_id')
       .single();
     if (convErr || !conv?.id) {
       // A mensagem já saiu; explicitar isso evita que o cliente repita o envio e
@@ -544,6 +545,24 @@ Deno.serve(async (req: Request) => {
     conversationId = conv.id;
     wasClosed = conv.status === 'closed';
     hadOwner = !!conv.assigned_user_id;
+
+    // ── AVISO AO TIME NÃO É ATENDIMENTO ────────────────────────────────────
+    //
+    // O lembrete de prazo que o CRM manda para o telefone do responsável precisa
+    // de uma conversa (é onde a mensagem é gravada), mas não pode entrar na
+    // caixa de entrada: ninguém está do outro lado esperando resposta, e a
+    // linha inflaria não-lidas e SLA.
+    //
+    // A marca só é posta em conversa SEM CLIENTE vinculado. O upsert acima
+    // reaproveita a thread existente, e um colaborador que também seja cliente
+    // do escritório não pode ter o atendimento dele sumindo da inbox porque um
+    // aviso de prazo passou pelo mesmo número.
+    if (body?.internal === true && !conv.client_id) {
+      await admin.from('whatsapp_conversations')
+        .update({ is_internal: true })
+        .eq('id', conversationId)
+        .is('client_id', null);
+    }
   }
 
   const insertRow: Record<string, unknown> = {

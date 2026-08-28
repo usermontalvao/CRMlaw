@@ -1,5 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  canalDaNotificacao,
+  dentroDoHorarioDeAviso,
+  montarMensagemNotificacao,
+  normalizarConfigWhatsApp,
+  primeiroNome,
+  templateDaNotificacao,
+  type NotificacaoWhatsAppConfig,
+} from "../_shared/notificacao-whatsapp.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -63,6 +72,14 @@ async function loadAutomationThresholds(): Promise<typeof THRESHOLDS_DEFAULTS> {
   return { ...THRESHOLDS_DEFAULTS };
 }
 
+/** Prioridade legível — o banco guarda a chave, o WhatsApp mostra a palavra. */
+const PRIORIDADE_LABEL: Record<string, string> = {
+  urgente: "Urgente",
+  alta: "Alta",
+  media: "Média",
+  baixa: "Baixa",
+};
+
 type NotificationChannel = "email" | "push" | "whatsapp";
 type NotificationRecipients = "responsible" | "admin" | "all_lawyers" | "specific_role";
 
@@ -107,6 +124,162 @@ async function loadNotificationRules(): Promise<LoadedRules> {
     }
   } catch { /* usa defaults */ }
   return { enabled: null, byTrigger: new Map() };
+}
+
+async function loadWhatsAppConfig(): Promise<NotificacaoWhatsAppConfig> {
+  try {
+    const { data } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("key", "notification_whatsapp_config")
+      .maybeSingle();
+    return normalizarConfigWhatsApp(data?.value);
+  } catch {
+    // Falha de leitura não pode virar envio: `normalizarConfigWhatsApp(null)`
+    // devolve a configuração DESLIGADA.
+    return normalizarConfigWhatsApp(null);
+  }
+}
+
+/** O perfil de quem vai receber o aviso: nome para o tratamento, telefone para o envio. */
+interface PerfilDoAviso {
+  userId: string;
+  nome: string;
+  telefone: string | null;
+}
+
+/**
+ * MANDA O AVISO DE PRAZO PELO WHATSAPP.
+ *
+ * Fail-soft por inteiro: qualquer degrau que falte apenas impede ESTE envio, e
+ * nunca a execução. O push e o e-mail do mesmo prazo já saíram antes de chegar
+ * aqui — o WhatsApp é o reforço, não o aviso.
+ *
+ * Os degraus, na ordem em que desistem:
+ *
+ *  1. interruptor geral desligado;
+ *  2. fora do horário de aviso (o cron roda 24h; ver `dentroDoHorarioDeAviso`);
+ *  3. responsável sem telefone no perfil — nada a fazer, e não é erro;
+ *  4. nenhum canal de saída definido para o evento nem como padrão;
+ *  5. já avisado nesta janela (dedupe);
+ *  6. mensagem que ficou vazia depois de sumirem as linhas sem valor.
+ *
+ * Devolve `true` só quando a mensagem saiu de fato.
+ */
+async function enviarAvisoWhatsApp(params: {
+  config: NotificacaoWhatsAppConfig;
+  trigger: string;
+  perfil: PerfilDoAviso;
+  dedupeKey: string;
+  campos: Record<string, string>;
+  deadlineId: string;
+}): Promise<boolean> {
+  const { config, trigger, perfil, dedupeKey, campos, deadlineId } = params;
+
+  if (!config.enabled) return false;
+  if (!dentroDoHorarioDeAviso()) return false;
+  if (!perfil.telefone) {
+    console.log(`⏭️ WhatsApp: ${perfil.nome} não tem telefone no perfil`);
+    return false;
+  }
+
+  const canal = canalDaNotificacao(config, trigger);
+  if (!canal) {
+    console.log(`⏭️ WhatsApp: sem canal de saída para ${trigger}`);
+    return false;
+  }
+
+  const { data: jaAvisado } = await supabase
+    .from("user_notifications")
+    .select("id")
+    .eq("type", "deadline_whatsapp_notice")
+    .eq("deadline_id", deadlineId)
+    .filter("metadata->>dedupe_key", "eq", dedupeKey)
+    .limit(1);
+  if (jaAvisado && jaAvisado.length > 0) return false;
+
+  const texto = montarMensagemNotificacao(templateDaNotificacao(config, trigger), campos);
+  if (!texto.trim()) {
+    console.log(`⏭️ WhatsApp: modelo de ${trigger} ficou vazio`);
+    return false;
+  }
+
+  try {
+    const resp = await fetch(`${supabaseUrl}/functions/v1/evolution-send`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        phone: perfil.telefone,
+        channel_id: canal,
+        type: "text",
+        text: texto,
+        // A conversa nasce fora da caixa de entrada: aviso ao time não é
+        // atendimento. Ver `is_internal` em `wa_conversa_interna`.
+        internal: true,
+      }),
+    });
+    const out = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      console.error(`❌ WhatsApp ${trigger}: ${out?.error || resp.status}`);
+      return false;
+    }
+
+    // O carimbo é gravado DEPOIS da confirmação de envio, e só então. Gravá-lo
+    // antes tornaria uma falha da Evolution num aviso perdido para sempre — o
+    // dedupe barraria a próxima tentativa sem que ninguém tivesse sido avisado.
+    //
+    // E o erro deste insert é CONFERIDO, ao contrário dos irmãos acima. O
+    // carimbo é o único freio do envio: sem ele o dedupe não encontra nada na
+    // hora seguinte e a mesma mensagem sai de novo — 24 vezes por dia, no
+    // telefone pessoal de alguém. Foi exatamente o que quase aconteceu: `type` é
+    // um ENUM, o valor novo não existia nele, e o insert falharia calado.
+    const { error: carimboErr } = await supabase.from("user_notifications").insert({
+      user_id: perfil.userId,
+      title: "📱 Aviso de prazo enviado por WhatsApp",
+      message: campos.titulo ?? "",
+      type: "deadline_whatsapp_notice",
+      deadline_id: deadlineId,
+      read: true,
+      metadata: { dedupe_key: dedupeKey, trigger },
+      created_at: new Date().toISOString(),
+    });
+    if (carimboErr) {
+      console.error(
+        `🚨 WhatsApp ${trigger}: mensagem ENVIADA mas o carimbo falhou (${carimboErr.message}). ` +
+        `Sem ele este aviso repete a cada execução — investigar antes da próxima hora.`,
+      );
+    }
+    console.log(`📱 WhatsApp ${trigger} enviado a ${perfil.nome}`);
+    return true;
+  } catch (err: any) {
+    console.error(`❌ Erro no WhatsApp de ${trigger}: ${err?.message}`);
+    return false;
+  }
+}
+
+/** Perfis ativos indexados por `profiles.id` — quem recebe, e por qual telefone. */
+async function carregarPerfisDoAviso(): Promise<Map<string, PerfilDoAviso>> {
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, user_id, name, phone")
+    .eq("is_active", true);
+
+  const mapa = new Map<string, PerfilDoAviso>();
+  for (const p of profiles || []) {
+    if (!p.id || !p.user_id) continue;
+    const telefone = String(p.phone ?? "").replace(/\D/g, "");
+    mapa.set(p.id, {
+      userId: p.user_id,
+      nome: String(p.name ?? ""),
+      // Telefone curto demais não é telefone: mandar para ele é entregar o aviso
+      // do escritório a um desconhecido.
+      telefone: telefone.length >= 10 ? telefone : null,
+    });
+  }
+  return mapa;
 }
 
 function isEnabled(rules: LoadedRules, trigger: string): boolean {
@@ -227,7 +400,13 @@ async function createNotification(payload: NotificationPayload) {
 // um prazo que não está na lista dele é pedir para o aviso ser ignorado.
 const SOMENTE_VISIVEIS = (agora: string) => `visible_from.is.null,visible_from.lte.${agora}`;
 
-async function checkDeadlineReminders(sendPush: boolean, sendEmail: boolean, portalNotifConfig: PortalNotifConfig) {
+async function checkDeadlineReminders(
+  sendPush: boolean,
+  sendEmail: boolean,
+  portalNotifConfig: PortalNotifConfig,
+  waConfig: NotificacaoWhatsAppConfig,
+  sendWhatsapp: boolean,
+) {
   console.log("📅 Verificando prazos para lembrete...");
 
   const now = new Date();
@@ -236,7 +415,7 @@ async function checkDeadlineReminders(sendPush: boolean, sendEmail: boolean, por
 
   const { data: deadlines, error } = await supabase
     .from("deadlines")
-    .select("id, title, due_date, status, priority, notify_days_before, process_id, requirement_id, responsible_id, client_id, clients(full_name)")
+    .select("id, title, due_date, status, priority, notify_days_before, process_id, requirement_id, responsible_id, client_id, clients(full_name), processes(process_code)")
     .eq("status", "pendente")
     .or(SOMENTE_VISIVEIS(now.toISOString()))
     .gte("due_date", now.toISOString())
@@ -249,16 +428,10 @@ async function checkDeadlineReminders(sendPush: boolean, sendEmail: boolean, por
 
   console.log(`📋 ${deadlines?.length || 0} prazos encontrados`);
 
-  // Buscar mapa profile.id → user_id para resolver o responsável
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, user_id")
-    .eq("is_active", true);
-
+  // Buscar mapa profile.id → responsável (user_id, nome e telefone)
+  const perfis = await carregarPerfisDoAviso();
   const profileToUserId = new Map<string, string>();
-  for (const p of profiles || []) {
-    if (p.id && p.user_id) profileToUserId.set(p.id, p.user_id);
-  }
+  for (const [id, perfil] of perfis) profileToUserId.set(id, perfil.userId);
 
   for (const deadline of deadlines || []) {
     const dueDate = new Date(deadline.due_date);
@@ -307,6 +480,32 @@ async function checkDeadlineReminders(sendPush: boolean, sendEmail: boolean, por
           dedupe_key: dedupeKey,
         },
       });
+    }
+
+    if (sendWhatsapp) {
+      const perfil = perfis.get(deadline.responsible_id);
+      if (perfil) {
+        await enviarAvisoWhatsApp({
+          config: waConfig,
+          trigger: "deadline_due",
+          perfil,
+          deadlineId: deadline.id,
+          // A janela do dedupe é a MESMA do push: um aviso por dia-que-falta.
+          // Assim o responsável recebe em D-3, D-1 e no dia, e não de hora em
+          // hora — o cron roda 24 vezes por dia.
+          dedupeKey: `wa_deadline_due_${deadline.id}_${daysUntilDue}`,
+          campos: {
+            primeiro_nome: primeiroNome(perfil.nome),
+            responsavel: perfil.nome,
+            titulo: deadline.title ?? "",
+            vencimento: dueDate.toLocaleDateString("pt-BR"),
+            quando: daysUntilDue === 0 ? "HOJE" : daysUntilDue === 1 ? "AMANHÃ" : `em ${daysUntilDue} dias`,
+            cliente: clientName,
+            processo: (deadline as any).processes?.process_code ?? "",
+            prioridade: PRIORIDADE_LABEL[String(deadline.priority)] ?? "",
+          },
+        });
+      }
     }
 
     if (sendEmail) {
@@ -371,7 +570,12 @@ async function checkDeadlineReminders(sendPush: boolean, sendEmail: boolean, por
   }
 }
 
-async function checkOverdueDeadlines(sendPush: boolean, sendEmail: boolean) {
+async function checkOverdueDeadlines(
+  sendPush: boolean,
+  sendEmail: boolean,
+  waConfig: NotificacaoWhatsAppConfig,
+  sendWhatsapp: boolean,
+) {
   console.log("🚨 Verificando prazos vencidos...");
 
   const now = new Date();
@@ -379,7 +583,7 @@ async function checkOverdueDeadlines(sendPush: boolean, sendEmail: boolean) {
 
   const { data: deadlines, error } = await supabase
     .from("deadlines")
-    .select("id, title, due_date, status, priority, process_id, requirement_id, responsible_id, clients(full_name)")
+    .select("id, title, due_date, status, priority, process_id, requirement_id, responsible_id, clients(full_name), processes(process_code)")
     .eq("status", "pendente")
     .or(SOMENTE_VISIVEIS(now.toISOString()))
     .lt("due_date", now.toISOString());
@@ -391,15 +595,9 @@ async function checkOverdueDeadlines(sendPush: boolean, sendEmail: boolean) {
 
   console.log(`📋 ${deadlines?.length || 0} prazos vencidos encontrados`);
 
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, user_id")
-    .eq("is_active", true);
-
+  const perfis = await carregarPerfisDoAviso();
   const profileToUserId = new Map<string, string>();
-  for (const p of profiles || []) {
-    if (p.id && p.user_id) profileToUserId.set(p.id, p.user_id);
-  }
+  for (const [id, perfil] of perfis) profileToUserId.set(id, perfil.userId);
 
   for (const deadline of deadlines || []) {
     if (!deadline.responsible_id) continue;
@@ -430,6 +628,30 @@ async function checkOverdueDeadlines(sendPush: boolean, sendEmail: boolean) {
           process_id: deadline.process_id ?? undefined,
           requirement_id: deadline.requirement_id ?? undefined,
           metadata: { days_overdue: daysOverdue, dedupe_key: dedupeKey },
+        });
+      }
+    }
+
+    if (sendWhatsapp) {
+      const perfil = perfis.get(deadline.responsible_id);
+      if (perfil) {
+        await enviarAvisoWhatsApp({
+          config: waConfig,
+          trigger: "deadline_overdue",
+          perfil,
+          deadlineId: deadline.id,
+          // Uma cobrança por DIA. O prazo segue vencido enquanto ninguém age, e
+          // um lembrete de hora em hora vira ruído que se aprende a ignorar.
+          dedupeKey: `wa_deadline_overdue_${deadline.id}_${today}`,
+          campos: {
+            primeiro_nome: primeiroNome(perfil.nome),
+            responsavel: perfil.nome,
+            titulo: deadline.title ?? "",
+            vencimento: dueDate.toLocaleDateString("pt-BR"),
+            quando: daysOverdue <= 0 ? "hoje" : daysOverdue === 1 ? "ontem" : `há ${daysOverdue} dias`,
+            cliente: clientName,
+            processo: (deadline as any).processes?.process_code ?? "",
+          },
         });
       }
     }
@@ -493,14 +715,19 @@ async function checkOverdueDeadlines(sendPush: boolean, sendEmail: boolean) {
  * saia uma vez só — inclusive para o prazo trazido à força para a fila pela tela
  * de Agendados, que fica com visible_from nulo e mesmo assim é encontrado aqui.
  */
-async function checkPendingAssignmentNotices(sendPush: boolean, sendEmail: boolean) {
+async function checkPendingAssignmentNotices(
+  sendPush: boolean,
+  sendEmail: boolean,
+  waConfig: NotificacaoWhatsAppConfig,
+  sendWhatsapp: boolean,
+) {
   console.log("⏰ Verificando avisos de atribuição pendentes...");
 
   const agora = new Date().toISOString();
 
   const { data: deadlines, error } = await supabase
     .from("deadlines")
-    .select("id, title, due_date, status, priority, type, process_id, requirement_id, responsible_id, visible_from, created_by, clients(full_name)")
+    .select("id, title, due_date, status, priority, type, process_id, requirement_id, responsible_id, visible_from, created_by, clients(full_name), processes(process_code)")
     .is("assignment_notified_at", null)
     .is("deleted_at", null)
     .not("responsible_id", "is", null)
@@ -514,15 +741,9 @@ async function checkPendingAssignmentNotices(sendPush: boolean, sendEmail: boole
   console.log(`📋 ${deadlines?.length || 0} aviso(s) de atribuição a entregar`);
   if (!deadlines?.length) return;
 
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, user_id")
-    .eq("is_active", true);
-
+  const perfis = await carregarPerfisDoAviso();
   const profileToUserId = new Map<string, string>();
-  for (const p of profiles || []) {
-    if (p.id && p.user_id) profileToUserId.set(p.id, p.user_id);
-  }
+  for (const [id, perfil] of perfis) profileToUserId.set(id, perfil.userId);
 
   const typeLabels: Record<string, string> = { geral: "Geral", processo: "Processo", requerimento: "Requerimento" };
   const priorityLabels: Record<string, string> = { urgente: "Urgente", alta: "Alta", media: "Média", baixa: "Baixa" };
@@ -594,9 +815,33 @@ async function checkPendingAssignmentNotices(sendPush: boolean, sendEmail: boole
       }
     }
 
-    // O carimbo fecha o assunto, tenha o aviso saído por push, por email ou por
-    // nenhum dos dois (canais desligados): o que ele registra é que a hora do
-    // aviso passou, e ela não volta.
+    if (sendWhatsapp) {
+      const perfil = perfis.get(deadline.responsible_id!);
+      if (perfil) {
+        await enviarAvisoWhatsApp({
+          config: waConfig,
+          trigger: "deadline_assigned",
+          perfil,
+          deadlineId: deadline.id,
+          // Uma vez só na vida do prazo: o carimbo abaixo já o tira da fila, e
+          // este dedupe é a rede para o caso de a execução morrer entre um e outro.
+          dedupeKey: `wa_deadline_assigned_${deadline.id}`,
+          campos: {
+            primeiro_nome: primeiroNome(perfil.nome),
+            responsavel: perfil.nome,
+            titulo: deadline.title ?? "",
+            vencimento: dueDate.toLocaleDateString("pt-BR"),
+            cliente: clientName,
+            processo: (deadline as any).processes?.process_code ?? "",
+            prioridade: priorityLabel,
+          },
+        });
+      }
+    }
+
+    // O carimbo fecha o assunto, tenha o aviso saído por push, por email, por
+    // WhatsApp ou por nenhum deles (canais desligados): o que ele registra é que
+    // a hora do aviso passou, e ela não volta.
     await carimbar(deadline.id);
   }
 }
@@ -1015,18 +1260,20 @@ Deno.serve(async (req: Request) => {
 
     console.log("🔔 Iniciando verificação de notificações...");
 
-    const [thresholds, rules, portalNotifConfig] = await Promise.all([
+    const [thresholds, rules, portalNotifConfig, waConfig] = await Promise.all([
       loadAutomationThresholds(),
       loadNotificationRules(),
       loadPortalNotifConfig(),
+      loadWhatsAppConfig(),
     ]);
 
     const checks: Promise<void>[] = [];
 
     if (shouldSendTrigger(rules, "deadline_due")) {
       const ch = getRuleChannels(rules, "deadline_due");
-      if (ch.includes("push") || ch.includes("email"))
-        checks.push(checkDeadlineReminders(ch.includes("push"), ch.includes("email"), portalNotifConfig));
+      if (ch.includes("push") || ch.includes("email") || ch.includes("whatsapp"))
+        checks.push(checkDeadlineReminders(
+          ch.includes("push"), ch.includes("email"), portalNotifConfig, waConfig, ch.includes("whatsapp")));
     }
     // Usa a mesma regra "Prazo atribuído" do cadastro comum: é o mesmo aviso,
     // entregue na hora certa. Ela respeita horário comercial, o que aqui ajuda:
@@ -1035,13 +1282,15 @@ Deno.serve(async (req: Request) => {
     // regra for religada, em vez de sumir em silêncio.
     if (shouldSendTrigger(rules, "deadline_assigned")) {
       const ch = getRuleChannels(rules, "deadline_assigned");
-      if (ch.includes("push") || ch.includes("email"))
-        checks.push(checkPendingAssignmentNotices(ch.includes("push"), ch.includes("email")));
+      if (ch.includes("push") || ch.includes("email") || ch.includes("whatsapp"))
+        checks.push(checkPendingAssignmentNotices(
+          ch.includes("push"), ch.includes("email"), waConfig, ch.includes("whatsapp")));
     }
     if (shouldSendTrigger(rules, "deadline_overdue")) {
       const ch = getRuleChannels(rules, "deadline_overdue");
-      if (ch.includes("push") || ch.includes("email"))
-        checks.push(checkOverdueDeadlines(ch.includes("push"), ch.includes("email")));
+      if (ch.includes("push") || ch.includes("email") || ch.includes("whatsapp"))
+        checks.push(checkOverdueDeadlines(
+          ch.includes("push"), ch.includes("email"), waConfig, ch.includes("whatsapp")));
     }
     if (shouldSendTrigger(rules, "appointment_reminder") && getRuleChannels(rules, "appointment_reminder").includes("push"))
       checks.push(checkAppointmentReminders(thresholds));

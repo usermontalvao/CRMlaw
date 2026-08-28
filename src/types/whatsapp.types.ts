@@ -66,6 +66,13 @@ export interface WhatsAppConversation {
   presence: WhatsAppPresence;            // último sinal de presença (oportunista)
   presence_updated_at: string | null;    // quando esse sinal chegou
   last_seen_at: string | null;           // "visto por último" quando o WhatsApp fornecer
+  /**
+   * Conversa de AVISO AO TIME, não atendimento — o lembrete de prazo que sai
+   * para o WhatsApp do responsável. Some da lista, do widget e dos contadores:
+   * não há ninguém do outro lado esperando resposta. Ver a migration
+   * `wa_conversa_interna`.
+   */
+  is_internal?: boolean;
   is_blocked: boolean;                    // contato bloqueado — fora da fila normal
   blocked_at: string | null;
   blocked_by: string | null;

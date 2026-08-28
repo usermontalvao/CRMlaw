@@ -8,6 +8,11 @@ import { buildSearchTextVariants } from '../utils/search';
 import {
   PERICIA_AVISO_SETTING_KEY, normalizarTemplatesDoAviso, type PericiaAvisoTemplates,
 } from '../constants/periciaAviso';
+import {
+  NOTIF_WA_SETTING_KEY,
+  normalizarConfigWhatsApp,
+  type NotificacaoWhatsAppConfig,
+} from '../utils/notificacaoWhatsapp';
 
 function auditUserSearchFilter(value: string): string {
   return buildSearchTextVariants(value)
@@ -358,6 +363,12 @@ export const NOTIFICATION_TRIGGERS: NotificationEventDef[] = [
   // ── Requerimentos ───────────────────────────────────────────────────────
   { key: 'requirement_alert',         label: 'Requerimento em exigência',           group: 'Requerimentos', audience: ['colaborador'],           web: 'active',  email: 'active',  default_channels: ['push','email'], default_recipients: 'responsible',   default_enabled: true  },
   { key: 'requirement_critical',      label: 'Requerimento crítico',                group: 'Requerimentos', audience: ['colaborador','admin'],   web: 'active',  email: 'active',  default_channels: ['push','email'], default_recipients: 'admin',         default_enabled: true  },
+  // O lembrete de perícia é o único evento que JÁ nasce por WhatsApp: ele não
+  // passa pelo scheduler — é agendado na fila do WhatsApp quando a perícia é
+  // marcada. Está aqui para que o canal de saída e o liga/desliga morem no
+  // mesmo lugar que os outros. Web e e-mail não se aplicam: o destinatário é o
+  // cliente, que não tem sino nem, necessariamente, e-mail cadastrado.
+  { key: 'pericia_reminder',          label: 'Lembrete de perícia ao cliente',      group: 'Requerimentos', audience: ['cliente'],               web: 'no',      email: 'no',      default_channels: ['whatsapp'],     default_recipients: 'responsible',   default_enabled: true  },
   // ── Chat / Comentários ──────────────────────────────────────────────────
   { key: 'mention',                   label: 'Menção em comentário / chat',         group: 'Comunicação', audience: ['colaborador'],             web: 'active',  email: 'active',  default_channels: ['push','email'], default_recipients: 'responsible',   default_enabled: true  },
   { key: 'chat_message',              label: 'Nova mensagem direta',                group: 'Comunicação', audience: ['colaborador'],             web: 'active',  email: 'planned', default_channels: ['push'],         default_recipients: 'responsible',   default_enabled: true  },
@@ -1341,6 +1352,26 @@ class SettingsService {
   /** Grava o modelo do escritório. Passa por `updateSetting`, logo é auditado. */
   async updatePericiaNoticeTemplates(valor: PericiaAvisoTemplates, userName?: string): Promise<void> {
     await this.updateSetting(PERICIA_AVISO_SETTING_KEY, normalizarTemplatesDoAviso(valor), userName);
+  }
+
+  /**
+   * A configuração do canal WhatsApp das notificações.
+   *
+   * Nunca lança: Configurações não pode ficar em branco porque a leitura de uma
+   * chave falhou, e a normalização já devolve um padrão DESLIGADO — o pior
+   * resultado possível aqui é o aviso não sair, nunca o contrário.
+   */
+  async getNotificationWhatsAppConfig(): Promise<NotificacaoWhatsAppConfig> {
+    try {
+      return normalizarConfigWhatsApp(await this.getSetting<unknown>(NOTIF_WA_SETTING_KEY));
+    } catch {
+      return normalizarConfigWhatsApp(null);
+    }
+  }
+
+  /** Grava a configuração. Passa por `updateSetting`, logo é auditado. */
+  async updateNotificationWhatsAppConfig(valor: NotificacaoWhatsAppConfig, userName?: string): Promise<void> {
+    await this.updateSetting(NOTIF_WA_SETTING_KEY, normalizarConfigWhatsApp(valor), userName);
   }
 
   /**

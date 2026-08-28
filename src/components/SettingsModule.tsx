@@ -85,6 +85,16 @@ import { LAYER, zcStack } from '../styles/layers';
 import {
   PERICIA_AVISO_PADRAO, PERICIA_AVISO_CAMPOS, type PericiaAvisoTemplates,
 } from '../constants/periciaAviso';
+import { whatsappService } from '../services/whatsapp.service';
+import type { WhatsAppChannel } from '../types/whatsapp.types';
+import {
+  NOTIF_WA_EVENTOS,
+  canalDaNotificacao,
+  eventoWhatsApp,
+  normalizarConfigWhatsApp,
+  templateDaNotificacao,
+  type NotificacaoWhatsAppConfig,
+} from '../utils/notificacaoWhatsapp';
 import {
   settingsService,
   type AuditLogEntry,
@@ -586,6 +596,21 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   const [notifAudFilter, setNotifAudFilter] = useState<NotifAudience | 'all'>('all');
   const [notifDomFilter, setNotifDomFilter] = useState<string>('all');
 
+  // ── Saída por WhatsApp ──────────────────────────────────────────────────
+  // O terceiro canal das notificações. Diferente de push e e-mail, ele precisa
+  // saber DE QUAL número sai — daí a configuração própria, ao lado das regras.
+  const [notifWaConfig, setNotifWaConfig] = useState<NotificacaoWhatsAppConfig>(
+    () => normalizarConfigWhatsApp(null),
+  );
+  const [waChannels, setWaChannels] = useState<WhatsAppChannel[]>([]);
+  const [notifWaSaving, setNotifWaSaving] = useState(false);
+  /** Qual evento está com o editor de modelo aberto. */
+  const [notifWaEditor, setNotifWaEditor] = useState<string | null>(null);
+  /** Rascunho do editor — só vira config salva no botão. */
+  const [notifWaDraft, setNotifWaDraft] = useState<{ channel_id: string | null; template: string }>(
+    { channel_id: null, template: '' },
+  );
+
   // Módulo Processos
   const [processConfig, setProcessConfig] = useState<ProcessModuleConfig>({ ...PROCESS_MODULE_DEFAULTS });
 
@@ -856,6 +881,33 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     [confirmSettingsMutation],
   );
 
+  /**
+   * Grava a configuração de WhatsApp das notificações.
+   *
+   * Otimista de propósito: a tela reflete a escolha na hora e o PIN vem depois.
+   * Se o PIN for recusado, `notifWaConfig` fica à frente do banco até o próximo
+   * carregamento — o que é o comportamento das outras chaves desta tela, e a
+   * alternativa (piscar de volta) foi considerada pior por quem usa.
+   */
+  const salvarConfigWa = useCallback(async (proxima: NotificacaoWhatsAppConfig): Promise<boolean> => {
+    setNotifWaConfig(proxima);
+    setNotifWaSaving(true);
+    try {
+      const ok = await runWithSettingsPin(
+        {
+          action: 'update_notification_whatsapp_config',
+          title: 'Salvar saída por WhatsApp',
+          description: 'Confirme com seu PIN para salvar a configuração de WhatsApp das notificações.',
+          resourceType: 'notification_whatsapp_config',
+        },
+        () => settingsService.updateNotificationWhatsAppConfig(proxima, currentProfile?.name),
+      );
+      return !!ok;
+    } finally {
+      setNotifWaSaving(false);
+    }
+  }, [runWithSettingsPin, currentProfile?.name]);
+
   const loadProfile = useCallback(async () => {
     if (!user) return;
     try {
@@ -914,7 +966,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setNotificationConfig(notifData);
       setPreferences(prefData);
       setSecurityConfig(secData);
-      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, modulesConfigData, portalLoginData, petitionEditorData, periciaTemplateData] = await Promise.all([
+      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, modulesConfigData, portalLoginData, petitionEditorData, periciaTemplateData, notifWaData, waChannelsData] = await Promise.all([
         settingsService.getPortalModulesConfig(),
         settingsService.getFinancialModuleConfig(),
         settingsService.getEmailIntegrationConfig(),
@@ -943,6 +995,10 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         settingsService.getSetting<boolean>('portal_login_enabled'),
         settingsService.getPetitionEditorModuleConfig(),
         settingsService.getPericiaNoticeTemplates(),
+        settingsService.getNotificationWhatsAppConfig(),
+        // Canal fora do ar ainda aparece na lista: o escritório precisa poder
+        // apontar o aviso para ele antes de reconectar, e a tela mostra o estado.
+        whatsappService.listChannels().catch(() => [] as WhatsAppChannel[]),
       ]);
       setPortalModules(portalData);
       setPortalLoginEnabled(portalLoginData ?? true);
@@ -971,6 +1027,8 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setPetitionEditorConfig(petitionEditorData);
       setPericiaTemplates(periciaTemplateData);
       setPericiaTemplatesSalvos(periciaTemplateData);
+      setNotifWaConfig(notifWaData);
+      setWaChannels(waChannelsData);
       setSettingsLoaded(true);
     } catch (error) {
       console.error('Erro ao carregar configurações', error);
@@ -3733,7 +3791,14 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                     cliente:     { background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' },
                   };
 
-                  const toggleRule = async (evKey: string, field: 'enabled' | 'web' | 'email') => {
+                  const toggleRule = async (evKey: string, field: 'enabled' | 'web' | 'email' | 'whatsapp') => {
+                    // Ligar o WhatsApp num evento sem número de saída definido criaria
+                    // uma regra que nunca dispara e não diz por quê. A tela recusa e
+                    // aponta para o campo que falta, em vez de guardar uma promessa.
+                    if (field === 'whatsapp' && !canalDaNotificacao(notifWaConfig, evKey)) {
+                      setFeedback('error', 'Escolha antes o canal de saída: nenhum canal do WhatsApp foi definido para este evento nem como padrão do escritório.');
+                      return;
+                    }
                     let updated: NotificationRule[];
                     if (field === 'enabled') {
                       const existing = rulesMap[evKey];
@@ -3753,7 +3818,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         updated = [...notifRules, newRule];
                       }
                     } else {
-                      const ch: NotificationChannel = field === 'web' ? 'push' : 'email';
+                      const ch: NotificationChannel = field === 'web' ? 'push' : field === 'email' ? 'email' : 'whatsapp';
                       const existing = rulesMap[evKey];
                       const ev = NOTIFICATION_TRIGGERS.find(e => e.key === evKey)!;
                       const base: NotificationRule = existing ?? {
@@ -3823,13 +3888,76 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                         </div>
                       </div>
 
+                      {/* ── Saída por WhatsApp ───────────────────────────────────
+                          Push e e-mail nascem dentro do CRM e esperam a pessoa entrar.
+                          O WhatsApp vai atrás dela — por isso tem interruptor geral e
+                          precisa dizer DE QUAL número sai. */}
+                      <div style={{
+                        border: `2px solid ${notifWaConfig.enabled ? 'rgba(34,197,94,0.35)' : '#e7e5df'}`,
+                        background: notifWaConfig.enabled ? 'rgba(34,197,94,0.05)' : '#f8fafc',
+                        borderRadius: '14px', padding: '14px 16px', transition: 'all .15s',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{
+                            width: '38px', height: '38px', borderRadius: '11px', flexShrink: 0,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: notifWaConfig.enabled ? 'rgba(34,197,94,0.15)' : '#e2e8f0',
+                            fontSize: '18px',
+                          }}>📱</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: '13.5px', fontWeight: 600, color: '#191c1e', margin: 0 }}>Saída por WhatsApp</p>
+                            <p style={{ fontSize: '11.5px', color: '#747878', margin: '2px 0 0' }}>
+                              Interruptor geral. Desligado, nenhum aviso sai por WhatsApp — nem os eventos marcados abaixo.
+                            </p>
+                          </div>
+                          <button
+                            className={`settings-toggle${notifWaConfig.enabled ? ' on' : ''}`}
+                            disabled={notifWaSaving}
+                            aria-label="ligar/desligar saída por WhatsApp"
+                            onClick={() => salvarConfigWa({ ...notifWaConfig, enabled: !notifWaConfig.enabled })}
+                          />
+                        </div>
+
+                        {notifWaConfig.enabled && (
+                          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid rgba(15,23,42,0.08)' }}>
+                            <label style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                              Canal padrão do escritório
+                            </label>
+                            <select
+                              className="settings-input"
+                              style={{ maxWidth: '380px' }}
+                              disabled={notifWaSaving}
+                              value={notifWaConfig.default_channel_id ?? ''}
+                              onChange={(e) => salvarConfigWa({ ...notifWaConfig, default_channel_id: e.target.value || null })}
+                            >
+                              <option value="">— nenhum —</option>
+                              {waChannels.map((canal) => (
+                                <option key={canal.id} value={canal.id}>
+                                  {canal.name || canal.instance_name}
+                                  {canal.phone_number ? ` · ${canal.phone_number}` : ''}
+                                  {canal.status === 'connected' ? '' : ' (desconectado)'}
+                                </option>
+                              ))}
+                            </select>
+                            <p style={{ fontSize: '11.5px', color: '#747878', margin: '6px 0 0' }}>
+                              Vale para todo evento que não escolher outro. Cada evento pode abrir exceção no ⚙️ da linha.
+                            </p>
+                            {!notifWaConfig.default_channel_id && (
+                              <p style={{ fontSize: '11.5px', color: '#b45309', margin: '6px 0 0', fontWeight: 500 }}>
+                                Sem canal padrão, só os eventos com exceção própria conseguem enviar.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       {/* Legenda de canais */}
                       <div style={{ display: 'flex', gap: '16px', fontSize: '11px', color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 14px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 700 }}>Canais:</span>
                         <span>🔔 Web/Sistema</span>
                         <span>✉️ E-mail</span>
                         <span style={{ color: '#94a3b8' }}>💬 SMS <em>(planejado)</em></span>
-                        <span style={{ color: '#94a3b8' }}>📱 WhatsApp <em>(planejado)</em></span>
+                        <span>📱 WhatsApp</span>
                         <span style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} /> ativo
@@ -3849,11 +3977,12 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', marginBottom: '6px' }}>{domain}</p>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                               {/* Cabeçalho */}
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px', gap: '8px', padding: '4px 12px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 70px 70px 90px 70px', gap: '8px', padding: '4px 12px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                                 <span>Evento</span>
                                 <span style={{ textAlign: 'center' }}>Público</span>
                                 <span style={{ textAlign: 'center' }}>Web</span>
                                 <span style={{ textAlign: 'center' }}>E-mail</span>
+                                <span style={{ textAlign: 'center' }}>WhatsApp</span>
                                 <span style={{ textAlign: 'center' }}>Ativo</span>
                               </div>
                               {events.map(ev => {
@@ -3861,10 +3990,15 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 const isEnabled = rule ? rule.enabled : ev.default_enabled;
                                 const webOn = rule ? rule.channels.includes('push') : ev.default_channels.includes('push');
                                 const emailOn = rule ? rule.channels.includes('email') : ev.default_channels.includes('email');
+                                // O gatilho aceita WhatsApp? Quem responde é o catálogo do
+                                // módulo puro — o mesmo que o scheduler lê na hora de enviar.
+                                const waEv = eventoWhatsApp(ev.key);
+                                const waOn = rule ? rule.channels.includes('whatsapp') : ev.default_channels.includes('whatsapp');
+                                const waCanal = waEv ? canalDaNotificacao(notifWaConfig, ev.key) : null;
 
                                 return (
                                   <div key={ev.key} style={{
-                                    display: 'grid', gridTemplateColumns: '1fr 100px 80px 80px 80px',
+                                    display: 'grid', gridTemplateColumns: '1fr 100px 70px 70px 90px 70px',
                                     gap: '8px', padding: '10px 12px',
                                     background: isEnabled ? '#fff' : '#f8fafc',
                                     border: `1px solid ${isEnabled ? 'rgba(255,138,0,0.18)' : 'rgba(15,23,42,0.07)'}`,
@@ -3911,6 +4045,45 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                           title={emailOn ? 'E-mail ativo' : 'E-mail inativo'}
                                           onClick={() => toggleRule(ev.key, 'email')}
                                         />
+                                      )}
+                                    </div>
+
+                                    {/* WhatsApp — bolinha + ⚙️ do modelo/canal do evento */}
+                                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}>
+                                      {!waEv ? (
+                                        <span style={{ fontSize: '10px', color: '#94a3b8', fontStyle: 'italic' }} title="Este evento ainda não sai por WhatsApp">plan.</span>
+                                      ) : (
+                                        <>
+                                          <span
+                                            style={{
+                                              display: 'inline-block', width: '12px', height: '12px', borderRadius: '50%',
+                                              background: waOn && notifWaConfig.enabled ? '#22c55e' : '#e2e8f0',
+                                              border: waOn && notifWaConfig.enabled ? '1px solid #16a34a' : '1px solid #cbd5e1',
+                                              cursor: 'pointer', transition: 'background .15s',
+                                              opacity: notifWaConfig.enabled ? 1 : 0.5,
+                                            }}
+                                            title={
+                                              !notifWaConfig.enabled
+                                                ? 'Saída por WhatsApp desligada acima'
+                                                : !waCanal
+                                                  ? 'Sem canal de saída definido'
+                                                  : waOn ? 'WhatsApp ativo' : 'WhatsApp inativo'
+                                            }
+                                            onClick={() => toggleRule(ev.key, 'whatsapp')}
+                                          />
+                                          <button
+                                            title="Canal e modelo da mensagem"
+                                            aria-label={`configurar WhatsApp de ${ev.label}`}
+                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', lineHeight: 1, padding: 0, opacity: 0.65 }}
+                                            onClick={() => {
+                                              setNotifWaEditor(ev.key);
+                                              setNotifWaDraft({
+                                                channel_id: notifWaConfig.eventos[ev.key]?.channel_id ?? null,
+                                                template: templateDaNotificacao(notifWaConfig, ev.key),
+                                              });
+                                            }}
+                                          >⚙️</button>
+                                        </>
                                       )}
                                     </div>
 
@@ -6432,6 +6605,137 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   // Modais auxiliares — usam portal próprio (zIndex 100); válidos nos dois modos
   const settingsModals = (
     <>
+      {/* ── Modal: canal e modelo do aviso por WhatsApp ───────────────────
+          Um evento por vez. O canal aqui é EXCEÇÃO ao padrão do escritório, e o
+          modelo é o texto que chega no telefone de quem foi avisado. */}
+      {(() => {
+        const evWa = notifWaEditor ? eventoWhatsApp(notifWaEditor) : null;
+        if (!evWa) return null;
+        const fechar = () => setNotifWaEditor(null);
+        const padraoDeFabrica = evWa.padrao ?? '';
+        const canalEfetivo = notifWaDraft.channel_id ?? notifWaConfig.default_channel_id ?? null;
+        const nomeDoCanal = waChannels.find((c) => c.id === canalEfetivo);
+        return (
+          <Modal
+            open
+            onClose={fechar}
+            title={evWa.label}
+            eyebrow="WhatsApp"
+            size="md"
+            zIndex={LAYER.MODAL_NESTED}
+            footer={
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '12px 24px', alignItems: 'center' }}>
+                {padraoDeFabrica ? (
+                  <button
+                    className="settings-btn-ghost"
+                    disabled={notifWaDraft.template === padraoDeFabrica}
+                    onClick={() => setNotifWaDraft((d) => ({ ...d, template: padraoDeFabrica }))}
+                  >Restaurar padrão</button>
+                ) : <span />}
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button className="settings-btn-ghost" onClick={fechar}>Cancelar</button>
+                  <button className="settings-btn-primary" disabled={notifWaSaving} onClick={async () => {
+                    const proxima: NotificacaoWhatsAppConfig = {
+                      ...notifWaConfig,
+                      eventos: {
+                        ...notifWaConfig.eventos,
+                        [evWa.key]: {
+                          channel_id: notifWaDraft.channel_id,
+                          // Igual ao de fábrica é guardado como "sem modelo próprio":
+                          // assim uma melhoria futura no texto padrão chega sozinha,
+                          // em vez de ficar congelada numa cópia idêntica.
+                          template: !evWa.padrao || notifWaDraft.template.trim() === padraoDeFabrica.trim()
+                            ? null
+                            : notifWaDraft.template,
+                        },
+                      },
+                    };
+                    const ok = await salvarConfigWa(proxima);
+                    if (!ok) return;
+                    fechar();
+                    setFeedback('success', 'Aviso por WhatsApp salvo!');
+                  }}>
+                    <Save size={13} /> Salvar
+                  </button>
+                </div>
+              </div>
+            }
+          >
+            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                  Canal de saída
+                </label>
+                <select
+                  className="settings-input"
+                  value={notifWaDraft.channel_id ?? ''}
+                  onChange={(e) => setNotifWaDraft((d) => ({ ...d, channel_id: e.target.value || null }))}
+                >
+                  <option value="">
+                    Usar o padrão do escritório
+                    {notifWaConfig.default_channel_id
+                      ? ` (${waChannels.find((c) => c.id === notifWaConfig.default_channel_id)?.name
+                          || waChannels.find((c) => c.id === notifWaConfig.default_channel_id)?.instance_name
+                          || 'canal removido'})`
+                      : ' — nenhum definido'}
+                  </option>
+                  {waChannels.map((canal) => (
+                    <option key={canal.id} value={canal.id}>
+                      {canal.name || canal.instance_name}
+                      {canal.phone_number ? ` · ${canal.phone_number}` : ''}
+                      {canal.status === 'connected' ? '' : ' (desconectado)'}
+                    </option>
+                  ))}
+                </select>
+                {!canalEfetivo && (
+                  <p style={{ fontSize: '11.5px', color: '#b45309', margin: '6px 0 0', fontWeight: 500 }}>
+                    Sem canal, este aviso não sai. Escolha um aqui ou defina o padrão do escritório.
+                  </p>
+                )}
+                {canalEfetivo && nomeDoCanal && nomeDoCanal.status !== 'connected' && (
+                  <p style={{ fontSize: '11.5px', color: '#b45309', margin: '6px 0 0' }}>
+                    Este canal está desconectado agora. O aviso fica retido na fila até ele voltar.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                  Mensagem
+                </label>
+                {evWa.padrao === null ? (
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px 14px' }}>
+                    <p style={{ fontSize: '12.5px', color: '#475569', margin: 0 }}>
+                      Este aviso tem <strong>dois textos</strong> — um para a perícia social e outro para a médica,
+                      porque o que se leva numa não serve para a outra. Eles são editados em{' '}
+                      <strong>{evWa.textoEm}</strong>. Aqui você define apenas de qual canal eles saem.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <textarea
+                      className="settings-input"
+                      style={{ minHeight: '220px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '12.5px', lineHeight: 1.55 }}
+                      value={notifWaDraft.template}
+                      onChange={(e) => setNotifWaDraft((d) => ({ ...d, template: e.target.value }))}
+                    />
+                    <p style={{ fontSize: '11.5px', color: '#747878', margin: '8px 0 0' }}>
+                      Campos: <code>{evWa.campos.join(' ')}</code>. A linha some inteira quando o campo
+                      não tem valor — prazo sem processo não vira “Processo: —” no telefone de ninguém.
+                    </p>
+                    <p style={{ fontSize: '11.5px', color: '#747878', margin: '4px 0 0' }}>
+                      {evWa.destino === 'equipe'
+                        ? 'Vai para o telefone cadastrado no perfil do responsável. Sem telefone no perfil, o aviso não sai por aqui — o sino e o e-mail continuam valendo.'
+                        : 'Vai para o telefone do cliente, na conversa de atendimento.'}
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
+
       {/* Modal de regra de notificação */}
       <Modal
         open={ruleModal.open}
