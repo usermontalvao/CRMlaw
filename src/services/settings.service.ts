@@ -5,6 +5,9 @@
 
 import { supabase } from '../config/supabase';
 import { buildSearchTextVariants } from '../utils/search';
+import {
+  PERICIA_AVISO_SETTING_KEY, normalizarTemplatesDoAviso, type PericiaAvisoTemplates,
+} from '../constants/periciaAviso';
 
 function auditUserSearchFilter(value: string): string {
   return buildSearchTextVariants(value)
@@ -1317,6 +1320,27 @@ class SettingsService {
     }
 
     return data?.value as T ?? null;
+  }
+
+  /**
+   * O modelo do aviso de perícia que vale para TODOS os clientes.
+   *
+   * Nunca lança e nunca devolve texto vazio: config ausente ou corrompida cai
+   * no padrão de fábrica. Um modelo em branco produziria mensagem em branco, e
+   * a fila do WhatsApp aceitaria sem reclamar.
+   */
+  async getPericiaNoticeTemplates(): Promise<PericiaAvisoTemplates> {
+    try {
+      const bruto = await this.getSetting<unknown>(PERICIA_AVISO_SETTING_KEY);
+      return normalizarTemplatesDoAviso(bruto);
+    } catch {
+      return normalizarTemplatesDoAviso(null);
+    }
+  }
+
+  /** Grava o modelo do escritório. Passa por `updateSetting`, logo é auditado. */
+  async updatePericiaNoticeTemplates(valor: PericiaAvisoTemplates, userName?: string): Promise<void> {
+    await this.updateSetting(PERICIA_AVISO_SETTING_KEY, normalizarTemplatesDoAviso(valor), userName);
   }
 
   /**

@@ -222,6 +222,9 @@ export const automationApi = {
     storagePath?: string; mimeType?: string; fileName?: string;
     /** 'reconnect' → retida aguardando reconexão automática (não é agendamento do usuário). */
     holdReason?: 'reconnect';
+    /** Preenchidos só pelo aviso de perícia — ver `listPericiaReminders`. */
+    requirementId?: string | null;
+    periciaKind?: 'social' | 'medica' | null;
   }): Promise<WhatsAppScheduledMessage> {
     if (new Date(input.scheduledAt).getTime() < Date.now() - 30000) throw new Error('Escolha uma data/hora no futuro.');
     const type = input.type || 'text';
@@ -240,10 +243,55 @@ export const automationApi = {
       // Retenção começa a contar aqui: é esse relógio que o scheduler usa para
       // espaçar as tentativas e desistir quando o canal não volta.
       hold_since: input.holdReason ? new Date().toISOString() : null,
+      requirement_id: input.requirementId ?? null,
+      pericia_kind: input.periciaKind ?? null,
       created_by: auth?.user?.id ?? null,
     }).select('*').single();
     if (error) throw new Error(error.message);
     return data as WhatsAppScheduledMessage;
+  },
+
+  /**
+   * Os avisos de perícia VIVOS de um requerimento.
+   *
+   * Vivo = ainda vai acontecer: pendente na fila, ou falhou e espera alguém.
+   * Enviado e cancelado é história — não sinaliza nada na ficha nem impede um
+   * novo agendamento.
+   *
+   * Nunca lança: a ficha do requerimento não pode quebrar porque o WhatsApp
+   * está fora, e quem não enxerga a conversa (RLS) simplesmente não vê o aviso.
+   */
+  async listPericiaReminders(requirementId: string): Promise<WhatsAppScheduledMessage[]> {
+    const { data, error } = await supabase
+      .from(SCHEDULED_TABLE)
+      .select('*')
+      .eq('requirement_id', requirementId)
+      .in('status', ['pending', 'failed'])
+      .order('scheduled_at', { ascending: true });
+    if (error) return [];
+    return (data || []) as WhatsAppScheduledMessage[];
+  },
+
+  /**
+   * Desarma os avisos de uma perícia que vai ser reagendada ou desligada.
+   *
+   * Devolve QUANTOS sobraram sem cancelar. Não é detalhe: a policy
+   * `wa_sched_update_pericia` deixa qualquer pessoa do escritório cancelar
+   * aviso de requerimento, mas se um dia ela mudar, o número que volta daqui é
+   * o que faz a tela avisar em vez de prometer um cancelamento que não houve.
+   */
+  async cancelPericiaReminders(requirementId: string): Promise<{ canceladas: number; restantes: number }> {
+    const vivos = await this.listPericiaReminders(requirementId);
+    if (vivos.length === 0) return { canceladas: 0, restantes: 0 };
+    const { data, error } = await supabase
+      .from(SCHEDULED_TABLE)
+      .update({ status: 'canceled' })
+      .eq('requirement_id', requirementId)
+      .in('status', ['pending', 'failed'])
+      .select('id');
+    if (error) throw new Error(error.message);
+    const canceladas = (data || []).length;
+    return { canceladas, restantes: Math.max(0, vivos.length - canceladas) };
   },
 
   /** Edita uma mensagem ainda pendente (texto e/ou horário). */

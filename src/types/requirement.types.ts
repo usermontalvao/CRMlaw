@@ -30,8 +30,13 @@ export interface Requirement {
   entry_date: string | null;
   analysis_started_at?: string | null;
   exigency_due_date?: string | null;
-  pericia_medica_at?: string | null;
+  /** A social vem primeiro — é a ordem do site do INSS. */
   pericia_social_at?: string | null;
+  pericia_social_local?: string | null;
+  pericia_social_instrucoes?: string | null;
+  pericia_medica_at?: string | null;
+  pericia_medica_local?: string | null;
+  pericia_medica_instrucoes?: string | null;
   phone?: string | null;
   inss_password?: string | null;
   inss_password_enc?: string | null;
@@ -52,8 +57,13 @@ export interface CreateRequirementDTO {
   entry_date?: string | null;
   analysis_started_at?: string | null;
   exigency_due_date?: string | null;
-  pericia_medica_at?: string | null;
+  /** A social vem primeiro — é a ordem do site do INSS. */
   pericia_social_at?: string | null;
+  pericia_social_local?: string | null;
+  pericia_social_instrucoes?: string | null;
+  pericia_medica_at?: string | null;
+  pericia_medica_local?: string | null;
+  pericia_medica_instrucoes?: string | null;
   phone?: string | null;
   inss_password?: string | null;
   inss_password_enc?: string | null;

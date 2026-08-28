@@ -60,8 +60,10 @@ interface RequirementFull {
   status: string;
   entry_date?: string | null;
   exigency_due_date?: string | null;
-  pericia_medica_at?: string | null;
   pericia_social_at?: string | null;
+  pericia_social_local?: string | null;
+  pericia_medica_at?: string | null;
+  pericia_medica_local?: string | null;
   observations?: string | null;
   archived?: boolean;
   updated_at: string;
@@ -343,11 +345,18 @@ export const PortalRequirementDetails: React.FC<{ requirementId: string }> = ({ 
             {data.exigency_due_date && (
               <InfoRow label="Prazo da exig&ecirc;ncia" value={fmt(data.exigency_due_date)} icon={Clock} highlight={isFuture(data.exigency_due_date)} />
             )}
+            {/* Social antes de m&eacute;dica: a ordem do Meu INSS. */}
+            {data.pericia_social_at && (
+              <InfoRow label="Per&iacute;cia social" value={fmt(data.pericia_social_at)} icon={Calendar} highlight={isFuture(data.pericia_social_at)} past={!isFuture(data.pericia_social_at)} />
+            )}
+            {data.pericia_social_at && data.pericia_social_local && (
+              <InfoRow label="Local da per&iacute;cia social" value={data.pericia_social_local} icon={MapPin} />
+            )}
             {data.pericia_medica_at && (
               <InfoRow label="Per&iacute;cia m&eacute;dica" value={fmt(data.pericia_medica_at)} icon={Calendar} highlight={isFuture(data.pericia_medica_at)} past={!isFuture(data.pericia_medica_at)} />
             )}
-            {data.pericia_social_at && (
-              <InfoRow label="Per&iacute;cia social" value={fmt(data.pericia_social_at)} icon={Calendar} highlight={isFuture(data.pericia_social_at)} past={!isFuture(data.pericia_social_at)} />
+            {data.pericia_medica_at && data.pericia_medica_local && (
+              <InfoRow label="Local da per&iacute;cia m&eacute;dica" value={data.pericia_medica_local} icon={MapPin} />
             )}
             {!data.exigency_due_date && !data.pericia_medica_at && !data.pericia_social_at && (
               <InfoRow label="&Uacute;ltima atualiza&ccedil;&atilde;o" value={fmt(data.updated_at)} icon={Clock} />

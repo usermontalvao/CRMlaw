@@ -10,8 +10,8 @@ export type AutomationSourceTable = 'requirements';
 
 export type AutomationSourceDateField =
   | 'exigency_due_date'
-  | 'pericia_medica_at'
   | 'pericia_social_at'
+  | 'pericia_medica_at'
   | 'entry_date';
 
 export type AutomationFilterOp =
@@ -84,8 +84,9 @@ export interface DeadlineAutomationRun {
 /** Rótulos das datas-fonte, para os selects e para o log. */
 export const SOURCE_DATE_LABELS: Record<AutomationSourceDateField, string> = {
   exigency_due_date: 'Vencimento da exigência',
-  pericia_medica_at: 'Perícia médica',
+  // Social antes de médica: a ordem do Meu INSS, e a ordem do select.
   pericia_social_at: 'Perícia social',
+  pericia_medica_at: 'Perícia médica',
   entry_date: 'Data de entrada do requerimento',
 };
 

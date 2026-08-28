@@ -471,6 +471,16 @@ export interface WhatsAppScheduledMessage {
    * o contato recebeu é uma mensagem como qualquer outra.
    */
   sent_message_id?: string | null;
+  /**
+   * Requerimento cujo agendamento de perícia gerou este aviso.
+   *
+   * NULL nas agendadas comuns do atendente. É o que permite cancelar o aviso
+   * velho quando o INSS remarca a perícia, e é o que a ficha lê para dizer
+   * "o cliente já vai ser avisado".
+   */
+  requirement_id?: string | null;
+  /** Qual perícia este aviso lembra. NULL nas agendadas comuns. */
+  pericia_kind?: 'social' | 'medica' | null;
 }
 
 /**

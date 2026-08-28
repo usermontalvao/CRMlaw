@@ -87,7 +87,7 @@ class RequirementService {
     } else {
       // Exclui inss_password (plain-text legado) da query de lista para não vazar em massa.
       // inss_password_enc permanece para que a UI detecte se há senha configurada.
-      const SAFE_COLS = 'id, protocol, beneficiary, cpf, benefit_type, status, entry_date, analysis_started_at, exigency_due_date, pericia_medica_at, pericia_social_at, phone, inss_password_enc, observations, notes, client_id, archived, created_at, updated_at';
+      const SAFE_COLS = 'id, protocol, beneficiary, cpf, benefit_type, status, entry_date, analysis_started_at, exigency_due_date, pericia_social_at, pericia_social_local, pericia_social_instrucoes, pericia_medica_at, pericia_medica_local, pericia_medica_instrucoes, phone, inss_password_enc, observations, notes, client_id, archived, created_at, updated_at';
       let query = supabase
         .from(this.tableName)
         .select(SAFE_COLS)
@@ -152,7 +152,7 @@ class RequirementService {
   async getRequirementById(id: string): Promise<Requirement | null> {
     // Inclui inss_password (plain-text legado) apenas no fetch individual (detalhe),
     // nunca na query de lista, para não vazar em massa.
-    const SAFE_COLS = 'id, protocol, beneficiary, cpf, benefit_type, status, entry_date, analysis_started_at, exigency_due_date, pericia_medica_at, pericia_social_at, phone, inss_password, inss_password_enc, observations, notes, client_id, archived, created_at, updated_at';
+    const SAFE_COLS = 'id, protocol, beneficiary, cpf, benefit_type, status, entry_date, analysis_started_at, exigency_due_date, pericia_social_at, pericia_social_local, pericia_social_instrucoes, pericia_medica_at, pericia_medica_local, pericia_medica_instrucoes, phone, inss_password, inss_password_enc, observations, notes, client_id, archived, created_at, updated_at';
     const { data, error } = await supabase
       .from(this.tableName)
       .select(SAFE_COLS)
@@ -183,8 +183,12 @@ class RequirementService {
         status: nextPayload.status ?? 'aguardando_confeccao',
         protocol: nextPayload.protocol || null,
         exigency_due_date: nextPayload.exigency_due_date ?? null,
-        pericia_medica_at: nextPayload.pericia_medica_at ?? null,
         pericia_social_at: nextPayload.pericia_social_at ?? null,
+        pericia_social_local: nextPayload.pericia_social_local ?? null,
+        pericia_social_instrucoes: nextPayload.pericia_social_instrucoes ?? null,
+        pericia_medica_at: nextPayload.pericia_medica_at ?? null,
+        pericia_medica_local: nextPayload.pericia_medica_local ?? null,
+        pericia_medica_instrucoes: nextPayload.pericia_medica_instrucoes ?? null,
       })
       .select()
       .single();

@@ -83,6 +83,9 @@ import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { LAYER, zcStack } from '../styles/layers';
 import {
+  PERICIA_AVISO_PADRAO, PERICIA_AVISO_CAMPOS, type PericiaAvisoTemplates,
+} from '../constants/periciaAviso';
+import {
   settingsService,
   type AuditLogEntry,
   type DatajudKeyConfig,
@@ -690,6 +693,13 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
     statuses:      REQUIREMENT_MODULE_DEFAULTS.statuses.map(s => ({ ...s })),
     benefit_types: REQUIREMENT_MODULE_DEFAULTS.benefit_types.map(b => ({ ...b })),
   });
+  /**
+   * Modelo do aviso de perícia. A MESMA chave que o modal de agendamento lê e
+   * grava — duas telas, um texto. `salvos` é o que está no banco; é a diferença
+   * entre os dois que acende o botão Salvar.
+   */
+  const [periciaTemplates, setPericiaTemplates] = useState<PericiaAvisoTemplates>(PERICIA_AVISO_PADRAO);
+  const [periciaTemplatesSalvos, setPericiaTemplatesSalvos] = useState<PericiaAvisoTemplates>(PERICIA_AVISO_PADRAO);
   // Módulo Agenda
   const [calendarConfig, setCalendarConfig] = useState<CalendarModuleConfig>({
     ...CALENDAR_MODULE_DEFAULTS,
@@ -904,7 +914,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setNotificationConfig(notifData);
       setPreferences(prefData);
       setSecurityConfig(secData);
-      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, modulesConfigData, portalLoginData, petitionEditorData] = await Promise.all([
+      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, modulesConfigData, portalLoginData, petitionEditorData, periciaTemplateData] = await Promise.all([
         settingsService.getPortalModulesConfig(),
         settingsService.getFinancialModuleConfig(),
         settingsService.getEmailIntegrationConfig(),
@@ -932,6 +942,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         settingsService.getModulesConfig(),
         settingsService.getSetting<boolean>('portal_login_enabled'),
         settingsService.getPetitionEditorModuleConfig(),
+        settingsService.getPericiaNoticeTemplates(),
       ]);
       setPortalModules(portalData);
       setPortalLoginEnabled(portalLoginData ?? true);
@@ -958,6 +969,8 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setFormLayouts(formLayoutData);
       setModulesConfig(modulesConfigData);
       setPetitionEditorConfig(petitionEditorData);
+      setPericiaTemplates(periciaTemplateData);
+      setPericiaTemplatesSalvos(periciaTemplateData);
       setSettingsLoaded(true);
     } catch (error) {
       console.error('Erro ao carregar configurações', error);
@@ -5017,6 +5030,77 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                               setFeedback('success', 'Salvo!');
                           }}
                         />
+                      </div>
+
+                      {/* ── Modelo do aviso de perícia ──────────────────────
+                          O MESMO texto que o modal de agendamento edita: uma
+                          chave em `system_settings`, duas portas de entrada.
+                          Quem procura configuração acha aqui; quem está no meio
+                          do agendamento não precisa sair da tela. */}
+                      <div className="settings-card">
+                        <p className="settings-card-title">Aviso de perícia no WhatsApp</p>
+                        <p style={{ fontSize: '12px', color: '#747878', marginBottom: '12px', lineHeight: 1.5 }}>
+                          O lembrete que o cliente recebe alguns dias antes da perícia. Vale para todos os clientes.
+                          São dois textos porque são duas avaliações: a <strong>social</strong> pede os comprovantes de
+                          despesa da casa, a <strong>médica</strong> pede laudos e exames. Para o que só um caso pede,
+                          use o campo "Instruções ao cliente" no agendamento daquela perícia.
+                        </p>
+
+                        <label className="settings-label">Perícia social</label>
+                        <textarea
+                          rows={10}
+                          value={periciaTemplates.social}
+                          onChange={(e) => setPericiaTemplates(prev => ({ ...prev, social: e.target.value }))}
+                          className="settings-input"
+                          style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '11.5px', lineHeight: 1.6, resize: 'vertical' }}
+                        />
+
+                        <label className="settings-label" style={{ marginTop: '12px' }}>Perícia médica</label>
+                        <textarea
+                          rows={10}
+                          value={periciaTemplates.medica}
+                          onChange={(e) => setPericiaTemplates(prev => ({ ...prev, medica: e.target.value }))}
+                          className="settings-input"
+                          style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '11.5px', lineHeight: 1.6, resize: 'vertical' }}
+                        />
+
+                        <p style={{ fontSize: '11.5px', color: '#747878', marginTop: '8px', lineHeight: 1.5 }}>
+                          Campos: <code>{PERICIA_AVISO_CAMPOS.join(' ')}</code>. A linha some inteira quando o campo
+                          está vazio — requerimento sem protocolo não vira "Protocolo: —" no WhatsApp do cliente.
+                        </p>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }}>
+                          <button
+                            className="settings-btn-primary"
+                            disabled={saving || (periciaTemplates.social === periciaTemplatesSalvos.social && periciaTemplates.medica === periciaTemplatesSalvos.medica)}
+                            onClick={async () => {
+                              setSaving(true);
+                              try {
+                                const persisted = await runWithSettingsPin(
+                                  {
+                                    action: 'update_pericia_notice_templates',
+                                    title: 'Alterar o aviso de perícia',
+                                    description: 'Confirme com seu PIN para salvar o texto que será enviado aos clientes.',
+                                    resourceType: 'requirement_module',
+                                    resourceId: 'pericia_notice_templates',
+                                  },
+                                  () => settingsService.updatePericiaNoticeTemplates(periciaTemplates, currentProfile?.name),
+                                );
+                                if (!persisted) return;
+                                setPericiaTemplatesSalvos(periciaTemplates);
+                                setFeedback('success', 'Aviso de perícia salvo!');
+                              } catch (err: any) {
+                                setFeedback('error', err.message || 'Erro ao salvar.');
+                              } finally { setSaving(false); }
+                            }}>
+                            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Salvar aviso
+                          </button>
+                          <button
+                            className="settings-btn-ghost"
+                            onClick={() => setPericiaTemplates({ ...PERICIA_AVISO_PADRAO })}>
+                            Restaurar padrão
+                          </button>
+                        </div>
                       </div>
 
                       {/* ── Backfill Senha INSS ── */}

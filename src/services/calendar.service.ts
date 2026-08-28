@@ -155,6 +155,25 @@ class CalendarService {
     syncBus.emit('calendar');
   }
 
+  /**
+   * Os compromissos que um requerimento gerou.
+   *
+   * Existe para o caminho de volta: reabrir o agendamento de perícia e
+   * encontrar o responsável que já tinha sido escolhido, em vez de obrigar a
+   * pessoa a escolher de novo a cada correção de horário.
+   */
+  async listEventsByRequirementId(requirementId: string, eventType?: string): Promise<CalendarEvent[]> {
+    let query = supabase
+      .from(this.tableName)
+      .select('*')
+      .eq('requirement_id', requirementId)
+      .order('start_at', { ascending: true });
+    if (eventType) query = query.eq('event_type', eventType);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  }
+
   async deleteEventsByRequirementId(requirementId: string, eventType?: string): Promise<void> {
     let query = supabase.from(this.tableName).delete().eq('requirement_id', requirementId);
     if (eventType) query = query.eq('event_type', eventType);

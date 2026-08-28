@@ -3070,18 +3070,19 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                               )}
 
                               {/* Row 4 — datas periciais + alertas */}
-                              {(r.pericia_medica_at || r.pericia_social_at || nextPericia || hasAlert) && (
+                              {(r.pericia_social_at || r.pericia_medica_at || nextPericia || hasAlert) && (
                                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-                                  {r.pericia_medica_at && (
-                                    <span className="text-[11px] font-medium text-sky-600 flex items-center gap-1">
-                                      <CalendarIcon className="w-3 h-3 flex-shrink-0" />
-                                      Perícia médica · {formatDate(r.pericia_medica_at)}
-                                    </span>
-                                  )}
+                                  {/* Social antes de médica: a ordem do Meu INSS. */}
                                   {r.pericia_social_at && (
                                     <span className="text-[11px] font-medium text-sky-600 flex items-center gap-1">
                                       <CalendarIcon className="w-3 h-3 flex-shrink-0" />
                                       Perícia social · {formatDate(r.pericia_social_at)}
+                                    </span>
+                                  )}
+                                  {r.pericia_medica_at && (
+                                    <span className="text-[11px] font-medium text-sky-600 flex items-center gap-1">
+                                      <CalendarIcon className="w-3 h-3 flex-shrink-0" />
+                                      Perícia médica · {formatDate(r.pericia_medica_at)}
                                     </span>
                                   )}
                                   {nextPericia && (

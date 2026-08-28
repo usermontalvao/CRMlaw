@@ -21,6 +21,7 @@ import {
   Upload,
   ClipboardList,
   Bell,
+  BellOff,
   Stethoscope,
   History,
   NotebookPen,
@@ -62,12 +63,19 @@ import { requirementDocumentService } from '../services/requirementDocument.serv
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { openDocInEditorWindow } from '../utils/openEditorWindow';
 import { openWhatsAppChat } from '../utils/whatsappChat';
+import { whatsappService, normalizePhone } from '../services/whatsapp.service';
+import type { WhatsAppChannel, WhatsAppScheduledMessage } from '../types/whatsapp.types';
+import {
+  PERICIA_LABEL, PERICIA_AVISO_PADRAO, PERICIA_AVISO_CAMPOS, montarAvisoPericia,
+  instanteDoAviso, dataPorExtenso, type PericiaKind, type PericiaAvisoTemplates,
+} from '../constants/periciaAviso';
 import { subscribeEditorDocSourceSaved } from '../utils/editorDocSourceEvents';
 import { settingsService, type ModuleResponsibilityConfig } from '../services/settings.service';
 import { useAuth } from '../contexts/AuthContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { useNavigation } from '../contexts/NavigationContext';
 import { profileService } from '../services/profile.service';
 import { deadlineService } from '../services/deadline.service';
@@ -220,14 +228,29 @@ type PericiaModalState = {
 };
 
 type PericiaScheduleFormState = {
-  includeMedica: boolean;
-  medicaDate: string;
-  medicaTime: string;
+  // A SOCIAL VEM PRIMEIRO, aqui e em toda a tela: é a ordem em que o INSS
+  // agenda e mostra as duas no Meu INSS. Inverter a leitura para casar com o
+  // papel que o cliente tem na mão evita o erro de digitar uma data na outra.
   includeSocial: boolean;
   socialDate: string;
   socialTime: string;
+  socialLocal: string;
+  socialInstrucoes: string;
+  includeMedica: boolean;
+  medicaDate: string;
+  medicaTime: string;
+  medicaLocal: string;
+  medicaInstrucoes: string;
+  /** Aviso ao cliente: opcional, nasce fechado. Ver `PERICIA_AVISO_PADRAO`. */
+  notifyClient: boolean;
+  notifyChannelId: string;
   notifyDaysBefore: string;
+  notifyTime: string;
+  /** Um modelo POR perícia: o que levar numa não serve para a outra. */
+  notifyTemplateSocial: string;
+  notifyTemplateMedica: string;
 };
+
 
 const emptyForm: RequirementFormData = {
   protocol: '',
@@ -574,6 +597,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const toast = useToastContext();
   const { confirmDelete } = useDeleteConfirm();
   const { requirePin } = useSecurityPin();
+  const { isAdmin } = usePermissions();
   const { navigateTo } = useNavigation();
   const [statusOptions, setStatusOptions] = useState(STATUS_OPTIONS);
   const [benefitTypes, setBenefitTypes] = useState(BENEFIT_TYPES);
@@ -591,8 +615,16 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       : benefitTypes[0]?.key ?? emptyForm.benefit_type,
   }), [statusOptions, benefitTypes, defaultRequirementStatus, defaultRequirementBenefit]);
   const [responsibilityConfig, setResponsibilityConfig] = useState<ModuleResponsibilityConfig | null>(null);
+  /**
+   * O modelo do aviso QUE O ESCRITÓRIO SALVOU. É daqui que o formulário parte —
+   * o padrão de fábrica só aparece quando ninguém configurou nada, ou quando
+   * alguém clica em "Restaurar padrão".
+   */
+  const [periciaTemplatesSalvos, setPericiaTemplatesSalvos] = useState<PericiaAvisoTemplates>(PERICIA_AVISO_PADRAO);
+  const [salvandoTemplate, setSalvandoTemplate] = useState(false);
 
   useEffect(() => {
+    settingsService.getPericiaNoticeTemplates().then(setPericiaTemplatesSalvos).catch(() => {});
     settingsService.getResponsibilityConfig().then(cfgs => {
       const cfg = cfgs.find(c => c.module === 'requirements');
       if (cfg) setResponsibilityConfig(cfg);
@@ -699,16 +731,49 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const [periciaModal, setPericiaModal] = useState<PericiaModalState | null>(null);
   const [indeferidoConfirm, setIndeferidoConfirm] = useState<{ requirementId: string; hasMedica: boolean; hasSocial: boolean } | null>(null);
   const [periciaForm, setPericiaForm] = useState<PericiaScheduleFormState>({
-    includeMedica: true,
-    medicaDate: '',
-    medicaTime: '',
-    includeSocial: false,
+    includeSocial: true,
     socialDate: '',
     socialTime: '',
+    socialLocal: '',
+    socialInstrucoes: '',
+    includeMedica: false,
+    medicaDate: '',
+    medicaTime: '',
+    medicaLocal: '',
+    medicaInstrucoes: '',
+    notifyClient: false,
+    notifyChannelId: '',
     notifyDaysBefore: '1',
+    notifyTime: '09:00',
+    notifyTemplateSocial: PERICIA_AVISO_PADRAO.social,
+    notifyTemplateMedica: PERICIA_AVISO_PADRAO.medica,
   });
+
   const [periciaResponsibleId, setPericiaResponsibleId] = useState('');
   const [periciaSaving, setPericiaSaving] = useState(false);
+  /**
+   * Canais conectados, para o aviso ao cliente. Carregados só quando alguém
+   * abre a seção — o módulo de Requerimentos não fala com o WhatsApp até que
+   * alguém peça, e quem não usa o aviso não paga uma consulta por isso.
+   */
+  const [waChannels, setWaChannels] = useState<WhatsAppChannel[] | null>(null);
+  /**
+   * Avisos de perícia vivos do requerimento ABERTO na ficha.
+   *
+   * Só existe para responder, no cartão "Perícias", à pergunta que hoje não
+   * tem resposta na tela: "o cliente vai ser lembrado?". Quem não enxerga a
+   * conversa pela RLS recebe lista vazia e não vê o selo — o selo é uma
+   * informação a mais, nunca uma promessa de que NÃO há aviso.
+   */
+  const [periciaReminders, setPericiaReminders] = useState<WhatsAppScheduledMessage[] | null>(null);
+  /**
+   * Qual cartão está com a prévia aberta.
+   *
+   * A prévia vive ao lado das instruções, e não só dentro do bloco do aviso,
+   * porque é ali que ela é decidida: quem escreve "chegar 30 min antes" quer
+   * ver, na mesma tela, como aquilo chega ao cliente.
+   */
+  const [periciaPreview, setPericiaPreview] = useState<PericiaKind | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [filterNoPhone, setFilterNoPhone] = useState(false);
   const [filterNoCpf, setFilterNoCpf] = useState(false);
@@ -880,6 +945,21 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     return new Date(Math.min(...times)).toISOString();
   };
 
+  /**
+   * A PRÓXIMA perícia por inteiro — data, endereço e QUAL das duas, nunca
+   * cruzados. O tipo importa tanto quanto a data: é ele que decide o que o
+   * cliente precisa levar.
+   */
+  const getPericiaNext = (requirement: Requirement): { at: string; local: string | null; kind: PericiaKind } | null => {
+    const candidatos = [
+      { at: requirement.pericia_social_at, local: requirement.pericia_social_local ?? null, kind: 'social' as PericiaKind },
+      { at: requirement.pericia_medica_at, local: requirement.pericia_medica_local ?? null, kind: 'medica' as PericiaKind },
+    ]
+      .filter((c): c is { at: string; local: string | null; kind: PericiaKind } => !!c.at && !Number.isNaN(new Date(c.at).getTime()))
+      .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+    return candidatos[0] ?? null;
+  };
+
   const getAnalysisDays = (requirement: Requirement) => {
     // Só conta enquanto o requerimento está em análise
     if (requirement.status !== 'em_analise') return null;
@@ -990,7 +1070,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       { label: 'Prazo próximo', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está em análise há mais de 45 dias. Caso não haja decisão em breve, podemos estudar medidas judiciais para garantir seu direito. Podemos conversar?' },
     ],
     aguardando_pericia: [
-      { label: 'Perícia agendada', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está aguardando perícia.{pericia_frase} Lembre-se de comparecer com documento com foto e todos os laudos e exames. Qualquer dúvida, estou à disposição!' },
+      { label: 'Perícia agendada', text: 'Olá, *{nome}*! Seu requerimento (*{protocolo}*) está aguardando perícia.{pericia_frase}{levar_frase} Qualquer dúvida, estou à disposição!' },
     ],
     aguardando_confeccao: [
       { label: 'Em preparação', text: 'Olá, *{nome}*! Seu processo (*{protocolo}*) está em preparação. Em breve daremos início ao protocolo junto ao INSS. Qualquer dúvida, estou à disposição! 👍' },
@@ -1013,13 +1093,21 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
    * em vez de mandar "prazo até _".
    */
   const buildWAText = (text: string, req: Requirement) => {
-    const periciaAt = getPericiaNextAt(req);
+    const periciaNext = getPericiaNext(req);
     const analysisDays = getAnalysisDays(req);
     const prazoFrase = req.exigency_due_date
       ? ` O prazo para atendimento vai até *${formatDate(req.exigency_due_date)}*.`
       : '';
-    const periciaFrase = periciaAt
-      ? ` Está agendada para *${formatDateTime(periciaAt)}*.`
+    const periciaFrase = periciaNext
+      ? ` Está agendada para *${formatDateTime(periciaNext.at)}*${periciaNext.local ? `, em *${periciaNext.local}*` : ''}.`
+      : '';
+    // O que levar depende de QUAL perícia: a social avalia a renda e as
+    // despesas da casa; laudo não serve para ela, e comprovante de água não
+    // serve para a médica. Sem perícia marcada, a frase não entra.
+    const levarFrase = periciaNext
+      ? periciaNext.kind === 'social'
+        ? ' Leve documento com foto e os comprovantes de despesas da casa: água, luz, telefone, gás, aluguel, compras de mercado e remédios.'
+        : ' Leve documento com foto e todos os laudos e exames que você tiver.'
       : '';
     const diasFrase = typeof analysisDays === 'number'
       ? ` O pedido está em análise há *${analysisDays} dias*.`
@@ -1029,6 +1117,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       .replace(/{protocolo}/g, req.protocol ?? 'sem protocolo')
       .replace(/{prazo_frase}/g, prazoFrase)
       .replace(/{pericia_frase}/g, periciaFrase)
+      .replace(/{levar_frase}/g, levarFrase)
       .replace(/{dias_frase}/g, diasFrase)
       .replace(/ {2,}/g, ' ')
       .trim();
@@ -1071,24 +1160,31 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       ? `<div class="field"><div class="field-label">Prazo da Exig&ecirc;ncia</div><div class="field-value">${formatDate(req.exigency_due_date)}</div></div>`
       : '';
 
-    // Seção de Perícia
-    const medicaDate  = req.pericia_medica_at ? new Date(req.pericia_medica_at) : null;
+    // Seção de Perícia — a social vem primeiro, como no Meu INSS.
     const socialDate  = req.pericia_social_at ? new Date(req.pericia_social_at) : null;
-    const hasMedica   = medicaDate && !isNaN(medicaDate.getTime());
+    const medicaDate  = req.pericia_medica_at ? new Date(req.pericia_medica_at) : null;
     const hasSocial   = socialDate && !isNaN(socialDate.getTime());
-    const periciaBlock = (hasMedica || hasSocial) ? (() => {
+    const hasMedica   = medicaDate && !isNaN(medicaDate.getTime());
+    const periciaBlock = (hasSocial || hasMedica) ? (() => {
       const fmtPericia = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
         + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const futureBadge = (d: Date) => d > now
         ? '<span class="badge badge-future">Futura</span>'
         : '<span class="badge badge-past">Realizada</span>';
+      const localComInstrucoes = (local?: string | null, instrucoes?: string | null) => {
+        const partes = [
+          esc(local ?? '').trim(),
+          esc(instrucoes ?? '').trim() && `<em>${esc(instrucoes!).trim()}</em>`,
+        ].filter(Boolean);
+        return partes.length ? partes.join('<br/>') : '&mdash;';
+      };
       const rows = [
-        hasMedica ? `<tr><td>P&eacute;ricia M&eacute;dica</td><td>${fmtPericia(medicaDate!)}</td><td>${futureBadge(medicaDate!)}</td></tr>` : '',
-        hasSocial ? `<tr><td>P&eacute;ricia Social</td><td>${fmtPericia(socialDate!)}</td><td>${futureBadge(socialDate!)}</td></tr>` : '',
+        hasSocial ? `<tr><td>P&eacute;ricia Social</td><td>${fmtPericia(socialDate!)}</td><td>${localComInstrucoes(req.pericia_social_local, req.pericia_social_instrucoes)}</td><td>${futureBadge(socialDate!)}</td></tr>` : '',
+        hasMedica ? `<tr><td>P&eacute;ricia M&eacute;dica</td><td>${fmtPericia(medicaDate!)}</td><td>${localComInstrucoes(req.pericia_medica_local, req.pericia_medica_instrucoes)}</td><td>${futureBadge(medicaDate!)}</td></tr>` : '',
       ].join('');
       return `<div class="section-title">P&eacute;ricia</div>
 <table class="hist-table">
-  <thead><tr><th>Tipo</th><th>Data e Hora</th><th>Situa&ccedil;&atilde;o</th></tr></thead>
+  <thead><tr><th>Tipo</th><th>Data e Hora</th><th>Local</th><th>Situa&ccedil;&atilde;o</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>`;
     })() : '';
@@ -1311,26 +1407,136 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     });
   };
 
-  const openPericiaModal = (requirement?: Requirement | null) => {
+  /**
+   * @param opcoes.comAviso abre já com "Comunicar pelo WhatsApp" ligado. É o
+   *        atalho do "Avisar" que fica na ficha, ao lado de "Cliente não será
+   *        avisado": quem clica ali já disse o que quer.
+   */
+  const openPericiaModal = (requirement?: Requirement | null, opcoes?: { comAviso?: boolean }) => {
     if (!requirement) return;
-    const medica = toLocalDateTimeInput(requirement.pericia_medica_at ?? null);
     const social = toLocalDateTimeInput(requirement.pericia_social_at ?? null);
+    const medica = toLocalDateTimeInput(requirement.pericia_medica_at ?? null);
 
     setPericiaForm({
-      includeMedica: Boolean(requirement.pericia_medica_at) || !requirement.pericia_social_at,
-      medicaDate: medica.date,
-      medicaTime: medica.time,
-      includeSocial: Boolean(requirement.pericia_social_at),
+      // Abre marcando a SOCIAL quando nada foi agendado ainda: é a primeira
+      // que o INSS marca, e é a que a maioria dos casos tem sozinha.
+      includeSocial: Boolean(requirement.pericia_social_at) || !requirement.pericia_medica_at,
       socialDate: social.date,
       socialTime: social.time,
+      socialLocal: requirement.pericia_social_local ?? '',
+      socialInstrucoes: requirement.pericia_social_instrucoes ?? '',
+      includeMedica: Boolean(requirement.pericia_medica_at),
+      medicaDate: medica.date,
+      medicaTime: medica.time,
+      medicaLocal: requirement.pericia_medica_local ?? '',
+      medicaInstrucoes: requirement.pericia_medica_instrucoes ?? '',
+      // O aviso nasce desligado e é RELIGADO logo abaixo se já existir um na
+      // fila. Reabrir o modal para corrigir um horário não inventa mensagem —
+      // mas também não pode fingir que o aviso que já existe não existe.
+      notifyClient: false,
+      notifyChannelId: '',
       notifyDaysBefore: '1',
+      notifyTime: '09:00',
+      notifyTemplateSocial: periciaTemplatesSalvos.social,
+      notifyTemplateMedica: periciaTemplatesSalvos.medica,
     });
+
+    // Responsável: o que JÁ tinha sido escolhido. Sem isto, cada correção de
+    // horário obrigava a apontar a mesma pessoa de novo.
+    setPericiaResponsibleId(
+      responsibilityConfig?.default_mode === 'creator'
+        ? (user?.id ?? '')
+        : responsibilityConfig?.default_mode === 'single' && responsibilityConfig.single_member_id
+          ? responsibilityConfig.single_member_id
+          : '',
+    );
 
     setPericiaModal({
       requirementId: requirement.id,
       beneficiaryName: requirement.beneficiary ?? 'Beneficiário',
       benefitTypeLabel: getBenefitTypeLabel(requirement.benefit_type),
     });
+
+    void restaurarEstadoDaPericia(requirement).then(() => {
+      if (opcoes?.comAviso) void handleToggleNotifyClient(true);
+    });
+  };
+
+  /**
+   * Devolve ao formulário o que já estava agendado: o responsável do
+   * compromisso e o aviso que ainda está na fila do WhatsApp.
+   *
+   * Assíncrono e silencioso de propósito — o modal abre no mesmo quadro do
+   * clique, com os campos do requerimento já preenchidos, e o que vem do
+   * servidor entra depois. Falhar aqui não pode impedir ninguém de agendar.
+   */
+  const restaurarEstadoDaPericia = async (requirement: Requirement) => {
+    const [eventos, avisos] = await Promise.all([
+      calendarService.listEventsByRequirementId(requirement.id, 'pericia').catch(() => []),
+      whatsappService.listPericiaReminders(requirement.id).catch(() => []),
+    ]);
+
+    const responsavel = eventos.find((ev) => ev.user_id)?.user_id;
+    if (responsavel) setPericiaResponsibleId(responsavel);
+
+    if (avisos.length === 0) return;
+
+    // O "quantos dias antes" e a "hora" não são guardados: são DEDUZIDOS do
+    // aviso que está na fila contra a data da perícia que ele lembra. Guardar
+    // os dois criaria uma segunda verdade, que envelheceria na primeira vez que
+    // alguém remarcasse a perícia por fora.
+    const primeiro = avisos[0];
+    const dataDaPericia = primeiro.pericia_kind === 'medica'
+      ? requirement.pericia_medica_at
+      : requirement.pericia_social_at;
+    const quando = new Date(primeiro.scheduled_at);
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    let dias = '1';
+    if (dataDaPericia) {
+      const pericia = new Date(dataDaPericia);
+      const soData = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const diff = Math.round((soData(pericia) - soData(quando)) / 86_400_000);
+      if (Number.isFinite(diff) && diff >= 0) dias = String(diff);
+    }
+
+    setPericiaForm((prev) => ({
+      ...prev,
+      notifyClient: true,
+      notifyChannelId: primeiro.channel_id ?? prev.notifyChannelId,
+      notifyDaysBefore: dias,
+      notifyTime: `${pad(quando.getHours())}:${pad(quando.getMinutes())}`,
+    }));
+
+    // A lista de canais é necessária para o select mostrar o canal restaurado.
+    if (waChannels === null) {
+      whatsappService.listChannels().then(setWaChannels).catch(() => setWaChannels([]));
+    }
+  };
+
+  /**
+   * Liga/desliga a seção "Comunicar cliente".
+   *
+   * Ao abrir pela primeira vez busca os canais e já escolhe um conectado, para
+   * que o caso de canal único — o normal aqui — não exija nenhum clique extra.
+   */
+  const handleToggleNotifyClient = async (aberto: boolean) => {
+    setPericiaForm((prev) => ({ ...prev, notifyClient: aberto }));
+    if (!aberto || waChannels !== null) return;
+    try {
+      const lista = await whatsappService.listChannels();
+      setWaChannels(lista);
+      const conectados = lista.filter((c) => c.status === 'connected');
+      if (conectados.length > 0) {
+        setPericiaForm((prev) => ({
+          ...prev,
+          notifyChannelId: prev.notifyChannelId || conectados[0].id,
+        }));
+      }
+    } catch (err: any) {
+      setWaChannels([]);
+      toast.error('Não foi possível carregar os canais do WhatsApp', err?.message);
+    }
   };
 
   const detailNotes = useMemo(() => {
@@ -1341,6 +1547,22 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
   const noteThreads = useMemo<RequirementNote[]>(() => {
     return buildNoteThreads(detailNotes);
   }, [detailNotes]);
+
+  // O selo "aviso agendado" do cartão Perícias. Recarrega quando a ficha muda
+  // e quando a lista é relida — é assim que ele acende logo depois de salvar.
+  useEffect(() => {
+    const id = selectedRequirementForView?.id;
+    if (!id) { setPericiaReminders(null); return; }
+    let vivo = true;
+    setPericiaReminders(null);
+    whatsappService.listPericiaReminders(id)
+      .then((lista) => { if (vivo) setPericiaReminders(lista); })
+      // `null` continua significando NÃO SEI. Cair no catch e assumir lista
+      // vazia faria a ficha afirmar "não será avisado" justamente quando ela
+      // não tem como saber.
+      .catch(() => { if (vivo) setPericiaReminders(null); });
+    return () => { vivo = false; };
+  }, [selectedRequirementForView?.id, selectedRequirementForView?.updated_at]);
 
   useEffect(() => {
     if (!selectedRequirementForView?.id) {
@@ -2800,9 +3022,16 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       const requirement = requirements.find((req) => req.id === requirementId) || null;
       await requirementService.updateStatus(requirementId, newStatus);
       if (clearPericia) {
+        // Perícia apagada é aviso sem assunto: o cliente seria lembrado de
+        // comparecer a algo que o escritório acabou de dar por encerrado.
+        await whatsappService.cancelPericiaReminders(requirementId).catch(() => undefined);
         await requirementService.updateRequirement(requirementId, {
-          pericia_medica_at: null as any,
           pericia_social_at: null as any,
+          pericia_social_local: null as any,
+          pericia_social_instrucoes: null as any,
+          pericia_medica_at: null as any,
+          pericia_medica_local: null as any,
+          pericia_medica_instrucoes: null as any,
         });
       }
       setRequirements((prev) =>
@@ -2839,6 +3068,42 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     });
   };
 
+  /** O texto no formulário difere do que o escritório salvou? */
+  const templateAlterado =
+    periciaForm.notifyTemplateSocial !== periciaTemplatesSalvos.social ||
+    periciaForm.notifyTemplateMedica !== periciaTemplatesSalvos.medica;
+
+  /**
+   * Grava o modelo do escritório — vale para TODOS os clientes, daqui em
+   * diante. Só administrador chega neste botão (a seção inteira é escondida
+   * dos demais), e a gravação é auditada por `updateSetting`.
+   */
+  const handleSalvarTemplateDoEscritorio = async () => {
+    const novo: PericiaAvisoTemplates = {
+      social: periciaForm.notifyTemplateSocial,
+      medica: periciaForm.notifyTemplateMedica,
+    };
+    try {
+      setSalvandoTemplate(true);
+      await settingsService.updatePericiaNoticeTemplates(novo, currentProfile?.name || user?.email || undefined);
+      setPericiaTemplatesSalvos(novo);
+      toast.success('Modelo salvo', 'Vale para todos os clientes a partir de agora.');
+    } catch (err: any) {
+      toast.error('Não foi possível salvar o modelo', err?.message);
+    } finally {
+      setSalvandoTemplate(false);
+    }
+  };
+
+  /** Devolve o texto DE FÁBRICA ao formulário. Só grava se salvarem depois. */
+  const handleRestaurarTemplatePadrao = () => {
+    setPericiaForm((prev) => ({
+      ...prev,
+      notifyTemplateSocial: PERICIA_AVISO_PADRAO.social,
+      notifyTemplateMedica: PERICIA_AVISO_PADRAO.medica,
+    }));
+  };
+
   const handleClosePericiaModal = () => {
     if (periciaSaving) return;
     setPericiaModal(null);
@@ -2848,6 +3113,49 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     setPericiaForm((prev) => ({ ...prev, [field]: value } as PericiaScheduleFormState));
   };
 
+  /**
+   * Os avisos que ESTE formulário produziria, na ordem em que sairiam.
+   *
+   * Um por perícia marcada: cada mensagem diz qual delas é, com a data e o
+   * endereço daquela. Serve à validação e à prévia da tela — as duas leem a
+   * mesma lista, e por isso a prévia nunca promete um envio que o Salvar
+   * recusa.
+   */
+  const periciaRequirement = periciaModal
+    ? requirements.find((r) => r.id === periciaModal.requirementId) ?? null
+    : null;
+
+  const avisosDaPericia = useMemo(() => {
+    const dias = Number.parseInt(periciaForm.notifyDaysBefore, 10);
+    const req = periciaRequirement;
+    const partes: Array<{ kind: PericiaKind; date: string; time: string; local: string; instrucoes: string }> = [];
+    if (periciaForm.includeSocial && periciaForm.socialDate && periciaForm.socialTime) {
+      partes.push({ kind: 'social', date: periciaForm.socialDate, time: periciaForm.socialTime, local: periciaForm.socialLocal, instrucoes: periciaForm.socialInstrucoes });
+    }
+    if (periciaForm.includeMedica && periciaForm.medicaDate && periciaForm.medicaTime) {
+      partes.push({ kind: 'medica', date: periciaForm.medicaDate, time: periciaForm.medicaTime, local: periciaForm.medicaLocal, instrucoes: periciaForm.medicaInstrucoes });
+    }
+    return partes.map((parte) => {
+      const quando = instanteDoAviso(parte.date, Number.isFinite(dias) ? dias : 0, periciaForm.notifyTime);
+      return {
+        ...parte,
+        quando,
+        texto: montarAvisoPericia(
+          parte.kind === 'social' ? periciaForm.notifyTemplateSocial : periciaForm.notifyTemplateMedica,
+          {
+            nome: req?.beneficiary ?? periciaModal?.beneficiaryName ?? 'Beneficiário',
+            tipo: PERICIA_LABEL[parte.kind],
+            data: dataPorExtenso(parte.date, parte.time),
+            local: parte.local.trim(),
+            instrucoes: parte.instrucoes.trim(),
+            protocolo: req?.protocol ?? '',
+            beneficio: req ? getBenefitTypeLabel(req.benefit_type) : (periciaModal?.benefitTypeLabel ?? ''),
+          },
+        ),
+      };
+    });
+  }, [periciaForm, periciaModal, periciaRequirement]);
+
   const handleSavePericiaSchedule = async () => {
     if (!periciaModal) return;
     const requirement = requirements.find((req) => req.id === periciaModal.requirementId) || null;
@@ -2856,25 +3164,25 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       return;
     }
 
-    if (!periciaForm.includeMedica && !periciaForm.includeSocial) {
-      toast.error('Selecione pelo menos uma perícia (médica ou social).');
+    if (!periciaForm.includeSocial && !periciaForm.includeMedica) {
+      toast.error('Selecione pelo menos uma perícia (social ou médica).');
       return;
     }
 
-    const medicaAt = periciaForm.includeMedica
-      ? toUtcIsoFromLocalDateTime(periciaForm.medicaDate, periciaForm.medicaTime)
-      : null;
     const socialAt = periciaForm.includeSocial
       ? toUtcIsoFromLocalDateTime(periciaForm.socialDate, periciaForm.socialTime)
       : null;
-
-    if (periciaForm.includeMedica && (!periciaForm.medicaDate || !periciaForm.medicaTime || !medicaAt)) {
-      toast.error('Informe data e hora da perícia médica.');
-      return;
-    }
+    const medicaAt = periciaForm.includeMedica
+      ? toUtcIsoFromLocalDateTime(periciaForm.medicaDate, periciaForm.medicaTime)
+      : null;
 
     if (periciaForm.includeSocial && (!periciaForm.socialDate || !periciaForm.socialTime || !socialAt)) {
       toast.error('Informe data e hora da perícia social.');
+      return;
+    }
+
+    if (periciaForm.includeMedica && (!periciaForm.medicaDate || !periciaForm.medicaTime || !medicaAt)) {
+      toast.error('Informe data e hora da perícia médica.');
       return;
     }
 
@@ -2883,12 +3191,46 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
       return;
     }
 
+    // ── O aviso ao cliente é conferido ANTES de qualquer gravação ───────────
+    //
+    // Ele é opcional, mas se foi pedido tem de ser possível: descobrir depois
+    // de salvar que o telefone não existe deixaria a pessoa achando que o
+    // cliente vai ser avisado.
+    const telefoneDoAviso = normalizePhone(requirement.phone ?? '');
+    if (periciaForm.notifyClient) {
+      if (!telefoneDoAviso) {
+        toast.error('Sem telefone no requerimento', 'Cadastre o telefone do beneficiário para avisá-lo pelo WhatsApp.');
+        return;
+      }
+      if (!periciaForm.notifyChannelId) {
+        toast.error('Escolha o canal do WhatsApp que enviará o aviso.');
+        return;
+      }
+      const dias = Number.parseInt(periciaForm.notifyDaysBefore, 10);
+      if (!Number.isFinite(dias) || dias < 0) {
+        toast.error('Informe quantos dias antes o aviso deve sair.');
+        return;
+      }
+      const atrasado = avisosDaPericia.find((aviso) => !aviso.quando || aviso.quando.getTime() <= Date.now());
+      if (atrasado) {
+        toast.error(
+          'O aviso cairia no passado',
+          `${dias} dia(s) antes da ${PERICIA_LABEL[atrasado.kind]} já passou. Diminua os dias ou desmarque o aviso.`,
+        );
+        return;
+      }
+    }
+
     try {
       setPericiaSaving(true);
 
       await requirementService.updateRequirement(requirement.id, {
-        pericia_medica_at: medicaAt,
         pericia_social_at: socialAt,
+        pericia_social_local: socialAt ? (periciaForm.socialLocal.trim() || null) : null,
+        pericia_social_instrucoes: socialAt ? (periciaForm.socialInstrucoes.trim() || null) : null,
+        pericia_medica_at: medicaAt,
+        pericia_medica_local: medicaAt ? (periciaForm.medicaLocal.trim() || null) : null,
+        pericia_medica_instrucoes: medicaAt ? (periciaForm.medicaInstrucoes.trim() || null) : null,
       } as any);
 
       await calendarService.deleteEventsByRequirementId(requirement.id, 'pericia');
@@ -2905,11 +3247,18 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
       const toStartAtLocal = (dateOnly: string, timeOnly: string) => `${dateOnly}T${timeOnly}:00`;
 
-      if (medicaAt) {
-        const startAtLocal = toStartAtLocal(periciaForm.medicaDate, periciaForm.medicaTime);
-        const payloadEvent: CreateCalendarEventDTO = {
-          title: `Perícia médica - ${requirement.beneficiary}`,
-          description: `Perícia médica do requerimento ${requirement.protocol ?? 'sem protocolo'}.`,
+      /** O compromisso na Agenda. O local entra na descrição — a agenda não tem campo próprio para ele. */
+      const eventoDaPericia = (rotulo: string, dateOnly: string, timeOnly: string, local: string, instrucoes: string): CreateCalendarEventDTO => {
+        const startAtLocal = toStartAtLocal(dateOnly, timeOnly);
+        const endereco = local.trim();
+        const extras = instrucoes.trim();
+        return {
+          title: `Perícia ${rotulo} - ${requirement.beneficiary}`,
+          description: [
+            `Perícia ${rotulo} do requerimento ${requirement.protocol ?? 'sem protocolo'}.`,
+            endereco && `Local: ${endereco}`,
+            extras && `Instruções: ${extras}`,
+          ].filter(Boolean).join('\n'),
           event_type: 'pericia',
           status: 'pendente',
           start_at: startAtLocal,
@@ -2919,26 +3268,18 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
           process_id: null,
           user_id: periciaResponsibleId || null,
         };
-
-        periciaEvents.push(calendarService.createEvent(payloadEvent));
-      }
+      };
 
       if (socialAt) {
-        const startAtLocal = toStartAtLocal(periciaForm.socialDate, periciaForm.socialTime);
-        const payloadEvent: CreateCalendarEventDTO = {
-          title: `Perícia social - ${requirement.beneficiary}`,
-          description: `Perícia social do requerimento ${requirement.protocol ?? 'sem protocolo'}.`,
-          event_type: 'pericia',
-          status: 'pendente',
-          start_at: startAtLocal,
-          end_at: toEndAt(startAtLocal),
-          requirement_id: requirement.id,
-          client_id: requirement.client_id ?? null,
-          process_id: null,
-          user_id: periciaResponsibleId || null,
-        };
+        periciaEvents.push(calendarService.createEvent(
+          eventoDaPericia('social', periciaForm.socialDate, periciaForm.socialTime, periciaForm.socialLocal, periciaForm.socialInstrucoes),
+        ));
+      }
 
-        periciaEvents.push(calendarService.createEvent(payloadEvent));
+      if (medicaAt) {
+        periciaEvents.push(calendarService.createEvent(
+          eventoDaPericia('médica', periciaForm.medicaDate, periciaForm.medicaTime, periciaForm.medicaLocal, periciaForm.medicaInstrucoes),
+        ));
       }
 
       await Promise.all(periciaEvents);
@@ -2948,9 +3289,73 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
         await requirementService.updateStatus(requirement.id, 'aguardando_pericia');
       }
 
+      // ── O aviso, depois de a perícia já estar salva ────────────────────────
+      //
+      // Em bloco próprio de propósito: WhatsApp fora do ar não pode desfazer o
+      // agendamento que já foi gravado na Agenda. O que falhar aqui vira aviso
+      // na tela — e, uma vez agendada, a mensagem que não sair aparece sozinha
+      // na aba "Agendadas" do módulo WhatsApp, com o erro e o botão de reenviar.
+      let avisosAgendados = 0;
+      try {
+        // O aviso VELHO cai SEMPRE, tenha ou não aviso novo. Ele lembra uma
+        // data que este salvamento acabou de mudar: deixá-lo na fila manda o
+        // cliente ao INSS no dia errado, e é pior do que não avisar.
+        const { restantes } = await whatsappService.cancelPericiaReminders(requirement.id);
+        if (restantes > 0) {
+          toast.warning(
+            'Um aviso antigo continuou na fila',
+            'Cancele-o pela aba "Agendadas" do módulo WhatsApp — ele ainda aponta para a data anterior.',
+          );
+        }
+
+        if (periciaForm.notifyClient && avisosDaPericia.length > 0) {
+          const routing = await settingsService.getWhatsAppChannelDepartmentRouting().catch(() => []);
+          const { conversation_id } = await whatsappService.openConversation({
+            phone: telefoneDoAviso,
+            channelId: periciaForm.notifyChannelId,
+            clientId: requirement.client_id ?? null,
+            contactName: requirement.beneficiary ?? null,
+            departmentId: routing.find((item) => item.channel_id === periciaForm.notifyChannelId)?.default_department_id || null,
+          });
+          for (const aviso of avisosDaPericia) {
+            if (!aviso.quando) continue;
+            await whatsappService.scheduleMessage({
+              conversationId: conversation_id,
+              channelId: periciaForm.notifyChannelId,
+              scheduledAt: aviso.quando.toISOString(),
+              text: aviso.texto,
+              requirementId: requirement.id,
+              periciaKind: aviso.kind,
+            });
+            avisosAgendados += 1;
+          }
+        }
+      } catch (err: any) {
+        console.error(err);
+        toast.error(
+          'Perícia salva, mas o aviso não foi agendado',
+          err?.message || 'Tente de novo pelo módulo WhatsApp.',
+        );
+      }
+
+      // O texto editado e não salvo já saiu nas mensagens — é o que a prévia
+      // mostrou. Dizer isso em voz alta evita a suposição de que o escritório
+      // inteiro passou a usar o texto novo.
+      if (avisosAgendados > 0 && templateAlterado) {
+        toast.warning(
+          'O modelo do escritório não mudou',
+          'Este aviso saiu com o texto que você editou. Clique em "Salvar modelo" se quiser que valha para todos os clientes.',
+        );
+      }
+
       await handleReload();
       setSchedulePromptId(null);
-      toast.success('Perícia agendada na Agenda.');
+      toast.success(
+        'Perícia agendada na Agenda.',
+        avisosAgendados > 0
+          ? `${avisosAgendados === 1 ? 'Um aviso' : `${avisosAgendados} avisos`} para o cliente na fila do WhatsApp.`
+          : undefined,
+      );
       setPericiaModal(null);
     } catch (err: any) {
       console.error(err);
@@ -3855,157 +4260,482 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     </div>
   );
 
+  /** Campo de texto do modal — uma só definição, para não haver dois cinzas. */
+  const CAMPO_CLS =
+    'w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 outline-none transition ' +
+    'placeholder:text-slate-400 focus:border-transparent focus:ring-2 focus:ring-cyan-500 ' +
+    'dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-600';
+
+  const ROTULO_CLS = 'mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-zinc-400';
+
+  /**
+   * Interruptor de verdade (on/off), não caixa de seleção.
+   *
+   * As três decisões deste modal — faço a social? a médica? aviso o cliente? —
+   * são a mesma pergunta, e por isso têm o mesmo controle. Antes o aviso era um
+   * botão tracejado que TROCAVA de forma ao ser ligado: não dava para ver, de
+   * relance, se estava ligado ou desligado.
+   */
+  const renderInterruptor = (
+    ligado: boolean,
+    onChange: (v: boolean) => void,
+    corLigado: string,
+    rotulo: string,
+  ) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={ligado}
+      aria-label={rotulo}
+      onClick={() => onChange(!ligado)}
+      className={`relative inline-flex h-[22px] w-[38px] shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 dark:focus:ring-offset-zinc-900 ${
+        ligado ? corLigado : 'bg-slate-300 dark:bg-zinc-600'
+      }`}
+    >
+      <span
+        className={`inline-block h-[18px] w-[18px] transform rounded-full bg-white shadow transition-transform ${
+          ligado ? 'translate-x-[18px]' : 'translate-x-[2px]'
+        }`}
+      />
+    </button>
+  );
+
+  /**
+   * O cartão de uma perícia. É função, não componente: um componente declarado
+   * aqui dentro seria REMONTADO a cada tecla, e o campo perderia o foco no meio
+   * da digitação do endereço.
+   */
+  const renderPericiaCard = (kind: PericiaKind) => {
+    const social = kind === 'social';
+    const cor = social
+      ? { ponto: 'bg-indigo-500', switch: 'bg-indigo-500', selo: 'bg-indigo-50 text-indigo-700 ring-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:ring-indigo-900' }
+      : { ponto: 'bg-cyan-500', switch: 'bg-cyan-500', selo: 'bg-cyan-50 text-cyan-700 ring-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:ring-cyan-900' };
+
+    const ativo = social ? periciaForm.includeSocial : periciaForm.includeMedica;
+    const data = social ? periciaForm.socialDate : periciaForm.medicaDate;
+    const hora = social ? periciaForm.socialTime : periciaForm.medicaTime;
+    const local = social ? periciaForm.socialLocal : periciaForm.medicaLocal;
+    const instrucoes = social ? periciaForm.socialInstrucoes : periciaForm.medicaInstrucoes;
+    const quando = data && hora ? dataPorExtenso(data, hora) : '';
+    const aberta = periciaPreview === kind;
+    const previa = avisosDaPericia.find((a) => a.kind === kind)?.texto ?? '';
+
+    return (
+      <div
+        className={`rounded-xl border transition ${
+          ativo
+            ? 'border-slate-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-800/40'
+            : 'border-slate-200/70 bg-slate-50/60 dark:border-zinc-800 dark:bg-zinc-900/40'
+        }`}
+      >
+        <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+          <span className={`h-2 w-2 shrink-0 rounded-full ${ativo ? cor.ponto : 'bg-slate-300 dark:bg-zinc-600'}`} />
+          <span className={`text-sm font-semibold ${ativo ? 'text-slate-800 dark:text-zinc-100' : 'text-slate-500 dark:text-zinc-500'}`}>
+            {social ? 'Perícia social' : 'Perícia médica'}
+          </span>
+          {ativo && quando && (
+            <span className={`min-w-0 truncate rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${cor.selo}`}>
+              {quando}
+            </span>
+          )}
+          <span className="ml-auto">
+            {renderInterruptor(
+              ativo,
+              (v) => handlePericiaFormChange(social ? 'includeSocial' : 'includeMedica', v),
+              cor.switch,
+              social ? 'Perícia social' : 'Perícia médica',
+            )}
+          </span>
+        </div>
+
+        {ativo && (
+          <div className="space-y-2.5 border-t border-slate-100 px-3.5 py-3 dark:border-zinc-800">
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className={ROTULO_CLS}>Data <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  value={data}
+                  onChange={(e) => handlePericiaFormChange(social ? 'socialDate' : 'medicaDate', e.target.value)}
+                  className={CAMPO_CLS}
+                />
+              </div>
+              <div>
+                <label className={ROTULO_CLS}>Hora <span className="text-red-500">*</span></label>
+                <input
+                  type="time"
+                  value={hora}
+                  onChange={(e) => handlePericiaFormChange(social ? 'socialTime' : 'medicaTime', e.target.value)}
+                  className={CAMPO_CLS}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className={ROTULO_CLS}>Local</label>
+              <textarea
+                rows={2}
+                value={local}
+                onChange={(e) => handlePericiaFormChange(social ? 'socialLocal' : 'medicaLocal', e.target.value)}
+                placeholder="Endereço como está na carta do INSS"
+                className={`${CAMPO_CLS} resize-none`}
+              />
+            </div>
+
+            <div>
+              <div className="flex items-end justify-between gap-2">
+                <label className={ROTULO_CLS}>Instruções ao cliente</label>
+                <button
+                  type="button"
+                  onClick={() => setPericiaPreview((atual) => (atual === kind ? null : kind))}
+                  className="mb-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                  title="Ver a mensagem que o cliente recebe"
+                >
+                  {aberta ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  {aberta ? 'Ocultar prévia' : 'Ver prévia'}
+                </button>
+              </div>
+              <textarea
+                rows={2}
+                value={instrucoes}
+                onChange={(e) => handlePericiaFormChange(social ? 'socialInstrucoes' : 'medicaInstrucoes', e.target.value)}
+                placeholder="Ex.: chegar 30 min antes, levar acompanhante"
+                className={`${CAMPO_CLS} resize-none`}
+              />
+              <p className="mt-1 text-[11px] text-slate-400 dark:text-zinc-500">
+                O que só esta perícia pede. Vai destacado no aviso ao cliente e na Agenda.
+              </p>
+
+              {/* A prévia é a mensagem REAL — montada pelo mesmo código que o
+                  Salvar usa. Aparece com o aviso ligado ou desligado: ver o
+                  texto é como se decide se vale a pena ligá-lo. */}
+              {aberta && (
+                <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 dark:border-zinc-700">
+                  <p className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 dark:bg-zinc-800 dark:text-zinc-300">
+                    <MessageSquare className="h-3 w-3 shrink-0" />
+                    O que o cliente recebe
+                    {!periciaForm.notifyClient && (
+                      <span className="ml-auto font-normal text-slate-400 dark:text-zinc-500">aviso desligado</span>
+                    )}
+                  </p>
+                  {previa ? (
+                    <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words bg-white px-2.5 py-2 text-[11.5px] leading-relaxed text-slate-600 dark:bg-zinc-900 dark:text-zinc-300">
+                      {previa}
+                    </p>
+                  ) : (
+                    <p className="bg-white px-2.5 py-2 text-[11.5px] text-slate-400 dark:bg-zinc-900 dark:text-zinc-500">
+                      Preencha data e hora para montar a mensagem.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /**
+   * O modal de agendar perícia, em DUAS COLUNAS.
+   *
+   * Numa coluna só ele ficava comprido: as duas perícias, o aviso, a prévia das
+   * mensagens e o responsável, tudo empilhado, com o botão Salvar a três rolagens
+   * do topo. As perguntas são de naturezas diferentes — QUANDO é a perícia
+   * (esquerda) e O QUE O CLIENTE E A EQUIPE FICAM SABENDO (direita) — e cabem
+   * lado a lado. No celular a grade colapsa e a ordem volta a ser a de sempre.
+   */
   const periciaSchedulingModal = (
     <Modal
       open={!!periciaModal}
       onClose={handleClosePericiaModal}
       title="Agendar perícia"
       subtitle={[periciaModal?.beneficiaryName && `Beneficiário: ${periciaModal.beneficiaryName}`, periciaModal?.benefitTypeLabel && `Benefício: ${periciaModal.benefitTypeLabel}`].filter(Boolean).join(' · ') || undefined}
-      icon={<Stethoscope className="w-5 h-5" />}
-      size="md"
+      icon={<Stethoscope className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />}
+      size="xl"
       zIndex={LAYER.MODAL_NESTED}
+      footer={(
+        <ModalFooter>
+          <button
+            type="button"
+            onClick={handleClosePericiaModal}
+            disabled={periciaSaving}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSavePericiaSchedule}
+            disabled={periciaSaving}
+            className="flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-700 disabled:opacity-50"
+          >
+            {periciaSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+            Salvar
+          </button>
+        </ModalFooter>
+      )}
     >
       <ModalBody className="px-5 py-4">
-          <div className="flex items-center justify-between gap-3">
-            <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-800">
-              <input
-                type="checkbox"
-                checked={periciaForm.includeMedica}
-                onChange={(e) => handlePericiaFormChange('includeMedica', e.target.checked)}
-              />
-              Perícia médica
-            </label>
+        <div className="grid grid-cols-1 gap-x-5 gap-y-4 lg:grid-cols-2">
 
-            <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-800">
-              <input
-                type="checkbox"
-                checked={periciaForm.includeSocial}
-                onChange={(e) => handlePericiaFormChange('includeSocial', e.target.checked)}
-              />
-              Perícia social
-            </label>
+          {/* ── Coluna 1: quando e onde ─────────────────────────────────── */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-zinc-500">
+              Perícias
+            </p>
+            {/* A SOCIAL VEM PRIMEIRO: é a ordem do Meu INSS, o papel que o
+                cliente tem na mão quando dita as datas ao telefone. */}
+            {renderPericiaCard('social')}
+            {renderPericiaCard('medica')}
+
+            <p className="text-[11px] text-slate-400 dark:text-zinc-500">
+              Passada a data da última perícia, o requerimento volta sozinho para "Em análise".
+            </p>
           </div>
 
-          {periciaForm.includeMedica && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Data (médica) *</label>
-                <input
-                  type="date"
-                  value={periciaForm.medicaDate}
-                  onChange={(e) => handlePericiaFormChange('medicaDate', e.target.value)}
-                  className="input-field"
-                  min={new Date().toISOString().split('T')[0]}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Hora (médica) *</label>
-                <input
-                  type="time"
-                  value={periciaForm.medicaTime}
-                  onChange={(e) => handlePericiaFormChange('medicaTime', e.target.value)}
-                  className="input-field"
-                />
-              </div>
-            </div>
-          )}
+          {/* ── Coluna 2: quem fica sabendo ─────────────────────────────── */}
+          <div className="space-y-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-zinc-500">
+              Avisos
+            </p>
 
-          {periciaForm.includeSocial && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Data (social) *</label>
-                <input
-                  type="date"
-                  value={periciaForm.socialDate}
-                  onChange={(e) => handlePericiaFormChange('socialDate', e.target.value)}
-                  className="input-field"
-                  min={new Date().toISOString().split('T')[0]}
-                />
+            <div
+              className={`rounded-xl border transition ${
+                periciaForm.notifyClient
+                  ? 'border-emerald-200 bg-white shadow-sm dark:border-emerald-900 dark:bg-zinc-800/40'
+                  : 'border-slate-200/70 bg-slate-50/60 dark:border-zinc-800 dark:bg-zinc-900/40'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                  periciaForm.notifyClient
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
+                    : 'bg-slate-200 text-slate-400 dark:bg-zinc-800 dark:text-zinc-500'
+                }`}>
+                  {periciaForm.notifyClient ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
+                </span>
+                <span className="min-w-0">
+                  <span className={`block text-sm font-semibold ${
+                    periciaForm.notifyClient ? 'text-slate-800 dark:text-zinc-100' : 'text-slate-500 dark:text-zinc-500'
+                  }`}>
+                    Comunicar pelo WhatsApp
+                  </span>
+                  {!periciaForm.notifyClient && (
+                    <span className="block text-[11px] text-slate-400 dark:text-zinc-500">
+                      Opcional. O cliente não será lembrado.
+                    </span>
+                  )}
+                </span>
+                <span className="ml-auto">
+                  {renderInterruptor(
+                    periciaForm.notifyClient,
+                    (v) => { void handleToggleNotifyClient(v); },
+                    'bg-emerald-500',
+                    'Comunicar pelo WhatsApp',
+                  )}
+                </span>
               </div>
-              <div>
-                <label className="text-sm font-medium text-slate-700">Hora (social) *</label>
-                <input
-                  type="time"
-                  value={periciaForm.socialTime}
-                  onChange={(e) => handlePericiaFormChange('socialTime', e.target.value)}
-                  className="input-field"
-                />
-              </div>
-            </div>
-          )}
 
-          <div>
-            <label className="text-sm font-medium text-slate-700">Notificar quantos dias antes?</label>
-            <input
-              type="number"
-              min={0}
-              value={periciaForm.notifyDaysBefore}
-              onChange={(e) => handlePericiaFormChange('notifyDaysBefore', e.target.value)}
-              className="input-field"
-            />
-          </div>
+              {periciaForm.notifyClient && (
+                <div className="space-y-3 border-t border-slate-100 px-3.5 py-3 dark:border-zinc-800">
+                  {!normalizePhone(periciaRequirement?.phone ?? '') && (
+                    <p className="rounded-lg bg-red-50 px-2.5 py-2 text-[11.5px] text-red-700 dark:bg-red-950/30 dark:text-red-300">
+                      Este requerimento não tem telefone cadastrado — sem ele o aviso não pode ser agendado.
+                    </p>
+                  )}
 
-          <p className="text-xs text-slate-600">
-            Após passar a data da última perícia (médica/social), o requerimento será movido automaticamente para "Em análise".
-          </p>
-
-          {members.length > 0 && (
-            <div>
-              <label className="text-sm font-medium text-slate-700 dark:text-zinc-300 block mb-2">
-                Responsável <span className="text-red-500">*</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {members.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setPericiaResponsibleId(periciaResponsibleId === (m.user_id || m.id) ? '' : (m.user_id || m.id))}
-                    className={`relative flex-shrink-0 rounded-full focus:outline-none transition-all ${
-                      periciaResponsibleId === (m.user_id || m.id)
-                        ? 'ring-2 ring-offset-2 ring-amber-500'
-                        : 'ring-1 ring-transparent hover:ring-slate-300'
-                    }`}
-                    title={m.name || m.email || ''}
-                  >
-                    {m.avatar_url ? (
-                      <img src={m.avatar_url} className="w-9 h-9 rounded-full object-cover" alt={m.name || ''} />
+                  <div>
+                    <label className={ROTULO_CLS}>Canal <span className="text-red-500">*</span></label>
+                    {waChannels === null ? (
+                      <p className="py-1.5 text-[11.5px] text-slate-500">Carregando…</p>
+                    ) : waChannels.filter((c) => c.status === 'connected').length === 0 ? (
+                      <p className="py-1.5 text-[11.5px] text-red-600">Nenhum canal conectado agora.</p>
                     ) : (
-                      <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center text-sm font-semibold text-amber-700">
-                        {(m.name || m.email || '?')[0].toUpperCase()}
+                      <select
+                        value={periciaForm.notifyChannelId}
+                        onChange={(e) => handlePericiaFormChange('notifyChannelId', e.target.value)}
+                        className={CAMPO_CLS}
+                      >
+                        <option value="">Selecione…</option>
+                        {waChannels.filter((c) => c.status === 'connected').map((c) => (
+                          <option key={c.id} value={c.id}>{c.name || c.instance_name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className={ROTULO_CLS}>Dias antes <span className="text-red-500">*</span></label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={periciaForm.notifyDaysBefore}
+                        onChange={(e) => handlePericiaFormChange('notifyDaysBefore', e.target.value)}
+                        className={CAMPO_CLS}
+                      />
+                    </div>
+                    <div>
+                      <label className={ROTULO_CLS}>Hora do aviso</label>
+                      <input
+                        type="time"
+                        value={periciaForm.notifyTime}
+                        onChange={(e) => handlePericiaFormChange('notifyTime', e.target.value)}
+                        className={CAMPO_CLS}
+                      />
+                    </div>
+                  </div>
+
+                  {/* A prévia é a mensagem REAL, montada pelo mesmo código que o
+                      Salvar usa — o que aparece aqui é o que o cliente lê. */}
+                  {avisosDaPericia.length === 0 ? (
+                    <p className="text-[11.5px] text-slate-500">Preencha data e hora da perícia para ver o aviso.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {avisosDaPericia.map((aviso) => {
+                        const futuro = !!aviso.quando && aviso.quando.getTime() > Date.now();
+                        return (
+                          <div key={aviso.kind} className="overflow-hidden rounded-lg border border-slate-200 dark:border-zinc-700">
+                            <p className={`px-2.5 py-1.5 text-[11px] font-semibold ${
+                              futuro
+                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'
+                            }`}>
+                              {aviso.quando
+                                ? futuro
+                                  ? `Sai em ${formatDateTime(aviso.quando.toISOString())} · ${PERICIA_LABEL[aviso.kind]}`
+                                  : `O aviso da ${PERICIA_LABEL[aviso.kind]} cairia no passado — diminua os dias.`
+                                : `Data inválida para a ${PERICIA_LABEL[aviso.kind]}.`}
+                            </p>
+                            <p className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words bg-white px-2.5 py-2 text-[11.5px] leading-relaxed text-slate-600 dark:bg-zinc-900 dark:text-zinc-300">
+                              {aviso.texto}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* ── O modelo do ESCRITÓRIO ────────────────────────────
+                      Editar aqui não é um rascunho de uma vez: é o texto que
+                      vale para todo cliente, e por isso tem botão próprio. A
+                      variação de um caso é outra coisa, e tem outro campo —
+                      "Instruções ao cliente", no cartão da perícia.
+
+                      Escondido de quem não é administrador: quem agenda usa o
+                      modelo, quem governa o texto que sai em nome do escritório
+                      é a gestão. A prévia acima continua visível para todos. */}
+                  {isAdmin && (
+                    <details>
+                      <summary className="cursor-pointer list-none text-[11.5px] font-medium text-emerald-700 hover:underline dark:text-emerald-400">
+                        Modelo da mensagem — vale para todos os clientes
+                      </summary>
+                      <div className="mt-2 space-y-2.5">
+                        <div>
+                          <label className={ROTULO_CLS}>Perícia social</label>
+                          <textarea
+                            rows={8}
+                            value={periciaForm.notifyTemplateSocial}
+                            onChange={(e) => handlePericiaFormChange('notifyTemplateSocial', e.target.value)}
+                            className={`${CAMPO_CLS} font-mono text-[11px] leading-relaxed`}
+                          />
+                        </div>
+                        <div>
+                          <label className={ROTULO_CLS}>Perícia médica</label>
+                          <textarea
+                            rows={8}
+                            value={periciaForm.notifyTemplateMedica}
+                            onChange={(e) => handlePericiaFormChange('notifyTemplateMedica', e.target.value)}
+                            className={`${CAMPO_CLS} font-mono text-[11px] leading-relaxed`}
+                          />
+                        </div>
+
+                        <p className="text-[11px] text-slate-400 dark:text-zinc-500">
+                          {`Campos: ${PERICIA_AVISO_CAMPOS.join(' ')}. A linha some inteira quando o campo está vazio.`}
+                        </p>
+
+                        {/* A faixa existe para ninguém sair achando que salvou.
+                            Sem ela, editar e fechar o modal descartava o texto
+                            em silêncio — foi o que já aconteceu uma vez. */}
+                        {templateAlterado && (
+                          <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                            Modelo alterado e ainda não salvo. Sem salvar, o texto novo vale só para este agendamento.
+                          </p>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleSalvarTemplateDoEscritorio}
+                            disabled={salvandoTemplate || !templateAlterado}
+                            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[12px] font-medium text-white transition hover:bg-emerald-700 disabled:opacity-40"
+                          >
+                            {salvandoTemplate && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                            Salvar modelo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRestaurarTemplatePadrao}
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                          >
+                            Restaurar padrão
+                          </button>
+                          <span className="text-[11px] text-slate-400 dark:text-zinc-500">
+                            Também em Configurações → Requerimentos.
+                          </span>
+                        </div>
                       </div>
-                    )}
-                    {periciaResponsibleId === (m.user_id || m.id) && (
-                      <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
-                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M2 6l3 3 5-5"/>
-                        </svg>
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
+                    </details>
+                  )}
+
+                  <p className="text-[11px] text-slate-400 dark:text-zinc-500">
+                    Se não sair, o aviso aparece na aba "Agendadas" do módulo WhatsApp, com o erro e o botão de reenviar.
+                  </p>
+                </div>
+              )}
             </div>
-          )}
+
+            {members.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-800/40">
+                <label className={ROTULO_CLS}>Responsável <span className="text-red-500">*</span></label>
+                <div className="flex flex-wrap gap-2">
+                  {members.map((m) => {
+                    const id = m.user_id || m.id;
+                    const escolhido = periciaResponsibleId === id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setPericiaResponsibleId(escolhido ? '' : id)}
+                        className={`relative shrink-0 rounded-full transition-all focus:outline-none ${
+                          escolhido ? 'ring-2 ring-amber-500 ring-offset-2 dark:ring-offset-zinc-900' : 'ring-1 ring-transparent hover:ring-slate-300'
+                        }`}
+                        title={m.name || m.email || ''}
+                      >
+                        {m.avatar_url ? (
+                          <img src={m.avatar_url} className="h-9 w-9 rounded-full object-cover" alt={m.name || ''} />
+                        ) : (
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-sm font-semibold text-amber-700">
+                            {(m.name || m.email || '?')[0].toUpperCase()}
+                          </div>
+                        )}
+                        {escolhido && (
+                          <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500">
+                            <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M2 6l3 3 5-5"/>
+                            </svg>
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </ModalBody>
-      <ModalFooter>
-        <button
-          type="button"
-          onClick={handleClosePericiaModal}
-          disabled={periciaSaving}
-          className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition"
-        >
-          Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={handleSavePericiaSchedule}
-          disabled={periciaSaving}
-          className="px-4 py-2 text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 rounded-lg disabled:opacity-50 transition flex items-center gap-2"
-        >
-          {periciaSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-          Salvar
-        </button>
-      </ModalFooter>
     </Modal>
   );
 
@@ -4013,8 +4743,9 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
     const detailStatusConfig = getStatusConfig(selectedRequirementForView.status);
     const analysisDays = getAnalysisDays(selectedRequirementForView);
     const showMandadoRisk = isMandadoRisk(selectedRequirementForView);
-    const periciaMedicaAt = selectedRequirementForView.pericia_medica_at ?? null;
+    // A social vem primeiro — mesma ordem do Meu INSS.
     const periciaSocialAt = selectedRequirementForView.pericia_social_at ?? null;
+    const periciaMedicaAt = selectedRequirementForView.pericia_medica_at ?? null;
     
     const getHistoryActor = (changedBy: string | null) => {
       if (!changedBy) return 'Sistema';
@@ -4387,7 +5118,7 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
 
                   {(periciaMedicaAt || periciaSocialAt) && (() => {
                     const nowMs = Date.now();
-                    const makeCalendarLink = (isoDate: string, label: string) => {
+                    const makeCalendarLink = (isoDate: string, label: string, local: string | null) => {
                       const d = new Date(isoDate);
                       if (isNaN(d.getTime())) return null;
                       const pad = (n: number) => String(n).padStart(2, '0');
@@ -4397,15 +5128,18 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                       const name = selectedRequirementForView.beneficiary ?? 'Beneficiário';
                       const title = encodeURIComponent(`Perícia ${label} — ${name}`);
                       const details = encodeURIComponent(`Protocolo: ${selectedRequirementForView.protocol ?? '—'}`);
-                      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&dates=${fmt(d)}/${fmt(end)}`;
+                      const where = local?.trim() ? `&location=${encodeURIComponent(local.trim())}` : '';
+                      return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}${where}&dates=${fmt(d)}/${fmt(end)}`;
                     };
 
-                    const PericiaRow = ({ label, isoDate }: { label: string; isoDate: string }) => {
+                    const PericiaRow = ({ label, isoDate, local, instrucoes, kind }: { label: string; isoDate: string; local: string | null; instrucoes: string | null; kind: PericiaKind }) => {
                       const d = new Date(isoDate);
                       const isPast = !isNaN(d.getTime()) && d.getTime() < nowMs;
-                      const calLink = makeCalendarLink(isoDate, label);
+                      const calLink = makeCalendarLink(isoDate, label, local);
+                      const aviso = periciaReminders?.find((r) => r.pericia_kind === kind) ?? null;
                       return (
-                        <div className="flex items-center justify-between gap-3 text-sm py-0.5">
+                        <div className="py-0.5">
+                        <div className="flex items-center justify-between gap-3 text-sm">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="text-slate-500 dark:text-slate-400 shrink-0">{label}</span>
                             {isPast ? (
@@ -4435,6 +5169,50 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                             )}
                           </div>
                         </div>
+                        {local?.trim() && (
+                          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 break-words">{local.trim()}</p>
+                        )}
+                        {instrucoes?.trim() && (
+                          <p className="mt-0.5 flex items-start gap-1 text-xs text-amber-700 dark:text-amber-400 break-words">
+                            <span aria-hidden="true">⚠️</span>
+                            <span>{instrucoes.trim()}</span>
+                          </p>
+                        )}
+                        {/* ── O cliente vai ser lembrado? ─────────────────────
+                            Esta linha aparece SEMPRE, inclusive para dizer que
+                            não há aviso. Um selo que só nasce quando existe
+                            aviso é indistinguível de um recurso que não existe:
+                            quem abre a ficha e não vê nada não sabe se ninguém
+                            agendou ou se a tela não sabe mostrar.
+
+                            O único caso mudo é `null` — a lista não pôde ser
+                            lida (WhatsApp fora, ou canal que este usuário não
+                            enxerga). Aí a ficha CALA em vez de afirmar. */}
+                        {periciaReminders !== null && (
+                          aviso ? (
+                            <p className={`mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium ${
+                              aviso.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
+                            }`}>
+                              <Bell className="w-3 h-3 shrink-0" />
+                              {aviso.status === 'failed'
+                                ? 'Aviso ao cliente FALHOU — reenvie pela aba "Agendadas" do WhatsApp'
+                                : `Cliente será avisado em ${formatDateTime(aviso.scheduled_at)}`}
+                            </p>
+                          ) : !isPast ? (
+                            <p className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                              <BellOff className="w-3 h-3 shrink-0" />
+                              Cliente não será avisado
+                              <button
+                                type="button"
+                                onClick={() => openPericiaModal(selectedRequirementForView, { comAviso: true })}
+                                className="font-semibold text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-400"
+                              >
+                                Avisar
+                              </button>
+                            </p>
+                          ) : null
+                        )}
+                        </div>
                       );
                     };
 
@@ -4444,8 +5222,8 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                           <h3 className="text-sm font-semibold text-cyan-700 dark:text-cyan-300">Perícias</h3>
                         </div>
                         <div className="px-5 py-3 space-y-2">
-                          {periciaMedicaAt && <PericiaRow label="Médica" isoDate={periciaMedicaAt} />}
-                          {periciaSocialAt && <PericiaRow label="Social" isoDate={periciaSocialAt} />}
+                          {periciaSocialAt && <PericiaRow label="Social" isoDate={periciaSocialAt} local={selectedRequirementForView.pericia_social_local ?? null} instrucoes={selectedRequirementForView.pericia_social_instrucoes ?? null} kind="social" />}
+                          {periciaMedicaAt && <PericiaRow label="Médica" isoDate={periciaMedicaAt} local={selectedRequirementForView.pericia_medica_local ?? null} instrucoes={selectedRequirementForView.pericia_medica_instrucoes ?? null} kind="medica" />}
                         </div>
                       </div>
                     );
@@ -5939,10 +6717,10 @@ const RequirementsModule: React.FC<RequirementsModuleProps> = ({ forceCreate, en
                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                     Este requerimento possui{' '}
                     {[
-                      indeferidoConfirm.hasMedica && 'perícia médica',
                       indeferidoConfirm.hasSocial && 'perícia social',
+                      indeferidoConfirm.hasMedica && 'perícia médica',
                     ].filter(Boolean).join(' e ')}{' '}
-                    agendada{indeferidoConfirm.hasMedica && indeferidoConfirm.hasSocial ? 's' : ''} com data futura.
+                    agendada{indeferidoConfirm.hasSocial && indeferidoConfirm.hasMedica ? 's' : ''} com data futura.
                   </p>
                 </div>
               </div>

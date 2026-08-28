@@ -20,7 +20,7 @@ interface ProcessItem {
 interface RequirementItem {
   id: string; protocol?: string | null; beneficiary: string; benefit_type: string;
   status: string; entry_date?: string | null; exigency_due_date?: string | null;
-  pericia_medica_at?: string | null; pericia_social_at?: string | null;
+  pericia_social_at?: string | null; pericia_medica_at?: string | null;
   updated_at: string; archived?: boolean;
 }
 
@@ -267,12 +267,13 @@ const RequirementCard: React.FC<{ req: RequirementItem; onClick: () => void }> =
   const meta         = requirementMeta(r.status);
   const tone         = TONE_CLASSES[meta.tone];
   const benefitLabel = BENEFIT_TYPE_LABELS[r.benefit_type] || r.benefit_type;
-  const nextDate     = r.exigency_due_date || r.pericia_medica_at || r.pericia_social_at;
+  // Social antes de m\u00E9dica: a ordem do Meu INSS.
+  const nextDate     = r.exigency_due_date || r.pericia_social_at || r.pericia_medica_at;
   const isArchived   = r.archived === true;
 
   const nextLabel = r.exigency_due_date ? 'Prazo exig\u00EAncia'
-    : r.pericia_medica_at ? 'Per\u00EDcia m\u00E9dica'
     : r.pericia_social_at ? 'Per\u00EDcia social'
+    : r.pericia_medica_at ? 'Per\u00EDcia m\u00E9dica'
     : null;
 
   return (

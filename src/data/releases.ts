@@ -37,6 +37,63 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.11',
+    date: '28/08/2026',
+    summary: 'A perícia social passou a vir antes da médica, cada perícia ganhou o campo Local, e o agendamento pode avisar o cliente pelo WhatsApp alguns dias antes.',
+    modules: [
+      {
+        moduleId: 'requerimentos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Perícia social antes da médica',
+            description: 'A ordem das duas perícias foi invertida no agendamento, na ficha do requerimento, na ficha do cliente, no relatório impresso e no portal do cliente — é a mesma ordem em que o Meu INSS mostra, que é o papel que o beneficiário tem na mão.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Local da perícia',
+            description: 'Cada perícia agora guarda o endereço informado pelo INSS. Ele aparece na ficha, no relatório impresso, na descrição do compromisso da Agenda, no link do Google Agenda e no portal do cliente.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Comunicar cliente pelo WhatsApp',
+            description: 'Ao agendar a perícia, um botão opcional abre o aviso ao cliente: escolhe-se o canal, quantos dias antes e a hora. A mensagem já vem pronta com protocolo, benefício, data e local puxados do requerimento, e entra na fila de agendadas do WhatsApp. Se não sair, aparece na aba "Agendadas" do módulo WhatsApp com o erro e o botão de reenviar.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Cada perícia diz o que levar',
+            description: 'A social e a médica passaram a ter textos próprios, editáveis na tela. A social pede os comprovantes de despesas da casa — água, luz, telefone, gás, aluguel, mercado e remédios — porque é a renda da família que ela avalia; a médica continua pedindo laudos e exames. O mesmo acerto valeu para o modelo de WhatsApp do status "Aguardando perícia", que mandava pedir laudo para quem ia à avaliação social.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Instruções personalizadas por perícia',
+            description: 'Ao lado do Local, cada perícia ganhou um campo livre para o que só ela pede: chegar 30 minutos antes, levar acompanhante, o exame que o médico ainda vai entregar. O texto fica guardado no requerimento, aparece na ficha e no relatório, entra na descrição do compromisso da Agenda e vai destacado no aviso ao cliente.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O agendamento de perícia lembra o que já foi escolhido',
+            description: 'Reabrir o modal deixou de pedir tudo de novo: o responsável volta do compromisso já criado e, se houver aviso na fila, a seção "Comunicar cliente" abre ligada com o canal, os dias e a hora que estavam valendo. O modal também foi reorganizado, com os botões Cancelar e Salvar sempre à vista.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Remarcar a perícia cancela o aviso antigo',
+            description: 'O lembrete passou a ficar vinculado ao requerimento. Quando o INSS remarca e a data é corrigida no CRM, o aviso da data antiga é cancelado em vez de continuar na fila mandando o cliente comparecer num dia que não existe mais — o mesmo vale quando o requerimento é indeferido ou deferido. O cartão "Perícias" da ficha agora diz sempre em que pé está: quando o cliente será avisado, se o envio falhou, ou que não há aviso (com um atalho para criar um). Os lembretes que já estavam na fila sem vínculo foram adotados pelo protocolo impresso na própria mensagem.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Modelo do aviso virou configuração do escritório',
+            description: 'O texto do lembrete saiu do código e virou configuração do escritório, editável em Configurações → Requerimentos e também dentro do próprio modal de agendamento (só administrador). Antes o editor do modal era um rascunho que evaporava ao fechar a janela: agora ou você salva o modelo, e ele vale para todos os clientes, ou o sistema avisa em voz alta que a alteração valeu só para aquele envio. Toda gravação fica registrada na auditoria.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Modal de perícia em duas colunas, com interruptores',
+            description: 'O modal deixou de ser uma coluna comprida: de um lado as perícias (quando e onde), do outro os avisos e o responsável. Marcar cada perícia e ligar o aviso ao cliente agora é o mesmo controle — um interruptor que se lê de relance. E cada perícia ganhou um olho que mostra, ali mesmo, a mensagem exata que o cliente vai receber, mesmo com o aviso desligado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.10',
     date: '27/08/2026',
     summary: 'O ambiente de desenvolvimento ganhou atalhos para executar o painel e a API do projeto Operacao.',
