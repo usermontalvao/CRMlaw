@@ -37,8 +37,17 @@ function stripElsewhere(reason: string): { base: string; elsewhere: boolean } {
     : { base: reason, elsewhere: false };
 }
 
-/** Recusa: alguém — ou o aparelho, pelo dono — disse não. */
-const DECLINED_REASONS = new Set(['declined', 'reject', 'rejected', 'do_not_disturb']);
+/**
+ * Recusa: alguém — ou o aparelho, pelo dono — disse não.
+ *
+ * `rejected_local` é O ESCRITÓRIO recusando: o botão vermelho do convite, que o
+ * Jurius Call devolve com esse nome (ver `reject_call` em `state.rs`). Ele não
+ * estava nesta lista, caía no caso comum e virava PERDIDA — e o cartão de
+ * chamada perdida voltava a anunciar, a cada abertura do CRM, exatamente as
+ * ligações que a pessoa tinha acabado de recusar com a mão dela. Um aviso que
+ * insiste no que já foi decidido é o primeiro que se aprende a ignorar.
+ */
+const DECLINED_REASONS = new Set(['declined', 'reject', 'rejected', 'rejected_local', 'do_not_disturb']);
 
 /** Defeito: não houve conversa porque algo quebrou, não porque alguém não quis. */
 const FAILED_REASONS = new Set([
@@ -94,6 +103,9 @@ export function endReasonMessage(
     case 'reject':
     case 'rejected':
       return 'Chamada recusada.';
+    // A recusa foi NOSSA, no botão vermelho do convite.
+    case 'rejected_local':
+      return 'Você recusou a chamada.';
     case 'do_not_disturb':
       return 'O contato está com o "não perturbe" ligado.';
     case 'busy':

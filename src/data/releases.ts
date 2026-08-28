@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.5',
+    date: '27/08/2026',
+    summary: 'O cartão de chamada perdida parou de cobrar de você as ligações que você mesmo recusou.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Recusar no botão vermelho não é perder a ligação',
+            description: 'Quando você recusava uma chamada no botão vermelho do convite, o CRM guardava aquilo como "perdida". Resultado: o cartão de chamadas perdidas voltava a anunciar, a cada vez que você abria o sistema, exatamente as ligações que você tinha acabado de dispensar com a própria mão — e um aviso que insiste no que já foi decidido é o primeiro que se aprende a ignorar. A recusa feita daqui passou a ser registrada como recusa, e o histórico mostra "Você recusou a chamada".',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O que deixou de ser perdida agora sai do cartão',
+            description: 'O aviso só sabia somar: uma ligação entrava e ficava lá até completar 12 horas, mesmo que o registro do escritório já dissesse outra coisa sobre ela. Agora, a cada releitura do registro, o cartão devolve o que deixou de ser chamada perdida. A comparação só vale quando a releitura cobriu a janela inteira — sumir da lista por causa do limite de linhas não é o mesmo que ter deixado de ser perdida.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.4',
     date: '27/08/2026',
     summary: 'A triagem do WhatsApp deixou de soar como formulário: as 18 perguntas foram reescritas na língua de quem responde. E descobrimos que editar o roteiro na tela não estava mudando nada nesta campanha.',

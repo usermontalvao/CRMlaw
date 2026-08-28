@@ -147,6 +147,41 @@ export function mergeMissedCalls(
 }
 
 /**
+ * Quanto tempo uma chamada tem para APARECER no registro antes de o cartão
+ * cobrar a presença dela. Ela entra no aviso pelo evento local, no instante em
+ * que o telefone para de tocar, e só depois vira linha no banco.
+ */
+export const MISSED_CALL_RECONCILE_GRACE_MS = 3 * 60_000;
+
+/**
+ * O QUE DEIXOU DE SER PERDIDA SAI DO CARTÃO.
+ *
+ * O aviso só sabia somar: uma chamada entrava e ficava até a janela de 12h
+ * fechar, mesmo que o registro do escritório passasse a dizer outra coisa
+ * sobre ela. Foi o que aconteceu com as ligações recusadas no botão vermelho —
+ * gravadas como perdidas por engano (ver `outcomeFromEndReason`), corrigidas no
+ * banco depois, e ainda assim voltando à tela a cada abertura do CRM porque
+ * viviam no armazenamento do navegador.
+ *
+ * A comparação só vale quando a releitura cobriu a janela INTEIRA
+ * (`completa`): o registro vem com teto, e sumir da lista por causa do teto não
+ * é sumir da lista por ter deixado de ser perdida.
+ */
+export function reconcileMissedCalls(
+  current: readonly MissedCall[],
+  aindaPerdidas: ReadonlySet<string>,
+  options: { now: number; completa: boolean; graceMs?: number },
+): MissedCall[] {
+  if (!options.completa) return [...current];
+  const carencia = options.graceMs ?? MISSED_CALL_RECONCILE_GRACE_MS;
+  return current.filter(c => {
+    if (aindaPerdidas.has(c.callId)) return true;
+    // Acabou de acontecer: o registro ainda pode estar a caminho.
+    return options.now - c.startedAt <= carencia;
+  });
+}
+
+/**
  * Quem ligou — a chave que junta as ligações da MESMA pessoa.
  *
  * O telefone manda. Sem telefone, o apelido interno serve de chave (ele não

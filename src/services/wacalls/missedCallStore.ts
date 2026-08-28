@@ -34,6 +34,7 @@ import {
   parseStoredDismissed,
   parseStoredMissedCalls,
   pruneDismissed,
+  reconcileMissedCalls,
   type DismissedMissedCall,
   type MissedCall,
 } from './missedCalls';
@@ -63,6 +64,16 @@ const REFRESH_MS = 5 * 60_000;
  * anterior, que já é história quando o CRM abre.
  */
 const NOVIDADE_SONORA_MS = 2 * 60_000;
+
+/**
+ * Quantas perdidas a releitura pede.
+ *
+ * O número é explícito aqui porque ele decide se a comparação de baixa pode
+ * acontecer: só dá para afirmar "esta chamada não é mais perdida" quando a
+ * consulta trouxe MENOS que o teto — aí ela cobriu a janela inteira. Ver
+ * `reconcileMissedCalls`.
+ */
+const MISSED_LIMIT = 20;
 
 export interface MissedCallsSnapshot {
   /** As perdidas que ainda merecem tela, da mais recente para a mais antiga. */
@@ -246,7 +257,19 @@ export const missedCallsStore = {
     refreshing = (async () => {
       try {
         const desde = Date.now() - MISSED_CALL_WINDOW_MS;
-        const rows = await callLogService.listRecentMissed(desde);
+        const rows = await callLogService.listRecentMissed(desde, MISSED_LIMIT);
+        // A releitura também TIRA. Uma chamada que o registro deixou de chamar
+        // de perdida (foi recusada aqui, foi reclassificada) continuava na tela
+        // para sempre, porque o cartão vive no armazenamento do navegador e só
+        // sabia somar. Ver `reconcileMissedCalls`.
+        const antes = entries.length;
+        entries = reconcileMissedCalls(entries, new Set(rows.map(r => r.callId)), {
+          now: Date.now(),
+          // Veio menos que o teto: a consulta cobriu a janela inteira, então o
+          // que não está aqui de fato não é mais perdida.
+          completa: rows.length < MISSED_LIMIT,
+        });
+        if (entries.length !== antes) recompute();
         await add(rows.map(fromLogRow));
       } catch {
         // Sem rede, fica o que já está na tela.

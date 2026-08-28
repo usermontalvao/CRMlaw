@@ -119,6 +119,21 @@ test('a recusa do Jurius Call ("rejected") é recusa, e é dita na tela', () => 
   assert.equal(endedCallLabel('declined', { answered: false, direction: 'inbound' }), 'Chamada recusada');
 });
 
+test('recusar aqui não é perder a chamada', () => {
+  // O caso relatado em 27/08/2026: três ligações recusadas no botão vermelho
+  // ficaram gravadas como `missed` (o Jurius Call as encerra com
+  // `rejected_local`, que ninguém aqui conhecia) e o cartão de chamada perdida
+  // voltava a anunciá-las a cada abertura do CRM.
+  assert.equal(outcomeFromEndReason('rejected_local'), 'declined');
+  assert.equal(endReasonMeansNeverAnswered('rejected_local'), true);
+  assert.equal(resolveCallOutcome('rejected_local', { connected: true, failed: false }), 'declined');
+  assert.equal(endedCallLabel('rejected_local', { answered: false, direction: 'inbound' }), 'Chamada recusada');
+  assert.equal(
+    endReasonMessage('rejected_local', { answered: false, direction: 'inbound' }),
+    'Você recusou a chamada.',
+  );
+});
+
 test('defeito de mídia é falha, não desprezo do contato', () => {
   for (const motivo of ['relay_failed', 'relay_timeout', 'accept_failed']) {
     assert.equal(outcomeFromEndReason(motivo), 'failed', `motivo: ${motivo}`);

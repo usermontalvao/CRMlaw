@@ -10,6 +10,7 @@ import {
   parseStoredDismissed,
   parseStoredMissedCalls,
   pruneDismissed,
+  reconcileMissedCalls,
   type MissedCall,
 } from './missedCalls.ts';
 
@@ -148,4 +149,31 @@ test('as dispensadas envelhecem e a lista não cresce para sempre', () => {
   assert.deepEqual(pruneDismissed(guardadas, AGORA).map(d => d.callId), ['recente']);
   const muitas = Array.from({ length: 300 }, (_, i) => ({ callId: `c${i}`, at: AGORA }));
   assert.equal(pruneDismissed(muitas, AGORA).length, 200);
+});
+
+test('o que o registro deixou de chamar de perdida sai do cartão', () => {
+  // O caso de 27/08/2026: três ligações recusadas no botão vermelho foram
+  // gravadas como perdidas por engano. Corrigido o registro, o cartão continuava
+  // anunciando as três a cada abertura do CRM — ele vive no navegador e só
+  // sabia somar.
+  const atuais = [
+    perdida({ callId: 'recusada', startedAt: AGORA - 3 * 3_600_000 }),
+    perdida({ callId: 'perdida-mesmo', startedAt: AGORA - 2 * 3_600_000 }),
+  ];
+  const vivas = reconcileMissedCalls(atuais, new Set(['perdida-mesmo']), { now: AGORA, completa: true });
+  assert.deepEqual(vivas.map(c => c.callId), ['perdida-mesmo']);
+});
+
+test('a que acabou de tocar tem tempo de chegar ao registro', () => {
+  const atuais = [perdida({ callId: 'agorinha', startedAt: AGORA - 30_000 })];
+  const vivas = reconcileMissedCalls(atuais, new Set(), { now: AGORA, completa: true });
+  assert.deepEqual(vivas.map(c => c.callId), ['agorinha']);
+});
+
+test('releitura truncada não dá baixa em ninguém', () => {
+  // Sem a janela inteira, "não veio na consulta" pode ser só o teto do limite —
+  // e dar baixa por isso apagaria avisos legítimos.
+  const atuais = [perdida({ callId: 'antiga', startedAt: AGORA - 6 * 3_600_000 })];
+  const vivas = reconcileMissedCalls(atuais, new Set(['outra']), { now: AGORA, completa: false });
+  assert.deepEqual(vivas.map(c => c.callId), ['antiga']);
 });
