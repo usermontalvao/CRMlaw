@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Clock, Pencil, Ban, BellOff, AlertTriangle, Users, Timer, FileText, CheckCircle2, ArrowRightLeft,
+  Check, X, PenLine, Eye,
 } from 'lucide-react';
 import type {
   WhatsAppConversation, WhatsAppChannel, WhatsAppDepartment, WhatsAppPresence,
@@ -17,6 +18,7 @@ import { inferFunnelStage } from './funnel';
 import { conversationPreview } from './threadCalls';
 import { Avatar } from './avatar';
 import { WA_SWEEP_META, type WaSweepKind } from './conversationSweep';
+import type { SignatureListChip } from './signatureChip';
 
 /**
  * Linha de presença do cabeçalho (online/digitando/visto por último). Possui o
@@ -159,9 +161,16 @@ export const ConversationListItem: React.FC<{
    * linha não recebe clique — ela já não é mais trabalho de ninguém.
    */
   sweep?: WaSweepKind | null;
+  /**
+   * O que o CLIENTE fez com o documento que mandamos para assinar — assinou,
+   * recusou, está na página agora. Vem pronto de `signatureListChip`; a linha só
+   * desenha. Sem isto, "Cliente assinou" só existia dentro da conversa aberta,
+   * e quem varre a fila não abre conversa nenhuma.
+   */
+  signatureChip?: SignatureListChip | null;
   onSelect: (id: string) => void;
   onDismissTracking?: () => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, aiChip = null, elapsedMinutes, failedSends = 0, archived = false, showChannelName = false, busy = false, sweep = null, onSelect, onDismissTracking }) => {
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, aiChip = null, elapsedMinutes, failedSends = 0, archived = false, showChannelName = false, busy = false, sweep = null, signatureChip = null, onSelect, onDismissTracking }) => {
   // Com a IA conduzindo, os sinais de espera humana saem de cena — inclusive o
   // relógio vermelho do canto, que contava uma demora que não está havendo.
   const sla = aiChip ? null : slaSignal(c, elapsedMinutes);
@@ -322,6 +331,44 @@ export const ConversationListItem: React.FC<{
               title="Toque na conversa para tentar de novo ou descartar">
               <AlertTriangle size={10} />
               {failedSends === 1 ? 'Não enviada' : `${failedSends} não enviadas`}
+            </span>
+          )}
+          {/* O CLIENTE MEXEU NO DOCUMENTO. Vem logo depois do erro de envio e
+              antes da etapa: "Cliente assinou" é a notícia que o escritório
+              mais espera, e ela vivia só na faixa do topo da conversa aberta.
+              O X encerra o acompanhamento daqui mesmo — a mesma ação da faixa,
+              sem precisar entrar na conversa. */}
+          {signatureChip && (
+            <span className={`${CHIP} ${signatureChip.cls}`} title={signatureChip.title}>
+              {signatureChip.icon === 'signed' ? <Check size={10} strokeWidth={3} />
+                : signatureChip.icon === 'refused' ? <X size={10} strokeWidth={3} />
+                : signatureChip.icon === 'live' ? <PenLine size={10} />
+                : <Eye size={10} />}
+              {signatureChip.label}
+              {/* A linha inteira já é um <button>, e botão dentro de botão é HTML
+                  inválido (o React reclama e o navegador desmonta a árvore do
+                  seu jeito). Um span com papel de botão mantém o clique, o foco
+                  e o teclado sem aninhar nada. */}
+              {onDismissTracking && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => { e.stopPropagation(); onDismissTracking(); }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    // preventDefault: sem ele, o Espaço rola a lista e o Enter
+                    // dispara o clique da linha logo atrás.
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDismissTracking();
+                  }}
+                  title="Parar de acompanhar esta assinatura"
+                  aria-label="Parar de acompanhar esta assinatura"
+                  className="inline-flex items-center justify-center h-3 w-3 cursor-pointer rounded-full bg-white/60 transition hover:bg-slate-700 hover:text-white"
+                >
+                  <X size={8} strokeWidth={2.75} />
+                </span>
+              )}
             </span>
           )}
           {/* ETAPA do funil — onde o atendimento está no processo. Anda por

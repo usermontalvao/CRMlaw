@@ -4,6 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import PizZip from 'https://esm.sh/pizzip@3.2.0?target=deno';
 import Docxtemplater from 'https://esm.sh/docxtemplater@3.66.5?target=deno';
 import { matchWaAiClientsByPhone } from '../_shared/wa-ai-client-link.ts';
+import { camposParaGravar } from '../_shared/kit-client-merge.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -485,21 +486,31 @@ Deno.serve(async (req) => {
 
       if (existingClient?.id) {
         clientId = existingClient.id;
-        const updateData: Record<string, any> = { updated_by: link.created_by };
-
-        for (const [k, v] of Object.entries(clientPayload)) {
-          if (k === 'client_type' || k === 'created_by') continue;
-          if (v === null || v === '') continue;
-          const curr = (existingClient as any)[k];
-          if (curr === null || curr === '' || curr === undefined) {
-            updateData[k] = v;
-          }
-        }
 
         // Preencheu a ficha inteira e vai assinar: deixou de ser "alguém que
         // ligou". A marca sai do MESMO registro — compromissos, prazos e
         // documentos já pendurados nele continuam exatamente onde estavam.
         const promovendo = existingClient.is_pre_cadastro === true;
+
+        // O que o kit pode escrever mora em `camposParaGravar`, com testes:
+        // campo vazio sempre; e, SÓ na promoção, o nome que o kit completa. O
+        // pré-cadastro do WhatsApp se chama "Jeniffer" porque foi o que o
+        // atendente ouviu ao telefone — e essa etiqueta ficava para sempre no
+        // lugar do nome que a própria pessoa escreveu no documento que assinou.
+        const updateData: Record<string, any> = {
+          ...camposParaGravar({
+            atual: existingClient as Record<string, unknown>,
+            doKit: clientPayload,
+            promovendo,
+            ignorar: ['client_type', 'created_by'],
+          }),
+          updated_by: link.created_by,
+        };
+        const nomeCorrigido = typeof updateData.full_name === 'string'
+          && updateData.full_name !== existingClient.full_name
+          ? { de: existingClient.full_name as string | null, para: updateData.full_name as string }
+          : null;
+
         if (promovendo) updateData.is_pre_cadastro = false;
 
         const hasUpdates = Object.keys(updateData).length > 1;
@@ -516,6 +527,21 @@ Deno.serve(async (req) => {
             new_value: 'false',
             source: 'assinatura',
             source_label: 'Pré-cadastro promovido ao preencher o kit de assinatura',
+            changed_by: link.created_by ?? null,
+          });
+        }
+
+        // Trocar o nome de um cliente é a mudança mais visível que existe numa
+        // ficha: ela precisa estar escrita, com o nome antigo do lado, para
+        // ninguém achar que o cadastro virou outra pessoa.
+        if (nomeCorrigido) {
+          await admin.from('client_change_history').insert({
+            client_id: clientId,
+            field: 'full_name',
+            old_value: nomeCorrigido.de,
+            new_value: nomeCorrigido.para,
+            source: 'assinatura',
+            source_label: 'Nome completo informado pelo cliente no kit de assinatura',
             changed_by: link.created_by ?? null,
           });
         }

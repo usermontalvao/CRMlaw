@@ -15,12 +15,14 @@ import React, { useLayoutEffect, useRef } from 'react';
 import { Archive } from 'lucide-react';
 import { ConversationListItem } from './conversationListItem';
 import { ConversationListSkeleton } from './skeletons';
+import { signatureListChip } from './signatureChip';
 import type { FunnelLabel } from '../../services/settings.service';
 import type {
   WhatsAppChannel, WhatsAppConversation, WhatsAppDepartment,
 } from '../../types/whatsapp.types';
 import type { ElapsedMinutes } from './businessTime';
 import type { WaSweepKind } from './conversationSweep';
+import type { ClientTrackedSignatureStatus } from '../../services/whatsapp/shared';
 
 export interface ConversationListProps {
   conversations: WhatsAppConversation[];
@@ -58,7 +60,12 @@ export interface ConversationListProps {
   elapsedMinutes?: ElapsedMinutes;
   conversationStatus: (c: WhatsAppConversation) => { key: string; label: string; cls: string };
   docStatusFor: (clientId: string | null | undefined) => 'awaiting' | 'ready' | null;
-  trackedSignatureFor: (clientId: string | null | undefined) => { signature_request_id?: string | null; link_id?: string } | null;
+  /**
+   * Acompanhamento de assinatura/kit deste cliente. Alimenta duas coisas na
+   * linha: o chip do que o cliente fez com o documento e o X que encerra o
+   * acompanhamento.
+   */
+  trackedSignatureFor: (clientId: string | null | undefined) => ClientTrackedSignatureStatus | null;
   onSelect: (id: string) => void;
   onStopSignatureTracking: (signatureRequestId: string) => void;
   onStopTemplateFillTracking: (linkId: string) => void;
@@ -104,7 +111,15 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
     <div ref={listRef}>
       {conversations.map((c, i) => {
         const st = conversationStatus(c);
-        const tracked = st.key === 'waiting_client' ? trackedSignatureFor(c.client_id) : null;
+        // Sem a amarra do status: o acompanhamento é um fato do CLIENTE (ele
+        // assinou, ele abriu), e antes ele só era lido quando a conversa por
+        // acaso estava em "aguardando o cliente" — bastava a pessoa mandar uma
+        // mensagem depois de assinar para o aviso sumir da lista.
+        const tracked = trackedSignatureFor(c.client_id);
+        // O chip decide também o X: sem etiqueta na linha não há de onde
+        // encerrar o acompanhamento, e passar a função assim mesmo derrubaria o
+        // React.memo da linha por nada (ver o cabeçalho deste arquivo).
+        const signatureChip = signatureListChip(tracked);
         const arquivada = archivedIds.has(c.id);
         const item = (
           <ConversationListItem
@@ -128,11 +143,12 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
             funnelLabels={funnelLabelsForChannel(c.instance_id)}
             aiChip={aiChipFor?.(c.id) ?? null}
             elapsedMinutes={elapsedMinutes}
+            signatureChip={signatureChip}
             onSelect={onSelect}
-            onDismissTracking={tracked
+            onDismissTracking={tracked && signatureChip
               ? () => (tracked.signature_request_id
                 ? onStopSignatureTracking(tracked.signature_request_id)
-                : onStopTemplateFillTracking(tracked.link_id!))
+                : onStopTemplateFillTracking(tracked.link_id))
               : undefined}
           />
         );

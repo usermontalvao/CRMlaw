@@ -1603,6 +1603,28 @@ class SignatureService {
     return true;
   }
 
+  /**
+   * Fluxo INTERNO: URL temporária do PDF JÁ ASSINADO, que mora no bucket
+   * `assinados`.
+   *
+   * Existe aqui, e não só no `pdfSignature.service`, para que telas leves — o
+   * painel da conversa do WhatsApp, por exemplo — possam oferecer o download
+   * sem arrastar as ~3.500 linhas de geração de PDF para dentro do bundle.
+   * Devolve `null` em vez de estourar: um documento que sumiu do bucket não
+   * pode derrubar o painel inteiro em volta dele.
+   */
+  async getSignedDocumentUrl(path: string, expiresIn = 3600): Promise<string | null> {
+    if (!path) return null;
+    const { data, error } = await supabase.storage
+      .from('assinados')
+      .createSignedUrl(path, expiresIn);
+    if (error || !data?.signedUrl) {
+      console.warn('[getSignedDocumentUrl] falha ao assinar URL:', error?.message);
+      return null;
+    }
+    return data.signedUrl;
+  }
+
   async getSignedImageUrl(path: string, expiresIn = 3600): Promise<string> {
     const { data, error } = await supabase.storage
       .from(STORAGE_BUCKET)

@@ -7,6 +7,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Loader2, Clock, ChevronUp, ChevronDown, Plus, Scale, Calendar, Pencil,
   AlertCircle, FileText, CheckCircle2, X, Ban, PenLine, Check, Link2, HandCoins,
+  FileCheck, Download, FileArchive,
 } from 'lucide-react';
 import { processService, type ProcessMovement } from '../../services/process.service';
 import { whatsappService, type ClientPendings, type ClientSchedule } from '../../services/whatsapp.service';
@@ -14,6 +15,7 @@ import { signatureService } from '../../services/signature.service';
 import { useToastContext } from '../../contexts/ToastContext';
 import { useSecurityPin } from '../../contexts/SecurityPinContext';
 import { dueInfo } from './format';
+import { nomeDeArquivoSeguro, nomeUnicoNoZip, signedDocLabel } from './signedDocsNaming';
 import type { ConfirmFn, WaOpenWorkspaceFn } from './types';
 import type { Process, ProcessStatus, ProcessPracticeArea } from '../../types/process.types';
 import type { Requirement, RequirementStatus } from '../../types/requirement.types';
@@ -611,6 +613,219 @@ export const ClientSignaturesPanel: React.FC<{
                   })}
                 </div>
               )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ── Documentos JÁ ASSINADOS que ainda estão sendo acompanhados ──
+//
+// O topo da conversa anuncia "Cliente assinou" e some assim que alguém fecha o
+// acompanhamento. Só que o que o escritório quer fazer com essa notícia é BAIXAR
+// o arquivo — e para isso era preciso sair da conversa e ir até o módulo de
+// Assinaturas procurar o envelope. Aqui o PDF assinado fica à mão, no painel de
+// detalhes do contato, exatamente enquanto o acompanhamento durar: clicou em
+// "parar de acompanhar", o bloco sai junto com a faixa e com o chip da lista.
+type SignedDocFile = { key: string; name: string; path: string };
+
+export const ClientSignedDocsPanel: React.FC<{
+  signatures: import('../../types/signature.types').SignatureRequestWithSigners[] | null;
+  onStopSignatureTracking?: (requestId: string) => void;
+}> = ({ signatures, onStopSignatureTracking }) => {
+  const toast = useToastContext();
+  const [docsByRequest, setDocsByRequest] = useState<Record<string, SignedDocFile[]>>({});
+  const [baixando, setBaixando] = useState<string | null>(null);
+
+  // A mesma janela de 30 dias do acompanhamento (ver `lerStatusDeAssinaturas`):
+  // sem ela, abrir uma ficha antiga acenderia o bloco com um documento assinado
+  // no ano passado, que ninguém está esperando.
+  const assinados = useMemo(() => (signatures ?? []).filter(s => {
+    if (s.archived_at || s.deleted_at || (s as any).wa_tracking_stopped) return false;
+    if (Date.now() - new Date(s.created_at).getTime() > 30 * 86_400_000) return false;
+    return s.status === 'signed' || !!s.signed_at || (s.signers ?? []).some(sg => !!sg.signed_at);
+  }), [signatures]);
+
+  const idsAssinados = useMemo(() => assinados.map(s => s.id).join(','), [assinados]);
+
+  /**
+   * Os arquivos de cada envelope.
+   *
+   * O caminho preferido é `signature_request_documents`: no modelo per-document
+   * cada peça do envelope vira um PDF assinado próprio, e mostrar só um deles
+   * esconderia o resto. Quando o envelope não tem essas linhas (assinatura de
+   * peça única), o arquivo é o do signatário que assinou.
+   */
+  useEffect(() => {
+    if (assinados.length === 0) { setDocsByRequest({}); return; }
+    let vivo = true;
+    Promise.all(assinados.map(async req => {
+      const porDocumento = (await signatureService.listRequestDocuments(req.id).catch(() => []))
+        .filter(d => !!d.signed_file_path);
+      if (porDocumento.length > 0) {
+        // O rótulo NÃO é o `display_name` cru: no envelope vindo de kit ele é o
+        // nome do arquivo no bucket (um uuid), e a lista virava dois códigos de
+        // banco de dados um embaixo do outro. Ver `signedDocsNaming`.
+        const arquivos: SignedDocFile[] = porDocumento.map((d, i) => ({
+          key: d.id,
+          name: signedDocLabel({
+            displayName: d.display_name, path: d.signed_file_path,
+            index: i, total: porDocumento.length,
+          }),
+          path: d.signed_file_path!,
+        }));
+        return [req.id, arquivos] as const;
+      }
+      const vistos = new Set<string>();
+      const caminhos = (req.signers ?? [])
+        .filter(sg => {
+          if (!sg.signed_document_path || vistos.has(sg.signed_document_path)) return false;
+          vistos.add(sg.signed_document_path);
+          return true;
+        });
+      const dosSignatarios: SignedDocFile[] = caminhos.map((sg, i) => ({
+        key: sg.id,
+        name: signedDocLabel({
+          displayName: req.document_name, path: sg.signed_document_path,
+          index: i, total: caminhos.length,
+        }),
+        path: sg.signed_document_path!,
+      }));
+      return [req.id, dosSignatarios] as const;
+    })).then(pares => {
+      if (!vivo) return;
+      setDocsByRequest(Object.fromEntries(pares));
+    }).catch(() => { if (vivo) setDocsByRequest({}); });
+    return () => { vivo = false; };
+    // `idsAssinados` (e não `assinados`) porque o pacote 360 é relido a cada
+    // minuto: com o array na dependência, o painel refaria as consultas de
+    // documento a cada releitura, mesmo sem nada ter mudado.
+  }, [idsAssinados]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const baixar = async (file: SignedDocFile) => {
+    setBaixando(file.key);
+    try {
+      const url = await signatureService.getSignedDocumentUrl(file.path);
+      if (!url) { toast.error('Documento indisponível', 'O arquivo assinado não foi encontrado no armazenamento.'); return; }
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (e: any) {
+      toast.error('Não foi possível abrir o documento', e?.message);
+    } finally {
+      setBaixando(b => (b === file.key ? null : b));
+    }
+  };
+
+  /**
+   * BAIXAR TUDO — um zip por envelope.
+   *
+   * Um kit assinado chega com dois, três, cinco arquivos, e baixar um por um é
+   * abrir uma aba por documento e depois procurá-los soltos na pasta de
+   * downloads. O JSZip entra por `import()` dinâmico: quem nunca clica aqui não
+   * paga o pacote no carregamento do CRM.
+   */
+  const baixarTudo = async (req: import('../../types/signature.types').SignatureRequestWithSigners, arquivos: SignedDocFile[]) => {
+    const chave = `zip:${req.id}`;
+    setBaixando(chave);
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+      const usados = new Set<string>();
+      let dentro = 0;
+      for (const f of arquivos) {
+        const url = await signatureService.getSignedDocumentUrl(f.path);
+        if (!url) continue;
+        const resposta = await fetch(url);
+        if (!resposta.ok) continue;
+        zip.file(nomeUnicoNoZip(nomeDeArquivoSeguro(f.name, 'documento'), usados), await resposta.blob());
+        dentro += 1;
+      }
+      if (dentro === 0) {
+        toast.error('Nada para baixar', 'Nenhum dos arquivos assinados foi encontrado no armazenamento.');
+        return;
+      }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const nome = nomeDeArquivoSeguro(`${req.document_name || 'documentos-assinados'}.zip`, 'documentos-assinados.zip');
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href; a.download = nome;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(href), 5000);
+      // Um arquivo que não veio não pode passar por completo: o pacote sai, e a
+      // mensagem diz quantos documentos há dentro dele.
+      if (dentro < arquivos.length) toast.warning('ZIP incompleto', `${dentro} de ${arquivos.length} documentos entraram no pacote.`);
+      else toast.success(`ZIP com ${dentro} documento${dentro > 1 ? 's' : ''} baixado.`);
+    } catch (e: any) {
+      toast.error('Não foi possível montar o ZIP', e?.message);
+    } finally {
+      setBaixando(b => (b === chave ? null : b));
+    }
+  };
+
+  // Envelope assinado cujo arquivo ainda não foi gerado não vira bloco vazio:
+  // o aviso do topo já dá a notícia, e um cartão sem botão só confunde.
+  const comArquivo = assinados.filter(s => (docsByRequest[s.id] ?? []).length > 0);
+  if (comArquivo.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+        <FileCheck size={10} /> Documentos assinados
+        <span className="ml-auto px-1.5 py-px rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold">{comArquivo.length}</span>
+      </p>
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 divide-y divide-emerald-100 overflow-hidden">
+        {comArquivo.map(req => {
+          const arquivos = docsByRequest[req.id] ?? [];
+          const assinadoEm = req.signed_at
+            ?? (req.signers ?? []).map(sg => sg.signed_at).filter(Boolean).sort().slice(-1)[0]
+            ?? null;
+          return (
+            <div key={req.id} className="px-3 py-2.5">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[12.5px] font-semibold text-slate-800 truncate">{req.document_name || 'Documento'}</p>
+                  <p className="text-[10.5px] text-emerald-700 font-semibold mt-0.5">
+                    Assinado{assinadoEm ? ` em ${new Date(assinadoEm).toLocaleDateString('pt-BR')}` : ''}
+                  </p>
+                </div>
+                {onStopSignatureTracking && (
+                  <button
+                    onClick={() => onStopSignatureTracking(req.id)}
+                    title="Parar de acompanhar — o documento sai daqui e do aviso da conversa"
+                    className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-white/80 text-emerald-700 hover:bg-emerald-600 hover:text-white transition flex-shrink-0"
+                  >
+                    <X size={11} strokeWidth={2.75} />
+                  </button>
+                )}
+              </div>
+              <div className="mt-1.5 space-y-1">
+                {arquivos.map(f => (
+                  <button key={f.key} onClick={() => baixar(f)} disabled={baixando === f.key}
+                    className="w-full flex items-center gap-2 px-2 py-1 rounded-md bg-white border border-emerald-200 text-left transition hover:bg-emerald-50 disabled:opacity-60">
+                    {baixando === f.key
+                      ? <Loader2 size={12} className="flex-shrink-0 text-emerald-600 animate-spin" />
+                      : <Download size={12} className="flex-shrink-0 text-emerald-600" />}
+                    <span className="text-[11px] font-semibold text-emerald-800 truncate">{f.name}</span>
+                  </button>
+                ))}
+                {/* Com um arquivo só, "baixar tudo" é o mesmo botão de cima com
+                    outro nome — e um zip de um item ainda dá trabalho de abrir. */}
+                {arquivos.length > 1 && (
+                  <button onClick={() => baixarTudo(req, arquivos)} disabled={baixando === `zip:${req.id}`}
+                    title={`Baixar os ${arquivos.length} documentos num arquivo .zip`}
+                    className="w-full flex items-center gap-2 px-2 py-1 rounded-md bg-emerald-600 text-left transition hover:bg-emerald-700 disabled:opacity-60">
+                    {baixando === `zip:${req.id}`
+                      ? <Loader2 size={12} className="flex-shrink-0 text-white animate-spin" />
+                      : <FileArchive size={12} className="flex-shrink-0 text-white" />}
+                    <span className="text-[11px] font-semibold text-white truncate">
+                      {baixando === `zip:${req.id}` ? 'Montando o pacote…' : `Baixar tudo (${arquivos.length}) em .zip`}
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}

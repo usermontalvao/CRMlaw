@@ -13,6 +13,7 @@
 import React, { useMemo, useState } from 'react';
 import { Filter, Headphones, Bell, Plus, Search } from 'lucide-react';
 import { ConversationListItem } from '../components/whatsapp/conversationListItem';
+import { signatureListChip, type SignatureChipInput } from '../components/whatsapp/signatureChip';
 import { InboxTabs, type InboxTab } from '../components/whatsapp/InboxTabs';
 import { SegmentedTabs } from '../components/chat/SegmentedTabs';
 import type { WhatsAppChannel, WhatsAppConversation } from '../types/whatsapp.types';
@@ -24,6 +25,15 @@ const CANAL: WhatsAppChannel = {
   funnel_enabled: true, funnel_initial_stage: 'novo',
   auto_close_enabled: true, auto_close_minutes: 240, auto_close_message: null,
   auto_close_business_hours_only: true,
+};
+
+// Acompanhamento de assinatura por conversa: é o chip que avisa que o cliente
+// assinou (ou saiu sem assinar) sem ninguém precisar abrir a conversa. Fica na
+// bancada porque é justamente na SOMA com etapa, docs e relógio que a fileira
+// quebra em duas linhas.
+const ACOMPANHAMENTO: Record<string, SignatureChipInput> = {
+  c2: { kind: 'signature_signed', label: 'Assinado' },
+  c5: { kind: 'signature_viewed', label: 'Saiu sem assinar — visto por último hoje às 14:32' },
 };
 
 const FUNNEL = [
@@ -204,6 +214,8 @@ export default function WhatsAppInboxPreview() {
                 draftPreview=""
                 funnelLabels={FUNNEL}
                 showChannelName={false}
+                signatureChip={signatureListChip(ACOMPANHAMENTO[c.id] ?? null)}
+                onDismissTracking={ACOMPANHAMENTO[c.id] ? () => {} : undefined}
                 onSelect={setSelecionada}
               />
             ))}

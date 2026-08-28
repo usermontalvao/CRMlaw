@@ -37,6 +37,43 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.7',
+    date: '27/08/2026',
+    summary: '"Cliente assinou" saiu de dentro da conversa aberta e apareceu na lista — e o documento assinado ficou à mão, com nome de gente em vez de código.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'A lista da inbox mostra o que o cliente fez com o documento',
+            description: 'Assinou, recusou ou está na página agora: a notícia que o escritório mais espera vivia só na faixa verde do topo da conversa aberta — e quem varre a fila não abre conversa nenhuma. Agora ela é uma etiqueta na própria linha, ao lado da etapa e dos documentos. O X encerra o acompanhamento dali mesmo, sem precisar entrar na conversa.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'O PDF assinado ficou à mão no painel da conversa',
+            description: 'Saber que o cliente assinou e ter de ir até o módulo Assinaturas procurar o envelope eram dois passos para uma coisa só. O painel do cliente ganhou o bloco dos documentos já assinados, com download direto — e, quando o envelope tem várias peças, todas elas, porque cada peça vira um PDF assinado próprio e mostrar só uma esconde o resto.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Documento assinado deixou de se chamar "4585e82c-57b3….docx"',
+            description: 'No envelope montado a partir de um kit, o nome guardado no banco não é um nome: é o nome do arquivo no armazenamento. O advogado via um identificador de banco de dados, que não distingue um documento do outro nem diz o que há dentro. Na tela e no ZIP, esses casos passaram a se chamar "Documento 1", "Documento 2", e o ZIP garante que dois arquivos não saiam com o mesmo nome.',
+          },
+        ],
+      },
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O nome que o cliente escreve no kit passa a valer sobre o apelido do atendimento',
+            description: 'O pré-cadastro nasce no WhatsApp com o que se tinha na hora — quase sempre o primeiro nome ou o apelido do perfil ("Jeniffer", "Dona Maria"). Quando a pessoa preenche o kit, ela escreve o próprio nome, o mesmo que vai no contrato que assina em seguida. Esse nome estava sendo descartado porque "o campo já está preenchido", e a ficha ficava para sempre com a etiqueta do atendimento. Só nessa promoção o kit sobrescreve; para o resto, a regra continua conservadora — o formulário do cliente não passa por cima do que a equipe cadastrou.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.6',
     date: '27/08/2026',
     summary: 'A triagem por IA parou de anotar o que o cliente não disse, e parou de repetir a mesma pergunta como se ele não tivesse escrito nada.',

@@ -52,7 +52,8 @@ import { SendContactModal } from './whatsapp/sendContactModal';
 import { NewConversationPanel } from './whatsapp/newConversationPanel';
 import { CreateDeadlineFromMessageModal, CreateTaskFromMessageModal } from './whatsapp/createFromMessageModals';
 import {
-  CasosPanel, ClientAgendaPanel, ClientPendingsPanel, ClientSignaturesPanel, ClientAgreementsPanel,
+  CasosPanel, ClientAgendaPanel, ClientPendingsPanel, ClientSignaturesPanel, ClientSignedDocsPanel,
+  ClientAgreementsPanel,
   PROC_STATUS, PROC_AREA, REQ_STATUS_BADGE, REQ_STATUS_LABEL,
 } from './whatsapp/clientPanels';
 import type { ConfirmOpts, ConfirmFn, WaOpenWorkspaceFn } from './whatsapp/types';
@@ -515,6 +516,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   const imgInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
+  /**
+   * A raiz do módulo. Serve para saber se um gesto de teclado veio de DENTRO
+   * daqui: no widget flutuante, o CRM inteiro está atrás, e um atalho global
+   * não pode agir quando quem está com o foco é a tela de trás.
+   */
+  const rootRef = useRef<HTMLDivElement>(null);
   const [composerScrollTop, setComposerScrollTop] = useState(0);
   const [composerScrollbarWidth, setComposerScrollbarWidth] = useState(0);
   const [composerSpellMenu, setComposerSpellMenu] = useState<ComposerSpellcheckMenuState | null>(null);
@@ -1257,6 +1264,34 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     return () => window.clearTimeout(id);
   }, [selectedId, rawIsMobile, embedded]);
 
+  /**
+   * O CURSOR VOLTA PARA O COMPOSITOR quando o anexo termina.
+   *
+   * Mandar uma imagem custava um clique a mais do que devia: o preview do anexo
+   * (ou o seletor de GIF, ou a biblioteca de mídias) leva o foco embora, e ao
+   * fechar ele fica no `body` — a próxima frase digitada não ia para lugar
+   * nenhum, e o atendente precisava clicar de novo no campo. Com a conversa
+   * aberta, o compositor é o lugar do cursor.
+   *
+   * Só na TRANSIÇÃO de fechamento: um efeito que devolvesse o foco a todo
+   * render brigaria com quem está selecionando texto na conversa — focar um
+   * campo limpa a seleção do documento, e o Ctrl+A daqui de cima ficaria
+   * inútil.
+   */
+  const composerOverlayOpen = !!attachStaged || gifOpen || mediaLibOpen || emojiOpen || attachMenuOpen;
+  const composerOverlayAnteriorRef = useRef(composerOverlayOpen);
+  useEffect(() => {
+    const fechou = composerOverlayAnteriorRef.current && !composerOverlayOpen;
+    composerOverlayAnteriorRef.current = composerOverlayOpen;
+    if (!fechou || !selectedId || rawIsMobile) return;
+    if (conversationsRef.current.find(c => c.id === selectedId)?.is_blocked) return;
+    // Fechou o anexo para responder a um modal que subiu por cima (confirmação,
+    // workspace do CRM): o teclado é dele.
+    if (document.querySelector('[role="dialog"]')) return;
+    const id = window.setTimeout(() => draftRef.current?.focus({ preventScroll: true }), 0);
+    return () => window.clearTimeout(id);
+  }, [composerOverlayOpen, selectedId, rawIsMobile]);
+
   // Marca como lida ao abrir a conversa E a cada mensagem que chega com ela
   // aberta. A segunda metade é o que faltava: o contador de não-lidas vem do
   // banco pelo realtime, então cada mensagem recebida somava no badge da própria
@@ -1645,6 +1680,50 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     filteredIds, selectedId, search, embedded, onEscapeExit,
     draft, editing, replyTo, recording, attachMenuOpen, gifOpen, mediaLibOpen, emojiOpen, slashActive,
   ]);
+
+  /**
+   * Ctrl/⌘+A com a conversa aberta seleciona A CONVERSA, não a página.
+   *
+   * O padrão do navegador é "selecionar tudo o que está no documento" — e num
+   * CRM isso é a barra lateral, o cabeçalho, a lista de conversas e o painel de
+   * detalhes junto com as mensagens. Quem faz esse gesto dentro de um
+   * atendimento quer copiar o atendimento; o resto da tela é moldura.
+   *
+   * Vive num efeito PRÓPRIO, e não na escada de atalhos acima, porque aquela
+   * devolve as teclas ao hospedeiro no modo embutido (`embedded`). Aqui é o
+   * contrário: é justamente no widget que o Ctrl+A padrão faz o pior estrago,
+   * selecionando o CRM inteiro que está atrás da janelinha.
+   *
+   * O campo de texto continua sendo dono do gesto: dentro do compositor ou da
+   * busca, Ctrl+A seleciona o que está escrito ali, como sempre.
+   */
+  useEffect(() => {
+    const onSelectAll = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (e.key !== 'a' && e.key !== 'A') return;
+      if (!selectedId) return;
+      const conteudo = threadContentRef.current;
+      if (!conteudo) return;
+      const alvo = document.activeElement;
+      if (isTypingTarget(alvo)) return;
+      // Um modal por cima tem o próprio conteúdo para selecionar.
+      if (document.querySelector('[role="dialog"]')) return;
+      // Foco em algo que não é nosso (a tela de trás, no widget): o gesto é de
+      // quem está com o foco. Sem foco nenhum (`body`), a conversa aberta é a
+      // única coisa em cena que faz sentido selecionar.
+      const raiz = rootRef.current;
+      if (alvo && alvo !== document.body && raiz && !raiz.contains(alvo)) return;
+      const selecao = window.getSelection();
+      if (!selecao) return;
+      const faixa = document.createRange();
+      faixa.selectNodeContents(conteudo);
+      selecao.removeAllRanges();
+      selecao.addRange(faixa);
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onSelectAll);
+    return () => window.removeEventListener('keydown', onSelectAll);
+  }, [selectedId, threadContentRef]);
 
   // ── Props estáveis da lista ──────────────────────────────────────────
   // A lista está atrás de um React.memo (ver conversationList.tsx). Estas três
@@ -2562,7 +2641,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   );
 
   return (
-    <div className="relative flex flex-col h-full min-h-0 bg-[#faf9f7]">
+    <div ref={rootRef} className="relative flex flex-col h-full min-h-0 bg-[#faf9f7]">
       <ReconnectHoldSiren
         items={reconnectAlerts}
         conversationsById={conversationsById}
@@ -3951,6 +4030,9 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
               Documento enviado para assinar é acompanhamento de atendimento, não
               privilégio de quem já virou cadastro. */}
           <ClientSignaturesPanel signatures={overview?.signatures ?? null} links={overview?.templateFillLinks ?? null} onStopTracking={stopTemplateFillTracking} onStopSignatureTracking={stopSignatureTracking} />
+          {/* O que já foi assinado, pronto para baixar. Fica logo abaixo das
+              pendentes e some no mesmo gesto que apaga a faixa do topo. */}
+          <ClientSignedDocsPanel signatures={overview?.signatures ?? null} onStopSignatureTracking={stopSignatureTracking} />
 
           {/* 360: Financeiro — acordos clicáveis abrem detalhes em modal */}
           {selected.client_id && (
