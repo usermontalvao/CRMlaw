@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.9',
+    date: '27/08/2026',
+    summary: 'O WhatsApp passou a ter UMA definição de atraso, configurável por canal: a mesma conversa não fica mais vermelha na fila e "dentro do prazo" no painel.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Cada canal define quando uma conversa está atrasada',
+            description: 'Em Configurações → WhatsApp, cada número ganhou o painel SLA: a partir de quantos minutos a conversa fica âmbar, quando fica vermelha, quanto tempo ela pode ficar na fila de um setor sem responsável, quanto tempo uma transferência pode ficar sem aceite e a partir de quando uma conversa com responsável conta como abandonada. O padrão é o que já valia na inbox — 15 e 60 minutos.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O painel de métricas parou de contar por outra régua',
+            description: 'A inbox acendia âmbar aos 15 minutos e contava só o tempo de expediente; o painel dizia "Estouradas (>4h)" e contava relógio corrido, madrugada e fim de semana incluídos. A mesma conversa aparecia vermelha na fila e dentro do prazo no relatório. Agora os dois leem os mesmos números, do mesmo canal, com o mesmo relógio — e o cartão escreve o prazo que realmente usou, em vez de um ">4h" fixo. Efeito imediato nas conversas de hoje: uma delas deixou de ser cobrada como atrasada porque chegou fora do expediente.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O contador de "hoje" virava às 23h',
+            description: 'As métricas do dia começavam à meia-noite de São Paulo, enquanto o escritório, a agenda e o encerramento automático trabalham no horário de Cuiabá. Uma hora inteira da noite entrava no dia seguinte. O painel passou a usar a mesma âncora de todo o resto do sistema.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'As cobranças automáticas passaram a respeitar o expediente do canal',
+            description: 'Os lembretes de documento, de assinatura e de preenchimento tinham 8h–18h de segunda a sexta escritos dentro do código, iguais nos três. O número de plantão 24 horas — cujo expediente está cadastrado no painel — ficava mudo à noite e no fim de semana por causa dessa constante, e mudar o horário nas Configurações não valia para eles. Agora cada cobrança olha o expediente do canal em que a conversa vive.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.8',
     date: '27/08/2026',
     summary: 'Fechada a fresta que permitia a mesma mensagem agendada — ou o mesmo lembrete da IA — sair duas vezes.',

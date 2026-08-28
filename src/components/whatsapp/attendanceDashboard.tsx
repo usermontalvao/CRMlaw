@@ -12,12 +12,34 @@ interface DashboardStats {
   by_agent: { agent_name: string; total: number; waiting_reply: number }[] | null;
   sla_breached: number;
   sla_warning: number;
+  /**
+   * Os patamares que o banco usou para contar as duas linhas acima. Vêm nulos
+   * quando os canais visíveis discordam entre si — aí não há um número único a
+   * escrever no cartão, e ele fala sem prometer.
+   */
+  sla_warn_minutes: number | null;
+  sla_breach_minutes: number | null;
   unassigned: number;
   opened_today: number;
   closed_today: number;
   messages_sent_today: number;
   avg_first_response_min: number | null;
 }
+
+/**
+ * O prazo no rótulo do cartão, quando existe UM prazo.
+ *
+ * Os cartões diziam "(>4h)" e "(2-4h)" cravados no JSX enquanto a inbox
+ * acendia aos 15min: era a versão mais visível de um SLA que ninguém sabia
+ * dizer qual era. Agora o número vem do mesmo lugar que a contagem — e some
+ * quando os canais têm prazos diferentes, em vez de mentir um deles.
+ */
+const rotuloPrazo = (minutos: number | null): string => {
+  if (!minutos || minutos <= 0) return '';
+  if (minutos < 60) return ` (>${minutos}min)`;
+  const h = minutos / 60;
+  return ` (>${Number.isInteger(h) ? h : h.toFixed(1)}h)`;
+};
 
 export const AttendanceDashboard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -115,10 +137,10 @@ export const AttendanceDashboard: React.FC<{ onClose: () => void }> = ({ onClose
               <div>
                 <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2.5">SLA de resposta</p>
                 <div className="grid grid-cols-3 gap-3">
-                  <StatCard icon={<AlertTriangle size={13} />} label="Estouradas (>4h)" value={stats.sla_breached}
+                  <StatCard icon={<AlertTriangle size={13} />} label={`Estouradas${rotuloPrazo(stats.sla_breach_minutes)}`} value={stats.sla_breached}
                     tone={stats.sla_breached > 0 ? 'danger' : 'default'}
                     sub={stats.sla_breached > 0 ? 'Requer atenção imediata' : 'Tudo dentro do prazo'} />
-                  <StatCard icon={<Clock3 size={13} />} label="Atenção (2-4h)" value={stats.sla_warning}
+                  <StatCard icon={<Clock3 size={13} />} label={`Atenção${rotuloPrazo(stats.sla_warn_minutes)}`} value={stats.sla_warning}
                     tone={stats.sla_warning > 0 ? 'warning' : 'default'} />
                   <StatCard icon={<Clock3 size={13} />} label="TMR médio (7d)" value={
                     stats.avg_first_response_min != null
@@ -126,7 +148,7 @@ export const AttendanceDashboard: React.FC<{ onClose: () => void }> = ({ onClose
                         ? `${Math.round(stats.avg_first_response_min)}min`
                         : `${Math.floor(stats.avg_first_response_min / 60)}h${String(Math.floor(stats.avg_first_response_min % 60)).padStart(2, '0')}`
                       : '—'
-                  } sub="Tempo médio de 1ª resposta" />
+                  } sub="Tempo médio de 1ª resposta, em horário útil" />
                 </div>
               </div>
 

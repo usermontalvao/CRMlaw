@@ -8,18 +8,17 @@
 // signatário deixou a página (last_seen_at), e pula quem já é coberto por um kit.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { jobTokenOk, naoAutorizado } from '../_shared/job-token.ts';
+import { criarPortaoDeExpediente } from '../_shared/wa-channel-hours.ts';
 
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const PUBLIC_APP_ORIGIN = Deno.env.get('PUBLIC_APP_ORIGIN') || 'https://jurius.com.br';
 
-const TZ = 'America/Cuiaba';
-const BIZ_START = 8;
-const BIZ_END = 18;
-// Produção: só envia dentro do horário comercial (a função inteira é pulada
-// fora dele — o cron seguinte, já dentro do expediente, retoma o lembrete
-// vencido, então isso por si só implementa "no dia seguinte, horário comercial").
+// Produção: só envia dentro do expediente DO CANAL da conversa (antes era um
+// 08–18/Cuiabá cravado aqui, que ignorava o que estava cadastrado no painel). O
+// lembrete vencido fora do horário é retomado pelo cron seguinte, já dentro do
+// expediente — é isso que implementa "no dia seguinte, horário comercial".
 const BUSINESS_HOURS_ENABLED = true;
 
 // Cadência crescente após o cliente sair da página sem assinar: 1º lembrete em
@@ -53,24 +52,15 @@ function json(b: unknown, status = 200) {
   return new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-function inBusinessHours(d = new Date()): boolean {
-  const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: '2-digit', hourCycle: 'h23' }).formatToParts(d);
-  const wd = p.find(x => x.type === 'weekday')?.value || '';
-  const hour = parseInt(p.find(x => x.type === 'hour')?.value || '0', 10);
-  const weekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(wd);
-  return weekday && hour >= BIZ_START && hour < BIZ_END;
-}
-
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (!await jobTokenOk('wa_followup_token', req)) return naoAutorizado();
 
   const force = url.searchParams.get('force') === '1';
-  if (BUSINESS_HOURS_ENABLED && !force && !inBusinessHours()) {
-    return json({ ok: true, skipped: 'fora do horário comercial' });
-  }
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+  // O expediente é decidido por conversa, depois de saber o canal dela.
+  const canalPodeFalarAgora = criarPortaoDeExpediente(admin);
   const now = Date.now();
   const minCreated = new Date(now - MAX_AGE_DAYS * 86_400_000).toISOString();
 
@@ -151,13 +141,16 @@ Deno.serve(async (req) => {
       // Conversa de WhatsApp do cliente (aberta e não bloqueada).
       const { data: conv } = await admin
         .from('whatsapp_conversations')
-        .select('id, is_blocked, status, contact_name')
+        .select('id, is_blocked, status, contact_name, instance_id')
         .eq('client_id', r.client_id)
         .neq('status', 'closed')
         .order('last_message_at', { ascending: false, nullsFirst: false })
         .limit(1)
         .maybeSingle();
       if (!conv || conv.is_blocked) { skipped++; details.push({ id: r.id, result: 'no_conversation' }); continue; }
+      if (BUSINESS_HOURS_ENABLED && !force && !await canalPodeFalarAgora(conv.instance_id)) {
+        skipped++; details.push({ id: r.id, result: 'fora_do_expediente_do_canal' }); continue;
+      }
 
       // Cliente sinalizou desinteresse desde o último lembrete → encerra.
       const since = r.wa_followup_last_at || r.created_at;

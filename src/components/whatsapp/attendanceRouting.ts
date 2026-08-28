@@ -242,6 +242,24 @@ export interface QueuePolicy {
    * conversa ser medida no expediente do próprio canal.
    */
   elapsedMinutes?: ElapsedMinutes;
+  /**
+   * Patamares POR CANAL. Ausente = valem os números soltos acima.
+   *
+   * Mesma injeção do `elapsedMinutes`, e pelo mesmo motivo: este módulo não
+   * importa nada, e quem sabe ler a linha do canal é o `slaPolicy`
+   * (`queueThresholdsFor`). Sem isto, o plantão 24h e o comercial 8h–18h
+   * dividiriam o mesmo prazo de resposta — e o número que a fila usa
+   * divergiria do que o badge da conversa mostra.
+   */
+  thresholdsFor?: (channelId?: string | null) => QueueThresholds;
+}
+
+/** Os patamares que a fila consulta a cada item. */
+export interface QueueThresholds {
+  slaWarnMinutes: number;
+  slaBreachMinutes: number;
+  queueWarnMinutes: number;
+  transferAcceptTimeoutMinutes: number;
 }
 
 export const DEFAULT_QUEUE_POLICY: QueuePolicy = {
@@ -299,6 +317,9 @@ export function scoreQueueItem(
   if (item.isBlocked) return null;
   if (item.status === 'closed') return null;
 
+  // Um resolve por item: os quatro patamares vêm do canal DELE.
+  const limite: QueueThresholds = policy.thresholdsFor?.(item.channelId) ?? policy;
+
   const waiting = item.lastMessageDirection === 'in'
     ? minutesSince(item.lastCustomerMessageAt || item.lastMessageAt, now, policy.elapsedMinutes, item.channelId)
     : 0;
@@ -308,7 +329,7 @@ export function scoreQueueItem(
   // está sendo atendido. É o pior estado possível — vai na frente de tudo.
   if (item.awaitingAccept) {
     const pending = minutesSince(item.transferPendingSince, now, policy.elapsedMinutes, item.channelId);
-    if (pending >= policy.transferAcceptTimeoutMinutes) {
+    if (pending >= limite.transferAcceptTimeoutMinutes) {
       return {
         id: item.id, bucket: 'transferencia_travada',
         score: 900 + Math.min(99, Math.floor(pending)),
@@ -319,7 +340,7 @@ export function scoreQueueItem(
   }
 
   // 2) SLA estourado com o cliente esperando.
-  if (waiting >= policy.slaBreachMinutes) {
+  if (waiting >= limite.slaBreachMinutes) {
     return {
       id: item.id, bucket: 'sla_estourado',
       score: 800 + Math.min(99, Math.floor(waiting / 10)),
@@ -339,7 +360,7 @@ export function scoreQueueItem(
   }
 
   // 4) Espera do cliente em zona de atenção.
-  if (waiting >= policy.slaWarnMinutes) {
+  if (waiting >= limite.slaWarnMinutes) {
     return {
       id: item.id, bucket: 'sla_atencao',
       score: 600 + Math.min(99, Math.floor(waiting)),
@@ -351,7 +372,7 @@ export function scoreQueueItem(
   // 5) Na fila de um setor, sem dono, envelhecendo.
   if (!item.assignedUserId && item.departmentId && !item.awaitingAccept) {
     const queued = minutesSince(item.lastMessageAt, now, policy.elapsedMinutes, item.channelId);
-    if (queued >= policy.queueWarnMinutes) {
+    if (queued >= limite.queueWarnMinutes) {
       return {
         id: item.id, bucket: 'fila_setor',
         score: 500 + Math.min(99, Math.floor(queued / 2)),

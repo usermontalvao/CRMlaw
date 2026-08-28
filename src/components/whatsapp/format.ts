@@ -7,6 +7,7 @@ import type {
 } from '../../types/whatsapp.types';
 import type { StaffOption } from '../../services/whatsapp.service';
 import type { ElapsedMinutes } from './businessTime';
+import { DEFAULT_SLA_POLICY, type SlaPolicyFor } from './slaPolicy';
 import { nomeProprio } from './nomeProprio';
 import { matchesNormalizedSearch } from '../../utils/search';
 
@@ -263,73 +264,90 @@ export const waitingMinutes = (c: WhatsAppConversation, elapsed?: ElapsedMinutes
   return minutesSince(since, c, elapsed);
 };
 
-/** Sinal de SLA: atenção (>15min) ou estourado (>60min). null = sem alerta. */
+/**
+ * Sinal de SLA: atenção e estouro, nos patamares DO CANAL.
+ *
+ * Os 15/60 continuam sendo o padrão, mas não moram mais aqui: vêm de
+ * `slaPolicy`, que os lê do canal. Sem o resolvedor, padrão — a tela nunca
+ * fica sem regra. null = sem alerta.
+ */
 export const slaSignal = (
   c: WhatsAppConversation,
   elapsed?: ElapsedMinutes,
+  policyFor?: SlaPolicyFor,
 ): { color: string; label: string } | null => {
+  const p = policyFor ? policyFor(c.instance_id) : DEFAULT_SLA_POLICY;
   const m = waitingMinutes(c, elapsed);
-  if (m == null || m < 15) return null;
+  if (m == null || m < p.warnMinutes) return null;
   const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
-  return m >= 60
+  return m >= p.breachMinutes
     ? { color: '#dc2626', label: `parada há ${human}` }
     : { color: '#d97706', label: `parada há ${human}` };
 };
 
 /**
  * Sinal de SLA interno (Fase B): conversa em fila de setor sem responsável há muito tempo.
- * Usa last_message_at como proxy do momento em que entrou na fila.
- * null = sem alerta (conversa não está em fila ou tempo aceitável).
+ * Usa last_message_at como proxy do momento em que entrou na fila. Os patamares
+ * (padrão 30/120) saem da política do canal. null = sem alerta.
  */
 export const slaInternalSignal = (
   c: WhatsAppConversation,
   elapsed?: ElapsedMinutes,
+  policyFor?: SlaPolicyFor,
 ): { color: string; label: string } | null => {
   if (convStatus(c).key !== 'waiting_internal') return null;
   const since = c.last_message_at;
   if (!since) return null;
+  const p = policyFor ? policyFor(c.instance_id) : DEFAULT_SLA_POLICY;
   const m = minutesSince(since, c, elapsed);
-  if (m < 30) return null;
+  if (m < p.queueWarnMinutes) return null;
   const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
-  return m >= 120
+  return m >= p.queueBreachMinutes
     ? { color: '#dc2626', label: `na fila há ${human}` }
     : { color: '#d97706', label: `na fila há ${human}` };
 };
 
 /**
- * Fase N: conversa com responsável atribuído que não respondeu em >4h após última
- * mensagem do cliente. Mais grave que slaSignal (15min) — sinaliza abandono real.
+ * Fase N: conversa com responsável atribuído que não respondeu dentro do prazo
+ * de abandono do canal (padrão 4h) após a última mensagem do cliente. Mais grave
+ * que `slaSignal` — ali alguém ainda pode assumir; aqui já há um dono que sumiu.
  */
 export const abandonedSignal = (
   c: WhatsAppConversation,
   elapsed?: ElapsedMinutes,
+  policyFor?: SlaPolicyFor,
 ): { label: string } | null => {
   if (!c.assigned_user_id || c.is_blocked || c.status === 'closed') return null;
   if (c.last_message_direction !== 'in') return null;
   const since = c.last_customer_message_at || c.last_message_at;
   if (!since) return null;
-  const h = minutesSince(since, c, elapsed) / 60;
-  if (h < 4) return null;
+  const p = policyFor ? policyFor(c.instance_id) : DEFAULT_SLA_POLICY;
+  const m = minutesSince(since, c, elapsed);
+  if (m < p.abandonedMinutes) return null;
+  const h = m / 60;
   const label = h < 24 ? `${Math.floor(h)}h sem resposta` : `${Math.floor(h / 24)}d sem resposta`;
   return { label };
 };
 
 /**
  * Alerta de transferência sem aceite/continuidade (Fase 4). Enquanto a conversa
- * está "aguardando aceite", sinaliza o tempo parado: neutro no início, atenção
- * (>15min) e estourado (>60min) — para a operação ver o gargalo antes de virar
+ * está "aguardando aceite", sinaliza o tempo parado: neutro até o prazo de
+ * aceite do canal (padrão 15min), depois atenção, e vermelho no patamar de
+ * estouro (padrão 60min) — para a operação ver o gargalo antes de virar
  * problema. null = não há transferência pendente.
  */
 export const transferAlert = (
   c: WhatsAppConversation,
   elapsed?: ElapsedMinutes,
+  policyFor?: SlaPolicyFor,
 ): { color: string; label: string } | null => {
   if (!c.awaiting_accept || c.is_blocked || c.status === 'closed') return null;
+  const p = policyFor ? policyFor(c.instance_id) : DEFAULT_SLA_POLICY;
   const since = c.transfer_pending_since;
   const m = since ? minutesSince(since, c, elapsed) : 0;
-  if (m < 15) return { color: '#0ea5e9', label: 'aguardando aceite' };
+  if (m < p.transferAcceptMinutes) return { color: '#0ea5e9', label: 'aguardando aceite' };
   const human = m < 60 ? `${Math.floor(m)}min` : `${Math.floor(m / 60)}h${String(Math.floor(m % 60)).padStart(2, '0')}`;
-  return m >= 60
+  return m >= p.breachMinutes
     ? { color: '#dc2626', label: `sem aceite há ${human}` }
     : { color: '#d97706', label: `sem aceite há ${human}` };
 };

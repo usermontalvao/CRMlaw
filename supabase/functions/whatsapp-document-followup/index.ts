@@ -2,18 +2,17 @@
 //
 // Para cada solicitação de documento ABERTA (pending/partial) com follow-up ativo,
 // envia um lembrete pelo WhatsApp listando só os itens que ainda faltam, numa
-// cadência ESCALÁVEL (1d, 3d, 7d, 14d, 30d). Respeita horário comercial
-// (08–18, seg–sex, America/Cuiaba). Se o cliente sinalizar que não tem mais
-// interesse, cancela o follow-up. Chamado por pg_cron (token na query).
+// cadência ESCALÁVEL (1d, 3d, 7d, 14d, 30d). Respeita o expediente DO CANAL em
+// que a conversa vive — não mais um 08–18/Cuiabá cravado aqui, que deixava o
+// plantão 24h mudo à noite por uma constante. Se o cliente sinalizar que não tem
+// mais interesse, cancela o follow-up. Chamado por pg_cron (token na query).
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { jobTokenOk, naoAutorizado } from '../_shared/job-token.ts';
+import { criarPortaoDeExpediente } from '../_shared/wa-channel-hours.ts';
 
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-const TZ = 'America/Cuiaba';
-const BIZ_START = 8, BIZ_END = 18; // 08:00–18:00, seg–sex
 
 // Quando enviar cada lembrete: minutos desde a criação da solicitação. Escalável.
 // PRODUÇÃO: 1d, 3d, 7d, 14d, 30d.
@@ -38,22 +37,18 @@ function json(b: unknown, status = 200) {
   return new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-function inBusinessHours(d = new Date()): boolean {
-  const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: '2-digit', hourCycle: 'h23' }).formatToParts(d);
-  const wd = p.find(x => x.type === 'weekday')?.value || '';
-  const hour = parseInt(p.find(x => x.type === 'hour')?.value || '0', 10);
-  const weekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(wd);
-  return weekday && hour >= BIZ_START && hour < BIZ_END;
-}
-
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (!await jobTokenOk('wa_followup_token', req)) return naoAutorizado();
 
   const force = url.searchParams.get('force') === '1'; // teste: ignora horário comercial
-  if (!force && !inBusinessHours()) return json({ ok: true, skipped: 'fora do horário comercial' });
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+  // O expediente agora é decidido POR CONVERSA, depois de saber em que canal ela
+  // está — por isso a varredura não pode mais parar na porta. O passo perdido
+  // fora do horário volta na próxima rodada: `GRACE_MIN` são 72h, folga que já
+  // existia justamente para atravessar o fim de semana.
+  const canalPodeFalarAgora = criarPortaoDeExpediente(admin);
   const now = Date.now();
 
   const { data: reqs, error } = await admin.from('document_requests')
@@ -89,13 +84,16 @@ Deno.serve(async (req) => {
 
       // Conversa do cliente (mais recente).
       const { data: convs } = await admin.from('whatsapp_conversations')
-        .select('id, is_blocked, contact_name, last_message_at')
+        .select('id, is_blocked, contact_name, last_message_at, instance_id')
         .eq('client_id', r.client_id)
         .order('last_message_at', { ascending: false, nullsFirst: false })
         .limit(1);
       const conv = (convs || [])[0];
       if (!conv) { skipped++; details.push({ id: r.id, result: 'sem_conversa' }); continue; }
       if (conv.is_blocked) { skipped++; continue; }
+      if (!force && !await canalPodeFalarAgora(conv.instance_id)) {
+        skipped++; details.push({ id: r.id, result: 'fora_do_expediente_do_canal' }); continue;
+      }
 
       // Cliente sinalizou desinteresse desde o último contato? → cancela follow-up.
       const since = r.followup_last_at || r.created_at;

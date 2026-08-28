@@ -489,6 +489,41 @@ export const adminApi = {
     if (error) throw new Error(error.message);
   },
 
+  /**
+   * Política de SLA do canal — os patamares que a inbox, a fila e o dashboard
+   * passaram a compartilhar.
+   *
+   * Os limites repetem o CHECK do banco (1 a 43200 minutos, âmbar nunca depois
+   * do vermelho): cortar aqui devolve um formulário com o número corrigido em
+   * vez de um 400 sem explicação, que foi a lição do `updateAutoCloseConfig`.
+   */
+  async updateSlaPolicy(instanceId: string, config: {
+    warnMinutes: number;
+    breachMinutes: number;
+    queueWarnMinutes: number;
+    queueBreachMinutes: number;
+    transferAcceptMinutes: number;
+    abandonedMinutes: number;
+    businessHoursOnly: boolean;
+  }): Promise<void> {
+    const minuto = (v: number, padrao: number) => {
+      const n = Math.round(Number(v));
+      return Number.isFinite(n) ? Math.min(43200, Math.max(1, n)) : padrao;
+    };
+    const warn = minuto(config.warnMinutes, 15);
+    const queueWarn = minuto(config.queueWarnMinutes, 30);
+    const { error } = await supabase.from(CHANNEL_TABLE).update({
+      sla_warn_minutes: warn,
+      sla_breach_minutes: Math.max(warn, minuto(config.breachMinutes, 60)),
+      sla_queue_warn_minutes: queueWarn,
+      sla_queue_breach_minutes: Math.max(queueWarn, minuto(config.queueBreachMinutes, 120)),
+      sla_transfer_accept_minutes: minuto(config.transferAcceptMinutes, 15),
+      sla_abandoned_minutes: minuto(config.abandonedMinutes, 240),
+      sla_business_hours_only: config.businessHoursOnly,
+    }).eq('id', instanceId);
+    if (error) throw new Error(error.message);
+  },
+
   // ── IA de atendimento (Fase J) ────────────────────────────────
 
   async getAiChannelConfig(channelId: string): Promise<WhatsAppAiChannelConfig | null> {

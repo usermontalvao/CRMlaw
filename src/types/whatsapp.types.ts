@@ -298,6 +298,27 @@ export interface WhatsAppChannel {
   auto_close_message: string | null;
   /** Só encerra dentro do expediente — evita a despedida chegando de madrugada. */
   auto_close_business_hours_only: boolean;
+  /**
+   * Política de SLA do canal — os patamares que a inbox, a fila e o dashboard
+   * passaram a compartilhar em 27/08/2026. Antes, os números viviam escritos à
+   * mão em cinco lugares do front e um sexto, diferente, dentro do SQL do
+   * painel: a mesma conversa ficava vermelha na fila e "no prazo" no relatório.
+   * Ler e escrever sempre por `slaPolicy.ts`, que aplica a mesma ordem do CHECK
+   * do banco (âmbar nunca depois do vermelho).
+   *
+   * OPCIONAIS de propósito, embora o banco sempre as devolva: é o que impede
+   * que um retrato de canal mais velho que a migration — ou um canal montado à
+   * mão numa bancada — apague o SLA da tela. Ausente significa "vale o padrão",
+   * nunca "sem prazo".
+   */
+  sla_warn_minutes?: number;
+  sla_breach_minutes?: number;
+  sla_queue_warn_minutes?: number;
+  sla_queue_breach_minutes?: number;
+  sla_transfer_accept_minutes?: number;
+  sla_abandoned_minutes?: number;
+  /** O relógio do SLA só corre dentro do expediente do canal. */
+  sla_business_hours_only?: boolean;
   /** Fonte única de visibilidade usada pela inbox, nova conversa e funil de Leads. */
   visibility_mode: WhatsAppChannelVisibility;
   /** Recebe automaticamente mensagens de entrada quando a conversa ainda não tem responsável. */

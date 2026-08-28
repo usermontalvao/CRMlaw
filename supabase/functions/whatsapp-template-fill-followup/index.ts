@@ -4,6 +4,7 @@
 // /#/preencher/:token enquanto o cliente ainda não concluiu o preenchimento.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { jobTokenOk, naoAutorizado } from '../_shared/job-token.ts';
+import { criarPortaoDeExpediente } from '../_shared/wa-channel-hours.ts';
 
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -13,11 +14,9 @@ const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // (não localhost) para nunca enviar um link quebrado ao cliente.
 const PUBLIC_APP_ORIGIN = Deno.env.get('PUBLIC_APP_ORIGIN') || 'https://jurius.com.br';
 
-const TZ = 'America/Cuiaba';
-const BIZ_START = 8;
-const BIZ_END = 18;
 // Produção: 4h, 1d, 3d, 7d e 14d desde o envio do KIT. A função só envia
-// dentro do expediente; a janela de 72h atravessa fins de semana sem perder a
+// dentro do expediente DO CANAL da conversa (antes, um 08–18/Cuiabá cravado
+// aqui, igual nos outros dois arquivos de cobrança); a janela de 72h atravessa fins de semana sem perder a
 // tentativa e evita ressuscitar links antigos com vários avisos de uma vez.
 const STEP_OFFSETS_MIN = [4 * 60, 24 * 60, 3 * 1440, 7 * 1440, 14 * 1440];
 const GRACE_MIN = 72 * 60;
@@ -30,22 +29,17 @@ function json(b: unknown, status = 200) {
   return new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-function inBusinessHours(d = new Date()): boolean {
-  const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', hour: '2-digit', hourCycle: 'h23' }).formatToParts(d);
-  const wd = p.find(x => x.type === 'weekday')?.value || '';
-  const hour = parseInt(p.find(x => x.type === 'hour')?.value || '0', 10);
-  const weekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(wd);
-  return weekday && hour >= BIZ_START && hour < BIZ_END;
-}
-
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (!await jobTokenOk('wa_followup_token', req)) return naoAutorizado();
 
   const force = url.searchParams.get('force') === '1';
-  if (!force && !inBusinessHours()) return json({ ok: true, skipped: 'fora do horário comercial' });
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+  // O expediente é decidido por conversa, depois de saber o canal dela — por
+  // isso a varredura não para mais na porta. O passo perdido volta na rodada
+  // seguinte: `GRACE_MIN` são 72h, folga que já existia para o fim de semana.
+  const canalPodeFalarAgora = criarPortaoDeExpediente(admin);
   const now = Date.now();
 
   const { data: rows, error } = await admin
@@ -77,10 +71,11 @@ Deno.serve(async (req) => {
 
       const { data: conv } = await admin
         .from('whatsapp_conversations')
-        .select('id, is_blocked, contact_name')
+        .select('id, is_blocked, contact_name, instance_id')
         .eq('id', r.conversation_id)
         .maybeSingle();
       if (!conv || conv.is_blocked) { skipped++; continue; }
+      if (!force && !await canalPodeFalarAgora(conv.instance_id)) { skipped++; continue; }
 
       if (r.signature_request_id) {
         const [{ data: req }, { data: signers }] = await Promise.all([

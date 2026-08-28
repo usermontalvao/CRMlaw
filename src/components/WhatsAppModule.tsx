@@ -98,6 +98,8 @@ import {
   scheduleFromRows, elapsedMinutesFor, elapsedMinutesForChannels, businessHoursStatus,
   DEFAULT_BUSINESS_SCHEDULE, type BusinessSchedule,
 } from './whatsapp/businessTime';
+// A política de SLA (os patamares) mora no canal; este módulo só a resolve.
+import { slaPolicyForChannels, queueThresholdsFor } from './whatsapp/slaPolicy';
 // Fuso do escritório (configurável) — a mesma âncora que a agenda usa. Só entra
 // quando o canal não declara o próprio.
 import { getOfficeTimeZone } from '../utils/officeTime';
@@ -2485,9 +2487,22 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     [businessHoursLoaded, schedulesByChannel],
   );
 
+  /**
+   * Patamares de SLA de cada canal — a contraparte do relógio acima.
+   *
+   * O relógio diz QUANTO tempo passou; isto diz A PARTIR DE QUANDO isso é
+   * atraso. Os dois têm de sair do mesmo canal, senão o plantão 24h é medido
+   * com o prazo do comercial. Enquanto os canais não chegam, o resolvedor
+   * devolve o padrão (15/60), que é o mesmo `DEFAULT` das colunas no banco.
+   */
+  const slaPolicyFor = useMemo(
+    () => slaPolicyForChannels(Object.fromEntries(channels.map(ch => [ch.id, ch]))),
+    [channels],
+  );
+
   const queuePolicy = useMemo(
-    () => ({ ...DEFAULT_QUEUE_POLICY, elapsedMinutes }),
-    [elapsedMinutes],
+    () => ({ ...DEFAULT_QUEUE_POLICY, elapsedMinutes, thresholdsFor: queueThresholdsFor(slaPolicyFor) }),
+    [elapsedMinutes, slaPolicyFor],
   );
 
   const nextUp = useMemo(
@@ -2874,6 +2889,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
             sweeping={sweeping}
             funnelLabelsForChannel={funnelLabelsForChannel}
             elapsedMinutes={elapsedMinutes}
+            slaPolicyFor={slaPolicyFor}
             conversationStatus={effectiveConversationStatus}
             docStatusFor={effectiveDocStatus}
             aiChipFor={aiChipFor}
@@ -2958,12 +2974,12 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                       </span>
                     );
                   })()}
-                  {(() => { const sla = slaSignal(selected, elapsedMinutes); return sla ? (
+                  {(() => { const sla = slaSignal(selected, elapsedMinutes, slaPolicyFor); return sla ? (
                     <span className="inline-flex items-center gap-1 font-semibold" style={{ color: sla.color }}>
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: sla.color }} /> {sla.label}
                     </span>
                   ) : null; })()}
-                  {(() => { const ta = transferAlert(selected, elapsedMinutes); return ta ? (
+                  {(() => { const ta = transferAlert(selected, elapsedMinutes, slaPolicyFor); return ta ? (
                     <span className="inline-flex items-center gap-1 font-semibold" style={{ color: ta.color }}>
                       <ArrowRightLeft size={11} /> {ta.label}
                     </span>

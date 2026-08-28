@@ -21,6 +21,7 @@ import type {
   WhatsAppChannel, WhatsAppConversation, WhatsAppDepartment,
 } from '../../types/whatsapp.types';
 import type { ElapsedMinutes } from './businessTime';
+import type { SlaPolicyFor } from './slaPolicy';
 import type { WaSweepKind } from './conversationSweep';
 import type { ClientTrackedSignatureStatus } from '../../services/whatsapp/shared';
 
@@ -58,6 +59,7 @@ export interface ConversationListProps {
   aiChipFor?: (conversationId: string) => { label: string; title: string } | null;
   /** Medição de tempo dos badges de SLA (horário útil do canal de cada conversa). */
   elapsedMinutes?: ElapsedMinutes;
+  slaPolicyFor?: SlaPolicyFor;
   conversationStatus: (c: WhatsAppConversation) => { key: string; label: string; cls: string };
   docStatusFor: (clientId: string | null | undefined) => 'awaiting' | 'ready' | null;
   /**
@@ -74,7 +76,7 @@ export interface ConversationListProps {
 const ConversationListInner: React.FC<ConversationListProps> = ({
   conversations, selectedId, loading, privateMode, emptyMessage,
   channelById, deptById, drafts, mutedIds, failedSends, archivedIds, showChannelName, busyConversationIds, sweeping,
-  funnelLabelsForChannel, aiChipFor, elapsedMinutes,
+  funnelLabelsForChannel, aiChipFor, elapsedMinutes, slaPolicyFor,
   conversationStatus, docStatusFor, trackedSignatureFor,
   onSelect, onStopSignatureTracking, onStopTemplateFillTracking,
 }) => {
@@ -143,6 +145,7 @@ const ConversationListInner: React.FC<ConversationListProps> = ({
             funnelLabels={funnelLabelsForChannel(c.instance_id)}
             aiChip={aiChipFor?.(c.id) ?? null}
             elapsedMinutes={elapsedMinutes}
+            slaPolicyFor={slaPolicyFor}
             signatureChip={signatureChip}
             onSelect={onSelect}
             onDismissTracking={tracked && signatureChip

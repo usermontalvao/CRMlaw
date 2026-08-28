@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Save, Loader2, Eye, EyeOff, Plus, Trash2, QrCode, Check, Users, X, Phone,
-  Clock, BellOff, Bot, Pencil, MessageSquare, IdCard, TimerOff,
+  Clock, BellOff, Bot, Pencil, MessageSquare, IdCard, TimerOff, Gauge,
 } from 'lucide-react';
 import {
   settingsService,
@@ -139,6 +139,18 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
     enabled: false, minutes: 1440, message: '', businessHoursOnly: true,
   });
   const [savingAutoClose, setSavingAutoClose] = useState(false);
+  // SLA: painel próprio pelo mesmo motivo do encerramento. "Quando a conversa
+  // fica vermelha" e "quando o CRM desiste dela" são decisões diferentes, e
+  // até 27/08/2026 a primeira não tinha lugar nenhum — os números viviam
+  // escritos no código, em cinco pontos que não concordavam entre si.
+  const [slaOpenFor, setSlaOpenFor] = useState<string | null>(null);
+  const [sla, setSla] = useState({
+    warnMinutes: 15, breachMinutes: 60,
+    queueWarnMinutes: 30, queueBreachMinutes: 120,
+    transferAcceptMinutes: 15, abandonedMinutes: 240,
+    businessHoursOnly: true,
+  });
+  const [savingSla, setSavingSla] = useState(false);
   // QR / conexão por canal
   const [qrFor, setQrFor] = useState<{ id: string; qr?: string; status: string } | null>(null);
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -257,6 +269,40 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
       onFeedback('success', 'Encerramento por inatividade salvo!');
     } catch (e: any) { onFeedback('error', e.message); }
     finally { setSavingAutoClose(false); }
+  };
+
+  // SLA do canal — painel próprio, com o próprio salvar.
+  const openSla = useCallback((ch: WhatsAppChannel) => {
+    if (slaOpenFor === ch.id) { setSlaOpenFor(null); return; }
+    setSlaOpenFor(ch.id);
+    setSla({
+      warnMinutes: ch.sla_warn_minutes ?? 15,
+      breachMinutes: ch.sla_breach_minutes ?? 60,
+      queueWarnMinutes: ch.sla_queue_warn_minutes ?? 30,
+      queueBreachMinutes: ch.sla_queue_breach_minutes ?? 120,
+      transferAcceptMinutes: ch.sla_transfer_accept_minutes ?? 15,
+      abandonedMinutes: ch.sla_abandoned_minutes ?? 240,
+      businessHoursOnly: ch.sla_business_hours_only ?? true,
+    });
+  }, [slaOpenFor]);
+
+  const saveSla = async (ch: WhatsAppChannel) => {
+    setSavingSla(true);
+    try {
+      await whatsappService.updateSlaPolicy(ch.id, sla);
+      setChannels(prev => prev.map(c => c.id === ch.id ? {
+        ...c,
+        sla_warn_minutes: sla.warnMinutes,
+        sla_breach_minutes: Math.max(sla.warnMinutes, sla.breachMinutes),
+        sla_queue_warn_minutes: sla.queueWarnMinutes,
+        sla_queue_breach_minutes: Math.max(sla.queueWarnMinutes, sla.queueBreachMinutes),
+        sla_transfer_accept_minutes: sla.transferAcceptMinutes,
+        sla_abandoned_minutes: sla.abandonedMinutes,
+        sla_business_hours_only: sla.businessHoursOnly,
+      } : c));
+      onFeedback('success', 'SLA do canal salvo!');
+    } catch (e: any) { onFeedback('error', e.message); }
+    finally { setSavingSla(false); }
   };
 
   const saveServer = async () => {
@@ -957,6 +1003,10 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                   className="settings-btn-ghost" style={{ padding: '6px 10px', color: hoursOpenFor === ch.id ? '#d97706' : undefined }}>
                   <Clock size={13} /> Horário comercial
                 </button>
+                <button onClick={() => openSla(ch)} title="A partir de quando a conversa está atrasada"
+                  className="settings-btn-ghost" style={{ padding: '6px 10px', color: slaOpenFor === ch.id ? '#d97706' : undefined }}>
+                  <Gauge size={13} /> SLA
+                </button>
                 <button onClick={() => openAutoClose(ch)} title="Encerrar sozinho as conversas paradas"
                   className="settings-btn-ghost" style={{ padding: '6px 10px', color: autoCloseOpenFor === ch.id ? '#d97706' : undefined }}>
                   <TimerOff size={13} /> Encerramento
@@ -1113,6 +1163,90 @@ const WhatsAppIntegrationSettings: React.FC<Props> = ({ requirePin, userName, on
                   ligado), mas é outra decisão — e misturar as duas fazia mexer
                   no horário do canal esbarrar num encerramento automático que
                   ninguém pediu para revisar. */}
+              {slaOpenFor === ch.id && (
+                <div style={{ marginTop: '12px', border: '1px solid #e7e5df', borderRadius: '10px', padding: '14px', background: '#fafaf9' }}>
+                  <p style={{ fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Gauge size={13} /> SLA deste canal
+                  </p>
+                  <p style={{ fontSize: '11.5px', color: '#6b7280', marginBottom: '10px', lineHeight: 1.5 }}>
+                    A partir de quando uma conversa deste número está atrasada. Estes números valem
+                    para tudo ao mesmo tempo: a cor na linha da inbox, a ordem da fila de atendimento
+                    e os cartões do painel de métricas — que antes contavam por outra régua.
+                  </p>
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', marginBottom: '4px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={sla.businessHoursOnly} style={{ marginTop: '2px' }}
+                      onChange={e => setSla(v => ({ ...v, businessHoursOnly: e.target.checked }))} />
+                    <span style={{ fontSize: '12px', color: '#374151' }}>Contar o tempo só dentro do horário comercial deste canal</span>
+                  </label>
+                  <p style={{ margin: '0 1px 12px 22px', fontSize: '10.5px', lineHeight: 1.4, color: '#8a94a6' }}>
+                    Ligado, a mensagem que chega sexta às 18h05 começa a contar na segunda às 8h, e não
+                    aparece como "parada há 62h" com o escritório fechado no meio. Desmarcado, o relógio
+                    corre de madrugada e no fim de semana.
+                  </p>
+
+                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', margin: '0 0 6px' }}>Cliente esperando resposta</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '4px' }}>
+                    {([
+                      ['Atenção (min)', 'warnMinutes'],
+                      ['Estourado (min)', 'breachMinutes'],
+                    ] as const).map(([rotulo, campo]) => (
+                      <label key={campo} style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>
+                        {rotulo}
+                        <input type="number" min={1} max={43200} value={sla[campo]}
+                          onChange={e => setSla(v => ({ ...v, [campo]: Number(e.target.value) }))}
+                          style={{ width: '100%', fontSize: '12px', padding: '5px 8px', marginTop: '3px', borderRadius: '7px', border: '1px solid #d1d5db', background: '#fff', color: '#111827', boxSizing: 'border-box' }} />
+                      </label>
+                    ))}
+                  </div>
+                  <p style={{ margin: '0 1px 12px', fontSize: '10.5px', lineHeight: 1.4, color: '#8a94a6' }}>
+                    Padrão 15 e 60. O atendimento fica âmbar no primeiro e vermelho no segundo — e o
+                    segundo é o que o painel conta como "estourada".
+                  </p>
+
+                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', margin: '0 0 6px' }}>Parada na fila de um setor, sem responsável</p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                    {([
+                      ['Atenção (min)', 'queueWarnMinutes'],
+                      ['Gargalo (min)', 'queueBreachMinutes'],
+                    ] as const).map(([rotulo, campo]) => (
+                      <label key={campo} style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>
+                        {rotulo}
+                        <input type="number" min={1} max={43200} value={sla[campo]}
+                          onChange={e => setSla(v => ({ ...v, [campo]: Number(e.target.value) }))}
+                          style={{ width: '100%', fontSize: '12px', padding: '5px 8px', marginTop: '3px', borderRadius: '7px', border: '1px solid #d1d5db', background: '#fff', color: '#111827', boxSizing: 'border-box' }} />
+                      </label>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>
+                      Transferência sem aceite (min)
+                      <input type="number" min={1} max={43200} value={sla.transferAcceptMinutes}
+                        onChange={e => setSla(v => ({ ...v, transferAcceptMinutes: Number(e.target.value) }))}
+                        style={{ width: '100%', fontSize: '12px', padding: '5px 8px', marginTop: '3px', borderRadius: '7px', border: '1px solid #d1d5db', background: '#fff', color: '#111827', boxSizing: 'border-box' }} />
+                    </label>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#6b7280' }}>
+                      Abandono, já com responsável (min)
+                      <input type="number" min={1} max={43200} value={sla.abandonedMinutes}
+                        onChange={e => setSla(v => ({ ...v, abandonedMinutes: Number(e.target.value) }))}
+                        style={{ width: '100%', fontSize: '12px', padding: '5px 8px', marginTop: '3px', borderRadius: '7px', border: '1px solid #d1d5db', background: '#fff', color: '#111827', boxSizing: 'border-box' }} />
+                    </label>
+                  </div>
+                  <p style={{ margin: '5px 1px 0', fontSize: '10.5px', lineHeight: 1.4, color: '#8a94a6' }}>
+                    Transferência sem aceite vai para o TOPO da fila: ninguém é dono e o cliente acha que
+                    está sendo atendido. Abandono (padrão 240min) é mais grave que o estouro comum —
+                    ali alguém ainda pode assumir; aqui já há um dono que sumiu.
+                  </p>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                    <button className="settings-btn-primary" onClick={() => saveSla(ch)} disabled={savingSla}>
+                      {savingSla ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Salvar SLA
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {autoCloseOpenFor === ch.id && (
                 <div style={{ marginTop: '12px', border: '1px solid #e7e5df', borderRadius: '10px', padding: '14px', background: '#fafaf9' }}>
                   <p style={{ fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>

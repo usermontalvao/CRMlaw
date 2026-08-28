@@ -13,6 +13,7 @@ import {
 } from './format';
 import { autoCloseClock, autoCloseIdleLabel } from './autoCloseClock';
 import type { ElapsedMinutes } from './businessTime';
+import type { SlaPolicyFor } from './slaPolicy';
 import { waPlainText } from './waRichText';
 import { inferFunnelStage } from './funnel';
 import { conversationPreview } from './threadCalls';
@@ -136,6 +137,8 @@ export const ConversationListItem: React.FC<{
    * Precisa ter identidade estável para o React.memo continuar valendo.
    */
   elapsedMinutes?: ElapsedMinutes;
+  /** Patamares do canal desta conversa. Ausente = padrão (15/60). */
+  slaPolicyFor?: SlaPolicyFor;
   /**
    * Envios desta conversa que falharam e continuam esperando uma decisão
    * (tentar de novo ou descartar). Vem da fila otimista do compositor, que
@@ -170,10 +173,10 @@ export const ConversationListItem: React.FC<{
   signatureChip?: SignatureListChip | null;
   onSelect: (id: string) => void;
   onDismissTracking?: () => void;
-}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, aiChip = null, elapsedMinutes, failedSends = 0, archived = false, showChannelName = false, busy = false, sweep = null, signatureChip = null, onSelect, onDismissTracking }) => {
+}> = React.memo(({ c, active, channel: ch, dept, privateMode, statusKey, statusLabel, statusCls, docStatus: ds, muted, draftPreview, funnelLabels, aiChip = null, elapsedMinutes, slaPolicyFor, failedSends = 0, archived = false, showChannelName = false, busy = false, sweep = null, signatureChip = null, onSelect, onDismissTracking }) => {
   // Com a IA conduzindo, os sinais de espera humana saem de cena — inclusive o
   // relógio vermelho do canto, que contava uma demora que não está havendo.
-  const sla = aiChip ? null : slaSignal(c, elapsedMinutes);
+  const sla = aiChip ? null : slaSignal(c, elapsedMinutes, slaPolicyFor);
   const stage = inferFunnelStage(c.labels, funnelLabels);
   /**
    * A ETAPA INICIAL NÃO É NOTÍCIA.
