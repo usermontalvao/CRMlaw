@@ -1,1 +1,104 @@
-{"version": "0.0.1", "configurations": [{"name": "crm-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--", "--port", "3000"], "port": 3000}, {"name": "crm-dev-preview", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3001, "autoPort": true}, {"name": "crm-dev-ai", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--", "--port", "3077", "--strictPort"], "port": 3077}, {"name": "crm-dev-presence", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--", "--port", "3078", "--strictPort"], "port": 3078}, {"name": "site-pedro", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "/Users/pedrorodriguesmontalvaoneto/Documents/GitHub/pedro-montalvao-advocacia", "run", "dev", "--", "--port", "4321", "--strictPort"], "port": 4321}, {"name": "campanha-trabalhista", "runtimeExecutable": "/Users/pedrorodriguesmontalvaoneto/Documents/auto/.venv/bin/python", "runtimeArgs": ["/Users/pedrorodriguesmontalvaoneto/Documents/auto/run.py"], "port": 8000}]}
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "crm-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "3000"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "crm-dev-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3001,
+      "autoPort": true
+    },
+    {
+      "name": "crm-dev-ai",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "3077",
+        "--strictPort"
+      ],
+      "port": 3077
+    },
+    {
+      "name": "crm-dev-presence",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "3078",
+        "--strictPort"
+      ],
+      "port": 3078
+    },
+    {
+      "name": "site-pedro",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/pedrorodriguesmontalvaoneto/Documents/GitHub/pedro-montalvao-advocacia",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "4321",
+        "--strictPort"
+      ],
+      "port": 4321
+    },
+    {
+      "name": "campanha-trabalhista",
+      "runtimeExecutable": "/Users/pedrorodriguesmontalvaoneto/Documents/auto/.venv/bin/python",
+      "runtimeArgs": [
+        "/Users/pedrorodriguesmontalvaoneto/Documents/auto/run.py"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "operacao",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/pedrorodriguesmontalvaoneto/Documents/GitHub/Operacao && PORT=3010 npm run dev"
+      ],
+      "port": 5180
+    },
+    {
+      "name": "operacao-api",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/pedrorodriguesmontalvaoneto/Documents/GitHub/Operacao && PORT=3010 npm run dev:server"
+      ],
+      "port": 3010
+    },
+    {
+      "//": "Só a tela do Operacao. O 'operacao' sobe TAMBEM um servidor, e com o painel ja rodando isso vira um segundo robo varrendo o mercado contra a mesma carteira (ver DEPLOY.md). Este usa o proxy do vite para o servidor que ja estiver de pe em 3010.",
+      "name": "operacao-tela",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/pedrorodriguesmontalvaoneto/Documents/GitHub/Operacao && npm run dev:web"
+      ],
+      "port": 5180
+    }
+  ]
+}

@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.10',
+    date: '27/08/2026',
+    summary: 'O ambiente de desenvolvimento ganhou atalhos para executar o painel e a API do projeto Operacao.',
+    modules: [
+      {
+        moduleId: 'sistema',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Novos atalhos para o ambiente Operacao',
+            description: 'A configuração local agora permite iniciar em separado o painel, a API ou somente a interface do projeto Operacao, facilitando o desenvolvimento sem subir processos duplicados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.9',
     date: '27/08/2026',
     summary: 'O WhatsApp passou a ter UMA definição de atraso, configurável por canal: a mesma conversa não fica mais vermelha na fila e "dentro do prazo" no painel.',
