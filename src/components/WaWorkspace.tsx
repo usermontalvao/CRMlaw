@@ -19,6 +19,8 @@ import { templateFillPermalinkService } from '../services/templateFillPermalink.
 import { clientService } from '../services/client.service';
 import { deadlineService } from '../services/deadline.service';
 import ClientForm from './ClientForm';
+import ClientDetails from './ClientDetails';
+import ClientModal from './ClientModal';
 import { ProcessTimeline } from './ProcessTimeline';
 import { DeadlineFormModal } from './DeadlineFormModal';
 import { AgreementFormModal } from './AgreementFormModal';
@@ -38,6 +40,7 @@ import type { DocumentTemplate } from '../types/document.types';
 import { supabase } from '../config/supabase';
 import { LAYER } from '../styles/layers';
 import { useModalLayer } from '../styles/modalLayer';
+import { useEscapeLayer } from '../hooks/useEscapeLayer';
 
 // ─── Tipos de modal ───────────────────────────────────────────────────────────
 
@@ -114,6 +117,7 @@ const BENEFIT_TYPES: { key: BenefitType; label: string }[] = [
 
 // ─── Base overlay ─────────────────────────────────────────────────────────────
 
+
 const WaOverlay: React.FC<{
   title: string;
   icon?: React.ReactNode;
@@ -126,17 +130,21 @@ const WaOverlay: React.FC<{
   // tela cheia (faixa dos modais) quanto dentro do widget flutuante, que mora
   // acima dos modais. Ver `styles/modalLayer`.
   const camada = useModalLayer(LAYER.MODAL);
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
+  // Só a ficha do topo responde ao Esc — com duas abertas (ficha + edição), um
+  // Esc fechava as duas, e ainda levava a conversa atrás junto.
+  useEscapeLayer(true, onClose);
 
   const maxW = size === 'xl' ? 'max-w-4xl' : size === 'lg' ? 'max-w-2xl' : 'max-w-xl';
 
   return createPortal(
     <div className="fixed inset-0 flex items-center justify-center bg-black/50 p-4" style={{ zIndex: camada }} onClick={onClose}>
+      {/* `role="dialog"` não é enfeite de acessibilidade aqui: é como o teclado
+          da inbox descobre que há uma camada por cima dele. Sem a marca, o Esc
+          fechava esta ficha E a conversa atrás dela no mesmo toque. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className={`${maxW} w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden`}
         onClick={e => e.stopPropagation()}
       >
@@ -180,7 +188,7 @@ const BtnSave: React.FC<{ saving: boolean; disabled?: boolean; onClick: () => vo
 // ─── Modal: Cliente (ver/criar/editar) ────────────────────────────────────────
 
 const WaClientModal: React.FC<{
-  mode: 'view' | 'edit' | 'create';
+  mode: 'edit' | 'create';
   clientId?: string;
   prefill?: Partial<CreateClientDTO>;
   onClose: () => void;
@@ -196,55 +204,13 @@ const WaClientModal: React.FC<{
       .finally(() => setLoading(false));
   }, [clientId, mode]);
 
-  const title = mode === 'create' ? 'Novo cliente' : mode === 'edit' ? 'Editar cliente' : 'Dados do cliente';
+  const title = mode === 'create' ? 'Novo cliente' : 'Editar cliente';
 
   if (loading) {
     return (
       <WaOverlay title={title} icon={<UserIcon size={18} />} onClose={onClose}>
         <div className="flex items-center justify-center py-10 text-slate-400">
           <Loader2 size={20} className="animate-spin mr-2" /> Carregando…
-        </div>
-      </WaOverlay>
-    );
-  }
-
-  if (mode === 'view' && client) {
-    const fmtDoc = (doc: string | null) => {
-      if (!doc) return '';
-      const d = doc.replace(/\D/g, '');
-      if (d.length === 11) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
-      if (d.length === 14) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`;
-      return doc;
-    };
-    const row = (label: string, value: string | null | undefined) => value ? (
-      <div key={label} className="grid grid-cols-3 gap-2 py-2 border-b border-[#f1f0ec] last:border-0">
-        <span className="text-[11.5px] font-semibold text-slate-400 uppercase tracking-wide">{label}</span>
-        <span className="col-span-2 text-[13px] text-slate-700">{value}</span>
-      </div>
-    ) : null;
-
-    return (
-      <WaOverlay title="Dados do cliente" icon={<UserIcon size={18} />} onClose={onClose} size="lg">
-        <div className="space-y-0">
-          {row('Nome', client.full_name)}
-          {row('CPF/CNPJ', fmtDoc(client.cpf_cnpj ?? null))}
-          {row('E-mail', client.email)}
-          {row('Celular', client.mobile)}
-          {row('Telefone', client.phone)}
-          {row('Nascimento', client.birth_date ? new Date(client.birth_date).toLocaleDateString('pt-BR') : null)}
-          {row('Profissão', client.profession)}
-          {row('Estado civil', client.marital_status)}
-          {row('Tipo', client.client_type === 'pessoa_fisica' ? 'Pessoa física' : client.client_type === 'pessoa_juridica' ? 'Pessoa jurídica' : client.client_type)}
-          {row('Cidade', client.address_city)}
-          {row('Estado', client.address_state)}
-          {row('CEP', client.address_zip_code)}
-          {row('Endereço', [client.address_street, client.address_number, client.address_complement, client.address_neighborhood].filter(Boolean).join(', '))}
-          {client.notes && (
-            <div className="py-2">
-              <p className="text-[11.5px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Observações</p>
-              <p className="text-[13px] text-slate-700 whitespace-pre-wrap">{client.notes}</p>
-            </div>
-          )}
         </div>
       </WaOverlay>
     );
@@ -737,22 +703,149 @@ const WaDeadlineModal: React.FC<{
   );
 };
 
+// ─── Modal: ficha 360 do cliente ─────────────────────────────────────────────
+
+/**
+ * A FICHA DE VERDADE, aberta de dentro da conversa.
+ *
+ * Antes, "Ver" no painel do contato abria uma tabelinha de nome/CPF/endereço —
+ * um resumo que não respondia nenhuma das perguntas que se faz no meio de um
+ * atendimento (o que esse cliente tem em aberto? já assinou? quanto deve?).
+ * Agora abre a MESMA ficha 360 do módulo de Clientes, com as mesmas abas.
+ *
+ * Duas costuras a mais, porque aqui ela vive dentro de uma conversa:
+ *
+ *  - "Editar" não troca de tela: o formulário sobe por cima da ficha e, ao
+ *    salvar, a ficha se recarrega debaixo dele.
+ *  - Criar processo, requerimento ou prazo reaproveita o workspace do WhatsApp
+ *    (`WaWorkspaceRenderer` aninhado) — nada leva o atendente para outro módulo.
+ */
+const WaClient360Modal: React.FC<{
+  clientId: string;
+  onClose: () => void;
+  onSaved: () => void;
+  /** Abrir pasta do Nextcloud sem sair da conversa (janela flutuante). */
+  onOpenNextcloudFolder?: (path: string) => void;
+}> = ({ clientId, onClose, onSaved, onOpenNextcloudFolder }) => {
+  const [client, setClient] = useState<Client | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [processes, setProcesses] = useState<Process[]>([]);
+  const [requirements, setRequirements] = useState<Requirement[]>([]);
+  const [relationsLoading, setRelationsLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [nested, setNested] = useState<WaModal | null>(null);
+  const [versao, setVersao] = useState(0);
+
+  useEffect(() => {
+    let vivo = true;
+    setLoading(true);
+    clientService.getClientById(clientId)
+      .then(c => { if (vivo) setClient(c); })
+      .catch(() => { if (vivo) setClient(null); })
+      .finally(() => { if (vivo) setLoading(false); });
+    return () => { vivo = false; };
+  }, [clientId, versao]);
+
+  useEffect(() => {
+    let vivo = true;
+    setRelationsLoading(true);
+    Promise.all([
+      processService.listProcesses({ client_id: clientId }),
+      requirementService.listRequirements({ client_id: clientId }),
+    ])
+      .then(([p, r]) => { if (!vivo) return; setProcesses(p); setRequirements(r); })
+      .catch(() => { if (!vivo) return; setProcesses([]); setRequirements([]); })
+      .finally(() => { if (vivo) setRelationsLoading(false); });
+    return () => { vivo = false; };
+  }, [clientId, versao]);
+
+  if (loading || !client) {
+    return (
+      <WaOverlay title="Ficha do cliente" icon={<UserIcon size={18} />} onClose={onClose}>
+        <div className="flex items-center justify-center py-10 text-slate-400">
+          {loading
+            ? <><Loader2 size={20} className="animate-spin mr-2" /> Carregando…</>
+            : 'Cadastro não encontrado.'}
+        </div>
+      </WaOverlay>
+    );
+  }
+
+  return (
+    <>
+      <ClientModal
+        isOpen
+        onClose={onClose}
+        title="Detalhes do cliente"
+        icon={<UserIcon size={18} />}
+        size="xl"
+      >
+        <div className="bg-[#f8f7f5] p-3 sm:p-4">
+          <ClientDetails
+            client={client}
+            processes={processes}
+            requirements={requirements}
+            relationsLoading={relationsLoading}
+            onBack={onClose}
+            onEdit={() => setEditing(true)}
+            onCreateProcess={() => setNested({ type: 'case_process_create', clientId, clientName: client.full_name })}
+            onCreateRequirement={() => setNested({ type: 'case_requirement_create', clientId, clientName: client.full_name })}
+            onCreateDeadline={() => setNested({ type: 'deadline_create', clientId })}
+            onOpenNextcloudFolder={onOpenNextcloudFolder}
+          />
+        </div>
+      </ClientModal>
+
+      {/* Editar sobe POR CIMA da ficha; ao salvar, a ficha se recarrega. */}
+      {editing && (
+        <WaOverlay title="Editar cliente" icon={<Pencil size={18} />} onClose={() => setEditing(false)} size="xl">
+          <ClientForm
+            client={client}
+            onBack={() => setEditing(false)}
+            onSave={saved => { setClient(saved); setEditing(false); setVersao(v => v + 1); onSaved(); }}
+            variant="modal"
+          />
+        </WaOverlay>
+      )}
+
+      {/* Criar processo/requerimento/prazo sem sair da ficha nem da conversa. */}
+      <WaWorkspaceRenderer
+        modal={nested}
+        onClose={() => setNested(null)}
+        onSaved={() => { setVersao(v => v + 1); onSaved(); }}
+      />
+    </>
+  );
+};
+
 // ─── Renderer principal ───────────────────────────────────────────────────────
 
 export interface WaWorkspaceRendererProps {
   modal: WaModal | null;
   onClose: () => void;
   onSaved?: (type: string) => void;
+  /**
+   * Abrir uma pasta do Nextcloud sem trocar de módulo. A ficha 360 usa isto
+   * para subir a janela flutuante de arquivos sobre a conversa.
+   */
+  onOpenNextcloudFolder?: (path: string) => void;
 }
 
-export const WaWorkspaceRenderer: React.FC<WaWorkspaceRendererProps> = ({ modal, onClose, onSaved }) => {
+export const WaWorkspaceRenderer: React.FC<WaWorkspaceRendererProps> = ({ modal, onClose, onSaved, onOpenNextcloudFolder }) => {
   const done = useCallback((type: string) => { onSaved?.(type); onClose(); }, [onSaved, onClose]);
 
   if (!modal) return null;
 
   switch (modal.type) {
     case 'client_view':
-      return <WaClientModal mode="view" clientId={modal.clientId} onClose={onClose} onSaved={() => done('client')} />;
+      return (
+        <WaClient360Modal
+          clientId={modal.clientId}
+          onClose={onClose}
+          onSaved={() => onSaved?.('client')}
+          onOpenNextcloudFolder={onOpenNextcloudFolder}
+        />
+      );
     case 'client_edit':
       return <WaClientModal mode="edit" clientId={modal.clientId} onClose={onClose} onSaved={() => done('client')} />;
     case 'client_create':

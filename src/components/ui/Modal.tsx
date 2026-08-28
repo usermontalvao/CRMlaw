@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { LAYER } from '../../styles/layers';
 import { useModalLayer } from '../../styles/modalLayer';
+import { useEscapeLayer } from '../../hooks/useEscapeLayer';
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -62,14 +63,8 @@ export const Modal: React.FC<ModalProps> = ({
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const shouldReduceMotion = useReducedMotion();
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+  // Esc fecha SÓ O MODAL DO TOPO — a pilha é do CRM inteiro (useEscapeLayer).
+  useEscapeLayer(open, onClose);
 
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';

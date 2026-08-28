@@ -37,6 +37,53 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.13',
+    date: '28/08/2026',
+    summary: 'Os arquivos do cliente no Nextcloud passaram a abrir numa janela sobre a conversa, "Ver" abre a ficha 360 de verdade, os modais do WhatsApp encolheram para tamanho de aplicativo e o Esc voltou a fechar uma camada por vez.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Arquivos do cliente no Nextcloud, sem sair da conversa',
+            description: 'No painel de detalhes apareceu "Arquivos no Nextcloud". Ele abre uma janela flutuante — não um modal: a conversa continua atrás dela, legível e clicável. A janela arrasta pelo título, encolhe, abre em tela cheia, redimensiona pelo canto e guarda onde foi largada. A raiz é o CLIENTE: só as pastas vinculadas àquele cadastro, e quem tem uma pasta só entra direto nela. "Documentos no Cloud" continua onde estava.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Mandar o documento na conversa em um gesto',
+            description: 'Cada arquivo tem "Enviar na conversa": ele é baixado do Nextcloud e entra no mesmo preview com legenda de qualquer anexo. Dá para marcar vários (caixinha, Ctrl/⌘, Shift, Ctrl/⌘+A ou laçando com o mouse) e mandar todos de uma vez, ou simplesmente arrastar da janela para a conversa. No sentido contrário, soltar um arquivo do computador dentro da janela guarda ele na pasta aberta, com barra de progresso.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Bloco ou lista, e o arquivo abre em janela própria',
+            description: 'A pasta abre em blocos com miniatura (imagem e primeira página de PDF), com alternância para lista — a escolha fica guardada. Um clique seleciona e dois abrem, como no explorador de arquivos. O arquivo aberto ganha uma janela grande só dele: imagem, PDF, vídeo, áudio e texto abrem ali mesmo; .docx vai para o Editor.',
+          },
+          {
+            type: 'improvement' as const,
+            title: '"Ver" abre a ficha do cliente de verdade',
+            description: 'O botão Ver do perfil vinculado abria um resumo de nome, CPF e endereço. Agora abre a mesma ficha 360 do módulo de Clientes, com todas as abas — e sem sair da conversa: Editar sobe por cima e recarrega a ficha ao salvar, criar processo, requerimento ou prazo continua no workspace da conversa, e clicar numa pasta do Nextcloud abre a janela de arquivos em vez de levar para outro módulo.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Modais com cara de aplicativo',
+            description: 'Cabeçalho, corpo e rodapé dos diálogos do módulo encolheram, e o de transferência foi refeito: os dois selects grandes viraram pastilhas de setor e uma lista de responsáveis com busca, carga de cada atendente e os sugeridos no topo; o motivo, que é opcional e interno, deixou de ocupar um terço da caixa e agora abre num clique.',
+          },
+        ],
+      },
+      {
+        moduleId: 'geral',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O Esc fecha uma camada por vez',
+            description: 'Com um modal aberto sobre a conversa, o Esc fechava o modal E a conversa atrás dele no mesmo toque; o modal de lançamento não fechava com Esc nenhum. Agora existe uma pilha única: cada Esc desfaz só o que está por cima — a janela de arquivos, depois o modal, depois a ficha, e a conversa só quando não há mais nada em cima dela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.12',
     date: '28/08/2026',
     summary: 'A lista do cofre de códigos ganhou a marca de cada serviço, a contagem de chaves e a fonte da casa embarcada na extensão.',

@@ -168,6 +168,9 @@ import { isWhatsAppAppLocation } from '../utils/whatsappAppRoute';
 import { signatureService } from '../services/signature.service';
 import { WaWorkspaceRenderer } from './WaWorkspace';
 import { ClientCloudDocsLink } from './CloudFolderModal';
+import { NextcloudClientWindow, ClientNextcloudDocsLink } from './whatsapp/nextcloudClientWindow';
+import { nextcloudService, getNextcloudErrorMessage } from '../services/nextcloud.service';
+import { escapeLayerCount } from '../hooks/useEscapeLayer';
 import { Modal, ModalBody } from './ui/Modal';
 import { buildPublicFillUrl } from '../utils/publicAppUrl';
 import type { Lead } from '../types/lead.types';
@@ -1628,7 +1631,11 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
         typing: isTypingTarget(alvo),
         inSearch: alvo === searchRef.current,
         hasSearch: search.trim().length > 0,
-        dialogOpen: !!document.querySelector('[role="dialog"]'),
+        // Enquanto houver QUALQUER camada aberta por cima (modal, ficha,
+        // janela de arquivos), a tecla é dela — o Esc desce uma camada por vez
+        // e nunca leva a conversa junto. `escapeLayerCount` é o registro dessas
+        // camadas; a busca no DOM cobre as caixas antigas que ainda não o usam.
+        dialogOpen: escapeLayerCount() > 0 || !!document.querySelector('[role="dialog"]'),
         recording,
         overlayOpen: attachMenuOpen || gifOpen || mediaLibOpen || emojiOpen || slashActive,
         composing: !!editing || !!replyTo,
@@ -2070,9 +2077,47 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
     [selected],
   );
 
+  // ── A janela de arquivos do cliente (Nextcloud) ──
+  // Uma só por vez, e ela SOBREVIVE à troca de conversa fechando: o que está
+  // aberto pertence a um cliente, e continuar mostrando a pasta do anterior
+  // sobre a conversa nova seria pior do que fechar.
+  const [nextcloudWindow, setNextcloudWindow] = useState<{ clientId: string; clientName: string | null; path: string | null } | null>(null);
+  const abrirNextcloud = useCallback((path?: string | null) => {
+    if (!selected?.client_id) return;
+    setNextcloudWindow({
+      clientId: selected.client_id,
+      clientName: selected.client_name || selected.contact_name || null,
+      path: path ?? null,
+    });
+  }, [selected?.client_id, selected?.client_name, selected?.contact_name]);
+  useEffect(() => {
+    setNextcloudWindow(atual => (atual && atual.clientId !== selected?.client_id ? null : atual));
+  }, [selected?.client_id]);
+
+  /**
+   * Arrastou um arquivo da janela do Nextcloud para dentro da conversa.
+   *
+   * O arrasto não carrega bytes (o arquivo está no servidor, não no disco):
+   * chega o caminho, e é aqui que ele vira um `File` e entra no MESMO fluxo de
+   * anexo do compositor — com o preview e a legenda de sempre.
+   */
+  const handleNextcloudDrop = useCallback(async (payload: { files: Array<{ path: string; name: string; mime: string }> }) => {
+    try {
+      const baixados = await Promise.all(payload.files.map(async item => {
+        const blob = await nextcloudService.readFile(item.path);
+        return new File([blob], item.name, { type: blob.type || item.mime || 'application/octet-stream' });
+      }));
+      handleDroppedFiles(baixados);
+    } catch (err) {
+      toast.error('Arquivo do Nextcloud', getNextcloudErrorMessage(err, 'ler o arquivo para enviar'));
+    }
+    // `handleDroppedFiles` e `toast` são estáveis o bastante para o ciclo desta tela.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Drag and drop de arquivos na thread → useThreadDragDrop (estado do overlay +
   // handlers). O envio em si (sendFile, staging, retry/resend) vive em useWaComposer.
-  const { dragOver, dragProps } = useThreadDragDrop(!!selected && !editing, handleDroppedFiles);
+  const { dragOver, dragProps } = useThreadDragDrop(!!selected && !editing, handleDroppedFiles, handleNextcloudDrop);
 
   // ── Trocar o canal por onde se fala com este contato ──
   // Não move a conversa: cada número do escritório tem a SUA thread com o
@@ -4040,6 +4085,10 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
 
           {selected.client_id && <ClientPendingsPanel pendings={overview?.pendings ?? null} confirm={confirm} onChanged={reloadOverview} />}
           {selected.client_id && <ClientCloudDocsLink clientId={selected.client_id} clientName={selected.client_name || selected.contact_name || undefined} />}
+          {/* O acervo do cliente no Nextcloud, numa janela que não tira a
+              conversa da tela. O "Documentos no Cloud" acima continua de pé até
+              haver decisão sobre o Cloud interno. */}
+          {selected.client_id && <ClientNextcloudDocsLink clientId={selected.client_id} onOpen={() => abrirNextcloud()} />}
           {selected.client_id && <ClientFillLinksPanel links={overview?.templateFillLinks ?? null} signatures={overview?.signatures ?? null} onStopTracking={stopTemplateFillTracking} />}
           {/* Assinaturas aparecem MESMO sem cliente vinculado: sem cadastro, elas
               vêm pelo telefone do contato (ver `listSignaturesByContactPhone`).
@@ -4236,7 +4285,20 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
         modal={workspace}
         onClose={closeWa}
         onSaved={onWorkspaceSaved}
+        onOpenNextcloudFolder={abrirNextcloud}
       />
+
+      {/* Janela flutuante de arquivos do cliente — fica por cima, mas nunca
+          bloqueia: a conversa continua clicável atrás dela. */}
+      {nextcloudWindow && (
+        <NextcloudClientWindow
+          clientId={nextcloudWindow.clientId}
+          clientName={nextcloudWindow.clientName}
+          initialPath={nextcloudWindow.path}
+          onClose={() => setNextcloudWindow(null)}
+          onSendToConversation={selected ? handleDroppedFiles : undefined}
+        />
+      )}
 
       {templateOpen && selected && (
         <TemplatePickerModal

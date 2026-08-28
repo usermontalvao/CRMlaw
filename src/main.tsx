@@ -388,6 +388,15 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: bancada da janela de arquivos do cliente (?wanextcloudpreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('wanextcloudpreview')) {
+    const { default: WhatsAppNextcloudWindowPreview } = await import('./dev/WhatsAppNextcloudWindowPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <WhatsAppNextcloudWindowPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: harness do certificado de assinatura (?certpreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('certpreview')) {
     const { default: CertificatePreview } = await import('./dev/CertificatePreview');

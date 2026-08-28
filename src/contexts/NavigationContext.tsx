@@ -141,3 +141,14 @@ export const useNavigation = () => {
   }
   return context;
 };
+
+/**
+ * A mesma navegação, mas SEM exigir o provider.
+ *
+ * Existe por causa das telas que o CRM e o app de atendimento compartilham: a
+ * ficha 360 do cliente abre tanto dentro do CRM (onde há NavigationProvider e
+ * "abrir no módulo" faz sentido) quanto de dentro da conversa no app avulso
+ * `/atendimento`, que não tem módulos para onde ir. Lá `useNavigation` lançava e
+ * derrubava a ficha inteira; aqui devolve `null` e quem chama decide o plano B.
+ */
+export const useNavigationOptional = () => useContext(NavigationContext) ?? null;

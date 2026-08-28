@@ -13,6 +13,7 @@ import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { LAYER } from '../../styles/layers';
 import { useModalLayer } from '../../styles/modalLayer';
+import { useEscapeLayer } from '../../hooks/useEscapeLayer';
 
 /** Tom do diálogo: colore o emblema do cabeçalho e a faixa superior. */
 export type WaDialogTone = 'default' | 'danger' | 'success' | 'info';
@@ -37,19 +38,24 @@ export const waSelectStyle: React.CSSProperties = {
   backgroundPosition: 'right 0.65rem center',
   backgroundSize: '16px',
 };
-export const waLabel = 'block text-[11.5px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5';
+export const waLabel = 'block text-[10.5px] font-bold uppercase tracking-wider text-slate-400 mb-1';
 export const waHint = 'mt-1.5 text-[11.5px] leading-snug text-slate-400';
 
-const BTN_BASE = 'inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-50';
+const BTN_BASE = 'inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-50';
 export const waBtnPrimary = `${BTN_BASE} bg-amber-600 text-white shadow-sm hover:bg-amber-700 focus-visible:ring-2 focus-visible:ring-amber-200`;
 export const waBtnGhost = `${BTN_BASE} border border-[#e2e0d9] bg-white text-slate-600 hover:bg-[#faf9f7] hover:text-slate-800`;
 export const waBtnDanger = `${BTN_BASE} bg-red-600 text-white shadow-sm hover:bg-red-700 focus-visible:ring-2 focus-visible:ring-red-200`;
 
-const WA_DIALOG_WIDTH: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
-  // `sm` cresceu: com a largura antiga (max-w-sm) um formulário de dois selects
-  // e um textarea ficava espremido numa coluna estreita.
-  sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl',
+const WA_DIALOG_WIDTH: Record<'xs' | 'sm' | 'md' | 'lg' | 'xl', string> = {
+  // `xs` é a medida de aplicativo: a caixa que faz UMA pergunta e cabe no
+  // polegar. `sm` cresceu um dia porque um formulário de dois selects e um
+  // textarea ficava espremido em `max-w-sm` — a saída certa era encolher o
+  // formulário, não alargar o diálogo, e é o que os modais foram fazendo.
+  xs: 'max-w-sm', sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl',
 };
+
+/** Quantos diálogos estão prendendo a rolagem da página agora. */
+let travasDeRolagem = 0;
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
@@ -91,11 +97,6 @@ function initialFocus(panel: HTMLElement): HTMLElement | null {
   return campo ?? panel;
 }
 
-/**
- * Pilha de diálogos abertos. Só o do topo responde ao Esc — antes cada diálogo
- * escutava a tecla no window e um Esc fechava também o que estava por baixo.
- */
-const dialogStack: string[] = [];
 
 export const WaDialog: React.FC<{
   title: string;
@@ -104,7 +105,7 @@ export const WaDialog: React.FC<{
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   zIndex?: number;
   headerActions?: React.ReactNode;
   tone?: WaDialogTone;
@@ -119,13 +120,13 @@ export const WaDialog: React.FC<{
   // nele — senão ficaria atrás do próprio widget. Ver `styles/modalLayer`.
   const zIndex = useModalLayer(zIndexProp ?? LAYER.MODAL);
   const panelRef = useRef<HTMLDivElement>(null);
-  const idRef = useRef(`wa-dialog-${Math.random().toString(36).slice(2)}`);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  // Esc: só o diálogo do TOPO da pilha do CRM fecha. Ver `useEscapeLayer`.
+  useEscapeLayer(true, onClose);
+
   useEffect(() => {
-    const id = idRef.current;
-    dialogStack.push(id);
     const restoreFocus = document.activeElement as HTMLElement | null;
     // Foco inicial: ver `initialFocus`. O diálogo já abre operável pelo teclado,
     // e sem passar por cima do campo que o formulário escolheu.
@@ -133,8 +134,8 @@ export const WaDialog: React.FC<{
     if (panel) initialFocus(panel)?.focus({ preventScroll: true });
 
     const onKey = (e: KeyboardEvent) => {
-      if (dialogStack[dialogStack.length - 1] !== id) return; // só o diálogo do topo
-      if (e.key === 'Escape') { e.stopPropagation(); onCloseRef.current(); return; }
+      // O Esc é da pilha compartilhada (`useEscapeLayer`), logo abaixo. Aqui
+      // fica só o Tab, que precisa do painel para saber onde prender o foco.
       if (e.key !== 'Tab' || !panelRef.current) return;
       // Prende o Tab dentro do diálogo: sem isso o foco escapa para a inbox atrás.
       const items = [...panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)]
@@ -148,13 +149,16 @@ export const WaDialog: React.FC<{
     window.addEventListener('keydown', onKey);
 
     const prev = document.body.style.overflow;
+    travasDeRolagem += 1;
     document.body.style.overflow = 'hidden';
     return () => {
       window.removeEventListener('keydown', onKey);
-      const at = dialogStack.indexOf(id);
-      if (at >= 0) dialogStack.splice(at, 1);
-      // Só devolve a rolagem quando nenhum diálogo continua aberto.
-      if (dialogStack.length === 0) document.body.style.overflow = prev;
+      // Só devolve a rolagem quando o ÚLTIMO diálogo sai. O contador é destes
+      // diálogos, e não da pilha do Esc: a janela de arquivos também é uma
+      // camada do Esc, mas não trava a rolagem da página — contá-la aqui
+      // deixaria o `body` preso depois que o último diálogo fechasse.
+      travasDeRolagem = Math.max(0, travasDeRolagem - 1);
+      if (travasDeRolagem === 0) document.body.style.overflow = prev;
       restoreFocus?.focus?.({ preventScroll: true });
     };
   }, []);
@@ -181,19 +185,19 @@ export const WaDialog: React.FC<{
         {!darkHeader && <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-slate-200 sm:hidden" />}
 
         <div className={darkHeader
-          ? `flex shrink-0 items-center gap-3 px-4 py-3 text-white ${headerClassName}`
-          : 'flex shrink-0 items-start gap-3 border-b border-[#efece5] px-4 py-3.5 sm:px-5'}>
+          ? `flex shrink-0 items-center gap-2.5 px-3.5 py-2.5 text-white ${headerClassName}`
+          : 'flex shrink-0 items-start gap-2.5 border-b border-[#efece5] px-3.5 py-2.5 sm:px-4'}>
           {icon && (
             <div className={darkHeader
-              ? 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15'
-              : `flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ring-1 ${toneCls.chip}`}>
+              ? 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15'
+              : `flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ring-1 ${toneCls.chip}`}>
               {icon}
             </div>
           )}
           <div className="min-w-0 flex-1 pt-0.5">
-            <h3 className={`truncate text-[15px] font-semibold leading-tight ${darkHeader ? '' : 'text-slate-900'}`}>{title}</h3>
+            <h3 className={`truncate text-[14px] font-semibold leading-tight ${darkHeader ? '' : 'text-slate-900'}`}>{title}</h3>
             {subtitle && (typeof subtitle === 'string'
-              ? <p className={`truncate text-[12px] ${darkHeader ? 'text-white/80' : 'text-slate-500'}`}>{subtitle}</p>
+              ? <p className={`truncate text-[11.5px] ${darkHeader ? 'text-white/80' : 'text-slate-500'}`}>{subtitle}</p>
               : <div className={`text-[12px] ${darkHeader ? 'text-white/80' : 'text-slate-500'}`}>{subtitle}</div>)}
           </div>
           {headerActions}
@@ -212,7 +216,7 @@ export const WaDialog: React.FC<{
         {footer && (
           // No celular os botões ocupam a largura toda (alvo de toque decente);
           // no desktop voltam a ficar alinhados à direita.
-          <div className="shrink-0 border-t border-[#efece5] bg-[#faf9f7] px-4 py-3 sm:px-5 [&_button]:w-full sm:[&_button]:w-auto">
+          <div className="shrink-0 border-t border-[#efece5] bg-[#faf9f7] px-3.5 py-2.5 sm:px-4 [&_button]:w-full sm:[&_button]:w-auto">
             {footer}
           </div>
         )}
@@ -223,7 +227,7 @@ export const WaDialog: React.FC<{
 };
 
 export const WaDialogBody: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ className = '', children, ...props }) => (
-  <div className={['p-4 sm:p-5', className].filter(Boolean).join(' ')} {...props}>{children}</div>
+  <div className={['p-3.5 sm:p-4', className].filter(Boolean).join(' ')} {...props}>{children}</div>
 );
 
 /** Rodapé padrão: ações à direita no desktop, empilhadas no celular. */
@@ -259,5 +263,5 @@ export const WaField: React.FC<{
 
 /** Empilha campos com respiro uniforme dentro do corpo do diálogo. */
 export const WaFieldStack: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ className = '', children, ...props }) => (
-  <div className={['space-y-4', className].filter(Boolean).join(' ')} {...props}>{children}</div>
+  <div className={['space-y-3', className].filter(Boolean).join(' ')} {...props}>{children}</div>
 );

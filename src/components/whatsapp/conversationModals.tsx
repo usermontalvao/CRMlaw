@@ -2,12 +2,15 @@
 // atendimento. Extraídos de WhatsAppModule.tsx — autocontidos, dependem só das
 // primitivas de UI compartilhadas, do serviço e do contexto de toast.
 import React, { useMemo, useState } from 'react';
-import { Ban, Loader2, CheckCircle2, ArrowRightLeft, ShieldCheck, AlertTriangle, Scale } from 'lucide-react';
+import {
+  Ban, Loader2, CheckCircle2, ArrowRightLeft, ShieldCheck, AlertTriangle, Scale,
+  Check, Search, Users, MessageSquareText,
+} from 'lucide-react';
 import {
   WaDialog, WaDialogBody, WaDialogActions, WaField, WaFieldStack,
-  waTextarea, waSelect, waSelectStyle, waBtnGhost, waBtnPrimary, waBtnDanger,
+  waTextarea, waBtnGhost, waBtnPrimary, waBtnDanger,
 } from './ui';
-import { conversationName, agentLabel } from './format';
+import { conversationName, agentLabel, initials } from './format';
 import { agentLoads } from './attendanceRouting';
 import { validateTransfer, suggestLawyers, type TransferStaff } from './transferPolicy';
 import { whatsappService, renderTemplate, type StaffOption } from '../../services/whatsapp.service';
@@ -35,6 +38,8 @@ export const TransferModal: React.FC<{
   const [dept, setDept] = useState<string>(conversation.department_id || '');
   const [person, setPerson] = useState<string>(conversation.assigned_user_id || '');
   const [note, setNote] = useState('');
+  const [buscaPessoa, setBuscaPessoa] = useState('');
+  const [motivoAberto, setMotivoAberto] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Carga viva por atendente. Transferir às cegas é o que faz uma pessoa
@@ -148,13 +153,32 @@ export const TransferModal: React.FC<{
     } finally { setSaving(false); }
   };
 
+  // Uma linha por destino possível, já na ordem em que se decide: quem o
+  // sistema sugere primeiro, o resto do time depois. A busca filtra os dois.
+  const sugeridos = useMemo(() => new Map(lawyerPicks.map(p => [p.userId, p])), [lawyerPicks]);
+  const listaPessoas = useMemo(() => {
+    const termo = buscaPessoa.trim().toLowerCase();
+    const filtrados = staff.filter(s => !termo || s.name.toLowerCase().includes(termo));
+    // Sugeridos sobem, mantendo entre eles a ordem do ranqueamento.
+    const ordemSugerida = lawyerPicks.map(p => p.userId);
+    return [...filtrados].sort((a, b) => {
+      const ia = ordemSugerida.indexOf(a.user_id);
+      const ib = ordemSugerida.indexOf(b.user_id);
+      if (ia !== ib) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      return a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' });
+    });
+  }, [staff, buscaPessoa, lawyerPicks]);
+
+  const bloqueio = validation.issues.find(i => i.level === 'block') ?? null;
+  const ressalva = validation.issues.find(i => i.level !== 'block') ?? null;
+
   return (
     <WaDialog
       title="Transferir conversa"
       subtitle={conversationName(conversation)}
-      icon={<ArrowRightLeft size={18} />}
+      icon={<ArrowRightLeft size={16} />}
       onClose={onClose}
-      size="sm"
+      size="xs"
       footer={
         <WaDialogActions>
           <button onClick={onClose} className={waBtnGhost}>Cancelar</button>
@@ -166,94 +190,166 @@ export const TransferModal: React.FC<{
         </WaDialogActions>
       }
     >
-      <WaDialogBody>
-        <WaFieldStack>
-          {/* Atalho para o caminho mais comum: passar o caso para um advogado,
-              já na ordem certa (continuidade primeiro, depois quem está livre). */}
-          {lawyerPicks.length > 0 && (
-            <div>
-              <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                <Scale size={11} /> Encaminhar para advogado
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {lawyerPicks.map(pick => (
-                  <button
-                    key={pick.userId}
-                    type="button"
-                    onClick={() => setPerson(pick.userId)}
-                    title={pick.reasons.join(' · ')}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-semibold transition ${
-                      person === pick.userId
-                        ? 'border-amber-300 bg-amber-100 text-amber-800'
-                        : 'border-[#e7e5df] bg-white text-slate-600 hover:bg-[#f7f6f3]'
-                    }`}
-                  >
-                    {pick.name}
-                    <span className="font-normal text-slate-400">
-                      {pick.caution ?? pick.reasons[0]}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <WaField label="Departamento" htmlFor="wa-transfer-dept">
-            <select id="wa-transfer-dept" value={dept} onChange={e => setDept(e.target.value)}
-              className={waSelect} style={waSelectStyle}>
-              <option value="">Nenhum</option>
-              {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          </WaField>
-
-          <WaField
-            label="Responsável" htmlFor="wa-transfer-person"
-            hint={conversations?.length ? 'O número ao lado do nome é a carga de conversas ativas.' : undefined}
-          >
-            <select id="wa-transfer-person" value={person} onChange={e => setPerson(e.target.value)}
-              className={waSelect} style={waSelectStyle}>
-              <option value="">Ninguém</option>
-              {staff.map(s => {
-                const load = loads[s.user_id] ?? 0;
-                return (
-                  <option key={s.user_id} value={s.user_id}>
-                    {s.name}{conversations?.length ? ` — ${load} ${load === 1 ? 'conversa' : 'conversas'}` : ''}
-                  </option>
-                );
-              })}
-            </select>
-          </WaField>
-
-          {/* Impedimentos e ressalvas de uma vez só: corrigir um erro por vez,
-              com o modal fechando a cada tentativa, faz o atendente desistir. */}
-          {validation.issues.length > 0 && (
-            <ul className="space-y-1.5">
-              {validation.issues.map(issue => (
-                <li key={issue.code}
-                  className={`flex items-start gap-2 rounded-xl border px-3 py-2 text-[12px] leading-relaxed ${
-                    issue.level === 'block'
-                      ? 'border-red-100 bg-red-50/70 text-red-800'
-                      : 'border-amber-100 bg-amber-50/70 text-amber-800'
-                  }`}>
-                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                  <span>{issue.message}</span>
-                </li>
+      {/* Sem `WaDialogBody`: aqui o corpo é uma LISTA que rola sozinha, como
+          numa tela de aplicativo — a moldura fica parada e só o miolo anda. */}
+      <div className="flex flex-col">
+        {/* ── Setor: fila de pastilhas, não um select ──
+            São poucos e cabem numa linha; o select escondia as opções atrás de
+            um clique e fazia o diálogo parecer um formulário de cadastro. */}
+        {departments.length > 0 && (
+          <div className="shrink-0 border-b border-[#f4f2ee] px-3 py-2.5">
+            <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <Users size={11} /> Setor
+            </p>
+            <div className="-mx-0.5 flex gap-1.5 overflow-x-auto px-0.5 pb-0.5">
+              <Pastilha ativa={!dept} onClick={() => setDept('')}>Nenhum</Pastilha>
+              {departments.map(d => (
+                <Pastilha key={d.id} ativa={dept === d.id} onClick={() => setDept(d.id)}>{d.name}</Pastilha>
               ))}
-            </ul>
-          )}
+            </div>
+          </div>
+        )}
 
-          <WaField
-            label="Motivo da transferência" optional="(opcional, interno)" htmlFor="wa-transfer-note"
-            hint="O motivo fica só no histórico interno. O cliente recebe um aviso automático de encaminhamento."
-          >
-            <textarea id="wa-transfer-note" value={note} onChange={e => setNote(e.target.value)} rows={2}
-              placeholder="Ex: cliente quer falar com o financeiro" className={waTextarea} />
-          </WaField>
-        </WaFieldStack>
-      </WaDialogBody>
+        {/* ── Responsável: a lista que decide a transferência ── */}
+        <div className="shrink-0 px-3 pt-2.5">
+          <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <Scale size={11} /> Responsável
+          </p>
+          <div className="relative">
+            <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-300" />
+            <input
+              value={buscaPessoa} onChange={e => setBuscaPessoa(e.target.value)}
+              placeholder="Buscar pelo nome"
+              className="w-full rounded-lg border border-[#e2e0d9] bg-white py-1.5 pl-7 pr-2.5 text-[12.5px] text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+            />
+          </div>
+        </div>
+
+        <div className="min-h-0 max-h-[13.5rem] overflow-y-auto px-1.5 py-1.5">
+          <LinhaDestino
+            ativa={!person}
+            titulo="Ninguém"
+            detalhe="Devolve a conversa para a fila do setor"
+            onClick={() => setPerson('')}
+          />
+          {listaPessoas.map(s => {
+            const pick = sugeridos.get(s.user_id);
+            const load = loads[s.user_id] ?? 0;
+            return (
+              <LinhaDestino
+                key={s.user_id}
+                ativa={person === s.user_id}
+                titulo={agentLabel(s) || s.name}
+                detalhe={conversations?.length
+                  ? `${load} ${load === 1 ? 'conversa aberta' : 'conversas abertas'}`
+                  : (s.role || '')}
+                marca={pick ? (pick.caution ?? pick.reasons[0] ?? 'sugerido') : null}
+                iniciais={initials(s.name, '')}
+                onClick={() => setPerson(s.user_id)}
+              />
+            );
+          })}
+          {listaPessoas.length === 0 && (
+            <p className="px-2 py-6 text-center text-[12px] text-slate-400">Ninguém com esse nome.</p>
+          )}
+        </div>
+
+        {/* ── Impedimento e ressalva: uma linha cada, no lugar do bloco de avisos.
+            Corrigir um erro por vez com o diálogo fechando a cada tentativa faz
+            o atendente desistir — por isso os dois aparecem juntos, mas rasos. */}
+        {(bloqueio || ressalva) && (
+          <div className="shrink-0 space-y-1 border-t border-[#f4f2ee] px-3 py-2">
+            {bloqueio && (
+              <p className="flex items-start gap-1.5 text-[11.5px] leading-snug text-red-700">
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" /> {bloqueio.message}
+              </p>
+            )}
+            {ressalva && (
+              <p className="flex items-start gap-1.5 text-[11.5px] leading-snug text-amber-700">
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" /> {ressalva.message}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ── Motivo: fechado por padrão ──
+            É opcional e interno; ocupando um textarea aberto, ele respondia por
+            um terço da altura do diálogo sem ser preenchido quase nunca. */}
+        <div className="shrink-0 border-t border-[#f4f2ee] px-3 py-2">
+          {motivoAberto || note ? (
+            <>
+              <label htmlFor="wa-transfer-note" className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <MessageSquareText size={11} /> Motivo <span className="font-normal normal-case tracking-normal text-slate-300">(interno)</span>
+              </label>
+              <textarea
+                id="wa-transfer-note" value={note} onChange={e => setNote(e.target.value)} rows={2} autoFocus={motivoAberto}
+                placeholder="Ex: cliente quer falar com o financeiro"
+                className={waTextarea}
+              />
+            </>
+          ) : (
+            <button type="button" onClick={() => setMotivoAberto(true)}
+              className="flex items-center gap-1.5 text-[11.5px] font-semibold text-slate-400 transition hover:text-amber-700">
+              <MessageSquareText size={12} /> Anotar um motivo (opcional)
+            </button>
+          )}
+          <p className="mt-1.5 text-[11px] leading-snug text-slate-400">
+            O cliente recebe um aviso automático de encaminhamento.
+          </p>
+        </div>
+      </div>
     </WaDialog>
   );
 };
+
+/** Pastilha de escolha única — o select de setor virou isto. */
+const Pastilha: React.FC<{ ativa: boolean; onClick: () => void; children: React.ReactNode }> = ({ ativa, onClick, children }) => (
+  <button
+    type="button" onClick={onClick}
+    className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-[12px] font-semibold transition ${
+      ativa
+        ? 'border-amber-300 bg-amber-100 text-amber-800'
+        : 'border-[#e7e5df] bg-white text-slate-600 hover:bg-[#f7f6f3]'
+    }`}
+  >
+    {children}
+  </button>
+);
+
+/** Uma linha da lista de destinos: avatar, nome, carga e o visto de escolhido. */
+const LinhaDestino: React.FC<{
+  ativa: boolean;
+  titulo: string;
+  detalhe?: string;
+  marca?: string | null;
+  iniciais?: string;
+  onClick: () => void;
+}> = ({ ativa, titulo, detalhe, marca, iniciais, onClick }) => (
+  <button
+    type="button" onClick={onClick}
+    className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition ${
+      ativa ? 'bg-amber-50' : 'hover:bg-[#f7f6f3]'
+    }`}
+  >
+    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10.5px] font-bold ${
+      ativa ? 'bg-amber-200 text-amber-800' : 'bg-[#f0eee9] text-slate-500'
+    }`}>
+      {iniciais || '—'}
+    </span>
+    <span className="min-w-0 flex-1">
+      <span className="flex items-center gap-1.5">
+        <span className="truncate text-[13px] font-semibold text-slate-700">{titulo}</span>
+        {marca && (
+          <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-wide text-emerald-700">
+            {marca}
+          </span>
+        )}
+      </span>
+      {detalhe && <span className="block truncate text-[11px] text-slate-400">{detalhe}</span>}
+    </span>
+    {ativa && <Check size={15} className="shrink-0 text-amber-600" />}
+  </button>
+);
 
 // ── Modal: Bloquear contato ──
 export const BlockContactModal: React.FC<{

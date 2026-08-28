@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   FileText, FileCheck, Plus, Clock, FolderPlus,
@@ -11,7 +11,8 @@ import {
 import { events, SYSTEM_EVENTS } from '../utils/events';
 import { openWhatsAppChat } from '../utils/whatsappChat';
 import { openDialer } from '../utils/phoneDial';
-import { useNavigation } from '../contexts/NavigationContext';
+import { useNavigationOptional } from '../contexts/NavigationContext';
+import { moduleToPath, type ModuleName } from '../utils/moduleRoutes';
 import { formatDate as fmtDateG, formatDateTime as fmtDateTimeG, formatCurrency as fmtCurrencyG } from '../utils/formatters';
 import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
@@ -63,6 +64,15 @@ interface ClientDetailsProps {
   onCreateDeadline?: () => void;
   missingFields?: string[];
   isOutdated?: boolean;
+  /**
+   * Abrir uma pasta do Nextcloud SEM trocar de módulo.
+   *
+   * Quem abre a ficha de dentro de uma conversa do WhatsApp passa esta função:
+   * lá a pasta do cliente aparece numa janela flutuante sobre o atendimento, em
+   * vez de levar a pessoa para o módulo Nextcloud e fazer ela perder a conversa
+   * de vista. Sem a prop, o comportamento é o de sempre (fecha a ficha e navega).
+   */
+  onOpenNextcloudFolder?: (path: string) => void;
 }
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
@@ -772,10 +782,33 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   onCreateDeadline,
   missingFields = [],
   isOutdated = false,
+  onOpenNextcloudFolder,
 }) => {
   const { confirmDelete, notifyDeleted } = useDeleteConfirm();
   const { ensurePermission } = useSecurityPin();
-  const { navigateTo } = useNavigation();
+  // Navegação OPCIONAL: a mesma ficha abre no CRM (onde há módulos para onde ir)
+  // e no app avulso de atendimento (onde não há). Sem provider, "abrir no
+  // módulo" vira uma aba nova do CRM em vez de derrubar a ficha inteira.
+  const navigation = useNavigationOptional();
+  const navigateTo = useMemo(
+    () => navigation?.navigateTo ?? ((module: ModuleName) => {
+      const path = moduleToPath(module);
+      if (path) window.open(path, '_blank', 'noopener');
+    }),
+    [navigation],
+  );
+  /**
+   * Abrir a pasta do cliente no Nextcloud.
+   *
+   * Dentro de uma conversa, quem manda é `onOpenNextcloudFolder` — a pasta sobe
+   * numa janela flutuante e o atendimento continua atrás dela. Fora, o caminho
+   * de sempre: fecha a ficha e vai para o módulo.
+   */
+  const abrirPastaNextcloud = useCallback((folderPath: string) => {
+    if (onOpenNextcloudFolder) { onOpenNextcloudFolder(folderPath); return; }
+    onBack();
+    navigateTo('nextcloud', { path: folderPath });
+  }, [onOpenNextcloudFolder, onBack, navigateTo]);
   const [activeTab, setActiveTab] = useState<Tab>('data');
   const [historySearch, setHistorySearch] = useState('');
   const [docCopied, setDocCopied] = useState(false);
@@ -2668,7 +2701,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             <button
                               key={folderPath}
                               type="button"
-                              onClick={() => { onBack(); navigateTo('nextcloud', { path: folderPath }); }}
+                              onClick={() => abrirPastaNextcloud(folderPath)}
                               className="group flex w-full max-w-full items-center gap-2 rounded-lg bg-blue-50/70 px-2.5 py-1.5 text-left transition hover:bg-blue-100"
                               title={folderPath}
                             >
@@ -3768,7 +3801,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             <button
                               key={folderPath}
                               type="button"
-                              onClick={() => { onBack(); navigateTo('nextcloud', { path: folderPath }); }}
+                              onClick={() => abrirPastaNextcloud(folderPath)}
                               className={`${SURFACE} ${SURFACE_HOVER} flex w-full items-center justify-between gap-3 p-3.5 text-left`}
                             >
                               <span className="flex min-w-0 items-center gap-3">

@@ -5,6 +5,7 @@ import type { Agreement } from '../types/financial.types';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { LAYER } from '../styles/layers';
 import { useModalLayer } from '../styles/modalLayer';
+import { useEscapeLayer } from '../hooks/useEscapeLayer';
 
 interface FinancialModalProps {
   agreementId: string;
@@ -21,6 +22,9 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
   // fundo do painel, os títulos e os campos daqui. Quem manda na camada é o
   // `style` — inline ganha da classe, e aquele bloco não define `z-index`.
   const camada = useModalLayer(LAYER.MODAL_NESTED);
+  // Esta caixa não fechava no Esc — a tecla atravessava e ia fechar a conversa
+  // atrás dela. Agora ela é uma camada como as outras (ver `useEscapeLayer`).
+  useEscapeLayer(true, onClose);
   const [agreement, setAgreement] = useState<Agreement | null>(null);
   const [loading, setLoading] = useState(true);
   const statusLabel = (status?: Agreement['status'] | null) => {
@@ -50,7 +54,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
   if (loading) {
     return (
       <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4" style={{ zIndex: camada }}>
-        <div className="aero-modal w-full max-w-md rounded-t-[24px] p-6 sm:rounded-2xl">
+        <div role="dialog" aria-modal="true" aria-label="Detalhes do lançamento" className="aero-modal w-full max-w-md rounded-t-[24px] p-6 sm:rounded-2xl">
           <p className="text-center text-slate-700 dark:text-slate-300">Carregando...</p>
         </div>
       </div>
@@ -60,7 +64,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
   if (!agreement) {
     return (
       <div className="fixed inset-0 z-50 flex items-end justify-center px-3 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4" style={{ zIndex: camada }}>
-        <div className="aero-modal w-full max-w-md rounded-t-[24px] p-6 sm:rounded-2xl">
+        <div role="dialog" aria-modal="true" aria-label="Detalhes do lançamento" className="aero-modal w-full max-w-md rounded-t-[24px] p-6 sm:rounded-2xl">
           <p className="text-center text-slate-700 dark:text-slate-300">Lançamento não encontrado</p>
           <button
             onClick={onClose}
@@ -75,7 +79,7 @@ export function FinancialModal({ agreementId, onClose }: FinancialModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center px-0 py-0 aero-backdrop sm:items-center sm:px-4 sm:py-4" style={{ zIndex: camada }}>
-      <div className="aero-modal flex h-[100dvh] max-h-[100dvh] w-[calc(100vw-12px)] flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:w-full sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl">
+      <div role="dialog" aria-modal="true" aria-label="Detalhes do lançamento" className="aero-modal flex h-[100dvh] max-h-[100dvh] w-[calc(100vw-12px)] flex-col overflow-hidden rounded-t-[28px] sm:h-auto sm:w-full sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl">
         {/* Header */}
         <div className="sticky top-0 z-10 aero-modal-inner flex items-start justify-between gap-3 border-b border-white/30 px-4 py-4 dark:border-white/10 sm:px-6">
           <h2 className="text-lg font-bold text-slate-900 sm:text-xl">Detalhes do Lançamento</h2>
