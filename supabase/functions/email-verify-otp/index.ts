@@ -78,6 +78,7 @@ Deno.serve(async (req: Request) => {
       .select('id,otp_hash,expires_at,attempts,email')
       .eq('signer_id', signer.id)
       .is('verified_at', null)
+      .is('consumed_at', null)
       .order('created_at', { ascending: false })
       .limit(1)
 

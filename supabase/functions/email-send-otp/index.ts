@@ -1,6 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { enforceSecurityRateLimit } from '../_shared/security-rate-limit.ts'
+import {
+  JANELA_DA_ESCADA_MS,
+  esperaEntrePedidos,
+  segundosParaOProximoPedido,
+  textoDaEspera,
+} from '../_shared/otp-cooldown.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -123,19 +129,22 @@ Deno.serve(async (req: Request) => {
     )
     if (rateLimited) return rateLimited
 
-    const { data: lastOtp } = await supabase
+    // A mesma escada do código por telefone — ver `_shared/otp-cooldown`.
+    const { data: recentes } = await supabase
       .from('signature_email_otps')
       .select('created_at')
       .eq('signer_id', signer.id)
+      .gte('created_at', new Date(Date.now() - JANELA_DA_ESCADA_MS).toISOString())
       .order('created_at', { ascending: false })
-      .limit(1)
 
-    if (lastOtp && lastOtp.length > 0) {
-      const lastAt = new Date(lastOtp[0].created_at)
-      const diffMs = Date.now() - lastAt.getTime()
-      if (diffMs < 60_000) {
-        return jsonResponse({ success: false, error: 'Aguarde um minuto antes de solicitar outro código.' })
-      }
+    const enviadosNaJanela = recentes?.length ?? 0
+    const faltam = segundosParaOProximoPedido({
+      ultimoEnvioIso: recentes?.[0]?.created_at ?? null,
+      enviadosNaJanela,
+      agoraMs: Date.now(),
+    })
+    if (faltam > 0) {
+      return jsonResponse({ success: false, error: textoDaEspera(faltam), retry_after_seconds: faltam })
     }
 
     const code = generateOtp6()
@@ -312,6 +321,9 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({
       success: true,
       expires_at: expiresAt.toISOString(),
+      // Quanto o PRÓXIMO pedido vai custar de espera: a tela desliga o botão
+      // "Reenviar" por esse tempo em vez de deixar a pessoa descobrir no erro.
+      resend_in_seconds: esperaEntrePedidos(enviadosNaJanela + 1),
     })
   } catch (error: any) {
     return jsonResponse({ success: false, error: error?.message || 'Erro desconhecido' })

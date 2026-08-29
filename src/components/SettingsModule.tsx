@@ -704,7 +704,12 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
   }, [activeSection]);
   // Módulos restantes
   const [signatureConfig, setSignatureConfig]  = useState<SignatureModuleConfig>({ ...SIGNATURE_MODULE_DEFAULTS, signer_roles: [...SIGNATURE_MODULE_DEFAULTS.signer_roles], auth_methods: [...SIGNATURE_MODULE_DEFAULTS.auth_methods] });
-  const [publicAuthSignConfig, setPublicAuthSignConfig] = useState<{ google: boolean; email: boolean; phone: boolean }>({ google: true, email: true, phone: true });
+  const [publicAuthSignConfig, setPublicAuthSignConfig] = useState<{ google: boolean; email: boolean; phone: boolean; whatsapp: boolean }>({ google: true, email: true, phone: true, whatsapp: false });
+  // De qual número do escritório sai o código de assinatura. Vazio = o CRM
+  // escolhe sozinho (padrão dos avisos, depois qualquer canal conectado), e é
+  // justamente isso que faz o cliente ver o código chegar de números
+  // diferentes conforme o dia. Escolher aqui é o que torna previsível.
+  const [signatureWaChannelId, setSignatureWaChannelId] = useState<string>('');
   const [newSignerRole, setNewSignerRole]       = useState('');
   const [taskModConfig, setTaskModConfig]       = useState<TaskModuleConfig>({ priorities: TASK_MODULE_DEFAULTS.priorities.map(p => ({ ...p })) });
   const [clientConfig, setClientConfig]         = useState<ClientModuleConfig>({ statuses: CLIENT_MODULE_DEFAULTS.statuses.map(s => ({ ...s })), marital_statuses: CLIENT_MODULE_DEFAULTS.marital_statuses.map(m => ({ ...m })) });
@@ -1037,7 +1042,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setNotificationConfig(notifData);
       setPreferences(prefData);
       setSecurityConfig(secData);
-      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, modulesConfigData, portalLoginData, petitionEditorData, periciaTemplateData, notifWaData, waChannelsData] = await Promise.all([
+      const [portalData, finData, emailData, rulesData, procData, deadlineData, tmplData, leadData, calData, reqData, aiProv, aiTasks, sigData, taskData, clientData, portalCustData, portalNotifData, promptData, autoThreshData, respData, formLayoutData, pubAuthGoogle, pubAuthEmail, pubAuthPhone, pubAuthWhatsapp, sigWaChannel, modulesConfigData, portalLoginData, petitionEditorData, periciaTemplateData, notifWaData, waChannelsData] = await Promise.all([
         settingsService.getPortalModulesConfig(),
         settingsService.getFinancialModuleConfig(),
         settingsService.getEmailIntegrationConfig(),
@@ -1062,6 +1067,8 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
         settingsService.getSetting<boolean>('public_signature_auth_google'),
         settingsService.getSetting<boolean>('public_signature_auth_email'),
         settingsService.getSetting<boolean>('public_signature_auth_phone'),
+        settingsService.getSetting<boolean>('public_signature_auth_whatsapp'),
+        settingsService.getSetting<string>('signature_whatsapp_channel_id'),
         settingsService.getModulesConfig(),
         settingsService.getSetting<boolean>('portal_login_enabled'),
         settingsService.getPetitionEditorModuleConfig(),
@@ -1111,7 +1118,8 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
       setAiProviderConfig(aiProv);
       setAiTaskConfigs(aiTasks);
       setSignatureConfig(sigData);
-      setPublicAuthSignConfig({ google: pubAuthGoogle ?? true, email: pubAuthEmail ?? true, phone: pubAuthPhone ?? true });
+      setPublicAuthSignConfig({ google: pubAuthGoogle ?? true, email: pubAuthEmail ?? true, phone: pubAuthPhone ?? true, whatsapp: pubAuthWhatsapp ?? false });
+      setSignatureWaChannelId(typeof sigWaChannel === 'string' ? sigWaChannel : '');
       setTaskModConfig(taskData);
       setClientConfig(clientData);
       setPortalCustom(portalCustData);
@@ -5511,7 +5519,8 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             [
                               { key: 'google' as const, label: 'Google' },
                               { key: 'email' as const, label: 'E-mail' },
-                              { key: 'phone' as const, label: 'Telefone' },
+                              { key: 'whatsapp' as const, label: 'WhatsApp (código na conversa)' },
+                              { key: 'phone' as const, label: 'Telefone (código por SMS)' },
                             ]
                           ).map((item) => (
                             <label key={item.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '13px', color: '#374151' }}>
@@ -5519,7 +5528,7 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 type="button"
                                 onClick={() => {
                                   const next = { ...publicAuthSignConfig, [item.key]: !publicAuthSignConfig[item.key] };
-                                  if (!next.google && !next.email && !next.phone) return;
+                                  if (!next.google && !next.email && !next.phone && !next.whatsapp) return;
                                   setPublicAuthSignConfig(next);
                                 }}
                                 className={`relative w-8 h-5 rounded-full transition ${publicAuthSignConfig[item.key] ? 'bg-orange-500' : 'bg-slate-300'}`}
@@ -5530,6 +5539,35 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                             </label>
                           ))}
                         </div>
+
+                        {/* De qual número sai o código do WhatsApp */}
+                        {publicAuthSignConfig.whatsapp && (
+                          <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(15,23,42,0.08)' }}>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+                              Canal que envia o código
+                            </label>
+                            <select
+                              className="settings-input"
+                              value={signatureWaChannelId}
+                              onChange={(e) => setSignatureWaChannelId(e.target.value)}
+                              style={{ width: '100%' }}
+                            >
+                              <option value="">Escolher automaticamente</option>
+                              {waChannels.map((canal) => (
+                                <option key={canal.id} value={canal.id}>
+                                  {canal.name || canal.instance_name}
+                                  {canal.phone_number ? ` · ${canal.phone_number}` : ''}
+                                  {canal.status === 'connected' ? '' : ' (desconectado)'}
+                                </option>
+                              ))}
+                            </select>
+                            <p style={{ fontSize: '11.5px', color: '#747878', margin: '6px 0 0' }}>
+                              {signatureWaChannelId
+                                ? 'O código de assinatura sai sempre deste número. Se o cliente já tiver conversa aberta nele, o código chega na própria conversa.'
+                                : 'Sem escolha, o CRM usa o canal padrão dos avisos e, na falta dele, qualquer canal conectado — e o cliente pode ver o código chegar de números diferentes.'}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* Métodos de autenticação disponíveis */}
@@ -5594,6 +5632,8 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                     settingsService.updateSetting('public_signature_auth_google', publicAuthSignConfig.google, currentProfile?.name),
                                     settingsService.updateSetting('public_signature_auth_email', publicAuthSignConfig.email, currentProfile?.name),
                                     settingsService.updateSetting('public_signature_auth_phone', publicAuthSignConfig.phone, currentProfile?.name),
+                                    settingsService.updateSetting('public_signature_auth_whatsapp', publicAuthSignConfig.whatsapp, currentProfile?.name),
+                                    settingsService.updateSetting('signature_whatsapp_channel_id', signatureWaChannelId || null, currentProfile?.name),
                                   ]).then(() => undefined),
                                 );
                                 if (!persisted) return;

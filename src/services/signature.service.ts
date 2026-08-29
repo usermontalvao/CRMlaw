@@ -26,6 +26,22 @@ const STORAGE_BUCKET = 'document-templates';
  */
 export const SYSTEM_ISSUER_LABEL = 'Jurius CRM';
 
+/**
+ * Erro de pedido de código que carrega QUANTO falta esperar.
+ *
+ * A espera entre um código e o próximo cresce a cada pedido (ver
+ * `_shared/otp-cooldown` no servidor). Sem este número a tela só conseguiria
+ * repetir a frase do erro; com ele, ela desliga o botão e mostra o relógio.
+ */
+export type OtpRequestError = Error & { retryAfterSeconds?: number };
+
+const otpError = (mensagem?: string | null, segundos?: unknown): OtpRequestError => {
+  const err = new Error(mensagem || 'Não foi possível enviar o código.') as OtpRequestError;
+  const n = Number(segundos);
+  if (Number.isFinite(n) && n > 0) err.retryAfterSeconds = Math.ceil(n);
+  return err;
+};
+
 /** Resultado da verificação pública por hash. */
 /** Documento final de um envelope no modelo per_document (para a verificação pública). */
 export interface VerifiedDocument {
@@ -667,7 +683,7 @@ class SignatureService {
     request: SignatureRequest;
     creator?: { name: string };
     fields: SignatureField[];
-    auth_config?: { google: boolean; email: boolean; phone: boolean };
+    auth_config?: { google: boolean; email: boolean; phone: boolean; whatsapp: boolean };
     /** Em ordem sequencial, nome do signatário anterior ainda pendente (null = é a vez deste signatário). */
     waiting_for?: string | null;
   } | null> {
@@ -700,37 +716,61 @@ class SignatureService {
     };
   }
 
-  async sendPhoneOtp(params: { token: string; phone: string }): Promise<{ expires_at?: string | null }> {
-    const { token, phone } = params;
+  /**
+   * Envia o código de verificação por telefone.
+   *
+   * `channel` escolhe o transporte — WhatsApp ou SMS. O código, a validade e a
+   * conferência são os mesmos nos dois; muda o caminho até o aparelho. A função
+   * do servidor recusa o canal que estiver desligado nas Configurações, então
+   * esconder o botão na tela nunca é a única trava.
+   */
+  async sendPhoneOtp(params: { token: string; phone: string; channel?: 'sms' | 'whatsapp' }): Promise<{ expires_at?: string | null; channel?: 'sms' | 'whatsapp'; resend_in_seconds?: number }> {
+    const { token, phone, channel = 'sms' } = params;
     const { data, error } = await supabase.functions.invoke('smsdev-send-otp', {
-      body: { token, phone },
+      body: { token, phone, channel },
     });
 
-    if (error) throw new Error(error.message);
-    if (!data?.success) throw new Error(data?.error || 'Não foi possível enviar o código.');
-    return { expires_at: data?.expires_at ?? null };
+    if (error) {
+      const body = await this.extractEdgeErrorBody(error);
+      throw otpError(body?.error || error.message, body?.retry_after_seconds);
+    }
+    if (!data?.success) throw otpError(data?.error, data?.retry_after_seconds);
+    return {
+      expires_at: data?.expires_at ?? null,
+      channel: data?.channel ?? channel,
+      resend_in_seconds: Number(data?.resend_in_seconds ?? 0) || undefined,
+    };
   }
 
-  async sendEmailOtp(params: { token: string; email: string }): Promise<{ expires_at?: string | null }> {
+  async sendEmailOtp(params: { token: string; email: string }): Promise<{ expires_at?: string | null; resend_in_seconds?: number }> {
     const { token, email } = params;
     const { data, error } = await supabase.functions.invoke('email-send-otp', {
       body: { token, email },
     });
 
-    if (error) throw new Error(error.message);
-    if (!data?.success) throw new Error(data?.error || 'Não foi possível enviar o código.');
-    return { expires_at: data?.expires_at ?? null };
+    if (error) {
+      const body = await this.extractEdgeErrorBody(error);
+      throw otpError(body?.error || error.message, body?.retry_after_seconds);
+    }
+    if (!data?.success) throw otpError(data?.error, data?.retry_after_seconds);
+    return {
+      expires_at: data?.expires_at ?? null,
+      resend_in_seconds: Number(data?.resend_in_seconds ?? 0) || undefined,
+    };
   }
 
-  async verifyPhoneOtp(params: { token: string; code: string }): Promise<{ phone?: string | null }> {
+  async verifyPhoneOtp(params: { token: string; code: string }): Promise<{ phone?: string | null; channel?: 'sms' | 'whatsapp' }> {
     const { token, code } = params;
     const { data, error } = await supabase.functions.invoke('smsdev-verify-otp', {
       body: { token, code },
     });
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      const serverMessage = await this.extractEdgeErrorMessage(error);
+      throw new Error(serverMessage || error.message);
+    }
     if (!data?.success) throw new Error(data?.error || 'Código inválido.');
-    return { phone: data?.phone ?? null };
+    return { phone: data?.phone ?? null, channel: data?.channel ?? 'sms' };
   }
 
   async verifyEmailOtp(params: { token: string; code: string }): Promise<{ email?: string | null }> {
@@ -967,6 +1007,10 @@ class SignatureService {
         auth_email: payload.auth_email,
         auth_google_sub: payload.auth_google_sub,
         auth_google_picture: payload.auth_google_picture,
+        // Token cru do Google: o servidor reconfere com o Google antes de
+        // aceitar "autenticado por conta Google" como fato do dossiê.
+        auth_google_credential: payload.auth_google_credential,
+        auth_google_access_token: payload.auth_google_access_token,
         terms_accepted: payload.terms_accepted,
         terms_version: payload.terms_version,
         allow_signature_selfie_for_profile: payload.allow_signature_selfie_for_profile === true,
@@ -1154,6 +1198,20 @@ class SignatureService {
   }
 
   /** Extrai a mensagem de erro do corpo JSON de uma resposta não-2xx de Edge Function. */
+  /**
+   * O corpo do erro por inteiro — a mensagem sozinha não basta quando a
+   * resposta traz "e faltam N segundos" (a escada de espera entre códigos).
+   */
+  private async extractEdgeErrorBody(error: any): Promise<any | null> {
+    try {
+      const res = error?.context;
+      if (res && typeof res.json === 'function') return await res.clone().json();
+    } catch {
+      // ignore — cai no fallback do chamador
+    }
+    return null;
+  }
+
   private async extractEdgeErrorMessage(error: any): Promise<string | null> {
     try {
       const res = error?.context;

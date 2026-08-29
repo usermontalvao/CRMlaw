@@ -5,6 +5,7 @@ import { signatureService } from '../services/signature.service';
 import { BrandLogo } from './ui/BrandLogo';
 import { BRAND_GRADIENT, BRAND_IVORY } from '../constants/brand';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
+import { lerIdentidadeConfirmada, fraseIdentidadeConfirmada, rotuloIdentidadeConfirmada } from '../utils/identidadeConfirmada';
 
 // Registro de eventos por signatário — espelha a "TRILHA DE AUDITORIA / REGISTRO
 // DE EVENTOS" do PDF (pdfSignature.service.ts): visualização, autenticação,
@@ -17,8 +18,11 @@ const buildSignerEvents = (s: any): SignerEvent[] => {
   const authEmail = String(s.auth_email || '').trim();
   const phone = String(s.phone || '').trim();
   const rawEmail = String(s.email || '').trim();
-  const displayContact = authEmail || (s.auth_provider === 'phone' ? phone : '') || rawEmail;
-  const contactLabel = authEmail ? 'E-mail' : s.auth_provider === 'phone' ? 'Telefone' : 'E-mail';
+  const confirmadaContato = lerIdentidadeConfirmada(s);
+  const displayContact = confirmadaContato?.identificador || authEmail || (s.auth_provider === 'phone' ? phone : '') || rawEmail;
+  const contactLabel = confirmadaContato
+    ? (confirmadaContato.canal === 'whatsapp' ? 'WhatsApp' : confirmadaContato.canal === 'sms' ? 'Telefone' : 'E-mail')
+    : authEmail ? 'E-mail' : s.auth_provider === 'phone' ? 'Telefone' : 'E-mail';
   const contact = displayContact ? ` (${contactLabel}: ${displayContact})` : '';
   const cpf = s.cpf ? `, CPF: ${s.cpf}` : '';
   const geo = String(s.geolocation || '').trim();
@@ -29,7 +33,13 @@ const buildSignerEvents = (s: any): SignerEvent[] => {
     : s.auth_provider === 'email_link' ? 'Autenticação via Link por E-mail'
     : s.auth_provider === 'google' ? 'Autenticação via Google'
     : 'Autenticação no fluxo de assinatura';
-  const authSummary = (s.auth_provider === 'google' && s.auth_google_sub) ? `${base}. Google ID: ${s.auth_google_sub}` : base;
+  // Confirmado pelo servidor ganha do declarado — ver `utils/identidadeConfirmada`.
+  const confirmada = lerIdentidadeConfirmada(s);
+  const authSummary = confirmada
+    ? (confirmada.canal === 'google' && s.auth_google_sub
+        ? `${fraseIdentidadeConfirmada(confirmada)}. Google ID: ${s.auth_google_sub}`
+        : fraseIdentidadeConfirmada(confirmada))
+    : (s.auth_provider === 'google' && s.auth_google_sub) ? `${base}. Google ID: ${s.auth_google_sub}` : base;
 
   const viewedAt = s.viewed_at || s.opened_at;
   const signedMs = s.signed_at ? ms(s.signed_at) : 0;
@@ -119,9 +129,15 @@ const mapsUrl = (geo?: string | null) => {
   return `https://www.google.com/maps?q=${encodeURIComponent(g)}`;
 };
 
-const authLabel = (method?: string | null, provider?: string | null) => {
+const authLabel = (method?: string | null, provider?: string | null, canal?: string | null) => {
   const parts: string[] = [];
-  if (provider === 'google') parts.push('Autenticação via Google');
+  // O canal confirmado é mais específico que o provedor declarado: 'phone'
+  // não diz se o código foi por SMS ou por WhatsApp, e o relatório precisa.
+  if (canal === 'whatsapp') parts.push('Autenticação por WhatsApp');
+  else if (canal === 'sms') parts.push('Autenticação por SMS');
+  else if (canal === 'email') parts.push('Autenticação por e-mail');
+  else if (canal === 'google') parts.push('Autenticação via Google');
+  else if (provider === 'google') parts.push('Autenticação via Google');
   else if (provider === 'email_link') parts.push('Autenticação por e-mail');
   else if (provider === 'phone') parts.push('Autenticação por telefone');
   if (method === 'signature_facial' || method === 'signature_facial_document') parts.push('Verificação facial');
@@ -602,7 +618,20 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
                     <KVRow label="Telefone" value={s.phone || '-'} />
                     <KVRow label="Papel" value={s.role || 'Signatário'} />
                     <KVRow label="Situação" value={s.status === 'signed' ? 'Assinado' : (s.status || '-')} />
-                    <KVRow label="Autenticação aplicada" value={authLabel(s.auth_method, s.auth_provider)} />
+                    <KVRow label="Autenticação aplicada" value={authLabel(s.auth_method, s.auth_provider, s.auth_verified_channel)} />
+                    {(() => {
+                      // A linha que responde "este telefone foi mesmo
+                      // confirmado?". Sem ela, o número da ficha acima é só o
+                      // que a pessoa digitou.
+                      const id = lerIdentidadeConfirmada(s);
+                      if (!id) return null;
+                      return (
+                        <KVRow
+                          label="Identidade confirmada"
+                          value={`${rotuloIdentidadeConfirmada(id)}${id.em ? ` · em ${fmtShort(id.em)}` : ''}`}
+                        />
+                      );
+                    })()}
                     <KVRow label="Conta autenticada" value={s.auth_provider === 'google' ? (s.auth_email || 'Conta Google sem e-mail retornado') : (s.auth_email || '-')} />
                     {s.auth_provider === 'google' ? (
                       <KVRow label="ID da conta Google" value={s.auth_google_sub || '-'} mono />

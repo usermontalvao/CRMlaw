@@ -139,6 +139,233 @@ async function createCompletionNotification(input: {
   });
 }
 
+// ── PROVA DE IDENTIDADE ──────────────────────────────────────────────────────
+//
+// Até aqui quem afirmava que a identidade do signatário havia sido verificada
+// era o NAVEGADOR: `auth_provider`, `auth_email` e `phone` vinham no corpo da
+// requisição e eram gravados como fato. As tabelas de OTP existiam, o código
+// era mesmo enviado e conferido — mas nada disso era consultado na hora de
+// assinar. Uma chamada direta a este endpoint podia produzir uma assinatura
+// dizendo "autenticado por telefone, número X" sem que código nenhum tivesse
+// existido, e o dossiê imprimia a frase como prova.
+//
+// Daqui em diante a prova é LIDA do banco, e o que o navegador manda serve no
+// máximo para escolher ONDE procurar. O que o relatório mostra sai da linha
+// encontrada, nunca do payload.
+//
+// Um código verificado vale para UMA assinatura: ele é consumido (`consumed_at`)
+// ANTES da assinatura ser gravada. Se a gravação falhar depois, o cliente pede
+// outro código — o contrário (consumir só no sucesso) deixaria a janela aberta
+// para reusar a mesma verificação em duas assinaturas.
+
+const GOOGLE_CLIENT_ID = (Deno.env.get('GOOGLE_SIGNING_CLIENT_ID') ?? '').trim()
+  || '249483607462-bgh9hg63orddsjdai5tuicl5gd9p1jj0.apps.googleusercontent.com';
+
+type ProvaDeIdentidade = {
+  channel: 'whatsapp' | 'sms' | 'email' | 'google';
+  identifier: string;
+  /** Sub do Google, quando for o caso — o resto vem da linha de OTP. */
+  googleSub?: string | null;
+};
+
+/**
+ * Confere o token do Google no servidor.
+ *
+ * A página tem dois caminhos de login (botão do Google Identity, que devolve um
+ * `id_token`, e o popup OAuth, que devolve um `access_token`), então os dois são
+ * aceitos. Em ambos o que decide é o `aud`: token emitido para OUTRO aplicativo
+ * não vale aqui, mesmo sendo um token legítimo do Google.
+ */
+async function conferirGoogle(
+  idToken: string | null,
+  accessToken: string | null,
+): Promise<{ email: string; sub: string } | null> {
+  try {
+    if (idToken) {
+      const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return null;
+      const info: any = await res.json();
+      if (info?.aud !== GOOGLE_CLIENT_ID) return null;
+      if (Number(info?.exp ?? 0) * 1000 < Date.now()) return null;
+      const email = String(info?.email ?? '').trim().toLowerCase();
+      if (!email || (info?.email_verified !== true && info?.email_verified !== 'true')) return null;
+      return { email, sub: String(info?.sub ?? '') };
+    }
+    if (accessToken) {
+      // Dois passos de propósito: o `userinfo` diz QUEM é, e o `tokeninfo` diz
+      // PARA QUEM o token foi emitido. Sem o segundo, um access token tirado de
+      // qualquer outro site passaria.
+      const infoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!infoRes.ok) return null;
+      const info: any = await infoRes.json();
+      if (info?.aud !== GOOGLE_CLIENT_ID) return null;
+
+      const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!userRes.ok) return null;
+      const user: any = await userRes.json();
+      const email = String(user?.email ?? '').trim().toLowerCase();
+      if (!email) return null;
+      return { email, sub: String(user?.sub ?? info?.sub ?? '') };
+    }
+  } catch (e) {
+    console.error('conferirGoogle falhou', e);
+  }
+  return null;
+}
+
+/**
+ * Exige (e consome) a prova de identidade deste signatário.
+ *
+ * Devolve `null` quando o escritório não exige autenticação nenhuma — todos os
+ * métodos desligados nas Configurações. Devolve `Response` quando a prova falta
+ * ou não confere: a assinatura para aqui.
+ */
+async function exigirProvaDeIdentidade(
+  supabase: any,
+  signerId: string,
+  entrada: {
+    authProvider: string | null;
+    authEmail: string | null;
+    googleIdToken: string | null;
+    googleAccessToken: string | null;
+  },
+): Promise<ProvaDeIdentidade | null | Response> {
+  const { data: settingRows } = await supabase
+    .from('system_settings')
+    .select('key,value')
+    .in('key', [
+      'public_signature_auth_google',
+      'public_signature_auth_email',
+      'public_signature_auth_phone',
+      'public_signature_auth_whatsapp',
+    ]);
+
+  const ligado = (key: string, padrao: boolean): boolean => {
+    const row = (settingRows ?? []).find((r: any) => r.key === key);
+    if (!row) return padrao;
+    return row.value === true || row.value === 'true';
+  };
+
+  const googleOn = ligado('public_signature_auth_google', true);
+  const emailOn = ligado('public_signature_auth_email', true);
+  const phoneOn = ligado('public_signature_auth_phone', true);
+  const whatsappOn = ligado('public_signature_auth_whatsapp', false);
+
+  // Nenhum método ligado = a página não pede autenticação. Exigir prova aqui
+  // travaria toda assinatura do escritório que decidiu não usar nenhum.
+  if (!googleOn && !emailOn && !phoneOn && !whatsappOn) return null;
+
+  const provider = String(entrada.authProvider ?? '').trim();
+
+  if (provider === 'google') {
+    if (!googleOn) {
+      return jsonResponse({ success: false, error: 'A autenticação pelo Google não está habilitada para esta assinatura.' }, 403);
+    }
+    const google = await conferirGoogle(entrada.googleIdToken, entrada.googleAccessToken);
+    if (!google) {
+      return jsonResponse({
+        success: false,
+        code: 'AUTH_PROOF_REQUIRED',
+        error: 'Não foi possível confirmar a sua autenticação com o Google. Recarregue a página e entre novamente antes de assinar.',
+      }, 403);
+    }
+    return { channel: 'google', identifier: google.email, googleSub: google.sub };
+  }
+
+  if (provider === 'email_link') {
+    if (!emailOn) {
+      return jsonResponse({ success: false, error: 'A verificação por e-mail não está habilitada para esta assinatura.' }, 403);
+    }
+    const { data: rows } = await supabase
+      .from('signature_email_otps')
+      .select('id,email,verified_at')
+      .eq('signer_id', signerId)
+      .not('verified_at', 'is', null)
+      .is('consumed_at', null)
+      .order('verified_at', { ascending: false })
+      .limit(1);
+    const otp = rows?.[0];
+    if (!otp) {
+      return jsonResponse({
+        success: false,
+        code: 'AUTH_PROOF_REQUIRED',
+        error: 'A verificação por e-mail não foi concluída. Recarregue a página e valide o código antes de assinar.',
+      }, 403);
+    }
+    // O e-mail que o navegador diz ter usado precisa ser o que RECEBEU o código.
+    const declarado = String(entrada.authEmail ?? '').trim().toLowerCase();
+    if (declarado && declarado !== String(otp.email ?? '').trim().toLowerCase()) {
+      return jsonResponse({ success: false, error: 'O e-mail autenticado não confere com o e-mail que recebeu o código.' }, 403);
+    }
+    const { data: consumido } = await supabase
+      .from('signature_email_otps')
+      .update({ consumed_at: new Date().toISOString() })
+      .eq('id', otp.id)
+      .is('consumed_at', null)
+      .select('id');
+    if (!consumido || consumido.length === 0) {
+      return jsonResponse({ success: false, error: 'Esta verificação já foi usada. Solicite um novo código.' }, 409);
+    }
+    return { channel: 'email', identifier: String(otp.email) };
+  }
+
+  // Provedor que não é nenhum dos conhecidos: cliente antigo em cache, ou
+  // chamada montada à mão. Não há onde procurar prova, e inventar uma seria o
+  // erro que este bloco existe para corrigir.
+  if (provider !== 'phone') {
+    return jsonResponse({
+      success: false,
+      code: 'AUTH_PROOF_REQUIRED',
+      error: 'É necessário confirmar sua identidade antes de assinar. Recarregue a página e refaça a autenticação.',
+    }, 403);
+  }
+
+  // Telefone — SMS ou WhatsApp. O canal sai da linha, não do que foi enviado.
+  if (!phoneOn && !whatsappOn) {
+    return jsonResponse({ success: false, error: 'A verificação por telefone não está habilitada para esta assinatura.' }, 403);
+  }
+  const { data: rows } = await supabase
+    .from('signature_phone_otps')
+    .select('id,phone,channel,verified_at')
+    .eq('signer_id', signerId)
+    .not('verified_at', 'is', null)
+    .is('consumed_at', null)
+    .order('verified_at', { ascending: false })
+    .limit(1);
+  const otp = rows?.[0];
+  if (!otp) {
+    return jsonResponse({
+      success: false,
+      code: 'AUTH_PROOF_REQUIRED',
+      error: 'A verificação do seu telefone não foi concluída. Recarregue a página e valide o código antes de assinar.',
+    }, 403);
+  }
+  const canal = otp.channel === 'whatsapp' ? 'whatsapp' : 'sms';
+  if (canal === 'whatsapp' && !whatsappOn) {
+    return jsonResponse({ success: false, error: 'A verificação por WhatsApp não está habilitada para esta assinatura.' }, 403);
+  }
+  if (canal === 'sms' && !phoneOn) {
+    return jsonResponse({ success: false, error: 'A verificação por SMS não está habilitada para esta assinatura.' }, 403);
+  }
+  const { data: consumido } = await supabase
+    .from('signature_phone_otps')
+    .update({ consumed_at: new Date().toISOString() })
+    .eq('id', otp.id)
+    .is('consumed_at', null)
+    .select('id');
+  if (!consumido || consumido.length === 0) {
+    return jsonResponse({ success: false, error: 'Esta verificação já foi usada. Solicite um novo código.' }, 409);
+  }
+  return { channel: canal, identifier: String(otp.phone) };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { status: 200, headers: corsHeaders });
   try {
@@ -364,6 +591,18 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ success: false, error: 'A verificacao facial (selfie) e obrigatoria para assinar este documento.' }, 400);
     }
 
+    // Prova de identidade conferida NO SERVIDOR (ver o bloco no topo do
+    // arquivo). Vem depois das demais travas de propósito: ela CONSOME o
+    // código verificado, e consumir um código para uma assinatura que ia ser
+    // recusada por CPF ou por ordem obrigaria a pessoa a pedir outro à toa.
+    const prova = await exigirProvaDeIdentidade(supabase, signer.id, {
+      authProvider: auth_provider ?? null,
+      authEmail: auth_email ?? null,
+      googleIdToken: payload?.auth_google_credential ?? null,
+      googleAccessToken: payload?.auth_google_access_token ?? null,
+    });
+    if (prova instanceof Response) return prova;
+
     const STORAGE_BUCKET = 'document-templates';
 
     // Instantes REAIS das etapas probatórias, reportados pelo cliente no ato de
@@ -387,7 +626,17 @@ Deno.serve(async (req: Request) => {
       signer_ip: ip_address||null, signer_user_agent: user_agent||null, signer_geolocation: geolocation||null,
       verification_hash: generateVerificationHash(),
       name: signer_name??signer.name, cpf: signer_cpf??signer.cpf, phone: signer_phone??signer.phone,
-      auth_provider: auth_provider||null, auth_email: auth_email||null, auth_google_sub: auth_google_sub||null, auth_google_picture: auth_google_picture||null,
+      auth_provider: auth_provider||null,
+      // O e-mail e o sub do Google param de vir do navegador quando existe
+      // prova: o que fica gravado é o que o servidor conferiu. O `phone` acima
+      // continua sendo o DECLARADO no formulário — quem diz qual telefone foi
+      // confirmado é `auth_verified_identifier`, e são coisas diferentes.
+      auth_email: (prova?.channel === 'google' || prova?.channel === 'email') ? prova.identifier : (auth_email||null),
+      auth_google_sub: prova?.channel === 'google' ? (prova.googleSub || null) : (prova ? null : (auth_google_sub||null)),
+      auth_google_picture: auth_google_picture||null,
+      auth_verified_at: prova ? new Date().toISOString() : null,
+      auth_verified_channel: prova?.channel ?? null,
+      auth_verified_identifier: prova?.identifier ?? null,
       auth_at: clampStepTs(auth_at),
       geolocation_captured_at: geolocation ? clampStepTs(geolocation_captured_at) : null,
       terms_accepted_at: new Date().toISOString(), terms_version: terms_version||'v1',
@@ -412,7 +661,13 @@ Deno.serve(async (req: Request) => {
     console.log('✅ Signer updated:', signer.id);
 
     try {
-      await supabase.from('signature_audit_log').insert({ signature_request_id: signer.signature_request_id, signer_id: signer.id, action: 'signed', description: `Documento assinado por ${signer_name||signer.name}`, ip_address: ip_address||null, user_agent: user_agent||null });
+      // A identidade confirmada entra na MESMA linha do 'signed' — a lista de
+      // ações do log tem CHECK e cadeia de hash, e um tipo novo pediria
+      // migration na trilha à prova de adulteração para dizer o que cabe aqui.
+      const selo = prova
+        ? ` · identidade confirmada por ${({ whatsapp: 'WhatsApp', sms: 'SMS', email: 'e-mail', google: 'conta Google' } as Record<string, string>)[prova.channel]} (${prova.identifier})`
+        : '';
+      await supabase.from('signature_audit_log').insert({ signature_request_id: signer.signature_request_id, signer_id: signer.id, action: 'signed', description: `Documento assinado por ${signer_name||signer.name}${selo}`, ip_address: ip_address||null, user_agent: user_agent||null });
     } catch {}
 
     // No modelo per_document, o e-mail precisa esperar a persistência dos PDFs

@@ -25,7 +25,7 @@ interface PublicSigningPageProps {
 type SigningStep = 'loading' | 'success' | 'error' | 'already_signed';
 type ModalStep = 'google_auth' | 'phone_otp' | 'email_otp' | 'data' | 'signature' | 'location' | 'facial' | 'confirm';
 
-type PublicAuthConfig = { google: boolean; email: boolean; phone: boolean };
+type PublicAuthConfig = { google: boolean; email: boolean; phone: boolean; whatsapp: boolean };
 
 interface SignerData {
   name: string;
@@ -886,7 +886,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [pdfFrameLoaded, setPdfFrameLoaded] = useState(false);
   const [docxRendered, setDocxRendered] = useState(false);
 
-  const [authConfig, setAuthConfig] = useState<PublicAuthConfig>({ google: true, email: true, phone: true });
+  const [authConfig, setAuthConfig] = useState<PublicAuthConfig>({ google: true, email: true, phone: true, whatsapp: false });
 
   // Carrega o telefone do escritório (fonte central) para os botões de ajuda no WhatsApp.
   useEffect(() => {
@@ -1052,6 +1052,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   // Phone OTP
   const [phoneOtp, setPhoneOtp] = useState('');
+  // WhatsApp e SMS são a MESMA etapa: mesmo código, mesma tabela, mesma
+  // validação — muda só por onde ele chega. Duplicar a tela em duas etapas
+  // separadas seria duplicar também o reenvio, o contador e o erro.
+  const [phoneOtpChannel, setPhoneOtpChannel] = useState<'sms' | 'whatsapp'>('sms');
+  // Segundos que faltam para o próximo código poder ser pedido. A espera CRESCE
+  // a cada pedido (a escada vive no servidor, em `_shared/otp-cooldown`), então
+  // o número vem de lá — a tela só conta para trás e desliga o botão. Deixar a
+  // pessoa clicar para descobrir no erro seria pior do que mostrar o relógio.
+  const [phoneOtpResendIn, setPhoneOtpResendIn] = useState(0);
+  // Códigos errados seguidos. Serve para uma coisa só: a partir do primeiro
+  // tropeço a tela oferece OUTRO caminho. Insistir com quem não está recebendo
+  // o código é o jeito mais rápido de a assinatura não acontecer.
+  const [phoneOtpFails, setPhoneOtpFails] = useState(0);
   const [phoneOtpSent, setPhoneOtpSent] = useState(false);
   const [phoneOtpExpiresAt, setPhoneOtpExpiresAt] = useState<string | null>(null);
   const [phoneOtpVerified, setPhoneOtpVerified] = useState(false);
@@ -1076,6 +1089,18 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
   const [showEmailAnimation, setShowEmailAnimation] = useState(false);
   const [emailOtpRemaining, setEmailOtpRemaining] = useState<number>(0);
+  const [emailOtpResendIn, setEmailOtpResendIn] = useState(0);
+  const [emailOtpFails, setEmailOtpFails] = useState(0);
+
+  // Um relógio só para os dois contadores de reenvio.
+  useEffect(() => {
+    if (phoneOtpResendIn <= 0 && emailOtpResendIn <= 0) return;
+    const id = window.setInterval(() => {
+      setPhoneOtpResendIn((v) => (v > 0 ? v - 1 : 0));
+      setEmailOtpResendIn((v) => (v > 0 ? v - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [phoneOtpResendIn > 0, emailOtpResendIn > 0]);
 
   // Contador regressivo da validade do código de e-mail.
   useEffect(() => {
@@ -1471,7 +1496,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   
   // Inicializar Google Auth quando modal abre na etapa de autenticação
   useEffect(() => {
-    if (isSignModalOpen && modalStep === 'google_auth' && !googleUser) {
+    if (isSignModalOpen && modalStep === 'google_auth' && authConfig.google && !googleUser) {
       googleAuthInitTokenRef.current += 1;
       const token = googleAuthInitTokenRef.current;
 
@@ -1480,7 +1505,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       const tick = () => {
         if (cancelled) return;
-        if (!isSignModalOpen || modalStep !== 'google_auth' || googleUser) return;
+        if (!isSignModalOpen || modalStep !== 'google_auth' || !authConfig.google || googleUser) return;
 
         const el = googleButtonRef.current;
         if (el) {
@@ -1502,7 +1527,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         window.clearTimeout(timer);
       };
     }
-  }, [isSignModalOpen, modalStep, googleUser]);
+  }, [isSignModalOpen, modalStep, authConfig.google, googleUser]);
 
   
   const initGoogleAuth = async (initToken: number, buttonEl: HTMLDivElement) => {
@@ -1576,11 +1601,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       const res = await signatureService.sendEmailOtp({ token, email });
       setEmailOtpSent(true);
       setEmailOtpExpiresAt(res.expires_at ?? null);
+      setEmailOtpResendIn(res.resend_in_seconds ?? 0);
       toast.success('Código enviado por e-mail');
       
       // Manter animação por 1.5s antes de esconder
       setTimeout(() => setShowEmailAnimation(false), 1500);
     } catch (e: any) {
+      if (e?.retryAfterSeconds) setEmailOtpResendIn(e.retryAfterSeconds);
       setEmailOtpError(e?.message || 'Não foi possível enviar o código');
       setShowEmailAnimation(false);
     } finally {
@@ -1607,6 +1634,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       toast.success('E-mail verificado com sucesso!');
       setModalStep(allowSkipSignerDataStep && isSignerDataComplete(signerData) ? 'signature' : 'data');
     } catch (e: any) {
+      setEmailOtpFails((n) => n + 1);
       setEmailOtpError(e?.message || 'Código inválido');
     } finally {
       setEmailOtpLoading(false);
@@ -1644,6 +1672,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       const payload = JSON.parse(jsonPayload);
 
       const user: GoogleUser = {
+        // O JWT inteiro segue junto: a decodificação acima serve só para
+        // mostrar nome e foto aqui. Quem confere se ele é verdadeiro é o
+        // servidor, na hora de assinar.
+        idToken: response.credential,
         email: payload.email,
         name: payload.name,
         picture: payload.picture,
@@ -2304,9 +2336,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           google: !!data.auth_config.google,
           email: !!data.auth_config.email,
           phone: !!data.auth_config.phone,
+          whatsapp: !!data.auth_config.whatsapp,
         });
       } else {
-        setAuthConfig({ google: true, email: true, phone: true });
+        setAuthConfig({ google: true, email: true, phone: true, whatsapp: false });
       }
       setAllowSkipSignerDataStep(isTemplateFillSigner((data.signer as any)?.email ?? null));
       // Restaura rascunho salvo (refresh no meio do fluxo, validade de 24h) —
@@ -2458,10 +2491,73 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     }
   };
 
+  /** Quantos caminhos de autenticação o escritório deixou ligados. */
+  const contarMetodos = (cfg: PublicAuthConfig): number =>
+    [cfg.google, cfg.email, cfg.whatsapp, cfg.phone].filter(Boolean).length;
+
+  /**
+   * A etapa `google_auth` é também A ESCOLHA: é ela que desenha os botões de
+   * todos os métodos. Por isso ela continua valendo com o Google DESLIGADO,
+   * desde que exista mais de um caminho — sem isso, quem entra por WhatsApp
+   * nunca consegue voltar e tentar por e-mail. Com um método só, a escolha não
+   * tem o que escolher e o fluxo vai direto para ele.
+   */
+  /**
+   * A SAÍDA — mostrada assim que um código é recusado.
+   *
+   * O caminho de verificação escolhido pode simplesmente não funcionar para
+   * aquela pessoa naquele momento: o SMS não chega, o WhatsApp está em outro
+   * aparelho, o e-mail caiu no spam. Sem uma saída visível, a tela vira um muro
+   * e a assinatura não acontece — que é o pior desfecho possível aqui, pior do
+   * que qualquer atrito. Ela aparece só depois do primeiro erro para não poluir
+   * quem está indo bem, e nunca oferece o método que a pessoa já está tentando.
+   */
+  const SaidaPorOutroCaminho = ({ atual }: { atual: 'phone' | 'email' }) => {
+    const opcoes: { rotulo: string; ir: () => void }[] = [];
+    if (authConfig.google) opcoes.push({ rotulo: 'Google', ir: () => setModalStep('google_auth') });
+    if (authConfig.email && atual !== 'email') opcoes.push({ rotulo: 'E-mail', ir: () => setModalStep('email_otp') });
+    if (authConfig.whatsapp && !(atual === 'phone' && phoneOtpChannel === 'whatsapp')) {
+      opcoes.push({
+        rotulo: 'WhatsApp',
+        ir: () => { setPhoneOtpChannel('whatsapp'); setPhoneOtpSent(false); setPhoneOtp(''); setModalStep('phone_otp'); },
+      });
+    }
+    if (authConfig.phone && !(atual === 'phone' && phoneOtpChannel === 'sms')) {
+      opcoes.push({
+        rotulo: 'SMS',
+        ir: () => { setPhoneOtpChannel('sms'); setPhoneOtpSent(false); setPhoneOtp(''); setModalStep('phone_otp'); },
+      });
+    }
+    if (opcoes.length === 0) return null;
+
+    return (
+      <div className="rounded-xl border border-[#e7e5df] bg-white/70 p-3 text-center">
+        <p className="text-xs text-slate-500">Não está recebendo o código? Confirme de outro jeito:</p>
+        <div className="mt-2 flex flex-wrap justify-center gap-2">
+          {opcoes.map((o) => (
+            <button
+              key={o.rotulo}
+              type="button"
+              onClick={o.ir}
+              className="rounded-lg border border-[#e7e5df] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              {o.rotulo}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  /** "2:05" — a contagem que fica no lugar do rótulo do botão de reenvio. */
+  const contagemRegressiva = (segundos: number): string =>
+    `${Math.floor(segundos / 60)}:${String(segundos % 60).padStart(2, '0')}`;
+
   const getFirstAuthStep = (cfg: PublicAuthConfig): ModalStep => {
     if (cfg.google) return 'google_auth';
+    if (contarMetodos(cfg) > 1) return 'google_auth';
     if (cfg.email) return 'email_otp';
-    if (cfg.phone) return 'phone_otp';
+    if (cfg.whatsapp || cfg.phone) return 'phone_otp';
     return 'data';
   };
 
@@ -2469,13 +2565,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     if (!isSignModalOpen) return;
 
     const authStepDisabled =
-      (modalStep === 'google_auth' && !authConfig.google) ||
+      (modalStep === 'google_auth' && !authConfig.google && contarMetodos(authConfig) < 2) ||
       (modalStep === 'email_otp' && !authConfig.email) ||
-      (modalStep === 'phone_otp' && !authConfig.phone);
+      (modalStep === 'phone_otp' && !authConfig.phone && !authConfig.whatsapp);
 
     if (!authStepDisabled) return;
     setModalStep(getFirstAuthStep(authConfig));
   }, [isSignModalOpen, modalStep, authConfig]);
+
+  // Canal padrão do código por telefone: quando só o WhatsApp está ligado, a
+  // etapa precisa nascer nele — senão a tela pede SMS por um caminho que o
+  // servidor vai recusar.
+  useEffect(() => {
+    if (authConfig.whatsapp && !authConfig.phone) setPhoneOtpChannel('whatsapp');
+    else if (!authConfig.whatsapp && authConfig.phone) setPhoneOtpChannel('sms');
+  }, [authConfig.whatsapp, authConfig.phone]);
 
   useEffect(() => {
     if (!signer?.id || signer.status !== 'pending') return;
@@ -2760,6 +2864,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         auth_email: googleUser?.email || (emailOtpVerified ? (verifiedEmail || emailToVerify || undefined) : undefined),
         auth_google_sub: googleUser?.sub || undefined,
         auth_google_picture: googleUser?.picture || undefined,
+        // O token CRU vai junto: o servidor pergunta ao Google se ele é válido
+        // e se foi emitido para este aplicativo antes de escrever "autenticado
+        // por conta Google" no dossiê. Sem isso, quem afirma é o navegador.
+        auth_google_credential: googleUser?.idToken || undefined,
+        auth_google_access_token: googleUser?.accessToken || undefined,
         // Aceite dos Termos de Uso (LGPD)
         terms_accepted: true,
         terms_version: SIGNATURE_TERMS_VERSION,
@@ -3098,6 +3207,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setGoogleAuthLoading(false);
 
     setPhoneOtp('');
+    setPhoneOtpChannel(authConfig.whatsapp && !authConfig.phone ? 'whatsapp' : 'sms');
+    setPhoneOtpResendIn(0);
+    setPhoneOtpFails(0);
     setPhoneOtpSent(false);
     setPhoneOtpExpiresAt(null);
     setPhoneOtpVerified(false);
@@ -3106,6 +3218,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
     setEmailToVerify('');
     setEmailOtp('');
+    setEmailOtpResendIn(0);
+    setEmailOtpFails(0);
     setEmailOtpSent(false);
     setEmailOtpExpiresAt(null);
     setEmailOtpVerified(false);
@@ -3126,11 +3240,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         throw new Error('Informe um telefone válido');
       }
 
-      const res = await signatureService.sendPhoneOtp({ token, phone: digits });
+      const res = await signatureService.sendPhoneOtp({ token, phone: digits, channel: phoneOtpChannel });
       setPhoneOtpSent(true);
       setPhoneOtpExpiresAt(res.expires_at ?? null);
-      toast.success('Código enviado por SMS');
+      setPhoneOtpResendIn(res.resend_in_seconds ?? 0);
+      toast.success(phoneOtpChannel === 'whatsapp' ? 'Código enviado pelo WhatsApp' : 'Código enviado por SMS');
     } catch (e: any) {
+      if (e?.retryAfterSeconds) setPhoneOtpResendIn(e.retryAfterSeconds);
       setPhoneOtpError(e?.message || 'Não foi possível enviar o código');
     } finally {
       setPhoneOtpLoading(false);
@@ -3160,6 +3276,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           : 'data'
       );
     } catch (e: any) {
+      setPhoneOtpFails((n) => n + 1);
       setPhoneOtpError(e?.message || 'Código inválido');
     } finally {
       setPhoneOtpLoading(false);
@@ -3183,6 +3300,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setGoogleAuthError(null);
 
     setPhoneOtp('');
+    setPhoneOtpChannel(authConfig.whatsapp && !authConfig.phone ? 'whatsapp' : 'sms');
+    setPhoneOtpResendIn(0);
+    setPhoneOtpFails(0);
     setPhoneOtpSent(false);
     setPhoneOtpExpiresAt(null);
     setPhoneOtpVerified(false);
@@ -3191,6 +3311,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
     setEmailToVerify('');
     setEmailOtp('');
+    setEmailOtpResendIn(0);
+    setEmailOtpFails(0);
     setEmailOtpSent(false);
     setEmailOtpExpiresAt(null);
     setEmailOtpVerified(false);
@@ -4098,7 +4220,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           </div>
                         )}
 
-                        {authConfig.google && (authConfig.email || authConfig.phone) && (
+                        {authConfig.google && (authConfig.email || authConfig.phone || authConfig.whatsapp) && (
                           <div className="relative py-2 flex items-center justify-center">
                             <div className="absolute inset-0 flex items-center">
                               <div className="w-full border-t border-[#e7e5df]" />
@@ -4107,6 +4229,19 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                               OU
                             </div>
                           </div>
+                        )}
+
+                        {authConfig.whatsapp && (
+                          <button
+                            type="button"
+                            onClick={() => { setPhoneOtpChannel('whatsapp'); setPhoneOtpSent(false); setPhoneOtp(''); setModalStep('phone_otp'); }}
+                            className="w-full bg-[#25D366] hover:bg-[#1fb955] text-white font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-emerald-500/20 transition-all duration-200 active:scale-[0.98]"
+                          >
+                            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884a9.82 9.82 0 016.988 2.896 9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                            </svg>
+                            Continuar com WhatsApp
+                          </button>
                         )}
 
                         {authConfig.email && (
@@ -4123,7 +4258,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         {authConfig.phone && (
                           <button
                             type="button"
-                            onClick={() => setModalStep('phone_otp')}
+                            onClick={() => { setPhoneOtpChannel('sms'); setPhoneOtpSent(false); setPhoneOtp(''); setModalStep('phone_otp'); }}
                             className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 shadow-lg shadow-slate-900/20 transition-all duration-200 active:scale-[0.98]"
                           >
                             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -4160,9 +4295,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               {modalStep === 'phone_otp' && (
                 <div className="space-y-5">
                   <div className="text-center">
-                    <h2 className="text-xl font-bold text-slate-800">Verifique seu telefone</h2>
+                    <h2 className="text-xl font-bold text-slate-800">
+                      {phoneOtpChannel === 'whatsapp' ? 'Verifique seu WhatsApp' : 'Verifique seu telefone'}
+                    </h2>
                     <p className="text-slate-500 text-sm mt-2">
-                      Enviaremos um código por SMS para confirmar sua identidade.
+                      {phoneOtpChannel === 'whatsapp'
+                        ? 'Enviaremos um código pelo WhatsApp para confirmar sua identidade. O número precisa ser o mesmo que você usa no aplicativo.'
+                        : 'Enviaremos um código por SMS para confirmar sua identidade.'}
                     </p>
                   </div>
 
@@ -4188,15 +4327,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <button
                       type="button"
                       onClick={handleSendPhoneOtp}
-                      disabled={phoneOtpLoading}
-                      className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition disabled:opacity-50"
+                      disabled={phoneOtpLoading || phoneOtpResendIn > 0}
+                      className={`w-full py-3 text-white rounded-xl font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${phoneOtpChannel === 'whatsapp' ? 'bg-[#25D366] hover:bg-[#1fb955]' : 'bg-orange-600 hover:bg-orange-700'}`}
                     >
-                      {phoneOtpLoading ? 'Enviando…' : (phoneOtpSent ? 'Reenviar código' : 'Enviar código')}
+                      {phoneOtpLoading
+                        ? 'Enviando…'
+                        : phoneOtpResendIn > 0
+                          ? `Reenviar em ${contagemRegressiva(phoneOtpResendIn)}`
+                          : (phoneOtpSent ? 'Reenviar código' : 'Enviar código')}
                     </button>
 
                     {phoneOtpSent && (
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Código SMS *</label>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                          {phoneOtpChannel === 'whatsapp' ? 'Código recebido no WhatsApp *' : 'Código SMS *'}
+                        </label>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -4226,6 +4371,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         {phoneOtpLoading ? 'Validando…' : 'Validar e continuar'}
                       </button>
                     )}
+
+                    {phoneOtpFails > 0 && <SaidaPorOutroCaminho atual="phone" />}
 
                     <button
                       type="button"
@@ -4298,7 +4445,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         <button
                           type="button"
                           onClick={handleSendEmailOtp}
-                          disabled={emailOtpLoading}
+                          disabled={emailOtpLoading || emailOtpResendIn > 0}
                           className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                           {emailOtpLoading ? (
@@ -4306,6 +4453,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                               Enviando…
                             </>
+                          ) : emailOtpResendIn > 0 ? (
+                            `Aguarde ${contagemRegressiva(emailOtpResendIn)}`
                           ) : (
                             'Enviar código'
                           )}
@@ -4360,10 +4509,14 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           <button
                             type="button"
                             onClick={handleSendEmailOtp}
-                            disabled={emailOtpLoading}
+                            disabled={emailOtpLoading || emailOtpResendIn > 0}
                             className="font-medium text-orange-600 hover:text-orange-700 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            {emailOtpLoading ? 'Reenviando…' : 'Reenviar código'}
+                            {emailOtpLoading
+                              ? 'Reenviando…'
+                              : emailOtpResendIn > 0
+                                ? `Reenviar em ${contagemRegressiva(emailOtpResendIn)}`
+                                : 'Reenviar código'}
                           </button>
                         </div>
                       </div>
@@ -4384,6 +4537,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                             'Validar e continuar'
                           )}
                         </button>
+
+                        {emailOtpFails > 0 && <SaidaPorOutroCaminho atual="email" />}
 
                         <button
                           type="button"

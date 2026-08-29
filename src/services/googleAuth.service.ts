@@ -9,6 +9,19 @@ interface GoogleUser {
   name: string;
   picture?: string;
   sub: string; // Google user ID
+  /**
+   * O token CRU do Google, guardado para ser reconferido no servidor.
+   *
+   * A página decodifica o JWT só para mostrar nome e foto — decodificar não é
+   * verificar, e um payload decodificado no navegador prova nada. Quem assina
+   * manda o token junto, e o `public-sign-document` pergunta ao próprio Google
+   * se ele é válido e se foi emitido para ESTE aplicativo.
+   *
+   * São dois porque são dois caminhos de login: o botão do Google Identity
+   * devolve `idToken`; o popup OAuth devolve `accessToken`.
+   */
+  idToken?: string;
+  accessToken?: string;
 }
 
 interface GoogleAuthResponse {
@@ -220,6 +233,7 @@ class GoogleAuthService {
       name: data.name,
       picture: data.picture,
       sub: data.sub,
+      accessToken,
     };
   }
 
@@ -234,6 +248,7 @@ class GoogleAuthService {
     );
     const payload = JSON.parse(jsonPayload);
     return {
+      idToken: token,
       email: payload.email,
       name: payload.name,
       picture: payload.picture,

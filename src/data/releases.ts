@@ -37,6 +37,53 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.16',
+    date: '28/08/2026',
+    summary: 'Quem assina agora pode confirmar a identidade pelo WhatsApp, e não só por e-mail, Google ou SMS. Junto veio o conserto do que sustentava tudo isso: até aqui quem afirmava que a verificação tinha acontecido era o navegador — o servidor nunca conferia. Agora confere, e o telefone que aparece no relatório é o que respondeu ao código.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'O servidor passou a exigir a prova da identidade',
+            description: 'As tabelas de código de verificação existiam, o código era enviado e conferido — mas a hora de assinar não consultava nenhuma delas. O que ficava gravado no dossiê (“autenticado por telefone, número X”) vinha do próprio navegador, então uma chamada direta ao endereço público produzia uma assinatura afirmando uma verificação que nunca houve. Agora a assinatura só é aceita com um código validado e ainda não usado, ou com o token do Google reconferido com o Google. Cada código vale para uma assinatura só.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Confirmação por WhatsApp',
+            description: 'Novo caminho na página de assinatura: o código chega pelo WhatsApp em vez de SMS. Quando o cliente já tem conversa aberta com o escritório, ele chega nela, e a mensagem fica no histórico do atendimento. Nasce desligado — ligue em Configurações → Assinaturas → Autenticação Pública, junto com Google, e-mail e SMS.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O relatório diz qual telefone foi confirmado',
+            description: 'O número que aparecia no dossiê era o digitado no formulário. Agora o certificado, a ficha do signatário e a linha do tempo mostram o telefone (ou o e-mail) que RECEBEU o código e o devolveu certo, com o canal e a hora da confirmação. Assinaturas antigas continuam sendo exibidas como antes, sem serem chamadas de confirmadas.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Ninguém mais fica preso num código que não chega',
+            description: 'Ao primeiro código recusado, a página passa a oferecer os outros caminhos ali mesmo — Google, e-mail, WhatsApp ou SMS, sem o que a pessoa já está tentando. Antes o único gesto possível era pedir outro código do mesmo jeito que não estava funcionando, e o desfecho era o documento não ser assinado.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A espera entre um código e outro passou a crescer',
+            description: 'Era um minuto fixo, para sempre. Agora é um minuto na primeira repetição, dois na segunda, cinco na terceira e dez daí em diante, zerando depois de uma hora parado. Quem errou um dígito e corrigiu quase não sente; quem usa o formulário público para disparar mensagem atrás de mensagem para um telefone alheio esbarra. O botão mostra o relógio em vez de deixar a pessoa descobrir no erro. O código passou a valer 5 minutos, igual ao do e-mail.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O escritório escolhe de qual número sai o código',
+            description: 'Em Configurações → Assinaturas, junto dos métodos de autenticação. Sem essa escolha o CRM usava o canal padrão dos avisos e, na falta dele, qualquer canal conectado — o cliente podia ver o código chegar de números diferentes conforme o dia.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A tela de escolha some menos',
+            description: 'Com o Google desligado e mais de um método ligado, a página pulava direto para o primeiro e não havia como voltar e escolher outro. A tela de escolha agora continua de pé sempre que existe mais de um caminho.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.15',
     date: '28/08/2026',
     summary: 'O PIN das configurações deixou de ser pedido a cada clique — agora é uma vez por seção. O interruptor parou de mentir quando a confirmação é cancelada. E o prazo vencido passou a cobrar também a administração, todo dia, até alguém resolver.',

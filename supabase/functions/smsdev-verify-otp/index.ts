@@ -83,9 +83,10 @@ Deno.serve(async (req: Request) => {
 
     const { data: otpRows, error: otpError } = await supabase
       .from('signature_phone_otps')
-      .select('id,otp_hash,expires_at,attempts,phone')
+      .select('id,otp_hash,expires_at,attempts,phone,channel')
       .eq('signer_id', signer.id)
       .is('verified_at', null)
+      .is('consumed_at', null)
       .order('created_at', { ascending: false })
       .limit(1)
 
@@ -138,7 +139,7 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    return new Response(JSON.stringify({ success: true, phone: otp.phone }), {
+    return new Response(JSON.stringify({ success: true, phone: otp.phone, channel: otp.channel ?? 'sms' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (error: any) {

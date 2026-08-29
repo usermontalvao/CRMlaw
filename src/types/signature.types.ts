@@ -119,6 +119,15 @@ export interface Signer {
   auth_email?: string | null; // E-mail usado na autenticação
   auth_google_sub?: string | null; // ID único do Google (sub)
   auth_google_picture?: string | null; // URL da foto do Google
+  // ── O que o SERVIDOR confirmou ──────────────────────────────────────────
+  // Os três campos acima descrevem por onde a pessoa disse ter entrado. Estes
+  // são escritos pelo `public-sign-document` a partir do código efetivamente
+  // validado (ou do token do Google reconferido) e são os únicos que o dossiê
+  // pode chamar de prova. `auth_verified_identifier` é o telefone/e-mail que
+  // RECEBEU e devolveu o código — nunca o que foi digitado no formulário.
+  auth_verified_at?: string | null;
+  auth_verified_channel?: 'whatsapp' | 'sms' | 'email' | 'google' | null;
+  auth_verified_identifier?: string | null;
   // Aceite dos Termos de Uso (LGPD) no momento da assinatura
   terms_accepted_at?: string | null;
   terms_version?: string | null;
@@ -190,6 +199,10 @@ export interface SignDocumentDTO {
   auth_email?: string | null;
   auth_google_sub?: string | null;
   auth_google_picture?: string | null;
+  // Token CRU do Google, para o servidor reconferir com o próprio Google.
+  // Um dos dois, conforme o caminho de login usado (ver `GoogleUser`).
+  auth_google_credential?: string | null;
+  auth_google_access_token?: string | null;
   // Aceite dos Termos de Uso (LGPD)
   terms_accepted?: boolean;
   terms_version?: string | null;

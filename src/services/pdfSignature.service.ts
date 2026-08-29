@@ -8,6 +8,7 @@ import { supabase } from '../config/supabase';
 import { signatureFieldsService } from './signatureFields.service';
 import { SYSTEM_ISSUER_LABEL } from './signature.service';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
+import { lerIdentidadeConfirmada, fraseIdentidadeConfirmada } from '../utils/identidadeConfirmada';
 import type { Signer, SignatureRequest, SignatureField } from '../types/signature.types';
 
 /**
@@ -1284,7 +1285,14 @@ class PdfSignatureService {
       const geo = this.parseGeolocation(item.signer_geolocation);
       const ua = this.parseUserAgent(item.signer_user_agent);
       const points: string[] = ['Assinatura manuscrita digital'];
-      if (item.auth_provider === 'google') {
+      // O que o SERVIDOR confirmou tem preferência sobre o que foi declarado —
+      // ver `utils/identidadeConfirmada`. Assinatura antiga (sem as colunas)
+      // cai no texto de antes, que descreve o método sem chamá-lo de provado.
+      const confirmada = lerIdentidadeConfirmada(item as any);
+      if (confirmada) {
+        points.push(fraseIdentidadeConfirmada(confirmada));
+        if (confirmada.canal === 'google' && item.auth_google_sub) points.push(`Google ID: ${item.auth_google_sub}`);
+      } else if (item.auth_provider === 'google') {
         points.push(`Autenticação via Google (${item.auth_email || 'não informado'})`);
         if (item.auth_google_sub) points.push(`Google ID: ${item.auth_google_sub}`);
       } else if (item.auth_provider === 'email_link') {
@@ -1507,13 +1515,19 @@ class PdfSignatureService {
         const parts = [uaP2.browser, uaP2.os, uaP2.device].filter(Boolean);
         return parts.join(' · ') || '—';
       })();
+      const confirmadaP2 = lerIdentidadeConfirmada(item as any);
       const contactStrP2 = (() => {
+        // O contato exibido é o CONFIRMADO quando existe: é o único que o
+        // documento pode apresentar como verificado.
+        if (confirmadaP2) return confirmadaP2.identificador;
         const ae = String(item.auth_email || '').trim();
         const ph = String(item.phone || '').trim();
         const re = String(item.email || '').trim();
         return ae || (item.auth_provider === 'phone' ? ph : '') || (!this.isInternalPlaceholderEmail(re) ? re : '') || '—';
       })();
-      const authStrP2 = item.auth_provider === 'google'
+      const authStrP2 = confirmadaP2
+        ? `${confirmadaP2.rotuloCanal === 'e-mail' ? 'E-mail' : confirmadaP2.rotuloCanal} (${confirmadaP2.identificador})`
+        : item.auth_provider === 'google'
         ? `Google (${item.auth_email || ''})`
         : item.auth_provider === 'email_link' ? `E-mail (${item.auth_email || ''})`
         : item.auth_provider === 'phone'      ? `SMS (${item.phone || ''})`
@@ -1646,6 +1660,13 @@ class PdfSignatureService {
     history.push({ label: 'Criado', when: createdAtStr, detail: `Documento emitido por ${creatorName}.`, sortAt: createdAtDate.getTime(), order: 0 });
 
     const buildTimelineAuthSummary = (item: Signer) => {
+      const confirmada = lerIdentidadeConfirmada(item as any);
+      if (confirmada) {
+        const frase = fraseIdentidadeConfirmada(confirmada);
+        return confirmada.canal === 'google' && item.auth_google_sub
+          ? `${frase}. Google ID: ${item.auth_google_sub}`
+          : frase;
+      }
       const base =
         item.auth_provider === 'phone'
           ? 'Autenticação via Telefone'
