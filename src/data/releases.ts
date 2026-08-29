@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.17',
+    date: '29/08/2026',
+    summary: 'O módulo WhatsApp voltou a enviar. A trava de canal que subiu hoje perguntava ao banco por uma permissão que nunca tinha sido criada lá — e, como toda trava de segurança, na dúvida ela negava. Resultado: "sem permissão" para todo mundo, ao mesmo tempo.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Envio restabelecido',
+            description: 'Toda mensagem passava por uma conferência de permissão no banco antes de sair, e a função que respondia essa conferência não existia em produção — foi criada agora, junto com as três de que ela depende. Nenhuma regra foi afrouxada: quem podia responder antes responde, quem não podia continua sem poder.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.16',
     date: '28/08/2026',
     summary: 'Quem assina agora pode confirmar a identidade pelo WhatsApp, e não só por e-mail, Google ou SMS. Junto veio o conserto do que sustentava tudo isso: até aqui quem afirmava que a verificação tinha acontecido era o navegador — o servidor nunca conferia. Agora confere, e o telefone que aparece no relatório é o que respondeu ao código.',
