@@ -2549,6 +2549,23 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     );
   };
 
+  /**
+   * Máscara de telefone brasileiro, aplicada ENQUANTO se digita.
+   *
+   * O campo guardava e mostrava os dígitos colados ("65984046375"). Onze
+   * dígitos sem separação é justamente o formato que ninguém confere de
+   * relance — e este é o número que vai receber o código e, depois, constar do
+   * relatório como o telefone confirmado. O `handleSendPhoneOtp` continua
+   * mandando só os dígitos: a máscara é da tela, não do dado.
+   */
+  const formatarTelefoneBR = (valor: string): string => {
+    const d = valor.replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '').slice(0, 11);
+    if (d.length <= 2) return d;
+    if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+    if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+    return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  };
+
   /** "2:05" — a contagem que fica no lugar do rótulo do botão de reenvio. */
   const contagemRegressiva = (segundos: number): string =>
     `${Math.floor(segundos / 60)}:${String(segundos % 60).padStart(2, '0')}`;
@@ -4138,7 +4155,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       {/* Modal - Full screen no mobile */}
       {isSignModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 md:backdrop-blur-sm flex flex-col md:items-center md:justify-center">
+        <div className="tema-proprio fixed inset-0 z-50 bg-slate-900/50 md:backdrop-blur-sm flex flex-col md:items-center md:justify-center">
           <div className="bg-[#f8f7f5] w-full h-full md:h-auto md:max-w-lg md:rounded-3xl md:shadow-2xl overflow-hidden md:max-h-[92vh] flex flex-col">
             {/* Header */}
              <div className="flex-shrink-0 bg-orange-600 px-6 py-5 flex items-center justify-between gap-4">
@@ -4235,7 +4252,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           <button
                             type="button"
                             onClick={() => { setPhoneOtpChannel('whatsapp'); setPhoneOtpSent(false); setPhoneOtp(''); setModalStep('phone_otp'); }}
-                            className="w-full max-w-[420px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
+                            className="w-full max-w-[400px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
                           >
                             <svg className="w-[18px] h-[18px] text-[#25D366]" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                               <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884a9.82 9.82 0 016.988 2.896 9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
@@ -4248,7 +4265,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           <button
                             type="button"
                             onClick={() => setModalStep('email_otp')}
-                            className="w-full max-w-[420px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
+                            className="w-full max-w-[400px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
                           >
                             <Mail className="w-[18px] h-[18px] text-slate-500" />
                             Continuar com E-mail
@@ -4259,7 +4276,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                           <button
                             type="button"
                             onClick={() => { setPhoneOtpChannel('sms'); setPhoneOtpSent(false); setPhoneOtp(''); setModalStep('phone_otp'); }}
-                            className="w-full max-w-[420px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
+                            className="w-full max-w-[400px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
                           >
                             <svg className="w-[18px] h-[18px] text-slate-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                               <rect x="5" y="2" width="14" height="20" rx="2" stroke="currentColor" strokeWidth="2" />
@@ -4311,24 +4328,52 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     </div>
                   )}
 
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Telefone *</label>
-                      <input
-                        type="tel"
-                        inputMode="tel"
-                        value={signerData.phone}
-                        onChange={(e) => setSignerData((d) => ({ ...d, phone: e.target.value }))}
-                        placeholder="(11) 98888-7777"
-                        className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                      />
+                  <div className="space-y-4">
+                    {/* O NÚMERO é o dado principal desta tela — e antes ele
+                        aparecia como "65984046375" numa caixa cinza, do mesmo
+                        tamanho de qualquer outro campo. Quem digita o próprio
+                        telefone precisa CONFERIR o que digitou antes de mandar,
+                        e conferir onze dígitos colados é exatamente o que
+                        ninguém faz. Daí o +55 fixo à esquerda, a máscara e o
+                        corpo grande. */}
+                    <div className="text-left">
+                      <label className="block text-[13px] font-semibold text-slate-600 mb-2">
+                        {phoneOtpChannel === 'whatsapp' ? 'Seu número de WhatsApp' : 'Seu telefone com DDD'}
+                      </label>
+                      <div className="flex items-stretch overflow-hidden rounded-xl border border-[#e7e5df] bg-white transition focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500/15">
+                        {/* Bandeira + código. A bandeira sozinha seria bonita e
+                            ambígua: no Windows o emoji de bandeira vira as
+                            letras "BR", e vários países dividem o formato de
+                            número. Os dois juntos é o que o próprio WhatsApp
+                            faz — a bandeira dá o reconhecimento imediato, o
+                            "+55" diz o que a bandeira não consegue dizer em
+                            todo aparelho. */}
+                        <span className="flex select-none items-center gap-1.5 border-r border-[#e7e5df] bg-[#faf9f7] px-3.5">
+                          <span className="text-lg leading-none" role="img" aria-label="Brasil">🇧🇷</span>
+                          <span className="text-sm font-medium text-slate-400">+55</span>
+                        </span>
+                        <input
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="tel-national"
+                          value={formatarTelefoneBR(signerData.phone)}
+                          onChange={(e) => setSignerData((d) => ({ ...d, phone: formatarTelefoneBR(e.target.value) }))}
+                          placeholder="(65) 98404-6375"
+                          className="w-full bg-transparent px-4 py-3.5 text-xl font-semibold tabular-nums text-slate-900 outline-none placeholder:text-lg placeholder:font-normal placeholder:text-slate-300"
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-slate-500">
+                        {phoneOtpChannel === 'whatsapp'
+                          ? 'Confira antes de enviar: o código chega neste número, no aplicativo.'
+                          : 'Confira antes de enviar: o código chega neste número, por SMS.'}
+                      </p>
                     </div>
 
                     <button
                       type="button"
                       onClick={handleSendPhoneOtp}
-                      disabled={phoneOtpLoading || phoneOtpResendIn > 0}
-                      className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={phoneOtpLoading || phoneOtpResendIn > 0 || signerData.phone.replace(/\D/g, '').length < 10}
+                      className="w-full rounded-xl bg-orange-600 py-3.5 font-semibold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {phoneOtpLoading
                         ? 'Enviando…'
@@ -4338,22 +4383,27 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     </button>
 
                     {phoneOtpSent && (
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                          {phoneOtpChannel === 'whatsapp' ? 'Código recebido no WhatsApp *' : 'Código SMS *'}
+                      <div className="rounded-xl border border-[#e7e5df] bg-white p-4 text-left">
+                        <label className="block text-[13px] font-semibold text-slate-600 mb-1">
+                          Código de 6 dígitos
                         </label>
+                        <p className="mb-3 text-xs text-slate-500">
+                          Enviado {phoneOtpChannel === 'whatsapp' ? 'pelo WhatsApp' : 'por SMS'} para{' '}
+                          <span className="font-semibold tabular-nums text-slate-700">🇧🇷 +55 {formatarTelefoneBR(signerData.phone)}</span>
+                        </p>
                         <input
                           type="text"
                           inputMode="numeric"
+                          autoComplete="one-time-code"
                           maxLength={6}
                           value={phoneOtp}
-                          onChange={(e) => setPhoneOtp(e.target.value)}
+                          onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, ''))}
                           placeholder="000000"
-                          className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 tracking-widest text-center"
+                          className="w-full rounded-xl border border-[#e7e5df] bg-[#faf9f7] py-3.5 pl-[0.5em] text-center text-2xl font-bold tabular-nums tracking-[0.5em] text-slate-900 outline-none transition focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-500/15 placeholder:font-normal placeholder:text-slate-300"
                         />
                         {phoneOtpExpiresAt && (
-                          <div className="text-xs text-slate-500 mt-2">
-                            Válido até: {formatDate(phoneOtpExpiresAt)}
+                          <div className="mt-2 text-xs text-slate-500">
+                            Válido até {formatDate(phoneOtpExpiresAt)}
                           </div>
                         )}
                       </div>
@@ -4377,7 +4427,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <button
                       type="button"
                       onClick={() => setModalStep('google_auth')}
-                      className="w-full py-3 bg-white border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition"
+                      className="w-full rounded-xl border border-[#e7e5df] bg-white py-3 font-semibold text-slate-600 transition hover:bg-slate-50"
                     >
                       Voltar
                     </button>

@@ -1034,11 +1034,30 @@ body,
   transform: scale(0.97);
 }
 
-/* ===== MODAIS - CORREÇÃO GLOBAL ===== */
+/* ===== MODAIS - CORREÇÃO GLOBAL =====
+ *
+ * ATENÇÃO, e vale ler antes de desenhar qualquer coisa dentro de um modal:
+ * este bloco casa por SUBSTRING de classe e usa !important em tudo. Qualquer
+ * `div` que tenha `fixed` e `z-50` na classe é tratada como modal, e daí para
+ * dentro ele repinta input (caixa PRETA), label, h3, p e todo botão que tenha
+ * a palavra "border" na classe (bloco #3a3a3c de 14px de padding). O `style`
+ * inline do componente perde — não há erro nem aviso, a peça só aparece com
+ * outra cara.
+ *
+ * Isso nasceu para os modais internos do CRM, que são escuros. Tela PÚBLICA
+ * (a página de assinatura, que o cliente abre) é clara e tem desenho próprio:
+ * herdar esta pele deixava a coleta de dados com cara de terminal.
+ *
+ * A SAÍDA: `tema-proprio` na div do modal. Todo este bloco passa a ignorar
+ * aquela árvore, e o componente volta a mandar no próprio visual.
+ *
+ * Mesmo princípio das regras corrigidas em 23/08/2026: o explícito ganha do
+ * genérico, e a exceção mora NA REGRA, não em contorno dentro do componente.
+ */
 
 /* Reset - remover qualquer fundo azul/colorido */
 div[class*="fixed"][class*="inset-0"],
-div[class*="fixed"][class*="z-50"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]),
 div[class*="fixed"][class*="z-"][class*="inset-0"] {
   background: rgba(0, 0, 0, 0.6) !important;
   backdrop-filter: blur(8px) !important;
@@ -1153,10 +1172,10 @@ div[class*="fixed"] [class*="bg-slate-900"] {
 }
 
 /* Container do modal - fundo escuro sólido */
-div[class*="fixed"][class*="z-50"] > div[class*="bg-white"],
-div[class*="fixed"][class*="z-50"] > div[class*="rounded"],
-div[class*="fixed"][class*="z-50"] div[class*="rounded-2xl"][class*="bg-white"],
-div[class*="fixed"][class*="z-50"] div[class*="rounded-2xl"][class*="shadow"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) > div[class*="bg-white"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) > div[class*="rounded"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) div[class*="rounded-2xl"][class*="bg-white"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) div[class*="rounded-2xl"][class*="shadow"],
 div[class*="fixed"][class*="z-"] > div[class*="w-full"][class*="max-w-"] {
   background: #1c1c1e !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -1164,35 +1183,35 @@ div[class*="fixed"][class*="z-"] > div[class*="w-full"][class*="max-w-"] {
 }
 
 /* Headers de modais */
-div[class*="fixed"][class*="z-50"] [class*="border-b"] {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="border-b"] {
   border-color: var(--apple-border) !important;
   background: transparent !important;
 }
 
 /* Títulos em modais */
-div[class*="fixed"][class*="z-50"] h3,
-div[class*="fixed"][class*="z-50"] h2 {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) h3,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) h2 {
   color: var(--apple-text-primary) !important;
 }
 
 /* Subtítulos em modais */
-div[class*="fixed"][class*="z-50"] p[class*="text-slate"],
-div[class*="fixed"][class*="z-50"] p[class*="text-gray"] {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) p[class*="text-slate"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) p[class*="text-gray"] {
   color: var(--apple-text-secondary) !important;
 }
 
 /* Labels em modais */
-div[class*="fixed"][class*="z-50"] label {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) label {
   color: var(--apple-text-secondary) !important;
   font-size: 13px !important;
   font-weight: 500 !important;
 }
 
 /* Inputs em modais - TAMANHO GRANDE */
-div[class*="fixed"][class*="z-50"] input,
-div[class*="fixed"][class*="z-50"] select,
-div[class*="fixed"][class*="z-50"] textarea,
-div[class*="fixed"][class*="z-50"] .input-field {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) input,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) select,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) textarea,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) .input-field {
   background: #2c2c2e !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   border-radius: 12px !important;
@@ -1203,22 +1222,22 @@ div[class*="fixed"][class*="z-50"] .input-field {
   width: 100% !important;
 }
 
-div[class*="fixed"][class*="z-50"] input:focus,
-div[class*="fixed"][class*="z-50"] select:focus,
-div[class*="fixed"][class*="z-50"] textarea:focus,
-div[class*="fixed"][class*="z-50"] .input-field:focus {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) input:focus,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) select:focus,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) textarea:focus,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) .input-field:focus {
   outline: none !important;
   border-color: #f27a23 !important;
   box-shadow: 0 0 0 3px rgba(242, 122, 35, 0.2) !important;
 }
 
-div[class*="fixed"][class*="z-50"] input::placeholder,
-div[class*="fixed"][class*="z-50"] textarea::placeholder {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) input::placeholder,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) textarea::placeholder {
   color: #636366 !important;
 }
 
 /* Labels em modais - mais visíveis */
-div[class*="fixed"][class*="z-50"] label {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) label {
   color: #98989d !important;
   font-size: 14px !important;
   font-weight: 500 !important;
@@ -1227,7 +1246,7 @@ div[class*="fixed"][class*="z-50"] label {
 }
 
 /* Títulos de seção em modais */
-div[class*="fixed"][class*="z-50"] h3 {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) h3 {
   color: #d1d1d6 !important;
   font-size: 13px !important;
   font-weight: 600 !important;
@@ -1237,9 +1256,9 @@ div[class*="fixed"][class*="z-50"] h3 {
 }
 
 /* Botões primários em modais - TAMANHO GRANDE */
-div[class*="fixed"][class*="z-50"] button[class*="bg-blue"],
-div[class*="fixed"][class*="z-50"] button[class*="bg-emerald"],
-div[class*="fixed"][class*="z-50"] button[type="submit"]:not([class*="text-slate-400"]) {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-blue"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-emerald"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[type="submit"]:not([class*="text-slate-400"]) {
   background: #f27a23 !important;
   color: white !important;
   border: none !important;
@@ -1250,17 +1269,17 @@ div[class*="fixed"][class*="z-50"] button[type="submit"]:not([class*="text-slate
   transition: all 0.15s ease !important;
 }
 
-div[class*="fixed"][class*="z-50"] button[class*="bg-blue"]:hover,
-div[class*="fixed"][class*="z-50"] button[class*="bg-emerald"]:hover,
-div[class*="fixed"][class*="z-50"] button[type="submit"]:hover {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-blue"]:hover,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-emerald"]:hover,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[type="submit"]:hover {
   background: #e06b1f !important;
 }
 
 /* Botões secundários em modais - TAMANHO GRANDE */
-div[class*="fixed"][class*="z-50"] button[class*="border"],
-div[class*="fixed"][class*="z-50"] button[class*="bg-slate-100"],
-div[class*="fixed"][class*="z-50"] button[class*="bg-gray-100"],
-div[class*="fixed"][class*="z-50"] button[class*="btn-secondary"] {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="border"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-slate-100"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-gray-100"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="btn-secondary"] {
   background: #3a3a3c !important;
   color: #ffffff !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -1270,14 +1289,14 @@ div[class*="fixed"][class*="z-50"] button[class*="btn-secondary"] {
   padding: 14px 24px !important;
 }
 
-div[class*="fixed"][class*="z-50"] button[class*="border"]:hover,
-div[class*="fixed"][class*="z-50"] button[class*="btn-secondary"]:hover {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="border"]:hover,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="btn-secondary"]:hover {
   background: #4a4a4c !important;
 }
 
 /* Botão de fechar (X) - maior */
-div[class*="fixed"][class*="z-50"] button[class*="text-slate-400"],
-div[class*="fixed"][class*="z-50"] button[class*="text-gray-400"] {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="text-slate-400"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="text-gray-400"] {
   color: #98989d !important;
   background: transparent !important;
   border: none !important;
@@ -1290,54 +1309,54 @@ div[class*="fixed"][class*="z-50"] button[class*="text-gray-400"] {
   transition: all 0.15s ease !important;
 }
 
-div[class*="fixed"][class*="z-50"] button[class*="text-slate-400"]:hover,
-div[class*="fixed"][class*="z-50"] button[class*="text-gray-400"]:hover {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="text-slate-400"]:hover,
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="text-gray-400"]:hover {
   background: rgba(255, 255, 255, 0.1) !important;
   color: #ffffff !important;
 }
 
 /* Alertas/Feedback em modais */
-div[class*="fixed"][class*="z-50"] [class*="bg-green-50"],
-div[class*="fixed"][class*="z-50"] [class*="bg-emerald-50"] {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-green-50"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-emerald-50"] {
   background: rgba(52, 199, 89, 0.1) !important;
   border-color: rgba(52, 199, 89, 0.2) !important;
 }
 
-div[class*="fixed"][class*="z-50"] [class*="bg-yellow-50"],
-div[class*="fixed"][class*="z-50"] [class*="bg-amber-50"] {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-yellow-50"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-amber-50"] {
   background: rgba(255, 159, 10, 0.1) !important;
   border-color: rgba(255, 159, 10, 0.2) !important;
 }
 
-div[class*="fixed"][class*="z-50"] [class*="bg-red-50"],
-div[class*="fixed"][class*="z-50"] [class*="bg-rose-50"] {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-red-50"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-rose-50"] {
   background: rgba(255, 59, 48, 0.1) !important;
   border-color: rgba(255, 59, 48, 0.2) !important;
 }
 
 /* Seções dentro de modais */
-div[class*="fixed"][class*="z-50"] [class*="bg-slate-50"],
-div[class*="fixed"][class*="z-50"] [class*="bg-gray-50"] {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-slate-50"],
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-gray-50"] {
   background: var(--apple-surface) !important;
   border-radius: var(--apple-radius-md) !important;
 }
 
 /* Footer de modais */
-div[class*="fixed"][class*="z-50"] [class*="border-t"] {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="border-t"] {
   border-color: var(--apple-border) !important;
 }
 
 /* Gradientes em headers de modais - remover */
-div[class*="fixed"][class*="z-50"] [class*="bg-gradient"] {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-gradient"] {
   background: transparent !important;
 }
 
 /* Scrollbar em modais */
-div[class*="fixed"][class*="z-50"] ::-webkit-scrollbar {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) ::-webkit-scrollbar {
   width: 6px;
 }
 
-div[class*="fixed"][class*="z-50"] ::-webkit-scrollbar-thumb {
+div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) ::-webkit-scrollbar-thumb {
   background: var(--apple-text-tertiary);
   border-radius: 3px;
 }
@@ -1442,8 +1461,8 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 /* ===== LIGHT MODE - MODAIS ===== */
 
 /* Container do modal em light mode (cobre z-50, z-[60], z-[70] etc.) */
-:not(.dark) div[class*="fixed"][class*="z-50"] > div[class*="bg-white"],
-:not(.dark) div[class*="fixed"][class*="z-50"] div[class*="rounded-2xl"],
+:not(.dark) div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) > div[class*="bg-white"],
+:not(.dark) div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) div[class*="rounded-2xl"],
 :not(.dark) div[class*="fixed"][class*="z-"] > div[class*="w-full"][class*="max-w-"],
 :not(.dark) div[class*="fixed"][class*="z-"] > div[class*="bg-white"],
 :not(.dark) div[class*="fixed"][class*="z-"] div[class*="rounded-2xl"][class*="bg-white"] {
@@ -1463,9 +1482,9 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   color: #424245 !important;
 }
 
-:not(.dark) div[class*="fixed"][class*="z-50"] input,
-:not(.dark) div[class*="fixed"][class*="z-50"] select,
-:not(.dark) div[class*="fixed"][class*="z-50"] textarea {
+:not(.dark) div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) input,
+:not(.dark) div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) select,
+:not(.dark) div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) textarea {
   background: #f5f5f7 !important;
   border-color: rgba(0, 0, 0, 0.1) !important;
   color: #1d1d1f !important;
@@ -1474,122 +1493,122 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 /* ===== DARK MODE - MODAIS ===== */
 
 /* Container do modal em dark mode */
-.dark div[class*="fixed"][class*="z-50"] > div[class*="bg-white"],
-.dark div[class*="fixed"][class*="z-50"] div[class*="rounded-2xl"],
-.dark div[class*="fixed"][class*="z-50"] div[class*="rounded-lg"][class*="shadow"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) > div[class*="bg-white"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) div[class*="rounded-2xl"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) div[class*="rounded-lg"][class*="shadow"],
 .dark div[class*="fixed"][class*="z-"] > div[class*="w-full"] {
   background: #1c1c1e !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 /* Inputs em dark mode */
-.dark div[class*="fixed"][class*="z-50"] input,
-.dark div[class*="fixed"][class*="z-50"] select,
-.dark div[class*="fixed"][class*="z-50"] textarea,
-.dark div[class*="fixed"][class*="z-50"] .input-field {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) input,
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) select,
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) textarea,
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) .input-field {
   background: #2c2c2e !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   color: #f5f5f7 !important;
 }
 
-.dark div[class*="fixed"][class*="z-50"] input:focus,
-.dark div[class*="fixed"][class*="z-50"] select:focus,
-.dark div[class*="fixed"][class*="z-50"] textarea:focus {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) input:focus,
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) select:focus,
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) textarea:focus {
   border-color: #fb923c !important;
   box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.2) !important;
 }
 
 /* Seções internas */
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-slate-50"],
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-gray-50"],
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-slate-100"],
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-gray-100"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-slate-50"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-gray-50"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-slate-100"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-gray-100"] {
   background: #2c2c2e !important;
 }
 
 /* Bordas */
-.dark div[class*="fixed"][class*="z-50"] [class*="border-b"],
-.dark div[class*="fixed"][class*="z-50"] [class*="border-t"],
-.dark div[class*="fixed"][class*="z-50"] [class*="border-slate"],
-.dark div[class*="fixed"][class*="z-50"] [class*="border-gray"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="border-b"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="border-t"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="border-slate"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="border-gray"] {
   border-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 /* Texto em modais dark */
-.dark div[class*="fixed"][class*="z-50"] h2,
-.dark div[class*="fixed"][class*="z-50"] h3,
-.dark div[class*="fixed"][class*="z-50"] [class*="text-slate-900"],
-.dark div[class*="fixed"][class*="z-50"] [class*="text-gray-900"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) h2,
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) h3,
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-slate-900"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-gray-900"] {
   color: #f5f5f7 !important;
 }
 
-.dark div[class*="fixed"][class*="z-50"] p,
-.dark div[class*="fixed"][class*="z-50"] label,
-.dark div[class*="fixed"][class*="z-50"] [class*="text-slate-700"],
-.dark div[class*="fixed"][class*="z-50"] [class*="text-gray-700"],
-.dark div[class*="fixed"][class*="z-50"] [class*="text-slate-600"],
-.dark div[class*="fixed"][class*="z-50"] [class*="text-gray-600"],
-.dark div[class*="fixed"][class*="z-50"] [class*="text-slate-500"],
-.dark div[class*="fixed"][class*="z-50"] [class*="text-gray-500"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) p,
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) label,
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-slate-700"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-gray-700"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-slate-600"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-gray-600"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-slate-500"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-gray-500"] {
   color: #98989d !important;
 }
 
 /* Botões primários */
-.dark div[class*="fixed"][class*="z-50"] button[class*="bg-blue"],
-.dark div[class*="fixed"][class*="z-50"] button[class*="bg-emerald"],
-.dark div[class*="fixed"][class*="z-50"] button[type="submit"]:not([class*="border"]) {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-blue"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-emerald"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[type="submit"]:not([class*="border"]) {
   background: #fb923c !important;
   color: white !important;
 }
 
-.dark div[class*="fixed"][class*="z-50"] button[class*="bg-blue"]:hover {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-blue"]:hover {
   background: #f97316 !important;
 }
 
 /* Botões secundários */
-.dark div[class*="fixed"][class*="z-50"] button[class*="border"],
-.dark div[class*="fixed"][class*="z-50"] button[class*="bg-slate-100"],
-.dark div[class*="fixed"][class*="z-50"] button[class*="bg-gray-100"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="border"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-slate-100"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="bg-gray-100"] {
   background: #3a3a3c !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
   color: #f5f5f7 !important;
 }
 
 /* Botão fechar (X) */
-.dark div[class*="fixed"][class*="z-50"] button[class*="text-slate-400"],
-.dark div[class*="fixed"][class*="z-50"] button[class*="text-gray-400"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="text-slate-400"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) button[class*="text-gray-400"] {
   color: #98989d !important;
 }
 
 /* Alertas em dark mode */
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-green-50"],
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-emerald-50"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-green-50"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-emerald-50"] {
   background: rgba(48, 209, 88, 0.15) !important;
 }
 
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-yellow-50"],
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-amber-50"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-yellow-50"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-amber-50"] {
   background: rgba(255, 214, 10, 0.15) !important;
 }
 
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-red-50"],
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-rose-50"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-red-50"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-rose-50"] {
   background: rgba(255, 69, 58, 0.15) !important;
 }
 
 /* Texto de alertas */
-.dark div[class*="fixed"][class*="z-50"] [class*="text-green"],
-.dark div[class*="fixed"][class*="z-50"] [class*="text-emerald"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-green"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-emerald"] {
   color: #30d158 !important;
 }
 
-.dark div[class*="fixed"][class*="z-50"] [class*="text-yellow"],
-.dark div[class*="fixed"][class*="z-50"] [class*="text-amber"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-yellow"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-amber"] {
   color: #ffd60a !important;
 }
 
-.dark div[class*="fixed"][class*="z-50"] [class*="text-red"],
-.dark div[class*="fixed"][class*="z-50"] [class*="text-rose"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-red"],
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="text-rose"] {
   color: #ff453a !important;
 }
 
@@ -1601,7 +1620,7 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
 }
 
 /* Gradientes - remover em modais */
-.dark div[class*="fixed"][class*="z-50"] [class*="bg-gradient"] {
+.dark div[class*="fixed"][class*="z-50"]:not([class*="tema-proprio"]) [class*="bg-gradient"] {
   background: transparent !important;
 }
 

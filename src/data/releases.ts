@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.19',
+    date: '29/08/2026',
+    summary: 'A tela de assinatura estava vestindo a pele dos modais internos do CRM — que é escura. Era isso que deixava o campo de telefone como uma caixa preta e o botão "Voltar" como um bloco cinza-chumbo. A página pública passou a mandar no próprio visual, e o número ganhou o destaque que ele merece: é ele que recebe o código e é ele que vai para o relatório.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A página de assinatura saiu da pele dos modais internos',
+            description: 'Uma regra antiga do CSS trata como "modal" qualquer área com as palavras fixed e z-50 na classe, e daí para dentro repinta campo, rótulo e todo botão que tenha a palavra border — com prioridade máxima, sem erro e sem aviso. Serve para os modais internos, que são escuros; na página pública, que é clara, deixava a coleta de dados com cara de terminal. A tela de assinatura agora fica de fora dessa regra.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O número virou o centro da tela',
+            description: 'Antes aparecia como 65984046375 — onze dígitos colados, do tamanho de qualquer outro campo. Agora tem a bandeira do país e o +55 fixos à esquerda, máscara enquanto se digita ((65) 98404-6375) e corpo grande, com os dígitos em largura fixa para não dançarem enquanto você digita. Quem digita o próprio telefone precisa conferir antes de mandar, e é esse número que recebe o código e depois consta do relatório como o telefone confirmado. O campo do código também cresceu, com os seis dígitos espaçados e o número de destino repetido acima.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.18',
     date: '29/08/2026',
     summary: 'As opções de identificação na página de assinatura viraram uma lista só. E o módulo WhatsApp voltou a enviar de verdade — faltava uma segunda peça no banco, que morria depois de a mensagem já ter saído.',

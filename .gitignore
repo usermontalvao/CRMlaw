@@ -69,3 +69,4 @@ extension-signing-key.pem
 # contas descartáveis. Some junto com as contas, mas não deve ser versionado —
 # um token commitado continua sendo um token commitado.
 scripts/authenticator-e2e/estado.json
+.preview-botoes.html
