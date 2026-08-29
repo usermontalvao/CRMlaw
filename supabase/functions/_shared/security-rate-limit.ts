@@ -89,10 +89,25 @@ async function resolveBucket(
   return { bucketType: bucket.bucketType, bucketHash }
 }
 
+/**
+ * A resposta de "espere" — e por que ela precisa dos cabeçalhos de CORS.
+ *
+ * Sem `Access-Control-Allow-Origin`, o NAVEGADOR bloqueia a resposta antes de
+ * o código do site poder lê-la: a mensagem "aguarde 4 minutos" existe, viaja e
+ * é jogada fora, e o que sobra na tela é um "Failed to send a request to the
+ * Edge Function" — erro de rede genérico, no exato momento em que a pessoa
+ * mais precisa saber o que houve. Pior: parece defeito do sistema, e a reação
+ * natural é clicar de novo, que é o oposto do que a trava quer.
+ *
+ * Os cabeçalhos vêm de QUEM CHAMA porque a política é de cada função: as de
+ * assinatura são públicas e usam `*`; o cofre TOTP tem allow-list de origem e
+ * não pode receber um `*` embutido aqui.
+ */
 export function buildRateLimitResponse(
   message: string,
   retryAfterSeconds = 60,
   status = 429,
+  corsHeaders: Record<string, string> = {},
 ): Response {
   return new Response(
     JSON.stringify({
@@ -103,6 +118,7 @@ export function buildRateLimitResponse(
     {
       status,
       headers: {
+        ...corsHeaders,
         ...rateLimitHeaders,
         'Retry-After': String(Math.max(1, retryAfterSeconds)),
       },
@@ -149,10 +165,11 @@ export async function enforceSecurityRateLimit(
   scope: string,
   rules: SecurityRateLimitRule[],
   message = 'Muitas tentativas em sequência. Aguarde antes de tentar novamente.',
+  corsHeaders: Record<string, string> = {},
 ): Promise<Response | null> {
   const outcome = await hitSecurityRateLimit(supabase, req, scope, rules)
   if (outcome.blocked) {
-    return buildRateLimitResponse(message, outcome.retryAfterSeconds)
+    return buildRateLimitResponse(message, outcome.retryAfterSeconds, 429, corsHeaders)
   }
   return null
 }

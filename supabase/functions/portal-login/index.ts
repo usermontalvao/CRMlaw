@@ -93,6 +93,7 @@ Deno.serve(async (req: Request) => {
         { bucketType: "cpf", value: cpf, limit: 8, windowSeconds: 10 * 60, blockSeconds: 60 * 60 },
       ],
       "Muitas tentativas de acesso em sequência. Aguarde alguns minutos antes de tentar novamente.",
+      corsHeaders,
     );
     if (rateLimited) return rateLimited;
 

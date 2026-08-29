@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.22',
+    date: '29/08/2026',
+    summary: 'Quando a proteção contra excesso de tentativas entrava em ação, o navegador jogava a resposta fora e a tela mostrava um erro de rede genérico. A mensagem existia, viajava e era descartada — bem na hora em que a pessoa mais precisava saber o que tinha acontecido.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: '"Aguarde alguns minutos" voltou a aparecer',
+            description: 'A resposta de bloqueio saía sem os cabeçalhos que o navegador exige para deixar o site lê-la. Resultado: em vez de "muitas solicitações em sequência, aguarde", aparecia "Failed to send a request to the Edge Function" — que parece defeito do sistema e convida a clicar de novo, exatamente o oposto do que a trava quer. Valia para os códigos de assinatura (WhatsApp, SMS e e-mail) e também para o login do Portal do Cliente.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.21',
     date: '29/08/2026',
     summary: 'Errar o código deixou de sujar a tela: o campo se limpa sozinho, e sair para outro método e voltar não traz mais o "Código incorreto" de uma tentativa antiga.',

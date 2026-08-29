@@ -243,6 +243,7 @@ Deno.serve(async (req: Request) => {
         { bucketType: 'phone', value: phone, limit: 3, windowSeconds: 10 * 60, blockSeconds: 10 * 60 },
       ],
       'Muitas solicitações de código em sequência. Aguarde alguns minutos antes de solicitar novamente.',
+      corsHeaders,
     )
     if (rateLimited) return rateLimited
 

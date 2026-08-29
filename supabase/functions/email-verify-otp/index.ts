@@ -70,6 +70,7 @@ Deno.serve(async (req: Request) => {
         { bucketType: 'token', value: token, limit: 8, windowSeconds: 10 * 60, blockSeconds: 10 * 60 },
       ],
       'Muitas tentativas de validação em sequência. Aguarde alguns minutos e solicite um novo código se necessário.',
+      corsHeaders,
     )
     if (rateLimited) return rateLimited
 
