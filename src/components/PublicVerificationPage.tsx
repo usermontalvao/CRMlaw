@@ -23,7 +23,15 @@ import {
   sobe,
   type Tom,
 } from './publicSigning/ui';
-import { canalDoRegistro, documentoSemOSignatario, mascararCpf, nomeDoCanal } from '../utils/assinaturaPublica';
+import {
+  canalDoRegistro,
+  classificarCodigo,
+  documentoSemOSignatario,
+  mascararCpf,
+  nomeDoCanal,
+  normalizarCodigo,
+  rotuloDoCodigo,
+} from '../utils/assinaturaPublica';
 import { signatureService } from '../services/signature.service';
 import type { VerifiedDocument } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
@@ -292,7 +300,38 @@ const PublicVerificationPage: React.FC = () => {
     : isNotFound ? 'problema'
     : 'neutro';
 
-  const protocoloExibido = (result?.signer?.verification_hash || hash || '').trim();
+  /*
+    O QUE FOI CONSULTADO — e o recibo devolve isso, com o nome certo.
+
+    Antes o recibo mostrava `signer.verification_hash` sob o rótulo fixo
+    "Protocolo do envelope". Duas coisas erradas de uma vez: quem digitava o
+    código de um DOCUMENTO recebia de volta um número diferente do que tinha na
+    mão, e o rótulo chamava de "envelope" o que não era. Casar o papel com a
+    tela é a única coisa que esta página existe para permitir.
+  */
+  const codigoConsultado = (hash || '').trim();
+  const protocoloDoEnvelope = (result?.request?.id || result?.request?.envelope_verification_code || '').trim();
+  // A RPC marca `is_envelope` quando o código consultado é o do envelope — e
+  // esse sinal é mais confiável que comparar strings, porque o payload público
+  // do envelope nem sempre devolve o `envelope_verification_code` de volta.
+  const respostaDeEnvelope = !!(result?.request as { is_envelope?: boolean } | undefined)?.is_envelope;
+  const tipoDoCodigo: ReturnType<typeof classificarCodigo> = respostaDeEnvelope
+    ? 'envelope'
+    : classificarCodigo(codigoConsultado, {
+        envelope: [result?.request?.id, result?.request?.envelope_verification_code],
+        documentos: (result?.documents || []).map((doc) => doc.verification_code),
+        signatario: result?.signer?.verification_hash,
+      });
+  // Validando pelo ARQUIVO não há código digitado; aí o recibo mostra o
+  // protocolo do envelope, que é o identificador mais abrangente.
+  const codigoDoRecibo = codigoConsultado || protocoloDoEnvelope || (result?.signer?.verification_hash || '').trim();
+  const rotuloDoRecibo = codigoConsultado ? rotuloDoCodigo(tipoDoCodigo) : 'Protocolo do envelope';
+  /** O protocolo vira linha do recibo só quando NÃO é ele que está no topo. */
+  const mostrarProtocoloAparte =
+    tipoDoCodigo !== 'envelope'
+    && !!protocoloDoEnvelope
+    && normalizarCodigo(protocoloDoEnvelope) !== normalizarCodigo(codigoDoRecibo);
+  const protocoloExibido = codigoDoRecibo;
   const emailDoSignatario = isInternalPlaceholderEmail(result?.signer?.email) ? '' : (result?.signer?.email || '');
   const cpfDoSignatario = mascararCpf(result?.signer?.cpf);
   const canal = canalDoRegistro(result?.signer);
@@ -313,8 +352,16 @@ const PublicVerificationPage: React.FC = () => {
       )}
       {result?.signer?.name && <LinhaDoRecibo chave="Assinado por" quebrar>{result.signer.name}</LinhaDoRecibo>}
       {result?.signer?.signed_at && <LinhaDoRecibo chave="Assinado em">{formatDate(result.signer.signed_at)}</LinhaDoRecibo>}
-      <LinhaDoRecibo chave="Identidade">{identidadeDoRecibo}</LinhaDoRecibo>
-      {emailDoSignatario && <LinhaDoRecibo chave="E-mail">{emailDoSignatario}</LinhaDoRecibo>}
+      {/* Só entra quando há canal ou CPF. "Identidade: Confirmada" é uma linha
+          que ocupa espaço sem informar nada — e a resposta a "este documento é
+          autêntico?" já está no selo, não nela. */}
+      {(canal || cpfDoSignatario) && (
+        <LinhaDoRecibo chave="Identidade">{identidadeDoRecibo}</LinhaDoRecibo>
+      )}
+      {emailDoSignatario && <LinhaDoRecibo chave="E-mail" quebrar>{emailDoSignatario}</LinhaDoRecibo>}
+      {mostrarProtocoloAparte && (
+        <LinhaDoRecibo chave="Protocolo do envelope" quebrar>{protocoloDoEnvelope}</LinhaDoRecibo>
+      )}
     </>
   );
 
@@ -394,8 +441,10 @@ const PublicVerificationPage: React.FC = () => {
             {/* O RECIBO — literalmente a mesma peça do comprovante do signatário. */}
             <Recibo
               codigo={protocoloExibido}
+              rotulo={rotuloDoRecibo}
               estado="valido"
               aoCopiar={() => { void copiarProtocolo(); }}
+              acaoDeCopia={tipoDoCodigo === 'envelope' || !codigoConsultado ? 'Copiar protocolo' : 'Copiar código'}
               style={{ flex: '0 0 auto', width: 300, ...sobe(2, 0.5) }}
             >
               {linhasDoRecibo}
@@ -406,7 +455,11 @@ const PublicVerificationPage: React.FC = () => {
                   classe. No modo arquivo, as DUAS aparecem lado a lado: é a
                   comparação que sustenta o resultado, e o leitor precisa vê-la
                   em vez de acreditar que aconteceu. */}
-              {(fileHash || result.signer.signed_pdf_sha256) && (
+              {/* No envelope com vários arquivos, o hash de cada um vive na lista
+                  abaixo; repetir um deles aqui em cima só confundiria qual é
+                  qual. Este bloco fica para o documento único e para a
+                  comparação da validação por arquivo. */}
+              {(fileHash || result.signer.signed_pdf_sha256) && !(isProtocolResult && !verifiedByUploadedFile) && (
                 <div style={{
                   border: '1px solid #e7e5e4', borderRadius: 11, background: '#fff',
                   padding: '11px 13px', ...sobe(3),
@@ -468,6 +521,22 @@ const PublicVerificationPage: React.FC = () => {
                             }}>
                               {codigo}
                             </span>
+                            {/* A impressão digital DESTE arquivo. É o que permite
+                                conferir o PDF que a pessoa tem na mão — um hash
+                                só, do envelope, não responde isso quando o kit
+                                tem principal e dois anexos. */}
+                            {/* Sem reticências: hash cortado não serve para conferir
+                                nem para copiar, que é a única coisa que se faz
+                                com ele. */}
+                            {doc.signed_pdf_sha256 && (
+                              <span style={{
+                                display: 'block', marginTop: 3, fontSize: 8.5, color: TINTA_4,
+                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                                lineHeight: 1.5, overflowWrap: 'anywhere',
+                              }}>
+                                SHA-256 {doc.signed_pdf_sha256}
+                              </span>
+                            )}
                           </span>
                           {codigo && (
                             <button
@@ -486,6 +555,12 @@ const PublicVerificationPage: React.FC = () => {
                       );
                     })}
                   </div>
+                  <p style={{
+                    margin: 0, padding: '0 12px 11px', fontSize: 9.5, lineHeight: 1.5, color: TINTA_4,
+                  }}>
+                    O SHA-256 é a impressão digital do PDF assinado de cada arquivo. Baixe o
+                    documento e compare para provar que é exatamente este.
+                  </p>
                 </div>
               )}
 
@@ -560,6 +635,7 @@ const PublicVerificationPage: React.FC = () => {
 
           <Recibo
             codigo={protocoloExibido}
+            rotulo={rotuloDoRecibo}
             estado="desativado"
             esmaecido
             style={{ marginTop: 20, ...sobe(2, 0.5) }}

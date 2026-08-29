@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   canalDoRegistro,
+  classificarCodigo,
+  normalizarCodigo,
+  rotuloDoCodigo,
   descreverAparelho,
   documentoSemOSignatario,
   faseDaAbertura,
@@ -131,6 +134,35 @@ test('o corte é conservador: na dúvida, o título passa inteiro', () => {
   assert.equal(documentoSemOSignatario('Recibo Ana', 'Ana'), 'Recibo Ana');
   assert.equal(documentoSemOSignatario('Procuração', ''), 'Procuração');
   assert.equal(documentoSemOSignatario(null, 'Maria Silva'), '');
+});
+
+test('a validação reconhece QUAL código foi consultado', () => {
+  const refs = {
+    envelope: ['5f2a1c3e-0000-4aaa-bbbb-cccccccccccc', 'CA6B14B457214F73'],
+    documentos: ['a3f05e0698287546', '3afff1e8b617ef7a'],
+    signatario: '74B4E5EA2DA6E247',
+  };
+  assert.equal(classificarCodigo('CA6B14B457214F73', refs), 'envelope');
+  assert.equal(classificarCodigo('a3f05e0698287546', refs), 'documento');
+  assert.equal(classificarCodigo('74B4E5EA2DA6E247', refs), 'signatario');
+  assert.equal(classificarCodigo('ZZZZ0000', refs), 'desconhecido');
+  assert.equal(classificarCodigo('', refs), 'desconhecido');
+});
+
+test('o código do rodapé vem com hífen e a URL não — os dois têm de casar', () => {
+  const refs = { documentos: ['a3f05e0698287546'] };
+  assert.equal(classificarCodigo('A3F0-5E06-9828-7546', refs), 'documento');
+  assert.equal(normalizarCodigo('a3f0-5e06 9828.7546'), 'A3F05E0698287546');
+});
+
+test('o rótulo só afirma o que dá para saber: envelope ou não', () => {
+  // A RPC pública não distingue código de documento de código de signatário
+  // (devolve um signatário sintético com o próprio código consultado). O que
+  // ela distingue é o envelope — e são estes os dois nomes impressos no PDF.
+  assert.equal(rotuloDoCodigo('envelope'), 'Protocolo do envelope');
+  assert.equal(rotuloDoCodigo('documento'), 'Código de autenticação');
+  assert.equal(rotuloDoCodigo('signatario'), 'Código de autenticação');
+  assert.equal(rotuloDoCodigo('desconhecido'), 'Código de autenticação');
 });
 
 test('nenhuma das duas esperas promete conclusão', () => {

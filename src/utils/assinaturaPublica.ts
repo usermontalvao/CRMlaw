@@ -146,6 +146,65 @@ export function canalDoRegistro(
   return null;
 }
 
+/**
+ * OS QUATRO IDENTIFICADORES, e por que confundi-los quebra a conferência.
+ *
+ * Um envelope assinado carrega códigos diferentes, para coisas diferentes:
+ *
+ *  · o PROTOCOLO DO ENVELOPE (o `id` da solicitação, carimbado no rodapé do
+ *    PDF, com o `envelope_verification_code` como apelido curto) — vale o kit
+ *    inteiro;
+ *  · o CÓDIGO DO DOCUMENTO (um por arquivo, no modelo `per_document`);
+ *  · o CÓDIGO DO SIGNATÁRIO (o `verification_hash` de quem assinou).
+ *
+ * A tela de validação chamava todos de "Protocolo do envelope" e ainda exibia
+ * um valor DIFERENTE do que a pessoa tinha consultado: quem digitava o código
+ * de um documento recebia de volta outro número, sob um rótulo que dizia
+ * "envelope". Não dava para casar o que estava na mão com o que estava na tela
+ * — que é a única coisa que essa página existe para permitir.
+ */
+export type TipoDeCodigo = 'envelope' | 'documento' | 'signatario' | 'desconhecido';
+
+/** Compara ignorando caixa e separadores: o rodapé imprime com hífen, a URL não. */
+export function normalizarCodigo(valor: string | null | undefined): string {
+  return (valor || '').replace(/[^0-9a-z]/gi, '').toUpperCase();
+}
+
+export function classificarCodigo(
+  consultado: string | null | undefined,
+  referencias: {
+    envelope?: (string | null | undefined)[];
+    documentos?: (string | null | undefined)[];
+    signatario?: string | null;
+  },
+): TipoDeCodigo {
+  const alvo = normalizarCodigo(consultado);
+  if (!alvo) return 'desconhecido';
+
+  const bate = (valor: string | null | undefined) => !!valor && normalizarCodigo(valor) === alvo;
+
+  if ((referencias.envelope || []).some(bate)) return 'envelope';
+  if ((referencias.documentos || []).some(bate)) return 'documento';
+  if (bate(referencias.signatario)) return 'signatario';
+  return 'desconhecido';
+}
+
+/**
+ * O rótulo que vai em cima do código, no recibo.
+ *
+ * SÃO DOIS NOMES, não quatro — e são os que o próprio PDF assinado imprime no
+ * rodapé, para a pessoa reconhecer o que tem na mão.
+ *
+ * Separar "código do documento" de "código do signatário" seria mentir com
+ * confiança: a RPC pública devolve, para um código de documento, um signatário
+ * sintético cujo `verification_hash` é o próprio código consultado — ou seja, o
+ * que volta do servidor não distingue os dois. O que ela distingue com certeza
+ * é o envelope (vem do `id` da solicitação), e é só isso que o rótulo afirma.
+ */
+export function rotuloDoCodigo(tipo: TipoDeCodigo): string {
+  return tipo === 'envelope' ? 'Protocolo do envelope' : 'Código de autenticação';
+}
+
 const semAcento = (valor: string): string =>
   valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 

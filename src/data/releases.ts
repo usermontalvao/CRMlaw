@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.31',
+    date: '29/08/2026',
+    summary: 'O validador passou a dizer QUAL código foi consultado e a mostrar a impressão digital de cada documento do envelope.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O recibo devolve o código que você consultou',
+            description: 'Quem digitava o código de um documento recebia de volta um número DIFERENTE, com o rótulo fixo "Protocolo do envelope" — sem como casar o papel na mão com a tela, que é a única coisa que essa página existe para permitir. Agora o recibo mostra o código consultado, chamado pelo nome certo: "Protocolo do envelope" quando é o envelope, "Código de autenticação" quando é o de um documento. Quando não é o envelope, o protocolo aparece numa linha própria.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'A impressão digital de cada documento',
+            description: 'Num envelope com o principal e dois anexos, um hash só não responde à pergunta de quem tem UM PDF na mão. Cada arquivo da lista passou a mostrar o seu próprio SHA-256, inteiro e copiável, para conferir contra o arquivo baixado.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Sem a linha "Identidade: Confirmada"',
+            description: 'Quando o canal da confirmação não está registrado, a linha dizia "Confirmada" — ocupando espaço sem informar nada. Agora ela só aparece quando há canal ou CPF para mostrar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.30',
     date: '29/08/2026',
     summary: 'No recibo, o botão voltou a dizer o que copia, e o título do documento parou de repetir o nome de quem assinou.',

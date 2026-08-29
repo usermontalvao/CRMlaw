@@ -50,6 +50,16 @@ export interface VerifiedDocument {
   display_name?: string | null;
   document_type: 'main' | 'attachment';
   sort_order?: number | null;
+  /**
+   * A impressão digital de CADA arquivo, para a conferência pública.
+   *
+   * Quem valida tem UM PDF na mão e quer saber se AQUELE arquivo é o que foi
+   * assinado — num envelope com principal e dois anexos, um hash só não
+   * responde isso. Vêm da migration `validador_hash_por_documento`; envelopes
+   * antigos, sem linhas em `signature_request_documents`, trazem só o principal.
+   */
+  signed_pdf_sha256?: string | null;
+  document_hash?: string | null;
 }
 
 export type VerifyResult =
