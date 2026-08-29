@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.32',
+    date: '29/08/2026',
+    summary: 'A janela de editar cargo da Equipe ficava cortada em cima e embaixo, sem como rolar até as pontas.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A janela de editar cargo cabe na tela',
+            description: 'Com o título, o nome, os seis cargos, o aviso e o campo de gênero, a janela ficava mais alta que o navegador — e, centralizada, o que sobrava saía pelas duas pontas ao mesmo tempo. O primeiro cargo aparecia cortado ao meio, o campo de gênero sumia embaixo, e não havia como rolar até nenhum dos dois. Agora a janela tem teto e rolagem própria.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.31',
     date: '29/08/2026',
     summary: 'O validador passou a dizer QUAL código foi consultado e a mostrar a impressão digital de cada documento do envelope.',

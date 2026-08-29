@@ -699,11 +699,26 @@ export const UserManagementModule: React.FC = () => {
       </Modal>
 
       {/* Edit role modal inline */}
+      {/*
+        O cartão do modal PRECISA de teto e de rolagem própria.
+
+        Sem eles, o conteúdo (título, nome, seis cargos, aviso, gênero e os
+        botões) fica mais alto que a janela — e, num pai centralizado com
+        `align-items: center`, o que sobra estoura para CIMA e para BAIXO em
+        partes iguais. As duas pontas ficam fora da tela e não há como rolar até
+        elas: o primeiro cargo aparecia cortado ao meio e o campo de gênero
+        sumia embaixo. Numa tela de notebook com o dock à mostra, bastava isso
+        para a edição ficar impossível.
+
+        `padding` no fundo escuro garante que o cartão nunca encoste na borda, e
+        `overscroll-contain` impede que a rolagem escape para a página atrás.
+      */}
       {editingUser && (
         <div style={{ position: 'fixed', inset: 0, zIndex: LAYER.MODAL, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(6px)' }}
+          padding: '24px 16px', background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(6px)' }}
           onClick={() => setEditingUser(null)}>
-          <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: '360px',
+          <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: 'min(360px, 100%)',
+            maxHeight: '100%', overflowY: 'auto', overscrollBehavior: 'contain',
             boxShadow: '0 24px 60px rgba(0,0,0,0.18)', border: '1px solid rgba(15,23,42,0.10)' }}
             onClick={e => e.stopPropagation()}>
             {(() => { const editingSelf = editingUser.user_id === user?.id; return (<>
