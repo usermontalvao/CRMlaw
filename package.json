@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.13.22",
+  "version": "1.13.23",
   "scripts": {
     "start": "vite",
     "dev": "vite",
@@ -47,6 +47,9 @@
     "@syncfusion/ej2-base": "^32.1.19",
     "@syncfusion/ej2-locale": "^32.1.19",
     "@syncfusion/ej2-react-documenteditor": "32.1.21",
+    "@tensorflow-models/blazeface": "^0.1.0",
+    "@tensorflow/tfjs-backend-webgl": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/react-grid-layout": "^1.3.6",

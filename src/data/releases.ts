@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.23',
+    date: '29/08/2026',
+    summary: 'O visor da selfie passou a saber se há um rosto enquadrado antes de disparar a foto — e a decisão roda no próprio aparelho, sem mandar imagem para lugar nenhum.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'O visor da selfie enxerga o rosto',
+            description: 'A etapa da foto disparava sozinha depois de alguns segundos, olhando ou não para alguém: saíam fotos de teto, de mesa e de rosto cortado, que só eram recusadas depois, pela análise no servidor — e a pessoa tinha de recomeçar. Agora um detector roda no próprio celular e diz o que falta: procurando, longe demais, fora do centro, ou pronto. A foto só sai quando está enquadrada.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A etapa continua funcionando se o detector não carregar',
+            description: 'O modelo é baixado do próprio site. Se ele não vier — conexão ruim, navegador antigo —, o portão simplesmente sai do caminho e a captura volta a funcionar como antes, em vez de travar a assinatura.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.22',
     date: '29/08/2026',
     summary: 'Quando a proteção contra excesso de tentativas entrava em ação, o navegador jogava a resposta fora e a tela mostrava um erro de rede genérico. A mensagem existia, viajava e era descartada — bem na hora em que a pessoa mais precisava saber o que tinha acontecido.',
