@@ -7,7 +7,7 @@ import {
   FileText, Upload, Plus, Trash2, X, Check, Clock, CheckCircle, Send, Copy,
   User, Mail, Loader2, ChevronLeft, Eye, EyeOff, Filter, Search, MousePointer2,
   Type, Hash, Calendar, PenTool, Users, Download, AlertTriangle, ExternalLink, ChevronRight, ZoomIn, ZoomOut, Shield, Lightbulb, Pencil, Maximize2, Minimize2, LayoutList, LayoutGrid, FolderOpen, Phone,
-  ArrowUpDown, FileSignature, ChevronUp, ChevronDown, Lock, LockOpen, RotateCcw, Inbox, UploadCloud,
+  ArrowUpDown, FileSignature, ChevronUp, ChevronDown, Lock, LockOpen, RotateCcw, Inbox, UploadCloud, Folder,
 } from 'lucide-react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -36,7 +36,7 @@ import { useSilentRefresh } from '../hooks/useSilentRefresh';
 import { useMinLoading } from '../hooks/useMinLoading';
 import { useSelectionState } from '../hooks/useSelectionState';
 import FacialCapture from './FacialCapture';
-import { filterGeneratedDocumentsByFolder, filterSignatureRequests } from '../utils/signatureFilters';
+import { filterGeneratedDocumentsByFolder, filterSignatureRequests, isGlobalSignatureSearch } from '../utils/signatureFilters';
 import type {
   SignatureRequest, SignatureRequestWithSigners, Signer, CreateSignatureRequestDTO,
   SignerAuthMethod, SignatureFieldType, SignatureAuditLog, SignatureRequestDocument,
@@ -1031,13 +1031,17 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     return byKey;
   }, [explorerItems]);
 
+  // Pesquisa é global: com termo digitado, ignora a caixa aberta e varre todas as pastas.
+  const isGlobalSearch = useMemo(() => isGlobalSignatureSearch(searchTerm), [searchTerm]);
+
   const filteredRequestsByFolder = useMemo(() => {
+    if (isGlobalSearch) return filteredRequests;
     return filteredRequests.filter((req) => {
       const item = explorerItemIndex.get(`signature_request:${req.id}`);
       const folderId = item?.folder_id ?? null;
       return folderId === selectedFolderId;
     });
-  }, [filteredRequests, explorerItemIndex, selectedFolderId]);
+  }, [filteredRequests, explorerItemIndex, selectedFolderId, isGlobalSearch]);
 
   const filteredGeneratedDocumentsByFolder = useMemo(() => {
     return filterGeneratedDocumentsByFolder(generatedDocuments, explorerItemIndex, searchTerm, selectedFolderId);
@@ -1079,6 +1083,13 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
     for (const f of explorerFolders) compute(f.id);
     return map;
   }, [explorerFolders, foldersById]);
+
+  /** Em que caixa o item mora — mostrado nos resultados quando a busca é global. */
+  const folderLabelForItem = useCallback((itemType: 'signature_request' | 'generated_document', itemId: string) => {
+    const folderId = explorerItemIndex.get(`${itemType}:${itemId}`)?.folder_id ?? null;
+    if (!folderId) return 'Caixa de Entrada';
+    return folderPathLabelById.get(folderId) || 'Caixa de Entrada';
+  }, [explorerItemIndex, folderPathLabelById]);
 
   // Lista achatada (DFS) das pastas na ordem da árvore — para as abas lado a lado.
   const orderedFolders = useMemo(() => {
@@ -4671,6 +4682,26 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
             </div>
           </div>
 
+          {/* A busca atravessa as pastas — avisa que a caixa aberta deixou de limitar a lista */}
+          {isGlobalSearch && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2">
+              <span className="inline-flex items-center gap-2 min-w-0 text-xs text-orange-800">
+                <Search className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">
+                  Buscando em todas as pastas — {filteredRequestsByFolder.length + filteredGeneratedDocumentsByFolder.length} resultado(s)
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="inline-flex flex-shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
+              >
+                <X className="w-3.5 h-3.5" />
+                Limpar
+              </button>
+            </div>
+          )}
+
           {/* Toolbar */}
           <div className="rounded-xl bg-[#f8f7f5] overflow-hidden" style={{ border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
 
@@ -4722,7 +4753,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Buscar documentos..."
+                  placeholder="Buscar em todas as pastas..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full rounded-lg border border-[#e7e5df] bg-slate-50 pl-8 pr-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500/10"
@@ -4806,11 +4837,15 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                 <span className="font-semibold text-slate-900">{selectedRequestIds.size}</span> selecionado(s)
                 <span className="text-slate-400"> · </span>
                 <span className="text-slate-500">
-                  {selectedFolderId ? `Pasta atual (${filteredRequestsByFolder.length})` : `Filtro atual (${filteredRequests.length})`}
+                  {isGlobalSearch
+                    ? `Busca em todas as pastas (${filteredRequestsByFolder.length})`
+                    : selectedFolderId
+                      ? `Pasta atual (${filteredRequestsByFolder.length})`
+                      : `Filtro atual (${filteredRequests.length})`}
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                {selectedFolderId && (
+                {selectedFolderId && !isGlobalSearch && (
                   <button
                     type="button"
                     onClick={selectAllInFolder}
@@ -4959,14 +4994,29 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
           <div className="p-12 text-center">
             <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
             <h3 className="text-base font-semibold text-slate-900 mb-1">Nenhum documento encontrado</h3>
-            <p className="text-sm text-slate-500 mb-6">Crie seu primeiro documento para assinatura digital</p>
-            <button
-              onClick={() => { resetWizard(); setWizardStep('upload'); }}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              <Plus className="w-4 h-4" />
-              Criar documento
-            </button>
+            {isGlobalSearch ? (
+              <>
+                <p className="text-sm text-slate-500 mb-6">Procuramos em todas as pastas e nada bateu com “{searchTerm.trim()}”.</p>
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[#e7e5df] bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  <X className="w-4 h-4" />
+                  Limpar busca
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-slate-500 mb-6">Crie seu primeiro documento para assinatura digital</p>
+                <button
+                  onClick={() => { resetWizard(); setWizardStep('upload'); }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                >
+                  <Plus className="w-4 h-4" />
+                  Criar documento
+                </button>
+              </>
+            )}
           </div>
         ) : viewMode === 'list' ? (
           <div className="p-3 space-y-2">
@@ -5122,6 +5172,16 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         <span style={{ fontSize: 11, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clientLabel}</span>
                         <span style={{ width: 3, height: 3, borderRadius: '50%', background: '#cbd5e1', flexShrink: 0 }} />
                         <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', flexShrink: 0 }}>{formatDate(req.created_at)}</span>
+                        {isGlobalSearch && (
+                          <>
+                            <span style={{ width: 3, height: 3, borderRadius: '50%', background: '#cbd5e1', flexShrink: 0 }} />
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              title={`Está em: ${folderLabelForItem('signature_request', req.id)}`}>
+                              <Folder style={{ width: 10, height: 10, flexShrink: 0 }} />
+                              {folderLabelForItem('signature_request', req.id)}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -5234,7 +5294,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       >
                         <div className="min-w-0">
                           <div className="text-sm font-semibold text-slate-900 truncate">{doc.file_name}</div>
-                          <div className="text-xs text-slate-500 truncate">{doc.client_name || '—'}</div>
+                          <div className="text-xs text-slate-500 truncate">
+                            {doc.client_name || '—'}
+                            {isGlobalSearch && (
+                              <span className="text-slate-400"> · {folderLabelForItem('generated_document', doc.id)}</span>
+                            )}
+                          </div>
                         </div>
                         <div className="text-xs text-slate-400 shrink-0">{formatDate(doc.created_at)}</div>
                       </button>
@@ -5365,10 +5430,21 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         </div>
 
                         {/* Client */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: isGlobalSearch ? 5 : 12 }}>
                           <User style={{ width: 11, height: 11, color: '#94a3b8', flexShrink: 0 }} />
                           <span style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clientLabel}</span>
                         </div>
+
+                        {/* Caixa de origem — só na busca global, que atravessa as pastas */}
+                        {isGlobalSearch && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 12 }}
+                            title={`Está em: ${folderLabelForItem('signature_request', req.id)}`}>
+                            <Folder style={{ width: 11, height: 11, color: '#94a3b8', flexShrink: 0 }} />
+                            <span style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {folderLabelForItem('signature_request', req.id)}
+                            </span>
+                          </div>
+                        )}
 
                         {/* Tags */}
                         {(req.process_id || req.requirement_id) && (
@@ -5483,6 +5559,12 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                       <div className="text-xs text-slate-500 truncate">{formatDate(doc.created_at)}</div>
                       <div className="mt-1 text-sm font-semibold text-slate-900 line-clamp-2">{doc.file_name}</div>
                       <div className="mt-1 text-xs text-slate-600 truncate">{doc.client_name || '—'}</div>
+                      {isGlobalSearch && (
+                        <div className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+                          <Folder className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{folderLabelForItem('generated_document', doc.id)}</span>
+                        </div>
+                      )}
                     </button>
                   ))}
                 </div>

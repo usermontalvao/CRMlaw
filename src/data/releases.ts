@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.38',
+    date: '29/08/2026',
+    summary: 'A busca do módulo Assinaturas passou a atravessar as pastas: digitou, procura em todas — e mostra em qual cada resultado está.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'A busca procura em todas as pastas',
+            description: 'Antes ela só varria a caixa aberta: quem não lembrava onde tinha guardado o documento precisava abrir pasta por pasta. Agora, com um termo digitado, a pesquisa ignora a pasta atual e procura no módulo inteiro. Sem termo, cada caixa volta a mostrar só o que está dentro dela.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Cada resultado diz em que pasta está',
+            description: 'Como a lista passou a misturar documentos de pastas diferentes, cada item mostra a caixa de origem — na lista e nos cartões. Uma faixa no topo avisa que a busca está atravessando as pastas, com a contagem de resultados e um atalho para limpar; e a tela de "nada encontrado" passou a oferecer limpar a busca em vez de criar documento.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.37',
     date: '29/08/2026',
     summary: 'A ficha do colaborador dizia "PIN não configurado" para todo mundo — inclusive para quem tem PIN há semanas — e o botão de resetar nunca funcionou.',

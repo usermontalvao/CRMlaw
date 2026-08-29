@@ -1,6 +1,6 @@
 import type { GeneratedDocument } from '../types/document.types';
 import type { SignatureRequestWithSigners } from '../types/signature.types';
-import { matchesNormalizedSearch } from './search';
+import { matchesNormalizedSearch, normalizeSearchText } from './search';
 
 export interface SignatureFilterState {
   searchTerm: string;
@@ -61,16 +61,26 @@ export const filterSignatureRequests = (
   return out;
 };
 
+/**
+ * Com termo digitado a pesquisa é GLOBAL: varre todas as pastas, não só a caixa
+ * aberta. Sem termo, cada caixa mostra só o que está dentro dela.
+ */
+export const isGlobalSignatureSearch = (searchTerm: string) => normalizeSearchText(searchTerm).length > 0;
+
 export const filterGeneratedDocumentsByFolder = (
   generatedDocuments: GeneratedDocument[],
   explorerItemIndex: Map<string, { folder_id?: string | null }>,
   searchTerm: string,
   selectedFolderId: string | null,
 ) => {
+  const ignoreFolder = isGlobalSignatureSearch(searchTerm);
+
   return generatedDocuments.filter((doc) => {
-    const item = explorerItemIndex.get(`generated_document:${doc.id}`);
-    const folderId = item?.folder_id ?? null;
-    if (folderId !== selectedFolderId) return false;
+    if (!ignoreFolder) {
+      const item = explorerItemIndex.get(`generated_document:${doc.id}`);
+      const folderId = item?.folder_id ?? null;
+      if (folderId !== selectedFolderId) return false;
+    }
 
     const matchesSearch = matchesNormalizedSearch(searchTerm, [doc.file_name, doc.client_name, doc.template_name]);
     return matchesSearch;
