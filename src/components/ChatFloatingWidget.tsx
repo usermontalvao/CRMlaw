@@ -622,6 +622,18 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
    * dentro do widget seria desfeito no render seguinte.
    */
   const [waOpenConvId, setWaOpenConvId] = useState<string | null>(null);
+  /**
+   * Texto que já entra escrito no compositor da conversa pedida de fora.
+   *
+   * O módulo cheio recebia isto desde sempre (`openConversationDraft`); o widget
+   * NÃO — ele só repassava o id da conversa. Resultado: clicar em "Enviar no
+   * WhatsApp" no módulo Documentos abria a conversa certa, mostrava o toast
+   * dizendo "a mensagem já está escrita no compositor"… e o compositor vinha
+   * vazio, sem o link da assinatura. O mesmo valia para o convite de assinatura
+   * e para os modelos do requerimento sempre que a pessoa não estava no módulo
+   * do WhatsApp. Ver a regra: o widget espelha o módulo.
+   */
+  const [waOpenDraft, setWaOpenDraft] = useState<string | null>(null);
   const [ticketTyping, setTicketTyping] = useState<Map<string, string>>(new Map());
   const [liveTypingText, setLiveTypingText] = useState('');
   const typingClearTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -1689,6 +1701,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
       const conversationId = String(payload?.conversationId ?? '').trim();
       if (!conversationId) return;
       setToast(null);
+      const rascunho = String(payload?.draft ?? '').trim();
+      setWaOpenDraft(rascunho || null);
       // Sai de qualquer sala da equipe que estivesse aberta: o painel tem um
       // conteúdo só, e o pedido é explícito sobre qual.
       setSelectedRoomId(null);
@@ -2723,7 +2737,8 @@ const ChatFloatingWidget: React.FC<ChatFloatingWidgetProps> = ({ hidden = false 
                     <WhatsAppModule
                       variant="embedded"
                       openConversationId={waOpenConvId ?? undefined}
-                      onParamConsumed={() => setWaOpenConvId(null)}
+                      openConversationDraft={waOpenDraft ?? undefined}
+                      onParamConsumed={() => { setWaOpenConvId(null); setWaOpenDraft(null); }}
                       onActiveConversationChange={handleWaActiveConversation}
                       /* O Esc na lista fecha a janela: é o degrau que o módulo
                          não tem como dar sozinho, porque a janela é nossa. */

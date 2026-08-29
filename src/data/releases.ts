@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.26',
+    date: '29/08/2026',
+    summary: 'O link de assinatura passou a sair pela conversa do CRM com um clique — e o texto pronto, que antes se perdia no caminho, agora chega escrito no compositor.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Enviar o link de assinatura no WhatsApp',
+            description: 'Depois de gerar o documento, o único caminho era copiar o link e colar em algum lugar. Quando o cliente tem telefone na ficha, agora há um botão que abre a conversa dele no CRM com a mensagem já escrita: nome do documento, link e saudação. Sem telefone cadastrado o botão não aparece — prometer um envio que não tem para onde ir é pior do que não oferecer.',
+          },
+        ],
+      },
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O texto pronto voltou a chegar no compositor',
+            description: 'Quem não estava no módulo do WhatsApp via a conversa abrir pelo painel flutuante, lia o aviso "a mensagem já está escrita no compositor"… e encontrava o compositor vazio. O painel repassava só a conversa, nunca o texto. Valia para o convite de assinatura e para os modelos do requerimento também.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.25',
     date: '29/08/2026',
     summary: 'CPF passou a ser conferido de verdade na assinatura pública, o histórico voltou a contar quantas vezes o documento foi aberto, e o protocolo ganhou um carimbo na margem que sobrevive a recorte.',

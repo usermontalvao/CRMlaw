@@ -22,6 +22,7 @@ import {
   Check,
   ChevronRight,
   MoreHorizontal,
+  MessageCircle,
 } from 'lucide-react';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
@@ -58,6 +59,9 @@ import type { Client } from '../types/client.types';
 import type { Process } from '../types/process.types';
 import type { SignerAuthMethod } from '../types/signature.types';
 import { LAYER } from '../styles/layers';
+import { openWhatsAppChat } from '../utils/whatsappChat';
+import { buildWhatsappUrl } from '../utils/whatsapp';
+import { formatPhone } from '../utils/formatters';
 import {
   humanizeTemplatePlaceholder,
   isBuiltInTemplatePlaceholder,
@@ -397,6 +401,15 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
   const [showSignatureLinkModal, setShowSignatureLinkModal] = useState(false);
   const [signatureLink, setSignatureLink] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
+  // Quem recebe o link, congelado no instante em que o modal abre. A seleção da
+  // tela de trás continua viva e pode mudar; a mensagem do WhatsApp tem de
+  // continuar sendo a do documento que acabou de sair.
+  const [signatureLinkTarget, setSignatureLinkTarget] = useState<{
+    clientId: string;
+    clientName: string;
+    phone: string;
+    documentName: string;
+  } | null>(null);
 
   const [preparingSignature, setPreparingSignature] = useState(false);
 
@@ -1783,6 +1796,12 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       // Mostrar modal com o link
       setSignatureLink(link);
       setLinkCopied(false);
+      setSignatureLinkTarget({
+        clientId: selectedClient.id,
+        clientName: selectedClient.full_name,
+        phone: selectedClient.phone || selectedClient.mobile || '',
+        documentName: `${selectedTemplate.name} - ${selectedClient.full_name}`,
+      });
       setShowSignatureLinkModal(true);
 
       // Limpar estados
@@ -1814,6 +1833,39 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 3000);
     });
+  };
+
+  /**
+   * Manda o link de assinatura pela conversa do CRM.
+   *
+   * O modal FECHA antes de pedir a conversa, e isso não é cosmético: o widget
+   * flutuante mora em `FLOATING` e este modal em `MODAL_NESTED` — deixá-lo
+   * aberto faria a conversa subir atrás dele e o clique pareceria não ter feito
+   * nada. Ver `utils/whatsappChat`.
+   *
+   * A resposta de `openWhatsAppChat` é síncrona de propósito: `false` quer dizer
+   * "não há como abrir aqui dentro" (sem permissão no módulo ou sem canal
+   * conectado), e só aí vale o `wa.me` de sempre — decidir depois de um `await`
+   * faria o navegador tratar o `window.open` como pop-up e bloquear.
+   */
+  const handleSendSignatureLinkOnWhatsApp = () => {
+    if (!signatureLinkTarget?.phone || !signatureLink) return;
+    const { phone, clientId, clientName, documentName } = signatureLinkTarget;
+    const mensagem = `Olá ${clientName}! Seu documento chegou para assinatura.\n\n*${documentName}*\n\nAcesse o link abaixo para assinar:\n${signatureLink}`;
+
+    setShowSignatureLinkModal(false);
+
+    if (openWhatsAppChat({ phone, clientId, contactName: clientName, text: mensagem })) {
+      toast.success('Conversa aberta', 'A mensagem já está escrita no compositor — revise e envie.');
+      return;
+    }
+
+    const fallback = buildWhatsappUrl(phone, mensagem);
+    if (fallback) {
+      window.open(fallback, '_blank');
+      return;
+    }
+    toast.error('Não foi possível abrir o WhatsApp', 'Confira o telefone cadastrado deste cliente.');
   };
 
   const handleGenerateTemplateFillLink = async (template: DocumentTemplate) => {
@@ -3403,9 +3455,47 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
           </div>
         </div>
 
+        {/*
+          Copiar e colar em algum lugar era o único caminho. Quando o cliente já
+          tem telefone na ficha, o envio sai daqui pela conversa do CRM — é lá
+          que ficam a thread, o vínculo com o cadastro e o acompanhamento da
+          assinatura. Sem telefone cadastrado, o botão não aparece: prometer um
+          envio que não tem para onde ir é pior do que não oferecer.
+        */}
+        {signatureLinkTarget?.phone && (
+          <button
+            type="button"
+            onClick={handleSendSignatureLinkOnWhatsApp}
+            className="mb-4 flex w-full items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30"
+          >
+            <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-emerald-500 text-white">
+              <MessageCircle className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-emerald-900 dark:text-emerald-200">
+                Enviar no WhatsApp
+              </span>
+              <span className="block truncate text-xs text-emerald-700 dark:text-emerald-300">
+                Abre a conversa com {signatureLinkTarget.clientName} ({formatPhone(signatureLinkTarget.phone)}) com a mensagem pronta.
+              </span>
+            </span>
+            <ChevronRight className="h-4 w-4 flex-none text-emerald-600 dark:text-emerald-400" />
+          </button>
+        )}
+
         <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
           <p className="text-xs text-amber-700 dark:text-amber-300">
-            <strong>Dica:</strong> Envie este link por WhatsApp, e-mail ou SMS para o cliente. Ele poderá assinar o documento diretamente pelo celular ou computador.
+            {signatureLinkTarget && !signatureLinkTarget.phone ? (
+              <>
+                <strong>Dica:</strong> este cliente não tem telefone cadastrado, então o envio direto pelo
+                WhatsApp não aparece aqui. Copie o link e mande por e-mail ou SMS — ou cadastre o telefone na
+                ficha dele.
+              </>
+            ) : (
+              <>
+                <strong>Dica:</strong> Envie este link por WhatsApp, e-mail ou SMS para o cliente. Ele poderá assinar o documento diretamente pelo celular ou computador.
+              </>
+            )}
           </p>
         </div>
       </ModalBody>
