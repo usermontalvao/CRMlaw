@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.39',
+    date: '29/08/2026',
+    summary: 'O aviso de prazo por WhatsApp passou a sair também no sábado e no domingo, como o push e o e-mail já saíam.',
+    modules: [
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'WhatsApp de prazo agora sai no fim de semana',
+            description: 'O agendador usava duas janelas diferentes sem que ninguém tivesse escolhido isso: push e e-mail saíam todos os dias, das 8h às 18h, e o WhatsApp tinha uma trava própria que barrava sábado e domingo. Num sábado, o aviso de prazo VENCIDO chegava por e-mail e era engolido justamente no canal que a pessoa olha fora do expediente. Agora os três canais seguem a mesma janela: todos os dias, das 8h às 18h de Brasília.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A madrugada continua protegida',
+            description: 'Liberar o fim de semana não liberou o horário: uma mensagem de WhatsApp às 3h acorda a pessoa, e um lembrete de prazo de madrugada não é mais útil que o mesmo lembrete às 8h. O piso de horário vale igual no domingo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.38',
     date: '29/08/2026',
     summary: 'A busca do módulo Assinaturas passou a atravessar as pastas: digitou, procura em todas — e mostra em qual cada resultado está.',

@@ -310,7 +310,18 @@ export function primeiroNome(nome: string | null | undefined): string {
  *
  * Por isso o aviso à EQUIPE tem trava própria, independente do interruptor
  * "respeitar horário comercial" da regra: aquele é uma preferência, este é o
- * piso. Segunda a sexta, 08:00–18:00 de Brasília.
+ * piso. Todos os dias, 08:00–18:00 de Brasília.
+ *
+ * SÁBADO E DOMINGO ENTRARAM (29/08/2026, decisão do escritório). Até aqui esta
+ * trava também barrava o fim de semana, e isso criava uma incoerência que
+ * ninguém tinha escolhido: o `notification-scheduler` usa DUAS janelas — a sua
+ * própria (`isBusinessHoursNow`, só a hora) para push e e-mail, e esta para o
+ * WhatsApp. Resultado: num sábado o aviso de PRAZO VENCIDO saía por push e
+ * e-mail e era engolido no WhatsApp — justamente o canal que a pessoa olha no
+ * fim de semana. Prazo não espera segunda-feira.
+ *
+ * O piso de horário fica: a razão dele é não acordar ninguém às 3h, e isso vale
+ * igual no domingo.
  *
  * Aviso ao CLIENTE não passa por aqui: ele sai pela fila do WhatsApp, que já
  * tem o expediente do canal — a agenda real do escritório, com sábado, feriado
@@ -319,8 +330,6 @@ export function primeiroNome(nome: string | null | undefined): string {
 export function dentroDoHorarioDeAviso(agora: Date = new Date()): boolean {
   // Brasília é UTC-3 o ano inteiro desde 2019 (não há mais horário de verão).
   const brasilia = new Date(agora.getTime() - 3 * 60 * 60_000);
-  const dia = brasilia.getUTCDay();
-  if (dia === 0 || dia === 6) return false;
   const minutos = brasilia.getUTCHours() * 60 + brasilia.getUTCMinutes();
   return minutos >= 8 * 60 && minutos < 18 * 60;
 }
