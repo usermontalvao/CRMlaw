@@ -31,6 +31,7 @@ import {
   nomeDoCanal,
   normalizarCodigo,
   rotuloDoCodigo,
+  rotuloDoMetodo,
 } from '../utils/assinaturaPublica';
 import { signatureService } from '../services/signature.service';
 import type { VerifiedDocument } from '../services/signature.service';
@@ -357,6 +358,11 @@ const PublicVerificationPage: React.FC = () => {
           autêntico?" já está no selo, não nela. */}
       {(canal || cpfDoSignatario) && (
         <LinhaDoRecibo chave="Identidade">{identidadeDoRecibo}</LinhaDoRecibo>
+      )}
+      {/* O MÉTODO é outra pergunta: "Identidade" diz por onde a pessoa provou
+          quem é; "Autenticação" diz o que foi exigido para assinar. */}
+      {rotuloDoMetodo(result?.signer?.auth_method) && (
+        <LinhaDoRecibo chave="Autenticação">{rotuloDoMetodo(result?.signer?.auth_method)}</LinhaDoRecibo>
       )}
       {emailDoSignatario && <LinhaDoRecibo chave="E-mail" quebrar>{emailDoSignatario}</LinhaDoRecibo>}
       {mostrarProtocoloAparte && (

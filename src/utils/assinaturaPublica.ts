@@ -205,6 +205,22 @@ export function rotuloDoCodigo(tipo: TipoDeCodigo): string {
   return tipo === 'envelope' ? 'Protocolo do envelope' : 'Código de autenticação';
 }
 
+/**
+ * O método de assinatura, em português.
+ *
+ * `auth_method` diz o que foi EXIGIDO para assinar (só o traço, traço + selfie,
+ * ou os dois mais o documento) — e é diferente do CANAL, que diz por onde a
+ * identidade foi confirmada. Quem confere um documento quer os dois: "assinou
+ * com selfie" e "confirmou por WhatsApp" respondem perguntas distintas.
+ */
+export function rotuloDoMetodo(metodo: string | null | undefined): string {
+  const m = (metodo || '').trim();
+  if (m === 'signature_facial_document') return 'Assinatura + selfie + documento';
+  if (m === 'signature_facial') return 'Assinatura + selfie';
+  if (m === 'signature_only') return 'Assinatura eletrônica';
+  return '';
+}
+
 const semAcento = (valor: string): string =>
   valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 

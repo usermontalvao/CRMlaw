@@ -5,6 +5,7 @@ import {
   classificarCodigo,
   normalizarCodigo,
   rotuloDoCodigo,
+  rotuloDoMetodo,
   descreverAparelho,
   documentoSemOSignatario,
   faseDaAbertura,
@@ -163,6 +164,15 @@ test('o rótulo só afirma o que dá para saber: envelope ou não', () => {
   assert.equal(rotuloDoCodigo('documento'), 'Código de autenticação');
   assert.equal(rotuloDoCodigo('signatario'), 'Código de autenticação');
   assert.equal(rotuloDoCodigo('desconhecido'), 'Código de autenticação');
+});
+
+test('o método de assinatura é diferente do canal da identidade', () => {
+  assert.equal(rotuloDoMetodo('signature_only'), 'Assinatura eletrônica');
+  assert.equal(rotuloDoMetodo('signature_facial'), 'Assinatura + selfie');
+  assert.equal(rotuloDoMetodo('signature_facial_document'), 'Assinatura + selfie + documento');
+  // Método desconhecido não vira linha na tela.
+  assert.equal(rotuloDoMetodo('outro_qualquer'), '');
+  assert.equal(rotuloDoMetodo(null), '');
 });
 
 test('nenhuma das duas esperas promete conclusão', () => {

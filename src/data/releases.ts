@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.33',
+    date: '29/08/2026',
+    summary: 'Na consulta por código de um documento, o campo "Assinado por" mostrava o nome do ARQUIVO no lugar da pessoa — e faltavam o método de autenticação e a impressão digital.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: '"Assinado por" mostrava o nome do arquivo',
+            description: 'Consultando o código de um documento específico, o validador montava um signatário a partir da linha do documento — e o campo "Assinado por" recebia o título do arquivo ("KIT CONSUMIDOR - JENIFFER ..."). Num comprovante de assinatura esse é justamente o campo que não pode estar errado. Agora vem o nome de quem assinou de verdade.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Método de autenticação no recibo',
+            description: 'O recibo passou a dizer o que foi exigido para assinar — assinatura eletrônica, assinatura + selfie, ou os dois mais o documento. É uma pergunta diferente de "por onde a identidade foi confirmada", e agora as duas aparecem.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A impressão digital e a lista do envelope na consulta individual',
+            description: 'Consultando um documento pelo seu código, o SHA-256 daquele arquivo e a lista dos demais documentos do envelope não apareciam — a consulta devolvia menos informação que a do envelope, sem motivo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.32',
     date: '29/08/2026',
     summary: 'A janela de editar cargo da Equipe ficava cortada em cima e embaixo, sem como rolar até as pontas.',
