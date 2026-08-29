@@ -26,8 +26,9 @@ import {
 import {
   AcaoPrimaria,
   AcaoSecundaria,
-  LARANJA,
+  LinhaDoRecibo,
   MolduraPublica,
+  Recibo,
   Roda,
   RodapeDeConfianca,
   TINTA,
@@ -44,46 +45,6 @@ export interface DocumentoAssinado {
   verificationCode: string;
   url?: string | null;
 }
-
-const Picote: React.FC<{ lado: 'topo' | 'base' }> = ({ lado }) => (
-  <div
-    aria-hidden
-    style={{
-      position: 'absolute', left: 0, right: 0, height: 7,
-      [lado === 'topo' ? 'top' : 'bottom']: -6,
-      background: 'radial-gradient(circle at 4px 0, transparent 0 4px, #fff 4px)',
-      backgroundSize: '8px 7px',
-      transform: lado === 'topo' ? 'rotate(180deg)' : undefined,
-    } as React.CSSProperties}
-  />
-);
-
-const Divisor: React.FC = () => (
-  <div
-    aria-hidden
-    style={{
-      height: 1, margin: '11px 0',
-      background: 'repeating-linear-gradient(to right,#e2e8f0 0 3px,transparent 3px 6px)',
-    }}
-  />
-);
-
-const Linha: React.FC<{ chave: string; children: React.ReactNode }> = ({ chave, children }) => (
-  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginTop: 5 }}>
-    <span style={{
-      flex: '0 0 auto', fontSize: 8, fontWeight: 700, letterSpacing: '.1em',
-      textTransform: 'uppercase', color: TINTA_4,
-    }}>
-      {chave}
-    </span>
-    <span style={{
-      minWidth: 0, fontSize: 10.5, color: TINTA_2, textAlign: 'right',
-      fontVariantNumeric: 'tabular-nums', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-    }}>
-      {children}
-    </span>
-  </div>
-);
 
 const TelaDeComprovante: React.FC<{
   nome: string;
@@ -153,88 +114,21 @@ const TelaDeComprovante: React.FC<{
           </p>
         </div>
 
-        {/* ── O recibo ── */}
-        <div style={{
-          position: 'relative', width: '100%', maxWidth: 320, background: '#fff',
-          padding: '17px 16px 15px', border: '1px solid #eef1f4',
-          boxShadow: '0 18px 38px -26px rgba(15,23,42,.55)', ...sobe(2, 0.5),
-        }}>
-          <Picote lado="topo" />
-          <Picote lado="base" />
-
-          <p style={{
-            margin: 0, fontSize: 8, fontWeight: 700, letterSpacing: '.2em',
-            textTransform: 'uppercase', color: TINTA_4,
-          }}>
-            Protocolo do envelope
-          </p>
-          <p style={{
-            margin: '6px 0 3px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            fontSize: 19, fontWeight: 500, letterSpacing: '.09em', color: TINTA,
-            wordBreak: 'break-all', lineHeight: 1.25,
-          }}>
-            {protocolo || '—'}
-          </p>
-          <p style={{
-            margin: 0, fontSize: 8, fontWeight: 700, letterSpacing: '.2em',
-            textTransform: 'uppercase', color: VERDE,
-          }}>
-            Válido · Autêntico
-          </p>
-          {protocolo && (
-            <button
-              type="button"
-              onClick={aoCopiarProtocolo}
-              style={{
-                marginTop: 7, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                fontSize: 10.5, fontWeight: 700, color: LARANJA,
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-              }}
-            >
-              <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2"
-                   strokeLinecap="round" strokeLinejoin="round">
-                <rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" />
-              </svg>
-              Copiar protocolo
-            </button>
-          )}
-
-          {/*
-            A prova, em miniatura. Some inteira quando não há nem selfie nem
-            traço em mãos — o que acontece se a pessoa recarregar a página
-            depois de assinar, porque aí ela cai na tela de "já assinado".
-          */}
-          {(selfie || assinatura) && (
-            <>
-              <Divisor />
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                {selfie && (
-                  <img
-                    src={selfie}
-                    alt=""
-                    style={{ width: 32, height: 42, borderRadius: 6, objectFit: 'cover', flex: '0 0 auto' }}
-                  />
-                )}
-                {assinatura && (
-                  <img
-                    src={assinatura}
-                    alt="Sua assinatura"
-                    style={{ flex: 1, minWidth: 0, height: 36, objectFit: 'contain', objectPosition: 'center' }}
-                  />
-                )}
-              </div>
-            </>
-          )}
-
-          <Divisor />
-          <div style={{ textAlign: 'left' }}>
-            {documento && <Linha chave="Documento">{documento}</Linha>}
-            <Linha chave="Assinado por">{nome}</Linha>
-            {assinadoEm && <Linha chave="Assinado em">{assinadoEm}</Linha>}
-            {coordenadas && <Linha chave="Local">{coordenadas}</Linha>}
-            <Linha chave="Identidade">{identidade}</Linha>
-          </div>
-        </div>
+        {/* ── O recibo — a MESMA peça que o validador público devolve ── */}
+        <Recibo
+          codigo={protocolo}
+          estado="valido"
+          aoCopiar={aoCopiarProtocolo}
+          selfie={selfie}
+          assinatura={assinatura}
+          style={sobe(2, 0.5)}
+        >
+          {documento && <LinhaDoRecibo chave="Documento" quebrar>{documento}</LinhaDoRecibo>}
+          <LinhaDoRecibo chave="Assinado por">{nome}</LinhaDoRecibo>
+          {assinadoEm && <LinhaDoRecibo chave="Assinado em">{assinadoEm}</LinhaDoRecibo>}
+          {coordenadas && <LinhaDoRecibo chave="Local">{coordenadas}</LinhaDoRecibo>}
+          <LinhaDoRecibo chave="Identidade">{identidade}</LinhaDoRecibo>
+        </Recibo>
 
         {/* ── Ações ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 320, ...sobe(4) }}>

@@ -1,8 +1,29 @@
-// @ts-nocheck
+// (o @ts-nocheck saiu: esta tela passou a ser conferida pelo compilador)
 import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { ArrowLeft, CheckCircle, ChevronDown, ChevronRight, Download, Eye, FileText, Loader2, Lock, Shield, XCircle } from 'lucide-react';
-import { BrandLogo } from './ui';
+import {
+  AcaoPrimaria,
+  AcaoSecundaria,
+  DivisorPicotado,
+  Explicacao,
+  LinhaDoRecibo,
+  MolduraPublica,
+  Recibo,
+  Roda,
+  RodapeDeConfianca,
+  Rotulo,
+  Tarja,
+  TopoDaMarca,
+  TINTA,
+  TINTA_2,
+  TINTA_3,
+  TINTA_4,
+  VERDE,
+  sobe,
+  type Tom,
+} from './publicSigning/ui';
+import { canalDoRegistro, mascararCpf, nomeDoCanal } from '../utils/assinaturaPublica';
 import { signatureService } from '../services/signature.service';
 import type { VerifiedDocument } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
@@ -255,387 +276,516 @@ const PublicVerificationPage: React.FC = () => {
   const isNotFound = hasResultState && !result?.valid && !isBlocked;
   // Protocolo (envelope) traz o kit inteiro em documents[]; código individual não.
   const isProtocolResult = isValid && Array.isArray(result?.documents) && (result?.documents?.length ?? 0) > 0;
-  const labelCls = 'block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-1';
+  /**
+   * O tom da página mora num lugar só: o fio de 2,5 px no alto, o mesmo das
+   * telas de assinatura e com os mesmos significados. Quem já assinou um
+   * documento pelo Jurius chega aqui reconhecendo a cor antes de ler.
+   *
+   * Âmbar para "desativado pelo emissor" e vermelho para "não encontrado" NÃO
+   * é detalhe: o documento bloqueado existe e está válido — pintá-lo de
+   * vermelho insinuaria fraude onde há só uma preferência do escritório.
+   */
+  const tom: Tom =
+    loading || fileLoading ? 'trabalhando'
+    : isValid ? 'pronto'
+    : isBlocked ? 'espera'
+    : isNotFound ? 'problema'
+    : 'neutro';
+
+  const protocoloExibido = (result?.signer?.verification_hash || hash || '').trim();
+  const emailDoSignatario = isInternalPlaceholderEmail(result?.signer?.email) ? '' : (result?.signer?.email || '');
+  const cpfDoSignatario = mascararCpf(result?.signer?.cpf);
+  const canal = canalDoRegistro(result?.signer);
+  const identidadeDoRecibo = cpfDoSignatario
+    ? `${nomeDoCanal(canal)} · CPF ${cpfDoSignatario}`
+    : nomeDoCanal(canal);
+
+  /** As linhas do recibo — as mesmas que o signatário guardou no comprovante. */
+  const linhasDoRecibo = (
+    <>
+      {result?.request?.document_name && (
+        <LinhaDoRecibo chave="Documento" quebrar>{stripDocumentExtension(result.request.document_name)}</LinhaDoRecibo>
+      )}
+      {result?.signer?.name && <LinhaDoRecibo chave="Assinado por" quebrar>{result.signer.name}</LinhaDoRecibo>}
+      {result?.signer?.signed_at && <LinhaDoRecibo chave="Assinado em">{formatDate(result.signer.signed_at)}</LinhaDoRecibo>}
+      <LinhaDoRecibo chave="Identidade">{identidadeDoRecibo}</LinhaDoRecibo>
+      {emailDoSignatario && <LinhaDoRecibo chave="E-mail">{emailDoSignatario}</LinhaDoRecibo>}
+    </>
+  );
+
+  const copiarProtocolo = async () => {
+    if (!protocoloExibido) return;
+    try { await navigator.clipboard.writeText(protocoloExibido); } catch { /* sem área de transferência */ }
+  };
+
+  const rodapeDaPagina = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+      <RodapeDeConfianca itens={['Conexão segura', 'AES-256', 'MP 2.200-2/2001']} />
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 10, color: TINTA_4 }}>
+        <span>© {new Date().getFullYear()} Jurius · {DISPLAY_APP_VERSION_LABEL}</span>
+        <a href={termsUrl} style={{ color: TINTA_3, fontWeight: 600, textDecoration: 'none' }}>Termos de Uso</a>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen flex flex-col bg-white text-slate-900">
-      <main className={`flex-1 px-3 sm:px-6 ${hasResultState ? 'py-4 sm:py-6' : 'py-3 sm:py-4'}`}>
-        <div className="mx-auto w-full max-w-[1080px]">
-          <section className="overflow-hidden bg-white">
-            <div className="flex items-start justify-between gap-3 px-4 py-3 sm:items-center sm:px-6 sm:py-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-50 ring-1 ring-orange-100">
-                  <BrandLogo iconOnly size="sm" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xl font-black tracking-tight text-slate-900 sm:text-lg">JURIUS</p>
-                  <p className="text-[11px] font-medium text-slate-500">Validador público de autenticidade documental</p>
-                </div>
-              </div>
-              <Shield className="h-4 w-4 text-orange-500" strokeWidth={2} />
+    <MolduraPublica
+      tom={tom}
+      alinhamento="inicio"
+      largura={720}
+      topo={<TopoDaMarca etiqueta="Validador público" />}
+      rodape={rodapeDaPagina}
+    >
+      {/* ══════════ PERGUNTA ══════════
+          O título era "Validar documento" — um comando para quem já sabe o que
+          quer. Quem chega aqui não é o cliente: é um cartório, um banco, o
+          advogado do outro lado, com o comprovante na mão. A pergunta que ele
+          veio fazer é o título. */}
+      {!hasResultState && (
+        <div>
+          <Rotulo style={sobe(0)}>Conferência de autenticidade</Rotulo>
+          <h1 style={{
+            margin: '10px 0 0', fontSize: 30, fontWeight: 700, letterSpacing: '-1px',
+            lineHeight: 1.08, color: TINTA, ...sobe(1, 0.5),
+          }}>
+            Este documento é <span style={{ color: '#ea580c' }}>autêntico</span>?
+          </h1>
+          <Explicacao style={{ marginTop: 11, maxWidth: 430, ...sobe(2) }}>
+            Cole o protocolo do comprovante ou envie o PDF assinado. Conferimos contra o
+            registro original, sem login e sem cadastro.
+          </Explicacao>
+        </div>
+      )}
+
+      {/* ══════════ RESULTADO ══════════ */}
+      {isValid && result?.signer && result?.request && (
+        <div style={{ marginTop: 4 }}>
+          <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', ...sobe(0, 0.5) }}>
+            <span style={{
+              flex: '0 0 auto', marginTop: 2, width: 40, height: 40, borderRadius: 999,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+              background: 'linear-gradient(135deg,#34d399,#059669)',
+              boxShadow: '0 12px 26px -12px rgba(5,150,105,.8)',
+              animation: 'ap-selo .6s cubic-bezier(.2,1.4,.4,1) .25s both',
+            }}>
+              <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#fff" strokeWidth="3.2"
+                   strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 12l5 5L20 6" /></svg>
+            </span>
+            <div>
+              <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, letterSpacing: '-.95px', lineHeight: 1.08, color: TINTA }}>
+                {verifiedByUploadedFile
+                  ? <>O arquivo <span style={{ color: VERDE }}>confere</span>.</>
+                  : <>Documento <span style={{ color: VERDE }}>autêntico</span>.</>}
+              </h1>
+              <Explicacao style={{ marginTop: 8, maxWidth: 420 }}>
+                {verifiedByUploadedFile
+                  ? 'Byte a byte, é o mesmo PDF que foi assinado. Uma vírgula alterada mudaria a impressão digital.'
+                  : 'Confere com o registro original. Nada foi alterado depois da assinatura.'}
+              </Explicacao>
             </div>
-            <div className="h-[3px] w-full" style={{ background: 'linear-gradient(90deg, #ea580c 0%, #f97316 55%, #fb923c 100%)' }} />
-          </section>
+          </div>
 
-          <div className={`${hasResultState ? 'mt-6' : 'mt-4'}`}>
-            <div className={`min-w-0 ${isValid ? 'max-w-[1080px]' : 'max-w-[720px]'}`}>
-              <a href={`${window.location.origin}/#/`} className={`inline-flex items-center gap-2 text-base font-semibold text-orange-600 transition hover:text-orange-700 sm:text-sm ${hasResultState ? 'mb-5 sm:mb-6' : 'mb-4'}`}>
-                <ArrowLeft className="h-4 w-4" />
-                Voltar ao Início
-              </a>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 22, alignItems: 'flex-start', marginTop: 24 }}>
+            {/* O RECIBO — literalmente a mesma peça do comprovante do signatário. */}
+            <Recibo
+              codigo={protocoloExibido}
+              estado="valido"
+              aoCopiar={() => { void copiarProtocolo(); }}
+              style={{ flex: '0 0 auto', width: 300, ...sobe(2, 0.5) }}
+            >
+              {linhasDoRecibo}
+            </Recibo>
 
-              <section>
-                <h1 className="text-[1.45rem] font-black tracking-[-0.04em] text-slate-950 sm:text-[2.1rem]">Validar documento</h1>
-                <p className="mt-3 max-w-[560px] text-[14px] leading-8 text-slate-600 sm:mt-2 sm:text-[15px] sm:leading-6">
-                  {activeMode === 'file'
-                    ? 'Envie o PDF assinado: calculamos o SHA-256 do arquivo e comparamos com os registros persistidos.'
-                    : 'Cole o código do documento ou o protocolo do envelope exibido no rodapé do documento assinado — validamos o arquivo específico ou o kit inteiro.'}
-                </p>
-
-                <div className="mt-5 inline-flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-100/70 p-1 sm:mt-4">
-                  {([
-                    { key: 'code', label: 'Código ou Protocolo' },
-                    { key: 'file', label: 'Arquivo PDF' },
-                  ] as const).map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => setActiveMode(tab.key)}
-                      className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:py-2 ${activeMode === tab.key ? 'bg-white text-orange-600 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className={hasResultState ? 'mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)] lg:items-start' : 'mt-4'}>
-                <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] sm:p-5">
-                  {activeMode !== 'file' ? (
-                    <div>
-                      <label className="mb-3 block text-[15px] font-bold text-slate-800 sm:mb-2 sm:text-sm">
-                        Código ou Protocolo
-                      </label>
-                      <input
-                        type="text"
-                        value={hash}
-                        onChange={(e) => setHash(e.target.value.trim())}
-                        onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
-                        placeholder="Cole o código do documento ou o protocolo do envelope"
-                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3.5 text-[16px] text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-4 focus:ring-orange-100 sm:py-3 sm:text-base"
-                      />
-                      <p className="mt-2 text-sm text-slate-500">
-                        Aceita tanto o código de um documento específico quanto o protocolo do envelope (valida o kit inteiro). Ambos aparecem no rodapé do documento assinado e no final da URL.
-                      </p>
-                      <button
-                        onClick={() => handleVerify()}
-                        disabled={loading || !hash.trim()}
-                        className="mt-5 inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-base font-bold text-white transition hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 sm:mt-4 sm:min-h-0 sm:w-auto sm:min-w-[168px] sm:py-2.5 sm:text-sm"
-                      >
-                        {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-                        Validar
-                      </button>
-                    </div>
+            <div style={{ flex: 1, minWidth: 250 }}>
+              {/* A impressão digital sai da caixa cinza e vira dado de primeira
+                  classe. No modo arquivo, as DUAS aparecem lado a lado: é a
+                  comparação que sustenta o resultado, e o leitor precisa vê-la
+                  em vez de acreditar que aconteceu. */}
+              {(fileHash || result.signer.signed_pdf_sha256) && (
+                <div style={{
+                  border: '1px solid #e7e5e4', borderRadius: 11, background: '#fff',
+                  padding: '11px 13px', ...sobe(3),
+                }}>
+                  {verifiedByUploadedFile ? (
+                    <>
+                      <span style={rotuloDoHash}>Do seu arquivo</span>
+                      <code style={codigoDoHash}>{fileHash}</code>
+                      <DivisorPicotado style={{ margin: '9px 0' }} />
+                      <span style={rotuloDoHash}>Do registro original</span>
+                      <code style={codigoDoHash}>{result.signer.signed_pdf_sha256 || fileHash}</code>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 9,
+                        fontSize: 9.5, fontWeight: 700, color: VERDE,
+                      }}>
+                        <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor"
+                             strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <path d="M4 12l5 5L20 6" />
+                        </svg>
+                        Idênticos — uma vírgula alterada mudaria isto
+                      </span>
+                    </>
                   ) : (
-                    <div className="space-y-4">
-                      <label className="block text-sm font-bold text-slate-800">Arquivo assinado em PDF</label>
-                      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
-                        <input
-                          type="file"
-                          accept="application/pdf"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) handleVerifyFile(f);
-                          }}
-                          className="block w-full text-sm file:mr-4 file:rounded-xl file:border-0 file:bg-orange-500 file:px-4 file:py-2.5 file:font-semibold file:text-white hover:file:bg-orange-600"
-                        />
-                        <p className="mt-3 text-sm text-slate-500">O sistema calcula o SHA-256 do PDF e compara com os registros persistidos.</p>
-                      </div>
-                      {fileLoading && (
-                        <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Calculando SHA-256 e verificando...
-                        </div>
-                      )}
-                      {fileHash && (
-                        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">SHA-256</p>
-                          <p className="mt-2 break-all font-mono text-[12px] leading-6 text-slate-700">{fileHash}</p>
-                        </div>
-                      )}
-                    </div>
+                    <>
+                      <span style={rotuloDoHash}>Impressão digital do arquivo · SHA-256</span>
+                      <code style={codigoDoHash}>{fileHash || result.signer.signed_pdf_sha256}</code>
+                    </>
                   )}
                 </div>
-                {isValid && result?.signer && result?.request && (
-                <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                  <div className="flex items-center gap-2 border-b border-emerald-100 bg-emerald-50/70 px-5 py-2.5">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-600">Status do documento</span>
-                    <span className="ml-auto rounded-full bg-emerald-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-white">{statusBadgeLabel}</span>
-                  </div>
-                  <div className="p-5 sm:p-6">
-                    <div className="flex items-center gap-3.5">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/30">
-                        <CheckCircle className="h-6 w-6" />
-                      </div>
-                      <p className="min-w-0 flex-1 text-xl font-black leading-tight tracking-[-0.02em] text-emerald-700 sm:text-[1.7rem]">Válido e Autêntico</p>
-                    </div>
-                    <p className="mt-3.5 text-sm leading-6 text-slate-600">
-                      {verifiedByUploadedFile
-                        ? 'O arquivo enviado corresponde ao PDF assinado registrado na base. A integridade foi confirmada por comparação de SHA-256.'
-                        : isProtocolResult
-                          ? `Protocolo válido: ${result.documents!.length} documento(s) assinado(s) neste envelope. Assinatura registrada em ${result.signer.signed_at ? formatDate(result.signer.signed_at) : 'data indisponível'}.`
-                          : `Este código corresponde a um registro de assinatura válido. Assinatura registrada em ${result.signer.signed_at ? formatDate(result.signer.signed_at) : 'data indisponível'}.`}
-                    </p>
-                  </div>
-                </div>
-                )}
-                {searched && result && !result.valid && (
-                <section className={`overflow-hidden rounded-2xl border shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${isBlocked ? 'border-amber-200' : 'border-red-200'} bg-white`}>
-                  <div className={`flex items-center gap-2 border-b px-5 py-2.5 ${isBlocked ? 'border-amber-100 bg-amber-50/70' : 'border-red-100 bg-red-50/70'}`}>
-                    <span className={`text-[11px] font-bold uppercase tracking-[0.18em] ${isBlocked ? 'text-amber-600' : 'text-red-500'}`}>Status do documento</span>
-                    <span className={`ml-auto rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-white ${isBlocked ? 'bg-amber-500' : 'bg-red-500'}`}>
-                      {isBlocked ? 'Auditoria' : 'Inválido'}
-                    </span>
-                  </div>
-                  <div className="p-5 sm:p-6">
-                    <div className="flex items-center gap-3.5">
-                      <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg ${isBlocked ? 'bg-amber-500 shadow-amber-500/30' : 'bg-red-500 shadow-red-500/30'}`}>
-                        {isBlocked ? <Lock className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}
-                      </div>
-                      <p className={`min-w-0 flex-1 text-xl font-black leading-tight tracking-[-0.02em] sm:text-[1.7rem] ${isBlocked ? 'text-amber-700' : 'text-red-600'}`}>
-                        {isBlocked ? 'Validação desativada' : 'Documento não encontrado'}
-                      </p>
-                    </div>
-                    <p className="mt-3.5 text-sm leading-6 text-slate-600">
-                      {isBlocked
-                        ? (result.message || 'A assinatura existe, mas a validação pública foi desativada pelo emissor.')
-                        : 'Não localizamos nenhuma assinatura com esse código. Verifique se o código/protocolo foi digitado corretamente.'}
-                    </p>
-                  </div>
-                  {isBlocked && (result.signer || result.request) && (
-                    <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-5 sm:px-6">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Registro de auditoria</p>
-                      <div className="mt-4 grid grid-cols-1 gap-5 md:grid-cols-2">
-                        {result.request && (
-                          <div>
-                            <span className={labelCls}>Documento</span>
-                            <p className="text-base font-semibold text-slate-800">{stripDocumentExtension(result.request.document_name)}</p>
-                          </div>
-                        )}
-                        {result.signer && (
-                          <div>
-                            <span className={labelCls}>Signatário</span>
-                            <p className="text-base font-semibold text-slate-800">{result.signer.name}</p>
-                          </div>
-                        )}
-                        {result.signer?.signed_at && (
-                          <div>
-                            <span className={labelCls}>Data da assinatura</span>
-                            <p className="text-base text-slate-700">{formatDate(result.signer.signed_at)}</p>
-                          </div>
-                        )}
-                        {(result.signer?.verification_hash || hash) && (
-                          <div>
-                            <span className={labelCls}>Código</span>
-                            <p className="break-all font-mono text-[13px] text-slate-700">{result.signer?.verification_hash || hash}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </section>
-                )}
-                </div>
-              </section>
-
-              {isValid && result?.signer && result?.request && (
-                <section className="mt-8 space-y-4">
-                  <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                    <div className="border-b border-slate-200 bg-slate-100/90 px-6 py-4 sm:px-8">
-                      <h3 className="text-[1.35rem] font-black tracking-[-0.03em] text-slate-800">Informações do Documento</h3>
-                    </div>
-                    <div className="grid grid-cols-1 gap-x-8 gap-y-6 px-6 py-6 sm:px-8 md:grid-cols-2">
-                      <div>
-                        <span className={labelCls}>Nome do Documento</span>
-                        <p className="break-words text-base font-semibold leading-7 text-slate-800">{stripDocumentExtension(result.request.document_name)}</p>
-                      </div>
-                      <div>
-                        <span className={labelCls}>Data da Assinatura</span>
-                        <p className="text-base font-semibold leading-7 text-slate-700">{result.signer.signed_at ? formatDate(result.signer.signed_at) : '—'}</p>
-                      </div>
-                      {(result.signer.integrity_sha256 || fileHash) && <div>
-                        <span className={labelCls}>Hash do Documento original (SHA256)</span>
-                        <p className="break-all font-mono text-[13px] leading-7 text-slate-700">{result.signer.integrity_sha256 || fileHash}</p>
-                      </div>}
-                      <div>
-                        <span className={labelCls}>Código de Verificação</span>
-                        <p className="break-all font-mono text-[13px] leading-7 text-slate-800">{result.signer.verification_hash || hash}</p>
-                      </div>
-                      <div>
-                        <span className={labelCls}>Signatário</span>
-                        <p className="text-base font-semibold text-slate-800">{result.signer.name}</p>
-                        {result.signer.email && !isInternalPlaceholderEmail(result.signer.email) && (
-                          <p className="mt-1 text-sm text-slate-500">{result.signer.email}</p>
-                        )}
-                      </div>
-                      <div>
-                        <span className={labelCls}>Timestamp do servidor</span>
-                        <p className="font-mono text-[13px] leading-7 text-slate-700">{result.signer.signed_at ? `${new Date(result.signer.signed_at).getTime()}-UTC` : '—'}</p>
-                      </div>
-                    </div>
-                    {(result.documents && result.documents.length > 0) ? (
-                      // Modelo per_document: cada arquivo é um documento final independente,
-                      // acessado pelo seu próprio código de verificação.
-                      <div className="border-t border-slate-100 px-6 py-5 sm:px-8">
-                        <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                          Documentos assinados ({result.documents.length})
-                        </p>
-                        <div className="space-y-2">
-                          {result.documents.map((doc, index) => {
-                            const docCode = String(doc.verification_code || '').trim();
-                            const fallbackDocCode =
-                              !docCode &&
-                              doc.document_type === 'main' &&
-                              result.documents?.length === 1
-                                ? String(result.signer?.verification_hash || '').trim()
-                                : '';
-                            const effectiveDocCode = docCode || fallbackDocCode;
-                            const canOpenSignedDoc = !!effectiveDocCode;
-                            return (
-                            <div key={effectiveDocCode || `${doc.document_type}-${index}`} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
-                              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600 ring-1 ring-orange-100">
-                                <FileText className="h-4 w-4" />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold text-slate-800">{stripDocumentExtension(doc.display_name) || docCode || `Documento ${index + 1}`}</p>
-                                <p className="font-mono text-[11px] text-slate-400">{doc.document_type === 'main' ? 'Principal' : 'Anexo'} · {effectiveDocCode || 's/ código'}</p>
-                              </div>
-                              <div className="flex flex-shrink-0 items-center gap-1.5">
-                                <button
-                                  onClick={() => canOpenSignedDoc ? openDocumentViewer(effectiveDocCode) : undefined}
-                                  disabled={viewerLoading || !canOpenSignedDoc}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  <Eye className="h-3.5 w-3.5" />Ver
-                                </button>
-                                <button
-                                  onClick={() => canOpenSignedDoc ? downloadSignedByCode(effectiveDocCode, stripDocumentExtension(doc.display_name) || effectiveDocCode) : undefined}
-                                  disabled={viewerLoading || !canOpenSignedDoc}
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-[13px] font-semibold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  <Download className="h-3.5 w-3.5" />Baixar
-                                </button>
-                              </div>
-                            </div>
-                          )})}
-                        </div>
-                      </div>
-                    ) : result.signer.signed_document_path && (
-                      <div className="border-t border-slate-100 px-6 py-5 sm:px-8">
-                        <div className="flex flex-wrap gap-2.5">
-                          <button
-                            onClick={() => openDocumentViewer(result.signer!.verification_hash || hash, result.signer!.signed_document_path)}
-                            disabled={viewerLoading}
-                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-                          >
-                            {viewerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-                            Ver assinado
-                          </button>
-                          <button
-                            onClick={handleDownloadSigned}
-                            disabled={viewerLoading}
-                            className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
-                          >
-                            <Download className="h-4 w-4" />
-                            Baixar assinado
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                    <div className="flex items-center justify-between border-b border-slate-200 bg-slate-100/90 px-6 py-4 sm:px-8">
-                      <h3 className="text-[1.3rem] font-black tracking-[-0.03em] text-slate-800">Assinaturas</h3>
-                      <span className="text-sm font-semibold text-slate-600">1 de 1 assinaturas</span>
-                    </div>
-                    <div className="space-y-4 px-6 py-5 sm:px-8">
-                      <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-lg bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">Assinado</span>
-                          <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">Autenticação reconhecida pelo Jurius</span>
-                        </div>
-                        <p className="mt-3 text-base font-semibold text-slate-800">{result.signer.name}</p>
-                        {result.signer.email && !isInternalPlaceholderEmail(result.signer.email) && (
-                          <p className="text-sm text-slate-600">{result.signer.email}</p>
-                        )}
-                        <p className="mt-1 text-sm text-slate-600">Data e hora {result.signer.signed_at ? formatDate(result.signer.signed_at) : '—'}</p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setMeaningOpen((prev) => !prev)}
-                        className="flex w-full items-center justify-between rounded-2xl bg-slate-100 px-5 py-3.5 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
-                      >
-                        <span>O que isso significa?</span>
-                        <ChevronDown className={`h-5 w-5 transition ${meaningOpen ? 'rotate-180' : ''}`} />
-                      </button>
-
-                      {meaningOpen && (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm leading-7 text-slate-600">
-                          Compare o documento baixado com a versão que você tem em mãos para garantir a autenticidade. O código de verificação e o hash vinculam o arquivo ao registro de assinatura persistido no sistema.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </section>
               )}
 
-              {isValid && qrDataUrl && (
-                <div className="mt-4 inline-flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-                  <img src={qrDataUrl} alt="QR de validação" className="h-14 w-14 rounded-lg border border-slate-200 p-1" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">Validação instantânea</p>
-                    <p className="text-xs text-slate-500">Use a câmera do celular para abrir este registro.</p>
+              {/* Modelo per_document: cada arquivo do kit tem o seu código. */}
+              {isProtocolResult && (
+                <div style={{
+                  marginTop: 12, border: '1px solid #e7e5e4', borderRadius: 11,
+                  background: '#fff', overflow: 'hidden', ...sobe(4),
+                }}>
+                  <span style={{
+                    display: 'block', padding: '9px 12px 5px', fontSize: 8.5, fontWeight: 700,
+                    letterSpacing: '.14em', textTransform: 'uppercase', color: TINTA_4,
+                  }}>
+                    Documentos deste envelope ({result.documents!.length})
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 12px' }}>
+                    {result.documents!.map((doc, index) => {
+                      const codigo = (doc.verification_code || '').trim();
+                      return (
+                        <div key={codigo || index} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ minWidth: 0, flex: 1 }}>
+                            <span style={{
+                              display: 'block', fontSize: 11.5, fontWeight: 600, color: TINTA,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {stripDocumentExtension(doc.display_name) || codigo || `Documento ${index + 1}`}
+                            </span>
+                            <span style={{
+                              display: 'block', marginTop: 1, fontSize: 9.5, color: TINTA_3,
+                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                            }}>
+                              {codigo}
+                            </span>
+                          </span>
+                          {codigo && (
+                            <button
+                              type="button"
+                              onClick={() => { void openDocumentViewer(codigo); }}
+                              style={{
+                                flex: '0 0 auto', padding: '5px 10px', border: '1px solid #e2e8f0',
+                                borderRadius: 8, background: '#fff', color: TINTA_2,
+                                fontSize: 10.5, fontWeight: 600, cursor: 'pointer',
+                              }}
+                            >
+                              Abrir
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
+                </div>
+              )}
+
+              <div style={{ marginTop: 12, ...sobe(5) }}>
+                <AcaoPrimaria
+                  onClick={() => { void openDocumentViewer(protocoloExibido, result.signer?.signed_document_path); }}
+                  disabled={viewerLoading}
+                  icone={viewerLoading ? <Roda tamanho={17} cor="#fff" /> : undefined}
+                >
+                  {viewerLoading ? 'Abrindo…' : 'Abrir documento assinado'}
+                </AcaoPrimaria>
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <AcaoSecundaria onClick={() => { void handleDownloadSigned(); }}>Baixar PDF</AcaoSecundaria>
+                  <AcaoSecundaria
+                    onClick={() => {
+                      setResult(null); setSearched(false); setHash(''); setFileHash('');
+                      autoVerifiedRef.current = true;
+                    }}
+                  >
+                    Nova consulta
+                  </AcaoSecundaria>
+                </div>
+              </div>
+
+              {qrDataUrl && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 11, marginTop: 12,
+                  border: '1px solid #e7e5e4', borderRadius: 11, background: '#fff',
+                  padding: '10px 12px', ...sobe(6),
+                }}>
+                  <img src={qrDataUrl} alt="QR desta validação" style={{ width: 48, height: 48, flex: '0 0 auto' }} />
+                  <span style={{ fontSize: 11, lineHeight: 1.5, color: TINTA_2 }}>
+                    Aponte a câmera para reabrir esta conferência, ou compartilhe o QR com quem
+                    precisar conferir também.
+                  </span>
                 </div>
               )}
             </div>
           </div>
         </div>
-      </main>
+      )}
 
-      {viewerUrl && (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-slate-900/70 backdrop-blur-sm" onClick={closeViewer}>
-          <div className="flex items-center justify-between gap-3 bg-slate-900 px-4 py-3 text-white sm:px-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex min-w-0 items-center gap-2">
-              <FileText className="h-4 w-4 shrink-0 text-cyan-300" />
-              <span className="truncate text-sm font-medium">Documento assinado</span>
-            </div>
-            <button
-              onClick={closeViewer}
-              className="inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/20"
+      {/* ══════════ DESATIVADO PELO EMISSOR ══════════
+          Âmbar, não vermelho: o documento existe e a assinatura vale. O que foi
+          desligado é a consulta pública. */}
+      {isBlocked && (
+        <div style={{ marginTop: 4 }}>
+          <div style={{ ...sobe(0, 0.5) }}>
+            <span style={{
+              display: 'inline-flex', width: 40, height: 40, borderRadius: 999, marginBottom: 14,
+              alignItems: 'center', justifyContent: 'center', color: '#fff',
+              background: 'linear-gradient(135deg,#fbbf24,#d97706)',
+              boxShadow: '0 12px 26px -12px rgba(217,119,6,.7)',
+              animation: 'ap-selo .6s cubic-bezier(.2,1.4,.4,1) .25s both',
+            }}>
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="#fff" strokeWidth="2.6"
+                   strokeLinecap="round" aria-hidden>
+                <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              </svg>
+            </span>
+            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: '-.9px', lineHeight: 1.08, color: TINTA }}>
+              A consulta deste código está fechada.
+            </h1>
+            <Explicacao style={{ marginTop: 9, maxWidth: 430 }}>
+              O registro existe e a assinatura continua válida — o escritório que emitiu o
+              documento desligou a consulta pública deste código.
+            </Explicacao>
+            {result?.message && (
+              <Explicacao style={{ marginTop: 8, maxWidth: 430, color: TINTA_3 }}>{result.message}</Explicacao>
+            )}
+          </div>
+
+          <Recibo
+            codigo={protocoloExibido}
+            estado="desativado"
+            esmaecido
+            style={{ marginTop: 20, ...sobe(2, 0.5) }}
+          >
+            {linhasDoRecibo}
+          </Recibo>
+
+          <div style={{ maxWidth: 320, marginTop: 12, ...sobe(3) }}>
+            <AcaoSecundaria
+              onClick={() => {
+                setResult(null); setSearched(false); setHash(''); setFileHash('');
+                autoVerifiedRef.current = true;
+              }}
             >
-              <XCircle className="h-4 w-4" />
+              Consultar outro código
+            </AcaoSecundaria>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════ NÃO ENCONTRADO ══════════
+          Devolve o código tentado e avisa das confusões de quem copia do papel.
+          Um código que não existe não é prova de documento falso, e a tela não
+          pode insinuar que é. */}
+      {isNotFound && (
+        <div style={{ marginTop: 20, maxWidth: 430 }}>
+          <div style={sobe(0, 0.5)}>
+            <span style={{
+              display: 'inline-flex', width: 38, height: 38, borderRadius: 999, marginBottom: 13,
+              alignItems: 'center', justifyContent: 'center', color: '#fff',
+              background: 'linear-gradient(135deg,#fb7185,#e11d48)',
+              boxShadow: '0 12px 26px -12px rgba(225,29,72,.7)',
+              animation: 'ap-selo .6s cubic-bezier(.2,1.4,.4,1) .25s both',
+            }}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth="3"
+                   strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </span>
+            <h1 style={{ margin: 0, fontSize: 25, fontWeight: 700, letterSpacing: '-.9px', lineHeight: 1.08, color: TINTA }}>
+              Nenhum registro com este código.
+            </h1>
+            <Explicacao style={{ marginTop: 9 }}>
+              {hash
+                ? <>Nada encontrado para <strong style={{ color: TINTA, fontWeight: 600 }}>{hash}</strong>. Um código que não existe não quer dizer documento falso.</>
+                : 'Não localizamos nenhuma assinatura com esse código.'}
+            </Explicacao>
+          </div>
+
+          <Tarja tom="atencao" style={{ marginTop: 16, ...sobe(2) }}>
+            Copiando do papel? Atenção ao <strong>0 e O</strong>, <strong>1 e I</strong>.
+          </Tarja>
+
+          {/* Sem botão "corrigir": o campo continua logo abaixo, com o código
+              digitado dentro dele. Um botão que só rola a tela até um campo
+              visível é degrau a mais. */}
+          <p style={{ margin: '14px 0 0', fontSize: 11.5, color: TINTA_3 }}>
+            Corrija o código abaixo e tente de novo — ou envie o PDF, que dispensa digitação.
+          </p>
+        </div>
+      )}
+
+      {/* ══════════ ENTRADA ══════════ */}
+      {!isValid && !isBlocked && (
+        <div style={{ marginTop: hasResultState ? 20 : 22, maxWidth: 420 }}>
+          <div style={{
+            display: 'flex', gap: 4, padding: 3, borderRadius: 10,
+            background: '#eef2f6', width: 'fit-content', ...sobe(3),
+          }}>
+            {([
+              { key: 'code', label: 'Protocolo ou código' },
+              { key: 'file', label: 'Arquivo PDF' },
+            ] as const).map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveMode(tab.key)}
+                style={{
+                  padding: '6px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                  fontSize: 11.5, fontWeight: 600,
+                  background: activeMode === tab.key ? '#fff' : 'transparent',
+                  color: activeMode === tab.key ? TINTA : TINTA_2,
+                  boxShadow: activeMode === tab.key ? '0 1px 2px rgba(15,23,42,.08)' : 'none',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {activeMode === 'code' ? (
+            <div style={sobe(4)}>
+              {/* O campo veste o mesmo picotado do comprovante de onde a pessoa
+                  está copiando: ela olha para o papel e para a tela e vê a
+                  mesma coisa antes de ler qualquer rótulo. */}
+              <div style={{
+                marginTop: 14, border: '1px dashed #cbd5e1', borderRadius: 6,
+                background: '#fff', overflow: 'hidden',
+              }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                  padding: '6px 11px', borderBottom: '1px dashed #cbd5e1', background: '#f8fafc',
+                }}>
+                  <span style={{
+                    fontSize: 8, fontWeight: 700, letterSpacing: '.14em',
+                    textTransform: 'uppercase', color: TINTA_3,
+                  }}>
+                    Protocolo do envelope ou código do documento
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={hash}
+                  onChange={(e) => setHash(e.target.value.trim())}
+                  onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
+                  placeholder="A7K2-9QF4-3XLM"
+                  aria-label="Protocolo ou código de verificação"
+                  style={{
+                    width: '100%', border: 'none', outline: 'none', background: 'transparent',
+                    padding: '13px 11px', textAlign: 'center',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontSize: 18, fontWeight: 500, letterSpacing: '.08em', color: TINTA,
+                  }}
+                />
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <AcaoPrimaria
+                  onClick={() => handleVerify()}
+                  disabled={loading || !hash.trim()}
+                  icone={loading ? <Roda tamanho={17} cor="#fff" /> : undefined}
+                >
+                  {loading ? 'Conferindo…' : 'Verificar autenticidade'}
+                </AcaoPrimaria>
+              </div>
+
+              <p style={{ margin: '14px 0 0', fontSize: 11, lineHeight: 1.55, color: TINTA_3 }}>
+                <strong style={{ color: TINTA_2, fontWeight: 600 }}>Onde encontrar:</strong> no comprovante
+                que o signatário recebeu, no rodapé de cada página do PDF assinado e na margem
+                esquerda da folha.
+              </p>
+            </div>
+          ) : (
+            <div style={sobe(4)}>
+              <label
+                style={{
+                  display: 'block', marginTop: 14, padding: '18px 16px', textAlign: 'center',
+                  border: '1px dashed #cbd5e1', borderRadius: 12, background: '#fff', cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleVerifyFile(f); }}
+                  style={{ display: 'none' }}
+                />
+                <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: TINTA }}>
+                  Escolher o PDF assinado
+                </span>
+                <span style={{ display: 'block', marginTop: 4, fontSize: 11, color: TINTA_3 }}>
+                  ou arraste o arquivo até aqui
+                </span>
+              </label>
+
+              {/*
+                A frase mais importante desta tela, e ela não existia. Quem vai
+                conferir um contrato sigiloso hesita antes de entregar o PDF a um
+                site — e o cálculo é MESMO local (`crypto.subtle` no navegador),
+                então dizê-lo é só contar a verdade.
+              */}
+              <Tarja tom="neutro" style={{ marginTop: 12 }}>
+                O arquivo não sai do seu aparelho. A impressão digital é calculada aqui, e só
+                ela é comparada com o registro.
+              </Tarja>
+
+              {fileLoading && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 14 }}>
+                  <Roda tamanho={17} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: TINTA }}>
+                    Calculando a impressão digital…
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Visualizador do documento assinado — sem expor a URL do storage. */}
+      {viewerUrl && (
+        <div
+          className="fixed inset-0 z-[100] flex h-[100dvh] flex-col bg-slate-900/70 backdrop-blur-sm"
+          onClick={closeViewer}
+        >
+          <div
+            className="flex shrink-0 items-center justify-between gap-3 bg-white px-4 py-3 sm:px-6"
+            style={{ borderBottom: '1px solid #e7e5e4' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span style={{ minWidth: 0, fontSize: 13, fontWeight: 600, color: TINTA, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {stripDocumentExtension(result?.request?.document_name) || 'Documento assinado'}
+            </span>
+            <button
+              type="button"
+              onClick={closeViewer}
+              style={{
+                flex: '0 0 auto', padding: '6px 12px', borderRadius: 9, border: '1px solid #e2e8f0',
+                background: '#fff', color: TINTA_2, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
               Fechar
             </button>
           </div>
           <iframe
             title="Documento assinado"
             src={viewerUrl}
-            className="flex-1 w-full bg-white"
+            className="w-full flex-1 bg-white"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
       )}
-
-      <footer className="mt-auto border-t border-slate-200 bg-white px-6 py-4 sm:px-8">
-        <div className="mx-auto flex max-w-[1180px] flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
-          <span className="text-sm font-medium text-slate-500">© {new Date().getFullYear()} Jurius · {DISPLAY_APP_VERSION_LABEL}</span>
-          <a href={termsUrl} className="text-sm font-semibold text-slate-500 transition hover:text-orange-600">Termos de Uso</a>
-        </div>
-      </footer>
-    </div>
+    </MolduraPublica>
   );
+};
+
+const rotuloDoHash: React.CSSProperties = {
+  display: 'block', fontSize: 8, fontWeight: 700, letterSpacing: '.16em',
+  textTransform: 'uppercase', color: '#cbd5e1',
+};
+
+const codigoDoHash: React.CSSProperties = {
+  display: 'block', marginTop: 5, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  fontSize: 10, lineHeight: 1.6, color: '#64748b', wordBreak: 'break-all',
 };
 
 export default PublicVerificationPage;

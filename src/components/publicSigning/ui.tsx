@@ -137,26 +137,59 @@ export const MolduraPublica: React.FC<{
   progresso?: number | null;
   /** `inicio` ancora o conteúdo no alto (abertura); `centro` centraliza. */
   alinhamento?: 'inicio' | 'centro';
+  /**
+   * Largura da coluna. 430 é a medida das telas de assinatura, que são de
+   * celular por natureza; o validador público é lido também no computador de
+   * um cartório ou de um banco e pede mais espaço.
+   */
+  largura?: number;
+  /** Faixa de marca no alto — páginas soltas têm, etapas dentro do modal não. */
+  topo?: React.ReactNode;
   /** Rodapé discreto — selos de segurança, avisos, links. */
   rodape?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ tom, progresso, alinhamento = 'centro', rodape, children }) => (
+}> = ({ tom, progresso, alinhamento = 'centro', largura = 430, topo, rodape, children }) => (
   <div className="ap-anima" style={{ minHeight: '100dvh', background: CHAO, display: 'flex', flexDirection: 'column' }}>
     <Fio tom={tom} progresso={progresso} />
+    {topo}
     <div
       style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         justifyContent: alinhamento === 'centro' ? 'center' : 'flex-start',
-        gap: 0, width: '100%', maxWidth: 430, margin: '0 auto',
-        padding: alinhamento === 'centro' ? '28px 22px' : '38px 22px 20px',
+        gap: 0, width: '100%', maxWidth: largura, margin: '0 auto',
+        padding: alinhamento === 'centro' ? '28px 22px' : '34px 22px 20px',
       }}
     >
       {children}
     </div>
     {rodape && (
-      <div style={{ flex: '0 0 auto', width: '100%', maxWidth: 430, margin: '0 auto', padding: '0 22px 22px' }}>
+      <div style={{ flex: '0 0 auto', width: '100%', maxWidth: largura, margin: '0 auto', padding: '0 22px 22px' }}>
         {rodape}
       </div>
+    )}
+  </div>
+);
+
+/** Faixa de marca das páginas públicas soltas (validador, termos). */
+export const TopoDaMarca: React.FC<{ etiqueta?: string }> = ({ etiqueta }) => (
+  <div style={{
+    flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    gap: 10, padding: '11px 18px', borderBottom: `1px solid ${LINHA}`, background: '#fff',
+  }}>
+    <span style={{ fontWeight: 700, fontSize: 12.5, color: '#1A1613' }}>
+      jurius<span style={{ color: '#E45C12' }}>.</span>
+      <span style={{ fontWeight: 400, color: '#a8a29e' }}>com.br</span>
+    </span>
+    {etiqueta && (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 8,
+        fontWeight: 800, letterSpacing: '.14em', textTransform: 'uppercase', color: TINTA_3,
+      }}>
+        <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+        {etiqueta}
+      </span>
     )}
   </div>
 );
@@ -403,6 +436,162 @@ const LinhaDeContexto: React.FC<{ icone: React.ReactNode; children: React.ReactN
     <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{children}</span>
   </div>
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O RECIBO.
+//
+// A mesma peça em dois lugares, e é isso que a torna útil: o signatário guarda
+// este recibo ao terminar de assinar, e quem depois cola o protocolo no
+// validador público recebe ELE DE VOLTA, com o selo. Quem confere e quem
+// assinou estão olhando para o mesmo papel — é o que transforma "confie no
+// resultado" em "compare com o que você tem na mão".
+//
+// Vive aqui, e não em cada tela, justamente para não poderem divergir.
+// ─────────────────────────────────────────────────────────────────────────────
+const Picote: React.FC<{ lado: 'topo' | 'base' }> = ({ lado }) => (
+  <div
+    aria-hidden
+    style={{
+      position: 'absolute', left: 0, right: 0, height: 7,
+      [lado === 'topo' ? 'top' : 'bottom']: -6,
+      background: 'radial-gradient(circle at 4px 0, transparent 0 4px, #fff 4px)',
+      backgroundSize: '8px 7px',
+      transform: lado === 'topo' ? 'rotate(180deg)' : undefined,
+    } as React.CSSProperties}
+  />
+);
+
+export const DivisorPicotado: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
+  <div
+    aria-hidden
+    style={{
+      height: 1, margin: '11px 0',
+      background: 'repeating-linear-gradient(to right,#e2e8f0 0 3px,transparent 3px 6px)',
+      ...style,
+    }}
+  />
+);
+
+export const LinhaDoRecibo: React.FC<{
+  chave: string;
+  /** Deixa o valor quebrar em duas linhas. Nome de documento é longo e cortá-lo
+   *  no meio ("KIT CONSUMIDOR - JENIFFER APAR…") esconde justamente o que a
+   *  pessoa veio conferir. */
+  quebrar?: boolean;
+  children: React.ReactNode;
+}> = ({ chave, quebrar, children }) => (
+  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'baseline', marginTop: 5 }}>
+    <span style={{
+      flex: '0 0 auto', fontSize: 8, fontWeight: 700, letterSpacing: '.1em',
+      textTransform: 'uppercase', color: TINTA_4,
+    }}>
+      {chave}
+    </span>
+    <span style={{
+      minWidth: 0, fontSize: 10.5, color: TINTA_2, textAlign: 'right', lineHeight: 1.4,
+      fontVariantNumeric: 'tabular-nums',
+      ...(quebrar
+        ? { overflowWrap: 'anywhere' as const }
+        : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }),
+    }}>
+      {children}
+    </span>
+  </div>
+);
+
+export type EstadoDoRecibo = 'valido' | 'desativado' | 'neutro';
+
+export const Recibo: React.FC<{
+  rotulo?: string;
+  codigo: string;
+  estado?: EstadoDoRecibo;
+  aoCopiar?: () => void;
+  /** Miniaturas da prova: só o comprovante logo após assinar as tem em mãos. */
+  selfie?: string | null;
+  assinatura?: string | null;
+  /** Meia-luz para quando o emissor desligou a consulta pública. */
+  esmaecido?: boolean;
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
+}> = ({ rotulo = 'Protocolo do envelope', codigo, estado = 'valido', aoCopiar, selfie, assinatura, esmaecido, children, style }) => {
+  const carimbo =
+    estado === 'valido' ? { texto: 'Válido · Autêntico', cor: VERDE }
+    : estado === 'desativado' ? { texto: 'Consulta desativada', cor: '#b45309' }
+    : null;
+
+  return (
+    <div style={{
+      position: 'relative', width: '100%', maxWidth: 320, background: '#fff',
+      padding: '17px 16px 15px', border: '1px solid #eef1f4',
+      boxShadow: '0 18px 38px -26px rgba(15,23,42,.55)',
+      opacity: esmaecido ? .78 : 1,
+      ...style,
+    }}>
+      <Picote lado="topo" />
+      <Picote lado="base" />
+
+      <p style={{
+        margin: 0, fontSize: 8, fontWeight: 700, letterSpacing: '.2em',
+        textTransform: 'uppercase', color: TINTA_4, textAlign: 'center',
+      }}>
+        {rotulo}
+      </p>
+      <p style={{
+        margin: '6px 0 3px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: 19, fontWeight: 500, letterSpacing: '.09em', color: TINTA,
+        wordBreak: 'break-all', lineHeight: 1.25, textAlign: 'center',
+      }}>
+        {codigo || '—'}
+      </p>
+      {carimbo && (
+        <p style={{
+          margin: 0, fontSize: 8, fontWeight: 700, letterSpacing: '.2em',
+          textTransform: 'uppercase', color: carimbo.cor, textAlign: 'center',
+        }}>
+          {carimbo.texto}
+        </p>
+      )}
+      {aoCopiar && codigo && (
+        <div style={{ textAlign: 'center' }}>
+          <button
+            type="button"
+            onClick={aoCopiar}
+            style={{
+              marginTop: 7, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              fontSize: 10.5, fontWeight: 700, color: LARANJA,
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2"
+                 strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" />
+            </svg>
+            Copiar
+          </button>
+        </div>
+      )}
+
+      {/* A prova em miniatura. Some inteira quando não há nem selfie nem traço
+          em mãos — o caso de quem recarregou a página, e o do validador. */}
+      {(selfie || assinatura) && (
+        <>
+          <DivisorPicotado />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {selfie && (
+              <img src={selfie} alt="" style={{ width: 32, height: 42, borderRadius: 6, objectFit: 'cover', flex: '0 0 auto' }} />
+            )}
+            {assinatura && (
+              <img src={assinatura} alt="Sua assinatura" style={{ flex: 1, minWidth: 0, height: 36, objectFit: 'contain' }} />
+            )}
+          </div>
+        </>
+      )}
+
+      <DivisorPicotado />
+      <div style={{ textAlign: 'left' }}>{children}</div>
+    </div>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // O bilhete do protocolo — picotado, para virar print.

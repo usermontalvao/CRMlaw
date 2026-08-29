@@ -37,6 +37,43 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.29',
+    date: '29/08/2026',
+    summary: 'A página pública de validação entrou no mesmo sistema das telas de assinatura — e o resultado passou a ser o próprio comprovante do signatário, devolvido com o selo.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'O resultado é o mesmo recibo que o cliente guardou',
+            description: 'Antes o resultado era uma pilha de quatro caixas — status, registro de auditoria, informações do documento, assinaturas — repetindo nome, data e signatário em três tamanhos diferentes. Agora é uma peça só: o mesmo recibo do comprovante, com o selo. Quem confere e quem assinou olham para o mesmo papel.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O título virou a pergunta que a pessoa veio fazer',
+            description: '"Validar documento" era um comando para quem já sabia o que queria. Quem chega nessa página costuma ser um cartório, um banco ou o advogado do outro lado, com o comprovante na mão — e a pergunta é "este documento é autêntico?". O campo do código passou a ter o mesmo picotado do comprovante de onde ele é copiado.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'As duas impressões digitais aparecem lado a lado',
+            description: 'Validando pelo PDF, a tela mostra a impressão digital do arquivo enviado E a do registro original, com a palavra "Idênticos". Antes mostrava só a do arquivo, numa caixa cinza, sem nada para comparar: o leitor tinha de acreditar que a comparação aconteceu em vez de vê-la.',
+          },
+          {
+            type: 'improvement' as const,
+            title: '"O arquivo não sai do seu aparelho"',
+            description: 'A frase não existia, e é a dúvida de quem vai conferir um contrato sigiloso. O cálculo é mesmo feito no navegador — só a impressão digital é comparada —, então a tela passou a dizer isso.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Não encontrado deixou de parecer acusação',
+            description: 'A tela devolve o código tentado (metade dos casos é um caractere errado), avisa da confusão entre 0 e O, 1 e I, e diz explicitamente que um código inexistente não significa documento falso. Já o código desativado pelo emissor ganhou cor âmbar, não vermelha: o documento existe e a assinatura vale — só a consulta pública foi desligada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.28',
     date: '29/08/2026',
     summary: 'A tela de leitura do documento no celular deixou de ter uma mancha escura sobre o texto e três linhas de cabeçalho antes do contrato começar.',
