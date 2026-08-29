@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.34',
+    date: '29/08/2026',
+    summary: 'O comprovante escondia provas: dizia "assinatura eletrônica" quando havia selfie e confirmação por e-mail registradas.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A autenticação lista o que foi usado de verdade',
+            description: 'A linha mostrava o método configurado na criação da solicitação, não o que aconteceu. Num documento real do acervo isso escondia duas provas: o campo dizia "assinatura eletrônica" enquanto a pessoa havia feito selfie E confirmado a identidade por e-mail. Agora a linha lista tudo que foi coletado — assinatura, selfie, documento e o código, com o canal.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O signatário voltou a aparecer nos envelopes com vários arquivos',
+            description: 'Nos envelopes que geram um PDF por documento, a busca pelo signatário exigia um campo que nesse modelo é sempre vazio. Não achando ninguém, a tela caía no nome do cliente — parecia certo, mas tudo que só existe no signatário (canal da identidade, selfie, assinatura) vinha em branco.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.33',
     date: '29/08/2026',
     summary: 'Na consulta por código de um documento, o campo "Assinado por" mostrava o nome do ARQUIVO no lugar da pessoa — e faltavam o método de autenticação e a impressão digital.',

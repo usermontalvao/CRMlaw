@@ -206,19 +206,36 @@ export function rotuloDoCodigo(tipo: TipoDeCodigo): string {
 }
 
 /**
- * O método de assinatura, em português.
+ * O QUE FOI USADO para autenticar — não o que estava configurado.
  *
- * `auth_method` diz o que foi EXIGIDO para assinar (só o traço, traço + selfie,
- * ou os dois mais o documento) — e é diferente do CANAL, que diz por onde a
- * identidade foi confirmada. Quem confere um documento quer os dois: "assinou
- * com selfie" e "confirmou por WhatsApp" respondem perguntas distintas.
+ * A tela mostrava o `auth_method`, que guarda o método EXIGIDO quando a
+ * solicitação foi criada. Ele mente por omissão: numa assinatura real deste
+ * acervo o campo diz `signature_only`, e a pessoa tinha feito selfie E
+ * confirmado a identidade por e-mail. O comprovante dizia "assinatura
+ * eletrônica" e escondia duas provas que existem.
+ *
+ * Aqui a lista sai do que foi COLETADO, e por isso pode ter mais de um item.
+ * Quando não há nada registrado, devolve vazio — e a linha some da tela, em vez
+ * de afirmar um método que ninguém pode conferir.
  */
-export function rotuloDoMetodo(metodo: string | null | undefined): string {
-  const m = (metodo || '').trim();
-  if (m === 'signature_facial_document') return 'Assinatura + selfie + documento';
-  if (m === 'signature_facial') return 'Assinatura + selfie';
-  if (m === 'signature_only') return 'Assinatura eletrônica';
-  return '';
+export function fatoresDeAutenticacao(dados: {
+  assinatura?: boolean | null;
+  selfie?: boolean | null;
+  documento?: boolean | null;
+  canal?: CanalDeIdentidade;
+}): string {
+  const partes: string[] = [];
+  if (dados.assinatura) partes.push('assinatura');
+  if (dados.selfie) partes.push('selfie');
+  if (dados.documento) partes.push('documento de identidade');
+  if (dados.canal === 'google') partes.push('conta Google');
+  else if (dados.canal) partes.push(`código por ${nomeDoCanal(dados.canal)}`);
+
+  if (partes.length === 0) return '';
+  const frase = partes.length === 1
+    ? partes[0]
+    : `${partes.slice(0, -1).join(', ')} e ${partes[partes.length - 1]}`;
+  return frase.charAt(0).toUpperCase() + frase.slice(1);
 }
 
 const semAcento = (valor: string): string =>

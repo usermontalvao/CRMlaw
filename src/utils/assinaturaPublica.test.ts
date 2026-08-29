@@ -4,8 +4,8 @@ import {
   canalDoRegistro,
   classificarCodigo,
   normalizarCodigo,
+  fatoresDeAutenticacao,
   rotuloDoCodigo,
-  rotuloDoMetodo,
   descreverAparelho,
   documentoSemOSignatario,
   faseDaAbertura,
@@ -166,13 +166,24 @@ test('o rótulo só afirma o que dá para saber: envelope ou não', () => {
   assert.equal(rotuloDoCodigo('desconhecido'), 'Código de autenticação');
 });
 
-test('o método de assinatura é diferente do canal da identidade', () => {
-  assert.equal(rotuloDoMetodo('signature_only'), 'Assinatura eletrônica');
-  assert.equal(rotuloDoMetodo('signature_facial'), 'Assinatura + selfie');
-  assert.equal(rotuloDoMetodo('signature_facial_document'), 'Assinatura + selfie + documento');
-  // Método desconhecido não vira linha na tela.
-  assert.equal(rotuloDoMetodo('outro_qualquer'), '');
-  assert.equal(rotuloDoMetodo(null), '');
+test('a autenticação lista o que foi USADO, não o que estava configurado', () => {
+  // Caso real do acervo: auth_method dizia "signature_only", mas houve selfie
+  // e confirmação por e-mail. Mostrar só o método escondia duas provas.
+  assert.equal(
+    fatoresDeAutenticacao({ assinatura: true, selfie: true, canal: 'email' }),
+    'Assinatura, selfie e código por E-mail',
+  );
+  assert.equal(fatoresDeAutenticacao({ assinatura: true }), 'Assinatura');
+  assert.equal(
+    fatoresDeAutenticacao({ assinatura: true, selfie: true, documento: true, canal: 'whatsapp' }),
+    'Assinatura, selfie, documento de identidade e código por WhatsApp',
+  );
+  assert.equal(fatoresDeAutenticacao({ canal: 'google' }), 'Conta Google');
+});
+
+test('sem nada registrado, a linha da autenticação some', () => {
+  assert.equal(fatoresDeAutenticacao({}), '');
+  assert.equal(fatoresDeAutenticacao({ assinatura: false, selfie: false, canal: null }), '');
 });
 
 test('nenhuma das duas esperas promete conclusão', () => {

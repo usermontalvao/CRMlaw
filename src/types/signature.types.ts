@@ -127,6 +127,16 @@ export interface Signer {
   // RECEBEU e devolveu o código — nunca o que foi digitado no formulário.
   auth_verified_at?: string | null;
   auth_verified_channel?: 'whatsapp' | 'sms' | 'email' | 'google' | null;
+  /**
+   * O que foi COLETADO na assinatura — booleanos, nunca os caminhos.
+   *
+   * Só o validador público recebe estes campos (ver a migration
+   * `validador_fatores_realmente_usados`): quem confere precisa saber que houve
+   * selfie, não receber a selfie.
+   */
+  has_signature_image?: boolean | null;
+  has_facial_image?: boolean | null;
+  has_document_image?: boolean | null;
   auth_verified_identifier?: string | null;
   // Aceite dos Termos de Uso (LGPD) no momento da assinatura
   terms_accepted_at?: string | null;

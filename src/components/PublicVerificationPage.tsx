@@ -30,8 +30,8 @@ import {
   mascararCpf,
   nomeDoCanal,
   normalizarCodigo,
+  fatoresDeAutenticacao,
   rotuloDoCodigo,
-  rotuloDoMetodo,
 } from '../utils/assinaturaPublica';
 import { signatureService } from '../services/signature.service';
 import type { VerifiedDocument } from '../services/signature.service';
@@ -336,6 +336,12 @@ const PublicVerificationPage: React.FC = () => {
   const emailDoSignatario = isInternalPlaceholderEmail(result?.signer?.email) ? '' : (result?.signer?.email || '');
   const cpfDoSignatario = mascararCpf(result?.signer?.cpf);
   const canal = canalDoRegistro(result?.signer);
+  const autenticacaoUsada = fatoresDeAutenticacao({
+    assinatura: result?.signer?.has_signature_image,
+    selfie: result?.signer?.has_facial_image,
+    documento: result?.signer?.has_document_image,
+    canal,
+  });
   const identidadeDoRecibo = cpfDoSignatario
     ? `${nomeDoCanal(canal)} · CPF ${cpfDoSignatario}`
     : nomeDoCanal(canal);
@@ -359,10 +365,10 @@ const PublicVerificationPage: React.FC = () => {
       {(canal || cpfDoSignatario) && (
         <LinhaDoRecibo chave="Identidade">{identidadeDoRecibo}</LinhaDoRecibo>
       )}
-      {/* O MÉTODO é outra pergunta: "Identidade" diz por onde a pessoa provou
-          quem é; "Autenticação" diz o que foi exigido para assinar. */}
-      {rotuloDoMetodo(result?.signer?.auth_method) && (
-        <LinhaDoRecibo chave="Autenticação">{rotuloDoMetodo(result?.signer?.auth_method)}</LinhaDoRecibo>
+      {/* O que foi de fato coletado — pode ser mais de uma coisa. Ver
+          `fatoresDeAutenticacao`: mostrar o `auth_method` escondia provas. */}
+      {autenticacaoUsada && (
+        <LinhaDoRecibo chave="Autenticação" quebrar>{autenticacaoUsada}</LinhaDoRecibo>
       )}
       {emailDoSignatario && <LinhaDoRecibo chave="E-mail" quebrar>{emailDoSignatario}</LinhaDoRecibo>}
       {mostrarProtocoloAparte && (
