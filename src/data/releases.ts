@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.25',
+    date: '29/08/2026',
+    summary: 'CPF passou a ser conferido de verdade na assinatura pública, o histórico voltou a contar quantas vezes o documento foi aberto, e o protocolo ganhou um carimbo na margem que sobrevive a recorte.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'CPF inválido não passa mais',
+            description: 'A tela pública só contava se havia 11 dígitos: "111.111.111-11" era aceito. Agora os dígitos verificadores são conferidos antes de continuar. Um CPF inválido no documento assinado é um defeito no próprio instrumento.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O histórico voltou a contar as aberturas',
+            description: 'A trilha mostrava UMA visualização por sessão do navegador e nunca mais. Quem abria o documento cinco vezes ao longo da tarde aparecia uma vez só — e a trilha existe justamente para contar isso. Agora a janela é a mesma do servidor: recarregar a página não vira evento, voltar ao documento mais tarde vira.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Protocolo carimbado também na margem',
+            description: 'O rodapé leva o protocolo e o código, mas o rodapé é a primeira coisa que some quando alguém recorta, fotografa ou reimprime só o miolo. Na margem esquerda, girado e em cinza claro, o identificador sobrevive a isso: presente para quem procura, invisível para quem lê.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.24',
     date: '29/08/2026',
     summary: 'O relatório de assinatura voltou a dizer por onde a identidade foi confirmada — WhatsApp, SMS ou e-mail — em vez de descrever o método de forma genérica.',

@@ -8,7 +8,9 @@ import { supabase } from '../config/supabase';
 import { signatureFieldsService } from './signatureFields.service';
 import { SYSTEM_ISSUER_LABEL } from './signature.service';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
-import { lerIdentidadeConfirmada, fraseIdentidadeConfirmada } from '../utils/identidadeConfirmada';
+import { lerIdentidadeConfirmada, fraseIdentidadeConfirmada, resumoIdentidadeConfirmada, rotuloIdentificadorConfirmado, autenticacaoOtpSemCanal, formatarTelefoneConfirmado } from '../utils/identidadeConfirmada';
+import { comCanalRecuperado } from '../utils/canalRecuperado';
+import { signatureService } from './signature.service';
 import type { Signer, SignatureRequest, SignatureField } from '../types/signature.types';
 
 /**
@@ -296,16 +298,40 @@ class PdfSignatureService {
   }) {
     const { page, pageWidth, pageHeight, font } = params;
     const text = 'ASSINADO ELETRONICAMENTE';
-    const size = 32;
-    const textWidth = font.widthOfTextAtSize(text, size);
+    const ANGULO = 32;
+
+    // O `rotate` do pdf-lib gira o texto em torno do PONTO DE ANCORAGEM (x, y),
+    // não do centro dele. Centralizar como se não houvesse rotação — que era o
+    // que este método fazia — deixava a marca 44pt à esquerda e 109pt ACIMA do
+    // centro numa A4: ela subia por cima do cabeçalho do documento. Aqui a
+    // âncora é calculada de trás para frente, a partir de onde o centro visual
+    // do texto deve cair.
+    const rad = (ANGULO * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    // Corpo que caiba na página mesmo depois de girado: a largura ocupada pelo
+    // texto inclinado é `largura·cos + altura·sin`, e uma página estreita
+    // (paisagem recortada, meia-folha) estouraria com o tamanho fixo de 32.
+    let size = 32;
+    const larguraOcupada = (s: number) =>
+      font.widthOfTextAtSize(text, s) * cos + s * 0.72 * sin;
+    const limite = pageWidth * 0.86;
+    if (larguraOcupada(size) > limite) {
+      size = Math.max(12, Math.floor((size * limite) / larguraOcupada(size)));
+    }
+
+    const larguraTexto = font.widthOfTextAtSize(text, size);
+    const alturaTexto = size * 0.72; // altura aproximada da caixa alta
+
     page.drawText(text, {
-      x: (pageWidth - textWidth) / 2,
-      y: pageHeight * 0.46,
+      x: pageWidth / 2 - (larguraTexto / 2) * cos + (alturaTexto / 2) * sin,
+      y: pageHeight / 2 - (larguraTexto / 2) * sin - (alturaTexto / 2) * cos,
       size,
       font,
       color: rgb(0.84, 0.87, 0.91),
       opacity: 0.16,
-      rotate: degrees(32),
+      rotate: degrees(ANGULO),
     });
   }
 
@@ -720,6 +746,75 @@ class PdfSignatureService {
     return { x, y, w, h };
   }
 
+  /**
+   * Carimbo lateral: protocolo e código de autenticação na margem da folha.
+   *
+   * O rodapé já leva os dois, mas o rodapé é a primeira coisa que some quando
+   * alguém recorta, fotografa ou reimprime só o miolo do documento. Na margem
+   * lateral o dado sobrevive a isso, e é onde as plataformas de assinatura
+   * costumam carimbar o identificador do envelope.
+   *
+   * Fica na margem ESQUERDA, girado 90° (lê-se de baixo para cima), em corpo 6
+   * e cinza claro: presente para quem procura, invisível para quem lê.
+   */
+  private drawSideStamp(params: {
+    page: any;
+    font: any;
+    protocol?: string;
+    code?: string;
+  }) {
+    const { page, font, protocol, code } = params;
+
+    const partes: string[] = [];
+    if (protocol?.trim()) partes.push(`PROTOCOLO ${protocol.trim().toUpperCase()}`);
+    if (code?.trim() && code.trim().toUpperCase() !== 'N/A') partes.push(`CÓDIGO ${code.trim().toUpperCase()}`);
+    if (partes.length === 0) return;
+
+    const texto = partes.join('   ·   ');
+    const size = 6;
+
+    // Girado 90°, o texto cresce em +y e o corpo dele ocupa x para a ESQUERDA
+    // da âncora — por isso a âncora fica em x=16 e o glifo vive entre 10 e 16,
+    // fora de qualquer margem de documento.
+    const mb = page.getMediaBox();
+    const larguraTexto = font.widthOfTextAtSize(texto, size);
+    const cor = rgb(0.62, 0.66, 0.72);
+    const opacidade = 0.75;
+
+    // Não deixa o carimbo passar da folha: numa página menor que A4 ele seria
+    // desenhado para fora e sumiria sem aviso.
+    const alturaUtil = (mb.height as number) - 108 - 40;
+    if (larguraTexto > alturaUtil) return;
+
+    // ── Esquerda, embaixo ────────────────────────────────────────────────
+    // Girado 90°, o texto cresce em +y e o corpo dele ocupa x para a ESQUERDA
+    // da âncora — por isso a âncora fica em x=16 e o glifo vive entre 10 e 16,
+    // fora de qualquer margem de documento.
+    page.drawText(texto, {
+      x: (mb.x as number) + 16,
+      y: (mb.y as number) + 108,
+      size,
+      font,
+      color: cor,
+      opacity: opacidade,
+      rotate: degrees(90),
+    });
+
+    // ── Direita, em cima ─────────────────────────────────────────────────
+    // Espelhado: girado -90° o texto cresce em -y (lê-se de cima para baixo) e
+    // o corpo ocupa x para a DIREITA da âncora, então a âncora fica a 16pt da
+    // borda direita e o glifo volta para dentro, entre 16 e 10pt da margem.
+    page.drawText(texto, {
+      x: (mb.x as number) + (mb.width as number) - 16,
+      y: (mb.y as number) + (mb.height as number) - 40,
+      size,
+      font,
+      color: cor,
+      opacity: opacidade,
+      rotate: degrees(-90),
+    });
+  }
+
   private drawFooterStamp(params: {
     page: any;
     pageWidth: number;
@@ -753,6 +848,10 @@ class PdfSignatureService {
     const code = (verificationCode || signer.verification_hash || '').toUpperCase() || 'N/A';
     const protocolStr = (protocol || '').trim();
     const mode: 'card' | 'strip' = variant ?? 'strip';
+
+    // Margem lateral — mesma informação do rodapé, num lugar que sobrevive a
+    // recorte e reimpressão. Ver drawSideStamp.
+    this.drawSideStamp({ page, font: courier, protocol: protocolStr, code });
 
     if (mode === 'strip') {
       const h = 64;
@@ -1069,7 +1168,24 @@ class PdfSignatureService {
           all = (data as Signer[] | null) ?? [];
         }
         const signed = (all ?? []).filter((item) => item.status === 'signed');
-        return signed.length > 0 ? signed : [signer];
+        const base = signed.length > 0 ? signed : [signer];
+
+        // Recupera POR ONDE o código foi enviado para quem assinou antes de o
+        // servidor passar a gravar isso. O dado sai do registro de verificação
+        // do próprio servidor — ver utils/canalRecuperado. No fluxo público as
+        // tabelas de OTP não são legíveis, e aí o relatório simplesmente não
+        // afirma canal nenhum, como já fazia.
+        if (this.publicReportData?.signers) return base;
+        const faltando = base.filter((item) => !String((item as any).auth_verified_channel || '').trim());
+        if (faltando.length === 0) return base;
+        try {
+          const verificacoes = await signatureService.lerVerificacoesRegistradas(faltando.map((i) => i.id));
+          if (verificacoes.length === 0) return base;
+          return base.map((item) => comCanalRecuperado(item as any, verificacoes) as Signer);
+        } catch (e) {
+          console.warn('[PDF] Não foi possível recuperar o canal de verificação:', e);
+          return base;
+        }
       } catch {
         return [signer];
       }
@@ -1298,12 +1414,19 @@ class PdfSignatureService {
       } else if (item.auth_provider === 'email_link') {
         points.push(`Autenticação via Link por E-mail (${item.auth_email || 'não informado'})`);
       } else if (item.auth_provider === 'phone') {
-        points.push(`Autenticação via Telefone (${item.phone || 'verificado'})`);
+        // Sem o canal confirmado pelo servidor não dá para afirmar WhatsApp nem
+        // SMS — e afirmar o errado num documento de prova é pior do que não
+        // afirmar. A frase sai de um lugar só (autenticacaoOtpSemCanal), para
+        // as duas páginas do relatório nunca divergirem.
+        points.push(autenticacaoOtpSemCanal(item.phone));
       }
       if (item.signer_ip) points.push(`Endereço IP: ${item.signer_ip}`);
       if (geo.coordinates) points.push(`Geolocalização: ${geo.coordinates}`);
       if (item.facial_image_path) points.push('Verificação facial (selfie)');
       const deviceParts = [ua.device, ua.browser, ua.os].filter(Boolean);
+      // Resumo curto — o cartão tem altura fixa e uma linha por item. A cadeia
+      // completa do agente de usuário fica na trilha de auditoria, que quebra
+      // linha e pagina sozinha.
       if (deviceParts.length > 0) points.push(`Dispositivo: ${deviceParts.join(' - ')}`);
       return points;
     };
@@ -1347,7 +1470,23 @@ class PdfSignatureService {
       const authPoints = buildAuthPoints(item);
       const rightColW = 175;
       const rightStartX = pageWidth - lm - rightColW;
-      const cardHeight = Math.max(180, 78 + (authPoints.length * 13));
+
+      // Os itens são quebrados AQUI, antes de medir o cartão. Antes a altura
+      // saía de `authPoints.length * 13` — uma linha por item — mas o texto era
+      // desenhado com `maxWidth`, então um item comprido virava duas linhas e a
+      // segunda caía por cima do item seguinte. Quem manda na altura agora é o
+      // número de linhas de verdade.
+      const pointTextW = rightStartX - lm - 38;
+      const authPointLines = authPoints
+        .slice(0, 8)
+        .map((point) => wrapText(point, helvetica, 7.5, pointTextW));
+      const totalPointLines = authPointLines.reduce((soma, linhas) => soma + linhas.length, 0);
+
+      // 86 e não 78: a última linha da lista assenta 13pt acima do fundo do
+      // cartão, e não 2pt colados nele. Com uma linha por item a diferença não
+      // aparecia; com itens que quebram, o cartão passou a crescer e o aperto
+      // no rodapé ficaria visível.
+      const cardHeight = Math.max(180, 86 + totalPointLines * 13);
       if (yCards - cardHeight < 80) break;
 
       const cw = contentW;
@@ -1381,10 +1520,14 @@ class PdfSignatureService {
       page1.drawText('FATORES DE AUTENTICAÇÃO', { x: cx + 14, y: bodyTop - 41, size: 6.5, font: helveticaBold, color: txtSoft });
 
       let pointY = bodyTop - 55;
-      for (const point of authPoints.slice(0, 8)) {
+      for (const linhas of authPointLines) {
+        // A bolinha marca só a PRIMEIRA linha do item; as continuações entram
+        // alinhadas com o texto, sem marcador, como uma lista de verdade.
         circleDot(page1, cx + 16, pointY + 2.5, 2, emerald);
-        page1.drawText(point, { x: cx + 24, y: pointY, size: 7.5, font: helvetica, color: txtMid, maxWidth: rightStartX - cx - 38 });
-        pointY -= 13;
+        for (const linha of linhas) {
+          page1.drawText(linha, { x: cx + 24, y: pointY, size: 7.5, font: helvetica, color: txtMid });
+          pointY -= 13;
+        }
       }
 
       // Right column — signature box (rounded)
@@ -1526,11 +1669,11 @@ class PdfSignatureService {
         return ae || (item.auth_provider === 'phone' ? ph : '') || (!this.isInternalPlaceholderEmail(re) ? re : '') || '—';
       })();
       const authStrP2 = confirmadaP2
-        ? `${confirmadaP2.rotuloCanal === 'e-mail' ? 'E-mail' : confirmadaP2.rotuloCanal} (${confirmadaP2.identificador})`
+        ? resumoIdentidadeConfirmada(confirmadaP2)
         : item.auth_provider === 'google'
         ? `Google (${item.auth_email || ''})`
         : item.auth_provider === 'email_link' ? `E-mail (${item.auth_email || ''})`
-        : item.auth_provider === 'phone'      ? `SMS (${item.phone || ''})`
+        : item.auth_provider === 'phone'      ? autenticacaoOtpSemCanal(item.phone)
         : 'Assinatura direta';
 
       const termsStrP2 = item.terms_accepted_at
@@ -1559,14 +1702,35 @@ class PdfSignatureService {
         if (detY < photoY + 4) break;
         const trimmed = String(rawVal || '').trim();
         const isEmpty = trimmed === '' || trimmed === '—' || trimmed === '-';
-        const value = isEmpty ? 'Não informado' : (rawVal.length > 40 ? `${rawVal.slice(0, 38)}…` : rawVal);
         circleDot(page, detX + 2, detY + 2.5, 2, emerald);
+
         const lbl = `${label}: `;
         page.drawText(lbl, { x: detX + 10, y: detY, size: 7.5, font: helvetica, color: txtSoft });
         const lw = helvetica.widthOfTextAtSize(lbl, 7.5);
         const valFont = !isEmpty && monoLabels.has(label) ? courier : helveticaBold;
-        page.drawText(value, { x: detX + 10 + lw, y: detY, size: 7.5, font: valFont, color: isEmpty ? silver : txtDark });
-        detY -= 15;
+
+        // O valor QUEBRA em vez de ser cortado. Antes havia um corte seco em 40
+        // caracteres com reticências, e a linha da autenticação — que é
+        // justamente a que precisa ser lida por inteiro num documento de prova —
+        // saía como "Autenticação realizada por código enviad…".
+        const valorTexto = isEmpty ? 'Não informado' : String(rawVal);
+        const larguraValor = detX + detW - (detX + 10 + lw) - 6;
+        const linhasValor = wrapText(valorTexto, valFont, 7.5, larguraValor);
+
+        let linhaY = detY;
+        for (const linha of linhasValor) {
+          if (linhaY < photoY + 4) break;
+          page.drawText(linha, {
+            x: detX + 10 + lw,
+            y: linhaY,
+            size: 7.5,
+            font: valFont,
+            color: isEmpty ? silver : txtDark,
+          });
+          linhaY -= 11;
+        }
+        // A próxima linha começa depois da última que foi realmente desenhada.
+        detY = linhaY - 4;
       }
 
       // ── Certificate / integrity block — white, ZapSign-style ──
@@ -1669,7 +1833,7 @@ class PdfSignatureService {
       }
       const base =
         item.auth_provider === 'phone'
-          ? 'Autenticação via Telefone'
+          ? autenticacaoOtpSemCanal(item.phone)
           : item.auth_provider === 'email_link'
             ? 'Autenticação via Link por E-mail'
             : item.auth_provider === 'google'
@@ -1685,12 +1849,38 @@ class PdfSignatureService {
       const authEmail = String(item.auth_email || '').trim();
       const phone = String(item.phone || '').trim();
       const rawEmail = String(item.email || '').trim();
-      const displayContact = authEmail || (item.auth_provider === 'phone' ? phone : '') || (!this.isInternalPlaceholderEmail(rawEmail) ? rawEmail : '');
-      const displayContactLabel = authEmail ? 'Email' : item.auth_provider === 'phone' ? 'Telefone' : 'Email';
-      const signerContact = displayContact ? ` (${displayContactLabel}: ${displayContact})` : '';
+      // O identificador CONFIRMADO tem preferência sobre qualquer contato
+      // declarado, e leva o rótulo que diz o que ele é — "Telefone" descrevia
+      // um dado de contato, não a prova de que aquele número recebeu o código.
+      const confirmadaContato = lerIdentidadeConfirmada(item as any);
+      const displayContact =
+        confirmadaContato?.identificador ||
+        authEmail ||
+        (item.auth_provider === 'phone' ? formatarTelefoneConfirmado(phone) : '') ||
+        (!this.isInternalPlaceholderEmail(rawEmail) ? rawEmail : '');
+      const displayContactLabel = confirmadaContato
+        ? rotuloIdentificadorConfirmado(confirmadaContato)
+        : authEmail ? 'Email' : item.auth_provider === 'phone' ? 'Telefone informado' : 'Email';
+      // Quando a identidade foi CONFIRMADA, a frase de autenticação já diz o
+      // número ("…enviado via WhatsApp para +55 (65) 98404-6375"). Repetir o
+      // mesmo número entre parênteses no começo da linha não acrescenta nada e
+      // deixa o evento com cara de formulário preenchido duas vezes.
+      const contatoJaDitoNaAutenticacao = !!confirmadaContato;
+      const signerContact =
+        displayContact && !contatoJaDitoNaAutenticacao
+          ? ` (${displayContactLabel}: ${displayContact})`
+          : '';
       const signerCpf = item.cpf ? `, CPF: ${item.cpf}` : '';
       const locationInfo = geo.coordinates ? ` localizado em ${geo.coordinates}${geo.address ? ` - ${geo.address}` : ''}` : '';
       const authTimelineSummary = buildTimelineAuthSummary(item);
+
+      // O agente de usuário vai INTEIRO para a trilha, não resumido. O resumo
+      // ("Desktop - Google Chrome - macOS") descarta justamente o que
+      // identifica o cliente de verdade: uma string com "Claude/1.40609.0
+      // Chrome/148…" virava só "Google Chrome". Num documento que serve de
+      // prova, a cadeia crua é o dado; o resumo é cortesia.
+      const uaCompleto = String(item.signer_user_agent || '').trim();
+      const uaSufixo = uaCompleto ? ` Dispositivo: ${uaCompleto}` : '';
 
       // ── View events: use audit log to capture ALL visits (multiple opens) ──
       const viewAuditEntries = auditLogEntries.filter(
@@ -1720,7 +1910,7 @@ class PdfSignatureService {
         history.push({
           label: 'Visualizado',
           when: fmtWhen(item.viewed_at),
-          detail: `${item.name}${signerCpf} visualizou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}`,
+          detail: `${item.name}${signerCpf} visualizou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}.${uaSufixo}`,
           sortAt: viewedAtDate?.getTime() ?? 0,
           order: 1,
         });
@@ -1735,7 +1925,7 @@ class PdfSignatureService {
         history.push({
           label: 'Autenticação',
           when: fmtWhen(authWhenRaw),
-          detail: `${item.name}${signerCpf}. ${authTimelineSummary}${ipInfoSigner ? `${ipInfoSigner}.` : '.'}`,
+          detail: `${item.name}${signerCpf}. ${authTimelineSummary}${ipInfoSigner ? `${ipInfoSigner}.` : '.'}${uaSufixo}`,
           sortAt: this.toDateValue(authWhenRaw)?.getTime() ?? 0,
           order: 2,
         });
@@ -1786,7 +1976,7 @@ class PdfSignatureService {
         history.push({
           label: 'Assinado',
           when: fmtWhen(item.signed_at),
-          detail: `${item.name}${signerContact}${signerCpf} assinou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}. ${buildTimelineAuthSummary(item)}`,
+          detail: `${item.name}${signerContact}${signerCpf} assinou este documento${item.signer_ip ? ` por meio do IP ${item.signer_ip}` : ''}${locationInfo}. ${buildTimelineAuthSummary(item)}${uaSufixo}`,
           sortAt: signedAtMs,
           order: 5,
         });
