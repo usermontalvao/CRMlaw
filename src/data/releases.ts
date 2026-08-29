@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.28',
+    date: '29/08/2026',
+    summary: 'A tela de leitura do documento no celular deixou de ter uma mancha escura sobre o texto e três linhas de cabeçalho antes do contrato começar.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A mancha escura sobre o rodapé do documento',
+            description: 'Atrás do botão de assinar havia um degradê preto, herdado de quando o leitor tinha moldura escura. Sobre a folha branca ele virava uma sujeira atravessando o texto. Agora é o próprio fundo da página subindo: as últimas linhas se dissolvem no branco em vez de ficarem encardidas.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O cabeçalho do documento cabe em uma linha',
+            description: 'Eram três: o rótulo, o nome do documento em duas linhas e, embaixo, o nome do signatário. Como os documentos do escritório já nascem com o nome da pessoa no título, a terceira linha repetia a segunda — e as três juntas comiam um quarto da tela antes de o contrato começar.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Os botões pararam de gritar',
+            description: '"ASSINAR DOCUMENTO" e "RECUSAR ASSINATURA" estavam em caixa-alta, sozinhos numa tela em que todo o resto já fala em caixa normal.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.27',
     date: '29/08/2026',
     summary: 'As telas públicas de assinatura passaram a falar um idioma só: abertura, conferência, comprovante, erro e as seis etapas da assinatura deixaram de trocar de tipografia e de paleta no meio do caminho.',

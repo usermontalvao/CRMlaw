@@ -3790,20 +3790,31 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           </button>
         </div>
 
+        {/*
+          O que está sendo assinado — em UMA linha de contexto, não em três.
+
+          O bloco trazia o rótulo, o nome do documento em duas linhas e, logo
+          abaixo, o nome do signatário. Só que os documentos do escritório
+          nascem com o nome da pessoa no título ("KIT CONSUMIDOR - PEDRO
+          RODRIGUES MONTALVAO NETO"): a terceira linha repetia, em caixa-alta, o
+          que a segunda já dizia — e as três juntas comiam um quarto da tela do
+          celular antes de o documento começar.
+        */}
         {request?.document_name && (
-          <div className="mt-2.5 min-w-0">
-            <div className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: '#ea580c' }}>
-              Para assinatura
-            </div>
-            <div
-              className="mt-1 line-clamp-2 text-[14px] font-semibold leading-tight tracking-[-0.01em]"
+          <div className="mt-2 flex min-w-0 items-baseline gap-2">
+            <span
+              className="flex-none text-[9px] font-bold uppercase tracking-[0.18em]"
+              style={{ color: '#ea580c' }}
+            >
+              Assinar
+            </span>
+            <span
+              className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-[-0.01em]"
               style={{ color: TINTA }}
+              title={request.document_name}
             >
               {request.document_name}
-            </div>
-            {signer?.name && (
-              <div className="mt-0.5 truncate text-[11px]" style={{ color: TINTA_3 }}>{signer.name}</div>
-            )}
+            </span>
           </div>
         )}
       </header>
@@ -3886,17 +3897,26 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         (() => {
           const isWaiting = !canOpenSignModal || queuedOpenSignModal;
           const isButtonDisabled = loading || isSignModalOpen;
-          const buttonClass = `fixed left-1/2 z-50 flex min-h-12 w-[calc(100%_-_2rem)] max-w-[22rem] -translate-x-1/2 items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-bold text-white transition-all duration-200 whitespace-nowrap sm:w-auto sm:px-7 sm:py-3.5 ${isButtonDisabled ? 'bg-slate-400 cursor-not-allowed opacity-80 shadow-none ring-0' : isWaiting ? 'bg-orange-600/70 hover:bg-orange-600/70 cursor-wait shadow-[0_10px_24px_rgba(234,88,12,0.24)] ring-1 ring-white/10' : 'bg-orange-600 hover:bg-orange-700 shadow-[0_16px_30px_rgba(234,88,12,0.28),0_6px_18px_rgba(15,23,42,0.14)] ring-1 ring-white/12 hover:-translate-x-1/2 hover:-translate-y-0.5 hover:shadow-[0_20px_36px_rgba(234,88,12,0.32),0_10px_22px_rgba(15,23,42,0.16)] active:scale-95 active:translate-y-0'}`;
+          const buttonClass = `fixed left-1/2 z-50 flex min-h-12 w-[calc(100%_-_2rem)] max-w-[22rem] -translate-x-1/2 items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[15px] font-bold tracking-[-0.01em] text-white transition-all duration-200 whitespace-nowrap sm:w-auto sm:px-8 ${isButtonDisabled ? 'bg-slate-400 cursor-not-allowed opacity-80 shadow-none ring-0' : isWaiting ? 'bg-orange-600/70 hover:bg-orange-600/70 cursor-wait shadow-[0_10px_24px_rgba(234,88,12,0.24)] ring-1 ring-white/10' : 'bg-orange-600 hover:bg-orange-700 shadow-[0_16px_30px_rgba(234,88,12,0.28),0_6px_18px_rgba(15,23,42,0.14)] ring-1 ring-white/12 hover:-translate-x-1/2 hover:-translate-y-0.5 hover:shadow-[0_20px_36px_rgba(234,88,12,0.32),0_10px_22px_rgba(15,23,42,0.16)] active:scale-95 active:translate-y-0'}`;
 
           return (
             <>
+              {/*
+                O véu que separa o botão do texto.
+
+                Era um degradê PRETO (`from-slate-950/44`), herdado de quando o
+                leitor tinha moldura escura. Sobre a folha branca ele virava uma
+                mancha suja atravessando o rodapé do documento — a coisa mais
+                feia da tela no celular. Agora é o próprio chão da página
+                subindo: o texto se dissolve no fundo em vez de ser encardido.
+
+                A linha branca de 1 px que vinha embaixo também saiu: ela existia
+                para marcar a borda contra o escuro, e no claro era invisível.
+              */}
               <div
                 aria-hidden
-                className="pointer-events-none fixed inset-x-0 bottom-0 z-40 h-[calc(6rem_+_env(safe-area-inset-bottom))] bg-gradient-to-t from-slate-950/44 via-slate-950/26 to-transparent backdrop-blur-[1px]"
-              />
-              <div
-                aria-hidden
-                className="fixed inset-x-0 bottom-0 z-40 h-px bg-white/10 pointer-events-none"
+                className="pointer-events-none fixed inset-x-0 bottom-0 z-40 h-[calc(7rem_+_env(safe-area-inset-bottom))]"
+                style={{ background: 'linear-gradient(to top, #f8fafc 34%, rgba(248,250,252,.86) 62%, rgba(248,250,252,0))' }}
               />
               <button
                 onClick={openSignModal}
@@ -3907,12 +3927,12 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 {(!canOpenSignModal || queuedOpenSignModal) ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      CARREGANDO…
+                      Carregando…
                     </>
                 ) : (
                     <>
                       <PenTool className="w-4 h-4" />
-                      ASSINAR DOCUMENTO
+                      Assinar documento
                     </>
                 )}
               </button>
@@ -3930,7 +3950,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           style={{ WebkitTapHighlightColor: 'transparent', bottom: 'calc(max(1.25rem, env(safe-area-inset-bottom)) + 4.5rem)' }}
         >
           <X className="w-4 h-4" />
-          RECUSAR ASSINATURA
+          Recusar assinatura
         </button>
       )}
 
