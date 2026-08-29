@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.36',
+    date: '29/08/2026',
+    summary: 'A janela de cadastro da Equipe passou a usar a mesma moldura de janela do resto do sistema.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'A janela de cadastro parece o resto do CRM',
+            description: 'Ela era feita à mão — cartão, sombra, campos e botões todos inventados — e por isso destoava de qualquer outra janela do sistema, inclusive a de criar usuário, que fica a dois cliques dali. Agora usa a moldura padrão: cabeçalho com o e-mail, faixa laranja, rodapé fixo com Cancelar e Salvar, campos iguais aos do formulário de criação, e os seis cargos em duas colunas.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.35',
     date: '29/08/2026',
     summary: 'A janela da Equipe passou a abrir por cima da tela inteira e a editar o cadastro completo, não só o cargo.',

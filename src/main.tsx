@@ -224,6 +224,15 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: bancada da janela de cadastro da Equipe (?equipepreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('equipepreview')) {
+    const { default: EquipeCadastroPreview } = await import('./dev/EquipeCadastroPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <EquipeCadastroPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: bancada das telas públicas de assinatura (?assinaturapreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('assinaturapreview')) {
     const { default: AssinaturaPublicaPreview } = await import('./dev/AssinaturaPublicaPreview');
