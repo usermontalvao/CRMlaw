@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.21',
+    date: '29/08/2026',
+    summary: 'Errar o código deixou de sujar a tela: o campo se limpa sozinho, e sair para outro método e voltar não traz mais o "Código incorreto" de uma tentativa antiga.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O erro de código não persegue mais quem trocou de caminho',
+            description: 'Quem errava o código e usava a saída de baixo ("confirme de outro jeito") ia para a tela de escolha e, ao voltar, encontrava o "Código incorreto" da tentativa anterior ainda na tela — sem relação nenhuma com o que estava acontecendo, e com os dígitos errados ainda no campo, prontos para queimar mais uma tentativa num clique. Trocar de etapa agora limpa as duas coisas.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Código recusado esvazia o campo',
+            description: 'Seis dígitos errados continuavam na tela, e era preciso apagar um por um antes de tentar de novo. Agora o campo se limpa e o cursor volta para ele.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Voltar para o mesmo canal não descarta um código que ainda vale',
+            description: 'Sair para a tela de escolha e voltar para o WhatsApp reiniciava a etapa, apagando um código que ainda tinha minutos de validade e jogando a pessoa na espera do reenvio sem necessidade. Agora só a troca de canal descarta o que foi enviado — aí o código realmente é outro.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.20',
     date: '29/08/2026',
     summary: 'Pedir o número e digitar o código viraram duas telas, e o código agora mostra quanto tempo ainda vale.',

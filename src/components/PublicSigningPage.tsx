@@ -1063,6 +1063,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [phoneOtpResendIn, setPhoneOtpResendIn] = useState(0);
   /** Segundos que o código ainda vale. O relógio fica logo abaixo do campo. */
   const [phoneOtpRemaining, setPhoneOtpRemaining] = useState(0);
+  const phoneOtpInputRef = useRef<HTMLInputElement>(null);
+  const emailOtpInputRef = useRef<HTMLInputElement>(null);
   // Códigos errados seguidos. Serve para uma coisa só: a partir do primeiro
   // tropeço a tela oferece OUTRO caminho. Insistir com quem não está recebendo
   // o código é o jeito mais rápido de a assinatura não acontecer.
@@ -1093,6 +1095,25 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [emailOtpRemaining, setEmailOtpRemaining] = useState<number>(0);
   const [emailOtpResendIn, setEmailOtpResendIn] = useState(0);
   const [emailOtpFails, setEmailOtpFails] = useState(0);
+
+  // Erro de código é do MOMENTO, não da etapa.
+  //
+  // Quem erra o código e usa a saída lá de baixo ("confirme de outro jeito")
+  // vai para a tela de escolha; ao voltar para o WhatsApp encontrava o
+  // "Código incorreto" da tentativa anterior ainda na tela, agora sem nenhuma
+  // relação com o que está acontecendo — e com os dígitos errados ainda no
+  // campo, prontos para queimar mais uma tentativa num clique.
+  //
+  // Trocar de etapa limpa as duas coisas. Fica no efeito, e não em cada botão,
+  // porque são muitos caminhos de ida e volta (as saídas alternativas, os dois
+  // "Voltar", o salto automático quando um método é desligado) e esquecer um
+  // deles é justamente como o problema nasceu.
+  useEffect(() => {
+    setPhoneOtpError(null);
+    setEmailOtpError(null);
+    setPhoneOtp('');
+    setEmailOtp('');
+  }, [modalStep]);
 
   // Validade do código por telefone: conta para trás a partir de `expires_at`.
   // "Válido até 21:47" obriga quem lê a olhar o relógio e fazer a conta; o que
@@ -1655,6 +1676,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     } catch (e: any) {
       setEmailOtpFails((n) => n + 1);
       setEmailOtpError(e?.message || 'Código inválido');
+      setEmailOtp('');
+      window.setTimeout(() => emailOtpInputRef.current?.focus(), 0);
     } finally {
       setEmailOtpLoading(false);
     }
@@ -2538,13 +2561,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     if (authConfig.whatsapp && !(atual === 'phone' && phoneOtpChannel === 'whatsapp')) {
       opcoes.push({
         rotulo: 'WhatsApp',
-        ir: () => { setPhoneOtpChannel('whatsapp'); setPhoneOtpSent(false); setPhoneOtp(''); setModalStep('phone_otp'); },
+        ir: () => { setPhoneOtpSent(false); setPhoneOtpChannel('whatsapp'); setModalStep('phone_otp'); },
       });
     }
     if (authConfig.phone && !(atual === 'phone' && phoneOtpChannel === 'sms')) {
       opcoes.push({
         rotulo: 'SMS',
-        ir: () => { setPhoneOtpChannel('sms'); setPhoneOtpSent(false); setPhoneOtp(''); setModalStep('phone_otp'); },
+        ir: () => { setPhoneOtpSent(false); setPhoneOtpChannel('sms'); setModalStep('phone_otp'); },
       });
     }
     if (opcoes.length === 0) return null;
@@ -3314,6 +3337,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     } catch (e: any) {
       setPhoneOtpFails((n) => n + 1);
       setPhoneOtpError(e?.message || 'Código inválido');
+      // Código recusado esvazia o campo: seis dígitos errados na tela obrigam
+      // a apagar um por um antes de tentar de novo, e o cursor volta para cá
+      // para a próxima tentativa começar no gesto certo.
+      setPhoneOtp('');
+      window.setTimeout(() => phoneOtpInputRef.current?.focus(), 0);
     } finally {
       setPhoneOtpLoading(false);
     }
@@ -4270,7 +4298,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         {authConfig.whatsapp && (
                           <button
                             type="button"
-                            onClick={() => { setPhoneOtpChannel('whatsapp'); setPhoneOtpSent(false); setPhoneOtp(''); setModalStep('phone_otp'); }}
+                            onClick={() => { if (phoneOtpChannel !== 'whatsapp') setPhoneOtpSent(false); setPhoneOtpChannel('whatsapp'); setModalStep('phone_otp'); }}
                             className="w-full max-w-[400px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
                           >
                             <svg className="w-[18px] h-[18px] text-[#25D366]" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -4294,7 +4322,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                         {authConfig.phone && (
                           <button
                             type="button"
-                            onClick={() => { setPhoneOtpChannel('sms'); setPhoneOtpSent(false); setPhoneOtp(''); setModalStep('phone_otp'); }}
+                            onClick={() => { if (phoneOtpChannel !== 'sms') setPhoneOtpSent(false); setPhoneOtpChannel('sms'); setModalStep('phone_otp'); }}
                             className="w-full max-w-[400px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
                           >
                             <svg className="w-[18px] h-[18px] text-slate-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -4424,6 +4452,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     <div className="space-y-4">
                       <div>
                         <input
+                          ref={phoneOtpInputRef}
                           type="text"
                           inputMode="numeric"
                           autoComplete="one-time-code"
@@ -4580,6 +4609,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       <div className="space-y-3">
                         <div>
                           <input
+                            ref={emailOtpInputRef}
                             type="text"
                             inputMode="numeric"
                             maxLength={6}
