@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Users, Plus, Search, Shield, Trash2, Edit2, Loader2, Eye, EyeOff, CheckCircle2, X, UserLock, UserX, UserCheck, KeyRound } from 'lucide-react';
 import { supabase } from '../config/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { securityPinService, type PinMeta } from '../services/securityPin.service';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
+import { formatPhone, maskCpfInput } from '../utils/formatters';
 import { Modal, ModalBody, ModuleSkeleton } from './ui';
 import { LAYER } from '../styles/layers';
 
@@ -19,7 +21,26 @@ interface Profile {
   is_active?: boolean;
   created_at: string;
   last_sign_in_at?: string;
+  // Cadastro completo — editável pela janela da Equipe.
+  phone?: string | null;
+  cpf?: string | null;
+  oab?: string | null;
+  location?: string | null;
+  bio?: string | null;
+  lawyer_full_name?: string | null;
 }
+
+const campoTitulo: React.CSSProperties = {
+  fontSize: '11px', fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase',
+  color: '#9ca3af', marginBottom: '10px',
+};
+const campoRotulo: React.CSSProperties = {
+  display: 'block', fontSize: '12px', fontWeight: 600, color: '#444748', marginBottom: '5px',
+};
+const campoInput: React.CSSProperties = {
+  width: '100%', height: '36px', padding: '0 10px', fontSize: '13px', color: '#191c1e',
+  border: '1px solid rgba(15,23,42,0.14)', borderRadius: '8px', background: '#fff', outline: 'none',
+};
 
 const ROLES = [
   { value: 'Administrador', label: 'Administrador', description: 'Acesso total ao sistema', icon: '👑', restricted: true },
@@ -45,6 +66,18 @@ export const UserManagementModule: React.FC = () => {
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
   const [editRole, setEditRole] = useState<string>('');
   const [editGender, setEditGender] = useState<string>('');
+  /**
+   * O cadastro inteiro, e não só o cargo.
+   *
+   * A janela chamava-se "Editar cargo" e era isso mesmo que fazia: cargo e
+   * gênero. Trocar um telefone errado ou cadastrar a OAB de alguém exigia ir ao
+   * banco. Agora ela edita o cadastro; o e-mail continua de fora porque ele é a
+   * credencial de login e mora no Auth, não aqui — mudá-lo neste formulário
+   * dessincronizaria as duas pontas em silêncio.
+   */
+  const [editForm, setEditForm] = useState({
+    name: '', phone: '', cpf: '', oab: '', location: '', bio: '', lawyerFullName: '',
+  });
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [editingUserPinMeta, setEditingUserPinMeta] = useState<PinMeta | null>(null);
@@ -207,6 +240,15 @@ export const UserManagementModule: React.FC = () => {
     setEditingUser(profile);
     setEditRole(profile.role);
     setEditGender(profile.gender || '');
+    setEditForm({
+      name: profile.name || '',
+      phone: profile.phone ? formatPhone(profile.phone) : '',
+      cpf: profile.cpf ? maskCpfInput(profile.cpf) : '',
+      oab: profile.oab || '',
+      location: profile.location || '',
+      bio: profile.bio || '',
+      lawyerFullName: profile.lawyer_full_name || '',
+    });
     setEditingUserPinMeta(null);
     if (profile.user_id) {
       securityPinService.getPinMeta(profile.user_id)
@@ -256,9 +298,9 @@ export const UserManagementModule: React.FC = () => {
       resourceType: 'user',
       resourceId: targetUserId ?? editingUser.id,
       sensitivity: 'high',
-      title: 'Alterar cargo',
-      description: `Confirme seu PIN para alterar o cargo de "${targetName}" para "${editRole}".`,
-      actionLabel: 'Salvar cargo',
+      title: 'Alterar cadastro',
+      description: `Confirme seu PIN para alterar o cadastro de "${targetName}".`,
+      actionLabel: 'Salvar cadastro',
       permission: {
         module: 'usuarios',
         action: 'edit',
@@ -268,16 +310,33 @@ export const UserManagementModule: React.FC = () => {
         setSaving(true);
         setError(null);
         try {
+          // Campo vazio vira NULL, não string vazia: "" no CPF passaria por
+          // preenchido em qualquer verificação que só teste presença.
+          const ouNulo = (valor: string) => {
+            const limpo = valor.trim();
+            return limpo ? limpo : null;
+          };
           const { error: updateError } = await supabase
             .from('profiles')
-            .update({ role: editRole, gender: editGender, updated_at: new Date().toISOString() })
+            .update({
+              role: editRole,
+              gender: editGender,
+              name: editForm.name.trim() || targetName,
+              phone: ouNulo(editForm.phone),
+              cpf: ouNulo(editForm.cpf),
+              oab: ouNulo(editForm.oab),
+              location: ouNulo(editForm.location),
+              bio: ouNulo(editForm.bio),
+              lawyer_full_name: ouNulo(editForm.lawyerFullName),
+              updated_at: new Date().toISOString(),
+            })
             .eq('user_id', targetUserId);
           if (updateError) throw updateError;
-          setSuccess(`Cargo de "${targetName}" atualizado para "${editRole}"!`);
+          setSuccess(`Cadastro de "${targetName}" atualizado.`);
           setEditingUser(null);
           loadProfiles();
         } catch (err: any) {
-          setError('Erro ao atualizar cargo do usuário.');
+          setError('Erro ao atualizar o cadastro do usuário.');
         } finally {
           setSaving(false);
         }
@@ -698,32 +757,93 @@ export const UserManagementModule: React.FC = () => {
         </ModalBody>
       </Modal>
 
-      {/* Edit role modal inline */}
       {/*
-        O cartão do modal PRECISA de teto e de rolagem própria.
+        A JANELA DA EQUIPE — em portal, e com o cadastro inteiro.
 
-        Sem eles, o conteúdo (título, nome, seis cargos, aviso, gênero e os
-        botões) fica mais alto que a janela — e, num pai centralizado com
-        `align-items: center`, o que sobra estoura para CIMA e para BAIXO em
-        partes iguais. As duas pontas ficam fora da tela e não há como rolar até
-        elas: o primeiro cargo aparecia cortado ao meio e o campo de gênero
-        sumia embaixo. Numa tela de notebook com o dock à mostra, bastava isso
-        para a edição ficar impossível.
+        Dois defeitos de uma vez. Primeiro, ela abria DENTRO do bloco de
+        Configurações: `position: fixed` só é relativo à janela quando nenhum
+        ancestral cria um bloco de contenção, e a tela de Configurações tem
+        ancestrais com `animation`/`transform`. O modal virava uma caixinha
+        espremida no painel, cortada em cima e embaixo. `createPortal` para o
+        `body` tira a janela dessa árvore e é a única correção que não depende
+        de caçar qual ancestral tem transform hoje — e amanhã.
 
-        `padding` no fundo escuro garante que o cartão nunca encoste na borda, e
-        `overscroll-contain` impede que a rolagem escape para a página atrás.
+        Segundo, ela só editava cargo e gênero. Corrigir um telefone errado ou
+        cadastrar a OAB de alguém exigia ir ao banco. Agora edita o cadastro.
+
+        O E-MAIL FICA DE FORA de propósito: ele é a credencial de login e mora no
+        Auth. Alterá-lo aqui mudaria só o espelho em `profiles` e as duas pontas
+        passariam a discordar em silêncio — a pessoa continuaria entrando com o
+        endereço antigo e a tela mostraria o novo.
       */}
-      {editingUser && (
+      {editingUser && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: LAYER.MODAL, display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: '24px 16px', background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(6px)' }}
           onClick={() => setEditingUser(null)}>
-          <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: 'min(360px, 100%)',
+          <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', width: 'min(520px, 100%)',
             maxHeight: '100%', overflowY: 'auto', overscrollBehavior: 'contain',
             boxShadow: '0 24px 60px rgba(0,0,0,0.18)', border: '1px solid rgba(15,23,42,0.10)' }}
             onClick={e => e.stopPropagation()}>
             {(() => { const editingSelf = editingUser.user_id === user?.id; return (<>
-            <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#191c1e', marginBottom: '4px' }}>{editingSelf ? 'Editar meus dados' : 'Editar cargo'}</h3>
-            <p style={{ fontSize: '13px', color: '#747878', marginBottom: '16px' }}>{editingUser.name}</p>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#191c1e', marginBottom: '4px' }}>Editar cadastro</h3>
+            <p style={{ fontSize: '13px', color: '#747878', marginBottom: '18px' }}>{editingUser.email}</p>
+
+            {/* ── Dados pessoais ── */}
+            <p style={campoTitulo}>Dados pessoais</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+              <label style={{ gridColumn: '1 / -1' }}>
+                <span style={campoRotulo}>Nome</span>
+                <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                  style={campoInput} placeholder="Nome completo" />
+              </label>
+              <label>
+                <span style={campoRotulo}>Telefone</span>
+                <input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: formatPhone(e.target.value) }))}
+                  style={campoInput} placeholder="(65) 99999-0000" inputMode="tel" />
+              </label>
+              <label>
+                <span style={campoRotulo}>CPF</span>
+                <input value={editForm.cpf} onChange={e => setEditForm(f => ({ ...f, cpf: maskCpfInput(e.target.value) }))}
+                  style={campoInput} placeholder="000.000.000-00" inputMode="numeric" />
+              </label>
+              <label>
+                <span style={campoRotulo}>OAB</span>
+                <input value={editForm.oab} onChange={e => setEditForm(f => ({ ...f, oab: e.target.value }))}
+                  style={campoInput} placeholder="30.021/MT" />
+              </label>
+              <label>
+                <span style={campoRotulo}>Local</span>
+                <input value={editForm.location} onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))}
+                  style={campoInput} placeholder="Cuiabá/MT" />
+              </label>
+              <label style={{ gridColumn: '1 / -1' }}>
+                <span style={campoRotulo}>Nome completo para petições</span>
+                <input value={editForm.lawyerFullName} onChange={e => setEditForm(f => ({ ...f, lawyerFullName: e.target.value }))}
+                  style={campoInput} placeholder="Como assina nas peças" />
+              </label>
+              <label style={{ gridColumn: '1 / -1' }}>
+                <span style={campoRotulo}>Observações</span>
+                <textarea value={editForm.bio} onChange={e => setEditForm(f => ({ ...f, bio: e.target.value }))}
+                  rows={2} style={{ ...campoInput, height: 'auto', padding: '8px 10px', resize: 'vertical' }} />
+              </label>
+              <label>
+                <span style={campoRotulo}>Gênero</span>
+                <select value={editGender} onChange={e => setEditGender(e.target.value)} style={{ ...campoInput, cursor: 'pointer' }}>
+                  <option value="">Não informar</option>
+                  <option value="male">Masculino</option>
+                  <option value="female">Feminino</option>
+                </select>
+              </label>
+            </div>
+            <p style={{ fontSize: '11.5px', color: '#9ca3af', marginTop: '-8px', marginBottom: '18px' }}>
+              {normalizeRole(editRole) === 'advogado'
+                ? 'O gênero define o tratamento (Dr./Dra.) no atendimento por WhatsApp.'
+                : 'O tratamento Dr./Dra. vale apenas para advogados.'}
+              {' '}O e-mail é a credencial de login e não muda por aqui.
+            </p>
+
+            {/* ── Cargo ── */}
+            <p style={campoTitulo}>Cargo</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: editingSelf ? '8px' : '20px' }}>
               {ROLES.map(role => (
                 <button key={role.value} disabled={editingSelf} onClick={() => { if (!editingSelf) setEditRole(role.value); }}
@@ -744,23 +864,6 @@ export const UserManagementModule: React.FC = () => {
             {editingSelf && (
               <p style={{ fontSize: '11.5px', color: '#747878', marginBottom: '20px' }}>Você não pode alterar o próprio cargo. Outro administrador precisa fazer isso.</p>
             )}
-
-            {/* Gênero — usado p/ tratamento Dr./Dra. apenas de advogados */}
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#444748', marginBottom: '6px' }}>Gênero</label>
-              <select value={editGender} onChange={e => setEditGender(e.target.value)}
-                style={{ width: '100%', height: '36px', padding: '0 10px', fontSize: '13px',
-                  border: '1px solid rgba(15,23,42,0.14)', borderRadius: '8px', background: '#fff', cursor: 'pointer' }}>
-                <option value="">Não informar</option>
-                <option value="male">Masculino</option>
-                <option value="female">Feminino</option>
-              </select>
-              <p style={{ fontSize: '11.5px', color: '#747878', marginTop: '6px' }}>
-                {normalizeRole(editRole) === 'advogado'
-                  ? 'Define o tratamento (Dr./Dra.) no atendimento por WhatsApp.'
-                  : 'O tratamento Dr./Dra. vale apenas para advogados.'}
-              </p>
-            </div>
             </>); })()}
 
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
@@ -770,12 +873,21 @@ export const UserManagementModule: React.FC = () => {
                 Cancelar
               </button>
               {(() => {
-                const unchanged = editRole === editingUser.role && editGender === (editingUser.gender || '');
+                const semMudanca =
+                  editRole === editingUser.role
+                  && editGender === (editingUser.gender || '')
+                  && editForm.name === (editingUser.name || '')
+                  && editForm.phone === (editingUser.phone ? formatPhone(editingUser.phone) : '')
+                  && editForm.cpf === (editingUser.cpf ? maskCpfInput(editingUser.cpf) : '')
+                  && editForm.oab === (editingUser.oab || '')
+                  && editForm.location === (editingUser.location || '')
+                  && editForm.bio === (editingUser.bio || '')
+                  && editForm.lawyerFullName === (editingUser.lawyer_full_name || '');
                 return (
-                  <button onClick={handleSaveEdit} disabled={saving || unchanged}
+                  <button onClick={handleSaveEdit} disabled={saving || semMudanca}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px',
                       fontSize: '13px', fontWeight: 600, color: '#fff', background: '#ea6c00',
-                      border: 'none', borderRadius: '8px', cursor: 'pointer', opacity: (saving || unchanged) ? 0.6 : 1 }}>
+                      border: 'none', borderRadius: '8px', cursor: 'pointer', opacity: (saving || semMudanca) ? 0.6 : 1 }}>
                     {saving ? <Loader2 size={13} className="animate-spin" /> : null}
                     Salvar
                   </button>
@@ -783,7 +895,7 @@ export const UserManagementModule: React.FC = () => {
               })()}
             </div>
 
-            {/* ── PIN de Segurança (admin) ───────────────────────────────── */}
+      {/* ── PIN de Segurança (admin) ───────────────────────────────── */}
             <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(15,23,42,0.08)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <p style={{ fontSize: '13px', fontWeight: 600, color: '#191c1e' }}>PIN de Segurança</p>
@@ -826,7 +938,8 @@ export const UserManagementModule: React.FC = () => {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

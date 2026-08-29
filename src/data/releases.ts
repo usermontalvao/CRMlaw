@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.35',
+    date: '29/08/2026',
+    summary: 'A janela da Equipe passou a abrir por cima da tela inteira e a editar o cadastro completo, não só o cargo.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A janela abria dentro do bloco de Configurações',
+            description: 'Ela ficava presa ao painel, espremida e cortada, em vez de cobrir a tela — a página de Configurações tem contêineres com animação, e isso muda o ponto de referência de uma janela flutuante. Agora ela é montada fora dessa árvore e abre por cima de tudo.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Editar o cadastro completo do colaborador',
+            description: 'A janela só mexia em cargo e gênero: corrigir um telefone errado ou cadastrar a OAB de alguém exigia mexer no banco. Agora edita nome, telefone, CPF, OAB, local, nome completo para petições, observações, gênero e cargo — com o PIN de segurança na mesma tela, como já era. O e-mail continua de fora porque é a credencial de login: mudá-lo aqui faria a tela e o acesso discordarem em silêncio.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.34',
     date: '29/08/2026',
     summary: 'O comprovante escondia provas: dizia "assinatura eletrônica" quando havia selfie e confirmação por e-mail registradas.',
