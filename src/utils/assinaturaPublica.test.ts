@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   canalDoRegistro,
   descreverAparelho,
+  documentoSemOSignatario,
   faseDaAbertura,
   faseDaConferencia,
   formatarCoordenadas,
@@ -102,6 +103,34 @@ test('quem volta ao link depois lê o canal do registro', () => {
   // `phone` não diz se foi WhatsApp ou SMS: melhor "Confirmada" do que um chute.
   assert.equal(canalDoRegistro({ auth_provider: 'phone' }), null);
   assert.equal(canalDoRegistro(null), null);
+});
+
+test('o título do documento não repete o nome de quem assinou', () => {
+  assert.equal(
+    documentoSemOSignatario('KIT CONSUMIDOR - JENIFFER APARECIDA ALVES RODRIGUES', 'Jeniffer Aparecida Alves Rodrigues'),
+    'KIT CONSUMIDOR',
+  );
+  // Acento e caixa não podem impedir o corte.
+  assert.equal(
+    documentoSemOSignatario('Procuração — José Antônio da Silva', 'JOSE ANTONIO DA SILVA'),
+    'Procuração',
+  );
+});
+
+test('o corte é conservador: na dúvida, o título passa inteiro', () => {
+  // Nome no MEIO do título não é o padrão que estamos apagando.
+  assert.equal(
+    documentoSemOSignatario('Contrato de Maria Silva assinado', 'Maria Silva'),
+    'Contrato de Maria Silva assinado',
+  );
+  // Sobraria pouco demais para ainda ser nome de documento.
+  assert.equal(documentoSemOSignatario('De Maria Silva', 'Maria Silva'), 'De Maria Silva');
+  // Título que É só o nome continua sendo o título.
+  assert.equal(documentoSemOSignatario('Maria Silva', 'Maria Silva'), 'Maria Silva');
+  // Nome curto demais para servir de sufixo confiável.
+  assert.equal(documentoSemOSignatario('Recibo Ana', 'Ana'), 'Recibo Ana');
+  assert.equal(documentoSemOSignatario('Procuração', ''), 'Procuração');
+  assert.equal(documentoSemOSignatario(null, 'Maria Silva'), '');
 });
 
 test('nenhuma das duas esperas promete conclusão', () => {

@@ -506,6 +506,14 @@ export const Recibo: React.FC<{
   codigo: string;
   estado?: EstadoDoRecibo;
   aoCopiar?: () => void;
+  /**
+   * O que o botão diz que copia.
+   *
+   * Ele dizia só "Copiar", flutuando embaixo de "Válido · Autêntico" — e o que
+   * está logo acima dele são TRÊS coisas (o rótulo, o código e o selo). Um
+   * botão de copiar precisa nomear o que leva.
+   */
+  acaoDeCopia?: string;
   /** Miniaturas da prova: só o comprovante logo após assinar as tem em mãos. */
   selfie?: string | null;
   assinatura?: string | null;
@@ -513,7 +521,10 @@ export const Recibo: React.FC<{
   esmaecido?: boolean;
   children?: React.ReactNode;
   style?: React.CSSProperties;
-}> = ({ rotulo = 'Protocolo do envelope', codigo, estado = 'valido', aoCopiar, selfie, assinatura, esmaecido, children, style }) => {
+}> = ({
+  rotulo = 'Protocolo do envelope', codigo, estado = 'valido', aoCopiar,
+  acaoDeCopia = 'Copiar protocolo', selfie, assinatura, esmaecido, children, style,
+}) => {
   const carimbo =
     estado === 'valido' ? { texto: 'Válido · Autêntico', cor: VERDE }
     : estado === 'desativado' ? { texto: 'Consulta desativada', cor: '#b45309' }
@@ -566,7 +577,7 @@ export const Recibo: React.FC<{
                  strokeLinecap="round" strokeLinejoin="round">
               <rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" />
             </svg>
-            Copiar
+            {acaoDeCopia}
           </button>
         </div>
       )}

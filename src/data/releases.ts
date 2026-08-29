@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.30',
+    date: '29/08/2026',
+    summary: 'No recibo, o botão voltou a dizer o que copia, e o título do documento parou de repetir o nome de quem assinou.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O botão diz "Copiar protocolo"',
+            description: 'Ele mostrava só "Copiar", logo abaixo de três coisas diferentes — o rótulo, o código e o selo de válido — sem dizer qual delas ia para a área de transferência. Vale para o comprovante do signatário e para o validador público.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O documento não repete o nome do signatário',
+            description: 'Os documentos daqui nascem com o nome da pessoa no título ("KIT CONSUMIDOR - JENIFFER ..."), e o recibo mostrava logo abaixo "Assinado por: JENIFFER ...". Duas linhas coladas dizendo a mesma coisa, com a informação que de fato distingue — QUE documento é — espremida na frente do nome. Agora sobra "KIT CONSUMIDOR", e o nome continua inteiro na linha de baixo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.29',
     date: '29/08/2026',
     summary: 'A página pública de validação entrou no mesmo sistema das telas de assinatura — e o resultado passou a ser o próprio comprovante do signatário, devolvido com o selo.',

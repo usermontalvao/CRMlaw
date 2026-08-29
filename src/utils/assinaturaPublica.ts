@@ -146,6 +146,46 @@ export function canalDoRegistro(
   return null;
 }
 
+const semAcento = (valor: string): string =>
+  valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * O nome do documento SEM repetir o nome de quem assinou.
+ *
+ * Os documentos do escritório nascem com o nome da pessoa no título ("KIT
+ * CONSUMIDOR - JENIFFER APARECIDA ALVES RODRIGUES"), e o recibo mostra logo
+ * abaixo "Assinado por: JENIFFER APARECIDA ALVES RODRIGUES". Duas linhas
+ * coladas dizendo a mesma coisa, e a informação que distingue uma da outra —
+ * QUE documento é — fica espremida na frente do nome.
+ *
+ * Aqui o sufixo repetido sai do título e sobra "KIT CONSUMIDOR". Nada se perde:
+ * o nome continua inteiro na linha de baixo, que é a que tem valor jurídico.
+ *
+ * Conservador de propósito: só corta quando o nome está mesmo no FIM do título,
+ * e só se o que sobrar ainda for um nome de documento (3+ caracteres). Título
+ * que não segue esse padrão passa intacto.
+ */
+export function documentoSemOSignatario(
+  nomeDoDocumento: string | null | undefined,
+  nomeDoSignatario: string | null | undefined,
+): string {
+  const documento = (nomeDoDocumento || '').trim();
+  const signatario = (nomeDoSignatario || '').trim();
+  if (!documento || !signatario) return documento;
+
+  const doc = semAcento(documento);
+  const sig = semAcento(signatario);
+  if (sig.length < 4 || !doc.endsWith(sig) || doc === sig) return documento;
+
+  // Corta pelo COMPRIMENTO do sufixo normalizado. Acento e caixa não mudam a
+  // contagem de caracteres nesta normalização, então o índice vale no original.
+  const restante = documento.slice(0, documento.length - signatario.length)
+    .replace(/[\s\-–—,;:|]+$/u, '')
+    .trim();
+
+  return restante.length >= 3 ? restante : documento;
+}
+
 /**
  * A frase da conferência, escolhida pelo tempo decorrido.
  *

@@ -23,7 +23,7 @@ import {
   sobe,
   type Tom,
 } from './publicSigning/ui';
-import { canalDoRegistro, mascararCpf, nomeDoCanal } from '../utils/assinaturaPublica';
+import { canalDoRegistro, documentoSemOSignatario, mascararCpf, nomeDoCanal } from '../utils/assinaturaPublica';
 import { signatureService } from '../services/signature.service';
 import type { VerifiedDocument } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
@@ -304,7 +304,12 @@ const PublicVerificationPage: React.FC = () => {
   const linhasDoRecibo = (
     <>
       {result?.request?.document_name && (
-        <LinhaDoRecibo chave="Documento" quebrar>{stripDocumentExtension(result.request.document_name)}</LinhaDoRecibo>
+        <LinhaDoRecibo chave="Documento" quebrar>
+          {documentoSemOSignatario(
+            stripDocumentExtension(result.request.document_name),
+            result?.signer?.name,
+          )}
+        </LinhaDoRecibo>
       )}
       {result?.signer?.name && <LinhaDoRecibo chave="Assinado por" quebrar>{result.signer.name}</LinhaDoRecibo>}
       {result?.signer?.signed_at && <LinhaDoRecibo chave="Assinado em">{formatDate(result.signer.signed_at)}</LinhaDoRecibo>}

@@ -19,6 +19,7 @@
 import React from 'react';
 import {
   type CanalDeIdentidade,
+  documentoSemOSignatario,
   formatarCoordenadas,
   mascararCpf,
   nomeDoCanal,
@@ -123,7 +124,7 @@ const TelaDeComprovante: React.FC<{
           assinatura={assinatura}
           style={sobe(2, 0.5)}
         >
-          {documento && <LinhaDoRecibo chave="Documento" quebrar>{documento}</LinhaDoRecibo>}
+          {documento && <LinhaDoRecibo chave="Documento" quebrar>{documentoSemOSignatario(documento, nome)}</LinhaDoRecibo>}
           <LinhaDoRecibo chave="Assinado por">{nome}</LinhaDoRecibo>
           {assinadoEm && <LinhaDoRecibo chave="Assinado em">{assinadoEm}</LinhaDoRecibo>}
           {coordenadas && <LinhaDoRecibo chave="Local">{coordenadas}</LinhaDoRecibo>}
