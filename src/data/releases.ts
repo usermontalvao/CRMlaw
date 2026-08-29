@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.18',
+    date: '29/08/2026',
+    summary: 'As opções de identificação na página de assinatura viraram uma lista só. E o módulo WhatsApp voltou a enviar de verdade — faltava uma segunda peça no banco, que morria depois de a mensagem já ter saído.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Os botões de identificação viraram um conjunto',
+            description: 'O botão do Google é desenhado pelo próprio Google e não aceita estilo nosso. Os outros três agora copiam exatamente a medida dele — mesma altura, mesmo canto, mesma borda, mesmo texto —, e a cor da marca ficou só no ícone. Antes eram um bloco verde e um bloco preto ao lado de um botão branco, e a tela parecia montada com peças de origens diferentes.',
+          },
+        ],
+      },
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A segunda peça que faltava para o envio',
+            description: 'Destravada a permissão, a mensagem passou a morrer um degrau adiante, numa coluna que não existia no banco — e o pior é que isso acontecia DEPOIS de o WhatsApp já ter entregue: o cliente recebia, o CRM dava erro e não guardava, e reenviar duplicava. A coluna e o registro de "respondeu sem assumir" foram criados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.17',
     date: '29/08/2026',
     summary: 'O módulo WhatsApp voltou a enviar. A trava de canal que subiu hoje perguntava ao banco por uma permissão que nunca tinha sido criada lá — e, como toda trava de segurança, na dúvida ela negava. Resultado: "sem permissão" para todo mundo, ao mesmo tempo.',
