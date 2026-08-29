@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.20',
+    date: '29/08/2026',
+    summary: 'Pedir o número e digitar o código viraram duas telas, e o código agora mostra quanto tempo ainda vale.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'O código ganhou tela própria',
+            description: 'O campo do código aparecia embaixo do telefone, com o botão de reenviar entre os dois: três coisas competindo na mesma tela, e nenhuma dizendo qual era o próximo gesto. Agora a primeira tela só pede o número; a segunda só recebe o código, e diz no alto para qual número ele foi. De lá dá para reenviar ou voltar e usar outro número.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Contador de validade do código',
+            description: 'No lugar de "válido até 21:47" — que obriga a olhar o relógio e fazer a conta — a tela mostra "Expira em 4:54", contando para trás. Quando zera, o campo avisa que o código expirou e o botão de validar sai do ar, em vez de deixar a pessoa tentar um código morto e receber um erro seco.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.19',
     date: '29/08/2026',
     summary: 'A tela de assinatura estava vestindo a pele dos modais internos do CRM — que é escura. Era isso que deixava o campo de telefone como uma caixa preta e o botão "Voltar" como um bloco cinza-chumbo. A página pública passou a mandar no próprio visual, e o número ganhou o destaque que ele merece: é ele que recebe o código e é ele que vai para o relatório.',

@@ -1061,6 +1061,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   // o número vem de lá — a tela só conta para trás e desliga o botão. Deixar a
   // pessoa clicar para descobrir no erro seria pior do que mostrar o relógio.
   const [phoneOtpResendIn, setPhoneOtpResendIn] = useState(0);
+  /** Segundos que o código ainda vale. O relógio fica logo abaixo do campo. */
+  const [phoneOtpRemaining, setPhoneOtpRemaining] = useState(0);
   // Códigos errados seguidos. Serve para uma coisa só: a partir do primeiro
   // tropeço a tela oferece OUTRO caminho. Insistir com quem não está recebendo
   // o código é o jeito mais rápido de a assinatura não acontecer.
@@ -1091,6 +1093,23 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [emailOtpRemaining, setEmailOtpRemaining] = useState<number>(0);
   const [emailOtpResendIn, setEmailOtpResendIn] = useState(0);
   const [emailOtpFails, setEmailOtpFails] = useState(0);
+
+  // Validade do código por telefone: conta para trás a partir de `expires_at`.
+  // "Válido até 21:47" obriga quem lê a olhar o relógio e fazer a conta; o que
+  // a pessoa quer saber é quanto tempo AINDA tem.
+  useEffect(() => {
+    if (!phoneOtpSent || !phoneOtpExpiresAt) {
+      setPhoneOtpRemaining(0);
+      return;
+    }
+    const tick = () => {
+      const diff = Math.max(0, Math.floor((new Date(phoneOtpExpiresAt).getTime() - Date.now()) / 1000));
+      setPhoneOtpRemaining(diff);
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [phoneOtpSent, phoneOtpExpiresAt]);
 
   // Um relógio só para os dois contadores de reenvio.
   useEffect(() => {
@@ -4308,17 +4327,28 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 </div>
               )}
 
-              {/* Etapa: Verificação por telefone */}
+              {/* Etapa: Verificação por telefone — DUAS TELAS.
+                  Pedir o número e digitar o código são momentos diferentes, e
+                  empilhar os dois deixava o campo do código aparecendo embaixo
+                  do telefone com o botão "Reenviar" no meio: três coisas
+                  competindo, e nenhuma dizendo qual é o próximo gesto. Agora a
+                  primeira tela só coleta o número; a segunda só recebe o
+                  código, e mostra para onde ele foi. */}
               {modalStep === 'phone_otp' && (
                 <div className="space-y-5">
                   <div className="text-center">
                     <h2 className="text-xl font-bold text-slate-800">
-                      {phoneOtpChannel === 'whatsapp' ? 'Verifique seu WhatsApp' : 'Verifique seu telefone'}
+                      {phoneOtpSent
+                        ? 'Digite o código'
+                        : phoneOtpChannel === 'whatsapp' ? 'Verifique seu WhatsApp' : 'Verifique seu telefone'}
                     </h2>
                     <p className="text-slate-500 text-sm mt-2">
-                      {phoneOtpChannel === 'whatsapp'
-                        ? 'Enviaremos um código pelo WhatsApp para confirmar sua identidade. O número precisa ser o mesmo que você usa no aplicativo.'
-                        : 'Enviaremos um código por SMS para confirmar sua identidade.'}
+                      {phoneOtpSent
+                        ? <>Enviamos um código de 6 dígitos {phoneOtpChannel === 'whatsapp' ? 'pelo WhatsApp' : 'por SMS'} para{' '}
+                            <span className="font-semibold tabular-nums text-slate-700">+55 {formatarTelefoneBR(signerData.phone)}</span>.</>
+                        : phoneOtpChannel === 'whatsapp'
+                          ? 'Enviaremos um código pelo WhatsApp para confirmar sua identidade. O número precisa ser o mesmo que você usa no aplicativo.'
+                          : 'Enviaremos um código por SMS para confirmar sua identidade.'}
                     </p>
                   </div>
 
@@ -4328,110 +4358,133 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                     </div>
                   )}
 
-                  <div className="space-y-4">
-                    {/* O NÚMERO é o dado principal desta tela — e antes ele
-                        aparecia como "65984046375" numa caixa cinza, do mesmo
-                        tamanho de qualquer outro campo. Quem digita o próprio
-                        telefone precisa CONFERIR o que digitou antes de mandar,
-                        e conferir onze dígitos colados é exatamente o que
-                        ninguém faz. Daí o +55 fixo à esquerda, a máscara e o
-                        corpo grande. */}
-                    <div className="text-left">
-                      <label className="block text-[13px] font-semibold text-slate-600 mb-2">
-                        {phoneOtpChannel === 'whatsapp' ? 'Seu número de WhatsApp' : 'Seu telefone com DDD'}
-                      </label>
-                      <div className="flex items-stretch overflow-hidden rounded-xl border border-[#e7e5df] bg-white transition focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500/15">
-                        {/* Bandeira + código. A bandeira sozinha seria bonita e
-                            ambígua: no Windows o emoji de bandeira vira as
-                            letras "BR", e vários países dividem o formato de
-                            número. Os dois juntos é o que o próprio WhatsApp
-                            faz — a bandeira dá o reconhecimento imediato, o
-                            "+55" diz o que a bandeira não consegue dizer em
-                            todo aparelho. */}
-                        <span className="flex select-none items-center gap-1.5 border-r border-[#e7e5df] bg-[#faf9f7] px-3.5">
-                          <span className="text-lg leading-none" role="img" aria-label="Brasil">🇧🇷</span>
-                          <span className="text-sm font-medium text-slate-400">+55</span>
-                        </span>
-                        <input
-                          type="tel"
-                          inputMode="tel"
-                          autoComplete="tel-national"
-                          value={formatarTelefoneBR(signerData.phone)}
-                          onChange={(e) => setSignerData((d) => ({ ...d, phone: formatarTelefoneBR(e.target.value) }))}
-                          placeholder="(65) 98404-6375"
-                          className="w-full bg-transparent px-4 py-3.5 text-xl font-semibold tabular-nums text-slate-900 outline-none placeholder:text-lg placeholder:font-normal placeholder:text-slate-300"
-                        />
-                      </div>
-                      <p className="mt-2 text-xs text-slate-500">
-                        {phoneOtpChannel === 'whatsapp'
-                          ? 'Confira antes de enviar: o código chega neste número, no aplicativo.'
-                          : 'Confira antes de enviar: o código chega neste número, por SMS.'}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleSendPhoneOtp}
-                      disabled={phoneOtpLoading || phoneOtpResendIn > 0 || signerData.phone.replace(/\D/g, '').length < 10}
-                      className="w-full rounded-xl bg-orange-600 py-3.5 font-semibold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {phoneOtpLoading
-                        ? 'Enviando…'
-                        : phoneOtpResendIn > 0
-                          ? `Reenviar em ${contagemRegressiva(phoneOtpResendIn)}`
-                          : (phoneOtpSent ? 'Reenviar código' : 'Enviar código')}
-                    </button>
-
-                    {phoneOtpSent && (
-                      <div className="rounded-xl border border-[#e7e5df] bg-white p-4 text-left">
-                        <label className="block text-[13px] font-semibold text-slate-600 mb-1">
-                          Código de 6 dígitos
+                  {!phoneOtpSent ? (
+                    /* ── Tela 1: o número ────────────────────────────────── */
+                    <div className="space-y-4">
+                      {/* O NÚMERO é o dado principal desta tela — e antes ele
+                          aparecia como "65984046375" numa caixa cinza, do mesmo
+                          tamanho de qualquer outro campo. Quem digita o próprio
+                          telefone precisa CONFERIR o que digitou antes de
+                          mandar, e conferir onze dígitos colados é exatamente o
+                          que ninguém faz. */}
+                      <div className="text-left">
+                        <label className="block text-[13px] font-semibold text-slate-600 mb-2">
+                          {phoneOtpChannel === 'whatsapp' ? 'Seu número de WhatsApp' : 'Seu telefone com DDD'}
                         </label>
-                        <p className="mb-3 text-xs text-slate-500">
-                          Enviado {phoneOtpChannel === 'whatsapp' ? 'pelo WhatsApp' : 'por SMS'} para{' '}
-                          <span className="font-semibold tabular-nums text-slate-700">🇧🇷 +55 {formatarTelefoneBR(signerData.phone)}</span>
+                        <div className="flex items-stretch overflow-hidden rounded-xl border border-[#e7e5df] bg-white transition focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500/15">
+                          {/* Bandeira + código. A bandeira sozinha seria bonita
+                              e ambígua: no Windows o emoji de bandeira vira as
+                              letras "BR", e vários países dividem o formato de
+                              número. Os dois juntos é o que o próprio WhatsApp
+                              faz. */}
+                          <span className="flex select-none items-center gap-1.5 border-r border-[#e7e5df] bg-[#faf9f7] px-3.5">
+                            <span className="text-lg leading-none" role="img" aria-label="Brasil">🇧🇷</span>
+                            <span className="text-sm font-medium text-slate-400">+55</span>
+                          </span>
+                          <input
+                            type="tel"
+                            inputMode="tel"
+                            autoComplete="tel-national"
+                            value={formatarTelefoneBR(signerData.phone)}
+                            onChange={(e) => setSignerData((d) => ({ ...d, phone: formatarTelefoneBR(e.target.value) }))}
+                            placeholder="(65) 98404-6375"
+                            className="w-full bg-transparent px-4 py-3.5 text-xl font-semibold tabular-nums text-slate-900 outline-none placeholder:text-lg placeholder:font-normal placeholder:text-slate-300"
+                          />
+                        </div>
+                        <p className="mt-2 text-xs text-slate-500">
+                          {phoneOtpChannel === 'whatsapp'
+                            ? 'Confira antes de enviar: o código chega neste número, no aplicativo.'
+                            : 'Confira antes de enviar: o código chega neste número, por SMS.'}
                         </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSendPhoneOtp}
+                        disabled={phoneOtpLoading || phoneOtpResendIn > 0 || signerData.phone.replace(/\D/g, '').length < 10}
+                        className="w-full rounded-xl bg-orange-600 py-3.5 font-semibold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {phoneOtpLoading
+                          ? 'Enviando…'
+                          : phoneOtpResendIn > 0
+                            ? `Aguarde ${contagemRegressiva(phoneOtpResendIn)}`
+                            : 'Enviar código'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setModalStep('google_auth')}
+                        className="w-full rounded-xl border border-[#e7e5df] bg-white py-3 font-semibold text-slate-600 transition hover:bg-slate-50"
+                      >
+                        Voltar
+                      </button>
+                    </div>
+                  ) : (
+                    /* ── Tela 2: o código ────────────────────────────────── */
+                    <div className="space-y-4">
+                      <div>
                         <input
                           type="text"
                           inputMode="numeric"
                           autoComplete="one-time-code"
+                          autoFocus
                           maxLength={6}
                           value={phoneOtp}
                           onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, ''))}
                           placeholder="000000"
-                          className="w-full rounded-xl border border-[#e7e5df] bg-[#faf9f7] py-3.5 pl-[0.5em] text-center text-2xl font-bold tabular-nums tracking-[0.5em] text-slate-900 outline-none transition focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-500/15 placeholder:font-normal placeholder:text-slate-300"
+                          className="w-full rounded-xl border border-[#e7e5df] bg-[#faf9f7] py-4 pl-[0.5em] text-center text-3xl font-bold tabular-nums tracking-[0.5em] text-slate-900 outline-none transition focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-500/15 placeholder:font-normal placeholder:text-slate-300"
                         />
-                        {phoneOtpExpiresAt && (
-                          <div className="mt-2 text-xs text-slate-500">
-                            Válido até {formatDate(phoneOtpExpiresAt)}
-                          </div>
-                        )}
+                        {/* O relógio da validade. Vale mais que "válido até
+                            21:47": ninguém quer fazer a conta com o relógio da
+                            parede, quer saber quanto ainda tem. */}
+                        <div className="mt-2 flex items-center justify-center gap-1.5 text-xs">
+                          {phoneOtpRemaining > 0 ? (
+                            <>
+                              <Clock className="h-3.5 w-3.5 text-slate-400" />
+                              <span className="text-slate-500">
+                                Expira em <span className="font-semibold tabular-nums text-slate-700">{contagemRegressiva(phoneOtpRemaining)}</span>
+                              </span>
+                            </>
+                          ) : (
+                            <span className="font-medium text-red-500">Código expirado — peça outro abaixo.</span>
+                          )}
+                        </div>
                       </div>
-                    )}
-                  </div>
 
-                  <div className="space-y-3">
-                    {phoneOtpSent && (
                       <button
                         type="button"
                         onClick={handleVerifyPhoneOtp}
-                        disabled={phoneOtpLoading || phoneOtp.length < 4}
-                        className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-base shadow-lg shadow-emerald-500/30 disabled:opacity-50 transition"
+                        disabled={phoneOtpLoading || phoneOtp.length < 6 || phoneOtpRemaining <= 0}
+                        className="w-full rounded-xl bg-orange-600 py-3.5 font-semibold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {phoneOtpLoading ? 'Validando…' : 'Validar e continuar'}
                       </button>
-                    )}
 
-                    {phoneOtpFails > 0 && <SaidaPorOutroCaminho atual="phone" />}
+                      <div className="text-center text-xs text-slate-500">
+                        Não recebeu?{' '}
+                        <button
+                          type="button"
+                          onClick={handleSendPhoneOtp}
+                          disabled={phoneOtpLoading || phoneOtpResendIn > 0}
+                          className="font-semibold text-orange-600 transition hover:text-orange-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
+                        >
+                          {phoneOtpResendIn > 0
+                            ? `Reenviar em ${contagemRegressiva(phoneOtpResendIn)}`
+                            : 'Reenviar código'}
+                        </button>
+                      </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setModalStep('google_auth')}
-                      className="w-full rounded-xl border border-[#e7e5df] bg-white py-3 font-semibold text-slate-600 transition hover:bg-slate-50"
-                    >
-                      Voltar
-                    </button>
-                  </div>
+                      {phoneOtpFails > 0 && <SaidaPorOutroCaminho atual="phone" />}
+
+                      <button
+                        type="button"
+                        onClick={() => { setPhoneOtpSent(false); setPhoneOtp(''); setPhoneOtpError(null); }}
+                        className="w-full rounded-xl border border-[#e7e5df] bg-white py-3 font-semibold text-slate-600 transition hover:bg-slate-50"
+                      >
+                        Usar outro número
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
