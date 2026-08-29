@@ -5,7 +5,7 @@ import { signatureService } from '../services/signature.service';
 import { BrandLogo } from './ui/BrandLogo';
 import { BRAND_GRADIENT, BRAND_IVORY } from '../constants/brand';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
-import { lerIdentidadeConfirmada, fraseIdentidadeConfirmada, rotuloIdentidadeConfirmada } from '../utils/identidadeConfirmada';
+import { lerIdentidadeConfirmada, fraseIdentidadeConfirmada, rotuloIdentificadorConfirmado, rotuloIdentidadeConfirmada, autenticacaoOtpSemCanal, formatarTelefoneConfirmado, AUTENTICACAO_OTP_SEM_CANAL } from '../utils/identidadeConfirmada';
 
 // Registro de eventos por signatário — espelha a "TRILHA DE AUDITORIA / REGISTRO
 // DE EVENTOS" do PDF (pdfSignature.service.ts): visualização, autenticação,
@@ -19,20 +19,28 @@ const buildSignerEvents = (s: any): SignerEvent[] => {
   const phone = String(s.phone || '').trim();
   const rawEmail = String(s.email || '').trim();
   const confirmadaContato = lerIdentidadeConfirmada(s);
-  const displayContact = confirmadaContato?.identificador || authEmail || (s.auth_provider === 'phone' ? phone : '') || rawEmail;
+  const displayContact = confirmadaContato?.identificador || authEmail || (s.auth_provider === 'phone' ? formatarTelefoneConfirmado(phone) : '') || rawEmail;
+  // Confirmado pelo servidor não é "telefone": é o número que RECEBEU o código.
   const contactLabel = confirmadaContato
-    ? (confirmadaContato.canal === 'whatsapp' ? 'WhatsApp' : confirmadaContato.canal === 'sms' ? 'Telefone' : 'E-mail')
-    : authEmail ? 'E-mail' : s.auth_provider === 'phone' ? 'Telefone' : 'E-mail';
-  const contact = displayContact ? ` (${contactLabel}: ${displayContact})` : '';
+    ? rotuloIdentificadorConfirmado(confirmadaContato)
+    : authEmail ? 'E-mail' : s.auth_provider === 'phone' ? 'Telefone informado' : 'E-mail';
+  // Quando a identidade foi CONFIRMADA, a frase de autenticação já diz o número
+  // ("…enviado via WhatsApp para +55 (65) 98404-6375"). Repetir o mesmo número
+  // logo depois do nome não acrescenta nada e polui a linha do evento.
+  const contact = displayContact && !confirmadaContato ? ` (${contactLabel}: ${displayContact})` : '';
   const cpf = s.cpf ? `, CPF: ${s.cpf}` : '';
   const geo = String(s.geolocation || '').trim();
   const hasGeo = !!geo && /-?\d/.test(geo);
   const ip = String(s.ip_address || '').trim();
   const ipInfo = ip ? ` por meio do IP ${ip}` : '';
-  const base = s.auth_provider === 'phone' ? 'Autenticação via Telefone'
-    : s.auth_provider === 'email_link' ? 'Autenticação via Link por E-mail'
-    : s.auth_provider === 'google' ? 'Autenticação via Google'
-    : 'Autenticação no fluxo de assinatura';
+  // Onde o IP entra, o aparelho entra junto: os dois respondem à mesma pergunta
+  // ("de onde partiu este ato") e separá-los obrigava a cruzar telas.
+  const uaCompleto = String(s.user_agent || '').trim();
+  const uaSufixo = uaCompleto ? ` Dispositivo: ${uaCompleto}` : '';
+  const base = s.auth_provider === 'phone' ? autenticacaoOtpSemCanal(s.phone)
+    : s.auth_provider === 'email_link' ? 'Autenticação realizada por código enviado via e-mail'
+    : s.auth_provider === 'google' ? 'Autenticação realizada via conta Google'
+    : 'Autenticação realizada no fluxo de assinatura';
   // Confirmado pelo servidor ganha do declarado — ver `utils/identidadeConfirmada`.
   const confirmada = lerIdentidadeConfirmada(s);
   const authSummary = confirmada
@@ -50,8 +58,8 @@ const buildSignerEvents = (s: any): SignerEvent[] => {
   const geoAt = s.geolocation_captured_at || viewedAt;
   const events: SignerEvent[] = [];
   if (viewedAt) {
-    events.push({ label: 'Visualizado', at: viewedAt, sortAt: ms(viewedAt), order: 1, detail: `${name}${cpf} abriu o documento${ipInfo}.` });
-    events.push({ label: 'Autenticação', at: authAt, sortAt: ms(authAt), order: 2, detail: `${name}${cpf}. ${authSummary}${ipInfo ? `${ipInfo}.` : '.'}` });
+    events.push({ label: 'Visualizado', at: viewedAt, sortAt: ms(viewedAt), order: 1, detail: `${name}${cpf} abriu o documento${ipInfo}.${uaSufixo}` });
+    events.push({ label: 'Autenticação', at: authAt, sortAt: ms(authAt), order: 2, detail: `${name}${cpf}. ${authSummary}${ipInfo ? `${ipInfo}.` : '.'}${uaSufixo}` });
     if (s.has_facial_biometrics) events.push({ label: 'Biometria facial', at: facialAt, sortAt: ms(facialAt), order: 2.5, detail: `${name}${contact}${cpf} concedeu acesso à câmera e teve a selfie capturada para verificação facial.` });
     if (hasGeo) events.push({ label: 'Localização', at: geoAt, sortAt: ms(geoAt), order: 3, detail: `${name}${contact}${cpf} ativou a localização com coordenadas ${geo}.` });
   }
@@ -61,7 +69,7 @@ const buildSignerEvents = (s: any): SignerEvent[] => {
     events.push({ label: 'Termos', at: s.terms_accepted_at, sortAt: signedMs ? Math.min(tMs, signedMs) : tMs, order: 4, detail: `${name}${contact}${cpf} declarou ter lido e aceitado os Termos de Uso (versão ${v})${ipInfo}. Consulte em ${buildPublicSignatureTermsUrl(v)}` });
   }
   if (s.signed_at) {
-    events.push({ label: 'Assinado', at: s.signed_at, sortAt: signedMs, order: 5, detail: `${name}${contact}${cpf} assinou este documento${ipInfo}${hasGeo ? ` localizado em ${geo}` : ''}. ${authSummary}` });
+    events.push({ label: 'Assinado', at: s.signed_at, sortAt: signedMs, order: 5, detail: `${name}${contact}${cpf} assinou este documento${ipInfo}${hasGeo ? ` localizado em ${geo}` : ''}. ${authSummary}${uaSufixo}` });
   }
   events.sort((a, b) => a.sortAt - b.sortAt || a.order - b.order);
   return events;
@@ -133,13 +141,13 @@ const authLabel = (method?: string | null, provider?: string | null, canal?: str
   const parts: string[] = [];
   // O canal confirmado é mais específico que o provedor declarado: 'phone'
   // não diz se o código foi por SMS ou por WhatsApp, e o relatório precisa.
-  if (canal === 'whatsapp') parts.push('Autenticação por WhatsApp');
-  else if (canal === 'sms') parts.push('Autenticação por SMS');
-  else if (canal === 'email') parts.push('Autenticação por e-mail');
-  else if (canal === 'google') parts.push('Autenticação via Google');
-  else if (provider === 'google') parts.push('Autenticação via Google');
-  else if (provider === 'email_link') parts.push('Autenticação por e-mail');
-  else if (provider === 'phone') parts.push('Autenticação por telefone');
+  if (canal === 'whatsapp') parts.push('Autenticação realizada via WhatsApp');
+  else if (canal === 'sms') parts.push('Autenticação realizada via SMS');
+  else if (canal === 'email') parts.push('Autenticação realizada via e-mail');
+  else if (canal === 'google') parts.push('Autenticação realizada via conta Google');
+  else if (provider === 'google') parts.push('Autenticação realizada via conta Google');
+  else if (provider === 'email_link') parts.push('Autenticação realizada via e-mail');
+  else if (provider === 'phone') parts.push(AUTENTICACAO_OTP_SEM_CANAL);
   if (method === 'signature_facial' || method === 'signature_facial_document') parts.push('Verificação facial');
   if (method === 'signature_facial_document') parts.push('Documento com foto');
   if (!parts.length) parts.push('Assinatura eletrônica');
@@ -640,6 +648,13 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
                     <KVRow label="Geolocalização" value={mapsUrl(s.geolocation) ? <a href={mapsUrl(s.geolocation)!} target="_blank" rel="noreferrer" style={{ color: '#1d4ed8' }}>{s.geolocation}</a> : (s.geolocation || '-')} mono />
                     <KVRow label="Endereço IP" value={s.ip_address || '-'} mono />
                     <KVRow label="Dispositivo" value={parseUA(s.user_agent)} />
+                    {/* A cadeia crua vai junto: o resumo acima descarta o que
+                        identifica o cliente de verdade (um "Claude/1.40609.0
+                        Chrome/148…" virava só "Chrome"). Num dossiê que serve
+                        de prova, o dado é a string inteira. */}
+                    {String(s.user_agent || '').trim() && (
+                      <KVRow label="Agente de usuário" value={String(s.user_agent).trim()} mono />
+                    )}
                     <KVRow label="Código de verificação do signatário" value={s.signer_verification_hash || '-'} mono />
 
                     {(() => {

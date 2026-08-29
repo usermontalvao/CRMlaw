@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import type { Signer, SignatureRequest } from '../types/signature.types';
 import { supabase } from '../config/supabase';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
+import { lerIdentidadeConfirmada, resumoIdentidadeConfirmada, autenticacaoOtpSemCanal, AUTENTICACAO_OTP_SEM_CANAL, formatarTelefoneConfirmado } from '../utils/identidadeConfirmada';
 
 interface SignatureReportProps {
   signer: Signer;
@@ -122,13 +123,20 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
     const re = (signer.email || '').trim();
     return ae || (signer.auth_provider === 'phone' ? ph : '') || (!isPlaceholder(re) ? re : '') || '';
   })();
+  const identidadeConfirmada = lerIdentidadeConfirmada(signer);
 
   const authItems: string[] = [];
   if (signer.signature_image_path) authItems.push('Assinatura manuscrita');
   if (signer.facial_image_path) authItems.push('Biometria facial');
-  if (signer.auth_provider === 'google') authItems.push('Google OAuth 2.0');
-  if (signer.auth_provider === 'email_link') authItems.push('E-mail OTP');
-  if (signer.auth_provider === 'phone') authItems.push('SMS OTP');
+  // "OTP" é jargão nosso, não do leitor do documento. Os textos dizem o ato e
+  // o canal, e saem das MESMAS constantes usadas nas outras duas páginas do
+  // relatório — antes cada tela escrevia a sua versão e elas divergiam.
+  if (identidadeConfirmada?.canal === 'whatsapp') authItems.push('Código enviado via WhatsApp');
+  else if (identidadeConfirmada?.canal === 'sms') authItems.push('Código enviado via SMS');
+  else if (identidadeConfirmada?.canal === 'email') authItems.push('Código enviado via e-mail');
+  else if (identidadeConfirmada?.canal === 'google' || signer.auth_provider === 'google') authItems.push('Conta Google');
+  else if (signer.auth_provider === 'email_link') authItems.push('Código enviado via e-mail');
+  else if (signer.auth_provider === 'phone') authItems.push(AUTENTICACAO_OTP_SEM_CANAL);
   if (signer.signer_geolocation) authItems.push('Geolocalização GPS');
   if (signer.signer_ip) authItems.push('IP registrado');
 
@@ -159,12 +167,14 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
     {
       label: 'Autenticação',
       value:
-        signer.auth_provider === 'google'
+        identidadeConfirmada
+          ? resumoIdentidadeConfirmada(identidadeConfirmada)
+          : signer.auth_provider === 'google'
           ? `Google (${signer.auth_email || ''})`
           : signer.auth_provider === 'email_link'
             ? `E-mail (${signer.auth_email || ''})`
             : signer.auth_provider === 'phone'
-              ? `SMS (${signer.phone || ''})`
+              ? autenticacaoOtpSemCanal(signer.phone)
               : 'Assinatura direta',
     },
     signer.terms_accepted_at
@@ -193,9 +203,11 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
     label:
       item === 'Assinatura manuscrita' ? 'Assinatura'
       : item === 'Biometria facial' ? 'Biometria'
-      : item === 'Google OAuth 2.0' ? 'Google'
-      : item === 'E-mail OTP' ? 'E-mail'
-      : item === 'SMS OTP' ? 'SMS'
+      : item === 'Conta Google' ? 'Google'
+      : item === 'Código enviado via e-mail' ? 'E-mail'
+      : item === 'Código enviado via WhatsApp' ? 'WhatsApp'
+      : item === 'Código enviado via SMS' ? 'SMS'
+      : item === AUTENTICACAO_OTP_SEM_CANAL ? 'Código'
       : item === 'Geolocalização GPS' ? 'Geolocalização'
       : item === 'IP registrado' ? 'IP'
       : `Fator ${index + 1}`,

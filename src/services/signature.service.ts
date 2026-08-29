@@ -1,4 +1,5 @@
 import { supabase } from '../config/supabase';
+import type { VerificacaoRegistrada } from '../utils/canalRecuperado';
 import { toWhatsappNumber } from '../utils/whatsapp';
 import type {
   SignatureRequest,
@@ -798,6 +799,59 @@ class SignatureService {
     } catch (e) {
       console.warn('Não foi possível registrar visualização (acesso público):', e);
     }
+  }
+
+  /**
+   * Lê as verificações de código já registradas pelo servidor, para o relatório
+   * recuperar POR ONDE o código foi enviado.
+   *
+   * Só o CRM autenticado enxerga estas tabelas (RLS `is_office_staff()`), o que
+   * é adequado: quem gera o relatório é o escritório. O fluxo público não passa
+   * por aqui e continua com o texto sem canal.
+   *
+   * Ver `utils/canalRecuperado` para a regra de qual verificação pertence a
+   * qual assinatura.
+   */
+  async lerVerificacoesRegistradas(signerIds: string[]): Promise<VerificacaoRegistrada[]> {
+    const ids = Array.from(new Set(signerIds.filter(Boolean)));
+    if (ids.length === 0) return [];
+
+    const verificacoes: VerificacaoRegistrada[] = [];
+
+    const [telefone, email] = await Promise.all([
+      supabase
+        .from('signature_phone_otps')
+        .select('signer_id,phone,channel,verified_at')
+        .in('signer_id', ids)
+        .not('verified_at', 'is', null),
+      supabase
+        .from('signature_email_otps')
+        .select('signer_id,email,verified_at')
+        .in('signer_id', ids)
+        .not('verified_at', 'is', null),
+    ]);
+
+    for (const linha of (telefone.data ?? []) as any[]) {
+      if (!linha?.signer_id || !linha?.verified_at || !linha?.phone) continue;
+      verificacoes.push({
+        signerId: String(linha.signer_id),
+        canal: linha.channel === 'whatsapp' ? 'whatsapp' : 'sms',
+        identificador: String(linha.phone),
+        verificadoEm: String(linha.verified_at),
+      });
+    }
+
+    for (const linha of (email.data ?? []) as any[]) {
+      if (!linha?.signer_id || !linha?.verified_at || !linha?.email) continue;
+      verificacoes.push({
+        signerId: String(linha.signer_id),
+        canal: 'email',
+        identificador: String(linha.email),
+        verificadoEm: String(linha.verified_at),
+      });
+    }
+
+    return verificacoes;
   }
 
   /** Heartbeat de presença pelo PÚBLICO via RPC restrita por public_token. */

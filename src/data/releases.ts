@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.24',
+    date: '29/08/2026',
+    summary: 'O relatório de assinatura voltou a dizer por onde a identidade foi confirmada — WhatsApp, SMS ou e-mail — em vez de descrever o método de forma genérica.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'O dossiê diz por onde o código foi confirmado',
+            description: 'Assinaturas em que o canal não ficou gravado no registro do signatário apareciam com o texto genérico de "autenticação por código". O relatório agora procura a verificação correspondente entre os códigos que o servidor já validou e escreve o canal e o identificador certos. Quando não há como saber, continua no texto genérico — nunca chuta.',
+          },
+          {
+            type: 'security' as const,
+            title: 'O que é contato e o que é prova continuam separados',
+            description: 'O telefone que a pessoa digitou no formulário não vale como identidade confirmada; só vale o número ou endereço que recebeu um código e o devolveu certo. A distinção deixou de depender de quem está escrevendo a tela.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.23',
     date: '29/08/2026',
     summary: 'O visor da selfie passou a saber se há um rosto enquadrado antes de disparar a foto — e a decisão roda no próprio aparelho, sem mandar imagem para lugar nenhum.',

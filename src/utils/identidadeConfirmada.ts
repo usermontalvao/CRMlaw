@@ -29,7 +29,7 @@ export type CanalConfirmado = 'whatsapp' | 'sms' | 'email' | 'google';
 
 export interface IdentidadeConfirmada {
   canal: CanalConfirmado;
-  /** Como o canal se chama no texto corrido: "WhatsApp", "SMS", "e-mail"… */
+  /** Como o canal se chama no texto corrido. */
   rotuloCanal: string;
   /** O identificador pronto para leitura humana (telefone já formatado). */
   identificador: string;
@@ -37,8 +37,17 @@ export interface IdentidadeConfirmada {
   em: string | null;
 }
 
-const ROTULOS: Record<CanalConfirmado, string> = {
+/** O canal como ele se chama dentro da frase. Curto de propósito: o leitor do
+ *  documento reconhece "WhatsApp", não "WhatsApp profissional do escritório". */
+const CANAL_CURTO: Record<CanalConfirmado, string> = {
   whatsapp: 'WhatsApp',
+  sms: 'SMS',
+  email: 'e-mail',
+  google: 'conta Google',
+};
+
+const ROTULOS: Record<CanalConfirmado, string> = {
+  whatsapp: 'WhatsApp profissional do escritório',
   sms: 'SMS',
   email: 'e-mail',
   google: 'conta Google',
@@ -48,15 +57,36 @@ const ROTULOS: Record<CanalConfirmado, string> = {
  * Telefone brasileiro vem do OTP em dígitos crus, às vezes com o 55 na frente
  * (WhatsApp) e às vezes sem (SMS). O relatório mostra os dois do mesmo jeito.
  */
-const formatarIdentificador = (canal: CanalConfirmado, valor: string): string => {
-  if (canal !== 'whatsapp' && canal !== 'sms') return valor;
-  const digitos = valor.replace(/\D/g, '');
+export const formatarTelefoneConfirmado = (valor: string | null | undefined): string => {
+  const bruto = String(valor ?? '').trim();
+  if (!bruto) return '';
+  const digitos = bruto.replace(/\D/g, '');
   const nacional = digitos.length > 11 && digitos.startsWith('55') ? digitos.slice(2) : digitos;
   const formatado =
     nacional.length === 11 ? `(${nacional.slice(0, 2)}) ${nacional.slice(2, 7)}-${nacional.slice(7)}`
     : nacional.length === 10 ? `(${nacional.slice(0, 2)}) ${nacional.slice(2, 6)}-${nacional.slice(6)}`
     : null;
-  return formatado ? `+55 ${formatado}` : valor;
+  return formatado ? `+55 ${formatado}` : bruto;
+};
+
+const formatarIdentificador = (canal: CanalConfirmado, valor: string): string =>
+  canal === 'whatsapp' || canal === 'sms' ? formatarTelefoneConfirmado(valor) : valor;
+
+/**
+ * Como descrever a autenticação por código quando o canal NÃO está registrado.
+ *
+ * Uma constante, e não a frase solta em cada tela: o relatório comparava este
+ * texto por igualdade de string para escolher o rótulo do chip, então trocar a
+ * frase num lugar e não no outro quebrava o rótulo em silêncio.
+ */
+export const AUTENTICACAO_OTP_SEM_CANAL = 'Autenticação realizada por código enviado ao número informado';
+
+/** A mesma frase com o número já formatado. */
+export const autenticacaoOtpSemCanal = (telefone?: string | null): string => {
+  const numero = formatarTelefoneConfirmado(telefone);
+  return numero
+    ? `Autenticação realizada por código enviado ao número ${numero}`
+    : AUTENTICACAO_OTP_SEM_CANAL;
 };
 
 export const lerIdentidadeConfirmada = (s: {
@@ -86,11 +116,46 @@ export const lerIdentidadeConfirmada = (s: {
  */
 export const rotuloIdentidadeConfirmada = (id: IdentidadeConfirmada): string =>
   id.canal === 'google'
-    ? `Conta Google autenticada: ${id.identificador}`
-    : `Código de verificação enviado por ${id.rotuloCanal === 'e-mail' ? 'e-mail' : id.rotuloCanal} para ${id.identificador}, informado corretamente`;
+    ? `Autenticação realizada pela conta Google ${id.identificador}`
+    : `Autenticação realizada por código enviado via ${CANAL_CURTO[id.canal]} para ${id.identificador}`;
 
 /** A mesma coisa em uma linha, para a cadeia de eventos. */
 export const fraseIdentidadeConfirmada = (id: IdentidadeConfirmada): string =>
   id.canal === 'google'
-    ? `Identidade confirmada pela conta Google (${id.identificador})`
-    : `Identidade confirmada por código de verificação enviado por ${id.rotuloCanal} para ${id.identificador}`;
+    ? `Autenticação realizada pela conta Google ${id.identificador}`
+    : `Autenticação realizada por código enviado via ${CANAL_CURTO[id.canal]} para ${id.identificador}`;
+
+/**
+ * Descrição curta para o campo "Autenticação" das fichas e relatórios.
+ *
+ * Diz o QUE foi feito (código de verificação) e POR ONDE (o canal real). Os
+ * textos antigos erravam nos dois: "Autenticação via Telefone" descrevia só o
+ * dado de contato, e "SMS" nomeava um canal que muitas vezes não foi o usado.
+ */
+export const resumoIdentidadeConfirmada = (id: IdentidadeConfirmada): string => {
+  if (id.canal === 'google') return `Autenticação realizada via conta Google (${id.identificador})`;
+  if (id.canal === 'whatsapp') return `Autenticação realizada via WhatsApp (${id.identificador})`;
+  if (id.canal === 'sms') return `Autenticação realizada via SMS (${id.identificador})`;
+  return `Autenticação realizada via e-mail (${id.identificador})`;
+};
+
+/**
+ * O instante em que o servidor deu a confirmação por boa.
+ *
+ * Só sai quando existe de verdade: assinatura antiga não tem esta coluna, e um
+ * documento de prova não pode inventar a hora de um ato que ele não registrou.
+ */
+export const instanteConfirmacao = (
+  id: IdentidadeConfirmada,
+  formatar: (iso: string) => string,
+): string | null => (id.em ? formatar(id.em) : null);
+
+/**
+ * Como chamar o identificador no detalhamento.
+ *
+ * "Telefone" e "E-mail" descrevem um dado de CONTATO, que qualquer um pode
+ * declarar. O que está sendo exibido aqui é outra coisa: o endereço que
+ * recebeu um código e o devolveu certo. O rótulo tem de dizer isso.
+ */
+export const rotuloIdentificadorConfirmado = (id: IdentidadeConfirmada): string =>
+  id.canal === 'whatsapp' || id.canal === 'sms' ? 'Número verificado' : 'E-mail verificado';
