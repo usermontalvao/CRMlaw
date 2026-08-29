@@ -224,6 +224,15 @@ async function renderRoot() {
     return;
   }
 
+  // DEV-ONLY: bancada das telas públicas de assinatura (?assinaturapreview=1).
+  if (isDev && new URLSearchParams(window.location.search).has('assinaturapreview')) {
+    const { default: AssinaturaPublicaPreview } = await import('./dev/AssinaturaPublicaPreview');
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <AssinaturaPublicaPreview />,
+    );
+    return;
+  }
+
   // DEV-ONLY: bancada do módulo Documentos (?docspreview=1).
   if (isDev && new URLSearchParams(window.location.search).has('docspreview')) {
     const { default: DocumentsPreview } = await import('./dev/DocumentsPreview');

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BrandLogo } from './ui';
-import { BRAND_SERIF, BRAND_WORDMARK, BRAND_DOT_ON_DARK } from '../constants/brand';
+import { BRAND_SERIF, BRAND_WORDMARK, BRAND_DOT, BRAND_DOT_ON_DARK } from '../constants/brand';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Camera, Check, CheckCircle, ChevronLeft, Clock, Copy, Download, ExternalLink, Eye, FileText, Loader2, Lock, MapPin, PenTool, RotateCcw, Share2, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
+import { AlertCircle, Camera, Check, CheckCircle, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Loader2, MapPin, PenTool, RotateCcw, User, X, Shield, AlertTriangle, Mail } from 'lucide-react';
 import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
@@ -10,11 +10,36 @@ import { buildWhatsappUrl } from '../utils/whatsapp';
 import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT, SELFIE_PROFILE_CONSENT_VERSION, SELFIE_PROFILE_CONSENT_LABEL, parseSignatureTermsText } from '../constants/signatureTerms';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
+import { useDeteccaoDeRosto } from '../hooks/useDeteccaoDeRosto';
+import { cpfValido } from '../utils/cpf';
+import { deveRegistrarVisualizacao } from '../utils/registroDeVisualizacao';
 import type { SignDocumentDTO, SignatureAuditLog, SignatureField, SignatureRequestDocument, Signer, SignatureRequest } from '../types/signature.types';
 import SignatureReport from './SignatureReport';
 import { renderAsync } from 'docx-preview';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { supabase } from '../config/supabase';
+import TelaDeAbertura from './publicSigning/TelaDeAbertura';
+import TelaDeConferencia from './publicSigning/TelaDeConferencia';
+import TelaDeComprovante from './publicSigning/TelaDeComprovante';
+import EtapaDeIdentidade from './publicSigning/EtapaDeIdentidade';
+import {
+  AcaoPrimaria,
+  AcaoSecundaria,
+  DemoDoDedo,
+  EtiquetaDoDocumento,
+  Explicacao,
+  Fio,
+  Roda,
+  MolduraPublica,
+  RodapeDeConfianca,
+  Rotulo,
+  Tarja,
+  TINTA,
+  TINTA_2,
+  TINTA_3,
+  sobe,
+} from './publicSigning/ui';
+import { canalDoRegistro, primeiroNome, type CanalDeIdentidade } from '../utils/assinaturaPublica';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -118,62 +143,219 @@ const signStepNumber = (s: ModalStep): number =>
   : s === 'facial' ? 5
   : 6;
 
-// Stepper visual do fluxo de assinatura: círculos com ícone ligados por linhas.
-const SIGN_STEPS: { icon: React.ElementType; label: string }[] = [
-  { icon: Shield,      label: 'Identidade' },
-  { icon: User,        label: 'Dados' },
-  { icon: PenTool,     label: 'Assinatura' },
-  { icon: MapPin,      label: 'Localização' },
-  { icon: Camera,      label: 'Foto' },
-  { icon: CheckCircle, label: 'Confirmar' },
+// Rótulos das seis etapas do fluxo, na ordem em que aparecem.
+const SIGN_STEPS: { label: string }[] = [
+  { label: 'Identidade' },
+  { label: 'Dados' },
+  { label: 'Assinatura' },
+  { label: 'Localização' },
+  { label: 'Foto' },
+  { label: 'Confirmar' },
 ];
 
+/* ═══════════════════════════════════════════════════════════════════════
+   Vocabulário visual da tela pública.
+
+   Tudo aqui é extraído do bloco de comprovante (procure por "PAINEL DE MARCA"
+   mais abaixo): canto reto, régua laranja de 32×2, rótulo em caixa-alta com
+   tracking largo e título em Spectral com a palavra-chave em itálico. O
+   comprovante era a única tela nessa língua; estes componentes levam a mesma
+   língua para as outras oito, no lugar dos cards arredondados de SaaS.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Máscaras de destino ──────────────────────────────────────────────────
+   Na etapa de identidade cada opção mostra PARA ONDE o código vai. Sem isso a
+   pessoa escolhe às cegas e só descobre o número errado depois de gastar um
+   envio. Mostramos o suficiente para reconhecer, nunca o dado inteiro. */
+
+/** "65984046375" → "··· 9 8404-6375". Devolve null se não der para reconhecer. */
+const mascararTelefone = (bruto?: string | null): string | null => {
+  const d = (bruto ?? '').replace(/\D/g, '');
+  if (d.length < 8) return null;
+  const ultimos = d.slice(-8);
+  return `··· ${ultimos.slice(0, 1)} ${ultimos.slice(1, 5)}-${ultimos.slice(5)}`;
+};
+
+/** "maria.silva@gmail.com" → "m···a@gmail.com". */
+const mascararEmail = (bruto?: string | null): string | null => {
+  const e = (bruto ?? '').trim();
+  const at = e.indexOf('@');
+  if (at < 1 || at === e.length - 1) return null;
+  const local = e.slice(0, at);
+  const dominio = e.slice(at);
+  if (local.length <= 2) return `${local[0]}···${dominio}`;
+  return `${local[0]}···${local[local.length - 1]}${dominio}`;
+};
+
+/** Proporção da selfie: retrato 3:4, o formato de foto de celular. Vale para o
+ *  visor, para o recorte da captura e para a prévia — os três precisam contar a
+ *  mesma história, senão a pessoa enquadra uma coisa e o certificado guarda outra. */
+const FOTO_PROPORCAO = 3 / 4;
+
+/** Segundos de contagem antes da foto sair sozinha. Curto o bastante para não
+ *  cansar, longo o bastante para a pessoa entender que vai disparar. */
+const SEGUNDOS_CONTAGEM = 5;
+/** Teto de fotos automáticas por etapa — ver o comentário em fotosAutomaticas. */
+const MAX_FOTOS_AUTOMATICAS = 3;
+
+/** De onde sai o IP público do visitante. Sem ele o evento fica sem origem. */
+const URL_IP_PUBLICO = 'https://api.ipify.org?format=json';
+
+/**
+ * Registra uma visualização do documento.
+ *
+ * Existia em DOIS lugares, e o primeiro deles chamava sem IP. Como ambos
+ * gravavam a mesma chave de sessão, quem chegasse antes vencia — e era o sem
+ * IP, e por isso as visualizações do histórico apareciam sem origem. Agora é
+ * um caminho só, e ele sempre tenta o IP.
+ */
+const registrarVisualizacao = async (token: string, signerId: string): Promise<void> => {
+  const chave = `public_signing_viewed_${signerId}`;
+
+  try {
+    const ultima = Number(window.sessionStorage.getItem(chave) || 0);
+    if (!deveRegistrarVisualizacao(ultima, Date.now())) return;
+    window.sessionStorage.setItem(chave, String(Date.now()));
+  } catch {
+    // Navegador sem sessionStorage (janela privada restrita): sem a trava
+    // local o servidor ainda agrupa pela janela dele. Segue em frente.
+  }
+
+  // O IP é bom ter, não é motivo para perder o evento: se o serviço demorar
+  // ou estiver bloqueado, a visualização é registrada mesmo assim.
+  let ip: string | undefined;
+  try {
+    const controlador = new AbortController();
+    const prazo = window.setTimeout(() => controlador.abort(), 2500);
+    const resposta = await fetch(URL_IP_PUBLICO, { signal: controlador.signal });
+    window.clearTimeout(prazo);
+    const dados = await resposta.json();
+    ip = typeof dados?.ip === 'string' ? dados.ip : undefined;
+  } catch {
+    // segue sem IP
+  }
+
+  await signatureService.markSignerAsViewed(token, ip, navigator.userAgent);
+};
+
+/** Palavra-chave em itálico laranja dentro de um título em Spectral. */
+/** A palavra que carrega o peso do título — laranja, sem trocar de família. */
+const Accent: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <span style={{ color: '#ea580c' }}>{children}</span>
+);
+
+/**
+ * Abertura de etapa.
+ *
+ * Era rótulo + régua laranja + título em SERIFA ITÁLICA + subtítulo: quatro
+ * elementos e duas famílias tipográficas antes de a etapa dizer o que fazer.
+ * Somando a régua de seis segmentos e o cabeçalho escuro logo acima, a tela
+ * gastava um terço da altura do celular antes do primeiro botão.
+ *
+ * Agora é o mesmo gesto da abertura e do comprovante: uma frase grande em
+ * sans, apertada, e uma linha de apoio. O rótulo da etapa saiu daqui porque a
+ * régua acima já diz "Etapa 3 de 6 · Assinatura" — dizer duas vezes era metade
+ * da poluição.
+ */
+const StepHeading: React.FC<{
+  title: React.ReactNode;
+  note?: React.ReactNode;
+}> = ({ title, note }) => (
+  <div className="min-w-0" style={sobe(0, 0.45)}>
+    <h2 style={{
+      margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: '-0.85px',
+      lineHeight: 1.08, color: TINTA,
+    }}>
+      {title}
+    </h2>
+    {note && (
+      <p style={{ margin: '9px 0 0', fontSize: 13, lineHeight: 1.55, color: TINTA_2, maxWidth: 320 }}>
+        {note}
+      </p>
+    )}
+  </div>
+);
+
+/** O único botão cheio da tela. Gradiente do comprovante, canto reto. */
+const PrimaryButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({
+  children, disabled, className = '', ...rest
+}) => (
+  <button
+    {...rest}
+    disabled={disabled}
+    className={`w-full flex items-center justify-center gap-2.5 px-5 py-3.5 text-[14px] font-bold text-white transition-transform ${disabled ? 'cursor-not-allowed' : 'active:scale-[0.99]'} ${className}`}
+    style={{ background: disabled ? '#D8D2C9' : 'linear-gradient(135deg, #FB8C3E 0%, #EA5310 100%)' }}
+  >
+    {children}
+  </button>
+);
+
+/** Ação secundária: só contorno, nunca concorre com o botão cheio. */
+const GhostButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({
+  children, className = '', ...rest
+}) => (
+  <button
+    {...rest}
+    className={`w-full flex items-center justify-center gap-2 border border-[#DDD6CC] bg-transparent px-5 py-3 text-[12.5px] font-semibold text-[#6C7787] transition-colors hover:bg-white disabled:opacity-50 ${className}`}
+  >
+    {children}
+  </button>
+);
+
+/** Rótulo de campo, na mesma família dos rótulos do comprovante. */
+const FieldLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <label className="mb-1.5 block text-[9px] font-bold uppercase tracking-[0.16em] text-[#A0968C]">
+    {children}
+  </label>
+);
+
+/** Campo de texto: canto reto, foco no laranja da marca. */
+const INPUT_CLS =
+  'w-full h-[46px] bg-white border px-3.5 text-[15px] font-medium text-[#141B26] transition-colors focus:outline-none';
+const INPUT_OK = 'border-[#E0DAD1] focus:border-[#EA5310] focus:ring-[3px] focus:ring-[#EA5310]/15';
+const INPUT_BAD = 'border-[#D98A8A] focus:border-[#C0392B] focus:ring-[3px] focus:ring-[#C0392B]/15';
+
+/** Picote de recibo — o mesmo divisor que separa os painéis do comprovante. */
+const Perforation: React.FC<{ label?: string; className?: string }> = ({ label, className = '' }) => (
+  <div className={`flex items-center gap-3 ${className}`}>
+    <div
+      className="h-px flex-1"
+      style={{ background: 'repeating-linear-gradient(to right, rgba(15,23,42,0.2) 0 5px, transparent 5px 10px)' }}
+    />
+    {label && (
+      <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-[#A0968C]">{label}</span>
+    )}
+    {label && (
+      <div
+        className="h-px flex-1"
+        style={{ background: 'repeating-linear-gradient(to right, rgba(15,23,42,0.2) 0 5px, transparent 5px 10px)' }}
+      />
+    )}
+  </div>
+);
+
+/** Régua de progresso segmentada. Substitui os seis círculos com ícone, que
+ *  comiam 70px de altura logo na primeira dobra do celular. */
+/**
+ * A régua das seis etapas.
+ *
+ * Eram seis segmentos separados por vãos de 3 px, em três cores, com o rótulo
+ * por cima — seis peças para dizer uma coisa só. Virou o MESMO fio de 2,5 px da
+ * abertura, da conferência e do comprovante: uma barra que avança, e o avanço é
+ * a informação. Sem brilho, porque aqui não há nada acontecendo — a régua está
+ * parada esperando a pessoa.
+ */
 const SignStepper: React.FC<{ current: number }> = ({ current }) => (
-  <div className="flex-shrink-0 bg-[#f8f7f5] px-5 pt-5 pb-1">
-    <div className="flex items-start">
-      {SIGN_STEPS.map((st, i) => {
-        const n = i + 1;
-        const done = n < current;
-        const active = n === current;
-        const isLast = i === SIGN_STEPS.length - 1;
-        const Icon = st.icon;
-        return (
-          <div key={n} className="relative flex-1 flex flex-col items-center">
-            {/* Linha conectora até o próximo nó */}
-            {!isLast && (
-              <div
-                className={`absolute top-4 left-1/2 w-full h-[2px] -translate-y-1/2 transition-colors ${
-                  done ? 'bg-orange-500' : 'bg-slate-200'
-                }`}
-              />
-            )}
-            {/* Nó (círculo com ícone) */}
-            <div
-              className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                done
-                  ? 'bg-orange-500 text-white'
-                  : active
-                    ? 'bg-white text-orange-600 border-2 border-orange-500 shadow-sm shadow-orange-500/20'
-                    : 'bg-white text-slate-300 border border-slate-200'
-              }`}
-            >
-              {done ? (
-                <Check className="w-4 h-4" strokeWidth={3} />
-              ) : (
-                <Icon className="w-[15px] h-[15px]" strokeWidth={2} />
-              )}
-            </div>
-            {/* Rótulo */}
-            <span
-              className={`mt-1.5 text-[10px] font-semibold tracking-tight text-center leading-tight ${
-                active ? 'text-slate-700' : done ? 'text-slate-500' : 'text-slate-400'
-              }`}
-            >
-              {st.label}
-            </span>
-          </div>
-        );
-      })}
+  <div className="flex-shrink-0">
+    <Fio tom="trabalhando" progresso={(current / SIGN_STEPS.length) * 100} brilho={false} />
+    <div className="bg-[#f8fafc] px-4 pb-1 pt-2.5 min-[390px]:px-5">
+      <span style={{
+        fontSize: 9, fontWeight: 800, letterSpacing: '.2em', textTransform: 'uppercase',
+        color: TINTA_3,
+      }}>
+        Etapa <span style={{ color: '#ea580c' }}>{current}</span> de {SIGN_STEPS.length}
+        {SIGN_STEPS[current - 1] ? ` · ${SIGN_STEPS[current - 1].label}` : ''}
+      </span>
     </div>
   </div>
 );
@@ -257,10 +439,14 @@ const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachme
           <div key={`attach-${idx}`}>
             {attach.isDocx ? (
               // DOCX: div preenchida pelo renderAsync
+              // `overflow: auto` aqui criava um SEGUNDO scroller dentro do
+              // scroller do documento — o dedo agarrava a caixa do anexo em vez
+              // da página, e a leitura "travava". A rolagem lateral (folha larga
+              // no desktop) vive agora no CSS, só no eixo X.
               <div
                 ref={el => { attachmentRefs.current[idx] = el; }}
-                className="bg-[#f8f7f5] docx-responsive"
-                style={{ width: '100%', overflow: 'auto' }}
+                className="bg-[#f8f7f5] docx-responsive docx-anexo"
+                style={{ width: '100%' }}
               />
             ) : isPdf ? (
               // PDF: canvas via react-pdf, sem iframe, sem scroll interno
@@ -290,449 +476,6 @@ const AttachmentsList: React.FC<AttachmentsListProps> = ({ attachments, attachme
           </div>
         );
       })}
-    </div>
-  );
-};
-
-// ─── Inject loading animation keyframes once at module load (never remounts) ───
-(() => {
-  const styleId = 'public-signing-loading-animations';
-  if (typeof document === 'undefined' || document.getElementById(styleId)) return;
-  const style = document.createElement('style');
-  style.id = styleId;
-  style.textContent = `
-    @keyframes iconBreath {
-      0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0   rgba(194,65,12,0.14), 0 16px 40px -8px rgba(194,65,12,0.30); }
-      50%       { transform: scale(1.04); box-shadow: 0 0 0 10px rgba(194,65,12,0),   0 20px 48px -8px rgba(194,65,12,0.40); }
-    }
-    @keyframes ringPulse {
-      0%   { transform: scale(1);   opacity: 0.45; }
-      100% { transform: scale(1.75); opacity: 0; }
-    }
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(10px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes arcSpin {
-      from { transform: rotate(0deg); }
-      to   { transform: rotate(360deg); }
-    }
-    @keyframes docPass {
-      0%   { transform: translateX(0) translateY(0) rotate(var(--doc-rot)); opacity: 0; }
-      8%   { opacity: 1; }
-      88%  { opacity: 0.85; }
-      100% { transform: translateX(var(--doc-tx)) translateY(var(--doc-ty)) rotate(var(--doc-rot-end)); opacity: 0; }
-    }
-    @keyframes shimmerBar {
-      0%   { transform: translateX(-100%); }
-      100% { transform: translateX(600%);  }
-    }
-    @keyframes progressPulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.7; }
-    }
-  `;
-  document.head.appendChild(style);
-})();
-
-// ─── LoadingScreen — defined at MODULE level so React never remounts it ────────
-const LOADING_STEPS = [
-  { label: 'Validando credenciais de acesso', doneAt: 1.8 },
-  { label: 'Carregando seu documento',        doneAt: 4.2 },
-  { label: 'Preparando ambiente seguro',      doneAt: 9.0 },
-];
-
-const FLOATING_DOCS = [
-  { delay: '0s',    dur: '3.2s', tx: '160px', ty: '-18px', rot: '-6deg',  rotEnd: '2deg',  left: '-20px', top: '22px',  w: '64px' },
-  { delay: '1.1s',  dur: '3.4s', tx: '170px', ty: '10px',  rot: '4deg',   rotEnd: '-3deg', left: '-10px', top: '6px',   w: '58px' },
-  { delay: '2.0s',  dur: '3.0s', tx: '165px', ty: '-8px',  rot: '-2deg',  rotEnd: '5deg',  left: '-16px', top: '34px',  w: '60px' },
-  { delay: '0.55s', dur: '3.6s', tx: '155px', ty: '14px',  rot: '6deg',   rotEnd: '-4deg', left: '-24px', top: '14px',  w: '62px' },
-  { delay: '1.7s',  dur: '3.1s', tx: '158px', ty: '-12px', rot: '-4deg',  rotEnd: '3deg',  left: '-18px', top: '28px',  w: '56px' },
-];
-
-const LoadingScreen: React.FC<{ docName?: string; allDocNames?: string[]; signerName?: string }> = ({ docName, allDocNames, signerName }) => {
-  const [elapsed, setElapsed] = useState(0);
-  const mountRef = useRef(Date.now());
-  // Guarda o nome assim que chegar — nunca volta para vazio
-  const [resolvedName, setResolvedName] = useState(signerName || '');
-  useEffect(() => {
-    if (signerName && !resolvedName) setResolvedName(signerName);
-  }, [signerName, resolvedName]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setElapsed((Date.now() - mountRef.current) / 1000);
-    }, 50);
-    return () => window.clearInterval(id);
-  }, []);
-
-  // Curva assintótica: sobe rápido e desacelera perto de 99% sem nunca "congelar"
-  // num valor fixo (antes ficava preso em 96%), transmitindo progresso contínuo.
-  const pct       = Math.min(99, 100 * (1 - Math.exp(-elapsed / 4)));
-  const firstName = resolvedName ? resolvedName.split(' ')[0] : '';
-
-  return (
-    <div className="min-h-[100dvh] flex flex-col select-none overflow-hidden" style={{ background: '#f8fafc' }}>
-
-      {/* ── Faixa laranja fixa no topo — identidade JURIUS ── */}
-      <div className="h-[4px] w-full flex-shrink-0" style={{ background: 'linear-gradient(90deg, #ea580c 0%, #f97316 45%, #fb923c 100%)' }} />
-
-      {/* ── Barra de progresso ── */}
-      <div className="h-[3px] w-full flex-shrink-0 relative overflow-hidden" style={{ background: '#e2e8f0' }}>
-        <div
-          className="absolute left-0 top-0 h-full"
-          style={{ width: `${pct}%`, transition: 'width 200ms ease-out', background: 'linear-gradient(90deg, #c2410c 0%, #ea580c 60%, #f97316 100%)' }}
-        />
-        <div
-          className="absolute top-0 h-full w-[80px] pointer-events-none"
-          style={{
-            left: `${Math.max(0, pct - 8)}%`,
-            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent)',
-            animation: 'shimmerBar 1.8s ease-in-out infinite',
-          }}
-        />
-      </div>
-
-      {/* ── Conteúdo central ── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
-
-        {/* Logomarca / Ícone com ripple */}
-        <div className="relative flex items-center justify-center mb-5" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
-          <div className="absolute w-[88px] h-[88px] rounded-full" style={{ border: '1.5px solid rgba(234,88,12,0.20)', animation: 'ringPulse 2.6s ease-out infinite' }} />
-          <div className="absolute w-[88px] h-[88px] rounded-full" style={{ border: '1.5px solid rgba(234,88,12,0.10)', animation: 'ringPulse 2.6s ease-out infinite 0.9s' }} />
-          <div
-            className="relative w-[64px] h-[64px] rounded-2xl flex items-center justify-center"
-            style={{
-              background: 'linear-gradient(145deg, #9a3412 0%, #c2410c 50%, #ea580c 100%)',
-              boxShadow: '0 12px 32px -6px rgba(194,65,12,0.40), 0 0 0 1px rgba(234,88,12,0.12)',
-              animation: 'iconBreath 3.2s ease-in-out infinite',
-            }}
-          >
-            <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              <path d="M9 12l2 2 4-4" />
-            </svg>
-          </div>
-        </div>
-
-        {/* Eyebrow — laranja da marca */}
-        <p className="text-[10px] font-bold tracking-[0.22em] uppercase mb-3" style={{ color: '#ea580c', animation: 'fadeUp 0.5s ease-out 0.10s both' }}>
-          Assinatura Digital · JURIUS
-        </p>
-
-        {/* Título */}
-        <div style={{ animation: 'fadeUp 0.45s ease-out both', textAlign: 'center' }}>
-          <h1 className="text-[23px] font-bold tracking-tight text-center mb-1.5" style={{ color: '#0f172a', letterSpacing: '-0.3px' }}>
-            Carregando documento
-          </h1>
-          <p className="text-[13px] text-center leading-relaxed" style={{ maxWidth: 270, color: '#94a3b8' }}>
-            Autenticando sessão e preparando<br />o ambiente seguro.
-          </p>
-        </div>
-
-        {/* Chips de documentos */}
-        {docName && (
-          <div className="flex flex-col gap-1.5 w-full max-w-[300px] mt-4 mb-1" style={{ animation: 'fadeUp 0.4s ease-out 0.28s both' }}>
-            {(allDocNames && allDocNames.length > 0 ? allDocNames : [docName]).map((name, idx) => (
-              <div
-                key={idx}
-                className="flex items-center gap-2 w-full px-3 py-2 rounded-xl"
-                style={{
-                  background: idx === 0 ? '#fff7ed' : '#f8fafc',
-                  border: `1px solid ${idx === 0 ? '#fed7aa' : '#e2e8f0'}`,
-                  animation: `fadeUp 0.35s ease-out ${idx * 0.07}s both`,
-                }}
-              >
-                <svg viewBox="0 0 24 24" style={{ flexShrink: 0, width: 13, height: 13, color: idx === 0 ? '#ea580c' : '#94a3b8' }} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-                <span className="text-[11px] font-medium truncate leading-tight flex-1" style={{ color: idx === 0 ? '#c2410c' : '#64748b' }}>{name}</span>
-                {idx === 0 && <span className="text-[9px] font-bold uppercase tracking-wide flex-shrink-0" style={{ color: '#fb923c' }}>Principal</span>}
-                {idx > 0  && <span className="text-[9px] font-semibold uppercase tracking-wide flex-shrink-0" style={{ color: '#cbd5e1' }}>Anexo</span>}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── Animação de documentos flutuando ── */}
-        <div
-          className="relative w-[220px] h-[58px] my-5"
-          style={{ animation: 'fadeUp 0.5s ease-out 0.32s both' }}
-        >
-          {FLOATING_DOCS.map((d, i) => (
-            <div
-              key={i}
-              className="absolute rounded-[5px] overflow-hidden"
-              style={{
-                left: d.left, top: d.top, width: d.w, height: '40px',
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 2px 8px rgba(15,23,42,0.07)',
-                '--doc-rot': d.rot, '--doc-rot-end': d.rotEnd, '--doc-tx': d.tx, '--doc-ty': d.ty,
-                animation: `docPass ${d.dur} ease-in-out ${d.delay} infinite`,
-              } as React.CSSProperties}
-            >
-              {/* Tarja laranja do documento — identidade JURIUS */}
-              <div className="h-[4px] w-full" style={{ background: 'linear-gradient(90deg, #ea580c, #f97316)' }} />
-              <div className="px-[6px] pt-[5px] space-y-[3px]">
-                <div className="h-[2px] w-[70%] rounded-full" style={{ background: '#e2e8f0' }} />
-                <div className="h-[2px] w-full  rounded-full" style={{ background: '#f1f5f9' }} />
-                <div className="h-[2px] w-[50%] rounded-full" style={{ background: '#dbeafe' }} />
-              </div>
-            </div>
-          ))}
-          {/* Seta central */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <svg width="28" height="10" viewBox="0 0 32 12" fill="none" style={{ opacity: 0.15 }}>
-              <path d="M0 6h24M20 2l6 4-6 4" stroke="#2563eb" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-        </div>
-
-        {/* ── Steps de carregamento ── */}
-        <div className="w-full max-w-[260px] space-y-2.5 mb-6" style={{ animation: 'fadeUp 0.5s ease-out 0.38s both' }}>
-          {LOADING_STEPS.map((s, i) => {
-            const done   = elapsed >= s.doneAt;
-            const active = !done && (i === 0 ? true : elapsed >= LOADING_STEPS[i - 1].doneAt);
-            return (
-              <div key={i} className="flex items-center gap-3">
-                <div
-                  className="flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center transition-all duration-300"
-                  style={{
-                    background:   done   ? '#10b981' : 'transparent',
-                    border:       done   ? 'none' : active ? '2px solid #ea580c' : '2px solid #e2e8f0',
-                  }}
-                >
-                  {done && (
-                    <svg viewBox="0 0 10 10" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1.5 5l2.5 2.5 4.5-4.5" />
-                    </svg>
-                  )}
-                  {active && (
-                    <div className="w-[6px] h-[6px] rounded-full" style={{ background: '#ea580c', animation: 'progressPulse 1s ease-in-out infinite' }} />
-                  )}
-                </div>
-                <span
-                  className="text-[12.5px] transition-colors duration-300"
-                  style={{
-                    color:       done   ? '#cbd5e1' : active ? '#0f172a' : '#cbd5e1',
-                    fontWeight:  active ? 600 : 400,
-                    textDecorationLine: done ? 'line-through' : 'none',
-                    textDecorationColor: '#e2e8f0',
-                  }}
-                >
-                  {s.label}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Spinner + porcentagem */}
-        <div className="flex items-center gap-2.5" style={{ animation: 'fadeUp 0.5s ease-out 0.46s both' }}>
-          <svg width="20" height="20" viewBox="0 0 32 32" style={{ animation: 'arcSpin 1s linear infinite' }}>
-            <circle cx="16" cy="16" r="13" fill="none" stroke="#f1f5f9" strokeWidth="3" />
-            <circle cx="16" cy="16" r="13" fill="none" stroke="#ea580c" strokeWidth="3" strokeLinecap="round" strokeDasharray="26 56" />
-          </svg>
-          <span className="text-[11px] tabular-nums font-medium" style={{ color: '#94a3b8' }}>{Math.round(pct)}%</span>
-        </div>
-
-      </div>
-
-      {/* ── Rodapé de confiança ── */}
-      <div className="flex-shrink-0 pb-7 pt-2 flex flex-col items-center gap-2" style={{ animation: 'fadeUp 0.5s ease-out 0.54s both' }}>
-        <div className="flex items-center gap-4" style={{ color: '#94a3b8' }}>
-          <div className="flex items-center gap-1.5">
-            <Lock className="w-[11px] h-[11px]" />
-            <span className="text-[10.5px]">AES-256</span>
-          </div>
-          <span className="w-[3px] h-[3px] rounded-full flex-shrink-0" style={{ background: '#e2e8f0' }} />
-          <div className="flex items-center gap-1.5">
-            <svg viewBox="0 0 24 24" className="w-[11px] h-[11px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-            <span className="text-[10.5px]">SSL / TLS</span>
-          </div>
-          <span className="w-[3px] h-[3px] rounded-full bg-slate-200 flex-shrink-0" />
-          <div className="flex items-center gap-1.5">
-            <svg viewBox="0 0 24 24" className="w-[11px] h-[11px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" /><path d="M12 8v4l3 3" />
-            </svg>
-            <span className="text-[10.5px]">MP 2.200-2/2001</span>
-          </div>
-        </div>
-        <p className="text-[9px] font-semibold tracking-[0.18em] uppercase text-slate-300">
-          JURIUS · Assinatura Digital Certificada
-        </p>
-      </div>
-    </div>
-  );
-};
-
-// ─── SigningScreen — tela de envio da assinatura (módulo-nível) ───────────────
-const SIGNING_STEPS = [
-  { label: 'Enviando foto, assinatura e geolocalização', doneAt: 2.2 },
-  { label: 'Conferindo identidade',                      doneAt: 4.0 },
-  { label: 'Registrando assinatura',                     doneAt: 5.8 },
-  { label: 'Finalizando…',                               doneAt: 7.2 },
-];
-
-const SigningScreen: React.FC<{ docName?: string }> = ({ docName }) => {
-  const [elapsed, setElapsed] = useState(0);
-  const mountRef = useRef(Date.now());
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setElapsed((Date.now() - mountRef.current) / 1000);
-    }, 50);
-    return () => window.clearInterval(id);
-  }, []);
-
-  // Curva assintótica (não "congela" num valor fixo enquanto o envio finaliza).
-  const pct = Math.min(99, 100 * (1 - Math.exp(-elapsed / 3.5)));
-
-  return (
-    <div className="min-h-[100dvh] flex flex-col select-none overflow-hidden" style={{ background: '#f8fafc' }}>
-
-      {/* Barra de progresso determinista */}
-      <div className="h-[3px] w-full flex-shrink-0 relative overflow-hidden" style={{ background: '#e2e8f0' }}>
-        <div
-          className="absolute left-0 top-0 h-full"
-          style={{ width: `${pct}%`, transition: 'width 200ms ease-out', background: 'linear-gradient(90deg, #c2410c 0%, #ea580c 60%, #f97316 100%)' }}
-        />
-        <div
-          className="absolute top-0 h-full w-[60px] pointer-events-none"
-          style={{
-            left: `${Math.max(0, pct - 10)}%`,
-            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)',
-            animation: 'shimmerBar 1.8s ease-in-out infinite',
-          }}
-        />
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-10">
-
-        {/* Ícone de envio */}
-        <div className="relative flex items-center justify-center mb-8" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
-          <div className="absolute w-[88px] h-[88px] rounded-full" style={{ border: '1.5px solid rgba(234,88,12,0.20)', animation: 'ringPulse 2.6s ease-out infinite' }} />
-          <div className="absolute w-[88px] h-[88px] rounded-full" style={{ border: '1.5px solid rgba(234,88,12,0.10)', animation: 'ringPulse 2.6s ease-out infinite 0.9s' }} />
-          <div
-            className="relative w-[64px] h-[64px] rounded-full flex items-center justify-center"
-            style={{
-              background: 'linear-gradient(145deg, #9a3412 0%, #c2410c 50%, #ea580c 100%)',
-              boxShadow: '0 12px 32px -8px rgba(194,65,12,0.40)',
-              animation: 'iconBreath 3s ease-in-out infinite',
-            }}
-          >
-            <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 19V5" />
-              <polyline points="5 12 12 5 19 12" />
-              <path d="M5 19h14" strokeWidth="1.8" opacity="0.6" />
-            </svg>
-          </div>
-        </div>
-
-        {/* Eyebrow */}
-        <p
-          className="text-[10px] font-bold tracking-[0.22em] uppercase mb-2"
-          style={{ color: '#ea580c', animation: 'fadeUp 0.5s ease-out 0.1s both' }}
-        >
-          Assinatura Digital · JURIUS
-        </p>
-
-        {/* Título */}
-        <h1
-          className="text-[21px] font-bold tracking-tight text-center mb-1"
-          style={{ color: '#0f172a', letterSpacing: '-0.3px', animation: 'fadeUp 0.5s ease-out 0.18s both' }}
-        >
-          Enviando assinatura
-        </h1>
-
-        {/* Nome do documento */}
-        {docName ? (
-          <div
-            className="flex items-center gap-2 mt-2 mb-6 px-3.5 py-1.5 rounded-full max-w-[280px]"
-            style={{ background: '#fff7ed', border: '1px solid #fed7aa', animation: 'fadeUp 0.35s ease-out both' }}
-          >
-            <svg viewBox="0 0 24 24" style={{ width: 14, height: 14, flexShrink: 0, color: '#ea580c' }} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
-            <span className="text-[11.5px] font-medium truncate leading-tight" style={{ color: '#c2410c' }}>{docName}</span>
-          </div>
-        ) : (
-          <p
-            className="text-sm text-center max-w-[240px] mt-1 mb-6"
-            style={{ color: '#94a3b8', animation: 'fadeUp 0.5s ease-out 0.26s both' }}
-          >
-            Não feche esta janela. Processando com segurança.
-          </p>
-        )}
-
-        {/* Steps */}
-        <div
-          className="w-full max-w-[290px] space-y-3 mb-7"
-          style={{ animation: 'fadeUp 0.5s ease-out 0.34s both' }}
-        >
-          {SIGNING_STEPS.map((s, i) => {
-            const done   = elapsed >= s.doneAt;
-            const active = !done && (i === 0 ? true : elapsed >= SIGNING_STEPS[i - 1].doneAt);
-            return (
-              <div key={i} className="flex items-center gap-3">
-                <div
-                  className="flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center transition-all duration-300"
-                  style={{
-                    background: done ? '#10b981' : 'transparent',
-                    border:     done ? 'none' : active ? '2px solid #ea580c' : '2px solid #e2e8f0',
-                  }}
-                >
-                  {done && (
-                    <svg viewBox="0 0 10 10" className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M1.5 5l2.5 2.5 4.5-4.5" />
-                    </svg>
-                  )}
-                  {active && (
-                    <div className="w-[6px] h-[6px] rounded-full" style={{ background: '#ea580c', animation: 'progressPulse 1s ease-in-out infinite' }} />
-                  )}
-                </div>
-                <span
-                  className="text-[12.5px] transition-colors duration-300"
-                  style={{
-                    color:      done ? '#cbd5e1' : active ? '#0f172a' : '#cbd5e1',
-                    fontWeight: active ? 600 : 400,
-                    textDecoration: done ? 'line-through' : 'none',
-                  }}
-                >
-                  {s.label}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Spinner + percentagem */}
-        <div className="flex items-center gap-2.5" style={{ animation: 'fadeUp 0.5s ease-out 0.42s both' }}>
-          <svg width="20" height="20" viewBox="0 0 32 32" style={{ animation: 'arcSpin 1s linear infinite' }}>
-            <circle cx="16" cy="16" r="13" fill="none" stroke="#f1f5f9" strokeWidth="3" />
-            <circle cx="16" cy="16" r="13" fill="none" stroke="#ea580c" strokeWidth="3" strokeLinecap="round" strokeDasharray="26 56" />
-          </svg>
-          <span className="text-[11px] tabular-nums font-medium" style={{ color: '#94a3b8' }}>{Math.round(pct)}%</span>
-        </div>
-      </div>
-
-      {/* Trust strip */}
-      <div
-        className="flex-shrink-0 pb-8 pt-2 flex items-center justify-center gap-3"
-        style={{ animation: 'fadeUp 0.5s ease-out 0.5s both' }}
-      >
-        <div className="flex items-center gap-1.5 text-slate-400">
-          <Lock className="w-3 h-3" />
-          <span className="text-[11px]">Conexão segura</span>
-        </div>
-        <span className="w-[3px] h-[3px] rounded-full bg-slate-200 flex-shrink-0" />
-        <span className="text-[11px] text-slate-400">SSL / TLS</span>
-      </div>
     </div>
   );
 };
@@ -773,51 +516,33 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   useEffect(() => {
     const styleId = 'public-signing-docx-responsive-styles';
-    if (document.getElementById(styleId)) return;
+    document.getElementById(styleId)?.remove();
+    // Remove a regra antiga que redimensionava o article para o viewport e,
+    // em seguida, aplicava outra escala sobre a folha.
+    document.getElementById('docx-page-break-styles-public')?.remove();
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = `
       .docx-responsive .docx-wrapper-wrapper {
         background: transparent !important;
-        padding: 0 !important;
+        width: 100% !important;
+        padding: 20px !important;
         display: flex !important;
-        justify-content: center !important;
-      }
-      .docx-responsive .docx-wrapper {
-        max-width: none !important;
-        width: auto !important;
-        padding: 0 !important;
+        flex-direction: column !important;
+        align-items: center !important;
         box-sizing: border-box !important;
-        box-shadow: none !important;
-        margin: 0 !important;
-        background: transparent !important;
-        transform-origin: top center !important;
-        /* docx-preview trava a altura A4 (1123px) inline no wrapper → vão enorme
-           em páginas curtas. Colapsa para a altura real do conteúdo. */
-        min-height: 0 !important;
-        height: auto !important;
       }
-      /* FORÇAR A4 FIXO (largura) para layout idêntico ao da criação */
-      .docx-responsive .docx-wrapper > section,
-      .docx-responsive .docx-wrapper > section > article {
-        width: 794px !important; /* A4 @ 96dpi */
-        min-width: 794px !important;
-        max-width: 794px !important;
+
+      /* Com className="docx-wrapper", o docx-preview cria a folha como
+         <section class="docx-wrapper">. No desktop, preservamos as dimensões
+         e margens que a biblioteca extraiu do Word. */
+      .docx-responsive section.docx-wrapper {
+        flex: none !important;
+        box-sizing: border-box !important;
         background: white !important;
         box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
-        margin-bottom: 20px !important;
-        box-sizing: border-box !important;
-        padding: 40px !important; /* Mesma padding do SignatureModule */
-      }
-      /* Colapsa a altura: docx-preview força min-height de página A4 inteira
-         (inline), gerando um vão enorme em páginas curtas — tanto no documento
-         principal quanto nos ANEXOS (que podem renderizar como <article> direto).
-         Cobre qualquer nível (section/article). Só afeta o preview on-screen
-         (.docx-responsive); a geração do PDF assinado usa host próprio. */
-      .docx-responsive .docx-wrapper section,
-      .docx-responsive .docx-wrapper article {
-        min-height: 0 !important;
-        height: auto !important;
+        margin: 0 0 20px !important;
+        transform-origin: top center !important;
       }
 
       /* Scrollbar */
@@ -832,28 +557,78 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         border-radius: 4px;
       }
 
+      /* Rolagem lateral da folha larga: SO no eixo X, e com o Y explicitamente
+         travado. Um "overflow-x: auto" sozinho promoveria o eixo Y de "visible"
+         para "auto" (regra do CSS), e o container viraria um scroller aninhado.
+         Com altura automatica, "overflow-y: hidden" nao corta nada: o box
+         cresce com o conteudo. */
+      .docx-responsive.docx-anexo {
+        overflow-x: auto;
+        overflow-y: hidden;
+      }
+
       @media (max-width: 820px) {
-        .docx-responsive {
-          overflow-x: hidden !important;
+        /* No celular NAO existe rolagem lateral: a folha reflui. E aqui esta a
+           armadilha que fazia o documento travar: "overflow-x: hidden" sozinho
+           TAMBEM promove o eixo Y a "auto", criando o segundo scroller mesmo
+           sem ninguem pedir. Travar os DOIS eixos e o que devolve o toque ao
+           scroller de verdade, o main. */
+        .docx-responsive,
+        .docx-responsive.docx-anexo {
+          overflow: hidden !important;
+          padding: 0 !important;
+        }
+
+        .docx-responsive .docx-wrapper-wrapper {
           padding: 12px !important;
           align-items: flex-start !important;
         }
 
-        .docx-responsive .docx-wrapper > section,
-        .docx-responsive .docx-wrapper > section > article {
-          width: 794px !important;
-          min-width: 794px !important;
-          max-width: 794px !important;
-          padding: 24px !important;
+        /* Modo de leitura: a folha deixa de ser uma miniatura A4 e passa a
+           refluir na largura disponível. A tipografia continua no tamanho
+           original do Word, portanto permanece legível no celular. */
+        .docx-responsive section.docx-wrapper {
+          width: 100% !important;
+          min-width: 0 !important;
+          max-width: 100% !important;
+          height: auto !important;
+          min-height: 0 !important;
+          padding: clamp(20px, 5vw, 32px) !important;
+          overflow: visible !important;
+          zoom: 1 !important;
+          transform: none !important;
+          transform-origin: initial !important;
         }
 
-        /* Escala automática para caber no celular sem quebrar o layout do DOCX */
-        .docx-responsive .docx-wrapper {
-          transform: scale(calc((100vw - 24px) / 794)) !important;
+        .docx-responsive section.docx-wrapper > article {
+          width: 100% !important;
+          min-width: 0 !important;
+          max-width: 100% !important;
+          height: auto !important;
+        }
+
+        .docx-responsive section.docx-wrapper table {
+          width: 100% !important;
+          max-width: 100% !important;
+          table-layout: fixed !important;
+        }
+
+        .docx-responsive section.docx-wrapper p,
+        .docx-responsive section.docx-wrapper td,
+        .docx-responsive section.docx-wrapper th {
+          overflow-wrap: break-word !important;
+        }
+
+        .docx-responsive section.docx-wrapper img,
+        .docx-responsive section.docx-wrapper svg,
+        .docx-responsive section.docx-wrapper canvas {
+          max-width: 100% !important;
+          height: auto !important;
         }
       }
     `;
     document.head.appendChild(style);
+    return () => style.remove();
   }, []);
 
   const [step, setStep] = useState<SigningStep>('loading');
@@ -867,6 +642,9 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const signingDraftKey = `signing-draft:${token}`;
   const draftLoadedRef = useRef(false);
   const [signatureData, setSignatureData] = useState<string | null>(null);
+  /** Espelho do desenho para ler de dentro do ResizeObserver sem closure velha. */
+  const signatureDataRef = useRef<string | null>(null);
+  signatureDataRef.current = signatureData;
   const [facialData, setFacialData] = useState<string | null>(null);
   const [facialValidating, setFacialValidating] = useState(false);
   const [facialValidation, setFacialValidation] = useState<FacialAIValidationResult | null>(null);
@@ -946,6 +724,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const canOpenSignModal = isFullyLoaded;
 
   // ── Overlay de carregamento: visível desde o início, tempo mínimo de 10 s ──
+  /** O compartilhamento faz rede antes de abrir a folha; sem isto o botão fica mudo. */
+  const [sharing, setSharing] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);   // começa visível
   const [overlayFading, setOverlayFading] = useState(false);
   const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -963,18 +743,36 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     }
   }, [step]);
 
-  // Dispensa o overlay depois que a página carregou completamente E o tempo mínimo passou
+  /**
+   * Dispensa a cortina de abertura.
+   *
+   * O piso era de DEZ SEGUNDOS. Num link que abre rápido, o documento já estava
+   * pronto atrás da cortina desde o segundo 2 — e a pessoa ficava olhando
+   * "Pronto para assinar." por oito segundos, sem nada acontecendo. O piso não
+   * media nada: `isFullyLoaded` já é um sinal honesto (documento principal
+   * renderizado + anexos, ou o prazo-limite).
+   *
+   * Sobraram dois tempos, e cada um existe por um motivo:
+   *
+   *  · PISO — a cena não pode ser um flash de 200 ms quando tudo vem do cache;
+   *  · RESPIRO — depois do "pronto", o tempo de LER que ficou pronto. Sem ele, a
+   *    linha verde apareceria e sumiria no mesmo quadro.
+   *
+   * Quem chega depois do piso paga só o respiro.
+   */
   useEffect(() => {
     if (isFullyLoaded && overlayVisible && !overlayFading) {
-      const elapsed   = Date.now() - pageLoadTimeRef.current;
-      const remaining = Math.max(0, 10_000 - elapsed);
+      const PISO_MS = 1400;
+      const RESPIRO_MS = 650;
+      const decorrido = Date.now() - pageLoadTimeRef.current;
+      const espera = Math.max(PISO_MS - decorrido, RESPIRO_MS);
       overlayTimerRef.current = setTimeout(() => {
         setOverlayFading(true);
         overlayTimerRef.current = setTimeout(() => {
           setOverlayVisible(false);
           setOverlayFading(false);
-        }, 600);
-      }, remaining);
+        }, 420);
+      }, espera);
     }
     return () => {
       if (overlayTimerRef.current) clearTimeout(overlayTimerRef.current);
@@ -1021,6 +819,27 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
+
+  // Portão de rosto no visor: só roda com a câmera ligada e nenhuma foto ainda
+  // tirada. Ver src/hooks/useDeteccaoDeRosto.ts para os escapes da trava.
+  const deteccaoRosto = useDeteccaoDeRosto(
+    videoRef,
+    isSignModalOpen && modalStep === 'facial' && cameraActive && !facialData,
+  );
+
+  /** Espelho da estabilidade para o cronômetro ler sem se reiniciar. */
+  const estavelRef = useRef(false);
+  estavelRef.current = deteccaoRosto.estavel;
+
+  /** Contagem regressiva visível antes do disparo automático (null = parada). */
+  const [contagemFoto, setContagemFoto] = useState<number | null>(null);
+  /**
+   * Quantas fotos já saíram sozinhas. O disparo automático é ótimo até a IA
+   * reprovar: se a pessoa deixar a mão no rosto e o aparelho apontado, cada
+   * repetição vira uma chamada de visão paga. Depois de MAX_FOTOS_AUTOMATICAS
+   * a câmera continua ligada, mas quem dispara é o dedo.
+   */
+  const [fotosAutomaticas, setFotosAutomaticas] = useState(0);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -1234,65 +1053,6 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         setDocxLoading(true);
         setDocxRendered(false);
         
-        // Adicionar estilos para formatação A4 consistente (igual ao SignatureModule)
-        const styleId = 'docx-page-break-styles-public';
-        if (!document.getElementById(styleId)) {
-          const style = document.createElement('style');
-          style.id = styleId;
-          style.textContent = `
-            .docx-wrapper {
-              background: #e2e8f0 !important;
-              padding: 24px !important;
-              display: flex !important;
-              flex-direction: column !important;
-              align-items: center !important;
-            }
-            /* Estilo para sections (páginas) - FORÇAR A4 FIXO */
-            .docx-wrapper > section,
-            .docx-wrapper article {
-              width: 794px !important; /* A4 width at 96 DPI */
-              min-width: 794px !important;
-              max-width: 794px !important;
-              background: white !important;
-              box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1) !important;
-              margin-bottom: 30px !important;
-              border-radius: 4px !important;
-              position: relative !important;
-              padding: 40px !important;
-            }
-
-            @media (max-width: 820px) {
-              .docx-wrapper > section,
-              .docx-wrapper article {
-                width: calc(100vw - 32px) !important;
-                min-width: 0 !important;
-                max-width: calc(100vw - 32px) !important;
-                padding: 20px !important;
-              }
-            }
-            /* Separador visual entre páginas */
-            .docx-wrapper > section::after,
-            .docx-wrapper article::after {
-              content: '— Fim da Página —' !important;
-              display: block !important;
-              text-align: center !important;
-              padding: 16px !important;
-              margin-top: 20px !important;
-              color: #64748b !important;
-              font-size: 12px !important;
-              font-weight: 500 !important;
-              border-top: 2px dashed #cbd5e1 !important;
-            }
-            .docx-wrapper > section:last-child::after,
-            .docx-wrapper article:last-child::after {
-              content: '— Última Página —' !important;
-              border-top-color: #f97316 !important;
-              color: #f97316 !important;
-            }
-          `;
-          document.head.appendChild(style);
-        }
-        
         const response = await fetch(pdfUrl);
         
         if (!response.ok) {
@@ -1482,21 +1242,42 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     return () => window.clearTimeout(id);
   }, [isFullyLoaded]);
 
+  /**
+   * Dimensiona o canvas quando a etapa de assinatura entra em cena — e de novo
+   * sempre que a caixa mudar de tamanho.
+   *
+   * O ResizeObserver dispara já na primeira observação, então ele é também a
+   * inicialização, e com a vantagem de medir depois do layout assentar: o
+   * efeito anterior media uma vez só, no commit, e ficava preso àquele tamanho.
+   * O guarda por largura/altura arredondadas evita reinicializar (e apagar o
+   * traço) a cada fração de pixel.
+   */
   useEffect(() => {
-    if (isSignModalOpen && modalStep === 'signature' && canvasRef.current) {
+    if (!isSignModalOpen || modalStep !== 'signature') return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    let largura = 0;
+    let altura = 0;
+
+    const dimensionar = () => {
+      const rect = canvas.getBoundingClientRect();
+      const l = Math.round(rect.width);
+      const a = Math.round(rect.height);
+      if (l === 0 || a === 0) return;
+      if (l === largura && a === altura) return;
+      largura = l;
+      altura = a;
+
+      const salvo = signatureDataRef.current;
       initCanvas();
-      // Redesenha a assinatura restaurada do rascunho sobre o canvas recém-limpo.
-      if (signatureData) {
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          const rect = canvas.getBoundingClientRect();
-          const img = new Image();
-          img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
-          img.src = signatureData;
-        }
-      }
-    }
+      // Redesenha o traço que veio do rascunho (ou o que já estava na tela).
+      if (salvo) redesenharAssinatura(salvo);
+    };
+
+    const observador = new ResizeObserver(dimensionar);
+    observador.observe(canvas);
+    return () => observador.disconnect();
   }, [isSignModalOpen, modalStep]);
 
   useEffect(() => {
@@ -1521,6 +1302,71 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       videoRef.current.srcObject = cameraStreamRef.current;
     }
   }, [cameraActive, modalStep]);
+
+  /**
+   * Disparo automático da selfie.
+   *
+   * Enquanto o rosto estiver enquadrado e parado, corre uma contagem visível de
+   * MAX_FOTOS_AUTOMATICAS…1 e a foto sai sozinha. Se o rosto sair do lugar no
+   * meio da contagem, ela é cancelada — a foto nunca sai de surpresa.
+   */
+  useEffect(() => {
+    if (modalStep !== 'facial' || !cameraActive || facialData || fotosAutomaticas >= MAX_FOTOS_AUTOMATICAS) {
+      setContagemFoto(null);
+      return;
+    }
+
+    // O cronômetro NÃO depende de `estavel` nas dependências do efeito: se
+    // dependesse, cada oscilação do detector recriaria o intervalo e a contagem
+    // reiniciava do começo, sem nunca chegar a zero — era por isso que a foto
+    // não saía sozinha. Ele roda solto e lê o estado mais recente por ref.
+    let restante: number | null = null;
+    const t = window.setInterval(() => {
+      if (!estavelRef.current) {
+        if (restante !== null) {
+          restante = null;
+          setContagemFoto(null);
+        }
+        return;
+      }
+
+      restante = restante === null ? SEGUNDOS_CONTAGEM : restante - 1;
+      if (restante <= 0) {
+        restante = null;
+        setContagemFoto(null);
+        setFotosAutomaticas((n) => n + 1);
+        void capturePhoto();
+        return;
+      }
+      setContagemFoto(restante);
+    }, 1000);
+
+    return () => window.clearInterval(t);
+  }, [modalStep, cameraActive, facialData, fotosAutomaticas]);
+
+  /**
+   * Foto reprovada pela IA → devolve a câmera sozinho, com o motivo na tela.
+   *
+   * É aqui que a obstrução (mão no rosto, óculos escuros cobrindo) é de fato
+   * barrada: o detector local só sabe dizer que há um rosto enquadrado, quem
+   * julga se dá para reconhecer é `analyze-facial-photo`.
+   */
+  useEffect(() => {
+    if (modalStep !== 'facial') return;
+    if (facialValidating) return;
+    if (facialValidation?.valid !== false) return;
+    const t = window.setTimeout(() => {
+      setFacialData(null);
+      setFacialValidation(null);
+      void startCamera();
+    }, 2600);
+    return () => window.clearTimeout(t);
+  }, [modalStep, facialValidating, facialValidation]);
+
+  // Ao sair da etapa da foto, zera o contador de disparos automáticos.
+  useEffect(() => {
+    if (modalStep !== 'facial') setFotosAutomaticas(0);
+  }, [modalStep]);
 
   // Foto aprovada → avança automaticamente para a etapa de autorização/confirmação.
   // Mostra "Foto aprovada!" por um instante antes de avançar.
@@ -1627,13 +1473,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     }
   };
 
-  const handleSendEmailOtp = async () => {
+  /**
+   * Envia o código por e-mail.
+   *
+   * Aceita um endereço EXPLÍCITO porque o atalho da tela de identidade dispara
+   * o envio no mesmo clique em que escolhe o método: nesse instante o `setState`
+   * do endereço ainda não foi aplicado, e ler do estado mandaria string vazia.
+   */
+  const handleSendEmailOtp = async (emailExplicito?: string) => {
     try {
       setEmailOtpLoading(true);
       setEmailOtpError(null);
       setShowEmailAnimation(true);
 
-      const email = (emailToVerify || '').trim();
+      const email = (emailExplicito ?? emailToVerify ?? '').trim();
+      if (emailExplicito) setEmailToVerify(email);
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         throw new Error('Informe um e-mail válido');
       }
@@ -2259,9 +2113,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   const handleShareSignedDocuments = async (currentRequest: SignatureRequest, currentSigner: Signer) => {
     try {
+      setSharing(true);
       const docs = await getShareableSignedDocuments(currentRequest, currentSigner);
       if (docs.length === 0) {
-        toast.error('Os documentos assinados ainda estÃ£o sendo finalizados.');
+        toast.error('Os documentos assinados ainda estão sendo finalizados.');
         return;
       }
 
@@ -2315,11 +2170,33 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         return;
       }
 
-      await navigator.clipboard.writeText(docs.map((doc) => `${doc.displayName}: ${doc.url}`).join('\n'));
-      toast.success(docs.length > 1 ? 'Links dos documentos copiados.' : 'Link do documento assinado copiado.');
-    } catch (e) {
-      console.log('Compartilhamento cancelado/erro:', e);
+      await copiarLinksDosDocumentos(docs);
+    } catch (e: any) {
+      // Cancelar a folha de compartilhamento é uma decisão, não um erro.
+      if (e?.name === 'AbortError') return;
+      console.warn('Compartilhamento falhou; caindo para os links:', e);
+      // NUNCA terminar em silêncio. Era o que acontecia: `navigator.share`
+      // existe no desktop, mas quando o clique já perdeu o gesto do usuário
+      // (este caminho faz três `await` antes de chamá-lo) ele recusa com
+      // NotAllowedError — e o `catch` engolia tudo num `console.log`. Para
+      // quem apertava, o botão simplesmente não fazia nada.
+      try {
+        const docs = await getShareableSignedDocuments(currentRequest, currentSigner);
+        if (docs.length > 0) { await copiarLinksDosDocumentos(docs); return; }
+      } catch { /* segue para o aviso */ }
+      toast.error('Não foi possível compartilhar', 'Use "Abrir documento assinado" e compartilhe pelo seu aparelho.');
+    } finally {
+      setSharing(false);
     }
+  };
+
+  /** Plano B universal do compartilhamento: os links na área de transferência. */
+  const copiarLinksDosDocumentos = async (
+    docs: { displayName: string; url?: string | null }[],
+  ) => {
+    const texto = docs.map((doc) => `${doc.displayName}: ${doc.url}`).join('\n');
+    await navigator.clipboard.writeText(texto);
+    toast.success(docs.length > 1 ? 'Links dos documentos copiados.' : 'Link do documento assinado copiado.');
   };
 
   const closeSignedViewer = () => {
@@ -2335,15 +2212,22 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   // Modal do visualizador — compartilhado entre as telas "já assinado" e "sucesso".
   const signedDocViewer = signedViewerUrl ? (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-900/70 backdrop-blur-sm" onClick={closeSignedViewer}>
-      <div className="flex items-center justify-between px-4 sm:px-6 py-3 bg-slate-900 text-white shrink-0" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-[100] flex h-[100dvh] min-w-0 flex-col bg-slate-900/70 backdrop-blur-sm"
+      onClick={closeSignedViewer}
+    >
+      <div
+        className="flex min-w-0 shrink-0 items-center justify-between gap-3 bg-slate-900 px-3 pb-3 text-white sm:px-6 sm:py-3"
+        style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center gap-2 min-w-0">
           <FileText className="w-4 h-4 text-orange-400 shrink-0" />
           <span className="text-sm font-medium truncate">{request?.document_name || 'Documento assinado'}</span>
         </div>
         <button
           onClick={closeSignedViewer}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium bg-white/10 hover:bg-white/20 transition-colors"
+          className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/20"
         >
           <X className="w-4 h-4" />
           Fechar
@@ -2352,7 +2236,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       <iframe
         title="Documento assinado"
         src={signedViewerUrl}
-        className="flex-1 w-full bg-white"
+        className="min-h-0 w-full flex-1 bg-white"
         onClick={(e) => e.stopPropagation()}
       />
     </div>
@@ -2401,16 +2285,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       draftLoadedRef.current = true;
       if (data.creator) setCreator(data.creator);
       if (data.signer.status !== 'signed') {
-        const viewedKey = `public_signing_viewed_${data.signer.id}`;
-        const alreadyLogged = typeof window !== 'undefined' ? window.sessionStorage.getItem(viewedKey) : null;
-        if (!alreadyLogged) {
-          try {
-            window.sessionStorage.setItem(viewedKey, String(Date.now()));
-          } catch {
-            // noop
-          }
-          void signatureService.markSignerAsViewed(token, undefined, navigator.userAgent);
-        }
+        void registrarVisualizacao(token, data.signer.id);
       }
 
       // Tentar carregar preview do documento principal
@@ -2503,27 +2378,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       if (data.signer.status === 'signed') {
         setStep('already_signed');
       } else {
-        // Registrar visualização (capturar IP + plataforma)
-        const viewedKey = `public_signing_viewed_${data.signer.id}`;
-        const alreadyLogged = typeof window !== 'undefined' ? window.sessionStorage.getItem(viewedKey) : null;
-        if (!alreadyLogged) {
-          const userAgent = navigator.userAgent;
-          let ipAddress: string | undefined;
-          try {
-            const ipResponse = await fetch('https://api.ipify.org?format=json');
-            const ipData = await ipResponse.json();
-            ipAddress = ipData.ip;
-          } catch (e) {
-            // Não bloquear o fluxo
-          }
-
-          await signatureService.markSignerAsViewed(token, ipAddress, userAgent);
-          try {
-            window.sessionStorage.setItem(viewedKey, String(Date.now()));
-          } catch {
-            // noop
-          }
-        }
+        // Registrar visualização (com IP e aparelho) — ver registrarVisualizacao.
+        await registrarVisualizacao(token, data.signer.id);
         setStep('success');
       }
     } catch (e: any) {
@@ -2612,6 +2468,44 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const contagemRegressiva = (segundos: number): string =>
     `${Math.floor(segundos / 60)}:${String(segundos % 60).padStart(2, '0')}`;
 
+  /**
+   * O e-mail que JÁ ESTÁ na ficha do signatário.
+   *
+   * Era o buraco do fluxo: a tela de identidade anunciava "Código para
+   * c···b@dvqlb.com", a pessoa clicava, e o campo da etapa seguinte abria
+   * VAZIO — porque `emailToVerify` nascia como string vazia e nunca era
+   * semeado, ao contrário do telefone (que vinha de `signerData.phone`). Quem
+   * não lembrava o próprio endereço de cadastro ficava travado numa tela que
+   * acabara de mostrar o endereço.
+   *
+   * O endereço sintético do kit de preenchimento (`public+…@crm.local`) não
+   * conta: ninguém lê aquela caixa, e oferecê-lo mandaria o código para o vazio.
+   */
+  const emailDoCadastro = ((): string => {
+    const e = (signer?.email || '').trim();
+    return !e || isTemplateFillSigner(e) ? '' : e;
+  })();
+
+  /** O telefone que já está na ficha (ou o que a pessoa digitou nesta sessão). */
+  const telefoneDoCadastro = ((): string => {
+    const bruto = (signerData.phone || signer?.phone || '').replace(/\D/g, '');
+    return bruto.length >= 10 ? bruto : '';
+  })();
+
+  /**
+   * Atalho da tela de identidade: com o contato já conhecido, o clique no
+   * método MANDA O CÓDIGO e cai direto na tela de digitar.
+   *
+   * Conferir um telefone que o próprio sistema acabou de exibir é uma etapa que
+   * não decide nada. A tela de coleta continua existindo — ela é o caminho de
+   * quem não tem contato na ficha, e também o destino quando o envio falha
+   * (o erro aparece ali, com o campo para corrigir).
+   */
+  const jaPodeEnviarCodigo = (canal: 'sms' | 'whatsapp' | 'email'): boolean => {
+    if (canal === 'email') return !!emailDoCadastro && !emailOtpSent && emailOtpResendIn <= 0;
+    return !!telefoneDoCadastro && !phoneOtpSent && phoneOtpResendIn <= 0;
+  };
+
   const getFirstAuthStep = (cfg: PublicAuthConfig): ModalStep => {
     if (cfg.google) return 'google_auth';
     if (contarMetodos(cfg) > 1) return 'google_auth';
@@ -2685,6 +2579,20 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     };
   }, [signer?.id, signer?.status]);
 
+  /**
+   * Dimensiona o canvas pelo tamanho REAL que ele ocupa na tela.
+   *
+   * O traço saía longe do dedo porque o desenho era feito em pixels de CSS sob
+   * um `ctx.scale(2, 2)` fixo: isso só fecha a conta enquanto o canvas tiver
+   * exatamente o tamanho que tinha no instante da medição. Qualquer mudança
+   * depois — barra de rolagem que aparece, rotação, teclado do celular subindo —
+   * separava o ponto tocado do ponto desenhado. E `ctx.scale` é MULTIPLICATIVO:
+   * uma segunda chamada sem reset dobraria a escala de novo.
+   *
+   * Agora o contexto desenha em pixels do buffer (transform identidade, posto de
+   * forma absoluta) e as coordenadas são convertidas ao vivo em getCoordinates.
+   * Não existe mais acoplamento entre o momento da medição e o do traço.
+   */
   const initCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -2692,38 +2600,50 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas size
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * 2;
-    canvas.height = rect.height * 2;
-    ctx.scale(2, 2);
+    const dpr = Math.min(Math.max(window.devicePixelRatio || 1, 1), 3);
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
 
-    // Style
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 2.5 * dpr;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Clear
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   };
 
+  /** Redesenha no canvas recém-dimensionado o traço que já existia. */
+  const redesenharAssinatura = (dataUrl: string) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    img.src = dataUrl;
+  };
+
+  /**
+   * Converte o ponto tocado para o sistema de coordenadas em que o contexto
+   * desenha. A razão buffer÷CSS é medida NESTE instante — é ela que garante
+   * que o traço nasça exatamente sob o dedo, mesmo que a caixa tenha mudado de
+   * tamanho desde que o canvas foi dimensionado.
+   */
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
 
     const rect = canvas.getBoundingClientRect();
-    
-    if ('touches' in e) {
-      return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top,
-      };
-    }
+    if (rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
+
+    const ponto = 'touches' in e ? (e.touches[0] ?? e.changedTouches[0]) : e;
+    if (!ponto) return { x: 0, y: 0 };
+
     return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: (ponto.clientX - rect.left) * (canvas.width / rect.width),
+      y: (ponto.clientY - rect.top) * (canvas.height / rect.height),
     };
   };
 
@@ -2778,8 +2698,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     try {
       setCameraError(null);
       stopCamera();
+      // Retrato, como a foto de um celular. `ideal` (e não `exact`) porque
+      // webcam de notebook só entrega paisagem: nesses casos o navegador
+      // devolve o que tem e o recorte em capturePhoto endireita a imagem.
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: 640, height: 480 },
+        video: {
+          facingMode: 'user',
+          width: { ideal: 1080 },
+          height: { ideal: 1440 },
+          aspectRatio: { ideal: FOTO_PROPORCAO },
+        },
       });
       cameraStreamRef.current = stream;
       setCameraActive(true);
@@ -2827,15 +2755,39 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   };
 
   const capturePhoto = async () => {
-    if (!videoRef.current) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    const larguraVideo = video.videoWidth;
+    const alturaVideo = video.videoHeight;
+    if (!larguraVideo || !alturaVideo) return;
+
+    // A foto gravada no certificado é sempre RETRATO. Antes ela saía com o
+    // formato cru da câmera — 4:3 deitado na webcam do notebook —, e o que a
+    // pessoa via no visor não era o que ficava guardado. Recortamos o centro
+    // na proporção de celular, o mesmo recorte que o `object-cover` do visor
+    // já mostra, então a prévia e o arquivo passam a coincidir.
+    let larguraCorte = larguraVideo;
+    let alturaCorte = alturaVideo;
+    if (larguraVideo / alturaVideo > FOTO_PROPORCAO) {
+      larguraCorte = Math.round(alturaVideo * FOTO_PROPORCAO); // sobra nas laterais
+    } else {
+      alturaCorte = Math.round(larguraVideo / FOTO_PROPORCAO); // sobra em cima e embaixo
+    }
+    const origemX = Math.round((larguraVideo - larguraCorte) / 2);
+    const origemY = Math.round((alturaVideo - alturaCorte) / 2);
 
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
+    canvas.width = larguraCorte;
+    canvas.height = alturaCorte;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.drawImage(videoRef.current, 0, 0);
+    ctx.drawImage(
+      video,
+      origemX, origemY, larguraCorte, alturaCorte,
+      0, 0, larguraCorte, alturaCorte,
+    );
     const imageData = canvas.toDataURL('image/jpeg', 0.85);
     setFacialValidation(null);
     setFacialData(imageData);
@@ -3256,7 +3208,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const expectedCpfDigits = (signer?.cpf || '').replace(/\D/g, '');
   const enteredCpfDigits = signerData.cpf.replace(/\D/g, '');
   const cpfMismatch = requireCpfMatch && expectedCpfDigits.length === 11 && enteredCpfDigits.length === 11 && enteredCpfDigits !== expectedCpfDigits;
-  const canProceedFromData = signerData.name.trim().length >= 3 && enteredCpfDigits.length === 11 && !cpfMismatch;
+  /** CPF com 11 dígitos mas dígitos verificadores errados — antes passava. */
+  const cpfInvalido = enteredCpfDigits.length === 11 && !cpfValido(enteredCpfDigits);
+  const canProceedFromData =
+    signerData.name.trim().length >= 3 &&
+    enteredCpfDigits.length === 11 &&
+    !cpfInvalido &&
+    !cpfMismatch;
 
   const closeSignModal = () => {
     setIsSignModalOpen(false);
@@ -3275,7 +3233,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setPhoneOtpLoading(false);
     setPhoneOtpError(null);
 
-    setEmailToVerify('');
+    // Semeado, não zerado: ver `emailDoCadastro`.
+    setEmailToVerify(emailDoCadastro);
     setEmailOtp('');
     setEmailOtpResendIn(0);
     setEmailOtpFails(0);
@@ -3288,22 +3247,33 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setShowEmailAnimation(false);
   };
 
-  const handleSendPhoneOtp = async () => {
+  /**
+   * Envia o código por SMS ou WhatsApp.
+   *
+   * Como no e-mail, aceita telefone e canal EXPLÍCITOS: o atalho da tela de
+   * identidade escolhe o canal e dispara o envio no mesmo clique, e o estado
+   * ainda não teria mudado a tempo.
+   */
+  const handleSendPhoneOtp = async (
+    telefoneExplicito?: string,
+    canalExplicito?: 'sms' | 'whatsapp',
+  ) => {
+    const canal = canalExplicito ?? phoneOtpChannel;
     try {
       setPhoneOtpLoading(true);
       setPhoneOtpError(null);
 
-      const phoneRaw = signerData.phone || '';
+      const phoneRaw = telefoneExplicito ?? signerData.phone ?? '';
       const digits = phoneRaw.replace(/\D/g, '');
       if (digits.length < 10) {
         throw new Error('Informe um telefone válido');
       }
 
-      const res = await signatureService.sendPhoneOtp({ token, phone: digits, channel: phoneOtpChannel });
+      const res = await signatureService.sendPhoneOtp({ token, phone: digits, channel: canal });
       setPhoneOtpSent(true);
       setPhoneOtpExpiresAt(res.expires_at ?? null);
       setPhoneOtpResendIn(res.resend_in_seconds ?? 0);
-      toast.success(phoneOtpChannel === 'whatsapp' ? 'Código enviado pelo WhatsApp' : 'Código enviado por SMS');
+      toast.success(canal === 'whatsapp' ? 'Código enviado pelo WhatsApp' : 'Código enviado por SMS');
     } catch (e: any) {
       if (e?.retryAfterSeconds) setPhoneOtpResendIn(e.retryAfterSeconds);
       setPhoneOtpError(e?.message || 'Não foi possível enviar o código');
@@ -3373,7 +3343,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setPhoneOtpLoading(false);
     setPhoneOtpError(null);
 
-    setEmailToVerify('');
+    // Semeado, não zerado: ver `emailDoCadastro`.
+    setEmailToVerify(emailDoCadastro);
     setEmailOtp('');
     setEmailOtpResendIn(0);
     setEmailOtpFails(0);
@@ -3387,20 +3358,41 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     setIsSignModalOpen(true);
   };
 
-  // ── Portal de carregamento (posição fixa na árvore → nunca desmonta o LoadingScreen) ──
+  /**
+   * Por onde a pessoa provou quem é.
+   *
+   * Mesma ordem de precedência do `auth_provider` que vai no payload da
+   * assinatura — de propósito: a tela não pode dizer "identidade por e-mail"
+   * enquanto o dossiê grava "google".
+   *
+   * O código do telefone vai por SMS OU por WhatsApp (`phoneOtpChannel`), e a
+   * tela usa o canal que de fato foi usado. Escrever "WhatsApp" num comprovante
+   * de código que saiu por SMS é o tipo de detalhe que derruba a prova.
+   *
+   * Sem nada em estado (a pessoa recarregou a página depois de assinar), cai
+   * para o que está gravado no registro do signatário.
+   */
+  const canalDeIdentidade: CanalDeIdentidade =
+    googleUser ? 'google'
+    : emailOtpVerified ? 'email'
+    : phoneOtpVerified ? phoneOtpChannel
+    : canalDoRegistro(signer);
+
+  // ── Portal de carregamento (posição fixa na árvore → nunca desmonta a abertura) ──
   const loadingPortal = overlayVisible
     ? createPortal(
         <div
           className="fixed inset-0 z-[9999]"
           style={{
             opacity: overlayFading ? 0 : 1,
-            transition: 'opacity 600ms cubic-bezier(0.4,0,0.2,1)',
+            transition: 'opacity 420ms cubic-bezier(0.4,0,0.2,1)',
             pointerEvents: overlayFading ? 'none' : 'auto',
           }}
         >
-          <LoadingScreen
+          <TelaDeAbertura
             docName={request?.document_name}
             signerName={signer?.name}
+            pronto={isFullyLoaded}
             allDocNames={request ? [
               request.document_name,
               ...((request as any).attachment_paths as string[] | null | undefined ?? [])
@@ -3425,52 +3417,63 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   // Error
   if (step === 'error') {
+    const waUrl = buildWhatsappUrl(officeWhatsapp, `Olá! Preciso de um novo link para assinatura. Token: ${token}`);
+
     return (
       <>
         {loadingPortal}
-        <div className="min-h-[100dvh] bg-slate-50 flex items-center justify-center p-5">
-        <div className="w-full max-w-lg relative">
+        <MolduraPublica tom="problema" rodape={<RodapeDeConfianca itens={['Conexão segura', 'Jurius']} />}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div style={sobe(0, 0.5)}>
+              <Rotulo cor="#e11d48">Link com problema</Rotulo>
+              <h1 style={{
+                margin: '10px 0 0', fontSize: 29, fontWeight: 700, letterSpacing: '-.9px',
+                lineHeight: 1.08, color: TINTA,
+              }}>
+                Este link não abre.
+              </h1>
+              <Explicacao style={{ marginTop: 11 }}>
+                {error || 'Não foi possível carregar este link de assinatura.'}
+              </Explicacao>
+              <Explicacao style={{ marginTop: 8, color: TINTA_3 }}>
+                Links de assinatura expiram. Se você recebeu este há algum tempo, peça um novo ao
+                escritório — leva um minuto.
+              </Explicacao>
+            </div>
 
-          <div className="relative bg-white rounded-2xl border border-slate-200 shadow-[0_20px_60px_rgba(15,23,42,0.08)] overflow-hidden">
-            <div className="h-1 w-full bg-orange-500" />
-
-            <div className="p-6 sm:p-8">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center flex-shrink-0">
-                  <AlertCircle className="w-6 h-6 text-red-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-600/80">
-                    Assinatura Digital
-                  </div>
-                  <h1 className="mt-1 text-xl sm:text-2xl font-semibold text-slate-900 tracking-tight">
-                    Link inválido ou expirado
-                  </h1>
-                  <p className="mt-2 text-sm text-slate-600 leading-relaxed">
-                    {error || 'Não foi possível carregar este link de assinatura.'}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-500">
-                    Se você recebeu este link há muito tempo, solicite um novo ao escritório.
-                  </p>
-                </div>
+            {/*
+              O token continua à vista e copiável: é ele que o escritório precisa
+              para achar o documento certo e reemitir o link.
+            */}
+            <div style={{
+              border: `1px dashed #cbd5e1`, borderRadius: 8, background: '#fff', overflow: 'hidden', ...sobe(2),
+            }}>
+              <div style={{ padding: '6px 11px', borderBottom: '1px dashed #cbd5e1', background: '#f8fafc' }}>
+                <span style={{
+                  fontSize: 8.5, fontWeight: 700, letterSpacing: '.14em',
+                  textTransform: 'uppercase', color: TINTA_3,
+                }}>
+                  Token deste link
+                </span>
               </div>
-
-              <div className="mt-6 rounded-2xl border border-[#e7e5df] bg-slate-50 p-4">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Token</div>
-                <div className="mt-1 font-mono text-xs text-slate-700 break-all">{token}</div>
+              <div style={{
+                padding: '9px 11px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                fontSize: 11.5, color: TINTA_2, wordBreak: 'break-all', lineHeight: 1.4,
+              }}>
+                {token}
               </div>
+            </div>
 
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={loadSignerData}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 hover:bg-orange-700 transition"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  Tentar novamente
-                </button>
-                <button
-                  type="button"
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...sobe(3) }}>
+              <AcaoPrimaria
+                onClick={loadSignerData}
+                icone={<RotateCcw className="w-4 h-4" />}
+              >
+                Tentar novamente
+              </AcaoPrimaria>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <AcaoSecundaria
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(token);
@@ -3479,43 +3482,32 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                       toast.error('Não foi possível copiar o token.');
                     }
                   }}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#f8f7f5] border border-[#e7e5df] px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
+                  icone={<Copy className="w-3.5 h-3.5" />}
                 >
-                  <Copy className="w-4 h-4" />
                   Copiar token
-                </button>
-                {(() => {
-                  const waUrl = buildWhatsappUrl(officeWhatsapp, `Olá! Preciso de um novo link para assinatura. Token: ${token}`);
-                  if (!waUrl) return null;
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => window.open(waUrl, '_blank')}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      Pedir ajuda no WhatsApp
-                    </button>
-                  );
-                })()}
-                <button
-                  type="button"
-                  onClick={() => window.location.assign('/')}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#f8f7f5] border border-[#e7e5df] px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  Voltar ao início
-                </button>
+                </AcaoSecundaria>
+                {waUrl && (
+                  <AcaoSecundaria
+                    onClick={() => window.open(waUrl, '_blank', 'noopener,noreferrer')}
+                    icone={<ExternalLink className="w-3.5 h-3.5" />}
+                  >
+                    Pedir ajuda
+                  </AcaoSecundaria>
+                )}
               </div>
             </div>
           </div>
-        </div>
-      </div>
+        </MolduraPublica>
       </>
     );
   }
 
-  // Already signed
+  // Já assinado — quem volta ao link depois (recarregou, guardou no histórico).
+  //
+  // A diferença para o comprovante logo após assinar é que aqui NÃO temos mais a
+  // selfie nem o traço em mãos: eles vivem em estado do navegador e a página foi
+  // recarregada. O comprovante degrada sozinho — some a miniatura da prova e
+  // sobra o protocolo, que é o que valida de verdade.
   if (step === 'already_signed') {
     if (!request || !signer) {
       return (
@@ -3526,25 +3518,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       );
     }
 
-    const isPerDocumentModel = request?.signature_model === 'per_document';
-    const primarySignedDocument =
-      signedDocuments.find((doc) => doc.documentKey === 'main') ??
-      signedDocuments[0] ??
-      null;
-    const displayedVerificationCode = (
-      isPerDocumentModel
-        ? primarySignedDocument?.verificationCode
-        : signer?.verification_hash
-    )?.trim() || '';
-    const verificationCodeLabel =
-      isPerDocumentModel && signedDocuments.length > 1
-        ? 'Código do documento principal'
-        : 'Código de autenticação';
-
-    const envelopeDisplayCode = getEnvelopeDisplayCode(request, signer);
-    const envelopeCodeLabel = 'Protocolo do envelope';
-
-    if (showReport && request && signer) {
+    if (showReport) {
       return (
         <SignatureReport
           signer={signer}
@@ -3555,189 +3529,154 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       );
     }
 
-    const handleCopyVerificationCode = async () => {
+    const isPerDocumentModel = request?.signature_model === 'per_document';
+    const primarySignedDocument =
+      signedDocuments.find((doc) => doc.documentKey === 'main') ??
+      signedDocuments[0] ??
+      null;
+
+    const envelopeDisplayCode = getEnvelopeDisplayCode(request, signer);
+    const protocolo = (
+      envelopeDisplayCode
+      || (isPerDocumentModel ? primarySignedDocument?.verificationCode : signer?.verification_hash)
+      || ''
+    ).trim();
+
+    const urlDeVerificacao = protocolo ? `${window.location.origin}/#/verificar/${protocolo}` : null;
+
+    const copiarProtocolo = async () => {
+      if (!protocolo) return;
       try {
-        const code = envelopeDisplayCode;
-        if (!code) return;
-        await navigator.clipboard.writeText(code);
-        toast.success('Código copiado.');
+        await navigator.clipboard.writeText(protocolo);
+        toast.success('Protocolo copiado.');
       } catch {
-        toast.error('Não foi possível copiar o código.');
+        toast.error('Não foi possível copiar o protocolo.');
       }
     };
-
-    const handleCopySignerToken = async () => {
-      try {
-        const t = (signer?.public_token || '').trim();
-        if (!t) return;
-        await navigator.clipboard.writeText(t);
-        toast.success('Token copiado.');
-      } catch {
-        toast.error('Não foi possível copiar o token.');
-      }
-    };
-
-    const verificationUrl = envelopeDisplayCode ? `${window.location.origin}/#/verificar/${envelopeDisplayCode}` : null;
-    const termsUrl = buildPublicSignatureTermsUrl();
 
     return (
       <>
         {loadingPortal}
-        <div className="min-h-[100dvh] flex flex-col" style={{ background: '#f4f7f9' }}>
-          <div className="h-[3px] w-full flex-shrink-0" style={{ background: 'linear-gradient(90deg,#ea580c,#f97316 45%,#fb923c)' }} />
-
-          <div className="flex-1 flex items-center justify-center p-4">
-            <div className="w-full max-w-[400px]">
-              <div className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-[0_10px_34px_-12px_rgba(15,23,42,0.18)]">
-                <div className="h-1" style={{ background: 'linear-gradient(90deg,#ea580c,#f59e0b)' }} />
-
-                <div className="p-5 sm:p-6">
-                  {/* Topo: marca + selo */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <BrandLogo iconOnly size="xs" />
-                      <span className="text-[15px] font-black tracking-tight text-slate-900">JURIUS</span>
-                    </div>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200">
-                      <CheckCircle className="w-3 h-3 text-emerald-600" />
-                      <span className="text-[9px] font-bold tracking-[0.12em] uppercase text-emerald-700">Assinado</span>
-                    </span>
-                  </div>
-
-                  <h1 className="text-[18px] font-bold text-slate-900 leading-tight">Documento assinado</h1>
-                  <p className="text-[12.5px] text-slate-500 mt-0.5">Uma cópia assinada está disponível para você.</p>
-
-                  {/* Documento */}
-                  <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#fff7ed', border: '1px solid #fed7aa' }}>
-                      <FileText className="w-4 h-4" style={{ color: '#ea580c' }} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[13px] font-semibold text-slate-900 truncate">{request?.document_name}</div>
-                      <div className="text-[11.5px] text-slate-400 mt-0.5 truncate">
-                        {signer?.name || 'Signatário'}{signer?.signed_at ? ` · ${formatDate(signer.signed_at)}` : ''}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Código de autenticação */}
-                  {envelopeDisplayCode && (
-                    <div className="mt-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9.5px] font-bold uppercase tracking-[0.12em] text-slate-400">{envelopeCodeLabel}</span>
-                        <button type="button" onClick={handleCopyVerificationCode} className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-orange-600 hover:text-orange-700">
-                          <Copy className="w-3 h-3" />Copiar
-                        </button>
-                      </div>
-                      <div className="font-mono text-[13px] font-semibold tracking-wider text-slate-800 break-all mt-1">{envelopeDisplayCode}</div>
-                      {verificationUrl && (
-                        <a href={verificationUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-500 hover:text-orange-600">
-                          <ExternalLink className="w-3 h-3" />Verificar autenticidade
-                        </a>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Ações */}
-                  <button
-                    type="button"
-                    onClick={() => openSignedDocumentViewer(setDownloadingAlreadySigned)}
-                    disabled={downloadingAlreadySigned}
-                    className="mt-4 w-full bg-orange-600 text-white px-4 py-3 rounded-xl font-semibold text-[13.5px] flex items-center justify-center gap-2 hover:bg-orange-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                  >
-                    {downloadingAlreadySigned ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
-                    Abrir documento assinado
-                  </button>
-                  <div className={`mt-2 grid gap-2 ${signer?.public_token ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                    <button type="button" onClick={() => handleShareSignedDocuments(request!, signer!)} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition">
-                      <Share2 className="w-3.5 h-3.5" />Compartilhar
-                    </button>
-                    {signer?.public_token && (
-                      <button type="button" onClick={handleCopySignerToken} className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[12px] font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition">
-                        <Shield className="w-3.5 h-3.5" />Copiar token
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="px-5 sm:px-6 py-3 border-t border-slate-100 flex items-center gap-2">
-                  <Lock className="w-3 h-3 text-slate-300 flex-shrink-0" />
-                  <p className="text-[10px] text-slate-400 leading-relaxed">Guarde o protocolo do envelope para conferencia futura.</p>
-                </div>
-              </div>
-
-              <div className="text-center mt-3">
-                <a href={termsUrl} className="text-[10px] font-semibold tracking-[0.1em] uppercase text-slate-400 hover:text-orange-600 transition">Termos de Uso</a>
-              </div>
-            </div>
-          </div>
-        </div>
+        <TelaDeComprovante
+          nome={signer?.name || 'Signatário'}
+          cpf={signer?.cpf}
+          canal={canalDoRegistro(signer)}
+          documento={request?.document_name}
+          assinadoEm={signer?.signed_at ? formatDate(signer.signed_at) : null}
+          protocolo={protocolo}
+          documentosAssinados={signedDocuments}
+          temArquivoAssinado={!!signer?.signed_document_path}
+          abrindo={downloadingAlreadySigned}
+          compartilhando={sharing}
+          urlDeVerificacao={urlDeVerificacao}
+          aoAbrir={() => openSignedDocumentViewer(setDownloadingAlreadySigned)}
+          aoCompartilhar={() => { void handleShareSignedDocuments(request!, signer!); }}
+          aoCopiarProtocolo={() => { void copiarProtocolo(); }}
+          aoAbrirDocumento={(url) => openUrlInSignedViewer(url)}
+          urlDosTermos={buildPublicSignatureTermsUrl()}
+        />
         {signedDocViewer}
       </>
     );
   }
 
-  // Ordem sequencial: ainda não é a vez deste signatário (há signatário anterior pendente).
-  // Bloqueia a UI de assinatura e explica o motivo. O servidor (edge function) também
-  // recusa qualquer tentativa fora de ordem como backstop.
+  // Ordem sequencial: ainda não é a vez deste signatário (há um anterior pendente).
+  // Bloqueia a UI de assinatura e explica o motivo. O servidor (edge function)
+  // também recusa qualquer tentativa fora de ordem como backstop.
   if (step === 'success' && signer?.status === 'pending' && waitingFor) {
     return (
       <>
         {loadingPortal}
-        <div className="min-h-[100dvh] bg-slate-50 flex items-center justify-center p-5">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 p-8 text-center">
-            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-slate-100 flex items-center justify-center">
-              <Clock className="w-8 h-8 text-slate-600" />
+        <MolduraPublica tom="espera" rodape={<RodapeDeConfianca itens={['Conexão segura', 'Jurius']} />}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div style={sobe(0, 0.5)}>
+              <Rotulo cor="#b45309">Assinatura em ordem</Rotulo>
+              <h1 style={{
+                margin: '10px 0 0', fontSize: 29, fontWeight: 700, letterSpacing: '-.9px',
+                lineHeight: 1.08, color: TINTA,
+              }}>
+                Ainda não é<br />a sua vez.
+              </h1>
+              <Explicacao style={{ marginTop: 11 }}>
+                Este documento precisa ser assinado numa ordem, e falta a assinatura de{' '}
+                <strong style={{ color: TINTA, fontWeight: 600 }}>{waitingFor}</strong> antes da sua.
+              </Explicacao>
             </div>
-            <h1 className="text-xl font-bold text-slate-900 mb-2">Ainda não é a sua vez</h1>
-            <p className="text-sm text-slate-600 mb-2">
-              Este documento exige assinatura <span className="font-semibold">em ordem</span>.
-            </p>
-            <p className="text-sm text-slate-600">
-              Aguardando a assinatura de <span className="font-semibold">{waitingFor}</span>. Você
-              receberá um novo aviso quando for a sua vez de assinar
-              {request?.document_name ? <> <span className="font-semibold">{request.document_name}</span></> : null}.
-            </p>
-            <button
-              onClick={loadSignerData}
-              className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium transition"
-            >
-              Verificar novamente
-            </button>
+
+            {request?.document_name && (
+              <div style={sobe(2)}>
+                <EtiquetaDoDocumento nome={request.document_name} />
+              </div>
+            )}
+
+            <Tarja tom="neutro" style={sobe(3)}>
+              Você receberá um novo aviso assim que chegar a sua vez. Pode fechar esta página.
+            </Tarja>
+
+            <div style={sobe(4)}>
+              <AcaoSecundaria onClick={loadSignerData} icone={<RotateCcw className="w-3.5 h-3.5" />}>
+                Verificar novamente
+              </AcaoSecundaria>
+            </div>
           </div>
-        </div>
+        </MolduraPublica>
       </>
     );
   }
 
-  // Success (após assinar)
+  // Recusa registrada.
   if (step === 'success' && signer?.status === 'refused') {
     return (
       <>
         {loadingPortal}
-        <div className="min-h-[100dvh] bg-slate-50 flex items-center justify-center p-5">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-rose-100 p-8 text-center">
-            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-rose-100 flex items-center justify-center">
-              <X className="w-8 h-8 text-rose-600" />
+        <MolduraPublica tom="problema" rodape={<RodapeDeConfianca itens={['Conexão segura', 'Jurius']} />}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div style={sobe(0, 0.5)}>
+              <Rotulo cor="#e11d48">Recusa registrada</Rotulo>
+              <h1 style={{
+                margin: '10px 0 0', fontSize: 29, fontWeight: 700, letterSpacing: '-.9px',
+                lineHeight: 1.08, color: TINTA,
+              }}>
+                Você recusou<br />esta assinatura.
+              </h1>
+              <Explicacao style={{ marginTop: 11 }}>
+                O escritório já foi avisado e vai retomar o contato. Nenhuma assinatura sua foi
+                registrada no documento.
+              </Explicacao>
             </div>
-            <h1 className="text-xl font-bold text-slate-900 mb-2">Assinatura recusada</h1>
-            <p className="text-sm text-slate-600 mb-4">
-              Você recusou a assinatura de <span className="font-semibold">{request?.document_name}</span>. O responsável pelo documento foi notificado.
-            </p>
+
+            {request?.document_name && (
+              <div style={sobe(2)}>
+                <EtiquetaDoDocumento nome={request.document_name} principal={false} />
+              </div>
+            )}
+
             {signer?.refusal_reason && (
-              <div className="text-left bg-rose-50 border border-rose-100 rounded-xl p-4">
-                <div className="text-xs font-semibold text-rose-700 mb-1">Motivo informado</div>
-                <div className="text-sm text-slate-700 whitespace-pre-wrap">{signer.refusal_reason}</div>
+              <div style={{
+                border: '1px solid #fecdd3', background: '#fff1f2', borderRadius: 12,
+                padding: '12px 14px', textAlign: 'left', ...sobe(3),
+              }}>
+                <p style={{
+                  margin: 0, fontSize: 8.5, fontWeight: 700, letterSpacing: '.14em',
+                  textTransform: 'uppercase', color: '#be123c',
+                }}>
+                  Motivo informado
+                </p>
+                <p style={{
+                  margin: '6px 0 0', fontSize: 12.5, color: TINTA_2, lineHeight: 1.5, whiteSpace: 'pre-wrap',
+                }}>
+                  {signer.refusal_reason}
+                </p>
               </div>
             )}
           </div>
-        </div>
+        </MolduraPublica>
       </>
     );
   }
 
   if (step === 'success' && signer?.status === 'signed') {
-    // Mostrar relatório de assinatura
+    // Relatório completo — continua sendo uma tela à parte.
     if (showReport && request) {
       return (
         <SignatureReport
@@ -3754,215 +3693,56 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       signedDocuments.find((doc) => doc.documentKey === 'main') ??
       signedDocuments[0] ??
       null;
-    const displayedVerificationCode = (
-      isPerDocumentModel
-        ? primarySignedDocument?.verificationCode
-        : signer?.verification_hash
-    )?.trim() || '';
-    const verificationCodeLabel =
-      isPerDocumentModel && signedDocuments.length > 1
-        ? 'Código do documento principal'
-        : 'Código de autenticação';
 
     const envelopeDisplayCode = getEnvelopeDisplayCode(request, signer);
-    const envelopeCodeLabel = 'Protocolo do envelope';
+    // O protocolo do envelope é o herói; o código do documento principal é o
+    // plano B, para o comprovante nunca sair com o campo vazio.
+    const protocolo = (
+      envelopeDisplayCode
+      || (isPerDocumentModel ? primarySignedDocument?.verificationCode : signer?.verification_hash)
+      || ''
+    ).trim();
+
+    const urlDeVerificacao = protocolo ? `${window.location.origin}/#/verificar/${protocolo}` : null;
 
     // Abre o documento assinado no visualizador interno (iframe), sem expor a URL do Supabase.
     const handleDownload = () => openSignedDocumentViewer(setDownloading);
-
     const handleShare = async () => handleShareSignedDocuments(request!, signer!);
+
+    const copiarProtocolo = async () => {
+      if (!protocolo) return;
+      try {
+        await navigator.clipboard.writeText(protocolo);
+        toast.success('Protocolo copiado.');
+      } catch {
+        toast.error('Não foi possível copiar o protocolo.');
+      }
+    };
 
     return (
       <>
         {loadingPortal}
-        <div
-          className="relative min-h-[100dvh] w-full overflow-y-auto flex items-center justify-center p-4 sm:p-8"
-          style={{
-            backgroundColor: '#0B1120',
-            backgroundImage:
-              'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),' +
-              'linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px),' +
-              'radial-gradient(760px 560px at 50% -12%, rgba(242,99,26,0.20), transparent 60%)',
-            backgroundSize: '48px 48px, 48px 48px, 100% 100%',
-          }}
-        >
-          {/* ══ CERTIFICADO — folha quadrada com marcas de registro ══ */}
-          <div className="relative z-10 w-full max-w-[460px] sm:max-w-[900px]">
-
-            {/* marcas de corte tipográficas nos 4 cantos */}
-            {[
-              '-left-[6px] -top-[6px] border-l-2 border-t-2',
-              '-right-[6px] -top-[6px] border-r-2 border-t-2',
-              '-left-[6px] -bottom-[6px] border-l-2 border-b-2',
-              '-right-[6px] -bottom-[6px] border-r-2 border-b-2',
-            ].map((corner) => (
-              <span key={corner} aria-hidden="true" className={`pointer-events-none absolute h-4 w-4 border-orange-400/70 ${corner}`} />
-            ))}
-
-            <div
-              className="relative flex flex-col overflow-hidden bg-white sm:flex-row"
-              style={{ boxShadow: '0 50px 100px -45px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.06)' }}
-            >
-              {/* ══ PAINEL DE MARCA (escuro, editorial) ══ */}
-              <div
-                className="relative flex flex-col justify-between gap-6 p-6 text-white sm:w-[42%] sm:flex-shrink-0 sm:p-8"
-                style={{
-                  backgroundColor: '#0C1320',
-                  backgroundImage:
-                    'linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),' +
-                    'linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px),' +
-                    'radial-gradient(440px 380px at 6% 112%, rgba(242,99,26,0.28), transparent 60%)',
-                  backgroundSize: '56px 56px, 56px 56px, 100% 100%',
-                }}
-              >
-                {/* Monograma "J" ao fundo */}
-                <div aria-hidden="true" className="pointer-events-none absolute select-none" style={{ right: -34, bottom: -74, fontFamily: BRAND_SERIF, fontSize: 320, lineHeight: 1, fontWeight: 600, color: 'rgba(255,255,255,0.045)', zIndex: 0 }}>J</div>
-
-                {/* Logo — wordmark oficial Jurius (Spectral, ponto laranja) + rótulo do produto */}
-                <div className="relative z-10 flex items-center gap-2.5">
-                  <BrandLogo iconOnly size="sm" />
-                  <div className="leading-none">
-                    <div style={{ fontFamily: BRAND_SERIF, fontWeight: 700, fontSize: 15, letterSpacing: '-0.012em', lineHeight: 1, color: '#FBF6F1' }}>
-                      {BRAND_WORDMARK.lead}
-                      <span style={{ color: BRAND_DOT_ON_DARK }}>{BRAND_WORDMARK.dot}</span>
-                      <span style={{ fontWeight: 400, color: '#8C7E72' }}>{BRAND_WORDMARK.tld}</span>
-                    </div>
-                    <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.24em]" style={{ color: '#5e6a82' }}>Assinatura</div>
-                  </div>
-                </div>
-
-                {/* Núcleo editorial */}
-                <div className="relative z-10">
-                  <div className="mb-4 flex h-12 w-12 items-center justify-center sm:h-14 sm:w-14" style={{ background: 'rgba(16,185,129,0.14)', border: '1px solid rgba(16,185,129,0.4)' }}>
-                    <Check className="h-6 w-6 sm:h-7 sm:w-7" strokeWidth={3} style={{ color: '#34d399' }} />
-                  </div>
-                  <div className="mb-4" style={{ width: 32, height: 2, background: '#F2631A' }} />
-                  <h1 style={{ fontFamily: BRAND_SERIF, fontWeight: 400, fontSize: 'clamp(28px,7vw,42px)', lineHeight: 1.06, letterSpacing: '-0.015em', color: '#F5F2EB' }}>
-                    Documento<br /><span style={{ fontStyle: 'italic', color: '#FF9259' }}>assinado</span>.
-                  </h1>
-                  <p className="mt-4 max-w-[260px] text-[12.5px] leading-relaxed" style={{ color: '#97a1b4' }}>
-                    Assinatura registrada e validada com sucesso, com trilha de auditoria completa.
-                  </p>
-                </div>
-
-                {/* Meta do documento */}
-                <div className="relative z-10 pt-5" style={{ borderTop: '1px solid rgba(255,255,255,0.09)' }}>
-                  <div className="mb-1.5 text-[9px] font-bold uppercase tracking-[0.22em]" style={{ color: '#5e6a82' }}>Documento</div>
-                  <div className="truncate text-[13px] font-semibold text-white">{request?.document_name}</div>
-                  {signer?.signed_at && <div className="mt-0.5 text-[11px]" style={{ color: '#8893a8' }}>{formatDate(signer.signed_at)}</div>}
-                </div>
-              </div>
-
-              {/* Perfuração / divisor pontilhado entre os painéis */}
-              <div aria-hidden="true" className="hidden w-px flex-shrink-0 sm:block" style={{ background: 'repeating-linear-gradient(to bottom, rgba(15,23,42,0.16) 0 6px, transparent 6px 12px)' }} />
-              <div aria-hidden="true" className="h-px w-full sm:hidden" style={{ background: 'repeating-linear-gradient(to right, rgba(15,23,42,0.16) 0 6px, transparent 6px 12px)' }} />
-
-              {/* ══ PAINEL DE AÇÕES (claro) ══ */}
-              <div className="flex min-w-0 flex-1 flex-col bg-white p-6 sm:p-8">
-                <div className="mb-1.5 flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 bg-emerald-500" style={{ boxShadow: '0 0 6px rgba(16,185,129,0.6)' }} />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-600">Válido · Autêntico</span>
-                </div>
-                <h2 className="text-[19px] font-extrabold tracking-tight text-slate-900 sm:text-xl">Comprovante de assinatura</h2>
-                <p className="mt-1 text-[13px] text-slate-500">Guarde o protocolo abaixo para validar quando quiser.</p>
-
-                {/* Protocolo do envelope — bloco "ticket" quadrado, borda picotada */}
-                {envelopeDisplayCode && (
-                  <div className="mt-5 border border-dashed border-slate-300 bg-slate-50">
-                    <div className="flex items-center justify-between border-b border-dashed border-slate-300 px-4 py-2">
-                      <span className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-slate-400">
-                        {envelopeCodeLabel}
-                      </span>
-                      <button
-                        onClick={async () => {
-                          try { await navigator.clipboard.writeText(envelopeDisplayCode || ''); toast.success('Protocolo copiado.'); }
-                          catch { /* ignore */ }
-                        }}
-                        className="flex items-center gap-1 text-[10.5px] font-semibold text-orange-600 transition-colors hover:text-orange-700"
-                      >
-                        <Copy className="h-3 w-3" /> Copiar
-                      </button>
-                    </div>
-                    <div className="break-all px-4 py-3 font-mono text-[14px] font-bold tracking-[0.08em] text-slate-800">
-                      {envelopeDisplayCode}
-                    </div>
-                  </div>
-                )}
-
-                {/* Ações */}
-                <div className="mt-4 space-y-2.5">
-                  {signer?.signed_document_path && (
-                    <button
-                      onClick={handleDownload}
-                      disabled={downloading}
-                      className="group flex w-full items-center justify-center gap-2.5 px-5 py-3.5 text-[14.5px] font-bold text-white transition-all active:scale-[0.99] disabled:opacity-70"
-                      style={{
-                        background: 'linear-gradient(135deg, #FB8C3E 0%, #EA5310 100%)',
-                        boxShadow: '0 12px 26px -10px rgba(234,88,12,0.55)',
-                      }}
-                    >
-                      {downloading ? (
-                        <><Loader2 className="h-[18px] w-[18px] animate-spin" />Abrindo documento...</>
-                      ) : (
-                        <><Download className="h-[18px] w-[18px]" />Abrir documento assinado</>
-                      )}
-                    </button>
-                  )}
-
-                  <div className="grid grid-cols-1 gap-2.5">
-                    <button
-                      onClick={handleShare}
-                      className="flex items-center justify-center gap-2 border border-slate-300 bg-white px-3 py-3 text-[13px] font-semibold text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.99]"
-                    >
-                      <Share2 className="h-4 w-4 flex-shrink-0" />
-                      Compartilhar
-                    </button>
-                  </div>
-                </div>
-
-
-                {/* Modelo per_document: 1 PDF assinado por arquivo do kit. Cada "Abrir"
-                    exibe o documento no visualizador interno (iframe), sem expor a URL. */}
-                {signedDocuments.length > 0 && (
-                  <div className="mt-4 border border-slate-200 bg-slate-50/60">
-                    <div className="px-3 pb-2 pt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-                      Documentos assinados ({signedDocuments.length})
-                    </div>
-                    <div className="space-y-2 px-3 pb-3">
-                      {signedDocuments.map((doc) => (
-                        <div key={doc.documentKey} className="border border-slate-200 bg-white px-3 py-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="truncate text-[13px] font-semibold text-slate-800">{doc.displayName.replace(/\.(pdf|docx?|rtf|odt)$/i, '')}</div>
-                              <div className="break-all font-mono text-[11px] text-slate-500">{doc.verificationCode}</div>
-                            </div>
-                            {doc.url && (
-                              <button
-                                onClick={() => openUrlInSignedViewer(doc.url)}
-                                className="flex flex-shrink-0 items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.99]"
-                              >
-                                <Eye className="h-3.5 w-3.5" /> Abrir
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Rodapé */}
-                <div className="mt-auto flex items-start gap-2 pt-6">
-                  <Shield className="mt-px h-3.5 w-3.5 flex-shrink-0 text-slate-300" />
-                  <p className="text-[10.5px] leading-relaxed text-slate-400">
-                    Uma cópia ficará disponível para download.
-                    {envelopeDisplayCode && <>{signedDocuments.length > 0 ? ' Verifique a autenticidade dos documentos pelo protocolo do envelope e pelos códigos individuais acima.' : ' Verifique a autenticidade a qualquer momento pelo protocolo do envelope acima.'}</>}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <TelaDeComprovante
+          nome={signerData.name || signer?.name || 'Signatário'}
+          cpf={signerData.cpf || signer?.cpf}
+          canal={canalDeIdentidade}
+          selfie={facialData}
+          assinatura={signatureData}
+          local={locationData}
+          documento={request?.document_name}
+          assinadoEm={signer?.signed_at ? formatDate(signer.signed_at) : null}
+          protocolo={protocolo}
+          documentosAssinados={signedDocuments}
+          temArquivoAssinado={!!signer?.signed_document_path}
+          abrindo={downloading}
+          compartilhando={sharing}
+          urlDeVerificacao={urlDeVerificacao}
+          aoAbrir={handleDownload}
+          aoCompartilhar={() => { void handleShare(); }}
+          aoCopiarProtocolo={() => { void copiarProtocolo(); }}
+          aoAbrirDocumento={(url) => openUrlInSignedViewer(url)}
+          urlDosTermos={buildPublicSignatureTermsUrl()}
+        />
         {signedDocViewer}
       </>
     );
@@ -3971,40 +3751,72 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   return (
     <>
       {loadingPortal}
-      <div className="min-h-[100dvh] h-[100dvh] bg-slate-900 flex flex-col overflow-hidden overscroll-none">
-      {/* Header compacto */}
-      <header className="bg-gradient-to-r from-[#4a1f14] via-[#3f190f] to-[#2f120b] px-3 py-2 flex items-center justify-between border-b border-black/30 safe-area-top">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-white/6 rounded-lg flex items-center justify-center ring-1 ring-white/10">
-            <PenTool className="w-3.5 h-3.5 text-white/90" />
-          </div>
-          <div className="leading-tight">
-            <div className="text-white font-semibold text-sm">Jurius</div>
-            <div className="text-[11px] text-white/68">Assinatura</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="text-xs text-white/62 truncate max-w-[160px]">
-            {request?.document_name}
+      <div className="flex h-[100dvh] min-h-[100dvh] min-w-0 flex-col overflow-hidden overscroll-none" style={{ background: '#f8fafc' }}>
+      {/*
+        O cabeçalho da leitura.
+        
+        Ele era um painel ESCURO (#0C1320), e a justificativa escrita aqui era
+        "mesmo painel escuro e mesma wordmark do comprovante". Agora o
+        comprovante é claro — e a mesma justificativa passa a mandar no sentido
+        contrário. O fio laranja no topo é o único lugar onde a cor fala, como
+        nas demais telas públicas.
+
+        Marca e documento também deixaram de ser dois blocos: num celular isso
+        custava duas faixas antes do PDF começar.
+      */}
+      <div className="h-[2.5px] w-full flex-none" style={{ background: 'linear-gradient(90deg,#c2410c,#ea580c 60%,#f97316)' }} />
+      <header
+        className="flex-none border-b bg-white px-4 pb-3 sm:px-5"
+        style={{ borderColor: '#e7e5e4', paddingTop: 'max(0.7rem, env(safe-area-inset-top))' }}
+      >
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <BrandLogo iconOnly size="xs" />
+            <span style={{ fontFamily: BRAND_SERIF, fontWeight: 700, fontSize: 13, letterSpacing: '-0.012em', color: '#1A1613' }}>
+              {BRAND_WORDMARK.lead}
+              <span style={{ color: BRAND_DOT }}>{BRAND_WORDMARK.dot}</span>
+              <span style={{ fontWeight: 400, color: '#a8a29e' }}>{BRAND_WORDMARK.tld}</span>
+            </span>
           </div>
           <button
             type="button"
             onClick={() => setActiveTab('history')}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/5 hover:bg-white/8 text-white/88 text-xs font-medium transition border border-white/6"
+            className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-slate-50"
+            style={{ borderColor: '#e2e8f0', color: TINTA_2 }}
             title="Histórico"
           >
             <Clock className="w-3.5 h-3.5" />
             Histórico
           </button>
         </div>
+
+        {request?.document_name && (
+          <div className="mt-2.5 min-w-0">
+            <div className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: '#ea580c' }}>
+              Para assinatura
+            </div>
+            <div
+              className="mt-1 line-clamp-2 text-[14px] font-semibold leading-tight tracking-[-0.01em]"
+              style={{ color: TINTA }}
+            >
+              {request.document_name}
+            </div>
+            {signer?.name && (
+              <div className="mt-0.5 truncate text-[11px]" style={{ color: TINTA_3 }}>{signer.name}</div>
+            )}
+          </div>
+        )}
       </header>
 
       {/* Document Viewer - Ocupa toda a tela */}
-      <main className="flex-1 min-h-0 relative overflow-y-auto bg-[#f8f7f5]">
+      {/* O ÚNICO scroller do leitor. `overscroll-contain` impede que o toque
+          escape para a página nas bordas — no iOS é isso que dá a sensação de
+          "dois scrolls brigando" ao chegar no fim do documento. */}
+      <main className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#f8fafc]">
         {pdfUrl ? (
           isDocx ? (
             // Renderizar DOCX com docx-preview
-            <div className="w-full bg-[#f8f7f5] pb-24">
+            <div className="w-full min-w-0 bg-[#f8f7f5] pb-28 sm:pb-24">
               {docxLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-[#f8f7f5]/80 z-10">
                   <div className="flex flex-col items-center gap-3">
@@ -4016,7 +3828,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               {/* Documento Principal DOCX */}
               <div
                 ref={docxContainerRef}
-                className="bg-slate-100 docx-responsive flex flex-col items-center"
+                className="docx-responsive flex min-w-0 flex-col items-center bg-slate-100"
                 style={{ width: '100%', minHeight: '400px', padding: '20px' }}
               />
 
@@ -4030,7 +3842,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             </div>
           ) : (
             // PDF: canvas via react-pdf, sem iframe, scroll único no <main>
-            <div className="w-full bg-[#f8f7f5] pb-24">
+            <div className="w-full min-w-0 bg-[#f8f7f5] pb-28 sm:pb-24">
               <PdfRenderer
                 url={pdfUrl!}
                 onLoad={() => setPdfFrameLoaded(true)}
@@ -4050,7 +3862,21 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       {loading && createPortal(
         <div className="fixed inset-0 z-[9998]">
-          <SigningScreen docName={request?.document_name} />
+          {/*
+            Tudo que a conferência mostra já está em mãos aqui: a selfie e o
+            traço acabaram de ser capturados, a localização foi lida antes de
+            abrir o modal, e o aparelho sai do próprio navegador. O IP é a única
+            coisa que falta — ele só é buscado DENTRO do envio, e por isso não
+            entra no cartão.
+          */}
+          <TelaDeConferencia
+            nome={signerData.name || signer?.name || 'Signatário'}
+            cpf={signerData.cpf || signer?.cpf}
+            canal={canalDeIdentidade}
+            selfie={facialData}
+            assinatura={signatureData}
+            local={locationData}
+          />
         </div>,
         document.body
       )}
@@ -4060,13 +3886,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         (() => {
           const isWaiting = !canOpenSignModal || queuedOpenSignModal;
           const isButtonDisabled = loading || isSignModalOpen;
-          const buttonClass = `fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-7 py-3.5 text-white font-bold text-sm rounded-full transition-all duration-200 whitespace-nowrap ${isButtonDisabled ? 'bg-slate-400 cursor-not-allowed opacity-80 shadow-none ring-0' : isWaiting ? 'bg-orange-600/70 hover:bg-orange-600/70 cursor-wait shadow-[0_10px_24px_rgba(234,88,12,0.24)] ring-1 ring-white/10' : 'bg-orange-600 hover:bg-orange-700 shadow-[0_16px_30px_rgba(234,88,12,0.28),0_6px_18px_rgba(15,23,42,0.14)] ring-1 ring-white/12 hover:-translate-x-1/2 hover:-translate-y-0.5 hover:shadow-[0_20px_36px_rgba(234,88,12,0.32),0_10px_22px_rgba(15,23,42,0.16)] active:scale-95 active:translate-y-0'}`;
+          const buttonClass = `fixed left-1/2 z-50 flex min-h-12 w-[calc(100%_-_2rem)] max-w-[22rem] -translate-x-1/2 items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-bold text-white transition-all duration-200 whitespace-nowrap sm:w-auto sm:px-7 sm:py-3.5 ${isButtonDisabled ? 'bg-slate-400 cursor-not-allowed opacity-80 shadow-none ring-0' : isWaiting ? 'bg-orange-600/70 hover:bg-orange-600/70 cursor-wait shadow-[0_10px_24px_rgba(234,88,12,0.24)] ring-1 ring-white/10' : 'bg-orange-600 hover:bg-orange-700 shadow-[0_16px_30px_rgba(234,88,12,0.28),0_6px_18px_rgba(15,23,42,0.14)] ring-1 ring-white/12 hover:-translate-x-1/2 hover:-translate-y-0.5 hover:shadow-[0_20px_36px_rgba(234,88,12,0.32),0_10px_22px_rgba(15,23,42,0.16)] active:scale-95 active:translate-y-0'}`;
 
           return (
             <>
               <div
                 aria-hidden
-                className="fixed inset-x-0 bottom-0 z-40 h-[5.25rem] bg-gradient-to-t from-slate-950/44 via-slate-950/26 to-transparent backdrop-blur-[1px] pointer-events-none"
+                className="pointer-events-none fixed inset-x-0 bottom-0 z-40 h-[calc(6rem_+_env(safe-area-inset-bottom))] bg-gradient-to-t from-slate-950/44 via-slate-950/26 to-transparent backdrop-blur-[1px]"
               />
               <div
                 aria-hidden
@@ -4076,7 +3902,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 onClick={openSignModal}
                 disabled={isButtonDisabled}
                 className={buttonClass}
-                style={{ WebkitTapHighlightColor: 'transparent' }}
+                style={{ WebkitTapHighlightColor: 'transparent', bottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
               >
                 {(!canOpenSignModal || queuedOpenSignModal) ? (
                     <>
@@ -4100,8 +3926,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         <button
           onClick={() => { setRefuseReason(''); setRefuseError(null); setIsRefuseModalOpen(true); }}
           disabled={loading}
-          className="fixed bottom-[5.5rem] left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-5 py-2.5 text-rose-700 bg-white/90 backdrop-blur border border-rose-200 font-semibold text-xs rounded-full shadow-md transition-all duration-200 hover:bg-rose-50 active:scale-95 whitespace-nowrap disabled:opacity-50"
-          style={{ WebkitTapHighlightColor: 'transparent' }}
+          className="fixed left-1/2 z-50 flex min-h-11 w-[calc(100%_-_3rem)] max-w-[19rem] -translate-x-1/2 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-rose-200 bg-white/90 px-5 py-2.5 text-xs font-semibold text-rose-700 shadow-md backdrop-blur transition-all duration-200 hover:bg-rose-50 active:scale-95 disabled:opacity-50 sm:w-auto"
+          style={{ WebkitTapHighlightColor: 'transparent', bottom: 'calc(max(1.25rem, env(safe-area-inset-bottom)) + 4.5rem)' }}
         >
           <X className="w-4 h-4" />
           RECUSAR ASSINATURA
@@ -4110,9 +3936,12 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       {/* Modal dos Termos de Uso (LGPD) */}
       {showTermsModal && (
-        <div className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+        <div className="fixed inset-0 z-[70] flex h-[100dvh] items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex h-[100dvh] w-full max-w-lg flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[85dvh] sm:rounded-2xl">
+            <div
+              className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 px-4 pb-3 sm:px-5 sm:py-4"
+              style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+            >
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0"><Shield className="w-5 h-5 text-orange-600" /></div>
                 <div className="min-w-0">
@@ -4122,7 +3951,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               </div>
               <button onClick={() => setShowTermsModal(false)} className="p-2 text-slate-400 hover:text-slate-600 flex-shrink-0"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-5 sm:p-6 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
               {SIGNATURE_TERMS_TEXT.trim() ? (
                 <div>
                   {parseSignatureTermsText(SIGNATURE_TERMS_TEXT, SIGNATURE_TERMS_TITLE).map((b, i) => {
@@ -4154,7 +3983,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                 </div>
               )}
             </div>
-            <div className="px-5 py-4 border-t border-slate-100 flex gap-2 flex-shrink-0">
+            <div
+              className="flex flex-shrink-0 gap-2 border-t border-slate-100 px-4 pt-3 sm:px-5 sm:py-4"
+              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+            >
               <button onClick={() => setShowTermsModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100">Fechar</button>
               <button
                 onClick={() => { setTermsAccepted(true); setShowTermsModal(false); }}
@@ -4170,16 +4002,16 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       {/* Modal de recusa */}
       {isRefuseModalOpen && (
-        <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-[60] flex h-[100dvh] items-end justify-center bg-slate-900/50 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex max-h-[100dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl">
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-lg bg-rose-100 flex items-center justify-center"><X className="w-5 h-5 text-rose-600" /></div>
                 <div className="font-semibold text-slate-900">Recusar assinatura</div>
               </div>
               <button onClick={() => !refusing && setIsRefuseModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="min-h-0 space-y-3 overflow-y-auto p-4 sm:p-5">
               <p className="text-sm text-slate-600">Descreva o motivo da recusa. O responsável pelo documento será notificado e esta ação ficará registrada.</p>
               <textarea
                 value={refuseReason}
@@ -4190,7 +4022,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               />
               {refuseError && <p className="text-xs text-rose-600">{refuseError}</p>}
             </div>
-            <div className="px-5 py-4 border-t border-slate-100 flex gap-2">
+            <div
+              className="flex flex-shrink-0 gap-2 border-t border-slate-100 px-4 pt-3 sm:px-5 sm:py-4"
+              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+            >
               <button onClick={() => !refusing && setIsRefuseModalOpen(false)} disabled={refusing} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50">Cancelar</button>
               <button onClick={handleRefuse} disabled={refusing || refuseReason.trim().length < 3} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 flex items-center justify-center gap-2">
                 {refusing ? <><Loader2 className="w-4 h-4 animate-spin" />Recusando…</> : 'Confirmar recusa'}
@@ -4202,157 +4037,100 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       {/* Modal - Full screen no mobile */}
       {isSignModalOpen && (
-        <div className="tema-proprio fixed inset-0 z-50 bg-slate-900/50 md:backdrop-blur-sm flex flex-col md:items-center md:justify-center">
-          <div className="bg-[#f8f7f5] w-full h-full md:h-auto md:max-w-lg md:rounded-3xl md:shadow-2xl overflow-hidden md:max-h-[92vh] flex flex-col">
-            {/* Header */}
-             <div className="flex-shrink-0 bg-orange-600 px-6 py-5 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5 min-w-0">
-                <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/20">
-                  <PenTool className="w-[22px] h-[22px] text-white" />
-                </div>
-                 <div className="min-w-0">
-                   <div className="text-white font-bold text-[17px] leading-tight">Assinar Documento</div>
-                   <div className="text-white/80 text-[12px] mt-0.5 leading-tight">Assinatura eletrônica segura</div>
-                 </div>
+        <div className="tema-proprio fixed inset-0 z-50 flex h-[100dvh] min-w-0 flex-col bg-slate-900/50 md:items-center md:justify-center md:backdrop-blur-sm">
+          <div className="flex h-[100dvh] min-h-0 w-full min-w-0 flex-col overflow-hidden bg-[#f8fafc] md:h-auto md:max-h-[92dvh] md:max-w-lg md:rounded-2xl md:shadow-2xl">
+            {/*
+              Cabeçalho.
+
+              Era o mesmo painel ESCURO do antigo comprovante — e o comprovante
+              deixou de ser escuro. Sobrando sozinho, ele virava a única faixa
+              preta de todo o fluxo, logo acima de uma tela clara. Agora é a
+              mesma barra do leitor: marca discreta à esquerda, fechar à direita,
+              e o fio de cor logo abaixo, na régua.
+            */}
+            <div
+              className="flex flex-shrink-0 items-center justify-between gap-4 border-b bg-white px-4 pb-2.5 sm:px-5"
+              style={{ borderColor: '#e7e5e4', paddingTop: 'max(0.7rem, env(safe-area-inset-top))' }}
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <BrandLogo iconOnly size="xs" />
+                <span style={{ fontFamily: BRAND_SERIF, fontWeight: 700, fontSize: 13, letterSpacing: '-0.012em', color: '#1A1613' }}>
+                  {BRAND_WORDMARK.lead}
+                  <span style={{ color: BRAND_DOT }}>{BRAND_WORDMARK.dot}</span>
+                  <span style={{ fontWeight: 400, color: '#a8a29e' }}>{BRAND_WORDMARK.tld}</span>
+                </span>
               </div>
               <button
                 onClick={closeSignModal}
                 aria-label="Fechar"
-                className="flex-shrink-0 p-2 rounded-full text-white/90 hover:bg-white/15 transition-colors"
+                className="-mr-1 flex-shrink-0 rounded-lg p-2 transition-colors hover:bg-slate-100"
+                style={{ color: TINTA_3 }}
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Stepper com ícones */}
+            {/* Régua de progresso */}
             <SignStepper current={signStepNumber(modalStep)} />
 
-            <div className="flex-1 overflow-y-auto px-6 pt-4 pb-6 bg-[#f8f7f5]">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#f8fafc] px-4 pt-4 sm:px-5 sm:pt-5"
+              style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}
+            >
               {/* Etapa 1: Autenticação / Identificação */}
+              {/* Etapa 1 — mora em `publicSigning/EtapaDeIdentidade` para caber
+                  na bancada de dev; a explicação do redesenho está lá. */}
               {modalStep === 'google_auth' && (
-                <div className="text-center">
-                  <div className="mb-7 space-y-1">
-                    <h2 className="text-xl font-bold text-slate-800">Confirme sua identidade</h2>
-                    <p className="text-sm font-medium text-slate-500 leading-relaxed max-w-xs mx-auto">
-                      Escolha uma das opções abaixo para se identificar de forma segura.
-                    </p>
-                  </div>
-
-                  {googleAuthError && (
-                    <div className="mb-5 p-4 bg-red-50 border border-red-200 rounded-xl text-left">
-                      <div className="flex items-start gap-3">
-                        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-                        <p className="text-sm text-red-700">{googleAuthError}</p>
-                      </div>
-                    </div>
+                <EtapaDeIdentidade
+                  metodos={{
+                    google: authConfig.google,
+                    whatsapp: authConfig.whatsapp,
+                    email: authConfig.email,
+                    phone: authConfig.phone,
+                  }}
+                  telefoneMascarado={mascararTelefone(telefoneDoCadastro)}
+                  emailMascarado={mascararEmail(emailDoCadastro)}
+                  enviando={
+                    emailOtpLoading ? 'email'
+                    : phoneOtpLoading ? phoneOtpChannel
+                    : null
+                  }
+                  refBotaoGoogle={googleButtonRef}
+                  googleCarregando={googleAuthLoading}
+                  googleErro={googleAuthError}
+                  googleNome={googleUser?.name}
+                  googleEmail={googleUser?.email}
+                  onContinuarComGoogle={() => setModalStep(isSignerDataComplete(signerData) ? 'signature' : 'data')}
+                  urlDeAjuda={buildWhatsappUrl(
+                    officeWhatsapp,
+                    `Olá! Preciso de ajuda para assinar o documento: ${(request?.document_name || 'documento').trim()}. Token: ${token}`,
                   )}
-
-                  {googleUser ? (
-                    <div className="mb-5 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
-                      <div className="flex items-center gap-3 justify-center">
-                        <CheckCircle className="w-6 h-6 text-emerald-500" />
-                        <div className="text-left">
-                          {googleUser?.name && <p className="font-medium text-emerald-700">{googleUser.name}</p>}
-                          <p className="text-sm text-emerald-600">{googleUser?.email}</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setModalStep(isSignerDataComplete(signerData) ? 'signature' : 'data')}
-                        className="w-full mt-4 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition"
-                      >
-                        Continuar
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className={`flex items-center justify-center gap-2 py-4 text-slate-500 ${googleAuthLoading ? '' : 'hidden'}`}>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>Carregando...</span>
-                      </div>
-
-                      <div className={`space-y-3 ${googleAuthLoading ? 'opacity-70 pointer-events-none' : ''}`}>
-                        {authConfig.google && (
-                          <div className="w-full">
-                            <div className="flex justify-end mb-1">
-                              <div
-                                className="pointer-events-none rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 border border-slate-200"
-                              >
-                                Recomendado
-                              </div>
-                            </div>
-                            <div ref={googleButtonRef} className="flex justify-center" />
-                          </div>
-                        )}
-
-                        {authConfig.google && (authConfig.email || authConfig.phone || authConfig.whatsapp) && (
-                          <div className="relative py-2 flex items-center justify-center">
-                            <div className="absolute inset-0 flex items-center">
-                              <div className="w-full border-t border-[#e7e5df]" />
-                            </div>
-                            <div className="relative bg-[#f8f7f5] px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                              OU
-                            </div>
-                          </div>
-                        )}
-
-                        {authConfig.whatsapp && (
-                          <button
-                            type="button"
-                            onClick={() => { if (phoneOtpChannel !== 'whatsapp') setPhoneOtpSent(false); setPhoneOtpChannel('whatsapp'); setModalStep('phone_otp'); }}
-                            className="w-full max-w-[400px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
-                          >
-                            <svg className="w-[18px] h-[18px] text-[#25D366]" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884a9.82 9.82 0 016.988 2.896 9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
-                            </svg>
-                            Continuar com WhatsApp
-                          </button>
-                        )}
-
-                        {authConfig.email && (
-                          <button
-                            type="button"
-                            onClick={() => setModalStep('email_otp')}
-                            className="w-full max-w-[400px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
-                          >
-                            <Mail className="w-[18px] h-[18px] text-slate-500" />
-                            Continuar com E-mail
-                          </button>
-                        )}
-
-                        {authConfig.phone && (
-                          <button
-                            type="button"
-                            onClick={() => { if (phoneOtpChannel !== 'sms') setPhoneOtpSent(false); setPhoneOtpChannel('sms'); setModalStep('phone_otp'); }}
-                            className="w-full max-w-[400px] mx-auto h-10 bg-white border border-[#dadce0] hover:bg-[#f8f9fa] hover:border-[#d2d5d9] text-[#3c4043] text-sm font-medium rounded flex items-center justify-center gap-3 transition-colors duration-200"
-                          >
-                            <svg className="w-[18px] h-[18px] text-slate-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <rect x="5" y="2" width="14" height="20" rx="2" stroke="currentColor" strokeWidth="2" />
-                              <line x1="9" y1="18" x2="15" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                            </svg>
-                            Continuar com Telefone
-                          </button>
-                        )}
-
-                        {(() => {
-                          const docName = (request?.document_name || 'documento').trim();
-                          const waUrl = buildWhatsappUrl(officeWhatsapp, `Olá! Preciso de ajuda para assinar o documento: ${docName}. Token: ${token}`);
-                          if (!waUrl) return null;
-                          return (
-                            <div className="pt-4 text-center">
-                              <button
-                                type="button"
-                                onClick={() => window.open(waUrl, '_blank')}
-                                className="text-orange-600 hover:text-orange-700 text-sm font-semibold transition-colors"
-                              >
-                                Precisa de ajuda?
-                              </button>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  cabecalho={
+                    <StepHeading
+                      /* O nome do documento saiu daqui: "KIT CONSUMIDOR - PEDRO
+                         RODRIGUES MONTALVAO NETO" no meio da frase empurrava a
+                         nota para três linhas e roubava a atenção de quem já
+                         está lendo o documento atrás do modal. */
+                      title={
+                        primeiroNome(signer?.name)
+                          ? <>Confirme que é você, <Accent>{primeiroNome(signer?.name)}</Accent>.</>
+                          : <>Confirme que é <Accent>você</Accent>.</>
+                      }
+                      note="Escolha por onde receber o código de 6 dígitos." 
+                    />
+                  }
+                  onEscolher={(metodo) => {
+                    if (metodo === 'email') {
+                      setModalStep('email_otp');
+                      if (jaPodeEnviarCodigo('email')) void handleSendEmailOtp(emailDoCadastro);
+                      return;
+                    }
+                    if (phoneOtpChannel !== metodo) setPhoneOtpSent(false);
+                    setPhoneOtpChannel(metodo);
+                    setModalStep('phone_otp');
+                    if (jaPodeEnviarCodigo(metodo)) void handleSendPhoneOtp(telefoneDoCadastro, metodo);
+                  }}
+                />
               )}
 
               {/* Etapa: Verificação por telefone — DUAS TELAS.
@@ -4363,504 +4141,444 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   primeira tela só coleta o número; a segunda só recebe o
                   código, e mostra para onde ele foi. */}
               {modalStep === 'phone_otp' && (
-                <div className="space-y-5">
-                  <div className="text-center">
-                    <h2 className="text-xl font-bold text-slate-800">
-                      {phoneOtpSent
-                        ? 'Digite o código'
-                        : phoneOtpChannel === 'whatsapp' ? 'Verifique seu WhatsApp' : 'Verifique seu telefone'}
-                    </h2>
-                    <p className="text-slate-500 text-sm mt-2">
-                      {phoneOtpSent
-                        ? <>Enviamos um código de 6 dígitos {phoneOtpChannel === 'whatsapp' ? 'pelo WhatsApp' : 'por SMS'} para{' '}
-                            <span className="font-semibold tabular-nums text-slate-700">+55 {formatarTelefoneBR(signerData.phone)}</span>.</>
+                <div>
+                  <StepHeading
+                    title={
+                      phoneOtpSent
+                        ? <>Digite o <Accent>código</Accent>.</>
+                        : <>Onde o código<br />vai <Accent>chegar</Accent>.</>
+                    }
+                    note={
+                      phoneOtpSent
+                        ? <>Enviamos 6 dígitos {phoneOtpChannel === 'whatsapp' ? 'pelo WhatsApp' : 'por SMS'} para{' '}
+                            <strong className="font-semibold tabular-nums text-[#141B26]">+55 {formatarTelefoneBR(signerData.phone)}</strong>.</>
                         : phoneOtpChannel === 'whatsapp'
-                          ? 'Enviaremos um código pelo WhatsApp para confirmar sua identidade. O número precisa ser o mesmo que você usa no aplicativo.'
-                          : 'Enviaremos um código por SMS para confirmar sua identidade.'}
-                    </p>
-                  </div>
+                          ? 'O número precisa ser o mesmo que você usa no aplicativo.'
+                          : 'O código chega por mensagem de texto.'
+                    }
+                  />
 
                   {phoneOtpError && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-left text-sm text-red-700">
+                    <div className="mt-4 border border-[#E0B4B4] bg-[#FDF4F4] p-3 text-[12.5px] leading-[1.5] text-[#8C3A3A]">
                       {phoneOtpError}
                     </div>
                   )}
 
                   {!phoneOtpSent ? (
                     /* ── Tela 1: o número ────────────────────────────────── */
-                    <div className="space-y-4">
-                      {/* O NÚMERO é o dado principal desta tela — e antes ele
-                          aparecia como "65984046375" numa caixa cinza, do mesmo
-                          tamanho de qualquer outro campo. Quem digita o próprio
-                          telefone precisa CONFERIR o que digitou antes de
-                          mandar, e conferir onze dígitos colados é exatamente o
-                          que ninguém faz. */}
-                      <div className="text-left">
-                        <label className="block text-[13px] font-semibold text-slate-600 mb-2">
-                          {phoneOtpChannel === 'whatsapp' ? 'Seu número de WhatsApp' : 'Seu telefone com DDD'}
-                        </label>
-                        <div className="flex items-stretch overflow-hidden rounded-xl border border-[#e7e5df] bg-white transition focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500/15">
-                          {/* Bandeira + código. A bandeira sozinha seria bonita
-                              e ambígua: no Windows o emoji de bandeira vira as
-                              letras "BR", e vários países dividem o formato de
-                              número. Os dois juntos é o que o próprio WhatsApp
-                              faz. */}
-                          <span className="flex select-none items-center gap-1.5 border-r border-[#e7e5df] bg-[#faf9f7] px-3.5">
-                            <span className="text-lg leading-none" role="img" aria-label="Brasil">🇧🇷</span>
-                            <span className="text-sm font-medium text-slate-400">+55</span>
-                          </span>
-                          <input
-                            type="tel"
-                            inputMode="tel"
-                            autoComplete="tel-national"
-                            value={formatarTelefoneBR(signerData.phone)}
-                            onChange={(e) => setSignerData((d) => ({ ...d, phone: formatarTelefoneBR(e.target.value) }))}
-                            placeholder="(65) 98404-6375"
-                            className="w-full bg-transparent px-4 py-3.5 text-xl font-semibold tabular-nums text-slate-900 outline-none placeholder:text-lg placeholder:font-normal placeholder:text-slate-300"
-                          />
-                        </div>
-                        <p className="mt-2 text-xs text-slate-500">
-                          {phoneOtpChannel === 'whatsapp'
-                            ? 'Confira antes de enviar: o código chega neste número, no aplicativo.'
-                            : 'Confira antes de enviar: o código chega neste número, por SMS.'}
-                        </p>
+                    <div className="mt-5">
+                      {/* O NÚMERO é o dado principal desta tela. Quem digita o
+                          próprio telefone precisa CONFERIR o que digitou antes
+                          de mandar, e conferir onze dígitos colados é
+                          exatamente o que ninguém faz. */}
+                      <FieldLabel>{phoneOtpChannel === 'whatsapp' ? 'Seu número de WhatsApp' : 'Seu telefone com DDD'}</FieldLabel>
+                      <div className="flex items-stretch border border-[#E0DAD1] bg-white transition-colors focus-within:border-[#EA5310] focus-within:ring-[3px] focus-within:ring-[#EA5310]/15">
+                        {/* Bandeira + código. A bandeira sozinha seria bonita e
+                            ambígua: no Windows o emoji vira as letras "BR", e
+                            vários países dividem o formato de número. */}
+                        <span className="flex select-none items-center gap-1.5 border-r border-[#EFEAE3] bg-[#FAF9F7] px-3.5">
+                          <span className="text-lg leading-none" role="img" aria-label="Brasil">🇧🇷</span>
+                          <span className="text-sm font-medium text-[#A0968C]">+55</span>
+                        </span>
+                        <input
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="tel-national"
+                          value={formatarTelefoneBR(signerData.phone)}
+                          onChange={(e) => setSignerData((d) => ({ ...d, phone: formatarTelefoneBR(e.target.value) }))}
+                          placeholder="(65) 98404-6375"
+                          className="w-full bg-transparent px-4 py-3.5 text-xl font-semibold tabular-nums text-[#141B26] outline-none placeholder:text-lg placeholder:font-normal placeholder:text-[#CFC7BC]"
+                        />
                       </div>
+                      <p className="mt-2 text-[11px] leading-[1.5] text-[#8A8078]">
+                        Confira antes de enviar: o código chega neste número
+                        {phoneOtpChannel === 'whatsapp' ? ', no aplicativo.' : ', por SMS.'}
+                      </p>
 
-                      <button
-                        type="button"
-                        onClick={handleSendPhoneOtp}
-                        disabled={phoneOtpLoading || phoneOtpResendIn > 0 || signerData.phone.replace(/\D/g, '').length < 10}
-                        className="w-full rounded-xl bg-orange-600 py-3.5 font-semibold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {phoneOtpLoading
-                          ? 'Enviando…'
-                          : phoneOtpResendIn > 0
-                            ? `Aguarde ${contagemRegressiva(phoneOtpResendIn)}`
-                            : 'Enviar código'}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setModalStep('google_auth')}
-                        className="w-full rounded-xl border border-[#e7e5df] bg-white py-3 font-semibold text-slate-600 transition hover:bg-slate-50"
-                      >
-                        Voltar
-                      </button>
+                      <div className="mt-5 flex flex-col gap-2">
+                        <PrimaryButton
+                          type="button"
+                          onClick={() => { void handleSendPhoneOtp(); }}
+                          disabled={phoneOtpLoading || phoneOtpResendIn > 0 || signerData.phone.replace(/\D/g, '').length < 10}
+                        >
+                          {phoneOtpLoading
+                            ? 'Enviando…'
+                            : phoneOtpResendIn > 0
+                              ? `Aguarde ${contagemRegressiva(phoneOtpResendIn)}`
+                              : 'Enviar código'}
+                        </PrimaryButton>
+                        <GhostButton type="button" onClick={() => setModalStep('google_auth')}>Voltar</GhostButton>
+                      </div>
                     </div>
                   ) : (
                     /* ── Tela 2: o código ────────────────────────────────── */
-                    <div className="space-y-4">
-                      <div>
-                        <input
-                          ref={phoneOtpInputRef}
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="one-time-code"
-                          autoFocus
-                          maxLength={6}
-                          value={phoneOtp}
-                          onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, ''))}
-                          placeholder="000000"
-                          className="w-full rounded-xl border border-[#e7e5df] bg-[#faf9f7] py-4 pl-[0.5em] text-center text-3xl font-bold tabular-nums tracking-[0.5em] text-slate-900 outline-none transition focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-500/15 placeholder:font-normal placeholder:text-slate-300"
-                        />
-                        {/* O relógio da validade. Vale mais que "válido até
-                            21:47": ninguém quer fazer a conta com o relógio da
-                            parede, quer saber quanto ainda tem. */}
-                        <div className="mt-2 flex items-center justify-center gap-1.5 text-xs">
-                          {phoneOtpRemaining > 0 ? (
-                            <>
-                              <Clock className="h-3.5 w-3.5 text-slate-400" />
-                              <span className="text-slate-500">
-                                Expira em <span className="font-semibold tabular-nums text-slate-700">{contagemRegressiva(phoneOtpRemaining)}</span>
-                              </span>
-                            </>
-                          ) : (
-                            <span className="font-medium text-red-500">Código expirado — peça outro abaixo.</span>
-                          )}
-                        </div>
-                      </div>
+                    <div className="mt-5">
+                      <input
+                        ref={phoneOtpInputRef}
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        autoFocus
+                        maxLength={6}
+                        value={phoneOtp}
+                        onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, ''))}
+                        placeholder="000000"
+                        className="w-full border border-[#E0DAD1] bg-white py-4 pl-[0.5em] text-center text-3xl font-bold tabular-nums tracking-[0.5em] text-[#141B26] outline-none transition-colors focus:border-[#EA5310] focus:ring-[3px] focus:ring-[#EA5310]/15 placeholder:font-normal placeholder:text-[#CFC7BC]"
+                      />
 
-                      <button
-                        type="button"
-                        onClick={handleVerifyPhoneOtp}
-                        disabled={phoneOtpLoading || phoneOtp.length < 6 || phoneOtpRemaining <= 0}
-                        className="w-full rounded-xl bg-orange-600 py-3.5 font-semibold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {phoneOtpLoading ? 'Validando…' : 'Validar e continuar'}
-                      </button>
-
-                      <div className="text-center text-xs text-slate-500">
-                        Não recebeu?{' '}
+                      {/* O relógio da validade, como linha de recibo. Vale mais
+                          que "válido até 21:47": ninguém quer fazer a conta com
+                          o relógio da parede, quer saber quanto ainda tem. */}
+                      <div className="mt-3 flex items-center justify-between border-t border-dashed border-[#DDD6CC] pt-2.5">
+                        {phoneOtpRemaining > 0 ? (
+                          <span className="flex items-center gap-1.5 text-[11px] text-[#8A8078]">
+                            <Clock className="h-3.5 w-3.5 text-[#A0968C]" />
+                            Expira em <span className="font-bold tabular-nums tracking-[0.06em] text-[#141B26]">{contagemRegressiva(phoneOtpRemaining)}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-[#C0392B]">Código expirado</span>
+                        )}
                         <button
                           type="button"
-                          onClick={handleSendPhoneOtp}
+                          onClick={() => { void handleSendPhoneOtp(); }}
                           disabled={phoneOtpLoading || phoneOtpResendIn > 0}
-                          className="font-semibold text-orange-600 transition hover:text-orange-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
+                          className="text-[11px] font-semibold text-[#C2500F] transition-colors hover:text-[#A34209] disabled:text-[#B4ACA3]"
                         >
-                          {phoneOtpResendIn > 0
-                            ? `Reenviar em ${contagemRegressiva(phoneOtpResendIn)}`
-                            : 'Reenviar código'}
+                          {phoneOtpResendIn > 0 ? `Reenviar em ${contagemRegressiva(phoneOtpResendIn)}` : 'Reenviar'}
                         </button>
                       </div>
 
-                      {phoneOtpFails > 0 && <SaidaPorOutroCaminho atual="phone" />}
+                      <div className="mt-4">
+                        <PrimaryButton
+                          type="button"
+                          onClick={handleVerifyPhoneOtp}
+                          disabled={phoneOtpLoading || phoneOtp.length < 6 || phoneOtpRemaining <= 0}
+                        >
+                          {phoneOtpLoading ? 'Validando…' : 'Validar e continuar'}
+                        </PrimaryButton>
+                      </div>
 
-                      <button
-                        type="button"
-                        onClick={() => { setPhoneOtpSent(false); setPhoneOtp(''); setPhoneOtpError(null); }}
-                        className="w-full rounded-xl border border-[#e7e5df] bg-white py-3 font-semibold text-slate-600 transition hover:bg-slate-50"
-                      >
-                        Usar outro número
-                      </button>
+                      {phoneOtpFails > 0 && <div className="mt-4"><SaidaPorOutroCaminho atual="phone" /></div>}
+
+                      <div className="mt-2">
+                        <GhostButton
+                          type="button"
+                          onClick={() => { setPhoneOtpSent(false); setPhoneOtp(''); setPhoneOtpError(null); }}
+                        >
+                          Usar outro número
+                        </GhostButton>
+                      </div>
                     </div>
                   )}
                 </div>
               )}
 
               {modalStep === 'email_otp' && (
-                <div className="space-y-5">
-                  <div className="text-center">
-                    <h2 className="text-xl font-bold text-slate-800">Verifique seu e-mail</h2>
-                    <p className="text-slate-500 text-sm mt-2">
-                      {emailOtpSent
-                        ? 'Digite o código que enviamos para o seu e-mail.'
-                        : 'Enviaremos um código por e-mail para confirmar sua identidade.'}
-                    </p>
-                  </div>
+                <div>
+                  <StepHeading
+                    title={emailOtpSent ? <>Digite o <Accent>código</Accent>.</> : <>Para onde<br />vai o <Accent>código</Accent>.</>}
+                    note={
+                      emailOtpSent
+                        ? <>Enviamos 6 dígitos para <strong className="font-semibold text-[#141B26] break-all">{emailToVerify}</strong>.</>
+                        : 'Confirme o endereço que recebe o código.'
+                    }
+                  />
 
                   {emailOtpError && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-left text-sm text-red-700">
+                    <div className="mt-4 border border-[#E0B4B4] bg-[#FDF4F4] p-3 text-[12.5px] leading-[1.5] text-[#8C3A3A]">
                       {emailOtpError}
                     </div>
                   )}
 
                   {/* Etapa 1: enviar e-mail */}
                   {!emailOtpSent && (
-                    <>
-                      <div className="space-y-3">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1.5">E-mail *</label>
-                          <input
-                            type="email"
-                            inputMode="email"
-                            value={emailToVerify}
-                            onChange={(e) => setEmailToVerify(e.target.value)}
-                            placeholder="seuemail@exemplo.com"
-                            className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                          />
+                    <div className="mt-5">
+                      <FieldLabel>Seu e-mail</FieldLabel>
+                      <input
+                        type="email"
+                        inputMode="email"
+                        value={emailToVerify}
+                        onChange={(e) => setEmailToVerify(e.target.value)}
+                        placeholder="seuemail@exemplo.com"
+                        className={`${INPUT_CLS} ${INPUT_OK} placeholder:font-normal placeholder:text-[#CFC7BC]`}
+                      />
+
+                      {showEmailAnimation && (
+                        <div className="mt-3 flex items-center justify-center gap-2 border border-[#E4DED5] bg-white py-3 text-[12px] font-semibold text-[#C2500F]">
+                          <Mail className="h-4 w-4 animate-pulse" />
+                          Enviando…
                         </div>
+                      )}
 
-                        {/* Animação de e-mail sendo enviado */}
-                        {showEmailAnimation && (
-                          <div className="flex justify-center py-4">
-                            <div className="relative">
-                              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-                                <Mail className="w-6 h-6 text-orange-600" />
-                              </div>
-                              <div className="absolute -top-1 -right-1">
-                                <div className="w-3 h-3 bg-orange-500 rounded-full animate-ping"></div>
-                              </div>
-                              <div className="absolute top-1/2 -translate-y-1/2 left-full ml-2">
-                                <div className="flex items-center gap-1">
-                                  <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
-                                  <div className="w-2 h-2 bg-orange-300 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                                  <div className="w-2 h-2 bg-orange-200 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-                                </div>
-                              </div>
-                              <div className="text-center mt-2">
-                                <p className="text-xs text-orange-600 font-medium">Enviando...</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        <button
+                      <div className="mt-5 flex flex-col gap-2">
+                        <PrimaryButton
                           type="button"
-                          onClick={handleSendEmailOtp}
+                          onClick={() => { void handleSendEmailOtp(); }}
                           disabled={emailOtpLoading || emailOtpResendIn > 0}
-                          className="w-full py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                           {emailOtpLoading ? (
-                            <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              Enviando…
-                            </>
+                            <><Loader2 className="h-4 w-4 animate-spin" />Enviando…</>
                           ) : emailOtpResendIn > 0 ? (
                             `Aguarde ${contagemRegressiva(emailOtpResendIn)}`
                           ) : (
                             'Enviar código'
                           )}
-                        </button>
+                        </PrimaryButton>
+                        <GhostButton type="button" onClick={() => setModalStep('google_auth')}>Voltar</GhostButton>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setModalStep('google_auth')}
-                        className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition"
-                      >
-                        Voltar
-                      </button>
-                    </>
+                    </div>
                   )}
 
                   {/* Etapa 2: inserir código */}
                   {emailOtpSent && (
-                    <>
-                      <div className="space-y-3">
-                        <div>
-                          <input
-                            ref={emailOtpInputRef}
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={6}
-                            value={emailOtp}
-                            onChange={(e) => setEmailOtp(e.target.value)}
-                            placeholder="CÓDIGO"
-                            autoFocus
-                            className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 tracking-[0.4em] text-center placeholder:tracking-[0.2em] placeholder:text-slate-400"
-                          />
-                          {emailOtpExpiresAt && (
-                            <div className="text-xs text-center mt-2">
-                              {emailOtpRemaining > 0 ? (
-                                <span className="text-slate-500">
-                                  Expira em{' '}
-                                  <span className="font-semibold tabular-nums text-slate-700">
-                                    {String(Math.floor(emailOtpRemaining / 60)).padStart(2, '0')}:
-                                    {String(emailOtpRemaining % 60).padStart(2, '0')}
-                                  </span>
-                                </span>
-                              ) : (
-                                <span className="text-red-500 font-medium">Código expirado</span>
-                              )}
-                            </div>
-                          )}
-                        </div>
+                    <div className="mt-5">
+                      <input
+                        ref={emailOtpInputRef}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={emailOtp}
+                        onChange={(e) => setEmailOtp(e.target.value)}
+                        placeholder="000000"
+                        autoFocus
+                        className="w-full border border-[#E0DAD1] bg-white py-4 pl-[0.5em] text-center text-3xl font-bold tabular-nums tracking-[0.5em] text-[#141B26] outline-none transition-colors focus:border-[#EA5310] focus:ring-[3px] focus:ring-[#EA5310]/15 placeholder:font-normal placeholder:text-[#CFC7BC]"
+                      />
 
-                        {/* Aviso discreto de reenvio */}
-                        <div className="text-center text-xs text-slate-500">
-                          Não recebeu?{' '}
-                          <button
-                            type="button"
-                            onClick={handleSendEmailOtp}
-                            disabled={emailOtpLoading || emailOtpResendIn > 0}
-                            className="font-medium text-orange-600 hover:text-orange-700 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {emailOtpLoading
-                              ? 'Reenviando…'
-                              : emailOtpResendIn > 0
-                                ? `Reenviar em ${contagemRegressiva(emailOtpResendIn)}`
-                                : 'Reenviar código'}
-                          </button>
-                        </div>
+                      {/* Relógio da validade como linha de recibo. */}
+                      <div className="mt-3 flex items-center justify-between border-t border-dashed border-[#DDD6CC] pt-2.5">
+                        {emailOtpExpiresAt && emailOtpRemaining <= 0 ? (
+                          <span className="text-[11px] font-semibold text-[#C0392B]">Código expirado</span>
+                        ) : emailOtpExpiresAt ? (
+                          <span className="flex items-center gap-1.5 text-[11px] text-[#8A8078]">
+                            <Clock className="h-3.5 w-3.5 text-[#A0968C]" />
+                            Expira em{' '}
+                            <span className="font-bold tabular-nums tracking-[0.06em] text-[#141B26]">
+                              {String(Math.floor(emailOtpRemaining / 60)).padStart(2, '0')}:
+                              {String(emailOtpRemaining % 60).padStart(2, '0')}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-[#8A8078]">Não recebeu?</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => { void handleSendEmailOtp(); }}
+                          disabled={emailOtpLoading || emailOtpResendIn > 0}
+                          className="text-[11px] font-semibold text-[#C2500F] transition-colors hover:text-[#A34209] disabled:text-[#B4ACA3]"
+                        >
+                          {emailOtpLoading
+                            ? 'Reenviando…'
+                            : emailOtpResendIn > 0
+                              ? `Reenviar em ${contagemRegressiva(emailOtpResendIn)}`
+                              : 'Reenviar'}
+                        </button>
                       </div>
 
-                      <div className="space-y-3">
-                        <button
+                      <div className="mt-4">
+                        <PrimaryButton
                           type="button"
                           onClick={handleVerifyEmailOtp}
                           disabled={emailOtpLoading || emailOtp.replace(/\D/g, '').length < 4}
-                          className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold text-base shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2"
                         >
                           {emailOtpLoading ? (
-                            <>
-                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              Validando…
-                            </>
+                            <><Loader2 className="h-4 w-4 animate-spin" />Validando…</>
                           ) : (
                             'Validar e continuar'
                           )}
-                        </button>
-
-                        {emailOtpFails > 0 && <SaidaPorOutroCaminho atual="email" />}
-
-                        <button
-                          type="button"
-                          onClick={() => setEmailOtpSent(false)}
-                          className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition"
-                        >
-                          Voltar
-                        </button>
+                        </PrimaryButton>
                       </div>
-                    </>
+
+                      {emailOtpFails > 0 && <div className="mt-4"><SaidaPorOutroCaminho atual="email" /></div>}
+
+                      <div className="mt-2">
+                        <GhostButton type="button" onClick={() => setEmailOtpSent(false)}>Usar outro e-mail</GhostButton>
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
 
-              {/* Etapa 2: Dados pessoais */}
               {modalStep === 'data' && (
-                <div className="space-y-5">
+                <div>
                   {googleUser && (
-                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-emerald-500" />
-                      <p className="text-sm text-emerald-700">
-                        Verificado: <span className="font-medium">{googleUser.email}</span>
-                      </p>
+                    <div className="mb-4 flex items-center gap-2.5 border border-[#CBE5D8] bg-[#F1F9F5] px-3 py-2.5">
+                      <CheckCircle className="h-4 w-4 flex-shrink-0 text-[#1F7A55]" />
+                      <div className="min-w-0">
+                        <p className="text-[11.5px] font-bold text-[#1F7A55]">Identidade confirmada</p>
+                        <p className="truncate text-[10.5px] text-[#4E8F73]">{googleUser.email}</p>
+                      </div>
                     </div>
                   )}
 
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">Nome completo *</label>
-                      <input
-                        type="text"
-                        value={signerData.name}
-                        onChange={(e) => setSignerData((d) => ({ ...d, name: e.target.value }))}
-                        placeholder="Digite seu nome completo"
-                        className="w-full px-4 py-3 border border-[#e7e5df] rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-                      />
-                    </div>
+                  <StepHeading
+                    title={<>Seus <Accent>dados</Accent>.</>}
+                    note="É assim que seu nome e CPF vão aparecer no documento assinado."
+                  />
 
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1.5">CPF *</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={14}
-                        value={signerData.cpf}
-                        onChange={(e) => setSignerData((d) => ({ ...d, cpf: formatCpf(e.target.value) }))}
-                        placeholder="000.000.000-00"
-                        className={`w-full px-4 py-3 border rounded-xl text-base focus:outline-none focus:ring-2 ${cpfMismatch ? 'border-red-400 focus:ring-red-500/20 focus:border-red-500' : 'border-[#e7e5df] focus:ring-orange-500/20 focus:border-orange-500'}`}
-                      />
-                      {cpfMismatch && (
-                        <p className="mt-1.5 text-xs text-red-600">O CPF informado não confere com o CPF do cliente cadastrado para esta assinatura.</p>
-                      )}
-                    </div>
+                  <div className="mt-5">
+                    <FieldLabel>Nome completo</FieldLabel>
+                    <input
+                      type="text"
+                      value={signerData.name}
+                      onChange={(e) => setSignerData((d) => ({ ...d, name: e.target.value }))}
+                      placeholder="Digite seu nome completo"
+                      className={`${INPUT_CLS} ${INPUT_OK} placeholder:font-normal placeholder:text-[#CFC7BC]`}
+                    />
                   </div>
 
-                  <button
-                    onClick={() => setModalStep('signature')}
-                    disabled={!canProceedFromData}
-                    className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-semibold text-base shadow-lg shadow-orange-500/20 disabled:opacity-50 transition-colors"
-                  >
-                    Continuar
-                  </button>
+                  <div className="mt-4">
+                    <FieldLabel>CPF</FieldLabel>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={14}
+                      value={signerData.cpf}
+                      onChange={(e) => setSignerData((d) => ({ ...d, cpf: formatCpf(e.target.value) }))}
+                      placeholder="000.000.000-00"
+                      className={`${INPUT_CLS} ${cpfMismatch || cpfInvalido ? INPUT_BAD : INPUT_OK} tabular-nums placeholder:font-normal placeholder:text-[#CFC7BC]`}
+                    />
+                    {cpfInvalido && (
+                      <p className="mt-1.5 text-[11.5px] leading-[1.5] text-[#C0392B]">
+                        Este CPF não existe — confira os números digitados.
+                      </p>
+                    )}
+                    {!cpfInvalido && cpfMismatch && (
+                      <p className="mt-1.5 text-[11.5px] leading-[1.5] text-[#C0392B]">
+                        O CPF informado não confere com o CPF do cliente cadastrado para esta assinatura.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-4 border-t border-dashed border-[#DDD6CC] pt-2.5 text-[10.5px] leading-[1.5] text-[#8A8078]">
+                    O CPF é conferido contra o cadastro do escritório. Se não bater, avisamos aqui antes de você continuar.
+                  </div>
+
+                  <div className="mt-5">
+                    <PrimaryButton onClick={() => setModalStep('signature')} disabled={!canProceedFromData}>
+                      Continuar
+                      <ChevronRight className="h-4 w-4" strokeWidth={2.4} />
+                    </PrimaryButton>
+                  </div>
                 </div>
               )}
 
               {/* Etapa 3: Assinatura */}
               {modalStep === 'signature' && (
-                <div className="flex flex-col items-center text-center">
-                  <h1 className="text-2xl font-bold text-slate-800 mb-2">Assinatura</h1>
-                  <p className="text-slate-500 mb-6 text-sm">Assine no quadro abaixo</p>
+                <div>
+                  <StepHeading
+                    title={<>Assine com o <Accent>dedo</Accent>.</>}
+                    note="Desenhe no quadro abaixo. Dá para refazer quantas vezes quiser."
+                  />
 
-                  <div className="w-full space-y-6">
-                    {/* Área de assinatura */}
-                    <div className="relative group">
-                      <div className="w-full h-56 bg-[#f8f7f5] rounded-xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.06)] border-2 border-dashed border-gray-300 hover:border-orange-400 transition-colors overflow-hidden relative">
-                        <canvas
-                          ref={canvasRef}
-                          className="absolute inset-0 w-full h-full touch-none cursor-crosshair"
-                          onMouseDown={startDrawing}
-                          onMouseMove={draw}
-                          onMouseUp={stopDrawing}
-                          onMouseLeave={stopDrawing}
-                          onTouchStart={startDrawing}
-                          onTouchMove={draw}
-                          onTouchEnd={stopDrawing}
-                        />
-                        {!hasSignature && (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none">
-                            <PenTool className="w-8 h-8 text-slate-300" />
-                            <span className="text-xs font-medium text-slate-400">Assine no campo acima</span>
-                          </div>
-                        )}
-                        <div className="absolute bottom-2 right-3 text-xs text-gray-400 pointer-events-none select-none">
-                          Área de assinatura
-                        </div>
+                  {/* Folha branca com linha-base e o nome impresso embaixo, como
+                      um recibo — no lugar da caixa tracejada com sombra interna
+                      e do botão preto "Limpar" de largura total. */}
+                  <div className="relative mt-4 h-[clamp(180px,31dvh,238px)] min-h-[180px] border border-[#E0DAD1] bg-white">
+                    <canvas
+                      ref={canvasRef}
+                      className="absolute inset-0 h-full w-full touch-none cursor-crosshair"
+                      onMouseDown={startDrawing}
+                      onMouseMove={draw}
+                      onMouseUp={stopDrawing}
+                      onMouseLeave={stopDrawing}
+                      onTouchStart={startDrawing}
+                      onTouchMove={draw}
+                      onTouchEnd={stopDrawing}
+                    />
+
+                    {/* O canvas é preenchido de branco opaco no initCanvas, então
+                        a linha-base e o rótulo TÊM de vir depois dele no DOM para
+                        aparecerem. São só guias: pointer-events-none mantém o toque
+                        no canvas, e nada disso entra na imagem salva. */}
+                    <div aria-hidden="true" className="pointer-events-none absolute inset-x-[22px] bottom-[44px] h-px bg-[#E8E2DA]" />
+                    <div aria-hidden="true" className="pointer-events-none absolute bottom-[24px] left-[22px] text-[9px] font-bold uppercase tracking-[0.18em] text-[#B4ACA3]">
+                      {signerData.name?.trim() || 'Assinatura do signatário'}
+                    </div>
+
+                    {/* Enquanto o quadro está vazio, o dedo mostra o gesto —
+                        ver `DemoDoDedo`. O ícone de caneta com "Assine aqui"
+                        nomeava a tarefa; isto ensina como fazê-la. Some no
+                        primeiro toque. */}
+                    {!hasSignature && (
+                      <div className="pointer-events-none absolute inset-x-[18px] bottom-[52px] top-[14px]">
+                        <DemoDoDedo />
                       </div>
-                    </div>
+                    )}
 
-                    {/* Botões */}
-                    <div className="space-y-4">
+                    {hasSignature && (
                       <button
+                        type="button"
                         onClick={clearSignature}
-                        className="w-full bg-gray-800 hover:bg-gray-900 text-white font-medium py-3 px-4 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
+                        className="absolute right-3 top-3 flex items-center gap-1.5 border border-[#E8E2DA] bg-white px-2.5 py-1.5 text-[10px] font-semibold text-[#8A8078] transition-colors hover:border-[#D2C8BC] hover:text-[#141B26]"
                       >
-                        Limpar
+                        <RotateCcw className="h-3 w-3" />
+                        Refazer
                       </button>
-                      <button
-                        onClick={() => {
-                          saveSignature();
-                          setModalStep('location');
-                        }}
-                        disabled={!hasSignature}
-                        className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5 disabled:opacity-50 disabled:transform-none"
-                      >
-                        Continuar
-                      </button>
-                    </div>
+                    )}
+                  </div>
+
+                  <div className="mt-5">
+                    <PrimaryButton
+                      onClick={() => { saveSignature(); setModalStep('location'); }}
+                      disabled={!hasSignature}
+                    >
+                      Continuar
+                      <ChevronRight className="h-4 w-4" strokeWidth={2.4} />
+                    </PrimaryButton>
                   </div>
                 </div>
               )}
 
               {/* Etapa 4: Localização */}
               {modalStep === 'location' && (
-                <div className="flex flex-col items-center text-center">
-                  {/* Ícone de localização */}
-                  <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mb-4 ring-4 ring-white shadow-md">
-                    <MapPin className="w-8 h-8 text-orange-500" />
-                  </div>
+                <div>
+                  <StepHeading
+                    title={<>Onde você está <Accent>agora</Accent>.</>}
+                    note="A localização entra no comprovante e é o que sustenta a assinatura se ela for contestada."
+                  />
 
-                  <h2 className="text-xl font-bold text-slate-800 mb-1.5">Ativar Localização</h2>
-                  <p className="text-slate-500 mb-5 text-sm leading-relaxed">
-                    Para sua segurança e conformidade jurídica, precisamos confirmar sua localização atual durante o processo de assinatura.
-                  </p>
-
-                  {/* Info box */}
-                  <div className="w-full bg-white border border-slate-200 rounded-xl p-4 mb-5 text-left flex items-start shadow-sm">
-                    <AlertCircle className="w-5 h-5 text-orange-500 mr-3 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-xs text-slate-800 font-semibold">Por que isso é necessário?</p>
-                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                        A geolocalização serve como evidência técnica para validar a autenticidade deste documento digital.
-                      </p>
+                  {/* Quadrado escuro — o mesmo tratamento do selo de validação
+                      do comprovante — no lugar do círculo laranja com anel. */}
+                  <div className="mt-5 border border-[#E4DED5] bg-white p-4">
+                    <div className="mb-3 flex h-11 w-11 items-center justify-center" style={{ backgroundColor: '#0C1320' }}>
+                      <MapPin className="h-5 w-5" style={{ color: BRAND_DOT_ON_DARK }} strokeWidth={1.8} />
+                    </div>
+                    <p className="text-[13px] font-bold text-[#141B26]">O navegador vai pedir permissão</p>
+                    <p className="mt-1.5 text-[11.5px] leading-[1.55] text-[#7C8797]">
+                      Toque em “Permitir” quando a caixa do seu navegador aparecer. Nada é gravado além da coordenada deste momento.
+                    </p>
+                    <div className="mt-3 border-t border-dashed border-[#DDD6CC] pt-2.5 text-[10.5px] leading-[1.5] text-[#8A8078]">
+                      Coleta única, no ato da assinatura. Não há rastreamento contínuo.
                     </div>
                   </div>
 
                   {locationError && (
-                    <div className="w-full mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-left">
-                      <p className="text-sm text-red-700">{locationError}</p>
+                    <div className="mt-4 border border-[#E0B4B4] bg-[#FDF4F4] p-3 text-[12.5px] leading-[1.5] text-[#8C3A3A]">
+                      {locationError}
                     </div>
                   )}
 
                   {locationData && (
-                    <div className="w-full mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-emerald-500" />
-                      <p className="text-sm text-emerald-700">Localização capturada com sucesso!</p>
+                    <div className="mt-4 flex items-center gap-2.5 border border-[#CBE5D8] bg-[#F1F9F5] px-3 py-2.5">
+                      <CheckCircle className="h-4 w-4 flex-shrink-0 text-[#1F7A55]" />
+                      <p className="text-[12px] font-semibold text-[#1F7A55]">Localização capturada.</p>
                     </div>
                   )}
 
-                  {/* Botões */}
-                  <div className="w-full space-y-3">
-                    <button
-                      onClick={requestLocation}
-                      disabled={locationLoading || !!locationData}
-                      className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-orange-500/20 transition-all duration-200 active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {locationLoading ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Obtendo localização...
-                        </>
-                      ) : locationData ? (
-                        <>
-                          <CheckCircle className="w-5 h-5" />
-                          Localização ativada
-                        </>
-                      ) : (
-                        <>
-                          <MapPin className="w-5 h-5" />
-                          Ativar Localização
-                        </>
-                      )}
-                    </button>
-                    {locationData && (
-                      <button
-                        onClick={() => setModalStep('facial')}
-                        className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-orange-500/20 transition-all active:scale-[0.98]"
-                      >
+                  <div className="mt-5 flex flex-col gap-2">
+                    {locationData ? (
+                      <PrimaryButton onClick={() => setModalStep('facial')}>
                         Continuar
-                      </button>
+                        <ChevronRight className="h-4 w-4" strokeWidth={2.4} />
+                      </PrimaryButton>
+                    ) : (
+                      <PrimaryButton onClick={requestLocation} disabled={locationLoading}>
+                        {locationLoading ? (
+                          <><Loader2 className="h-4 w-4 animate-spin" />Obtendo localização…</>
+                        ) : (
+                          <><MapPin className="h-4 w-4" />Permitir localização</>
+                        )}
+                      </PrimaryButton>
                     )}
                   </div>
                 </div>
@@ -4868,204 +4586,217 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
               {/* Etapa 5: Verificação facial */}
               {modalStep === 'facial' && (
-                <div className="space-y-4">
-                  <div className="text-center">
-                    <h2 className="text-xl font-bold text-slate-800">Verificação facial</h2>
-                    <p className="text-sm text-slate-500 mt-1">Tire uma selfie para validar a assinatura</p>
-                  </div>
+                <div>
+                  <StepHeading
+                    title={<>Enquadre seu <Accent>rosto</Accent>.</>}
+                    note="A foto sai sozinha quando você estiver enquadrado."
+                  />
 
+                  {/* A conferência é o momento em que a obstrução é julgada, e
+                      ela demora alguns segundos. Dizer isso em voz alta é melhor
+                      do que uma tela parada: quem espera sabendo, espera. */}
                   {facialValidating && (
-                    <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
-                      <div className="flex items-start gap-3">
-                        <Loader2 className="w-5 h-5 text-orange-600 animate-spin flex-shrink-0" />
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-orange-800">Analisando sua foto...</div>
-                          <div className="text-xs text-orange-700 mt-0.5">Aguarde alguns segundos. Precisamos ver o rosto com nitidez.</div>
-                        </div>
+                    <div className="mt-4 flex items-start gap-2.5 border border-[#E8CDB4] bg-[#FDF6EE] px-3.5 py-3">
+                      <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-[#C2500F]" />
+                      <div className="min-w-0">
+                        <div className="text-[12.5px] font-bold text-[#8A4A15]">Conferindo sua foto…</div>
+                        <div className="mt-0.5 text-[11px] leading-[1.5] text-[#A66B33]">Checando se o rosto aparece inteiro e sem nada cobrindo. Leva alguns segundos.</div>
                       </div>
                     </div>
                   )}
 
                   {facialValidation && facialValidation.valid === false && (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-red-800">Foto não aprovada</div>
-                          <div className="text-xs text-red-700 mt-0.5">{facialValidation.message}</div>
+                    <div className="mt-4 flex items-start gap-2.5 border border-[#E0B4B4] bg-[#FDF4F4] px-3.5 py-3">
+                      <AlertTriangle className="h-4 w-4 flex-shrink-0 text-[#C0392B]" />
+                      <div className="min-w-0">
+                        <div className="text-[12.5px] font-bold text-[#8C3A3A]">Foto não aprovada</div>
+                        <div className="mt-0.5 text-[11px] leading-[1.5] text-[#A55]">{facialValidation.message}</div>
+                        <div className="mt-1 text-[10.5px] font-semibold text-[#8C3A3A]">
+                          {fotosAutomaticas >= MAX_FOTOS_AUTOMATICAS
+                            ? 'A câmera volta em instantes — depois toque no botão para tentar de novo.'
+                            : 'A câmera volta em instantes para tentarmos de novo.'}
                         </div>
                       </div>
                     </div>
                   )}
 
                   {facialData ? (
-                    <div className="space-y-4">
-                      {/* Preview da foto capturada */}
-                      <div className="relative">
-                        <div
-                          className={`rounded-2xl p-4 border ${
-                            facialValidation?.valid === false
-                              ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200'
-                              : 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200'
-                          }`}
-                        >
-                          <div className="flex flex-col items-center">
-                            <div className="relative mb-3">
-                              <img 
-                                src={facialData} 
-                                alt="Foto" 
-                                className="w-32 h-32 object-cover rounded-full border-4 border-white shadow-lg" 
-                                style={{ transform: 'scaleX(-1)' }} 
-                              />
-                              {facialValidating ? (
-                                <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-orange-600 rounded-full flex items-center justify-center shadow-md">
-                                  <Loader2 className="w-5 h-5 text-white animate-spin" />
-                                </div>
-                              ) : facialValidation?.valid === false ? (
-                                <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-red-600 rounded-full flex items-center justify-center shadow-md">
-                                  <AlertTriangle className="w-5 h-5 text-white" />
-                                </div>
-                              ) : (
-                                <div className="absolute -bottom-1 -right-1 w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center shadow-md">
-                                  <CheckCircle className="w-5 h-5 text-white" />
-                                </div>
-                              )}
-                            </div>
-                            <p
-                              className={`text-base font-semibold ${
-                                facialValidation?.valid === false ? 'text-red-800' : 'text-emerald-800'
-                              }`}
-                            >
-                              {facialValidating
-                                ? 'Analisando foto...'
-                                : facialValidation?.valid === false
-                                  ? 'Tire outra foto'
-                                  : 'Foto aprovada!'}
-                            </p>
-                            <p className={`text-sm ${facialValidation?.valid === false ? 'text-red-600' : 'text-emerald-600'}`}>
-                              {facialValidating
-                                ? 'Precisamos ver seu rosto com nitidez.'
-                                : facialValidation?.valid === false
-                                  ? 'Deixe o rosto totalmente visível (sem cobrir) e tire a foto sem tremer.'
-                                  : 'Verificação facial concluída'}
-                            </p>
-                          </div>
+                    <div className="mt-4">
+                      <div
+                        className={`border p-4 ${
+                          facialValidation?.valid === false
+                            ? 'border-[#E0B4B4] bg-[#FDF4F4]'
+                            : 'border-[#CBE5D8] bg-[#F1F9F5]'
+                        }`}
+                      >
+                        <div className="flex flex-col items-center">
+                          <img
+                            src={facialData}
+                            alt="Foto"
+                            className="w-[108px] border border-white object-cover shadow-sm"
+                            style={{ transform: 'scaleX(-1)', aspectRatio: `${FOTO_PROPORCAO}` }}
+                          />
+                          <p
+                            className={`mt-3 text-[13px] font-bold ${
+                              facialValidation?.valid === false ? 'text-[#8C3A3A]' : 'text-[#1F7A55]'
+                            }`}
+                          >
+                            {facialValidating
+                              ? 'Analisando foto…'
+                              : facialValidation?.valid === false
+                                ? 'Tire outra foto'
+                                : 'Foto aprovada'}
+                          </p>
+                          <p className={`mt-1 text-center text-[11px] leading-[1.5] ${facialValidation?.valid === false ? 'text-[#A55]' : 'text-[#4E8F73]'}`}>
+                            {facialValidating
+                              ? 'Precisamos ver seu rosto com nitidez.'
+                              : facialValidation?.valid === false
+                                ? 'Deixe o rosto totalmente visível (sem cobrir) e tire a foto sem tremer.'
+                                : 'Verificação concluída'}
+                          </p>
                         </div>
                       </div>
-                      
-                      {/* Botão de refazer aparece SÓ quando a foto é reprovada.
-                          Durante a análise e ao aprovar (avança sozinho) ele some. */}
+
+                      {/* Refazer aparece SÓ quando a foto é reprovada. Durante a
+                          análise e ao aprovar (avança sozinho) ele some. */}
                       {facialValidation?.valid === false && (
-                        <button
-                          onClick={() => {
-                            setFacialData(null);
-                            setFacialValidation(null);
-                            startCamera();
-                          }}
-                          className="w-full py-3 border border-[#e7e5df] rounded-xl font-semibold text-slate-700 hover:bg-slate-50 transition flex items-center justify-center gap-2"
-                        >
-                          <RotateCcw className="w-4 h-4" />
-                          Tirar novamente
-                        </button>
+                        <div className="mt-4">
+                          <GhostButton
+                            onClick={() => { setFacialData(null); setFacialValidation(null); startCamera(); }}
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                            Tirar novamente
+                          </GhostButton>
+                        </div>
                       )}
 
                       {!facialValidating && facialValidation?.valid !== false && (
-                        <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                        <div className="mt-4 flex items-center justify-center gap-2 text-[12px] text-[#8A8078]">
+                          <Loader2 className="h-4 w-4 animate-spin" />
                           Avançando…
                         </div>
                       )}
                     </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {!cameraActive ? (
-                        <div className="rounded-2xl border border-[#e7e5df] bg-slate-50 p-5">
-                          <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
-                              <Camera className="w-5 h-5 text-orange-600" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-semibold text-slate-900">Permitir acesso à câmera</div>
-                              <div className="text-xs text-slate-600 mt-1 leading-relaxed">
-                                Para continuar, precisamos acessar sua câmera para tirar uma selfie.
-                                Ao clicar em <span className="font-semibold">Ativar câmera</span>, o navegador vai pedir sua autorização.
-                              </div>
-
-                              {cameraError && (
-                                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                                  {cameraError}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <button
-                              type="button"
-                              onClick={startCamera}
-                              className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-500/20 hover:bg-orange-700 transition"
-                            >
-                              <Camera className="w-4 h-4" />
-                              Ativar câmera
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setModalStep('signature')}
-                              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#f8f7f5] border border-[#e7e5df] px-4 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition"
-                            >
-                              <ChevronLeft className="w-4 h-4" />
-                              Voltar
-                            </button>
-                          </div>
+                  ) : !cameraActive ? (
+                    <div className="mt-4">
+                      <div className="border border-[#E4DED5] bg-white p-4">
+                        <div className="mb-3 flex h-11 w-11 items-center justify-center" style={{ backgroundColor: '#0C1320' }}>
+                          <Camera className="h-5 w-5" style={{ color: BRAND_DOT_ON_DARK }} strokeWidth={1.8} />
                         </div>
-                      ) : (
-                        <>
-                          <div className="relative rounded-2xl overflow-hidden shadow-xl">
-                            <video ref={videoRef} autoPlay playsInline muted className="w-full h-64 object-cover" style={{ transform: 'scaleX(-1)' }} />
-
-                            {/* Overlay escuro nas bordas */}
-                            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/40 pointer-events-none" />
-
-                            {/* Moldura central animada */}
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <div className="relative">
-                                {/* Círculo externo com animação de pulso */}
-                                <div className="w-40 h-40 rounded-full border-[3px] border-white/30 animate-pulse" />
-
-                                {/* Círculo interno sólido */}
-                                <div className="absolute inset-2 rounded-full border-[3px] border-white shadow-lg" />
-
-                                {/* Marcadores de alinhamento */}
-                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-1 bg-[#f8f7f5] rounded-full" />
-                                <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-1 bg-[#f8f7f5] rounded-full" />
-                                <div className="absolute top-1/2 -left-3 -translate-y-1/2 w-1 h-6 bg-[#f8f7f5] rounded-full" />
-                                <div className="absolute top-1/2 -right-3 -translate-y-1/2 w-1 h-6 bg-[#f8f7f5] rounded-full" />
-                              </div>
-                            </div>
-
-                            {/* Texto instrucional no topo */}
-                            <div className="absolute top-4 left-0 right-0 text-center">
-                              <div className="inline-flex items-center gap-2 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-lg">
-                                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                                <span className="text-sm font-semibold text-slate-700">Centralize seu rosto</span>
-                              </div>
-                            </div>
-
-                            {/* Dica no rodapé */}
-                            <div className="absolute bottom-4 left-0 right-0 text-center">
-                              <p className="text-white/80 text-xs">Mantenha o rosto dentro do círculo</p>
-                            </div>
+                        <p className="text-[13px] font-bold text-[#141B26]">Permitir acesso à câmera</p>
+                        <p className="mt-1.5 text-[11.5px] leading-[1.55] text-[#7C8797]">
+                          Ao tocar em “Ativar câmera”, o navegador vai pedir sua autorização. A imagem não sai deste dispositivo antes de você confirmar.
+                        </p>
+                        {cameraError && (
+                          <div className="mt-3 border border-[#E0B4B4] bg-[#FDF4F4] px-3 py-2.5 text-[12px] leading-[1.5] text-[#8C3A3A]">
+                            {cameraError}
                           </div>
+                        )}
+                      </div>
 
-                          <button
-                            onClick={capturePhoto}
-                            className="w-full py-3.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-base shadow-lg shadow-orange-500/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                      <div className="mt-5 flex flex-col gap-2">
+                        <PrimaryButton type="button" onClick={startCamera}>
+                          <Camera className="h-4 w-4" />
+                          Ativar câmera
+                        </PrimaryButton>
+                        <GhostButton type="button" onClick={() => setModalStep('signature')}>
+                          <ChevronLeft className="h-4 w-4" />
+                          Voltar
+                        </GhostButton>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-4">
+                      {/* Visor no mesmo #0C1320 do painel de marca, com cantos de
+                          enquadramento no lugar do círculo branco pulsante. */}
+                      {/* Retrato 3:4, o formato de foto de celular. A altura
+                          continua presa ao viewport (o visor não pode empurrar o
+                          botão para fora da tela) e a LARGURA é que sai dela, para
+                          o enquadramento ser o mesmo que capturePhoto recorta. */}
+                      <div
+                        className="relative mx-auto overflow-hidden"
+                        style={{
+                          backgroundColor: '#0C1320',
+                          height: 'clamp(260px, 44dvh, 380px)',
+                          aspectRatio: `${FOTO_PROPORCAO}`,
+                        }}
+                      >
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="h-full w-full object-cover"
+                          style={{ transform: 'scaleX(-1)' }}
+                        />
+
+                        <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+                          <span className="absolute left-3 top-3 h-[18px] w-[18px] border-l-2 border-t-2 border-white/35" />
+                          <span className="absolute right-3 top-3 h-[18px] w-[18px] border-r-2 border-t-2 border-white/35" />
+                          <span className="absolute bottom-3 left-3 h-[18px] w-[18px] border-b-2 border-l-2 border-white/35" />
+                          <span className="absolute bottom-3 right-3 h-[18px] w-[18px] border-b-2 border-r-2 border-white/35" />
+                          {/* O oval fecha em linha cheia e verde no instante em
+                              que o rosto entra: é o sinal que ensina sozinho o
+                              que o botão está esperando. */}
+                          <span
+                            className={`absolute left-1/2 top-[46%] h-[64%] w-[64%] -translate-x-1/2 -translate-y-1/2 rounded-[50%] border-2 transition-colors duration-200 ${
+                              deteccaoRosto.estado === 'pronto' ? 'border-solid' : 'border-dashed'
+                            }`}
+                            style={{
+                              borderColor:
+                                deteccaoRosto.estado === 'pronto'
+                                  ? 'rgba(52,211,153,0.95)'
+                                  : 'rgba(242,132,62,0.75)',
+                            }}
+                          />
+                          <span
+                            className={`absolute inset-x-0 bottom-3.5 px-3 text-center text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+                              deteccaoRosto.estado === 'pronto' ? 'text-emerald-300' : 'text-white/60'
+                            }`}
                           >
-                            <Camera className="w-5 h-5" />
-                            Capturar foto
-                          </button>
-                        </>
-                      )}
+                            {contagemFoto !== null ? 'Não se mexa' : deteccaoRosto.dica}
+                          </span>
+
+                          {/* A foto sai sozinha, mas nunca de surpresa: a
+                              contagem aparece grande e some se o rosto sair. */}
+                          {contagemFoto !== null && (
+                            <span
+                              className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 tabular-nums"
+                              style={{
+                                fontFamily: BRAND_SERIF,
+                                fontSize: 76,
+                                lineHeight: 1,
+                                color: 'rgba(255,255,255,0.92)',
+                                textShadow: '0 2px 24px rgba(0,0,0,0.55)',
+                              }}
+                            >
+                              {contagemFoto}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-5">
+                        {/* A foto sai sozinha quando o rosto está enquadrado; o
+                            botão fica como plano B — para quem prefere disparar
+                            e para depois do teto de disparos automáticos. */}
+                        <PrimaryButton
+                          onClick={() => { setContagemFoto(null); void capturePhoto(); }}
+                          disabled={!deteccaoRosto.liberado}
+                        >
+                          <Camera className="h-4 w-4" />
+                          {contagemFoto !== null ? `Tirando em ${contagemFoto}…` : 'Tirar foto agora'}
+                        </PrimaryButton>
+                        <p className="mt-2 text-center text-[11px] leading-[1.5] text-[#8A8078]">
+                          {deteccaoRosto.estado === 'carregando'
+                            ? 'Preparando o enquadramento…'
+                            : fotosAutomaticas >= MAX_FOTOS_AUTOMATICAS
+                              ? 'Enquadre o rosto e toque no botão quando estiver pronto.'
+                              : deteccaoRosto.liberado
+                                ? 'A foto sai sozinha assim que o rosto estiver parado no oval.'
+                                : 'O botão libera assim que seu rosto aparecer.'}
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -5073,105 +4804,112 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
               {/* Etapa final: Autorização e confirmação */}
               {modalStep === 'confirm' && (
-                <div className="space-y-5">
-                  <div className="text-center space-y-1">
-                    <h2 className="text-xl font-bold text-slate-800">Autorização e confirmação</h2>
-                    <p className="text-sm font-medium text-slate-500">Revise e conclua a assinatura</p>
-                  </div>
+                <div>
+                  <StepHeading
+                    title={<>Tudo pronto para <Accent>assinar</Accent>.</>}
+                    note="Confira o que vai ficar registrado e assine."
+                  />
 
-                  {/* Card de status: selfie aprovada */}
-                  {facialData && (
-                    <div className="bg-white border border-slate-100 rounded-2xl p-3 shadow-sm flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={facialData}
-                          alt="Selfie"
-                          className="w-12 h-12 object-cover rounded-full border-2 border-slate-50 shadow-inner"
-                          style={{ transform: 'scaleX(-1)' }}
-                        />
-                        <div className="min-w-0">
-                          <div className="text-sm font-bold text-emerald-700">Foto aprovada</div>
-                          <div className="text-xs text-emerald-600/80">Verificação facial concluída</div>
-                        </div>
-                      </div>
-                      <div className="text-emerald-500 bg-emerald-50 p-1.5 rounded-full flex-shrink-0">
-                        <CheckCircle className="w-5 h-5" />
-                      </div>
+                  {/* O resumo do que foi coletado, em formato de recibo, ANTES
+                      de pedir o aceite. Sem ele a etapa pedia autorização para
+                      algo que a pessoa não conseguia mais rever. */}
+                  <div className="mt-4 border border-[#E4DED5] bg-white">
+                    <div className="flex items-center justify-between border-b border-dashed border-[#E8E2DA] px-3 py-2.5">
+                      <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#A0968C]">Conferido</span>
+                      <CheckCircle className="h-3.5 w-3.5 text-[#1F7A55]" />
                     </div>
-                  )}
-
-                  <div className="space-y-3">
-                    {/* Consentimento OPCIONAL — usar a selfie como foto cadastral (default OFF) */}
-                    <label className="group block bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:border-orange-200 transition-colors cursor-pointer">
-                      <div className="flex gap-3">
-                        <div className="pt-0.5">
-                          <input
-                            type="checkbox"
-                            checked={allowSelfieForProfile}
-                            onChange={(e) => setAllowSelfieForProfile(e.target.checked)}
-                            className="sr-only"
-                          />
-                          <OrangeCheckbox checked={allowSelfieForProfile} />
+                    <div className="px-3 pb-2.5 pt-1">
+                      {signerData.name?.trim() && (
+                        <div className="flex items-center justify-between gap-3 border-b border-[#F1EDE7] py-2">
+                          <span className="flex-none text-[11.5px] text-[#7C8797]">Nome</span>
+                          <span className="truncate text-[11.5px] font-semibold text-[#141B26]">{signerData.name}</span>
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <span className="block text-xs font-semibold text-slate-700 leading-snug">
-                            {SELFIE_PROFILE_CONSENT_LABEL}
+                      )}
+                      {signerData.cpf?.trim() && (
+                        <div className="flex items-center justify-between gap-3 border-b border-[#F1EDE7] py-2">
+                          <span className="flex-none text-[11.5px] text-[#7C8797]">CPF</span>
+                          <span className="truncate text-[11.5px] font-semibold tabular-nums text-[#141B26]">{signerData.cpf}</span>
+                        </div>
+                      )}
+                      {googleUser?.email && (
+                        <div className="flex items-center justify-between gap-3 border-b border-[#F1EDE7] py-2">
+                          <span className="flex-none text-[11.5px] text-[#7C8797]">Identidade</span>
+                          <span className="truncate text-[11.5px] font-semibold text-[#141B26]">{googleUser.email}</span>
+                        </div>
+                      )}
+                      {locationData && (
+                        <div className="flex items-center justify-between gap-3 border-b border-[#F1EDE7] py-2">
+                          <span className="flex-none text-[11.5px] text-[#7C8797]">Localização</span>
+                          <span className="truncate text-[11.5px] font-semibold tabular-nums text-[#141B26]">
+                            {locationData.lat.toFixed(4)}, {locationData.lng.toFixed(4)}
                           </span>
                         </div>
-                      </div>
+                      )}
+                      {facialData && (
+                        <div className="flex items-center justify-between gap-3 py-2">
+                          <span className="flex-none text-[11.5px] text-[#7C8797]">Foto</span>
+                          <span className="flex items-center gap-1.5 text-[11.5px] font-semibold text-[#1F7A55]">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1F7A55" strokeWidth="2.6">
+                              <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            Aprovada
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-2">
+                    {/* Consentimento OPCIONAL — usar a selfie como foto cadastral (default OFF) */}
+                    <label className="flex cursor-pointer gap-3 border border-[#E0DAD1] bg-white p-3 transition-colors hover:border-[#D2C8BC]">
+                      <span className="flex-none pt-0.5">
+                        <input
+                          type="checkbox"
+                          checked={allowSelfieForProfile}
+                          onChange={(e) => setAllowSelfieForProfile(e.target.checked)}
+                          className="sr-only"
+                        />
+                        <OrangeCheckbox checked={allowSelfieForProfile} />
+                      </span>
+                      <span className="min-w-0 flex-1 text-[11.5px] leading-[1.5] text-[#4F5A69]">
+                        {SELFIE_PROFILE_CONSENT_LABEL} <span className="text-[#A0968C]">(opcional)</span>
+                      </span>
                     </label>
 
                     {/* Aceite dos Termos de Uso (LGPD) — obrigatório para assinar */}
-                    <label className="group block bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:border-orange-200 transition-colors cursor-pointer">
-                      <div className="flex gap-3 items-center">
-                        <div className="flex-shrink-0">
-                          <input
-                            type="checkbox"
-                            checked={termsAccepted}
-                            onChange={(e) => setTermsAccepted(e.target.checked)}
-                            className="sr-only"
-                          />
-                          <OrangeCheckbox checked={termsAccepted} />
-                        </div>
-                        <div className="min-w-0 flex-1 text-xs font-semibold text-slate-700">
-                          Li e aceito os{' '}
-                          <button
-                            type="button"
-                            onClick={(e) => { e.preventDefault(); setShowTermsModal(true); }}
-                            className="text-orange-600 hover:underline"
-                          >
-                            {SIGNATURE_TERMS_TITLE}
-                          </button>
-                          {' '}<span className="text-slate-400 font-normal">({SIGNATURE_TERMS_VERSION})</span>.
-                        </div>
-                      </div>
+                    <label className="flex cursor-pointer items-center gap-3 border border-[#E0DAD1] bg-white p-3 transition-colors hover:border-[#D2C8BC]">
+                      <span className="flex-none">
+                        <input
+                          type="checkbox"
+                          checked={termsAccepted}
+                          onChange={(e) => setTermsAccepted(e.target.checked)}
+                          className="sr-only"
+                        />
+                        <OrangeCheckbox checked={termsAccepted} />
+                      </span>
+                      <span className="min-w-0 flex-1 text-[11.5px] leading-[1.5] text-[#4F5A69]">
+                        Li e aceito os{' '}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); setShowTermsModal(true); }}
+                          className="font-semibold text-[#C2500F] underline decoration-[#C2500F]/40 underline-offset-2"
+                        >
+                          {SIGNATURE_TERMS_TITLE}
+                        </button>{' '}
+                        <span className="text-[#A0968C]">({SIGNATURE_TERMS_VERSION})</span>.
+                      </span>
                     </label>
                   </div>
 
-                  <div className="pt-2">
-                    <button
-                      onClick={handleSign}
-                      disabled={loading || !termsAccepted}
-                      className={`w-full py-3 text-white font-bold rounded-xl shadow-lg transition-all duration-300 flex items-center justify-center gap-3 ${
-                        (loading || !termsAccepted)
-                          ? 'bg-slate-300 shadow-slate-200 cursor-not-allowed'
-                          : 'bg-orange-600 hover:bg-orange-700 active:scale-[0.98] shadow-orange-200'
-                      }`}
-                    >
+                  <div className="mt-5">
+                    <PrimaryButton onClick={handleSign} disabled={loading || !termsAccepted}>
                       {loading ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          Enviando...
-                        </>
+                        <><Loader2 className="h-4 w-4 animate-spin" />Enviando…</>
                       ) : (
-                        <>
-                          <CheckCircle className="w-5 h-5" />
-                          Enviar Assinatura
-                        </>
+                        <><CheckCircle className="h-4 w-4" />Assinar documento</>
                       )}
-                    </button>
+                    </PrimaryButton>
                   </div>
-
                 </div>
               )}
             </div>
@@ -5181,8 +4919,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       {/* Histórico (overlay) */}
       {activeTab === 'history' && (
-        <div className="fixed inset-0 z-[60] bg-black/50 flex items-end md:items-center md:justify-center p-0 md:p-6">
-          <div className="w-full md:max-w-2xl bg-[#f8f7f5] rounded-t-2xl md:rounded-2xl shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-[60] flex h-[100dvh] items-end bg-black/50 p-0 md:items-center md:justify-center md:p-6">
+          <div className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-[#f8f7f5] shadow-2xl md:max-w-2xl md:rounded-2xl">
             <div className="px-5 py-4 border-b border-[#e7e5df] flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold text-slate-900">Histórico da assinatura</div>
@@ -5198,7 +4936,10 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
               </button>
             </div>
 
-            <div className="max-h-[70vh] overflow-auto p-5">
+            <div
+              className="min-h-0 flex-1 overflow-auto overscroll-contain p-4 sm:p-5"
+              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+            >
               {auditLogLoading ? (
                 <div className="flex items-center gap-2 text-sm text-slate-600">
                   <Loader2 className="w-4 h-4 animate-spin" />

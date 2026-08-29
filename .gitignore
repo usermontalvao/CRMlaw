@@ -70,3 +70,4 @@ extension-signing-key.pem
 # um token commitado continua sendo um token commitado.
 scripts/authenticator-e2e/estado.json
 .preview-botoes.html
+.preview-assinatura.html

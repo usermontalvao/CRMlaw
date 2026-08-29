@@ -37,6 +37,58 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.27',
+    date: '29/08/2026',
+    summary: 'As telas públicas de assinatura passaram a falar um idioma só: abertura, conferência, comprovante, erro e as seis etapas da assinatura deixaram de trocar de tipografia e de paleta no meio do caminho.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'A abertura trata o cliente pelo nome',
+            description: 'A primeira tela era uma sala de máquinas: escudo, documentos voando, três passos com visto, barra, roda, porcentagem e três selos jurídicos. Agora sobram a saudação com o nome de quem vai assinar, o que vai ser assinado e uma frase que muda, com uma bolinha de carregamento ao lado. Quando o documento fica pronto de verdade, a frase vira "Pronto para assinar" em verde.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A tela de carregamento não segura mais o documento',
+            description: 'Havia um piso de dez segundos: em link que abre rápido, o documento já estava pronto atrás da cortina desde o segundo 2 e a pessoa ficava olhando a tela de espera. Agora a cortina sai assim que o documento está na tela, com uma pausa curta só para dar tempo de ler que ficou pronto.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A conferência mostra a prova sendo conferida',
+            description: 'Enquanto a assinatura é registrada, a tela mostra a selfie, o traço, o lugar e o aparelho — com uma varredura passando por cima. E o aviso "não saia desta página" deixou de ser condicional: ele só era exibido quando o documento NÃO tinha nome, ou seja, quase nunca. Quem mais precisava do recado não recebia.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O comprovante virou um recibo de bolso',
+            description: 'No lugar do certificado escuro, uma folha picotada que começa por "Documento assinado", com o protocolo grande, a selfie e o traço lado a lado, e as linhas que alguém vai querer conferir depois. Foi desenhado para virar foto no álbum do celular — que é o que as pessoas fazem com comprovante.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O e-mail cadastrado aparece na hora de receber o código',
+            description: 'A tela anunciava "código para c···b@exemplo.com", a pessoa clicava e o campo abria vazio: o endereço nunca era preenchido, ao contrário do telefone. Além disso, com o contato já na ficha, tocar no método agora ENVIA o código e leva direto para a tela de digitar — conferir um dado que a linha de cima acabou de mostrar não decidia nada.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O documento parou de travar ao rolar no celular',
+            description: 'Havia dois scrolls disputando o dedo: a caixa de cada anexo em Word era um segundo rolador, e a regra que escondia a rolagem lateral no celular criava outro sem querer. Agora o toque volta para o documento.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O botão de compartilhar não some mais em silêncio',
+            description: 'Quando o navegador recusava a folha de compartilhamento, o erro era engolido e o botão simplesmente não fazia nada. Agora ele mostra que está preparando e, se não der, copia os links e avisa.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'As seis etapas ficaram mais limpas',
+            description: 'A régua de seis segmentos virou uma barra só que avança; o cabeçalho preto virou claro; os títulos perderam a serifa itálica e as quebras forçadas. A tela de identidade saiu de onze blocos para quatro, e a de assinatura passou a MOSTRAR o gesto: um dedo atravessa o quadro e a rubrica nasce atrás dele.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.26',
     date: '29/08/2026',
     summary: 'O link de assinatura passou a sair pela conversa do CRM com um clique — e o texto pronto, que antes se perdia no caminho, agora chega escrito no compositor.',
