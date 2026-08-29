@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.37',
+    date: '29/08/2026',
+    summary: 'A ficha do colaborador dizia "PIN não configurado" para todo mundo — inclusive para quem tem PIN há semanas — e o botão de resetar nunca funcionou.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O estado do PIN voltou a ser verdadeiro',
+            description: 'A verificação de "quem está pedindo é administrador?" comparava a coluna errada da tabela de perfis, e por isso nunca dava certo — nem para administradores de verdade. A consulta era recusada, o erro era engolido e a tela mostrava "Não configurado" para qualquer colaborador. Pelo mesmo motivo, o botão "Resetar PIN" nunca funcionou. Nada vazou: a falha era no sentido de negar, não de liberar.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A janela de cadastro cabe na tela',
+            description: 'Ficou mais larga e em duas colunas — dados pessoais de um lado, cargo e PIN do outro. Antes era preciso rolar para descobrir que o cargo e o PIN estavam ali embaixo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.36',
     date: '29/08/2026',
     summary: 'A janela de cadastro da Equipe passou a usar a mesma moldura de janela do resto do sistema.',

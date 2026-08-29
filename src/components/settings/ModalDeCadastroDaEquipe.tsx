@@ -119,7 +119,11 @@ const ModalDeCadastroDaEquipe: React.FC<{
     onClose={aoFechar}
     title="Editar cadastro"
     eyebrow={email}
-    size="md"
+    /* `lg` (max-w-2xl) com o conteúdo em duas colunas: cabe inteiro na área
+       visível de um notebook, sem rolagem interna. Em `md` numa coluna, o
+       cargo e o PIN ficavam abaixo da dobra e a janela pedia rolagem para
+       mostrar que existiam. */
+    size="lg"
     zIndex={LAYER.MODAL}
     footer={
       <div className="flex items-center justify-end gap-2">
@@ -144,7 +148,7 @@ const ModalDeCadastroDaEquipe: React.FC<{
     }
   >
     <ModalBody className="px-5 py-4">
-      <div className="space-y-5">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-2">
 
         {/* ── Dados pessoais ── */}
         <section>
@@ -221,7 +225,8 @@ const ModalDeCadastroDaEquipe: React.FC<{
           </p>
         </section>
 
-        {/* ── Cargo ── */}
+        {/* ── Cargo e PIN, na coluna da direita ── */}
+        <div className="flex flex-col gap-5">
         <section>
           <p className={SECAO}>Cargo</p>
           {editandoSiMesmo && (
@@ -229,7 +234,7 @@ const ModalDeCadastroDaEquipe: React.FC<{
               Você não pode alterar o próprio cargo. Outro administrador precisa fazer isso.
             </p>
           )}
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-2">
             {cargos.map((item) => {
               const escolhido = cargo === item.value;
               return (
@@ -304,6 +309,7 @@ const ModalDeCadastroDaEquipe: React.FC<{
             </p>
           )}
         </section>
+        </div>
 
       </div>
     </ModalBody>
