@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.41',
+    date: '29/08/2026',
+    summary: 'A página pública dos Termos de Assinatura voltou a abrir, e cada versão dos Termos passou a mostrar o texto que foi realmente aceito.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Página pública dos Termos abria em branco',
+            description: 'O número da versão vigente subiu para v2, mas a v2 nunca foi cadastrada no registro de versões. Qualquer endereço dos Termos — inclusive o padrão, sem versão — quebrava a tela. A v2 foi registrada e a busca passou a cair na versão mais recente em vez de devolver nada.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A v1 dos Termos exibia o texto da v2',
+            description: 'Quem assinou antes da mudança tem "v1" gravado na assinatura, mas a consulta devolvia o texto novo — ou seja, um texto que essa pessoa nunca leu. O texto original da v1 foi restaurado e ficou congelado, para que o relatório e o certificado apontem sempre o que foi de fato aceito.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.40',
     date: '29/08/2026',
     summary: 'O documento assinado passou a usar uma identidade única: código do documento e protocolo do envelope; o SHA-256 final fica na consulta pública.',
