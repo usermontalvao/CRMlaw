@@ -31,6 +31,10 @@ import {
   nomeDoCanal,
   normalizarCodigo,
   fatoresDeAutenticacao,
+  hashDoPdfAssinadoConsultado,
+  hashDoOriginalConsultado,
+  afirmacaoDaConsulta,
+  listarDocumentosDoEnvelope,
   rotuloDoCodigo,
 } from '../utils/assinaturaPublica';
 import { signatureService } from '../services/signature.service';
@@ -283,8 +287,6 @@ const PublicVerificationPage: React.FC = () => {
   // auditoria) de "não encontrado" (nenhum registro corresponde ao código).
   const isBlocked = hasResultState && !result?.valid && !!(result?.signer || result?.request);
   const isNotFound = hasResultState && !result?.valid && !isBlocked;
-  // Protocolo (envelope) traz o kit inteiro em documents[]; código individual não.
-  const isProtocolResult = isValid && Array.isArray(result?.documents) && (result?.documents?.length ?? 0) > 0;
   /**
    * O tom da página mora num lugar só: o fio de 2,5 px no alto, o mesmo das
    * telas de assinatura e com os mesmos significados. Quem já assinou um
@@ -323,10 +325,37 @@ const PublicVerificationPage: React.FC = () => {
         documentos: (result?.documents || []).map((doc) => doc.verification_code),
         signatario: result?.signer?.verification_hash,
       });
+  /**
+   * A lista do envelope só sai quando foi o ENVELOPE que se perguntou.
+   *
+   * Isto era `documents.length > 0`, e valeu enquanto só a consulta por
+   * protocolo devolvia `documents`. Desde que a RPC passou a mandar a lista
+   * TAMBÉM na consulta por código individual, aquela condição continuou
+   * verdadeira e a tela listava o kit inteiro para quem havia digitado o código
+   * de um único documento — mostrando os hashes dos irmãos ao lado do arquivo
+   * que a pessoa tinha em mãos.
+   */
+  const isProtocolResult = isValid && listarDocumentosDoEnvelope({
+    tipo: tipoDoCodigo,
+    codigoConsultado,
+    quantidadeDeDocumentos: result?.documents?.length ?? 0,
+  });
+
   // Validando pelo ARQUIVO não há código digitado; aí o recibo mostra o
   // protocolo do envelope, que é o identificador mais abrangente.
   const codigoDoRecibo = codigoConsultado || protocoloDoEnvelope || (result?.signer?.verification_hash || '').trim();
   const rotuloDoRecibo = codigoConsultado ? rotuloDoCodigo(tipoDoCodigo) : 'Protocolo do envelope';
+  const hashDoPdfAssinado = hashDoPdfAssinadoConsultado(
+    codigoConsultado,
+    result?.documents,
+    result?.signer?.signed_pdf_sha256,
+  );
+  const afirmacao = afirmacaoDaConsulta(verifiedByUploadedFile);
+  const hashDoOriginal = hashDoOriginalConsultado(
+    codigoConsultado,
+    result?.documents,
+    result?.signer?.integrity_sha256,
+  );
   /** O protocolo vira linha do recibo só quando NÃO é ele que está no topo. */
   const mostrarProtocoloAparte =
     tipoDoCodigo !== 'envelope'
@@ -436,15 +465,16 @@ const PublicVerificationPage: React.FC = () => {
                    strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 12l5 5L20 6" /></svg>
             </span>
             <div>
+              {/* A tela afirma só o que conferiu. Ver `afirmacaoDaConsulta`:
+                  consulta por código ENCONTRA um registro; ela não compara
+                  arquivo nenhum. Dizer "nada foi alterado" ali era uma
+                  afirmação de integridade não verificada — a primeira coisa
+                  que um perito da parte contrária derrubaria. */}
               <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, letterSpacing: '-.95px', lineHeight: 1.08, color: TINTA }}>
-                {verifiedByUploadedFile
-                  ? <>O arquivo <span style={{ color: VERDE }}>confere</span>.</>
-                  : <>Documento <span style={{ color: VERDE }}>autêntico</span>.</>}
+                {afirmacao.titulo} <span style={{ color: VERDE }}>{afirmacao.destaque}</span>.
               </h1>
-              <Explicacao style={{ marginTop: 8, maxWidth: 420 }}>
-                {verifiedByUploadedFile
-                  ? 'Byte a byte, é o mesmo PDF que foi assinado. Uma vírgula alterada mudaria a impressão digital.'
-                  : 'Confere com o registro original. Nada foi alterado depois da assinatura.'}
+              <Explicacao style={{ marginTop: 8, maxWidth: 460 }}>
+                {afirmacao.explicacao}
               </Explicacao>
             </div>
           </div>
@@ -471,7 +501,7 @@ const PublicVerificationPage: React.FC = () => {
                   abaixo; repetir um deles aqui em cima só confundiria qual é
                   qual. Este bloco fica para o documento único e para a
                   comparação da validação por arquivo. */}
-              {(fileHash || result.signer.signed_pdf_sha256) && !(isProtocolResult && !verifiedByUploadedFile) && (
+              {(fileHash || hashDoPdfAssinado || hashDoOriginal) && !(isProtocolResult && !verifiedByUploadedFile) && (
                 <div style={{
                   border: '1px solid #e7e5e4', borderRadius: 11, background: '#fff',
                   padding: '11px 13px', ...sobe(3),
@@ -481,8 +511,8 @@ const PublicVerificationPage: React.FC = () => {
                       <span style={rotuloDoHash}>Do seu arquivo</span>
                       <code style={codigoDoHash}>{fileHash}</code>
                       <DivisorPicotado style={{ margin: '9px 0' }} />
-                      <span style={rotuloDoHash}>Do registro original</span>
-                      <code style={codigoDoHash}>{result.signer.signed_pdf_sha256 || fileHash}</code>
+                      <span style={rotuloDoHash}>Do registro do PDF assinado</span>
+                      <code style={codigoDoHash}>{hashDoPdfAssinado || fileHash}</code>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 9,
                         fontSize: 9.5, fontWeight: 700, color: VERDE,
@@ -496,8 +526,27 @@ const PublicVerificationPage: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <span style={rotuloDoHash}>Impressão digital do arquivo · SHA-256</span>
-                      <code style={codigoDoHash}>{fileHash || result.signer.signed_pdf_sha256}</code>
+                      {/* OS DOIS HASHES, porque respondem a perguntas diferentes.
+                          O do ORIGINAL é o que está impresso no PDF; o do
+                          ASSINADO é o do arquivo que se baixa e não pode ser
+                          impresso dentro dele mesmo (mudaria os bytes). Mostrar
+                          só um fazia a pessoa comparar o número impresso com o
+                          arquivo em mãos e achar que nada batia. */}
+                      {hashDoOriginal ? (
+                        <>
+                          <span style={rotuloDoHash}>SHA-256 do documento original</span>
+                          <code style={codigoDoHash}>{hashDoOriginal}</code>
+                          <span style={{ display: 'block', marginTop: 5, fontSize: 9, color: '#78716c', lineHeight: 1.45 }}>
+                            É este que aparece impresso no rodapé do documento assinado.
+                          </span>
+                          <DivisorPicotado style={{ margin: '9px 0' }} />
+                        </>
+                      ) : null}
+                      <span style={rotuloDoHash}>SHA-256 do PDF assinado</span>
+                      <code style={codigoDoHash}>{fileHash || hashDoPdfAssinado}</code>
+                      <span style={{ display: 'block', marginTop: 5, fontSize: 9, color: '#78716c', lineHeight: 1.45 }}>
+                        É este que corresponde ao arquivo que você baixa aqui.
+                      </span>
                     </>
                   )}
                 </div>
@@ -540,13 +589,30 @@ const PublicVerificationPage: React.FC = () => {
                             {/* Sem reticências: hash cortado não serve para conferir
                                 nem para copiar, que é a única coisa que se faz
                                 com ele. */}
-                            {doc.signed_pdf_sha256 && (
+                            {/* OS DOIS HASHES, cada um dizendo de quê.
+                                Antes saía só "SHA-256 …" com o valor do
+                                ASSINADO — e um rótulo que não diz qual é qual
+                                faz a pessoa comparar o número impresso no
+                                rodapé do PDF (que é o do ORIGINAL) com este, e
+                                concluir que não bate. */}
+                            {doc.document_hash && (
                               <span style={{
                                 display: 'block', marginTop: 3, fontSize: 8.5, color: TINTA_4,
                                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
                                 lineHeight: 1.5, overflowWrap: 'anywhere',
                               }}>
-                                SHA-256 {doc.signed_pdf_sha256}
+                                <b style={{ fontFamily: 'inherit', fontWeight: 700 }}>ORIGINAL</b>{' '}
+                                {doc.document_hash}
+                              </span>
+                            )}
+                            {doc.signed_pdf_sha256 && (
+                              <span style={{
+                                display: 'block', marginTop: 2, fontSize: 8.5, color: TINTA_4,
+                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                                lineHeight: 1.5, overflowWrap: 'anywhere',
+                              }}>
+                                <b style={{ fontFamily: 'inherit', fontWeight: 700 }}>ASSINADO</b>{' '}
+                                {doc.signed_pdf_sha256}
                               </span>
                             )}
                           </span>
@@ -570,8 +636,10 @@ const PublicVerificationPage: React.FC = () => {
                   <p style={{
                     margin: 0, padding: '0 12px 11px', fontSize: 9.5, lineHeight: 1.5, color: TINTA_4,
                   }}>
-                    O SHA-256 é a impressão digital do PDF assinado de cada arquivo. Baixe o
-                    documento e compare para provar que é exatamente este.
+                    São dois SHA-256 por arquivo. O <b>ORIGINAL</b> é o do documento antes de
+                    assinar — é ele que aparece impresso no rodapé do PDF. O <b>ASSINADO</b> é o do
+                    arquivo que você baixa aqui; baixe e compare com este para provar que é
+                    exatamente ele.
                   </p>
                 </div>
               )}

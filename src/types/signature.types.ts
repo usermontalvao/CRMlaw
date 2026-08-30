@@ -113,7 +113,7 @@ export interface Signer {
   verification_hash?: string | null; // Hash para verificação pública
   signed_document_path?: string | null; // Path do PDF assinado no storage
   signed_pdf_sha256?: string | null; // SHA-256 do PDF assinado para verificação por upload
-  integrity_sha256?: string | null; // SHA-256 do documento ORIGINAL (mesmo valor impresso no rodapé do PDF)
+  integrity_sha256?: string | null; // SHA-256 do documento ORIGINAL; interno, distinto do hash do PDF assinado
   // Método de autenticação
   auth_provider?: 'google' | 'email_link' | 'phone' | null; // Como o usuário se autenticou
   auth_email?: string | null; // E-mail usado na autenticação
@@ -216,6 +216,8 @@ export interface SignDocumentDTO {
   // Aceite dos Termos de Uso (LGPD)
   terms_accepted?: boolean;
   terms_version?: string | null;
+  /** Instante REAL do aceite (relógio do servidor), não o do envio. */
+  terms_accepted_at?: string | null;
   // Consentimento opcional p/ usar a selfie como foto cadastral
   allow_signature_selfie_for_profile?: boolean;
   selfie_profile_consent_version?: string | null;

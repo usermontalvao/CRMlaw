@@ -23,6 +23,7 @@ import {
   type CanalDeIdentidade,
   descreverAparelho,
   faseDaConferencia,
+  explicacaoDaEspera,
   progresso as curvaDeProgresso,
 } from '../../utils/assinaturaPublica';
 import {
@@ -97,6 +98,17 @@ const TelaDeConferencia: React.FC<{
         }}>
           {faseDaConferencia(decorrido)}
         </p>
+
+        {/* Só aparece quando a espera passa do que parece normal. Antes disso,
+            explicar já sugeriria que algo vai dar errado. */}
+        {explicacaoDaEspera(decorrido) ? (
+          <p style={{
+            margin: '-4px 0 0', fontSize: 12.5, fontWeight: 500, color: '#6B7280',
+            maxWidth: 250, lineHeight: 1.45, ...sobe(3),
+          }}>
+            {explicacaoDaEspera(decorrido)}
+          </p>
+        ) : null}
 
         {/*
           Incondicional. Este é o recado que a tela existe para dar, e ele não

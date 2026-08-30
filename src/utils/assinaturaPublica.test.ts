@@ -5,11 +5,13 @@ import {
   classificarCodigo,
   normalizarCodigo,
   fatoresDeAutenticacao,
+  hashDoPdfAssinadoConsultado,
   rotuloDoCodigo,
   descreverAparelho,
   documentoSemOSignatario,
   faseDaAbertura,
   faseDaConferencia,
+  explicacaoDaEspera,
   formatarCoordenadas,
   mascararCpf,
   nomeDoCanal,
@@ -156,14 +158,27 @@ test('o código do rodapé vem com hífen e a URL não — os dois têm de casar
   assert.equal(normalizarCodigo('a3f0-5e06 9828.7546'), 'A3F05E0698287546');
 });
 
-test('o rótulo só afirma o que dá para saber: envelope ou não', () => {
-  // A RPC pública não distingue código de documento de código de signatário
-  // (devolve um signatário sintético com o próprio código consultado). O que
-  // ela distingue é o envelope — e são estes os dois nomes impressos no PDF.
+test('o recibo usa os dois identificadores públicos canônicos', () => {
   assert.equal(rotuloDoCodigo('envelope'), 'Protocolo do envelope');
-  assert.equal(rotuloDoCodigo('documento'), 'Código de autenticação');
-  assert.equal(rotuloDoCodigo('signatario'), 'Código de autenticação');
-  assert.equal(rotuloDoCodigo('desconhecido'), 'Código de autenticação');
+  assert.equal(rotuloDoCodigo('documento'), 'Código de verificação do documento');
+  assert.equal(rotuloDoCodigo('signatario'), 'Código de verificação');
+  assert.equal(rotuloDoCodigo('desconhecido'), 'Código de verificação');
+});
+
+test('a consulta pelo código do documento mostra o SHA-256 daquele PDF assinado', () => {
+  const documentos = [
+    { verification_code: 'A8162AF5EEAB20D8', signed_pdf_sha256: 'HASH-ASSINADO-PRINCIPAL' },
+    { verification_code: '05FBDC3C94D10F99', signed_pdf_sha256: 'HASH-ASSINADO-ANEXO' },
+  ];
+  assert.equal(
+    hashDoPdfAssinadoConsultado('a816-2af5-eeab-20d8', documentos, 'HASH-LEGADO'),
+    'HASH-ASSINADO-PRINCIPAL',
+  );
+  assert.equal(
+    hashDoPdfAssinadoConsultado('05fbdc3c94d10f99', documentos, 'HASH-LEGADO'),
+    'HASH-ASSINADO-ANEXO',
+  );
+  assert.equal(hashDoPdfAssinadoConsultado('', documentos, 'HASH-LEGADO'), 'HASH-LEGADO');
 });
 
 test('a autenticação lista o que foi USADO, não o que estava configurado', () => {
@@ -194,9 +209,51 @@ test('nenhuma das duas esperas promete conclusão', () => {
   }
 });
 
-test('a espera longa assume a lentidão em vez de repetir "quase lá"', () => {
-  assert.match(faseDaConferencia(20), /lenta/);
-  assert.match(faseDaAbertura(20), /lenta/);
+test('a espera longa nunca diz que está TENTANDO de novo', () => {
+  // "Continuamos tentando" sugere que algo falhou e está sendo repetido. Não
+  // está: há uma única execução em curso. Assustar quem está no meio de um ato
+  // que não pode ser interrompido é o pior momento possível para essa palavra.
+  for (const s of [20, 35, 60, 120]) {
+    assert.equal(/tentando|tentativa/i.test(faseDaConferencia(s)), false,
+      `"${faseDaConferencia(s)}" sugere repetição`);
+    assert.equal(/tentando|tentativa/i.test(faseDaAbertura(s)), false,
+      `"${faseDaAbertura(s)}" sugere repetição`);
+  }
+});
+
+test('a espera do ENVIO não culpa a conexão — o trabalho é no aparelho', () => {
+  // O PDF assinado é montado no dispositivo de quem assina. Dizer "a conexão
+  // está lenta" mandava a pessoa conferir o wi-fi atrás de um problema que não
+  // existe. Já a ABERTURA baixa o documento: ali a rede é suspeita legítima.
+  for (const s of [20, 40, 90]) {
+    assert.equal(/conex[ãa]o/i.test(faseDaConferencia(s)), false,
+      `"${faseDaConferencia(s)}" culpa a conexão por trabalho local`);
+  }
+  assert.match(explicacaoDaEspera(40), /aparelho|anexos/i);
+});
+
+test('a explicação da espera só entra quando a espera fica longa', () => {
+  // Explicar já na largada sugere que algo vai dar errado.
+  assert.equal(explicacaoDaEspera(3), '');
+  assert.equal(explicacaoDaEspera(12), '');
+  assert.ok(explicacaoDaEspera(25).length > 0);
+  assert.ok(explicacaoDaEspera(90).length > 0);
+});
+
+test('o título da espera cabe na caixa estreita da tela', () => {
+  // A caixa tem 240px em corpo 15.5 bold: acima de ~34 caracteres passa de
+  // duas linhas e empurra o layout. O texto que tranquiliza mora na segunda
+  // linha, não no título.
+  for (const s of [0, 3, 8, 15, 25, 60, 200]) {
+    assert.ok(faseDaConferencia(s).length <= 34,
+      `"${faseDaConferencia(s)}" tem ${faseDaConferencia(s).length} caracteres`);
+  }
+});
+
+test('nenhuma etapa da espera promete que terminou', () => {
+  for (const s of [0, 3, 8, 15, 25, 40, 120]) {
+    assert.equal(/pronto|conclu[ií]d|finalizado com|sucesso/i.test(faseDaConferencia(s)), false);
+  }
 });
 
 test('o progresso sobe, desacelera e nunca fecha a conta', () => {

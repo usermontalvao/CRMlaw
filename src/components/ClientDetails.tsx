@@ -26,6 +26,7 @@ import { DocumentRequestsAdmin } from './DocumentRequestsAdmin';
 import { ClientCallsPanel } from './ClientCallsPanel';
 import { ClientRecordingsPanel } from './ClientRecordingsPanel';
 import { signatureService } from '../services/signature.service';
+import { fotosDeClientePorWhatsApp } from '../services/whatsapp/fotoDoCliente';
 import { clientService } from '../services/client.service';
 import { pdfSignatureService } from '../services/pdfSignature.service';
 import { petitionEditorService } from '../services/petitionEditor.service';
@@ -38,7 +39,6 @@ import {
   type ClientChangeEntry,
 } from '../services/clientChangeHistory.service';
 import { financialService } from '../services/financial.service';
-import { SELFIE_PROFILE_CONSENT_LABEL } from '../constants/signatureTerms';
 import { useDeleteConfirm } from '../contexts/DeleteConfirmContext';
 import { useSecurityPin } from '../contexts/SecurityPinContext';
 import type { SavedPetition } from '../types/petitionEditor.types';
@@ -841,6 +841,12 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   }
   interface SelfieEntry { path: string; url: string; label: string; evidence: ConsentEvidence; }
   const [selfies, setSelfies] = useState<SelfieEntry[]>([]);
+  /**
+   * A FOTO DA FICHA vem do WhatsApp do contato vinculado (ou da foto pinada no
+   * cadastro). A selfie da assinatura saiu de cena: ela é prova, e prova com
+   * finalidade dupla é prova contestável — ver `services/whatsapp/fotoDoCliente`.
+   */
+  const [fotoDoCliente, setFotoDoCliente] = useState<{ url: string; path: string } | null>(null);
   const [pinnedPath, setPinnedPath] = useState<string | null>(client.photo_path ?? null);
   const [previewSelfie, setPreviewSelfie] = useState<SelfieEntry | null>(null);
   const [consentTrail, setConsentTrail] = useState<ConsentEvidence | null>(null);
@@ -992,6 +998,25 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   });
   const [paySubmitting, setPaySubmitting] = useState(false);
 
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      // Foto pinada no cadastro ganha da do WhatsApp: é escolha explícita.
+      if (client.photo_path) {
+        try {
+          const url = await signatureService.getSignedImageUrl(client.photo_path, 3600);
+          if (vivo && url) { setFotoDoCliente({ url, path: client.photo_path }); return; }
+        } catch { /* cai para o WhatsApp */ }
+      }
+      try {
+        const fotos = await fotosDeClientePorWhatsApp([client.id]);
+        const foto = fotos.get(client.id);
+        if (vivo && foto) setFotoDoCliente(foto);
+      } catch { /* sem foto: fica com as iniciais */ }
+    })();
+    return () => { vivo = false; };
+  }, [client.id, client.photo_path]);
+
   // ── Load all data on mount
   useEffect(() => {
     let active = true;
@@ -1008,42 +1033,16 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         const dateLabel = req.signed_at
           ? new Date(req.signed_at).toLocaleDateString('pt-BR')
           : req.document_name || 'Documento';
-        for (const signer of req.signers ?? []) {
-          // LGPD: só exibe/oferece a selfie como foto cadastral quando o
-          // signatário autorizou explicitamente (consentimento separado).
-          if (
-            signer.facial_image_path &&
-            signer.status === 'signed' &&
-            (signer as any).allow_signature_selfie_for_profile === true &&
-            !seen.has(signer.facial_image_path)
-          ) {
-            seen.add(signer.facial_image_path);
-            const sg = signer as any;
-            entries.push({
-              path: signer.facial_image_path,
-              label: `${signer.name || 'Signatário'} · ${dateLabel}`,
-              evidence: {
-                signerName: signer.name || 'Signatário',
-                signerCpf: sg.cpf || '',
-                consentText: SELFIE_PROFILE_CONSENT_LABEL,
-                consentVersion: sg.selfie_profile_consent_version || '—',
-                consentAt: sg.selfie_profile_consent_at ?? null,
-                termsVersion: sg.terms_version ?? null,
-                termsAcceptedAt: sg.terms_accepted_at ?? null,
-                authMethod: sg.auth_method ?? sg.auth_provider ?? null,
-                authEmail: sg.auth_email ?? sg.email ?? null,
-                documentName: req.document_name || 'Documento',
-                requestId: req.id,
-                signedAt: signer.signed_at ?? req.signed_at ?? null,
-                signerIp: sg.signer_ip ?? null,
-                signerUserAgent: sg.signer_user_agent ?? null,
-                signerGeolocation: sg.signer_geolocation ?? null,
-                verificationHash: sg.verification_hash ?? null,
-                signedPdfSha256: sg.signed_pdf_sha256 ?? null,
-              },
-            });
-          }
-        }
+        // A selfie da assinatura NÃO é mais oferecida como foto cadastral.
+        //
+        // Ela existe como PROVA; dar a ela uma segunda finalidade — ilustrar
+        // uma ficha — enfraquece a primeira. A foto de cliente passa a vir do
+        // WhatsApp do contato vinculado (ver `services/whatsapp/fotoDoCliente`),
+        // que é dado que o próprio cliente publicou para ser visto.
+        //
+        // As colunas de consentimento continuam no banco: são o registro
+        // histórico das autorizações que chegaram a ser dadas, e apagá-las
+        // destruiria a prova de que houve autorização à época.
         // Selfie no nível da request (legado) não tem consentimento individual:
         // não é usada como foto cadastral.
       }
@@ -1426,7 +1425,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     const now = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
     // Logo e foto carregadas em paralelo — base64 para impressão offline
-    const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0] ?? null;
+    const profileSelfie = fotoDoCliente;
     const blobToDataUrl = (blob: Blob) => new Promise<string>((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result as string);
@@ -1817,28 +1816,21 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
 
           {/* Avatar */}
           <div className="flex flex-shrink-0 flex-col items-center gap-1">
-            {selfies.length > 0 ? (() => {
-              const profileSelfie = (pinnedPath ? selfies.find((s) => s.path === pinnedPath) : null) ?? selfies[0];
+            {fotoDoCliente ? (() => {
               return (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewSelfie(profileSelfie)}
+                  {/* Sem o selo verde "ID": esta foto vem do WhatsApp do
+                      contato, não da biometria da assinatura. Marcá-la como
+                      documento de identidade seria afirmar o que ela não é. */}
+                  <a
+                    href={fotoDoCliente.url}
+                    target="_blank"
+                    rel="noreferrer"
                     className="group relative h-16 w-16 overflow-hidden rounded-2xl shadow-sm ring-1 ring-black/[0.06] transition focus:outline-none hover:ring-2 hover:ring-orange-300"
                     title="Ampliar foto"
                   >
-                    <img src={profileSelfie.url} alt={client.full_name} className="h-full w-full object-cover" />
-                    <span className="absolute inset-x-0 bottom-0 bg-emerald-500 py-[3px] text-center text-[8px] font-bold leading-none tracking-wider text-white">ID</span>
-                  </button>
-                  {selfies.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setSelfiePickerOpen(true)}
-                      className="text-[10px] font-semibold leading-none text-slate-400 transition hover:text-orange-500"
-                    >
-                      {selfies.length} fotos
-                    </button>
-                  )}
+                    <img src={fotoDoCliente.url} alt={client.full_name} className="h-full w-full object-cover" />
+                  </a>
                 </>
               );
             })() : (() => {

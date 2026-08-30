@@ -10,6 +10,7 @@ import { SYSTEM_ISSUER_LABEL } from './signature.service';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 import { lerIdentidadeConfirmada, fraseIdentidadeConfirmada, resumoIdentidadeConfirmada, rotuloIdentificadorConfirmado, autenticacaoOtpSemCanal, formatarTelefoneConfirmado } from '../utils/identidadeConfirmada';
 import { comCanalRecuperado } from '../utils/canalRecuperado';
+import { selarPdfAssinado } from '../utils/integridadeAssinatura';
 import { signatureService } from './signature.service';
 import type { Signer, SignatureRequest, SignatureField } from '../types/signature.types';
 
@@ -268,14 +269,6 @@ class PdfSignatureService {
     }
 
     return null;
-  }
-
-  private formatIntegrityHash(hash: string | null | undefined, truncate = false): string {
-    const h = (hash || '').trim();
-    if (!h) return 'N/A';
-    if (!truncate) return h;
-    if (h.length <= 18) return h;
-    return `${h.slice(0, 10)}…${h.slice(-8)}`;
   }
 
   private formatVerificationDisplay(url: string | null | undefined): string {
@@ -762,12 +755,27 @@ class PdfSignatureService {
     font: any;
     protocol?: string;
     code?: string;
+    /** Instante da assinatura, no fuso do escritório. */
+    signedAt?: string | null;
   }) {
-    const { page, font, protocol, code } = params;
+    const { page, font, protocol, code, signedAt } = params;
 
     const partes: string[] = [];
     if (protocol?.trim()) partes.push(`PROTOCOLO ${protocol.trim().toUpperCase()}`);
     if (code?.trim() && code.trim().toUpperCase() !== 'N/A') partes.push(`CÓDIGO ${code.trim().toUpperCase()}`);
+    // QUANDO, ao lado de o quê.
+    //
+    // A lateral existe para o caso em que a folha é recortada, reimpressa ou
+    // fotografada e só a margem sobrevive. Protocolo e código dizem QUAL
+    // documento é; sem a data, um fragmento de margem não diz QUANDO aquilo
+    // foi assinado — e é a pergunta seguinte de quem recebe a folha solta.
+    //
+    // O hash fica de fora de propósito: são 64 caracteres numa faixa vertical
+    // de 6pt, ilegíveis na prática, e ele já está no rodapé rotulado.
+    if (signedAt) {
+      const quando = this.formatCuiabaDateTime(new Date(signedAt));
+      if (quando) partes.push(quando.toUpperCase());
+    }
     if (partes.length === 0) return;
 
     const texto = partes.join('   ·   ');
@@ -844,14 +852,22 @@ class PdfSignatureService {
     const courier = params.courier ?? helvetica;
     const courierBold = params.courierBold ?? helveticaBold;
 
-    const integrityFull = this.formatIntegrityHash(integritySha256, false);
     const code = (verificationCode || signer.verification_hash || '').toUpperCase() || 'N/A';
     const protocolStr = (protocol || '').trim();
+    // Hash do documento de ORIGEM — os bytes antes de assinar.
+    //
+    // Este é o único SHA-256 que PODE ser impresso: ele já existe antes de o
+    // PDF assinado ser montado. O hash do próprio PDF assinado não cabe aqui
+    // por dependência circular — escrevê-lo mudaria os bytes e produziria
+    // outro hash. Por isso o rótulo diz DE QUÊ: um "SHA-256:" solto fazia a
+    // pessoa comparar este número com o do arquivo em mãos e concluir, com
+    // razão, que nada batia.
+    const originalHash = String(integritySha256 || '').trim().toLowerCase();
     const mode: 'card' | 'strip' = variant ?? 'strip';
 
     // Margem lateral — mesma informação do rodapé, num lugar que sobrevive a
     // recorte e reimpressão. Ver drawSideStamp.
-    this.drawSideStamp({ page, font: courier, protocol: protocolStr, code });
+    this.drawSideStamp({ page, font: courier, protocol: protocolStr, code, signedAt: signer.signed_at });
 
     if (mode === 'strip') {
       const h = 64;
@@ -967,12 +983,16 @@ class PdfSignatureService {
         });
       }
 
-      // ── SHA-256: faixa inferior separada por hairline ──
-      page.drawLine({ start: { x: tx, y: y + 10 }, end: { x: contentRight, y: y + 10 }, thickness: 0.5, color: hairSoft });
-      const shaLabelEnd = drawTracked('SHA-256', { x: tx, y: y + 3.5, size: 5, font: helveticaBold, color: label, tracking: 0.9 });
-      page.drawText(fit(integrityFull, courier, 5.4, contentRight - (shaLabelEnd + 8)), {
-        x: shaLabelEnd + 8, y: y + 3.4, size: 5.4, font: courier, color: inkSoft,
-      });
+      // ── SHA-256 DO DOCUMENTO ORIGINAL: faixa inferior com hairline ──
+      if (originalHash) {
+        page.drawLine({ start: { x: tx, y: y + 10 }, end: { x: contentRight, y: y + 10 }, thickness: 0.5, color: hairSoft });
+        const shaLabelEnd = drawTracked('SHA-256 DO DOCUMENTO ORIGINAL', {
+          x: tx, y: y + 3.5, size: 5, font: helveticaBold, color: label, tracking: 0.9,
+        });
+        page.drawText(fit(originalHash, courier, 5.4, contentRight - (shaLabelEnd + 8)), {
+          x: shaLabelEnd + 8, y: y + 3.4, size: 5.4, font: courier, color: inkSoft,
+        });
+      }
 
       // Link clicável cobrindo toda a zona de validação (divisor → margem direita).
       if (verificationUrl) {
@@ -1005,7 +1025,7 @@ class PdfSignatureService {
     const cardSoft   = rgb(0.45, 0.50, 0.58);   // mid gray
     const cardMuted  = rgb(0.62, 0.67, 0.74);   // light gray
     const cardValue  = rgb(0.20, 0.255, 0.333); // #334155 — código
-    const cardValueAlt = rgb(0.278, 0.333, 0.412); // #475569 — link/hash
+    const cardValueAlt = rgb(0.278, 0.333, 0.412); // #475569 — protocolo/link
     const cardOrange = rgb(0.91, 0.32, 0.04);   // #e85208 — acento institucional apenas
 
     // White background
@@ -1082,21 +1102,24 @@ class PdfSignatureService {
       });
     }
 
-    // SHA-256 row — cor neutra
-    const hashDisplay = integrityFull.length > 74 ? `${integrityFull.slice(0, 71)}...` : integrityFull;
-    page.drawText('SHA-256:', {
-      x: tx, y: boxY + boxH - 62, size: 6, font: helvetica, color: cardMuted,
-    });
-    page.drawText(hashDisplay, {
-      x: tx + 50, y: boxY + boxH - 62, size: 5.5, font: courier, color: cardValueAlt,
-    });
+    // SHA-256 do documento ORIGINAL — rotulado, para ninguém comparar com o
+    // hash do arquivo assinado que tem em mãos.
+    if (originalHash) {
+      page.drawText('SHA-256 do documento original:', {
+        x: tx, y: boxY + boxH - 62, size: 6, font: helvetica, color: cardMuted,
+      });
+      page.drawText(originalHash, {
+        x: tx + helvetica.widthOfTextAtSize('SHA-256 do documento original:', 6) + 6,
+        y: boxY + boxH - 62, size: 5.5, font: courier, color: cardValueAlt,
+      });
+    }
 
     // Verification URL
     if (verificationUrl) {
       const urlDisplay = verificationUrl.length > 90 ? `${verificationUrl.slice(0, 87)}...` : verificationUrl;
       page.drawLine({
-        start: { x: tx, y: boxY + boxH - 60 },
-        end: { x: qrX - 8, y: boxY + boxH - 60 },
+        start: { x: tx, y: boxY + boxH - 68 },
+        end: { x: qrX - 8, y: boxY + boxH - 68 },
         thickness: 0.4, color: cardBorder,
       });
       page.drawText(urlDisplay, {
@@ -1136,11 +1159,14 @@ class PdfSignatureService {
     facialImage?: EmbeddedImage | null;
     qrImage?: EmbeddedImage | null;
     verificationUrl?: string | null;
+    /** Código canônico do documento. No modelo per_document substitui qualquer código do signatário. */
+    verificationCode?: string | null;
+    /** SHA-256 do documento de ORIGEM (antes de assinar) — o único que pode ser impresso. */
     integritySha256?: string | null;
     /** Modelo per_document: nome PRÓPRIO do documento p/ o cabeçalho (senão usa request.document_name). */
     documentName?: string | null;
   }) {
-    const { pdfDoc, request, signer, creator, signatureImage, facialImage, qrImage, verificationUrl, integritySha256, documentName } = params;
+    const { pdfDoc, request, signer, creator, signatureImage, facialImage, qrImage, verificationUrl, verificationCode, integritySha256, documentName } = params;
 
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -1221,15 +1247,22 @@ class PdfSignatureService {
 
     const nowStr = this.formatCuiabaDateTime(new Date());
 
+    const documentCode = (verificationCode || signer.verification_hash || '').trim().toUpperCase();
+    const documentScoped = !!String(verificationCode || '').trim();
+
     const signerAssets = await Promise.all(
       signedRequestSigners.map(async (item) => ({
         signer: item,
         signature: item.id === signer.id ? (signatureImage ?? null) : await this.loadStorageImage(pdfDoc, item.signature_image_path, true),
         facial: item.id === signer.id ? (facialImage ?? null) : await this.loadStorageImage(pdfDoc, item.facial_image_path),
-        qr: item.id === signer.id
+        qr: documentScoped
+          ? (qrImage ?? null)
+          : item.id === signer.id
           ? (qrImage ?? null)
           : (item.verification_hash ? await this.buildQrPng(pdfDoc, `${window.location.origin}/#/verificar/${item.verification_hash}`) : null),
-        verificationUrl: item.id === signer.id
+        verificationUrl: documentScoped
+          ? (verificationUrl ?? null)
+          : item.id === signer.id
           ? (verificationUrl ?? null)
           : (item.verification_hash ? `${window.location.origin}/#/verificar/${item.verification_hash}` : null),
       }))
@@ -1380,7 +1413,7 @@ class PdfSignatureService {
       if (subtitle) {
         page.drawText(subtitle, { x: lm, y: pageHeight - 84, size: 8, font: helvetica, color: txtSoft });
       } else {
-        const codeVal = (signer.verification_hash || '').toUpperCase();
+        const codeVal = documentCode;
         let ry = pageHeight - 82;
         if (codeVal) {
           const cLabel = 'Código de verificação';
@@ -1780,19 +1813,35 @@ class PdfSignatureService {
       // Thin separator
       page.drawLine({ start: { x: vtx, y: legalTopY - 26 }, end: { x: cbQrX - 8, y: legalTopY - 26 }, thickness: 0.4, color: cbBorder });
 
-      // Code row
-      page.drawText('CÓDIGO:', { x: vtx, y: legalTopY - 37, size: 6, font: helvetica, color: cbMuted });
-      page.drawText((item.verification_hash || 'N/A').toUpperCase(), { x: vtx + 56, y: legalTopY - 37, size: 7.5, font: courierBold, color: cbValue });
+      // Código canônico do documento — nunca o identificador interno do signatário.
+      const cbCodeLabel = 'CÓDIGO DO DOCUMENTO:';
+      page.drawText(cbCodeLabel, { x: vtx, y: legalTopY - 37, size: 6, font: helvetica, color: cbMuted });
+      page.drawText(documentCode || 'N/A', {
+        x: vtx + helvetica.widthOfTextAtSize(cbCodeLabel, 6) + 8,
+        y: legalTopY - 37,
+        size: 7.5,
+        font: courierBold,
+        color: cbValue,
+      });
 
       // Protocolo do envelope (identifica o kit/processo)
       const cbProtoLabel = 'PROTOCOLO DO ENVELOPE:';
       page.drawText(cbProtoLabel, { x: vtx, y: legalTopY - 49, size: 6, font: helvetica, color: cbMuted });
       page.drawText(request.id, { x: vtx + helvetica.widthOfTextAtSize(cbProtoLabel, 6) + 8, y: legalTopY - 49, size: 6, font: courier, color: cbValueAlt });
 
-      // SHA-256 — hash de integridade REAL (completo, 64 hex) — cor neutra
-      const cbHash = this.formatIntegrityHash(integritySha256, false);
-      page.drawText('SHA-256:', { x: vtx, y: legalTopY - 61, size: 6, font: helvetica, color: cbMuted });
-      page.drawText(cbHash, { x: vtx + 56, y: legalTopY - 61, size: 5.5, font: courier, color: cbValueAlt });
+      // SHA-256 do documento ORIGINAL — rotulado. O hash do PDF assinado NÃO
+      // entra aqui: escrevê-lo dentro do próprio arquivo mudaria os bytes e
+      // produziria outro hash. Quem quiser conferir o assinado usa o código
+      // acima no validador público.
+      const cbOriginal = String(integritySha256 || '').trim().toLowerCase();
+      if (cbOriginal) {
+        const cbShaLabel = 'SHA-256 DO DOCUMENTO ORIGINAL:';
+        page.drawText(cbShaLabel, { x: vtx, y: legalTopY - 61, size: 6, font: helvetica, color: cbMuted });
+        page.drawText(cbOriginal, {
+          x: vtx + helvetica.widthOfTextAtSize(cbShaLabel, 6) + 8,
+          y: legalTopY - 61, size: 5.5, font: courier, color: cbValueAlt,
+        });
+      }
 
       // Separator
       page.drawLine({ start: { x: vtx, y: legalTopY - 69 }, end: { x: cbQrX - 8, y: legalTopY - 69 }, thickness: 0.4, color: cbBorder });
@@ -1804,7 +1853,7 @@ class PdfSignatureService {
       }
 
       // Signer note
-      page.drawText(`Signatário: ${item.name}`, { x: vtx, y: legalTopY - 90, size: 5, font: helvetica, color: cbMuted });
+      page.drawText(`Signatário: ${item.name}`, { x: vtx, y: legalTopY - 91, size: 5, font: helvetica, color: cbMuted });
     }
 
     let currentHistPage = pdfDoc.addPage([pageWidth, pageHeight]);
@@ -2276,11 +2325,13 @@ class PdfSignatureService {
       facialImage,
       qrImage,
       verificationUrl,
+      verificationCode: perDocument?.verificationCode,
       integritySha256,
       documentName: perDocument?.documentName,
     });
 
-    // Rodapé com hash de integridade em TODAS as páginas (documento + anexos + relatório)
+    // Rodapé com os dois identificadores públicos em TODAS as páginas:
+    // código do documento e protocolo UUID do envelope.
     const allPages = pdfDoc.getPages();
     for (let i = 0; i < allPages.length; i++) {
       const p = allPages[i];
@@ -2711,7 +2762,6 @@ class PdfSignatureService {
    */
   async saveSignedPdfToStorage(options: SignedPdfOptions): Promise<{ filePath: string; sha256: string; integritySha256: string | null; pageCount: number }> {
     const { bytes: pdfBytes, integritySha256, pageCount } = await this.generateSignedPdf(options);
-    const sha256 = await this.sha256Hex(pdfBytes);
 
     // No per_document o nome inclui a chave do documento para não colidir entre os
     // vários arquivos do MESMO signatário gerados no mesmo instante.
@@ -2719,7 +2769,12 @@ class PdfSignatureService {
     const fileName = `signed_${keyPart}${options.signer.id}_${Date.now()}.pdf`;
     const filePath = `${options.request.id}/${fileName}`;
 
-    await this.persistSignedPdf(filePath, pdfBytes, 'PDF assinado');
+    // Hash DEPOIS do PDF finalizado, e sobe os MESMOS bytes que foram hasheados.
+    const { sha256 } = await selarPdfAssinado({
+      bytesFinais: pdfBytes,
+      calcularSha256: (bytes) => this.sha256Hex(bytes),
+      enviarAoStorage: (bytes) => this.persistSignedPdf(filePath, bytes, 'PDF assinado'),
+    });
     if (options.perDocument) {
       console.log('[PER-DOC] PDF individual salvo:', filePath, 'sha256:', sha256, 'páginas:', pageCount);
     }
@@ -3503,6 +3558,7 @@ class PdfSignatureService {
       facialImage,
       qrImage,
       verificationUrl,
+      verificationCode: perDocument?.verificationCode,
       integritySha256,
       documentName: perDocument?.documentName,
     });
@@ -3541,13 +3597,17 @@ class PdfSignatureService {
     }
 
     const pdfBytes = await pdfDoc.save();
-    const sha256 = await this.sha256Hex(pdfBytes);
 
     const keyPart = perDocument ? `${perDocument.documentKey}_` : '';
     const fileName = `signed_${keyPart}${signer.id}_${Date.now()}.pdf`;
     const filePath = `${request.id}/${fileName}`;
 
-    await this.persistSignedPdf(filePath, pdfBytes, 'PDF do DOCX');
+    // Hash DEPOIS do PDF finalizado, e sobe os MESMOS bytes que foram hasheados.
+    const { sha256 } = await selarPdfAssinado({
+      bytesFinais: pdfBytes,
+      calcularSha256: (bytes) => this.sha256Hex(bytes),
+      enviarAoStorage: (bytes) => this.persistSignedPdf(filePath, bytes, 'PDF do DOCX'),
+    });
     // Nº de páginas de CONTEÚDO deste documento (exclui as páginas do relatório).
     const pageCount = pagesWithFooterCard.size;
     if (perDocument) {
@@ -3610,12 +3670,16 @@ class PdfSignatureService {
     });
     
     const pdfBytes = await pdfDoc.save();
-    const sha256 = await this.sha256Hex(pdfBytes);
 
     const fileName = `report_${signer.id}_${Date.now()}.pdf`;
     const filePath = `${request.id}/${fileName}`;
 
-    await this.persistSignedPdf(filePath, pdfBytes, 'relatório de assinatura');
+    // Hash DEPOIS do PDF finalizado, e sobe os MESMOS bytes que foram hasheados.
+    const { sha256 } = await selarPdfAssinado({
+      bytesFinais: pdfBytes,
+      calcularSha256: (bytes) => this.sha256Hex(bytes),
+      enviarAoStorage: (bytes) => this.persistSignedPdf(filePath, bytes, 'relatório de assinatura'),
+    });
     return { filePath, sha256, integritySha256: null };
   }
 

@@ -5,11 +5,11 @@
  * (ex.: 'v2'). A versão aceita fica registrada por signatário em
  * signature_signers.terms_version e aparece no relatório/certificado.
  */
-export const SIGNATURE_TERMS_VERSION = 'v1';
+export const SIGNATURE_TERMS_VERSION = 'v2';
 
 export const SIGNATURE_TERMS_TITLE = 'Termos de Uso da Assinatura Eletrônica';
 
-/** Texto definitivo dos termos (v1). Renderizado com whitespace-pre-wrap. */
+/** Texto definitivo dos termos (v2). Renderizado com whitespace-pre-wrap. */
 export const SIGNATURE_TERMS_TEXT = `Termos de Uso da Assinatura Eletrônica
 
 1. Apresentação
@@ -60,23 +60,16 @@ Tais registros integram a trilha técnica da assinatura e poderão ser utilizado
 
 7. Análise Automatizada da Imagem Facial
 Quando o fluxo exigir captura de imagem facial, o usuário fica expressamente ciente de que a selfie poderá ser submetida a análise automatizada por tecnologia de inteligência artificial, com a finalidade exclusiva de reforço técnico do procedimento de assinatura, incluindo verificações relacionadas à presença de rosto, enquadramento, nitidez, consistência visual e adequação mínima da imagem capturada.
-Tal análise automatizada compõe a camada de segurança do fluxo de assinatura e não se confunde com eventual autorização opcional para uso da imagem em finalidade cadastral.
+Tal análise automatizada compõe a camada de segurança do fluxo de assinatura.
+A imagem facial capturada é utilizada EXCLUSIVAMENTE para autenticação, segurança, auditoria e evidência técnica da assinatura. Ela não é utilizada como foto de perfil, foto cadastral ou imagem de ficha, em nenhuma hipótese e independentemente de autorização.
+Para assegurar a rastreabilidade e a cadeia de custódia da evidência, a imagem é gravada com marcação indelével contendo a data e a hora da captura, a finalidade do uso e o protocolo do documento assinado.
 Na hipótese de a captura facial constituir requisito obrigatório para determinado documento, a recusa em realizar a captura e a respectiva análise técnica poderá impedir a conclusão da assinatura.
 
-8. Uso Opcional da Foto como Foto Cadastral
-A imagem capturada no procedimento de assinatura somente poderá ser utilizada também como foto cadastral do usuário caso haja autorização específica, destacada, livre e opcional, prestada em campo próprio e apartado do aceite destes Termos.
-Essa autorização:
-- não é obrigatória para a conclusão da assinatura;
-- não interfere na validade do documento assinado;
-- constitui manifestação autônoma e separada;
-- poderá ser revogada posteriormente pelos meios disponibilizados pelo responsável pela plataforma, quando aplicável.
-Na ausência dessa autorização específica, a imagem capturada permanecerá restrita às finalidades de autenticação, segurança, auditoria e evidência técnica da assinatura, não devendo ser reutilizada automaticamente como foto de perfil, foto cadastral ou imagem de ficha.
-
-9. Geolocalização
+8. Geolocalização
 Quando a geolocalização estiver habilitada no fluxo, sua coleta terá finalidade de reforço técnico e probatório do procedimento de assinatura.
 A disponibilização dessa informação dependerá das permissões concedidas pelo próprio usuário em seu dispositivo. Em determinados cenários, sua ausência poderá limitar a formação de evidência complementar, sem necessariamente impedir a assinatura, salvo quando houver exigência expressa do fluxo configurado para o documento.
 
-10. Responsabilidade pelas Informações Prestadas
+9. Responsabilidade pelas Informações Prestadas
 O usuário é integralmente responsável pela veracidade, exatidão e legitimidade das informações fornecidas, bem como pela regularidade da assinatura realizada.
 É expressamente vedado:
 - utilizar identidade de terceiros;
@@ -86,7 +79,7 @@ O usuário é integralmente responsável pela veracidade, exatidão e legitimida
 - praticar qualquer ato voltado à simulação, fraude ou invalidação do procedimento.
 A constatação de uso indevido poderá ensejar bloqueio do fluxo, recusa operacional da assinatura, registro interno de incidente e adoção das medidas administrativas, contratuais e legais cabíveis.
 
-11. Documento Assinado e Relatório Técnico
+10. Documento Assinado e Relatório Técnico
 Concluído o procedimento, o sistema poderá gerar o documento assinado e, quando aplicável, relatório técnico ou trilha de auditoria contendo os elementos necessários à rastreabilidade do ato praticado.
 Esse relatório poderá reunir, conforme o caso:
 - identificação do signatário;
@@ -98,12 +91,12 @@ Esse relatório poderá reunir, conforme o caso:
 - identificadores de integridade, verificação e autenticidade.
 Tais elementos compõem a base técnica de comprovação do procedimento de assinatura.
 
-12. Verificação de Autenticidade
+11. Verificação de Autenticidade
 Os documentos assinados por meio deste sistema poderão contar com mecanismos de validação posterior, incluindo códigos, links, hashes, identificadores de conferência ou meios equivalentes.
 Esses recursos têm por finalidade permitir a confirmação da autenticidade, integridade e vinculação do documento ao respectivo procedimento de assinatura.
 O usuário compromete-se a não utilizar os mecanismos de verificação para finalidades abusivas, exploratórias, automatizadas ou incompatíveis com sua função legítima.
 
-13. Segurança e Prevenção a Fraudes
+12. Segurança e Prevenção a Fraudes
 A plataforma adota medidas técnicas e organizacionais voltadas à proteção do fluxo de assinatura, preservação das evidências, controle de acesso, monitoramento operacional e prevenção a fraudes.
 Sem prejuízo dessas medidas, o usuário reconhece que nenhum ambiente tecnológico é absolutamente invulnerável, comprometendo-se igualmente a agir com diligência e boa-fé, inclusive para:
 - proteger seus dispositivos e meios de autenticação;
@@ -111,11 +104,11 @@ Sem prejuízo dessas medidas, o usuário reconhece que nenhum ambiente tecnológ
 - revisar atentamente o conteúdo do documento antes da assinatura;
 - comunicar, com a maior brevidade possível, qualquer suspeita de uso indevido, irregularidade ou comprometimento do fluxo.
 
-14. Compartilhamento Operacional com Terceiros
+13. Compartilhamento Operacional com Terceiros
 Para viabilizar a execução do procedimento, determinadas operações poderão envolver fornecedores, prestadores de serviço e parceiros tecnológicos responsáveis por infraestrutura, autenticação, armazenamento, comunicações, processamento técnico, segurança, análise automatizada e suporte operacional.
 Sempre que houver esse compartilhamento, ele ocorrerá dentro dos limites necessários à execução, manutenção, segurança, validação e melhoria operacional do serviço.
 
-15. Retenção e Guarda de Registros
+14. Retenção e Guarda de Registros
 As informações, evidências técnicas e registros relacionados ao procedimento de assinatura poderão ser mantidos pelo período necessário à:
 - execução e comprovação do ato praticado;
 - preservação da integridade e autenticidade do documento;
@@ -124,15 +117,15 @@ As informações, evidências técnicas e registros relacionados ao procedimento
 - exercício regular de direitos em processos administrativos, arbitrais ou judiciais.
 Quando aplicável, e observadas as limitações técnicas, operacionais e probatórias do procedimento, os dados poderão ser eliminados, anonimizados ou ter seu tratamento restringido após o encerramento da finalidade pertinente e do período de retenção cabível.
 
-16. Direitos Relacionados aos Dados Pessoais
+15. Direitos Relacionados aos Dados Pessoais
 O usuário poderá exercer os direitos aplicáveis em relação aos seus dados pessoais pelos canais disponibilizados pelo responsável pelo tratamento, observadas as restrições e limitações inerentes à necessidade de preservação de evidências, segurança do fluxo, auditoria, integridade documental e defesa de direitos.
-A revogação de autorização específica para uso da imagem como foto cadastral não afeta a validade da assinatura já realizada, nem implica eliminação automática das evidências necessárias à comprovação do procedimento.
+O exercício desses direitos não implica eliminação automática das evidências necessárias à comprovação do procedimento de assinatura já realizado, nem afeta a validade do documento assinado.
 
-17. Indisponibilidade e Limitações Técnicas
+16. Indisponibilidade e Limitações Técnicas
 A plataforma poderá estar sujeita a indisponibilidades temporárias, interrupções, falhas de comunicação, oscilações, manutenção programada, incompatibilidades técnicas ou eventos alheios ao controle do responsável pelo serviço.
 Embora sejam adotados esforços razoáveis para assegurar continuidade e restabelecimento do funcionamento, não se garante operação ininterrupta, contínua ou absolutamente livre de falhas.
 
-18. Condutas Vedadas
+17. Condutas Vedadas
 É vedado ao usuário:
 - utilizar este sistema para fins ilícitos, fraudulentos ou abusivos;
 - interferir, tentar interferir ou comprometer o funcionamento da plataforma;
@@ -141,7 +134,7 @@ Embora sejam adotados esforços razoáveis para assegurar continuidade e restabe
 - automatizar acessos de modo indevido;
 - reproduzir, divulgar, redistribuir ou expor indevidamente documentos, imagens, relatórios, links, códigos ou evidências geradas no fluxo sem autorização legítima.
 
-19. Suspensão, Restrição e Bloqueio
+18. Suspensão, Restrição e Bloqueio
 O procedimento de assinatura poderá ser suspenso, restringido, recusado ou bloqueado, a qualquer tempo, sempre que houver:
 - indícios de fraude ou inconsistência relevante;
 - suspeita de uso indevido;
@@ -150,45 +143,49 @@ O procedimento de assinatura poderá ser suspenso, restringido, recusado ou bloq
 - risco à integridade do procedimento ou à confiabilidade das evidências.
 Nessas hipóteses, poderão ser preservados os registros necessários à auditoria, apuração dos fatos, segurança operacional e defesa de direitos.
 
-20. Validade da Assinatura
+19. Validade da Assinatura
 A assinatura eletrônica realizada neste ambiente representa manifestação eletrônica de vontade do signatário no contexto do documento apresentado, observadas as evidências produzidas no fluxo e os requisitos operacionais adotados para o procedimento.
 A validade, eficácia e alcance do documento assinado também dependem de seu conteúdo, da legitimidade das partes envolvidas, da regularidade do ato praticado e do contexto jurídico e fático de sua utilização.
 
-21. Atualizações destes Termos
+20. Atualizações destes Termos
 Estes Termos poderão ser alterados, atualizados ou substituídos a qualquer tempo, a critério do responsável pela plataforma, com ou sem aviso prévio, para refletir evoluções tecnológicas, aprimoramentos de segurança, mudanças operacionais, exigências regulatórias ou aperfeiçoamentos do fluxo de assinatura.
 A versão aplicável ao procedimento será aquela apresentada, disponibilizada ou vinculada no momento do aceite e da assinatura.
 
-22. Canais de Contato
+21. Canais de Contato
 Dúvidas, solicitações, comunicações ou requerimentos relacionados ao fluxo de assinatura, ao documento apresentado ou ao tratamento de dados poderão ser encaminhados pelos canais oficiais disponibilizados pelo emissor do documento.
 
-23. Declaração Final de Concordância
+22. Declaração Final de Concordância
 Ao selecionar a opção de aceite e prosseguir com o procedimento, o usuário declara, de forma expressa, que:
 - leu integralmente estes Termos;
 - compreendeu o funcionamento da assinatura eletrônica;
 - está ciente da coleta de evidências técnicas necessárias à execução e segurança do procedimento;
 - está ciente de que a imagem facial poderá ser analisada automaticamente para validação técnica da assinatura, quando aplicável;
 - concorda com a utilização deste sistema para assinatura do documento apresentado;
-- compreende que eventual autorização para uso da foto como foto cadastral constitui opção autônoma, facultativa, separada e não condiciona a conclusão da assinatura.`;
+- está ciente de que a imagem facial se destina exclusivamente à autenticação, segurança, auditoria e evidência técnica da assinatura, não sendo utilizada como foto de perfil ou cadastral;
+- está ciente de que a imagem é gravada com marcação de data, hora, finalidade e protocolo do documento, para fins de rastreabilidade e cadeia de custódia.`;
 
-/**
- * Consentimento SEPARADO e OPCIONAL para reutilizar a selfie capturada na
- * assinatura também como foto cadastral do cliente. Não é necessário para
- * concluir a assinatura. Versionado para registrar a prova do aceite.
+/*
+ * O consentimento opcional de uso da selfie como foto cadastral FOI REMOVIDO
+ * (v2 dos Termos).
+ *
+ * Pedir autorização criava uma finalidade secundária para uma imagem que
+ * existe como PROVA — e prova com finalidade dupla é prova contestável. A
+ * selfie agora serve só à autenticação e à auditoria, e é carimbada com data,
+ * hora, finalidade e protocolo para fechar a cadeia de custódia.
+ *
+ * A foto de cliente passa a vir do WhatsApp do contato vinculado, que é dado
+ * já compartilhado pelo próprio cliente para aquele fim. As colunas
+ * `allow_signature_selfie_for_profile` e afins continuam no banco: são o
+ * registro histórico dos consentimentos que chegaram a ser dados, e apagá-los
+ * destruiria a prova de que houve autorização à época.
  */
-export const SELFIE_PROFILE_CONSENT_VERSION = 'v1';
-
-export const SELFIE_PROFILE_CONSENT_LABEL =
-  'Autorizo que a foto capturada neste processo de assinatura também seja utilizada como foto cadastral.';
-
-export const SELFIE_PROFILE_CONSENT_HELP =
-  'Opcional. Esta autorização não é necessária para concluir a assinatura.';
 
 /**
  * Transparência (LGPD): a selfie poderá ser analisada automaticamente por
  * modelo de IA apenas para validação técnica do ato de assinar.
  */
 export const FACIAL_AI_NOTICE =
-  'A selfie poderá ser analisada automaticamente por um modelo de inteligência artificial apenas para validar tecnicamente a assinatura. Isso é independente da autorização opcional de uso como foto cadastral.';
+  'A selfie poderá ser analisada automaticamente por um modelo de inteligência artificial apenas para validar tecnicamente a assinatura. Ela é usada só como evidência do ato e é carimbada com data, hora, finalidade e protocolo.';
 
 /**
  * Registro versionado dos Termos de Uso da Assinatura.

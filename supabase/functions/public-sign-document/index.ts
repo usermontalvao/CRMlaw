@@ -384,7 +384,7 @@ Deno.serve(async (req: Request) => {
     if (!payload || typeof payload !== 'object') return jsonResponse({ success: false, error: 'Invalid payload' }, 400);
 
     const action = String(payload?.action ?? 'sign').trim();
-    const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, ip_address, user_agent, terms_accepted, terms_version, allow_signature_selfie_for_profile, selfie_profile_consent_version, auth_at, facial_captured_at, geolocation_captured_at } = payload;
+    const { token, signature_image, facial_image, geolocation, signer_name, signer_cpf, signer_phone, auth_provider, auth_email, auth_google_sub, auth_google_picture, ip_address, user_agent, terms_accepted, terms_version, terms_accepted_at, allow_signature_selfie_for_profile, selfie_profile_consent_version, auth_at, facial_captured_at, geolocation_captured_at } = payload;
 
     if (!token) return jsonResponse({ success: false, error: 'Token is required' }, 400);
     const { data: signer, error: signerError } = await supabase.from('signature_signers').select('*').eq('public_token', token).maybeSingle();
@@ -639,7 +639,15 @@ Deno.serve(async (req: Request) => {
       auth_verified_identifier: prova?.identifier ?? null,
       auth_at: clampStepTs(auth_at),
       geolocation_captured_at: geolocation ? clampStepTs(geolocation_captured_at) : null,
-      terms_accepted_at: new Date().toISOString(), terms_version: terms_version||'v1',
+      // Instante REAL do aceite, reportado pelo cliente e clampado à janela
+      // [viewed_at, now()] como as demais etapas. Gravar `new Date()` aqui fazia
+      // `terms_accepted_at` sair com o MESMO milissegundo de `signed_at` em
+      // 100% das assinaturas — e dois instantes idênticos leem como se o
+      // consentimento não tivesse precedido o ato, mas sido carimbado junto.
+      // Sem valor do cliente (versões antigas do front), cai no comportamento
+      // anterior para não gravar nulo.
+      terms_accepted_at: clampStepTs(terms_accepted_at) ?? new Date().toISOString(),
+      terms_version: terms_version||'v1',
       // Consentimento SEPARADO e opcional p/ usar a selfie como foto cadastral.
       // Default false: a assinatura nunca depende deste consentimento.
       allow_signature_selfie_for_profile: allow_signature_selfie_for_profile === true,

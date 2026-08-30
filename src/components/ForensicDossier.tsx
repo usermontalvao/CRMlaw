@@ -6,6 +6,7 @@ import { BrandLogo } from './ui/BrandLogo';
 import { BRAND_GRADIENT, BRAND_IVORY } from '../constants/brand';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 import { lerIdentidadeConfirmada, fraseIdentidadeConfirmada, rotuloIdentificadorConfirmado, rotuloIdentidadeConfirmada, autenticacaoOtpSemCanal, formatarTelefoneConfirmado, AUTENTICACAO_OTP_SEM_CANAL } from '../utils/identidadeConfirmada';
+import { conferirDocumento, parecerDoDossie, type StatusIntegridade } from '../utils/integridadeAssinatura';
 
 // Registro de eventos por signatário — espelha a "TRILHA DE AUDITORIA / REGISTRO
 // DE EVENTOS" do PDF (pdfSignature.service.ts): visualização, autenticação,
@@ -283,7 +284,7 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<any | null>(null);
   const [signerAssets, setSignerAssets] = useState<Record<string, { signatureUrl: string | null; facialUrl: string | null }>>({});
-  const [documentIntegrity, setDocumentIntegrity] = useState<Record<string, { status: 'checking' | 'valid' | 'mismatch' | 'unavailable'; currentHash?: string | null; error?: string | null }>>({});
+  const [documentIntegrity, setDocumentIntegrity] = useState<Record<string, { status: StatusIntegridade; currentHash?: string | null; error?: string | null }>>({});
   const printRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -310,12 +311,60 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
 
   const env = report?.envelope;
   const chain = report?.chain_integrity;
-  const docs: any[] = report?.documents || [];
+  const docsDoRelatorio: any[] = report?.documents || [];
   const signers: any[] = report?.signers || [];
   const trail: any[] = report?.audit_trail || [];
+
+  // ── ENVELOPES LEGADOS (modelo consolidado) ────────────────────────────────
+  // `signature_request_documents` só passou a existir com o modelo
+  // `per_document`. Nos envelopes antigos — 231 dos 242 assinados — essa tabela
+  // está VAZIA e o PDF assinado mora em `signature_signers`
+  // (`signed_document_path` + `signed_pdf_sha256`).
+  //
+  // O dossiê só olhava a tabela nova, então o laudo do legado saía com zero
+  // documentos. Antes isso passava por "nenhuma divergência encontrada" e o
+  // parecer fechava em ÍNTEGRO sem ter conferido arquivo nenhum; agora o
+  // parecer é honesto (INCONCLUSIVO), mas continua incompleto — o arquivo
+  // existe e é perfeitamente conferível. Isto vai buscá-lo.
+  //
+  // No consolidado o código do signatário É o código daquele PDF: é o que está
+  // impresso no documento antigo e o que a consulta pública aceita. Não é uma
+  // identidade extra — é a identidade daquele arquivo.
+  const [docsLegados, setDocsLegados] = useState<any[] | null>(null);
+  const precisaDeLegado = !!report && docsDoRelatorio.length === 0 && signers.length > 0;
+
+  useEffect(() => {
+    if (!precisaDeLegado) { setDocsLegados(null); return; }
+    let alive = true;
+    (async () => {
+      const { data } = await supabase
+        .from('signature_signers')
+        .select('name,verification_hash,signed_document_path,signed_pdf_sha256,integrity_sha256')
+        .eq('signature_request_id', requestId)
+        .not('signed_document_path', 'is', null);
+      if (!alive) return;
+      setDocsLegados((data || []).map((row: any) => ({
+        document_key: 'consolidado',
+        document_type: 'main',
+        display_name: env?.document_name || 'Documento assinado',
+        verification_code: row.verification_hash,
+        signed_pdf_sha256: row.signed_pdf_sha256,
+        source_document_sha256: row.integrity_sha256,
+        signed_file_path: row.signed_document_path,
+        hash_source: null,
+        legado: true,
+        assinante: row.name,
+      })));
+    })();
+    return () => { alive = false; };
+  }, [precisaDeLegado, requestId, env?.document_name]);
+
+  // A lista que vale para conferência e para a seção II.
+  const docs: any[] = docsDoRelatorio.length > 0 ? docsDoRelatorio : (docsLegados || []);
+  // Enquanto a busca do legado não voltou, não afirmar "zero documentos".
+  const legadoCarregando = precisaDeLegado && docsLegados === null;
   const verified = chain?.verified === true;
   const verifyPortalUrl = `${window.location.origin}/#/verificar`;
-  const envelopeVerifyUrl = env?.envelope_verification_code ? `${verifyPortalUrl}/${env.envelope_verification_code}` : verifyPortalUrl;
   const signersEffectKey = useMemo(() => JSON.stringify(signers.map((s: any) => ({
     key: s.signer_verification_hash || s.email || s.name || '',
     signature_image_path: s.signature_image_path || '',
@@ -333,21 +382,37 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
     [docs, documentIntegrity],
   );
   const mismatchCount = docIntegrityStatuses.filter((s) => s === 'mismatch').length;
-  const checkingDocs = docs.length > 0 && docIntegrityStatuses.some((s) => s === 'checking' || s === undefined);
-  const unavailableDocs = docIntegrityStatuses.some((s) => s === 'unavailable');
 
-  // Veredito GLOBAL = cadeia de auditoria integra E arquivos sem divergencia.
-  const overallStatus: 'valid' | 'mismatch' | 'checking' | 'unavailable' = useMemo(() => {
-    if (!verified || mismatchCount > 0) return 'mismatch';
-    if (checkingDocs) return 'checking';
-    if (unavailableDocs) return 'unavailable';
-    return 'valid';
-  }, [verified, mismatchCount, checkingDocs, unavailableDocs]);
+  // Veredito GLOBAL — regra em `utils/integridadeAssinatura`, testada à parte.
+  //
+  // A troca importante em relação à versão anterior: `!verified` virava
+  // 'mismatch' (NÃO ÍNTEGRO) mesmo quando a cadeia só não tinha sido apurada, e
+  // um envelope com ZERO documentos caía direto em 'valid' — dizia ÍNTEGRO sem
+  // ter conferido arquivo nenhum. Agora "não foi possível verificar" é
+  // INCONCLUSIVO, e só ruptura PROVADA é NÃO ÍNTEGRO.
+  const parecer = useMemo(() => parecerDoDossie({
+    cadeiaVerificada: chain ? chain.verified === true : null,
+    // `[undefined]` = ainda conferindo: impede que o laudo conclua enquanto a
+    // busca do artefato legado está em voo.
+    statusDosDocumentos: legadoCarregando ? [undefined] : docIntegrityStatuses,
+    documentosEsperados: typeof env?.expected_document_count === 'number'
+      ? env.expected_document_count
+      : undefined,
+  }), [chain, docIntegrityStatuses, env?.expected_document_count, legadoCarregando]);
+
+  const overallStatus: 'valid' | 'mismatch' | 'checking' | 'unavailable' =
+    parecer === 'ÍNTEGRO' ? 'valid'
+    : parecer === 'NÃO ÍNTEGRO' ? 'mismatch'
+    : parecer === 'CONFERINDO' ? 'checking'
+    : 'unavailable';
 
   const opinionText = useMemo(() => {
     if (!report) return '';
     const parts: string[] = [];
-    if (!verified) {
+    // Só afirmar ruptura quando ela foi PROVADA. Cadeia não apurada (chain
+    // ausente) é desconhecimento, e desconhecimento não vira acusação — do
+    // mesmo modo que não vira atestado de integridade.
+    if (chain && chain.verified !== true) {
       parts.push(`Foram identificadas ${chain?.broken_count || 0} inconsistência(s) na cadeia cronológica de auditoria.`);
     }
     if (mismatchCount > 0) {
@@ -361,16 +426,23 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
       return 'Reconferência criptográfica dos arquivos assinados em andamento.';
     }
     if (overallStatus === 'unavailable') {
+      // INCONCLUSIVO cobre três causas distintas; a frase tem de dizer QUAL,
+      // sob pena de sugerir uma conferência que não aconteceu.
+      if (!chain) {
+        return 'A cadeia cronológica de auditoria não pôde ser apurada nesta emissão; a integridade do envelope, portanto, não foi confirmada.';
+      }
+      const esperados = typeof env?.expected_document_count === 'number' ? env.expected_document_count : null;
+      if (esperados !== null && esperados > docs.length) {
+        return `Não foram constatadas rupturas na cadeia de auditoria; contudo, o envelope registra ${esperados} documento(s) e apenas ${docs.length} foram localizados para conferência.`;
+      }
       return 'Não foram constatadas rupturas na cadeia de auditoria; contudo, um ou mais arquivos não puderam ser reconferidos automaticamente neste momento.';
     }
     return 'Não foram constatadas rupturas na cadeia cronológica de auditoria do envelope analisado, e a reconferência criptográfica dos arquivos assinados não apresentou divergência em relação aos hashes registrados.';
-  }, [report, verified, chain?.broken_count, mismatchCount, overallStatus]);
+  }, [report, chain, mismatchCount, overallStatus, env?.expected_document_count, docs.length]);
 
   const verdictMeta = integrityMeta(overallStatus);
   const VerdictIcon = overallStatus === 'valid' ? CheckCircle2 : overallStatus === 'mismatch' ? XCircle : AlertTriangle;
-  const verdictLabel = overallStatus === 'valid' ? 'ÍNTEGRO'
-    : overallStatus === 'mismatch' ? 'NÃO ÍNTEGRO'
-    : overallStatus === 'checking' ? 'CONFERINDO' : 'INCONCLUSIVO';
+  const verdictLabel = parecer;
   const verdictSub = overallStatus === 'valid' ? 'Cadeia de auditoria e arquivos validados'
     : overallStatus === 'mismatch' ? 'Divergência de integridade detectada'
     : overallStatus === 'checking' ? 'Reconferência dos arquivos em andamento'
@@ -432,7 +504,7 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
     (async () => {
       const updates = await Promise.all(docs.map(async (doc: any, index: number) => {
         const key = doc.verification_code || doc.document_key || String(index);
-        const expectedHash = String(doc.signed_pdf_sha256 || '').trim().toLowerCase();
+        const expectedHash = String(doc.signed_pdf_sha256 || '').trim();
         const signedUrl = await createSignedStorageUrl(doc.signed_file_path, 900);
         if (!expectedHash || !signedUrl) {
           return [key, { status: 'unavailable' as const, currentHash: null, error: signedUrl ? 'Hash registrado ausente.' : 'Arquivo assinado indisponivel para conferencia.' }] as const;
@@ -442,11 +514,19 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
           if (!response.ok) {
             return [key, { status: 'unavailable' as const, currentHash: null, error: `Falha ao baixar arquivo (${response.status}).` }] as const;
           }
-          const currentHash = (await sha256Hex(await response.arrayBuffer())).toLowerCase();
+          const currentHash = await sha256Hex(await response.arrayBuffer());
+          // Comparação pela regra pura: o cliente grava o hash em MAIÚSCULAS e
+          // aqui ele nasce em minúsculas — comparar cru acusaria adulteração em
+          // todo envelope.
+          const status = conferirDocumento({
+            hashRegistrado: expectedHash,
+            hashAtual: currentHash,
+            arquivoBaixado: true,
+          });
           return [key, {
-            status: currentHash === expectedHash ? 'valid' as const : 'mismatch' as const,
+            status,
             currentHash,
-            error: currentHash === expectedHash ? null : 'O hash atual do arquivo diverge do hash registrado.',
+            error: status === 'valid' ? null : 'O hash atual do arquivo diverge do hash registrado.',
           }] as const;
         } catch (err) {
           return [key, { status: 'unavailable' as const, currentHash: null, error: (err as Error)?.message || 'Falha ao recalcular o hash do arquivo.' }] as const;
@@ -550,9 +630,12 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
               <SectionTitle index="I" title="Identificação do envelope e verificação pública" />
               <KVRow label="Documento principal" value={env?.document_name || '-'} />
               <KVRow label="Cliente" value={env?.client_name || '-'} />
+              {/* O envelope tem UM identificador público: o protocolo UUID. O
+                  `envelope_verification_code` é interno/legado — publicá-lo aqui
+                  criava um terceiro "código" que ninguém sabia onde usar e que
+                  não corresponde a nenhum PDF. Cada documento traz o seu na
+                  seção II. */}
               <KVRow label="Protocolo do envelope" value={env?.protocol || '-'} mono />
-              <KVRow label="Código de verificação do envelope" value={env?.envelope_verification_code || '-'} mono />
-              <KVRow label="Consulta pública do envelope" value={<a href={envelopeVerifyUrl} target="_blank" rel="noreferrer" style={{ color: '#1d4ed8' }}>{envelopeVerifyUrl}</a>} mono />
               <KVRow label="Portal público de verificação" value={<a href={verifyPortalUrl} target="_blank" rel="noreferrer" style={{ color: '#1d4ed8' }}>{verifyPortalUrl}</a>} mono />
               <KVRow label="Modelo de assinatura" value={env?.signature_model === 'per_document' ? 'Um PDF assinado por documento' : 'Documento consolidado'} />
               <KVRow label="Autenticação exigida" value={authLabel(env?.auth_method)} />
@@ -561,9 +644,16 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
               <KVRow label="Situação" value={env?.status === 'signed' ? 'Assinado / concluído' : (env?.status || '-')} />
 
               <SectionTitle index="II" title={`Documentos vinculados (${docs.length})`} />
+              {docs.length > 0 && docs[0]?.legado ? (
+                <p style={{ margin: '0 0 10px', fontFamily: SERIF, fontSize: 12.5, lineHeight: 1.65, color: MUTED }}>
+                  Envelope no modelo consolidado: um único PDF assinado reúne o documento principal e seus anexos.
+                </p>
+              ) : null}
               {docs.length === 0 ? (
                 <p style={{ margin: 0, fontFamily: SERIF, fontSize: 13.5, lineHeight: 1.7, color: '#374151' }}>
-                  Não há documentos individuais persistidos para este envelope.
+                  {legadoCarregando
+                    ? 'Localizando o arquivo assinado deste envelope…'
+                    : 'Não foi localizado nenhum arquivo assinado para este envelope.'}
                 </p>
               ) : null}
               {docs.map((d, index) => {
@@ -580,14 +670,48 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
                     </div>
                     <KVRow label="Tipo" value={d.document_type === 'main' ? 'Documento principal' : 'Documento anexo'} />
                     <KVRow label="Paginação" value={d.page_count ? `${d.page_count} página(s)` : 'Não informada'} />
-                    <KVRow label="Origem do hash" value={d.hash_source === 'server' ? 'Calculado no servidor' : 'Calculado no cliente'} />
+                    {/* DUAS COISAS DIFERENTES, e confundi-las é o que gera a
+                        pergunta "afinal está íntegro ou não?":
+                          · a ORIGEM do hash registrado — quem o calculou no ato
+                            da assinatura (o navegador de quem assinou) e se o
+                            servidor já o reconferiu depois;
+                          · a CONFERÊNCIA DESTA EMISSÃO — o arquivo foi baixado
+                            do cofre agora e teve o SHA-256 recalculado.
+                        Um documento pode estar ÍNTEGRO (o arquivo bate com o
+                        hash registrado) e ainda assim ter o hash registrado
+                        sem reconferência independente do servidor.
+                        O rótulo antigo dizia "Legado/cliente", o que era falso
+                        para envelopes per_document modernos — eles não têm
+                        nada de legado. */}
+                    <KVRow label="Origem do hash registrado" value={d.hash_source === 'server'
+                      ? 'Calculado no ato da assinatura e reconferido pelo servidor'
+                      : 'Calculado no ato da assinatura, no dispositivo do signatário — ainda sem reconferência independente do servidor'} />
+                    <KVRow label="Conferência desta emissão" value={
+                      integrity?.status === 'valid'
+                        ? 'Arquivo baixado do cofre e SHA-256 recalculado agora, na emissão deste laudo'
+                        : integrity?.status === 'mismatch'
+                        ? 'Arquivo baixado do cofre e SHA-256 recalculado agora — DIVERGENTE do registrado'
+                        : integrity?.status === 'checking'
+                        ? 'Em andamento'
+                        : 'Não foi possível baixar o arquivo para recalcular o hash'} />
+                    {d.legado ? (
+                      <KVRow label="Origem do registro" value={`Envelope no modelo consolidado: o arquivo assinado e seu SHA-256 estão vinculados ao signatário${d.assinante ? ` (${d.assinante})` : ''}, e não à tabela de documentos individuais.`} />
+                    ) : null}
                     <KVRow label="Código de verificação individual" value={d.verification_code || '-'} mono />
                     <KVRow label="Consulta individual" value={<a href={docVerifyUrl} target="_blank" rel="noreferrer" style={{ color: '#1d4ed8' }}>{docVerifyUrl}</a>} mono />
                     <KVRow label="SHA-256 do PDF assinado" value={d.signed_pdf_sha256 || '-'} mono />
                     <KVRow label="SHA-256 do documento-fonte" value={d.source_document_sha256 || '-'} mono />
                     <KVRow label="Hash atual do arquivo salvo" value={integrity?.currentHash || 'Não calculado'} mono />
                     <KVRow label="Situação da integridade" value={<StatusPill status={integrity?.status} />} />
-                    <KVRow label="Observação" value={integrity?.error || 'Conferência sem divergência detectada.'} />
+                    {/* Nunca afirmar "sem divergência" para um arquivo que não
+                        chegou a ser conferido: só o status 'valid' autoriza a
+                        frase afirmativa. */}
+                    <KVRow label="Observação" value={integrity?.error
+                      || (integrity?.status === 'valid'
+                        ? 'Hash atual do arquivo idêntico ao hash registrado.'
+                        : integrity?.status === 'checking'
+                        ? 'Reconferência em andamento.'
+                        : 'Conferência não concluída.')} />
                   </div>
                 );
               })}
@@ -655,7 +779,6 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
                     {String(s.user_agent || '').trim() && (
                       <KVRow label="Agente de usuário" value={String(s.user_agent).trim()} mono />
                     )}
-                    <KVRow label="Código de verificação do signatário" value={s.signer_verification_hash || '-'} mono />
 
                     {(() => {
                       const events = buildSignerEvents(s);
@@ -689,6 +812,26 @@ const ForensicDossier: React.FC<ForensicDossierProps> = ({ requestId, documentNa
               })}
 
               <SectionTitle index="IV" title={`Trilha cronológica de auditoria (${trail.length} eventos)`} />
+              {/* A verificação da CADEIA, que é o que dá valor probatório à
+                  trilha: cada registro incorpora o hash do anterior, e o
+                  servidor recalcula a corrente inteira no momento da emissão.
+                  Sem esta linha o leitor via os hashes e não via o veredito
+                  deles. */}
+              <div className="break-inside-avoid" style={{ border: `1px solid ${HAIR}`, padding: '12px 16px', marginBottom: 12 }}>
+                <KVRow
+                  label="Verificação da cadeia"
+                  value={!chain
+                    ? 'Não apurada nesta emissão'
+                    : verified
+                    ? 'Íntegra — nenhuma ruptura detectada'
+                    : `Rompida — ${chain.broken_count || 0} registro(s) inconsistente(s)`}
+                />
+                <KVRow label="Registros encadeados" value={`${trail.length} evento(s)`} />
+                <KVRow
+                  label="Método"
+                  value="Log append-only encadeado por hash, recalculado no servidor na emissão deste laudo"
+                />
+              </div>
               <div style={{ border: `1px solid ${HAIR}` }}>
                 {trail.map((e, index) => (
                   <div key={index} className="break-inside-avoid" style={{ padding: '13px 16px', borderTop: index > 0 ? `1px solid ${HAIR}` : 'none' }}>

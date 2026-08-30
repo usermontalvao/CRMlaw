@@ -43,6 +43,25 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// ── Espelho puro de `src/utils/integridadeAssinatura.ts` ────────────────────
+// O Deno não importa de `src/`, então estas duas regras vivem em cópia dupla.
+// `src/utils/integridadeAssinatura.test.ts` vigia que as cópias não divirjam.
+//
+// ARMADILHA REAL que estas funções existem para desarmar: o cliente grava o
+// SHA-256 em MAIÚSCULAS (`pdfSignature.service.ts` faz `.toUpperCase()`) e aqui
+// ele nasce em minúsculas. Comparar cru com `!==` acusaria adulteração em 100%
+// dos envelopes.
+function normalizarSha256(valor: string | null | undefined): string {
+  return String(valor ?? '').trim().toLowerCase();
+}
+
+function mesmoHash(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = normalizarSha256(a);
+  const y = normalizarSha256(b);
+  if (!x || !y) return false;
+  return x === y;
+}
+
 type Supa = ReturnType<typeof createClient>;
 
 async function audit(supabase: Supa, requestId: string, signerId: string | null, action: string, description: string, ip?: string | null, ua?: string | null) {
@@ -79,6 +98,71 @@ async function avisarWhatsApp(
     trigger: 'signature_completed',
     resourceId: requestId,
   }).catch(error => console.error('wa-ai signature lifecycle:', error));
+}
+
+/**
+ * RECONFERÊNCIA: relê cada PDF do Storage e recalcula o SHA-256 no servidor.
+ *
+ * Só toca em documento que ainda não foi conferido (`hash_source <> 'server'`),
+ * então chamar isto de novo num envelope já conferido não baixa nada.
+ *
+ * Nunca sobrescreve hash divergente: preserva os dois valores e registra a
+ * violação. Não escreve no PDF.
+ */
+async function reconferirDocumentos(
+  supabase: Supa, requestId: string, signerId: string | null,
+  ip: string | null, ua: string | null,
+): Promise<{ parecer: string; documentos: Array<Record<string, unknown>> }> {
+  const { data: docs } = await supabase.from('signature_request_documents')
+    .select('id, document_key, signed_file_path, signed_pdf_sha256, hash_source')
+    .eq('signature_request_id', requestId)
+    .not('signed_file_path', 'is', null)
+    // `neq('hash_source','server')` NÃO pega as linhas com hash_source NULL —
+    // em SQL, `NULL <> 'server'` é NULL, não TRUE, e o PostgREST descarta.
+    // Seriam justamente os documentos que nunca foram conferidos, ou seja, o
+    // filtro excluía exatamente o que ele precisava encontrar. É a mesma
+    // armadilha de três valores que deixou o dossiê aberto ao anônimo.
+    .or('hash_source.is.null,hash_source.neq.server');
+
+  const resultados: Array<Record<string, unknown>> = [];
+  for (const d of (docs ?? [])) {
+    const { data: blob, error: dlErr } = await supabase.storage.from(SIGNED_BUCKET).download(d.signed_file_path);
+    if (dlErr || !blob) {
+      resultados.push({ document_key: d.document_key, resultado: 'inconclusivo',
+        motivo: `arquivo indisponível: ${dlErr?.message ?? 'download vazio'}` });
+      continue;
+    }
+    const serverHash = await sha256Hex(new Uint8Array(await blob.arrayBuffer()));
+    const registrado = d.signed_pdf_sha256;
+
+    if (!registrado) {
+      await supabase.from('signature_request_documents')
+        .update({ signed_pdf_sha256: serverHash, hash_source: 'server' }).eq('id', d.id);
+      await audit(supabase, requestId, signerId, 'integrity_verified',
+        `Documento ${d.document_key} sem hash registrado; SHA-256 calculado no servidor: ${serverHash}.`, ip, ua);
+      resultados.push({ document_key: d.document_key, resultado: 'integro', hash: serverHash });
+      continue;
+    }
+    if (!mesmoHash(registrado, serverHash)) {
+      await audit(supabase, requestId, signerId, 'integrity_violation',
+        `INTEGRIDADE: documento ${d.document_key} DIVERGE. Registrado ${registrado}; recalculado ${serverHash}. Valor registrado preservado.`, ip, ua);
+      resultados.push({ document_key: d.document_key, resultado: 'divergente',
+        hash_registrado: registrado, hash_recalculado: serverHash });
+      continue;
+    }
+    await supabase.from('signature_request_documents')
+      .update({ hash_source: 'server' }).eq('id', d.id);
+    await audit(supabase, requestId, signerId, 'integrity_verified',
+      `Documento ${d.document_key} conferido no servidor: SHA-256 ${registrado} recalculado a partir do arquivo no Storage.`, ip, ua);
+    resultados.push({ document_key: d.document_key, resultado: 'integro', hash: registrado });
+  }
+
+  const divergentes = resultados.filter((r) => r.resultado === 'divergente').length;
+  const inconclusivos = resultados.filter((r) => r.resultado === 'inconclusivo').length;
+  return {
+    parecer: divergentes > 0 ? 'NAO_INTEGRO' : inconclusivos > 0 ? 'INCONCLUSIVO' : 'INTEGRO',
+    documentos: resultados,
+  };
 }
 
 Deno.serve(async (req: Request) => {
@@ -118,9 +202,33 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ success: false, error: 'Envelope indisponível' }, 403);
     }
 
+    // Reconferência sob demanda: registros antigos e auditoria manual.
+    // (O caminho automático é o bloco `status === 'signed'`, logo abaixo.)
+    if (payload?.action === 'reconfer') {
+      const r = await reconferirDocumentos(supabase, requestId, signerId, ip, ua);
+      return jsonResponse({ success: true, action: 'reconfer', ...r });
+    }
+
     // Já finalizado? Resposta idempotente imediata — ANTES de enfileirar, para
     // não criar job órfão em envelopes que já estão 'signed'.
     if (request0.status === 'signed') {
+      // ── A BRECHA QUE ISTO FECHA ──────────────────────────────────────────
+      // `public_attach_signed_document` (RPC do banco) AUTO-FINALIZA o envelope
+      // assim que o último documento é anexado. Quando o cliente chama este
+      // orquestrador logo depois, ele encontra `status === 'signed'` e caía
+      // direto nesta resposta idempotente — pulando o recálculo de hash.
+      //
+      // Resultado observado em produção: envelope assinado às 21:31 com os três
+      // documentos em `hash_source = null`, ou seja, o hash que o laudo exibia
+      // tinha sido calculado pelo navegador de quem assinou e NUNCA conferido
+      // por ninguém. O desenho previa o servidor como autoridade do hash e, na
+      // prática, ele jamais era consultado.
+      //
+      // Conferir aqui resolve sem tocar na auto-finalização (que, se removida,
+      // deixaria envelopes presos caso o orquestrador falhasse). Só processa
+      // documento ainda não conferido, então a segunda chamada não baixa nada.
+      const conferencia = await reconferirDocumentos(supabase, requestId, signerId, ip, ua);
+
       // ── Recuperação ──
       // Envelope já assinado, mas o WhatsApp nunca soube: é o estado de todo
       // envelope finalizado enquanto esta função rodava sem o aviso (a v12, de
@@ -132,9 +240,9 @@ Deno.serve(async (req: Request) => {
       // roda no máximo uma vez por envelope.
       if (request0.wa_tracking_stopped !== true) {
         await avisarWhatsApp(supabase, supabaseUrl, serviceRoleKey, requestId);
-        return jsonResponse({ success: true, finalized: true, request_status: 'signed', wa_recovered: true });
+        return jsonResponse({ success: true, finalized: true, request_status: 'signed', wa_recovered: true, integridade: conferencia });
       }
-      return jsonResponse({ success: true, finalized: true, request_status: 'signed' });
+      return jsonResponse({ success: true, finalized: true, request_status: 'signed', integridade: conferencia });
     }
 
     const expectedCount = Math.max(1, 1 + (Array.isArray(request0.attachment_paths) ? request0.attachment_paths.length : 0));
@@ -181,18 +289,46 @@ Deno.serve(async (req: Request) => {
         }
         const bytes = new Uint8Array(await blob.arrayBuffer());
         const serverHash = await sha256Hex(bytes);
+        const registrado = d.signed_pdf_sha256;
 
-        // A4: se já havia um hash SERVIDOR gravado e ele diverge → artefato foi
-        // sobrescrito por bytes diferentes. Isso é uma violação de integridade.
-        if (d.hash_source === 'server' && d.signed_pdf_sha256 && d.signed_pdf_sha256 !== serverHash) {
-          await audit(supabase, requestId, signerId, 'finalization_failed',
-            `INTEGRIDADE: artefato ${d.document_key} foi sobrescrito (hash servidor ${d.signed_pdf_sha256} → ${serverHash}).`, ip, ua);
-          throw new Error(`Violação de integridade no documento ${d.document_key}.`);
+        // ── A CONFERÊNCIA ──
+        // O servidor NUNCA substitui em silêncio o hash já registrado. Um hash
+        // gravado no ato da assinatura e um hash recalculado agora que não
+        // batem só têm uma leitura possível: os bytes no Storage não são mais
+        // os que foram assinados. Sobrescrever o registro apagaria justamente a
+        // prova disso — e o `hash_source = 'server'` transformaria o arquivo
+        // adulterado em "conferido pelo servidor".
+        //
+        // O bug que isto conserta: a checagem antiga só valia quando
+        // `hash_source` JÁ era 'server'. Na primeira finalização — quando
+        // `hash_source` é NULL, que é o caso de todo envelope novo — o UPDATE
+        // caía direto e carimbava 'server' em qualquer coisa que estivesse lá.
+        if (registrado && !mesmoHash(registrado, serverHash)) {
+          await audit(supabase, requestId, signerId, 'integrity_violation',
+            `INTEGRIDADE: documento ${d.document_key} diverge. Registrado ${registrado}; recalculado no servidor ${serverHash}. `
+            + `Origem do registro: ${d.hash_source ?? 'cliente/legado'}. O valor registrado foi PRESERVADO para investigação.`, ip, ua);
+          throw new Error(`Violação de integridade no documento ${d.document_key}: o arquivo no Storage não corresponde ao hash registrado.`);
         }
 
-        await supabase.from('signature_request_documents')
-          .update({ signed_pdf_sha256: serverHash, hash_source: 'server' })
-          .eq('id', d.id);
+        if (registrado) {
+          // Confere: promove a conferência a 'server' SEM reescrever o valor —
+          // manter os bytes originais do registro (inclusive a caixa das letras)
+          // deixa o histórico auditável.
+          if (d.hash_source !== 'server') {
+            await supabase.from('signature_request_documents')
+              .update({ hash_source: 'server' })
+              .eq('id', d.id);
+            await audit(supabase, requestId, signerId, 'integrity_verified',
+              `Documento ${d.document_key} reconferido no servidor: SHA-256 do arquivo no Storage confere com o registrado (${registrado}).`, ip, ua);
+          }
+        } else {
+          // Nunca houve hash registrado: o servidor é quem estabelece o valor.
+          await supabase.from('signature_request_documents')
+            .update({ signed_pdf_sha256: serverHash, hash_source: 'server' })
+            .eq('id', d.id);
+          await audit(supabase, requestId, signerId, 'integrity_verified',
+            `Documento ${d.document_key} sem hash registrado; SHA-256 calculado no servidor: ${serverHash}.`, ip, ua);
+        }
         persisted += 1;
       }
 

@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.40',
+    date: '29/08/2026',
+    summary: 'O documento assinado passou a usar uma identidade única: código do documento e protocolo do envelope; o SHA-256 final fica na consulta pública.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Certificado deixou de misturar códigos do documento e do signatário',
+            description: 'Cabeçalho, certificado, QR e rodapé agora apontam para o mesmo código de verificação do documento. O protocolo UUID continua identificando o envelope, sem apresentar aliases técnicos como novas identidades públicas.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Integridade conferida pelo hash do PDF assinado',
+            description: 'O hash do arquivo-fonte saiu do PDF para não ser confundido com a impressão digital do artefato final. A consulta pelo código do documento mostra o SHA-256 do PDF assinado, que pode ser comparado com o arquivo baixado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.39',
     date: '29/08/2026',
     summary: 'O aviso de prazo por WhatsApp passou a sair também no sábado e no domingo, como o push e o e-mail já saíam.',

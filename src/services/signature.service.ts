@@ -1077,6 +1077,7 @@ class SignatureService {
         auth_google_access_token: payload.auth_google_access_token,
         terms_accepted: payload.terms_accepted,
         terms_version: payload.terms_version,
+        terms_accepted_at: payload.terms_accepted_at,
         allow_signature_selfie_for_profile: payload.allow_signature_selfie_for_profile === true,
         selfie_profile_consent_version: payload.selfie_profile_consent_version,
         // Instantes reais das etapas (o servidor clampa à janela [viewed_at, now()])

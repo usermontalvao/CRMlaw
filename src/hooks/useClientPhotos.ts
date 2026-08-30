@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { signatureService } from '../services/signature.service';
+import { fotosDeClientePorWhatsApp } from '../services/whatsapp/fotoDoCliente';
 
 /**
  * Resolve a foto de cada cliente para exibição (lista, timeline, etc.)
  * Estratégia em camadas, com cache em localStorage:
  *   1) photo_path pinado no cadastro → URL assinada direta (rápido)
- *   2) Sem pinada → foto facial da assinatura digital mais recente
+ *   2) Sem pinada → foto de perfil do WhatsApp do contato vinculado
  *   3) Sem nada → marca "miss" por 24h (não refaz busca)
  *
  * Reutilizável em qualquer módulo que precise mostrar avatar de cliente.
@@ -84,42 +85,31 @@ export function useClientPhotos(clients: ClientLike[]): Map<string, string> {
       return null;
     };
 
-    const resolveFromSignatures = async (c: ClientLike): Promise<[string, string] | null> => {
-      const excluded = new Set<string>(Array.isArray(c.excluded_photo_paths) ? c.excluded_photo_paths : []);
+    /**
+     * A selfie da assinatura NÃO é mais usada como foto de cliente.
+     *
+     * Ela existe como prova; dar a ela uma segunda finalidade enfraquece a
+     * primeira. A foto vem do WhatsApp do contato vinculado — dado que o
+     * próprio cliente publicou para ser visto por quem conversa com ele.
+     */
+    const resolveFromWhatsApp = async (pendentes: ClientLike[]): Promise<Array<[string, string]>> => {
+      const achados: Array<[string, string]> = [];
       try {
-        const requests = await signatureService.listRequestsWithSigners({ client_id: c.id });
-        const signed = requests
-          .filter((r: any) => r.status === 'signed')
-          .sort(
-            (a: any, b: any) =>
-              new Date(b.signed_at || b.updated_at).getTime() -
-              new Date(a.signed_at || a.updated_at).getTime(),
-          );
-        for (const req of signed) {
-          for (const signer of req.signers ?? []) {
-            // LGPD: só usa a selfie da assinatura como foto de cliente quando o
-            // signatário autorizou explicitamente (consentimento separado).
-            if (
-              signer.facial_image_path &&
-              signer.status === 'signed' &&
-              signer.allow_signature_selfie_for_profile === true &&
-              !excluded.has(signer.facial_image_path)
-            ) {
-              const url = await tryUrl(signer.facial_image_path);
-              if (url) {
-                cache[c.id] = { url, path: signer.facial_image_path, expiresAt: now + PHOTO_CACHE_TTL_MS };
-                return [c.id, url];
-              }
-            }
+        const fotos = await fotosDeClientePorWhatsApp(pendentes.map((c) => c.id));
+        for (const c of pendentes) {
+          const excluded = new Set<string>(Array.isArray(c.excluded_photo_paths) ? c.excluded_photo_paths : []);
+          const foto = fotos.get(c.id);
+          if (foto && !excluded.has(foto.path)) {
+            cache[c.id] = { url: foto.url, path: foto.path, expiresAt: now + PHOTO_CACHE_TTL_MS };
+            achados.push([c.id, foto.url]);
+          } else {
+            cache[c.id] = { miss: true, expiresAt: now + MISS_CACHE_TTL_MS };
           }
-          // Nota: a selfie no nível da request (modelo legado) não possui
-          // consentimento individual e por isso NÃO é usada como foto cadastral.
         }
       } catch {
-        /* sem foto */
+        /* sem foto: não marca miss, para tentar de novo na próxima montagem */
       }
-      cache[c.id] = { miss: true, expiresAt: now + MISS_CACHE_TTL_MS };
-      return null;
+      return achados;
     };
 
     const runBatched = async (
@@ -148,7 +138,16 @@ export function useClientPhotos(clients: ClientLike[]): Map<string, string> {
       const unpinned = targets.filter((c) => !c.photo_path);
       await runBatched(pinned, resolvePinned, 12);
       if (cancelled) return;
-      await runBatched(unpinned, resolveFromSignatures, 4);
+      // O WhatsApp resolve o lote inteiro numa consulta só — não precisa do
+      // runBatched, que existia para não disparar N buscas de assinatura.
+      const doWhatsApp = await resolveFromWhatsApp(unpinned);
+      if (cancelled || doWhatsApp.length === 0) { saveCache(cache); return; }
+      setPhotoUrls((prev) => {
+        const next = new Map(prev);
+        doWhatsApp.forEach(([id, url]) => next.set(id, url));
+        return next;
+      });
+      saveCache(cache);
     })();
 
     return () => {

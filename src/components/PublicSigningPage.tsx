@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrandLogo } from './ui';
 import { BRAND_SERIF, BRAND_WORDMARK, BRAND_DOT, BRAND_DOT_ON_DARK } from '../constants/brand';
 import { createPortal } from 'react-dom';
@@ -7,7 +7,7 @@ import { signatureService } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 import { buildWhatsappUrl } from '../utils/whatsapp';
-import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT, SELFIE_PROFILE_CONSENT_VERSION, SELFIE_PROFILE_CONSENT_LABEL, parseSignatureTermsText } from '../constants/signatureTerms';
+import { SIGNATURE_TERMS_VERSION, SIGNATURE_TERMS_TITLE, SIGNATURE_TERMS_TEXT, parseSignatureTermsText } from '../constants/signatureTerms';
 import { googleAuthService, type GoogleUser } from '../services/googleAuth.service';
 import { useToastContext } from '../contexts/ToastContext';
 import { useDeteccaoDeRosto } from '../hooks/useDeteccaoDeRosto';
@@ -197,6 +197,66 @@ const FOTO_PROPORCAO = 3 / 4;
 const SEGUNDOS_CONTAGEM = 5;
 /** Teto de fotos automáticas por etapa — ver o comentário em fotosAutomaticas. */
 const MAX_FOTOS_AUTOMATICAS = 3;
+
+/**
+ * Carimba a evidência dentro dos PIXELS da foto.
+ *
+ * Três linhas, sempre, sem opção de desligar: data e hora da captura (relógio
+ * do escritório, America/Cuiaba), a FINALIDADE do uso e o PROTOCOLO do
+ * envelope. Uma foto de rosto sem contexto não prova nada — não diz quando foi
+ * tirada nem para quê, e permite alegar que veio de outro lugar. Com o
+ * protocolo gravado, a imagem aponta para o documento que ela prova, e
+ * continua apontando mesmo que circule sozinha.
+ *
+ * Vai desenhado, e não em EXIF, porque metadado não sobrevive a recorte,
+ * reexportação nem impressão — exatamente as coisas que acontecem com uma
+ * evidência no caminho até os autos.
+ */
+function desenharCarimboDaEvidencia(
+  ctx: CanvasRenderingContext2D,
+  largura: number,
+  altura: number,
+  dados: { quando: Date; finalidade: string; protocolo: string },
+): void {
+  const linhas = [
+    new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Cuiaba',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    }).format(dados.quando) + ' (America/Cuiaba)',
+    dados.finalidade,
+    dados.protocolo ? `Protocolo ${dados.protocolo}` : '',
+  ].filter(Boolean);
+
+  // Escala com a foto: o mesmo carimbo precisa ser legível numa selfie de
+  // 480px de webcam e numa de 1440px de celular.
+  const corpo = Math.max(11, Math.round(largura * 0.028));
+  const espaco = Math.round(corpo * 1.34);
+  const margem = Math.round(corpo * 0.9);
+  const alturaFaixa = espaco * linhas.length + margem * 1.1;
+
+  ctx.save();
+  // Faixa escura translúcida: mantém o rosto visível e o texto legível sobre
+  // qualquer fundo (parede clara, contraluz, camisa branca).
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+  ctx.fillRect(0, altura - alturaFaixa, largura, alturaFaixa);
+
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  let y = altura - alturaFaixa + margem * 0.75 + espaco / 2;
+  linhas.forEach((linha, i) => {
+    ctx.font = `${i === 0 ? '700 ' : ''}${corpo}px ui-monospace, "SF Mono", Menlo, Consolas, monospace`;
+    ctx.fillStyle = i === 0 ? '#ffffff' : 'rgba(255,255,255,0.92)';
+    // Contorno preto fino: garante contraste mesmo se a faixa for removida
+    // por reprocessamento agressivo da imagem.
+    ctx.lineWidth = Math.max(2, corpo * 0.16);
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.strokeText(linha, margem, y);
+    ctx.fillText(linha, margem, y);
+    y += espaco;
+  });
+  ctx.restore();
+}
 
 /** De onde sai o IP público do visitante. Sem ele o evento fica sem origem. */
 const URL_IP_PUBLICO = 'https://api.ipify.org?format=json';
@@ -634,6 +694,26 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [step, setStep] = useState<SigningStep>('loading');
   const [signer, setSigner] = useState<Signer | null>(null);
   const [request, setRequest] = useState<SignatureRequest | null>(null);
+  /**
+   * DESLOCAMENTO ENTRE O RELÓGIO DO NAVEGADOR E O DO SERVIDOR.
+   *
+   * A hora carimbada dentro da selfie precisa bater EXATAMENTE com a hora que
+   * a trilha de auditoria registra. Se o carimbo sair do relógio do aparelho,
+   * um celular adiantado produz uma foto dizendo uma hora e um registro dizendo
+   * outra — e essa divergência, num questionamento, vira argumento de montagem.
+   *
+   * Pior ainda: `public-sign-document` CLAMPA os instantes reportados pelo
+   * cliente à janela [viewed_at, now()] do servidor. Um relógio torto não só
+   * diverge — ele é silenciosamente corrigido no banco, e só a foto fica com a
+   * hora errada, sem ninguém perceber.
+   *
+   * Medido uma vez, com compensação de ida e volta.
+   */
+  const deslocamentoDoRelogioRef = useRef(0);
+  const agoraDoServidor = useCallback(
+    () => new Date(Date.now() + deslocamentoDoRelogioRef.current),
+    [],
+  );
   // Ordem sequencial: nome do signatário anterior ainda pendente (null = é a vez deste).
   const [waitingFor, setWaitingFor] = useState<string | null>(null);
   const [signatureFields, setSignatureFields] = useState<SignatureField[]>([]);
@@ -701,9 +781,27 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   const [creator, setCreator] = useState<{ name: string } | null>(null);
   // Aceite dos Termos de Uso (LGPD) — obrigatório para enviar a assinatura
   const [termsAccepted, setTermsAccepted] = useState(false);
+  /**
+   * INSTANTE REAL DO ACEITE DOS TERMOS.
+   *
+   * Antes o servidor gravava `new Date()` no momento do ENVIO, o que fazia
+   * `terms_accepted_at` sair com o mesmo milissegundo de `signed_at` em 100%
+   * das assinaturas. No papel isso lê como se o aceite não tivesse sido um ato
+   * separado — e é a primeira coisa que a parte contrária aponta: se os dois
+   * instantes são idênticos, o consentimento não precedeu a assinatura, foi
+   * carimbado junto com ela.
+   *
+   * Agora vale o momento em que a pessoa marca a caixa, no relógio do servidor
+   * (mesma fonte do carimbo da selfie e da trilha).
+   */
+  const termsAcceptedAtRef = useRef<string | null>(null);
+  const marcarAceiteDosTermos = useCallback((aceito: boolean) => {
+    setTermsAccepted(aceito);
+    // Desmarcar e marcar de novo vale o ÚLTIMO aceite: é ele que está em vigor
+    // quando a assinatura é enviada.
+    termsAcceptedAtRef.current = aceito ? agoraDoServidor().toISOString() : null;
+  }, [agoraDoServidor]);
   const [showTermsModal, setShowTermsModal] = useState(false);
-  // Consentimento SEPARADO e OPCIONAL p/ usar a selfie como foto cadastral (default OFF)
-  const [allowSelfieForProfile, setAllowSelfieForProfile] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages] = useState(1); // TODO: detectar páginas do PDF
   const [zoom, setZoom] = useState(100);
@@ -992,6 +1090,26 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
   useEffect(() => {
     loadSignerData();
   }, [token]);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const t0 = Date.now();
+        const { data, error } = await supabase.rpc('server_now');
+        const t1 = Date.now();
+        if (!vivo || error || !data) return;
+        const servidorMs = new Date(data as string).getTime();
+        if (Number.isNaN(servidorMs)) return;
+        // Metade do round-trip aproxima o instante em que o servidor respondeu.
+        deslocamentoDoRelogioRef.current = servidorMs - (t0 + (t1 - t0) / 2);
+      } catch {
+        // Sem resposta, segue com o relógio local: melhor um carimbo com a
+        // hora do aparelho do que nenhum carimbo.
+      }
+    })();
+    return () => { vivo = false; };
+  }, []);
 
   useEffect(() => {
     if (!request?.id) return;
@@ -1521,7 +1639,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       const res = await signatureService.verifyEmailOtp({ token, code });
       setEmailOtpVerified(true);
-      authAtRef.current = new Date().toISOString(); // instante real da autenticação
+      authAtRef.current = agoraDoServidor().toISOString(); // instante real, no relógio do servidor
       if (res.email) {
         setVerifiedEmail(res.email);
       }
@@ -1539,7 +1657,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
   const finalizeGoogleUser = (user: GoogleUser) => {
     setGoogleUser(user);
-    authAtRef.current = new Date().toISOString(); // instante real da autenticação
+    authAtRef.current = agoraDoServidor().toISOString(); // instante real, no relógio do servidor
 
     const next: SignerData = {
       ...signerData,
@@ -2788,10 +2906,27 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
       origemX, origemY, larguraCorte, alturaCorte,
       0, 0, larguraCorte, alturaCorte,
     );
+    // ── CARIMBO OBRIGATÓRIO: data, hora, finalidade e protocolo ──────────────
+    //
+    // Vai DENTRO dos pixels, não em metadado: metadado se perde ao recortar,
+    // reexportar ou imprimir, e uma foto de rosto solta, sem contexto, é a
+    // pior evidência possível — não diz quando foi tirada nem para quê, e
+    // qualquer um pode alegar que veio de outro lugar.
+    //
+    // Com o protocolo gravado na imagem, a foto deixa de ser uma selfie avulsa
+    // e passa a apontar para o envelope que ela prova, fechando a cadeia de
+    // custódia mesmo que o arquivo circule sozinho.
+    const capturadaEm = agoraDoServidor();
+    desenharCarimboDaEvidencia(ctx, canvas.width, canvas.height, {
+      quando: capturadaEm,
+      finalidade: 'Verificacao de identidade para assinatura eletronica',
+      protocolo: request?.id || '',
+    });
+
     const imageData = canvas.toDataURL('image/jpeg', 0.85);
     setFacialValidation(null);
     setFacialData(imageData);
-    facialCapturedAtRef.current = new Date().toISOString(); // instante real da selfie
+    facialCapturedAtRef.current = capturadaEm.toISOString(); // instante real da selfie
     stopCamera();
 
     const result = await validateFacialPhotoWithAI(imageData);
@@ -2822,7 +2957,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         });
-        geolocationCapturedAtRef.current = new Date().toISOString(); // instante real da localização
+        geolocationCapturedAtRef.current = agoraDoServidor().toISOString(); // instante real, no relógio do servidor
         setLocationLoading(false);
         setModalStep('facial');
       },
@@ -2883,9 +3018,8 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
         // Aceite dos Termos de Uso (LGPD)
         terms_accepted: true,
         terms_version: SIGNATURE_TERMS_VERSION,
-        // Consentimento OPCIONAL p/ usar a selfie como foto cadastral (não afeta a assinatura)
-        allow_signature_selfie_for_profile: allowSelfieForProfile,
-        selfie_profile_consent_version: SELFIE_PROFILE_CONSENT_VERSION,
+        // Instante REAL do aceite (relógio do servidor), não o do envio.
+        terms_accepted_at: termsAcceptedAtRef.current || undefined,
         // Instantes REAIS das etapas probatórias (servidor clampa a [viewed_at, now()])
         auth_at: authAtRef.current || undefined,
         facial_captured_at: facialData ? (facialCapturedAtRef.current || undefined) : undefined,
@@ -3294,7 +3428,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
 
       const res = await signatureService.verifyPhoneOtp({ token, code });
       setPhoneOtpVerified(true);
-      authAtRef.current = new Date().toISOString(); // instante real da autenticação
+      authAtRef.current = agoraDoServidor().toISOString(); // instante real, no relógio do servidor
       if (res.phone) {
         setSignerData((prev) => ({ ...prev, phone: res.phone || prev.phone }));
       }
@@ -4009,7 +4143,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
             >
               <button onClick={() => setShowTermsModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100">Fechar</button>
               <button
-                onClick={() => { setTermsAccepted(true); setShowTermsModal(false); }}
+                onClick={() => { marcarAceiteDosTermos(true); setShowTermsModal(false); }}
                 className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center gap-2"
               >
                 <CheckCircle className="w-4 h-4" />
@@ -4880,29 +5014,13 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                   </div>
 
                   <div className="mt-4 flex flex-col gap-2">
-                    {/* Consentimento OPCIONAL — usar a selfie como foto cadastral (default OFF) */}
-                    <label className="flex cursor-pointer gap-3 border border-[#E0DAD1] bg-white p-3 transition-colors hover:border-[#D2C8BC]">
-                      <span className="flex-none pt-0.5">
-                        <input
-                          type="checkbox"
-                          checked={allowSelfieForProfile}
-                          onChange={(e) => setAllowSelfieForProfile(e.target.checked)}
-                          className="sr-only"
-                        />
-                        <OrangeCheckbox checked={allowSelfieForProfile} />
-                      </span>
-                      <span className="min-w-0 flex-1 text-[11.5px] leading-[1.5] text-[#4F5A69]">
-                        {SELFIE_PROFILE_CONSENT_LABEL} <span className="text-[#A0968C]">(opcional)</span>
-                      </span>
-                    </label>
-
                     {/* Aceite dos Termos de Uso (LGPD) — obrigatório para assinar */}
                     <label className="flex cursor-pointer items-center gap-3 border border-[#E0DAD1] bg-white p-3 transition-colors hover:border-[#D2C8BC]">
                       <span className="flex-none">
                         <input
                           type="checkbox"
                           checked={termsAccepted}
-                          onChange={(e) => setTermsAccepted(e.target.checked)}
+                          onChange={(e) => marcarAceiteDosTermos(e.target.checked)}
                           className="sr-only"
                         />
                         <OrangeCheckbox checked={termsAccepted} />

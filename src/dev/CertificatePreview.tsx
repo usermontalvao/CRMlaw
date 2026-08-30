@@ -1,5 +1,5 @@
 import React from 'react';
-import { PDFDocument, rgb } from 'pdf-lib';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { pdfSignatureService } from '../services/pdfSignature.service';
 import type { AuditLogRow } from '../services/pdfSignature.service';
@@ -90,11 +90,15 @@ export default function CertificatePreview() {
         });
 
         const request: any = {
-          id: 'REQ-2026-000487',
+      id: '70f1a4a0-325c-432e-9d35-a5fde77b7534',
           document_name: 'Contrato de Prestação de Serviços Advocatícios — Jurius',
           created_at: '2026-07-03T15:30:00-04:00',
           document_path: null,
         };
+        const documentVerificationCode = 'A8162AF5EEAB20D8';
+        // SHA-256 do documento de ORIGEM (o real deste envelope, em produção).
+        const originalDocumentSha256 = '98B30EB2E3955A137CE6963039594C7985CE9284D3935AC0B3683C1F65887A72';
+        const verificationUrl = `${window.location.origin}/#/verificar/${documentVerificationCode}`;
 
         const audit: AuditLogRow[] = [
           { id: 'a1', signer_id: null, action: 'created', description: 'Documento criado', ip_address: '189.10.5.7', user_agent: '', created_at: '2026-07-03T15:30:00-04:00' },
@@ -152,6 +156,8 @@ export default function CertificatePreview() {
           360,
         );
 
+        const qrImage = await (pdfSignatureService as any).buildQrPng(pdfDoc, verificationUrl);
+
         await (pdfSignatureService as any).addReportPages({
           pdfDoc,
           request,
@@ -159,10 +165,37 @@ export default function CertificatePreview() {
           creator: { name: 'Dr. Pedro Montalvão' },
           signatureImage: sigImg,
           facialImage: faceImg,
-          qrImage: null,
-          verificationUrl: `${window.location.origin}/#/verificar/${signerA.verification_hash}`,
-          integritySha256: 'A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2E3F4A5B6C7D8E9F0A1B2',
+          qrImage,
+          verificationUrl,
+          verificationCode: documentVerificationCode,
+          integritySha256: originalDocumentSha256,
         });
+
+        const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+        const courier = await pdfDoc.embedFont(StandardFonts.Courier);
+        const courierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
+        for (const page of pdfDoc.getPages()) {
+          const { width, height } = page.getSize();
+          (pdfSignatureService as any).drawFooterStamp({
+            page,
+            pageWidth: width,
+            pageHeight: height,
+            signer: signerA,
+            verificationUrl,
+            qrImage,
+            integritySha256: originalDocumentSha256,
+            helvetica,
+            helveticaBold,
+            courier,
+            courierBold,
+            brandWordmark: null,
+            docHash: '',
+            variant: 'strip',
+            verificationCode: documentVerificationCode,
+            protocol: request.id,
+          });
+        }
 
         const bytes = await pdfDoc.save();
         const blob = new Blob([bytes as any], { type: 'application/pdf' });

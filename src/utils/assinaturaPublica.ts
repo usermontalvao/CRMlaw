@@ -147,15 +147,17 @@ export function canalDoRegistro(
 }
 
 /**
- * OS QUATRO IDENTIFICADORES, e por que confundi-los quebra a conferência.
+ * IDENTIFICADORES ACEITOS PELA CONSULTA, inclusive aliases legados.
  *
- * Um envelope assinado carrega códigos diferentes, para coisas diferentes:
+ * O contrato público dos documentos novos tem apenas duas identidades:
  *
- *  · o PROTOCOLO DO ENVELOPE (o `id` da solicitação, carimbado no rodapé do
- *    PDF, com o `envelope_verification_code` como apelido curto) — vale o kit
- *    inteiro;
+ *  · o PROTOCOLO DO ENVELOPE (o `id` da solicitação, carimbado no PDF) — vale o
+ *    kit inteiro;
  *  · o CÓDIGO DO DOCUMENTO (um por arquivo, no modelo `per_document`);
- *  · o CÓDIGO DO SIGNATÁRIO (o `verification_hash` de quem assinou).
+ *
+ * `envelope_verification_code` e `verification_hash` do signatário continuam
+ * reconhecidos para não quebrar links antigos, mas não formam uma terceira ou
+ * quarta identidade exibida nos documentos novos.
  *
  * A tela de validação chamava todos de "Protocolo do envelope" e ainda exibia
  * um valor DIFERENTE do que a pessoa tinha consultado: quem digitava o código
@@ -189,20 +191,40 @@ export function classificarCodigo(
   return 'desconhecido';
 }
 
-/**
- * O rótulo que vai em cima do código, no recibo.
- *
- * SÃO DOIS NOMES, não quatro — e são os que o próprio PDF assinado imprime no
- * rodapé, para a pessoa reconhecer o que tem na mão.
- *
- * Separar "código do documento" de "código do signatário" seria mentir com
- * confiança: a RPC pública devolve, para um código de documento, um signatário
- * sintético cujo `verification_hash` é o próprio código consultado — ou seja, o
- * que volta do servidor não distingue os dois. O que ela distingue com certeza
- * é o envelope (vem do `id` da solicitação), e é só isso que o rótulo afirma.
- */
+/** Rótulos públicos canônicos: protocolo do envelope ou código do documento. */
 export function rotuloDoCodigo(tipo: TipoDeCodigo): string {
-  return tipo === 'envelope' ? 'Protocolo do envelope' : 'Código de autenticação';
+  if (tipo === 'envelope') return 'Protocolo do envelope';
+  if (tipo === 'documento') return 'Código de verificação do documento';
+  // Códigos antigos de signatário continuam consultáveis por compatibilidade,
+  // mas não são apresentados como uma terceira identidade em documentos novos.
+  return 'Código de verificação';
+}
+
+export type DocumentoVerificavel = {
+  verification_code?: string | null;
+  signed_pdf_sha256?: string | null;
+  /** SHA-256 do documento de ORIGEM — o que vai impresso no PDF. */
+  document_hash?: string | null;
+};
+
+/**
+ * Devolve a impressão digital do PDF ASSINADO correspondente ao código que a
+ * pessoa consultou. O fallback cobre envelopes legados e validação por upload.
+ */
+export function hashDoPdfAssinadoConsultado(
+  codigoConsultado: string | null | undefined,
+  documentos: readonly DocumentoVerificavel[] | null | undefined,
+  fallback: string | null | undefined,
+): string {
+  const alvo = normalizarCodigo(codigoConsultado);
+  if (alvo) {
+    const documento = (documentos || []).find(
+      (item) => normalizarCodigo(item.verification_code) === alvo,
+    );
+    const hashDoDocumento = String(documento?.signed_pdf_sha256 || '').trim();
+    if (hashDoDocumento) return hashDoDocumento;
+  }
+  return String(fallback || '').trim();
 }
 
 /**
@@ -279,19 +301,52 @@ export function documentoSemOSignatario(
 }
 
 /**
- * A frase da conferência, escolhida pelo tempo decorrido.
+ * A frase da espera, escolhida pelo tempo decorrido.
  *
- * Cada etapa é uma coisa que o servidor está mesmo fazendo. A última não diz
- * "pronto": quem decide que terminou é a resposta do servidor, não o relógio —
- * a tela some sozinha quando ela chega. Prometer conclusão aqui seria mentir
- * para quem está com a conexão ruim.
+ * ONDE O TRABALHO ACONTECE — e por que isso muda o texto.
+ *
+ * O PDF assinado é montado NO APARELHO de quem assina: cada página é
+ * renderizada, a assinatura e a selfie são embutidas, o certificado e a trilha
+ * são desenhados, e só então o arquivo é lacrado e enviado. Num kit com
+ * documento principal e dois anexos são três PDFs completos. Em celular
+ * antigo isso passa fácil de meio minuto — sem que nada esteja errado.
+ *
+ * A frase antiga dizia, depois de 14s:
+ *
+ *     "A conexão está lenta. Continuamos tentando."
+ *
+ * Duas afirmações falsas na mesma linha. Não é a conexão: é processamento
+ * local, e a pessoa ia conferir o wi-fi atrás de um problema que não existe.
+ * E nada está sendo "tentado de novo" — há uma única execução em curso;
+ * "tentando" sugere que algo falhou e assusta justamente quem está no meio de
+ * um ato que não pode ser interrompido.
+ *
+ * Nenhuma etapa promete conclusão: quem fecha a conta é a resposta do
+ * servidor, não o relógio — a tela some sozinha quando ela chega.
  */
 export function faseDaConferencia(segundos: number): string {
-  if (segundos < 2.2) return 'Recebendo sua assinatura';
-  if (segundos < 4.5) return 'Conferindo sua identidade';
-  if (segundos < 7) return 'Gravando no documento';
-  if (segundos < 14) return 'Emitindo o comprovante';
-  return 'A conexão está lenta. Continuamos tentando.';
+  if (segundos < 2.5) return 'Registrando sua assinatura';
+  if (segundos < 6) return 'Aplicando ao documento';
+  if (segundos < 11) return 'Montando o documento assinado';
+  if (segundos < 20) return 'Gerando o certificado';
+  return 'Finalizando no seu aparelho';
+}
+
+/**
+ * A segunda linha da espera: explica, não alarma.
+ *
+ * Vazia no começo — quem espera 5 segundos não precisa de explicação, e um
+ * parágrafo já na largada sugere que algo vai dar errado. Ela entra quando a
+ * espera passa do que a pessoa considera normal, e aí responde à pergunta que
+ * ela está fazendo: "travou?".
+ *
+ * O título fica curto de propósito (a caixa tem 240px); é aqui que mora o
+ * texto que tranquiliza.
+ */
+export function explicacaoDaEspera(segundos: number): string {
+  if (segundos < 18) return '';
+  if (segundos < 40) return 'O documento é montado aqui no seu aparelho — por isso demora um pouco.';
+  return 'Kits com anexos levam mais tempo em alguns aparelhos. Continua em andamento.';
 }
 
 /**
@@ -301,8 +356,10 @@ export function faseDaConferencia(segundos: number): string {
 export function faseDaAbertura(segundos: number): string {
   if (segundos < 2.4) return 'Conferindo seu acesso…';
   if (segundos < 5.5) return 'Abrindo o documento…';
-  if (segundos < 12) return 'Quase lá…';
-  return 'A conexão está lenta. Continuamos tentando.';
+  if (segundos < 12) return 'Preparando a visualização…';
+  // Aqui a rede É a suspeita certa: a abertura baixa o documento. Mas continua
+  // sem dizer "tentando", que sugere falha onde há só espera.
+  return 'O download está demorando. Aguarde mais um instante.';
 }
 
 /**
@@ -315,4 +372,107 @@ export function faseDaAbertura(segundos: number): string {
 export function progresso(segundos: number, constante = 2.5): number {
   if (!(segundos > 0)) return 0;
   return Math.min(99, 100 * (1 - Math.exp(-segundos / constante)));
+}
+
+/**
+ * A LISTA DE DOCUMENTOS DO ENVELOPE aparece — ou não — conforme o que foi
+ * consultado. É a diferença entre responder a pergunta e entregar o arquivo
+ * inteiro de outra pessoa.
+ *
+ *  · CÓDIGO DE UM DOCUMENTO → mostra SÓ aquele documento. Quem tem em mãos o
+ *    anexo 2 perguntou pelo anexo 2; devolver os irmãos deixa a pessoa
+ *    comparando o hash errado com o arquivo certo, e ainda revela quantos e
+ *    quais outros arquivos existem no envelope a quem só conhece um código.
+ *  · PROTOCOLO DO ENVELOPE → mostra o kit inteiro. É o identificador que vale
+ *    pelo conjunto, e é aí que a lista responde à pergunta feita.
+ *  · VALIDAÇÃO POR ARQUIVO (sem código digitado) → mantém o kit, porque não
+ *    houve pergunta por um código específico.
+ *
+ * A regra vivia implícita num `documents.length > 0`, e valeu enquanto só a
+ * consulta por protocolo devolvia a lista. Quando a RPC passou a mandar
+ * `documents` TAMBÉM na consulta por código individual, o `length > 0` calou:
+ * continuou verdadeiro e a tela passou a listar o envelope inteiro para quem
+ * havia digitado um único código.
+ */
+export function listarDocumentosDoEnvelope(params: {
+  tipo: TipoDeCodigo;
+  codigoConsultado: string | null | undefined;
+  quantidadeDeDocumentos: number;
+}): boolean {
+  if (params.quantidadeDeDocumentos <= 0) return false;
+  // Sem código digitado (validação por arquivo): nada foi perguntado por código.
+  if (!normalizarCodigo(params.codigoConsultado)) return true;
+  return params.tipo === 'envelope';
+}
+
+/**
+ * O SHA-256 do DOCUMENTO ORIGINAL correspondente ao código consultado.
+ *
+ * São dois hashes, e a tela mostra os dois porque respondem a perguntas
+ * diferentes:
+ *
+ *  · o do ORIGINAL é o que está IMPRESSO no PDF assinado. Existe antes da
+ *    assinatura, então pode ser carimbado no documento sem circularidade. É
+ *    por ele que se confere que o papel na mão corresponde a este registro.
+ *  · o do PDF ASSINADO é o do arquivo que se baixa. Não pode ser impresso
+ *    dentro do próprio PDF — escrevê-lo mudaria os bytes e geraria outro hash.
+ *
+ * Mostrar só um deles foi o que gerou a dúvida: quem comparava o número
+ * impresso com o hash do arquivo baixado achava dois valores distintos e
+ * concluía que algo não fechava. Fechava — eram objetos diferentes, e a tela
+ * não dizia isso.
+ */
+export function hashDoOriginalConsultado(
+  codigoConsultado: string | null | undefined,
+  documentos: readonly DocumentoVerificavel[] | null | undefined,
+  fallback: string | null | undefined,
+): string {
+  const alvo = normalizarCodigo(codigoConsultado);
+  if (alvo) {
+    const documento = (documentos || []).find(
+      (item) => normalizarCodigo(item.verification_code) === alvo,
+    );
+    const hashDoDocumento = String(documento?.document_hash || '').trim();
+    if (hashDoDocumento) return hashDoDocumento;
+  }
+  return String(fallback || '').trim();
+}
+
+/**
+ * O QUE A TELA PODE AFIRMAR — e o que ela apenas encontrou.
+ *
+ * Esta é a distinção que decide se o validador sobrevive a um questionamento.
+ *
+ *  · CONSULTA POR CÓDIGO: o sistema achou um registro. Isso prova que a
+ *    assinatura existe, quem assinou, quando e como se autenticou. NÃO prova
+ *    que o arquivo na mão de quem consulta é aquele — nada foi comparado.
+ *  · VALIDAÇÃO POR ARQUIVO: o SHA-256 do arquivo enviado foi calculado e
+ *    bateu com o registrado. Aí sim houve conferência, e "nada foi alterado"
+ *    é uma afirmação sustentada.
+ *
+ * A tela dizia "Nada foi alterado depois da assinatura" nos DOIS casos. Na
+ * consulta por código isso é uma afirmação categórica de integridade que não
+ * foi verificada — exatamente a frase que um perito da parte contrária usaria
+ * para desqualificar o laudo inteiro: basta perguntar "com o que vocês
+ * compararam?". Prometer menos e provar o que promete é o que torna o
+ * documento defensável.
+ */
+export function afirmacaoDaConsulta(conferidoPorArquivo: boolean): {
+  titulo: string;
+  destaque: string;
+  explicacao: string;
+} {
+  if (conferidoPorArquivo) {
+    return {
+      titulo: 'O arquivo',
+      destaque: 'confere',
+      explicacao: 'Byte a byte, é o mesmo PDF que foi assinado. Uma vírgula alterada mudaria a impressão digital.',
+    };
+  }
+  return {
+    titulo: 'Assinatura',
+    destaque: 'registrada',
+    explicacao: 'Este código corresponde a uma assinatura no registro, com o signatário e a data abaixo. '
+      + 'Para provar que o arquivo em suas mãos é exatamente este, compare o SHA-256 do PDF assinado ou envie o arquivo para conferência.',
+  };
 }
