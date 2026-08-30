@@ -30,6 +30,14 @@ import { saveAs } from 'file-saver';
 import { Document as DocxDocument, Packer, Paragraph, TextRun } from 'docx';
 import { docxBlobToPdf } from '../utils/docxToPdf';
 import { matchesNormalizedSearch } from '../utils/search';
+import {
+  formatCepForDocument,
+  formatCpfCnpjForDocument,
+  formatPhoneForDocument,
+  formatProperNamePtBr,
+  formatQualificationTerm,
+  formatUfForDocument,
+} from '../utils/clientFieldFormat';
 import { documentTemplateService } from '../services/documentTemplate.service';
 import { clientService } from '../services/client.service';
 import { processService } from '../services/process.service';
@@ -170,10 +178,10 @@ const buildFullAddress = (client: Client) => {
   const street = (client.address_street || '').trim();
   const number = (client.address_number || '').trim();
   const complement = (client.address_complement || '').trim();
-  const neighborhood = (client.address_neighborhood || '').trim();
-  const city = (client.address_city || '').trim();
-  const state = (client.address_state || '').trim();
-  const cep = (client.address_zip_code || '').trim();
+  const neighborhood = formatProperNamePtBr(client.address_neighborhood);
+  const city = formatProperNamePtBr(client.address_city);
+  const state = formatUfForDocument(client.address_state);
+  const cep = formatCepForDocument(client.address_zip_code);
 
   const line1 = [street, number ? `nº ${number}` : '', complement].filter(Boolean).join(', ');
   const line2 = [neighborhood ? `Bairro ${neighborhood}` : '', city, state].filter(Boolean).join(' - ');
@@ -1056,24 +1064,28 @@ const DocumentsModule: React.FC<DocumentsModuleProps> = ({ onNavigateToModule })
       placeholders[normalizedKey.toUpperCase()] = safeValue;
     };
 
+    // Tudo que vem da ficha passa por uma máscara antes de virar texto do
+    // documento. O banco guarda o dado cru (CPF `04544803193`, telefone
+    // `65984046375`) porque é assim que se busca e se compara — mas um contrato
+    // impresso com o número cru parece rascunho. Ver `utils/clientFieldFormat`.
     registerPlaceholder('NOME COMPLETO', client.full_name);
     registerPlaceholder('NOME', client.full_name);
-    registerPlaceholder('nacionalidade', client.nationality);
-    registerPlaceholder('estado civil', formatMaritalStatus(client.marital_status));
-    registerPlaceholder('profissão', client.profession);
+    registerPlaceholder('nacionalidade', formatQualificationTerm(client.nationality));
+    registerPlaceholder('estado civil', formatQualificationTerm(formatMaritalStatus(client.marital_status)));
+    registerPlaceholder('profissão', formatQualificationTerm(client.profession));
     registerPlaceholder('RG', client.rg);
     registerPlaceholder('DATA_NASCIMENTO', formatDate(client.birth_date));
-    registerPlaceholder('CPF', client.cpf_cnpj);
-    registerPlaceholder('endereço', client.address_street);
+    registerPlaceholder('CPF', formatCpfCnpjForDocument(client.cpf_cnpj));
+    registerPlaceholder('endereço', formatProperNamePtBr(client.address_street));
     registerPlaceholder('número', client.address_number);
     registerPlaceholder('complemento', client.address_complement);
-    registerPlaceholder('bairro', client.address_neighborhood);
-    registerPlaceholder('cidade', client.address_city);
-    registerPlaceholder('estado', client.address_state);
-    registerPlaceholder('UF', client.address_state);
-    registerPlaceholder('CEP', client.address_zip_code);
+    registerPlaceholder('bairro', formatProperNamePtBr(client.address_neighborhood));
+    registerPlaceholder('cidade', formatProperNamePtBr(client.address_city));
+    registerPlaceholder('estado', formatUfForDocument(client.address_state));
+    registerPlaceholder('UF', formatUfForDocument(client.address_state));
+    registerPlaceholder('CEP', formatCepForDocument(client.address_zip_code));
     registerPlaceholder('ENDERECO_COMPLETO', buildFullAddress(client));
-    const primaryPhone = client.phone || client.mobile || '';
+    const primaryPhone = formatPhoneForDocument(client.phone || client.mobile || '');
     registerPlaceholder('telefone', primaryPhone);
     registerPlaceholder('celular', primaryPhone);
     registerPlaceholder('email', client.email);

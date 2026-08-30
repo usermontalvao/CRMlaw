@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.42',
+    date: '29/08/2026',
+    summary: 'Os dados da ficha do cliente passaram a entrar nos documentos com a apresentação adequada para leitura e impressão.',
+    modules: [
+      {
+        moduleId: 'documentos',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'CPF, CNPJ, CEP e telefone agora saem formatados nos documentos',
+            description: 'Os modelos continuam usando os dados brutos da ficha para busca e comparação, mas passam a aplicar as máscaras brasileiras ao gerar o texto final. Endereços recebem capitalização consistente, UFs ficam em maiúsculas e os termos de qualificação seguem a escrita corrente no meio da frase.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.41',
     date: '29/08/2026',
     summary: 'A página pública dos Termos de Assinatura voltou a abrir, e cada versão dos Termos passou a mostrar o texto que foi realmente aceito.',
