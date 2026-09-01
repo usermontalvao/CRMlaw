@@ -44,6 +44,8 @@ export interface CalendarEvent {
   manual_confirmed_by?: string | null;
   manual_confirmed_date?: string | null;
   manual_note?: string | null;
+  /** Onde acontece (texto livre). Alimenta {local}; só nos presenciais. */
+  location?: string | null;
 
   // ── Comunicar o cliente ────────────────────────────────────────────────
   // Separadas de `notify_minutes_before`, que é o lembrete da EQUIPE. Ver o
@@ -80,6 +82,7 @@ export interface CreateCalendarEventDTO {
   is_private?: boolean;
   shared_with_ids?: string[];
   event_mode?: CalendarEventMode | null;
+  location?: string | null;
   djen_intimation_id?: string | null;
   // Comunicar o cliente — gravada no mesmo INSERT/UPDATE do compromisso, para
   // não obrigar a criar-salvar-reabrir. `client_notify_sent_at` NÃO entra aqui

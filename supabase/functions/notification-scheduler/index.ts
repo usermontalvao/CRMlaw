@@ -17,6 +17,8 @@ import {
 import {
   montarMensagemDaComunicacao,
   motivoDeNaoEnviar,
+  nomeApresentavel,
+  primeiroNomeApresentavel,
 } from "../_shared/comunicacao-compromisso.ts";
 import { criarPortaoDeExpediente } from "../_shared/wa-channel-hours.ts";
 
@@ -1159,7 +1161,7 @@ async function checkClientAppointmentNotices() {
   const { data: eventos, error } = await supabase
     .from("calendar_events")
     .select(
-      "id, title, description, event_mode, start_at, status, client_id, client_notify_minutes_before, " +
+      "id, title, description, event_mode, location, event_type, start_at, status, client_id, client_notify_minutes_before, " +
       "client_notify_message, client_notify_media_id, client_notify_sent_at, " +
       "client_notify_enabled, process_id, processes(process_code), clients(full_name)",
     )
@@ -1215,13 +1217,16 @@ async function checkClientAppointmentNotices() {
     const inicio = new Date(ev.start_at);
     const clienteNome = (ev as any).clients?.full_name || conv.contact_name || "";
     const texto = montarMensagemDaComunicacao(String(ev.client_notify_message ?? ""), {
-      primeiro_nome: primeiroNome(clienteNome),
-      cliente: clienteNome,
+      // O cadastro guarda o cliente em CAIXA ALTA; "Bom dia, HELEN." se lê como
+      // grito. Ver `nomeApresentavel`.
+      primeiro_nome: primeiroNomeApresentavel(clienteNome),
+      cliente: nomeApresentavel(clienteNome),
       titulo: ev.title ?? "",
       data: inicio.toLocaleDateString("pt-BR", { timeZone: "America/Cuiaba" }),
       hora: inicio.toLocaleTimeString("pt-BR", {
         timeZone: "America/Cuiaba", hour: "2-digit", minute: "2-digit",
       }),
+      local: (ev as any).location ?? "",
       detalhes: (ev as any).description ?? "",
       modalidade: (ev as any).event_mode ?? "",
       processo: (ev as any).processes?.process_code ?? "",

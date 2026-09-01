@@ -37,6 +37,38 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.52',
+    date: '01/09/2026',
+    summary: 'O compromisso ganhou campo de local, e a mensagem ao cliente passou a falar do que ele vai enfrentar.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Compromisso presencial agora tem Local',
+            description: 'Campo de endereço, em texto livre, que aparece quando a modalidade é Presencial. Ele é o que o cliente recebe na comunicação, aparece nos detalhes do compromisso e é limpo automaticamente se a modalidade virar Online. Antes o endereço só cabia nas Observações, e a mensagem automática não tinha como dizer para onde ir.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A mensagem ao cliente segue o tipo e a modalidade',
+            description: 'Uma audiência presencial passa a sugerir "Sua audiência está marcada para… Compareça em… chegue com 30 minutos de antecedência e leve documento oficial com foto". Online fala em videoconferência e link, e nunca manda comparecer. Perícia pede exames e laudos. Reunião não manda levar documento. O texto continua editável, e para de se atualizar sozinho assim que alguém escreve nele.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Mais opções de antecedência',
+            description: 'A escada foi de cinco para doze opções e agora vai de 1 hora a 30 dias, passando por 3, 5, 10, 15 e 20 dias. Uma audiência que exige o cliente viajar ou faltar ao trabalho se avisa com semanas, não com um dia.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O nome do cliente não sai mais em caixa alta na mensagem',
+            description: 'O cadastro guarda "HELEN CRISTINA DE ALMEIDA SILVA", e a mensagem abria com "Bom dia, HELEN.", que se lê como grito. Agora sai "Bom dia, Helen.", com as partículas em minúscula. Nome digitado em caixa mista é preservado como está.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.51',
     date: '01/09/2026',
     summary: 'A comunicação ao cliente passou a ser definida já na criação do compromisso.',

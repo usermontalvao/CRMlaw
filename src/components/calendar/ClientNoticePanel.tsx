@@ -32,6 +32,9 @@ import {
   VARIAVEIS_DA_COMUNICACAO,
   momentoDoEnvio,
   montarMensagemDaComunicacao,
+  mensagemSugerida,
+  nomeApresentavel,
+  primeiroNomeApresentavel,
 } from '../../utils/comunicacaoCompromisso';
 import type { CalendarEvent } from '../../types/calendar.types';
 import type { WhatsAppMediaLibraryItem, WhatsAppMediaLibraryType } from '../../types/whatsapp.types';
@@ -42,6 +45,19 @@ export interface ValorDaComunicacao {
   minutos: number;
   mensagem: string;
   midiaId: string | null;
+  /**
+   * A mensagem foi escrita à mão?
+   *
+   * Enquanto for `false`, o texto ACOMPANHA o formulário: trocar o tipo de
+   * Reunião para Audiência, ou a modalidade para Presencial, reescreve a
+   * sugestão. No instante em que alguém digita no campo, vira `true` e o texto
+   * para de mudar sozinho — sobrescrever o que a pessoa escreveu porque ela
+   * mexeu num seletor acima seria perder trabalho dela.
+   *
+   * Não vai para o banco: um compromisso já salvo tem o texto que tem, e ao
+   * reabrir ele é sempre tratado como escrito à mão.
+   */
+  mensagemEditada: boolean;
 }
 
 /** O ponto de partida de um compromisso novo: desligado, com o texto sugerido. */
@@ -50,6 +66,7 @@ export const COMUNICACAO_VAZIA: ValorDaComunicacao = {
   minutos: ANTECEDENCIA_PADRAO_MINUTOS,
   mensagem: MENSAGEM_PADRAO_DA_COMUNICACAO,
   midiaId: null,
+  mensagemEditada: false,
 };
 
 /** Lê o valor de um compromisso já salvo, para semear a edição. */
@@ -60,6 +77,10 @@ export function comunicacaoDoEvento(ev: Partial<CalendarEvent> | null | undefine
     minutos: ev.client_notify_minutes_before ?? ANTECEDENCIA_PADRAO_MINUTOS,
     mensagem: ev.client_notify_message ?? MENSAGEM_PADRAO_DA_COMUNICACAO,
     midiaId: ev.client_notify_media_id ?? null,
+    // Compromisso já salvo: o texto que está lá é o que vale, venha ele de uma
+    // sugestão ou da mão de alguém. Reescrevê-lo ao reabrir seria trocar a
+    // decisão de quem salvou pela sugestão do momento.
+    mensagemEditada: true,
   };
 }
 
@@ -77,6 +98,10 @@ export function payloadDaComunicacao(v: ValorDaComunicacao) {
 export interface ContextoDaComunicacao {
   inicio: Date | null;
   titulo: string;
+  /** Tipo do evento (`hearing`, `pericia`, `meeting`…) — decide o texto sugerido. */
+  tipo: string;
+  /** Onde acontece, dos presenciais. */
+  local: string;
   detalhes: string;
   modalidade: string;
   clienteNome: string | null;
@@ -117,6 +142,25 @@ export const ClientNoticeFields: React.FC<CamposProps> = ({
   const [midias, setMidias] = useState<WhatsAppMediaLibraryItem[]>([]);
   const set = (parcial: Partial<ValorDaComunicacao>) => onChange({ ...valor, ...parcial });
 
+  // ── O TEXTO ACOMPANHA O CONTEXTO ──────────────────────────────────────────
+  //
+  // Marcar "Audiência" + "Presencial" e receber "Seu compromisso está marcado"
+  // é a mensagem certa para nenhum caso. Enquanto ninguém tiver escrito no
+  // campo, a sugestão é refeita a cada mudança de tipo, modalidade ou endereço.
+  //
+  // A guarda do `mensagemEditada` é o que separa "ajudar" de "atrapalhar":
+  // depois que a pessoa digita, trocar a modalidade não pode apagar o que ela
+  // escreveu. E a comparação com o texto atual evita um `setState` por render.
+  const sugestao = mensagemSugerida(contexto.tipo, contexto.modalidade, !!contexto.local.trim());
+  useEffect(() => {
+    if (valor.mensagemEditada) return;
+    if (valor.mensagem === sugestao) return;
+    onChange({ ...valor, mensagem: sugestao });
+    // `valor`/`onChange` ficam fora das dependências de propósito: o efeito
+    // reage à SUGESTÃO, e incluir o objeto que ele mesmo troca reentraria.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sugestao, valor.mensagemEditada]);
+
   // A biblioteca só é buscada quando a comunicação é ligada: quem nunca usa não
   // paga a consulta ao abrir um compromisso.
   useEffect(() => {
@@ -140,12 +184,13 @@ export const ClientNoticeFields: React.FC<CamposProps> = ({
     const nome = (contexto.clienteNome || '').trim();
     const nomeNaPrevia = nome || '[nome do cliente]';
     return montarMensagemDaComunicacao(valor.mensagem, {
-    primeiro_nome: nome ? nome.split(/\s+/)[0] : nomeNaPrevia,
-    cliente: nomeNaPrevia,
+    primeiro_nome: nome ? primeiroNomeApresentavel(nome) : nomeNaPrevia,
+    cliente: nome ? nomeApresentavel(nome) : nomeNaPrevia,
     titulo: contexto.titulo,
     data: contexto.inicio?.toLocaleDateString('pt-BR', { timeZone: 'America/Cuiaba' }) ?? '—',
     hora: contexto.inicio?.toLocaleTimeString('pt-BR', {
       timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit' }) ?? '—',
+    local: contexto.local,
     detalhes: contexto.detalhes,
     modalidade: contexto.modalidade,
     processo: contexto.processoCodigo ?? '',
@@ -243,7 +288,7 @@ export const ClientNoticeFields: React.FC<CamposProps> = ({
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Mensagem</p>
             <textarea
               value={valor.mensagem}
-              onChange={e => set({ mensagem: e.target.value })}
+              onChange={e => set({ mensagem: e.target.value, mensagemEditada: true })}
               rows={4}
               className="mt-1.5 w-full resize-y rounded-lg border border-slate-200 px-2.5 py-2 text-xs leading-relaxed text-slate-800 outline-none transition focus:border-orange-400"
               placeholder="O que o cliente vai ler…"
@@ -253,7 +298,7 @@ export const ClientNoticeFields: React.FC<CamposProps> = ({
                 <button
                   key={v}
                   type="button"
-                  onClick={() => set({ mensagem: `${valor.mensagem}{${v}}` })}
+                  onClick={() => set({ mensagem: `${valor.mensagem}{${v}}`, mensagemEditada: true })}
                   title={`Inserir {${v}}`}
                   className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
                 >
@@ -399,6 +444,8 @@ export const ClientNoticePanel: React.FC<Props> = ({
         contexto={{
           inicio,
           titulo: evento.title ?? '',
+          tipo: evento.event_type ?? '',
+          local: evento.location ?? '',
           detalhes: evento.description ?? '',
           modalidade: evento.event_mode ?? '',
           clienteNome: clienteNome ?? null,

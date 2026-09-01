@@ -176,6 +176,10 @@ type NewEventForm = {
   pericia_link_type: 'process' | 'requirement';
   // Modalidade: presencial ou online (visível para Audiência, Reunião, Perícia)
   event_mode: 'presencial' | 'online' | '';
+  // Onde acontece. Só aparece — e só é gravado — quando a modalidade é
+  // presencial: endereço de compromisso online é contradição, e guardá-lo
+  // faria a mensagem ao cliente mandar comparecer a uma videoconferência.
+  location: string;
   // Vínculo com a intimação de origem (guardião de compromissos) — usado quando
   // o evento é criado a partir de uma sugestão da agenda
   djen_intimation_id?: string | null;
@@ -372,6 +376,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     requirement_id: '',
     pericia_link_type: 'process',
     event_mode: '',
+    location: '',
     comunicacao: { ...COMUNICACAO_VAZIA },
   });
   const [savingEvent, setSavingEvent] = useState(false);
@@ -638,6 +643,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         requirement_id: '',
         pericia_link_type: 'process',
         event_mode: '',
+        location: '',
         djen_intimation_id: null,
         // Cópia nova a cada abertura: `COMUNICACAO_VAZIA` é um objeto de módulo,
         // e passá-lo por referência faria o texto digitado num compromisso
@@ -1831,6 +1837,12 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         event_mode: (['hearing', 'meeting', 'pericia'] as EventType[]).includes(newEventForm.type)
           ? (newEventForm.event_mode || null)
           : null,
+        // Endereço só existe no presencial. Trocar para online e salvar limpa o
+        // que estava lá, senão a mensagem ao cliente manda comparecer a uma
+        // videoconferência.
+        location: newEventForm.event_mode === 'presencial'
+          ? (newEventForm.location.trim() || null)
+          : null,
         // A comunicação ao cliente entra no MESMO INSERT/UPDATE do compromisso.
         // Sem cliente vinculado ela não pode ficar ligada: o cron encontraria a
         // linha, não acharia para quem mandar e registraria falha a cada hora.
@@ -2096,6 +2108,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           requirement_id: existing.requirement_id ?? '',
           pericia_link_type: existing.requirement_id ? 'requirement' : 'process',
           event_mode: (existing as any).event_mode ?? '',
+          location: existing.location ?? '',
           comunicacao: comunicacaoDoEvento(existing),
         },
         calendarEventId,
@@ -3708,6 +3721,22 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 );
               })()}
 
+              {/* Local — é o endereço que o cliente recebe, então quem abre o
+                  compromisso precisa vê-lo aqui para conferir antes que saia. */}
+              {(() => {
+                const local = (selectedEvent.extendedProps.data as any)?.location as string | null | undefined;
+                if (!local?.trim()) return null;
+                return (
+                  <div className="flex items-start gap-2 min-w-0">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Local</p>
+                      <p className="text-xs font-semibold text-slate-800 mt-0.5">{local}</p>
+                    </div>
+                  </div>
+                );
+              })()}
+
             </div>
           </div>
 
@@ -4195,6 +4224,28 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     </>
                   )}
                 </div>
+
+                {/* Local — só no presencial. Um compromisso presencial sem
+                    endereço esconde a informação de quem mais precisa dela: o
+                    cliente, que vai sair de casa. */}
+                {newEventForm.event_mode === 'presencial'
+                  && (['hearing', 'meeting', 'pericia'] as EventType[]).includes(newEventForm.type) && (
+                  <div className="col-span-1 sm:col-span-6 lg:col-span-12">
+                    <label className="block text-[13px] font-medium text-slate-700 dark:text-slate-200 mb-1">
+                      Local <span className="text-slate-300 font-normal">(endereço que o cliente vai receber)</span>
+                    </label>
+                    <div className="relative">
+                      <MapPin className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={newEventForm.location}
+                        onChange={(e) => setNewEventForm(prev => ({ ...prev, location: e.target.value }))}
+                        className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 h-[34px] pl-9 pr-3 text-[13px] transition"
+                        placeholder="8ª Vara do Trabalho de Cuiabá — Av. Historiador Rubens de Mendonça, 4º andar"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Tipo — coluna inteira */}
                 <div className="col-span-1 sm:col-span-6 lg:col-span-12">
@@ -4762,6 +4813,8 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                           ? new Date(`${newEventForm.date}T${newEventForm.time || '00:00'}:00`)
                           : null,
                         titulo: newEventForm.title,
+                        tipo: newEventForm.type,
+                        local: newEventForm.event_mode === 'presencial' ? newEventForm.location : '',
                         detalhes: newEventForm.description,
                         modalidade: newEventForm.event_mode,
                         clienteNome:
