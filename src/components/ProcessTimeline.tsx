@@ -30,6 +30,8 @@ import {
   Users,
   Layers,
   Archive,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { matchesNormalizedSearch } from '../utils/search';
 import { processTimelineService, type TimelineEvent } from '../services/processTimeline.service';
@@ -310,6 +312,7 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
   const [searchTerm,  setSearchTerm]  = useState('');
   const [showSummaryDetails, setShowSummaryDetails] = useState(false);
   const [groupByPhase, setGroupByPhase] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   // ── Informações do processo extraídas do DJEN ────────────────────────────
   interface ProcessInfo {
@@ -515,6 +518,16 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
     } finally {
       setLoading(false);
       setAnalyzing(false);
+    }
+  };
+
+  const copyProcessCode = async () => {
+    try {
+      await navigator.clipboard.writeText(processCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 1800);
+    } catch {
+      /* clipboard indisponível — silencioso */
     }
   };
 
@@ -757,7 +770,21 @@ export const ProcessTimeline: React.FC<ProcessTimelineProps> = ({
           <div>
             <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Andamento processual</div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white leading-tight">Linha do Tempo</h2>
-            <p className="text-[11px] text-slate-500 truncate max-w-[420px]">{clientName} <span className="text-slate-300">·</span> <span className="font-mono tabular-nums">{processCode}</span></p>
+            <div className="flex items-center gap-2 text-[11px] text-slate-500 max-w-[460px]">
+              <span className="truncate">{clientName}</span>
+              <button
+                type="button"
+                onClick={copyProcessCode}
+                title="Clique para copiar o número do processo"
+                className="group inline-flex items-center gap-1 font-mono tabular-nums rounded px-1 -mx-1 hover:bg-slate-100 dark:hover:bg-zinc-800 hover:text-slate-700 dark:hover:text-slate-200 transition"
+              >
+                <span className="truncate">{processCode}</span>
+                {codeCopied
+                  ? <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+                  : <Copy className="w-3 h-3 opacity-0 group-hover:opacity-60 shrink-0" />}
+              </button>
+              {codeCopied && <span className="text-[10px] font-semibold text-emerald-600 shrink-0">Copiado!</span>}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">

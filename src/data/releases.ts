@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.45',
+    date: '01/09/2026',
+    summary: 'O número do processo na Linha do Tempo copia com um clique.',
+    modules: [
+      {
+        moduleId: 'processos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Clicar no número do processo copia',
+            description: 'No cabeçalho da Linha do Tempo, o número virou botão: um clique copia e o campo confirma com um "Copiado!". O separador "·" entre o nome do cliente e o número saiu.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.44',
     date: '01/09/2026',
     summary: 'O aviso de prazo por WhatsApp passou a sair de verdade: faltava o código do país no telefone.',
