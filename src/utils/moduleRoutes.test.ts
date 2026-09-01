@@ -60,6 +60,8 @@ test('ida e volta módulo ↔ caminho', () => {
   assert.equal(pathToModule('/agenda'), 'agenda');
   assert.equal(pathToModule('/agenda/'), 'agenda', 'barra final deve ser tolerada');
   assert.equal(pathToModule('/configuracoes'), 'configuracoes');
+  assert.equal(moduleToPath('wiki'), '/wiki');
+  assert.equal(pathToModule('/wiki'), 'wiki');
 });
 
 test('login não vai para a URL — o destino pretendido tem de sobreviver', () => {

@@ -45,6 +45,7 @@ import {
   Clock,
   MessageSquare,
   Mail,
+  BookOpen,
 } from 'lucide-react';
 import OfflinePage from './components/OfflinePage';
 import SessionBootScreen from './components/SessionBootScreen';
@@ -95,6 +96,7 @@ const PublicPermalinkRedirect = lazy(() => import('./components/PublicPermalinkR
 const PublicCloudSharePage = lazy(() => import('./components/PublicCloudSharePage'));
 const PublicDocumentPage = lazy(() => import('./components/PublicDocumentPage'));
 const DocsPage = lazy(() => import('./components/DocsPage'));
+const WikiModule = lazy(() => import('./components/WikiModule'));
 // Portal do Cliente - Módulo isolado em src/portal/ (pode ser removido sem afetar o app principal)
 const PortalApp = lazy(() => import('./portal/PortalApp'));
 // Editor de Petições - Módulo isolado (pode ser removido sem afetar outros módulos)
@@ -241,6 +243,7 @@ const MODULE_META: Record<string, { label: string; desc: string; Icon: ModuleIco
   whatsapp:      { label: 'WhatsApp',             desc: 'atendimento via WhatsApp',               Icon: WhatsAppIcon },
   peticoes:      { label: 'Editor',              desc: 'redação e formatação de petições',       Icon: Newspaper },
   configuracoes: { label: 'Configurações',        desc: 'ajustes do sistema',                     Icon: Settings },
+  wiki:          { label: 'Central de ajuda',     desc: 'manuais e conhecimento do escritório',   Icon: BookOpen },
 };
 
 const AccessDeniedScreen: React.FC<{
@@ -1302,6 +1305,7 @@ const MainApp: React.FC = () => {
         () => import('./components/RequirementsModule'),
         () => import('./components/SettingsModule'),
         () => import('./components/DocsPage'),
+        () => import('./components/WikiModule'),
       ];
 
       tasks.forEach((task, idx) => {
@@ -2669,6 +2673,7 @@ useEffect(() => {
                     assinaturas: { label: 'Assinaturas', Icon: PenTool },
                     perfil: { label: 'Perfil', Icon: UserCog },
                     configuracoes: { label: 'Configurações', Icon: Settings },
+                    wiki: { label: 'Central de ajuda', Icon: BookOpen },
                     agenda: { label: 'Agenda', Icon: Calendar },
                     chat: { label: 'Chat', Icon: MessageCircle },
                     whatsapp: { label: 'WhatsApp', Icon: WhatsAppIcon },
@@ -2856,6 +2861,16 @@ useEffect(() => {
                           <UserCog className="h-3.5 w-3.5 text-slate-400" />
                           Meu Perfil
                         </button>
+                        <button
+                          onClick={() => {
+                            setProfileMenuOpen(false);
+                            navigateTo('wiki');
+                          }}
+                          className="flex w-full items-center gap-2.5 px-4 py-[7px] text-[13px] text-slate-700 transition-colors hover:bg-[#faf9f7]"
+                        >
+                          <BookOpen className="h-3.5 w-3.5 text-slate-400" />
+                          Central de ajuda
+                        </button>
                       </div>
                       {/* Logout */}
                       <div className="border-t border-[#f0ede8] py-1.5">
@@ -3041,6 +3056,7 @@ useEffect(() => {
               </div>
             )}
             {activeModule === 'email' && <EmailModule params={moduleParams['email'] ? JSON.parse(moduleParams['email']) : undefined} />}
+            {activeModule === 'wiki' && <WikiModule />}
             {activeModule === 'notificacoes' && <NotificationsModuleNew onNavigateToModule={handleNavigateToModule} />}
             {activeModule === 'financeiro' && (
               <FinancialModule

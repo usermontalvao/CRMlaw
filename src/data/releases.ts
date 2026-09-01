@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.43',
+    date: '01/09/2026',
+    summary: 'A Central de ajuda entrou no CRM como módulo próprio, em /wiki.',
+    modules: [
+      {
+        moduleId: 'wiki',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Central de ajuda: manuais e conhecimento do escritório dentro do sistema',
+            description: 'Os manuais deixam de morar fora do CRM e passam a abrir em /wiki, pelo menu do perfil. O módulo entra na lista de pré-carga junto com os outros, para a primeira abertura não pagar o download.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.42',
     date: '29/08/2026',
     summary: 'Os dados da ficha do cliente passaram a entrar nos documentos com a apresentação adequada para leitura e impressão.',

@@ -48,6 +48,7 @@ export const MODULE_PATHS = {
   login: '/login',
   cron: '/cron',
   configuracoes: '/configuracoes',
+  wiki: '/wiki',
   peticoes: '/peticoes', // Editor de Petições — módulo isolado
   perfil: '/perfil',
 } as const satisfies Record<string, `/${string}`>;
