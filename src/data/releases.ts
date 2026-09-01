@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.51',
+    date: '01/09/2026',
+    summary: 'A comunicação ao cliente passou a ser definida já na criação do compromisso.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Comunicar o cliente já em "Novo Compromisso"',
+            description: 'O bloco de comunicação passou a aparecer também no formulário de criação e edição, no fim. Antes só existia nos detalhes de um compromisso já salvo, o que obrigava a criar, salvar, fechar e clicar de novo no evento para só então avisar o cliente. Agora o compromisso já nasce com a comunicação agendada, e a prévia acompanha o que está sendo digitado — mudar a data acima muda o horário de envio embaixo.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Editar um compromisso não apaga mais a comunicação já enviada',
+            description: 'Alterar um compromisso depois que a mensagem saiu preservava o carimbo de envio, mas sobrescrevia o texto entregue. Esse texto é o registro do que foi dito ao cliente, e agora a edição não encosta nele.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.50',
     date: '01/09/2026',
     summary: 'A Agenda passou a comunicar o cliente por WhatsApp antes do compromisso.',

@@ -81,6 +81,13 @@ export interface CreateCalendarEventDTO {
   shared_with_ids?: string[];
   event_mode?: CalendarEventMode | null;
   djen_intimation_id?: string | null;
+  // Comunicar o cliente — gravada no mesmo INSERT/UPDATE do compromisso, para
+  // não obrigar a criar-salvar-reabrir. `client_notify_sent_at` NÃO entra aqui
+  // de propósito: quem carimba o envio é a Edge Function, nunca o formulário.
+  client_notify_enabled?: boolean;
+  client_notify_minutes_before?: number | null;
+  client_notify_message?: string | null;
+  client_notify_media_id?: string | null;
 }
 
 export interface UpdateCalendarEventDTO extends Partial<CreateCalendarEventDTO> {}

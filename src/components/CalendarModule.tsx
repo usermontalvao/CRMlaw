@@ -34,7 +34,14 @@ import type { Client } from '../types/client.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import type { RepresentativeAppointment } from '../types/representative.types';
 import RepresentativesPanel from './RepresentativesPanel';
-import { ClientNoticePanel } from './calendar/ClientNoticePanel';
+import {
+  ClientNoticePanel,
+  ClientNoticeFields,
+  COMUNICACAO_VAZIA,
+  comunicacaoDoEvento,
+  payloadDaComunicacao,
+  type ValorDaComunicacao,
+} from './calendar/ClientNoticePanel';
 import { Modal, ModalBody, ModuleSkeleton } from './ui';
 import { useSyncTick } from '../lib/syncBus';
 import { matchesCalendarSearch } from '../utils/calendarSearch.utils';
@@ -172,6 +179,11 @@ type NewEventForm = {
   // Vínculo com a intimação de origem (guardião de compromissos) — usado quando
   // o evento é criado a partir de uma sugestão da agenda
   djen_intimation_id?: string | null;
+  // A comunicação ao cliente viaja JUNTO com o formulário, e não numa segunda
+  // gravação depois de salvar: o compromisso ainda não tem id, não há linha
+  // para atualizar, e obrigar a criar-salvar-reabrir era um vaivém que o
+  // escritório recusou.
+  comunicacao: ValorDaComunicacao;
 };
 
 interface CalendarModuleProps {
@@ -360,6 +372,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
     requirement_id: '',
     pericia_link_type: 'process',
     event_mode: '',
+    comunicacao: { ...COMUNICACAO_VAZIA },
   });
   const [savingEvent, setSavingEvent] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
@@ -626,6 +639,10 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         pericia_link_type: 'process',
         event_mode: '',
         djen_intimation_id: null,
+        // Cópia nova a cada abertura: `COMUNICACAO_VAZIA` é um objeto de módulo,
+        // e passá-lo por referência faria o texto digitado num compromisso
+        // reaparecer no próximo.
+        comunicacao: { ...COMUNICACAO_VAZIA },
         ...initialValues,
       };
 
@@ -1814,12 +1831,32 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
         event_mode: (['hearing', 'meeting', 'pericia'] as EventType[]).includes(newEventForm.type)
           ? (newEventForm.event_mode || null)
           : null,
+        // A comunicação ao cliente entra no MESMO INSERT/UPDATE do compromisso.
+        // Sem cliente vinculado ela não pode ficar ligada: o cron encontraria a
+        // linha, não acharia para quem mandar e registraria falha a cada hora.
+        ...payloadDaComunicacao(
+          newEventForm.client_id ? newEventForm.comunicacao : { ...newEventForm.comunicacao, ligada: false },
+        ),
       };
 
       const isAllDay = !newEventForm.time;
 
       if (editingEventId) {
-        const updatedEvent = await calendarService.updateEvent(editingEventId, basePayload);
+        // COMUNICAÇÃO JÁ ENVIADA NÃO SE REESCREVE. Editar o compromisso depois
+        // que a mensagem saiu não pode apagar o texto que o cliente recebeu —
+        // é o registro do que foi dito, e o painel dos detalhes o mostra. O
+        // reenvio já estava barrado pelo carimbo; o que se protege aqui é a
+        // memória.
+        const jaEnviada = !!calendarEventsData
+          .find((e) => e.id === editingEventId)?.client_notify_sent_at;
+        const payloadDaEdicao = { ...basePayload };
+        if (jaEnviada) {
+          delete (payloadDaEdicao as Record<string, unknown>).client_notify_enabled;
+          delete (payloadDaEdicao as Record<string, unknown>).client_notify_minutes_before;
+          delete (payloadDaEdicao as Record<string, unknown>).client_notify_message;
+          delete (payloadDaEdicao as Record<string, unknown>).client_notify_media_id;
+        }
+        const updatedEvent = await calendarService.updateEvent(editingEventId, payloadDaEdicao);
         setCalendarEventsData((prev) =>
           prev.map((event) => (event.id === updatedEvent.id ? updatedEvent : event)),
         );
@@ -2059,6 +2096,7 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
           requirement_id: existing.requirement_id ?? '',
           pericia_link_type: existing.requirement_id ? 'requirement' : 'process',
           event_mode: (existing as any).event_mode ?? '',
+          comunicacao: comunicacaoDoEvento(existing),
         },
         calendarEventId,
       );
@@ -4705,6 +4743,40 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                     className="w-full rounded text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-orange-400/40 focus:border-orange-400 border border-slate-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 placeholder:text-slate-400 px-3 py-2 text-[13px] resize-none transition"
                     placeholder="Anotações, detalhes adicionais..."
                   />
+                </div>
+
+                {/* Comunicar o cliente — coluna inteira, no fim do formulário.
+                    Fica DEPOIS de tudo de propósito: só faz sentido depois que
+                    o cliente, a data e a hora já foram escolhidos, porque é
+                    disso que a prévia e o horário de envio são feitos. */}
+                <div className="col-span-1 sm:col-span-6 lg:col-span-12">
+                  <div className="rounded-xl border border-[#e7e5df] bg-slate-50/60 px-3 py-3">
+                    <ClientNoticeFields
+                      valor={newEventForm.comunicacao}
+                      onChange={(comunicacao) => setNewEventForm(prev => ({ ...prev, comunicacao }))}
+                      textoSemCliente="Escolha um cliente acima para poder avisá-lo — sem vínculo não há para quem enviar, e a comunicação não será salva."
+                      contexto={{
+                        // A prévia acompanha o formulário em tempo real: mudar a
+                        // data acima muda o "sai em" aqui embaixo.
+                        inicio: newEventForm.date
+                          ? new Date(`${newEventForm.date}T${newEventForm.time || '00:00'}:00`)
+                          : null,
+                        titulo: newEventForm.title,
+                        detalhes: newEventForm.description,
+                        modalidade: newEventForm.event_mode,
+                        clienteNome:
+                          clients.find(c => c.id === newEventForm.client_id)?.full_name
+                          ?? (newEventForm.client_name || null),
+                        clienteTelefone: (() => {
+                          const c = clients.find(x => x.id === newEventForm.client_id);
+                          return c ? (c.mobile || c.phone || null) : null;
+                        })(),
+                        processoCodigo:
+                          processes.find(pr => pr.id === newEventForm.process_id)?.process_code ?? null,
+                        temCliente: !!newEventForm.client_id,
+                      }}
+                    />
+                  </div>
                 </div>
 
           </div>{/* fim grid */}

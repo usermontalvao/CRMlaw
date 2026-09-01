@@ -8,6 +8,18 @@
 // `utils/comunicacaoCompromisso`, compartilhada com a Edge Function que envia.
 // A prévia desta tela e a mensagem que chega ao cliente são montadas pela mesma
 // função — divergir seria o escritório prometer uma coisa e mandar outra.
+//
+// SÃO DOIS USOS, e por isso o arquivo exporta duas coisas:
+//
+//   • `ClientNoticeFields` — os campos, controlados por quem os monta. É o que
+//     o formulário de "Novo Compromisso" usa: ali o compromisso ainda não tem
+//     `id`, não há linha para gravar, e a escolha viaja junto com o resto do
+//     formulário até o INSERT.
+//   • `ClientNoticePanel` — os mesmos campos com estado próprio e botão de
+//     salvar, para os detalhes de um compromisso que já existe.
+//
+// A primeira versão só tinha o painel, e o resultado era um vaivém: criar,
+// salvar, fechar, clicar de novo no evento e só então ligar a comunicação.
 import React, { useEffect, useMemo, useState } from 'react';
 import { Send, Loader2, Check, AlertTriangle, Image as ImageIcon, Video, FileText, Mic, UserPlus } from 'lucide-react';
 import { calendarService } from '../../services/calendar.service';
@@ -24,18 +36,53 @@ import {
 import type { CalendarEvent } from '../../types/calendar.types';
 import type { WhatsAppMediaLibraryItem, WhatsAppMediaLibraryType } from '../../types/whatsapp.types';
 
-interface Props {
-  evento: CalendarEvent;
-  /** Nome do cliente vinculado, para a prévia e o cabeçalho. */
-  clienteNome?: string | null;
-  /** Telefone, só para mostrar a quem a mensagem vai. */
-  clienteTelefone?: string | null;
-  /** Número do processo, se houver — alimenta `{processo}`. */
-  processoCodigo?: string | null;
-  /** Abre a edição do compromisso, para vincular um cliente. */
-  onVincularCliente?: () => void;
-  /** Avisa a Agenda que a linha mudou, para a lista recarregar. */
-  onSalvo?: (evento: CalendarEvent) => void;
+/** O que as duas pontas trocam. Tudo que a comunicação precisa saber. */
+export interface ValorDaComunicacao {
+  ligada: boolean;
+  minutos: number;
+  mensagem: string;
+  midiaId: string | null;
+}
+
+/** O ponto de partida de um compromisso novo: desligado, com o texto sugerido. */
+export const COMUNICACAO_VAZIA: ValorDaComunicacao = {
+  ligada: false,
+  minutos: ANTECEDENCIA_PADRAO_MINUTOS,
+  mensagem: MENSAGEM_PADRAO_DA_COMUNICACAO,
+  midiaId: null,
+};
+
+/** Lê o valor de um compromisso já salvo, para semear a edição. */
+export function comunicacaoDoEvento(ev: Partial<CalendarEvent> | null | undefined): ValorDaComunicacao {
+  if (!ev) return { ...COMUNICACAO_VAZIA };
+  return {
+    ligada: !!ev.client_notify_enabled,
+    minutos: ev.client_notify_minutes_before ?? ANTECEDENCIA_PADRAO_MINUTOS,
+    mensagem: ev.client_notify_message ?? MENSAGEM_PADRAO_DA_COMUNICACAO,
+    midiaId: ev.client_notify_media_id ?? null,
+  };
+}
+
+/** O que o formulário manda ao banco. Desligada, os campos voltam a nulo. */
+export function payloadDaComunicacao(v: ValorDaComunicacao) {
+  return {
+    client_notify_enabled: v.ligada,
+    client_notify_minutes_before: v.ligada ? v.minutos : null,
+    client_notify_message: v.ligada ? v.mensagem.trim() : null,
+    client_notify_media_id: v.ligada ? v.midiaId : null,
+  };
+}
+
+/** Os dados do compromisso que a prévia precisa — venham eles do formulário ou da linha. */
+export interface ContextoDaComunicacao {
+  inicio: Date | null;
+  titulo: string;
+  detalhes: string;
+  modalidade: string;
+  clienteNome: string | null;
+  clienteTelefone: string | null;
+  processoCodigo: string | null;
+  temCliente: boolean;
 }
 
 const ICONE_DA_MIDIA: Record<WhatsAppMediaLibraryType, React.ComponentType<{ className?: string }>> = {
@@ -49,123 +96,67 @@ const ROTULO_DA_MIDIA: Record<WhatsAppMediaLibraryType, string> = {
   image: 'Imagem', video: 'Vídeo', audio: 'Áudio', document: 'Documento',
 };
 
-export const ClientNoticePanel: React.FC<Props> = ({
-  evento, clienteNome, clienteTelefone, processoCodigo, onVincularCliente, onSalvo,
+// ── OS CAMPOS ───────────────────────────────────────────────────────────────
+// Controlados: não guardam nada, não gravam nada. Quem os monta é dono do
+// valor. É o que permite o mesmo bloco servir ao formulário de criação (onde o
+// compromisso ainda não existe) e ao painel dos detalhes.
+
+interface CamposProps {
+  valor: ValorDaComunicacao;
+  onChange: (v: ValorDaComunicacao) => void;
+  contexto: ContextoDaComunicacao;
+  /** Abre a edição do compromisso, para vincular um cliente. */
+  onVincularCliente?: () => void;
+  /** No formulário de criação o cliente ainda pode ser escolhido logo acima. */
+  textoSemCliente?: string;
+}
+
+export const ClientNoticeFields: React.FC<CamposProps> = ({
+  valor, onChange, contexto, onVincularCliente, textoSemCliente,
 }) => {
-  const toast = useToastContext();
+  const [midias, setMidias] = useState<WhatsAppMediaLibraryItem[]>([]);
+  const set = (parcial: Partial<ValorDaComunicacao>) => onChange({ ...valor, ...parcial });
 
-  const jaEnviada = !!evento.client_notify_sent_at;
-  const temCliente = !!evento.client_id;
-
-  const [ligada, setLigada]       = useState(!!evento.client_notify_enabled);
-  const [minutos, setMinutos]     = useState<number>(
-    evento.client_notify_minutes_before ?? ANTECEDENCIA_PADRAO_MINUTOS);
-  const [mensagem, setMensagem]   = useState(
-    evento.client_notify_message ?? MENSAGEM_PADRAO_DA_COMUNICACAO);
-  const [midiaId, setMidiaId]     = useState<string | null>(evento.client_notify_media_id ?? null);
-  const [midias, setMidias]       = useState<WhatsAppMediaLibraryItem[]>([]);
-  const [salvando, setSalvando]   = useState(false);
-
-  // A biblioteca só é buscada quando o painel é ligado: quem nunca usa a
-  // comunicação não paga a consulta ao abrir os detalhes de um compromisso.
+  // A biblioteca só é buscada quando a comunicação é ligada: quem nunca usa não
+  // paga a consulta ao abrir um compromisso.
   useEffect(() => {
-    if (!ligada || midias.length > 0) return;
+    if (!valor.ligada || midias.length > 0) return;
     let vivo = true;
     void whatsappService.listSavedMedia({ activeOnly: true })
       .then(itens => { if (vivo) setMidias(itens); })
-      .catch(() => { /* sem biblioteca o painel segue: a mídia é opcional */ });
+      .catch(() => { /* sem biblioteca o bloco segue: a mídia é opcional */ });
     return () => { vivo = false; };
-  }, [ligada, midias.length]);
+  }, [valor.ligada, midias.length]);
 
-  const inicio = useMemo(() => new Date(evento.start_at), [evento.start_at]);
+  /**
+   * A prévia usa a MESMA função do envio — ver o cabeçalho do arquivo.
+   *
+   * A única diferença é o nome: no formulário o cliente pode ainda não ter sido
+   * escolhido, e substituir por vazio produzia "Bom dia, . Seu compromisso…".
+   * O marcador deixa claro que ali entra um nome, em vez de parecer defeito.
+   * No envio de verdade o nome sempre existe — sem cliente não há envio.
+   */
+  const previa = useMemo(() => {
+    const nome = (contexto.clienteNome || '').trim();
+    const nomeNaPrevia = nome || '[nome do cliente]';
+    return montarMensagemDaComunicacao(valor.mensagem, {
+    primeiro_nome: nome ? nome.split(/\s+/)[0] : nomeNaPrevia,
+    cliente: nomeNaPrevia,
+    titulo: contexto.titulo,
+    data: contexto.inicio?.toLocaleDateString('pt-BR', { timeZone: 'America/Cuiaba' }) ?? '—',
+    hora: contexto.inicio?.toLocaleTimeString('pt-BR', {
+      timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit' }) ?? '—',
+    detalhes: contexto.detalhes,
+    modalidade: contexto.modalidade,
+    processo: contexto.processoCodigo ?? '',
+    });
+  }, [valor.mensagem, contexto]);
 
-  /** A prévia usa a MESMA função do envio — ver o cabeçalho do arquivo. */
-  const previa = useMemo(() => montarMensagemDaComunicacao(mensagem, {
-    primeiro_nome: (clienteNome || '').trim().split(/\s+/)[0] ?? '',
-    cliente: clienteNome ?? '',
-    titulo: evento.title ?? '',
-    data: inicio.toLocaleDateString('pt-BR', { timeZone: 'America/Cuiaba' }),
-    hora: inicio.toLocaleTimeString('pt-BR', { timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit' }),
-    detalhes: evento.description ?? '',
-    modalidade: evento.event_mode ?? '',
-    processo: processoCodigo ?? '',
-  }), [mensagem, clienteNome, evento.title, evento.description, evento.event_mode, processoCodigo, inicio]);
+  const saiEm = contexto.inicio ? momentoDoEnvio(contexto.inicio, valor.minutos) : null;
+  const jaPassouDaHora = !!saiEm && saiEm.getTime() <= Date.now();
 
-  const saiEm = useMemo(() => momentoDoEnvio(inicio, minutos), [inicio, minutos]);
-  const jaPassouDaHora = saiEm.getTime() <= Date.now();
-
-  const salvar = async () => {
-    setSalvando(true);
-    try {
-      const atualizado = await calendarService.saveClientNotice(evento.id, {
-        enabled: ligada,
-        minutesBefore: ligada ? minutos : null,
-        message: ligada ? mensagem.trim() : null,
-        mediaId: ligada ? midiaId : null,
-      });
-      toast.success(
-        ligada ? 'Comunicação agendada' : 'Comunicação cancelada',
-        ligada
-          ? `O cliente será avisado em ${saiEm.toLocaleString('pt-BR', { timeZone: 'America/Cuiaba', dateStyle: 'short', timeStyle: 'short' })}.`
-          : 'Nada será enviado ao cliente.',
-      );
-      onSalvo?.(atualizado);
-    } catch (err: any) {
-      toast.error('Não foi possível salvar', err?.message ?? 'Tente novamente.');
-    } finally {
-      setSalvando(false);
-    }
-  };
-
-  // ── Sem cliente vinculado: explica e leva para lá ────────────────────────
-  if (!temCliente) {
-    return (
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Comunicar o cliente</p>
-        <p className="mt-1.5 text-xs text-slate-600 leading-relaxed">
-          Este compromisso não tem cliente vinculado, então não há para quem enviar.
-          Vincule um cliente e a comunicação por WhatsApp fica disponível aqui.
-        </p>
-        {onVincularCliente && (
-          <button
-            type="button"
-            onClick={onVincularCliente}
-            className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-          >
-            <UserPlus className="h-3.5 w-3.5 text-slate-400" />
-            Vincular cliente
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  // ── Já enviada: vira registro, não formulário ────────────────────────────
-  if (jaEnviada) {
-    const quando = new Date(evento.client_notify_sent_at!);
-    return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Comunicação enviada</p>
-        <p className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
-          <Check className="h-3.5 w-3.5 shrink-0" />
-          {clienteNome || 'Cliente'} foi avisado em{' '}
-          {quando.toLocaleString('pt-BR', { timeZone: 'America/Cuiaba', dateStyle: 'short', timeStyle: 'short' })}
-        </p>
-        {evento.client_notify_message && (
-          <p className="mt-2 whitespace-pre-line rounded-lg border-l-2 border-emerald-400 bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed text-slate-700">
-            {evento.client_notify_message}
-          </p>
-        )}
-        {evento.client_notify_error && (
-          <p className="mt-2 text-[11px] text-amber-700">{evento.client_notify_error}</p>
-        )}
-      </div>
-    );
-  }
-
-  // ── O painel ─────────────────────────────────────────────────────────────
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+    <div>
       {/* Interruptor */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -175,37 +166,48 @@ export const ClientNoticePanel: React.FC<Props> = ({
         <button
           type="button"
           role="switch"
-          aria-checked={ligada}
+          aria-checked={valor.ligada}
           aria-label="Comunicar o cliente por WhatsApp"
-          onClick={() => setLigada(v => !v)}
-          className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition ${ligada ? 'bg-orange-500' : 'bg-slate-300'}`}
+          onClick={() => set({ ligada: !valor.ligada })}
+          className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition ${valor.ligada ? 'bg-orange-500' : 'bg-slate-300'}`}
         >
-          <span className={`absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white transition-all ${ligada ? 'left-[18px]' : 'left-[2px]'}`} />
+          <span className={`absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white transition-all ${valor.ligada ? 'left-[18px]' : 'left-[2px]'}`} />
         </button>
       </div>
 
-      {ligada && (
+      {valor.ligada && (
         <div className="mt-3 space-y-3 border-t border-slate-100 pt-3">
-          {/* Para quem vai */}
-          <div className="flex items-center gap-2.5 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-2">
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">
-              {(clienteNome || '?').trim().slice(0, 2).toUpperCase()}
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-slate-800">{clienteNome || 'Cliente vinculado'}</p>
-              <p className="truncate font-mono text-[10px] text-slate-500">
-                {clienteTelefone || 'sem telefone no cadastro'} · vinculado
-              </p>
+          {/* Para quem vai — ou o aviso de que ainda não há para quem */}
+          {contexto.temCliente ? (
+            <div className="flex items-center gap-2.5 rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-2">
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-emerald-600 text-[10px] font-bold text-white">
+                {(contexto.clienteNome || '?').trim().slice(0, 2).toUpperCase()}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-slate-800">{contexto.clienteNome || 'Cliente vinculado'}</p>
+                <p className="truncate font-mono text-[10px] text-slate-500">
+                  {contexto.clienteTelefone || 'sem telefone no cadastro'} · vinculado
+                </p>
+              </div>
             </div>
-          </div>
-
-          {/* Sem telefone o envio morre lá na frente; avisa aqui, antes de salvar. */}
-          {!clienteTelefone && (
-            <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-amber-700">
-              <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
-              O cadastro deste cliente não tem telefone. A comunicação fica agendada, mas só sai depois
-              que houver uma conversa de WhatsApp aberta com ele.
-            </p>
+          ) : (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
+              <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-amber-800">
+                <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+                {textoSemCliente
+                  ?? 'Este compromisso ainda não tem cliente vinculado — sem isso não há para quem enviar.'}
+              </p>
+              {onVincularCliente && (
+                <button
+                  type="button"
+                  onClick={onVincularCliente}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100"
+                >
+                  <UserPlus className="h-3 w-3" />
+                  Vincular cliente
+                </button>
+              )}
+            </div>
           )}
 
           {/* Antecedência */}
@@ -216,9 +218,9 @@ export const ClientNoticePanel: React.FC<Props> = ({
                 <button
                   key={op.minutos}
                   type="button"
-                  onClick={() => setMinutos(op.minutos)}
+                  onClick={() => set({ minutos: op.minutos })}
                   className={`rounded-full border px-2.5 py-1 text-[11px] tabular-nums transition ${
-                    minutos === op.minutos
+                    valor.minutos === op.minutos
                       ? 'border-transparent bg-orange-500 font-semibold text-white'
                       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                   }`}
@@ -228,9 +230,11 @@ export const ClientNoticePanel: React.FC<Props> = ({
               ))}
             </div>
             <p className={`mt-1.5 text-[10px] ${jaPassouDaHora ? 'text-amber-700' : 'text-slate-400'}`}>
-              {jaPassouDaHora
-                ? 'Essa antecedência já passou — o cliente não será avisado. Escolha uma menor.'
-                : `Sai em ${saiEm.toLocaleString('pt-BR', { timeZone: 'America/Cuiaba', dateStyle: 'short', timeStyle: 'short' })}, no horário de atendimento do canal.`}
+              {!saiEm
+                ? 'Escolha a data e a hora do compromisso para saber quando a mensagem sai.'
+                : jaPassouDaHora
+                  ? 'Essa antecedência já passou — o cliente não será avisado. Escolha uma menor.'
+                  : `Sai em ${saiEm.toLocaleString('pt-BR', { timeZone: 'America/Cuiaba', dateStyle: 'short', timeStyle: 'short' })}, no horário de atendimento do canal.`}
             </p>
           </div>
 
@@ -238,8 +242,8 @@ export const ClientNoticePanel: React.FC<Props> = ({
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Mensagem</p>
             <textarea
-              value={mensagem}
-              onChange={e => setMensagem(e.target.value)}
+              value={valor.mensagem}
+              onChange={e => set({ mensagem: e.target.value })}
               rows={4}
               className="mt-1.5 w-full resize-y rounded-lg border border-slate-200 px-2.5 py-2 text-xs leading-relaxed text-slate-800 outline-none transition focus:border-orange-400"
               placeholder="O que o cliente vai ler…"
@@ -249,7 +253,7 @@ export const ClientNoticePanel: React.FC<Props> = ({
                 <button
                   key={v}
                   type="button"
-                  onClick={() => setMensagem(m => `${m}{${v}}`)}
+                  onClick={() => set({ mensagem: `${valor.mensagem}{${v}}` })}
                   title={`Inserir {${v}}`}
                   className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
                 >
@@ -268,14 +272,14 @@ export const ClientNoticePanel: React.FC<Props> = ({
               <div className="mt-1.5 grid grid-cols-3 gap-1.5">
                 {midias.map(m => {
                   const Icone = ICONE_DA_MIDIA[m.type] ?? FileText;
-                  const escolhida = midiaId === m.id;
+                  const escolhida = valor.midiaId === m.id;
                   return (
                     <button
                       key={m.id}
                       type="button"
                       // Clicar na escolhida DESMARCA: sem isso, quem anexa por
                       // engano não tem como voltar a mandar só o texto.
-                      onClick={() => setMidiaId(escolhida ? null : m.id)}
+                      onClick={() => set({ midiaId: escolhida ? null : m.id })}
                       className={`overflow-hidden rounded-lg border text-left transition ${
                         escolhida ? 'border-orange-400 ring-2 ring-orange-200' : 'border-slate-200 hover:bg-slate-50'
                       }`}
@@ -305,25 +309,121 @@ export const ClientNoticePanel: React.FC<Props> = ({
               {previa.trim() || 'Escreva a mensagem acima.'}
             </p>
           </div>
-
-          {evento.client_notify_error && (
-            <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-red-700">
-              <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
-              {evento.client_notify_error}
-            </p>
-          )}
         </div>
+      )}
+    </div>
+  );
+};
+
+// ── O PAINEL DOS DETALHES ───────────────────────────────────────────────────
+// Os mesmos campos, com estado próprio e botão de salvar, para um compromisso
+// que já existe.
+
+interface Props {
+  evento: CalendarEvent;
+  /** Nome do cliente vinculado, para a prévia e o cabeçalho. */
+  clienteNome?: string | null;
+  /** Telefone, só para mostrar a quem a mensagem vai. */
+  clienteTelefone?: string | null;
+  /** Número do processo, se houver — alimenta `{processo}`. */
+  processoCodigo?: string | null;
+  /** Abre a edição do compromisso, para vincular um cliente. */
+  onVincularCliente?: () => void;
+  /** Avisa a Agenda que a linha mudou, para a lista recarregar. */
+  onSalvo?: (evento: CalendarEvent) => void;
+}
+
+export const ClientNoticePanel: React.FC<Props> = ({
+  evento, clienteNome, clienteTelefone, processoCodigo, onVincularCliente, onSalvo,
+}) => {
+  const toast = useToastContext();
+  const [valor, setValor] = useState<ValorDaComunicacao>(() => comunicacaoDoEvento(evento));
+  const [salvando, setSalvando] = useState(false);
+
+  const inicio = useMemo(() => new Date(evento.start_at), [evento.start_at]);
+  const saiEm = useMemo(() => momentoDoEnvio(inicio, valor.minutos), [inicio, valor.minutos]);
+
+  const salvar = async () => {
+    setSalvando(true);
+    try {
+      const atualizado = await calendarService.saveClientNotice(evento.id, {
+        enabled: valor.ligada,
+        minutesBefore: valor.ligada ? valor.minutos : null,
+        message: valor.ligada ? valor.mensagem.trim() : null,
+        mediaId: valor.ligada ? valor.midiaId : null,
+      });
+      toast.success(
+        valor.ligada ? 'Comunicação agendada' : 'Comunicação cancelada',
+        valor.ligada
+          ? `O cliente será avisado em ${saiEm.toLocaleString('pt-BR', { timeZone: 'America/Cuiaba', dateStyle: 'short', timeStyle: 'short' })}.`
+          : 'Nada será enviado ao cliente.',
+      );
+      onSalvo?.(atualizado);
+    } catch (err: any) {
+      toast.error('Não foi possível salvar', err?.message ?? 'Tente novamente.');
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  // ── Já enviada: vira registro, não formulário ────────────────────────────
+  if (evento.client_notify_sent_at) {
+    const quando = new Date(evento.client_notify_sent_at);
+    return (
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Comunicação enviada</p>
+        <p className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+          <Check className="h-3.5 w-3.5 shrink-0" />
+          {clienteNome || 'Cliente'} foi avisado em{' '}
+          {quando.toLocaleString('pt-BR', { timeZone: 'America/Cuiaba', dateStyle: 'short', timeStyle: 'short' })}
+        </p>
+        {evento.client_notify_message && (
+          <p className="mt-2 whitespace-pre-line rounded-lg border-l-2 border-emerald-400 bg-white/70 px-2.5 py-2 text-[11px] leading-relaxed text-slate-700">
+            {evento.client_notify_message}
+          </p>
+        )}
+        {evento.client_notify_error && (
+          <p className="mt-2 text-[11px] text-amber-700">{evento.client_notify_error}</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+      <ClientNoticeFields
+        valor={valor}
+        onChange={setValor}
+        onVincularCliente={onVincularCliente}
+        textoSemCliente="Este compromisso não tem cliente vinculado, então não há para quem enviar."
+        contexto={{
+          inicio,
+          titulo: evento.title ?? '',
+          detalhes: evento.description ?? '',
+          modalidade: evento.event_mode ?? '',
+          clienteNome: clienteNome ?? null,
+          clienteTelefone: clienteTelefone ?? null,
+          processoCodigo: processoCodigo ?? null,
+          temCliente: !!evento.client_id,
+        }}
+      />
+
+      {evento.client_notify_error && (
+        <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-red-700">
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+          {evento.client_notify_error}
+        </p>
       )}
 
       <div className="mt-3 flex justify-end">
         <button
           type="button"
           onClick={salvar}
-          disabled={salvando || (ligada && !mensagem.trim())}
+          disabled={salvando || (valor.ligada && !valor.mensagem.trim())}
           className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-orange-600 disabled:opacity-50"
         >
           {salvando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-          {ligada ? 'Salvar comunicação' : 'Salvar'}
+          {valor.ligada ? 'Salvar comunicação' : 'Salvar'}
         </button>
       </div>
     </div>
