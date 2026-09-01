@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.46',
+    date: '01/09/2026',
+    summary: 'Começar a gravar um áudio no WhatsApp cala o áudio que estava tocando.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Gravar áudio pausa o áudio que está tocando',
+            description: 'Quem estava ouvindo uma mensagem e clicava em gravar continuava com o áudio antigo saindo pelo alto-falante — dentro do microfone aberto, e no ouvido de quem gravava. A thread agora cala antes de o microfone abrir. Vale no módulo e no widget flutuante.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.45',
     date: '01/09/2026',
     summary: 'O número do processo na Linha do Tempo copia com um clique.',

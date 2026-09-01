@@ -16,6 +16,7 @@ import { isReconnectPendingError, enqueueReconnectHold } from '../../../services
 import { playWaActionSound } from '../../../utils/waActionSounds';
 import { giphyService, type GiphyItem } from '../../../services/giphy.service';
 import { openPreferredMicrophone } from '../../../utils/audioDevices';
+import { pausarTodosOsAudios } from '../audioPlayback';
 import { useToastContext } from '../../../contexts/ToastContext';
 import { useSecurityPin } from '../../../contexts/SecurityPinContext';
 import type {
@@ -966,6 +967,9 @@ export function useWaComposer({
     if (!ensurePermission({ module: 'whatsapp', action: 'create' })) return;
     if (!selected || recording) return;
     try {
+      // Áudio tocando + microfone aberto = o alto-falante entra na gravação (e
+      // quem grava fica ouvindo a mensagem antiga). A thread cala antes.
+      pausarTodosOsAudios();
       // O MESMO microfone das ligações — ver `utils/audioDevices`.
       const stream = await openPreferredMicrophone();
       const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'

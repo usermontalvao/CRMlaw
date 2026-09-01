@@ -18,6 +18,7 @@ import type { WhatsAppMessage, WhatsAppDeleteScope } from '../../types/whatsapp.
 import { ACTOR_ESCRITORIO, agruparReacoes } from '../../utils/waReactions';
 import { useMessageMenu, type MessageMenuActions } from './messageActionsMenu';
 import { applyOutputToElement } from '../../utils/audioDevices';
+import { audiosDaThread, pausarOsOutrosAudios, type ControleDeAudio } from './audioPlayback';
 
 /** Dia e hora do agendamento, curtos — cabem na linha da marca interna. */
 const formatScheduleStamp = (iso: string): string =>
@@ -308,19 +309,9 @@ MessageBubble.displayName = 'MessageBubble';
 
 // ── Player de áudio estilo WhatsApp (play/pause + onda clicável + tempo/velocidade) ──
 //
-// SALA DE CONTROLE DOS ÁUDIOS DA THREAD. Cada bolha é um componente isolado e não
-// enxerga as vizinhas; sem um ponto comum, dois áudios tocavam ao mesmo tempo
-// (bastava clicar no segundo sem pausar o primeiro) e nada emendava um no outro.
-// Este registro é esse ponto: cada player se anuncia pelo id da mensagem e
-// oferece "toque" e "pause". Módulo-nível de propósito — é o único escopo que
-// todas as bolhas compartilham, e ele se esvazia sozinho conforme elas desmontam.
-interface ControleDeAudio { tocar: () => void; pausar: () => void }
-const audiosDaThread = new Map<string, ControleDeAudio>();
-
-/** Silencia todos os outros áudios. Um por vez, como no WhatsApp. */
-function pausarOsOutrosAudios(idQueVaiTocar: string): void {
-  audiosDaThread.forEach((controle, id) => { if (id !== idQueVaiTocar) controle.pausar(); });
-}
+// O registro compartilhado (quem está tocando, quem pausa quem) mora em
+// `./audioPlayback` — o compositor também precisa dele para calar a thread
+// quando a gravação começa.
 
 const WA_AUDIO_BARS = Array.from({ length: 30 }, (_, i) => 25 + ((i * 41 + i * i * 7) % 75));
 const WaAudioPlayer: React.FC<{
