@@ -1,6 +1,6 @@
 {
   "name": "crm",
-  "version": "1.13.47",
+  "version": "1.13.48",
   "scripts": {
     "start": "vite",
     "dev": "vite",

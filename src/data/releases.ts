@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.48',
+    date: '01/09/2026',
+    summary: 'Uma tabela de backup estava aberta a qualquer um com a URL do projeto; foi fechada.',
+    modules: [
+      {
+        moduleId: 'configuracoes',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'Backup do roteiro da IA do WhatsApp deixou de ser público',
+            description: 'A tabela wa_ai_playbook_backup, cópia manual do roteiro da IA, tinha ficado sem Row-Level Security: qualquer um com a URL do projeto lia e editava o prompt inteiro. Agora está com RLS, sem policies e sem permissões para anônimo ou autenticado — só o serviço alcança. Era o único aviso crítico em aberto no painel do Supabase.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.47',
     date: '01/09/2026',
     summary: 'O título do prazo passa a ser sempre em caixa alta.',
