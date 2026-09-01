@@ -195,7 +195,7 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
 
     if (selectedDeadline) {
       setFormData({
-        title: selectedDeadline.title || '',
+        title: (selectedDeadline.title || '').toLocaleUpperCase('pt-BR'),
         description: selectedDeadline.description || '',
         due_date: toDateInputValue(selectedDeadline.due_date),
         status:   clampStatus(selectedDeadline.status   || 'pendente'),
@@ -229,8 +229,17 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
     }
   }, [open, selectedDeadline, initialData, statusOptionsProp, priorityOptionsProp, typeOptionsProp]);
 
+  /**
+   * O título do prazo é sempre em CAIXA ALTA. É como o escritório escreve nas
+   * listas e nos avisos, e a mistura de caixas deixava a coluna irregular.
+   * Aplicado enquanto se digita (e não só ao salvar) para que o campo mostre
+   * exatamente o que vai para o banco — inclusive ao abrir um prazo antigo.
+   * `pt-BR` porque a regra de caixa alta é por idioma, e o título tem acento.
+   */
+  const emCaixaAlta = (texto: string) => texto.toLocaleUpperCase('pt-BR');
+
   const handleChange = (field: keyof DeadlineFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => ({ ...prev, [field]: field === 'title' ? emCaixaAlta(value) : value }));
   };
 
   /**
@@ -287,7 +296,7 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
       const avisoSuspenso = !!visibleFromIso && new Date(visibleFromIso).getTime() > Date.now();
 
       const payload = {
-        title: formData.title.trim(),
+        title: emCaixaAlta(formData.title.trim()),
         description: formData.description?.trim() || null,
         due_date: new Date(formData.due_date).toISOString(),
         status: formData.status,
@@ -438,7 +447,7 @@ export const DeadlineFormModal: React.FC<DeadlineFormModalProps> = ({
                 value={formData.title}
                 onChange={e => handleChange('title', e.target.value)}
                 className={inputStyle}
-                placeholder="Ex: Contestação Processo 00123..."
+                placeholder="Ex: CONTESTAÇÃO PROCESSO 00123..."
                 required
               />
             </div>

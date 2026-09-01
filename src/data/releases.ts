@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.47',
+    date: '01/09/2026',
+    summary: 'O título do prazo passa a ser sempre em caixa alta.',
+    modules: [
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Título do prazo em CAIXA ALTA, automaticamente',
+            description: 'É como o escritório escreve nas listas e nos avisos, e a mistura de caixas deixava a coluna irregular. A conversão acontece enquanto se digita, ao abrir um prazo existente e na hora de salvar — o campo mostra exatamente o que vai para o banco.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.46',
     date: '01/09/2026',
     summary: 'Começar a gravar um áudio no WhatsApp cala o áudio que estava tocando.',
