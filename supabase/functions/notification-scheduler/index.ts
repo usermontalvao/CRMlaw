@@ -14,6 +14,11 @@ import {
   templateDaNotificacao,
   type NotificacaoWhatsAppConfig,
 } from "../_shared/notificacao-whatsapp.ts";
+import {
+  montarMensagemDaComunicacao,
+  motivoDeNaoEnviar,
+} from "../_shared/comunicacao-compromisso.ts";
+import { criarPortaoDeExpediente } from "../_shared/wa-channel-hours.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -1123,6 +1128,199 @@ async function checkAppointmentReminders(thresholds: typeof THRESHOLDS_DEFAULTS)
   }
 }
 
+/**
+ * COMUNICA O CLIENTE ANTES DO COMPROMISSO.
+ *
+ * Irmã de `checkAppointmentReminders`, e separada dela de propósito: aquela
+ * empurra a agenda de quem trabalha aqui, esta manda uma mensagem para fora do
+ * escritório. Dono, texto, canal, antecedência e consequência são outros — o
+ * lembrete interno ignorado não custa nada, e este, uma vez enviado, não volta.
+ *
+ * O caminho é o MESMO do follow-up de assinatura, que já é o caminho de falar
+ * com cliente por aqui: acha a conversa aberta do cliente, confere o expediente
+ * DO CANAL dela (a agenda real do escritório, com sábado e feriado — e não um
+ * 08–18 cravado), e entrega pelo `evolution-send`. Fora do expediente ninguém
+ * perde nada: a execução seguinte do cron pega a linha de novo, porque o
+ * carimbo `client_notify_sent_at` só é gravado depois do envio confirmado.
+ *
+ * A mídia sai como uma SEGUNDA mensagem, depois do texto. Mandar o texto como
+ * legenda do vídeo pareceria mais limpo, mas legenda longa fica escondida atrás
+ * de "ler mais" no aparelho do cliente — e o recado importante é o texto.
+ * Falha na mídia não desfaz o texto que já saiu; ela é o complemento.
+ */
+async function checkClientAppointmentNotices() {
+  console.log("📣 Verificando comunicações ao cliente...");
+
+  const agora = new Date();
+  // A janela é generosa de propósito: a maior antecedência oferecida é uma
+  // semana, e o filtro grosso aqui só existe para não varrer a agenda inteira.
+  const limite = new Date(agora.getTime() + 8 * 24 * 60 * 60_000);
+
+  const { data: eventos, error } = await supabase
+    .from("calendar_events")
+    .select(
+      "id, title, description, event_mode, start_at, status, client_id, client_notify_minutes_before, " +
+      "client_notify_message, client_notify_media_id, client_notify_sent_at, " +
+      "client_notify_enabled, process_id, processes(process_code), clients(full_name)",
+    )
+    .eq("client_notify_enabled", true)
+    .is("client_notify_sent_at", null)
+    .neq("status", "cancelado")
+    .gte("start_at", agora.toISOString())
+    .lte("start_at", limite.toISOString());
+
+  if (error) {
+    console.error("Erro ao buscar comunicações ao cliente:", error);
+    return;
+  }
+  if (!eventos || eventos.length === 0) return;
+
+  const canalPodeFalarAgora = criarPortaoDeExpediente(supabase);
+
+  for (const ev of eventos) {
+    const motivo = motivoDeNaoEnviar({
+      ligada: ev.client_notify_enabled === true,
+      enviadaEm: ev.client_notify_sent_at,
+      clienteId: ev.client_id,
+      mensagem: ev.client_notify_message,
+      inicio: ev.start_at,
+      minutosAntes: ev.client_notify_minutes_before,
+    }, agora);
+    if (motivo) {
+      // "ainda_cedo" é o caso comum e não merece linha de log; os outros sim,
+      // porque são configuração incompleta que alguém precisa consertar.
+      if (motivo !== "ainda_cedo") console.log(`⏭️ Comunicação ${ev.id}: ${motivo}`);
+      continue;
+    }
+
+    // A conversa aberta do cliente. Sem ela não há para onde mandar: o cliente
+    // nunca falou com o escritório por WhatsApp, e abrir conversa por conta
+    // própria para entregar um lembrete é começar uma conversa que ninguém
+    // pediu.
+    const { data: conv } = await supabase
+      .from("whatsapp_conversations")
+      .select("id, is_blocked, instance_id, contact_name")
+      .eq("client_id", ev.client_id)
+      .neq("status", "closed")
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!conv || conv.is_blocked) {
+      await marcarFalhaDaComunicacao(ev.id, "O cliente não tem conversa aberta no WhatsApp.");
+      continue;
+    }
+    if (!await canalPodeFalarAgora(conv.instance_id)) continue; // volta no cron seguinte
+
+    const inicio = new Date(ev.start_at);
+    const clienteNome = (ev as any).clients?.full_name || conv.contact_name || "";
+    const texto = montarMensagemDaComunicacao(String(ev.client_notify_message ?? ""), {
+      primeiro_nome: primeiroNome(clienteNome),
+      cliente: clienteNome,
+      titulo: ev.title ?? "",
+      data: inicio.toLocaleDateString("pt-BR", { timeZone: "America/Cuiaba" }),
+      hora: inicio.toLocaleTimeString("pt-BR", {
+        timeZone: "America/Cuiaba", hour: "2-digit", minute: "2-digit",
+      }),
+      detalhes: (ev as any).description ?? "",
+      modalidade: (ev as any).event_mode ?? "",
+      processo: (ev as any).processes?.process_code ?? "",
+    });
+    if (!texto.trim()) {
+      await marcarFalhaDaComunicacao(ev.id, "A mensagem ficou vazia depois de trocar as variáveis.");
+      continue;
+    }
+
+    try {
+      const resp = await fetch(`${supabaseUrl}/functions/v1/evolution-send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({ conversation_id: conv.id, sender_user_id: null, text: texto }),
+      });
+      const out = await resp.json().catch(() => ({}));
+      if (!resp.ok || out?.error) throw new Error(out?.error || `HTTP ${resp.status}`);
+
+      // O CARIMBO VEM AQUI, depois do texto confirmado e ANTES da mídia. Se a
+      // mídia falhar, o cliente já recebeu o recado e não pode receber o texto
+      // de novo na hora seguinte — mensagem duplicada para cliente é pior que
+      // mídia faltando, e a falha da mídia fica registrada no erro.
+      await supabase.from("calendar_events")
+        .update({ client_notify_sent_at: new Date().toISOString(), client_notify_error: null })
+        .eq("id", ev.id);
+
+      if (ev.client_notify_media_id) {
+        await enviarMidiaDaComunicacao(conv.id, ev.id, String(ev.client_notify_media_id));
+      }
+
+      await supabase.from("whatsapp_internal_notes").insert({
+        conversation_id: conv.id,
+        author_id: null,
+        body: `📣 Comunicação de compromisso enviada ao cliente: "${ev.title ?? ""}".`,
+      });
+      console.log(`📣 Comunicação enviada ao cliente do compromisso ${ev.id}`);
+    } catch (err: any) {
+      await marcarFalhaDaComunicacao(ev.id, String(err?.message ?? err).slice(0, 300));
+    }
+  }
+}
+
+/**
+ * Registra por que a comunicação não saiu, SEM carimbar o envio.
+ *
+ * A linha continua pendente e o cron tenta de novo — o que muda é que a falha
+ * fica visível no painel em vez de sumir num `console.error` que ninguém lê.
+ * Foi a ausência exata disto que deixou o aviso de prazo por WhatsApp meses
+ * sem entregar nada, com a função devolvendo sucesso a cada execução.
+ */
+async function marcarFalhaDaComunicacao(eventoId: string, erro: string) {
+  console.error(`❌ Comunicação ao cliente (${eventoId}): ${erro}`);
+  await supabase.from("calendar_events")
+    .update({ client_notify_error: erro })
+    .eq("id", eventoId);
+}
+
+/** A mídia da biblioteca, como segunda mensagem. Falhar aqui não desfaz o texto. */
+async function enviarMidiaDaComunicacao(conversationId: string, eventoId: string, mediaId: string) {
+  const { data: midia } = await supabase
+    .from("whatsapp_media_library")
+    .select("type, storage_path, mime_type, file_name, is_active")
+    .eq("id", mediaId)
+    .maybeSingle();
+
+  if (!midia || midia.is_active === false) {
+    await marcarFalhaDaComunicacao(eventoId, "Texto enviado, mas a mídia não está mais na biblioteca.");
+    return;
+  }
+
+  try {
+    const resp = await fetch(`${supabaseUrl}/functions/v1/evolution-send`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabaseServiceKey}`,
+      },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        sender_user_id: null,
+        type: midia.type,
+        storage_path: midia.storage_path,
+        mime_type: midia.mime_type,
+        file_name: midia.file_name,
+      }),
+    });
+    const out = await resp.json().catch(() => ({}));
+    if (!resp.ok || out?.error) throw new Error(out?.error || `HTTP ${resp.status}`);
+    // Sobe o contador de uso, que é o que põe a mídia no topo da biblioteca.
+    // Falhar aqui não é problema de ninguém: a mensagem já saiu.
+    await supabase.rpc("wa_media_library_touch", { p_id: mediaId });
+  } catch (err: any) {
+    await marcarFalhaDaComunicacao(eventoId, `Texto enviado, mas a mídia falhou: ${String(err?.message ?? err).slice(0, 200)}`);
+  }
+}
+
 async function checkUrgentIntimations(recipientRule: RecipientRule) {
   console.log("📄 Verificando intimações urgentes...");
 
@@ -1523,6 +1721,11 @@ Deno.serve(async (req: Request) => {
     }
     if (shouldSendTrigger(rules, "appointment_reminder") && getRuleChannels(rules, "appointment_reminder").includes("push"))
       checks.push(checkAppointmentReminders(thresholds));
+    // A comunicação ao cliente NÃO passa por `notification_rules`: ela é ligada
+    // compromisso a compromisso, no próprio painel da Agenda, e não por uma
+    // regra geral do sistema. Desligar "Lembrete de compromisso" cala a equipe,
+    // não o cliente — são decisões diferentes de gente diferente.
+    checks.push(checkClientAppointmentNotices());
     if (shouldSendTrigger(rules, "new_intimation") && getRuleChannels(rules, "new_intimation").includes("push"))
       checks.push(checkUrgentIntimations(getRuleRecipients(rules, "new_intimation")));
     if (shouldSendTrigger(rules, "requirement_alert") && getRuleChannels(rules, "requirement_alert").includes("push"))

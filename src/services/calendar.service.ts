@@ -200,6 +200,61 @@ class CalendarService {
     return (data ?? []) as CalendarEventAudit[];
   }
 
+  // ── COMUNICAR O CLIENTE ──────────────────────────────────────────────────
+  //
+  // Um par de métodos SÓ para a comunicação ao cliente, em vez de passar pelo
+  // `updateEvent` genérico. A razão é a auditoria: `updateEvent` grava uma
+  // entrada de "compromisso alterado", e ligar um lembrete não é alterar o
+  // compromisso — poluiria o histórico do evento com linhas que não mudaram
+  // nem data, nem título, nem responsável.
+
+  /**
+   * Salva (ou cancela) a comunicação ao cliente de um compromisso.
+   *
+   * Desligar é o cancelamento: enquanto `client_notify_sent_at` for nulo, o
+   * cron ainda não pegou a linha e nada saiu. Depois de enviada, este método
+   * recusa a alteração — mensagem entregue não volta, e deixar a tela sugerir
+   * que volta seria mentir para quem clicou.
+   */
+  async saveClientNotice(
+    eventId: string,
+    dados: {
+      enabled: boolean;
+      minutesBefore: number | null;
+      message: string | null;
+      mediaId: string | null;
+    },
+  ): Promise<CalendarEvent> {
+    // `.select()` porque um UPDATE barrado pela RLS devolve ZERO LINHAS sem
+    // erro no PostgREST — a tela comemoraria um agendamento que não existe.
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .update({
+        client_notify_enabled: dados.enabled,
+        client_notify_minutes_before: dados.minutesBefore,
+        client_notify_message: dados.message,
+        client_notify_media_id: dados.mediaId,
+        // Reabrir o agendamento limpa a falha anterior: o erro descreve a
+        // tentativa passada, e mantê-lo faria a tela acusar um problema que
+        // esta gravação acabou de tentar resolver.
+        client_notify_error: null,
+      })
+      .eq('id', eventId)
+      .is('client_notify_sent_at', null)
+      .select('*')
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) {
+      throw new Error(
+        'Não foi possível salvar: a comunicação já foi enviada, ou você não tem permissão para alterar este compromisso.',
+      );
+    }
+
+    syncBus.emit('calendar');
+    return data as CalendarEvent;
+  }
+
   /**
    * Retorna todas as entradas de auditoria de um período, útil para
    * relatórios administrativos. Limit padrão de 200 registros.

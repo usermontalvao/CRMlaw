@@ -44,6 +44,23 @@ export interface CalendarEvent {
   manual_confirmed_by?: string | null;
   manual_confirmed_date?: string | null;
   manual_note?: string | null;
+
+  // ── Comunicar o cliente ────────────────────────────────────────────────
+  // Separadas de `notify_minutes_before`, que é o lembrete da EQUIPE. Ver o
+  // comentário da migration 20260901160000: são dois avisos com dono, texto e
+  // consequência diferentes.
+  /** Interruptor do painel. Nasce desligado. */
+  client_notify_enabled?: boolean;
+  /** Antecedência da mensagem ao cliente, em minutos. */
+  client_notify_minutes_before?: number | null;
+  /** O texto, ainda com as variáveis — quem as resolve é o envio. */
+  client_notify_message?: string | null;
+  /** Item da biblioteca de mídia do WhatsApp, opcional. */
+  client_notify_media_id?: string | null;
+  /** Quando saiu. NULL = agendada e ainda cancelável. */
+  client_notify_sent_at?: string | null;
+  /** A última falha, quando houve. */
+  client_notify_error?: string | null;
 }
 
 export interface CreateCalendarEventDTO {

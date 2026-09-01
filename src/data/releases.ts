@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.50',
+    date: '01/09/2026',
+    summary: 'A Agenda passou a comunicar o cliente por WhatsApp antes do compromisso.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Comunicar o cliente antes do compromisso',
+            description: 'Nos detalhes do compromisso há um painel novo: ligue "Comunicar o cliente" e o cliente vinculado recebe uma mensagem no WhatsApp antes da data. Escolha a antecedência (1h, 3h, 1 dia, 2 dias ou 1 semana), escreva a mensagem com as variáveis do compromisso e, se quiser, anexe uma mídia já cadastrada na biblioteca do WhatsApp. A prévia mostra exatamente o que o cliente vai ler.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A comunicação é cancelável até a hora do envio',
+            description: 'Enquanto não tiver saído, desligar o interruptor cancela. Depois de enviada, o painel vira registro: mostra quando saiu e o texto que foi entregue, e não oferece mais alteração — mensagem entregue não volta.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O envio respeita o expediente do canal',
+            description: 'A mensagem sai pela mesma fila do WhatsApp que o resto do atendimento, com o expediente real do escritório — sábado, feriado e horário partido. Fora do horário, o envio espera a abertura seguinte em vez de se perder. Falhas ficam registradas no próprio compromisso.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.49',
     date: '01/09/2026',
     summary: 'Os avisos de prazo pararam de repetir: um lembrete antes, e a cobrança do vencido tem fim.',

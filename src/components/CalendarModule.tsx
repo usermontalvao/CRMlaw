@@ -34,6 +34,7 @@ import type { Client } from '../types/client.types';
 import type { CalendarEvent } from '../types/calendar.types';
 import type { RepresentativeAppointment } from '../types/representative.types';
 import RepresentativesPanel from './RepresentativesPanel';
+import { ClientNoticePanel } from './calendar/ClientNoticePanel';
 import { Modal, ModalBody, ModuleSkeleton } from './ui';
 import { useSyncTick } from '../lib/syncBus';
 import { matchesCalendarSearch } from '../utils/calendarSearch.utils';
@@ -4022,6 +4023,26 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
                 </div>
               ))}
             </div>
+          )}
+
+          {/* ── Comunicar o cliente ──
+              Só para compromissos DE VERDADE da agenda. A Agenda também mostra
+              prazos, processos e requerimentos como eventos sintéticos: eles não
+              têm linha em `calendar_events` e, portanto, não têm onde guardar o
+              agendamento da comunicação. */}
+          {selectedEvent.extendedProps.calendarEventId && selectedEvent.extendedProps.data?.id && (
+            <ClientNoticePanel
+              // A chave faz o painel RENASCER ao trocar de compromisso: o estado
+              // dele é semeado das props uma vez só, e sem isso o segundo evento
+              // aberto mostraria a mensagem digitada no primeiro.
+              key={selectedEvent.extendedProps.calendarEventId}
+              evento={selectedEvent.extendedProps.data as CalendarEvent}
+              clienteNome={selectedEvent.extendedProps.clientName ?? null}
+              clienteTelefone={selectedEvent.extendedProps.clientPhone ?? null}
+              processoCodigo={selectedEventProcess?.process_code ?? null}
+              onVincularCliente={handleEditSelectedEvent}
+              onSalvo={() => { void loadData(); }}
+            />
           )}
 
         </ModalBody>
