@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.49',
+    date: '01/09/2026',
+    summary: 'Os avisos de prazo pararam de repetir: um lembrete antes, e a cobrança do vencido tem fim.',
+    modules: [
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'Um único lembrete antes do vencimento',
+            description: 'O lembrete disparava todo dia desde "avisar N dias antes" até o vencimento — com o padrão de 2 dias, eram três lembretes por prazo, vezes três canais. Agora sai uma vez só, no dia exato que o prazo pede. A atribuição continua saindo na hora, sem mudança.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A cobrança de prazo vencido tem fim',
+            description: 'O aviso de atraso recomeçava todo dia, para sempre, até alguém marcar o prazo como concluído — era a maior fonte de ruído. Agora sai no dia do vencimento e mais uma vez três dias depois. O prazo não some por isso: continua pendente, no painel e na lista. O que acaba é a repetição diária.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O lembrete deixou de sair também por e-mail',
+            description: 'Sistema, e-mail e WhatsApp diziam a mesma frase no mesmo minuto. O lembrete ficou com sistema e WhatsApp; o e-mail segue no prazo vencido e na atribuição, que são os avisos graves. Medido: para 02/09, os 15 avisos que sairiam viraram 3.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.48',
     date: '01/09/2026',
     summary: 'Uma tabela de backup estava aberta a qualquer um com a URL do projeto; foi fechada.',

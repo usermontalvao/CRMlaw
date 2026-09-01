@@ -333,3 +333,68 @@ export function dentroDoHorarioDeAviso(agora: Date = new Date()): boolean {
   const minutos = brasilia.getUTCHours() * 60 + brasilia.getUTCMinutes();
   return minutos >= 8 * 60 && minutos < 18 * 60;
 }
+
+// ── A CADÊNCIA DOS AVISOS DE PRAZO ──────────────────────────────────────────
+//
+// Escrito em 01/09/2026, depois de medir o que a advogada recebia: UM prazo
+// ("CONTRAMINUTA AO A.I", venc. 27/08) gerou DOZE avisos em seis dias, e o
+// volume dela saltou de 2 por dia para 12 num só dia.
+//
+// A conta que produzia isso:
+//
+//   • o lembrete disparava TODO DIA desde "avisar N dias antes" até o
+//     vencimento — a comparação era `faltam > avisar_antes`, e não `===`;
+//   • o vencido recomeçava TODO DIA, sem fim, até alguém marcar o prazo como
+//     concluído — foram 8 dos 12;
+//   • e cada disparo saía três vezes, uma por canal.
+//
+// Nada disso era defeito de código: era a regra funcionando como foi escrita.
+// O que mudou foi a leitura do escritório sobre ela — repetir a mesma frase
+// todo dia treina a pessoa a ignorar, e um aviso ignorado não protege prazo
+// nenhum.
+//
+// As duas funções abaixo são a regra nova, isoladas do `notification-scheduler`
+// para poderem ser testadas sem subir a função. Elas decidem SE o aviso sai
+// hoje; quem decide por quais canais continua sendo `notification_rules`.
+
+/**
+ * O lembrete de "prazo vencendo" sai UMA VEZ SÓ, no dia exato que o prazo pede.
+ *
+ * Antes, `faltam > avisar_antes` deixava passar todos os dias abaixo do teto:
+ * com "avisar 2 dias antes" o aviso saía em D−2, D−1 e D−0. Agora é igualdade —
+ * um prazo, um lembrete.
+ *
+ * Devolve `false` para configuração ausente ou negativa, que é como o scheduler
+ * já tratava esses casos: sem "quantos dias antes" não há dia certo para avisar.
+ */
+export function deveLembrarDoPrazo(
+  diasQueFaltam: number,
+  avisarDiasAntes: number | null | undefined,
+): boolean {
+  if (avisarDiasAntes === null || avisarDiasAntes === undefined) return false;
+  if (!Number.isFinite(avisarDiasAntes) || avisarDiasAntes < 0) return false;
+  if (!Number.isFinite(diasQueFaltam) || diasQueFaltam < 0) return false;
+  return diasQueFaltam === avisarDiasAntes;
+}
+
+/**
+ * Os dias em que o aviso de prazo VENCIDO ainda sai: o dia do vencimento e mais
+ * uma insistência três dias depois. Depois disso, silêncio.
+ *
+ * Não é desistir do prazo — é parar de gritar. Quem não agiu no dia nem três
+ * dias depois não vai agir no décimo aviso idêntico, e o prazo continua na
+ * lista de pendentes, no painel e no relatório. O que acaba é a repetição
+ * diária no telefone de alguém.
+ */
+export const DIAS_DE_COBRANCA_DO_VENCIDO = [0, 3] as const;
+
+/**
+ * O aviso de vencido sai hoje?
+ *
+ * `diasVencido` é quantos dias inteiros se passaram desde o vencimento — 0 no
+ * próprio dia. Negativo (prazo que ainda não venceu) nunca cobra.
+ */
+export function deveCobrarPrazoVencido(diasVencido: number): boolean {
+  if (!Number.isFinite(diasVencido)) return false;
+  return (DIAS_DE_COBRANCA_DO_VENCIDO as readonly number[]).includes(diasVencido);
+}

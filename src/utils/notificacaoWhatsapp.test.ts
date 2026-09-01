@@ -13,6 +13,9 @@ import {
   telefoneInternacional,
   telefoneLegivel,
   templateDaNotificacao,
+  deveLembrarDoPrazo,
+  deveCobrarPrazoVencido,
+  DIAS_DE_COBRANCA_DO_VENCIDO,
 } from './notificacaoWhatsapp.ts';
 
 test('o espelho em supabase/functions/_shared é idêntico byte a byte', () => {
@@ -314,4 +317,76 @@ test('o aviso à administração diz de quem é o prazo; o do responsável não 
   assert.ok(doAdmin.includes('{responsavel}'), 'o admin precisa saber de quem é o prazo');
   assert.ok(doAdmin.includes('{link_cobranca}'));
   assert.ok(!doResponsavel.includes('{link_cobranca}'), 'ninguém precisa de link para si mesmo');
+});
+
+// ── A cadência: o que fez 12 avisos virarem 2 ───────────────────────────────
+
+test('o lembrete sai UMA vez, no dia exato — não todo dia até vencer', () => {
+  // "Avisar 2 dias antes" é a configuração de todos os prazos do escritório
+  // hoje. Antes, D−2, D−1 e D−0 disparavam; agora só D−2.
+  assert.equal(deveLembrarDoPrazo(2, 2), true, 'D−2 é o dia pedido');
+  assert.equal(deveLembrarDoPrazo(1, 2), false, 'D−1 já foi avisado ontem');
+  assert.equal(deveLembrarDoPrazo(0, 2), false, 'no dia do vencimento não se repete');
+  assert.equal(deveLembrarDoPrazo(3, 2), false, 'ainda cedo demais');
+});
+
+test('"avisar 0 dias antes" continua avisando no dia — e só nele', () => {
+  assert.equal(deveLembrarDoPrazo(0, 0), true);
+  assert.equal(deveLembrarDoPrazo(1, 0), false);
+});
+
+test('sem "quantos dias antes" não há dia certo, e nada sai', () => {
+  assert.equal(deveLembrarDoPrazo(2, null), false);
+  assert.equal(deveLembrarDoPrazo(2, undefined), false);
+  assert.equal(deveLembrarDoPrazo(2, -1), false, 'negativo é configuração inválida');
+  assert.equal(deveLembrarDoPrazo(2, Number.NaN), false);
+});
+
+test('prazo já vencido não entra pelo lembrete', () => {
+  // Quem cobra vencido é deveCobrarPrazoVencido; os dois nunca falam juntos.
+  assert.equal(deveLembrarDoPrazo(-1, 2), false);
+});
+
+test('o vencido cobra no dia e mais uma vez três dias depois — e para', () => {
+  assert.equal(deveCobrarPrazoVencido(0), true, 'o dia do vencimento');
+  assert.equal(deveCobrarPrazoVencido(1), false);
+  assert.equal(deveCobrarPrazoVencido(2), false);
+  assert.equal(deveCobrarPrazoVencido(3), true, 'a insistência única');
+  // O 4º dia é o que separava o aviso útil da cobrança diária eterna: era aqui
+  // que o prazo CONTRAMINUTA seguia gritando pela quarta vez.
+  assert.equal(deveCobrarPrazoVencido(4), false);
+  assert.equal(deveCobrarPrazoVencido(30), false);
+});
+
+test('prazo que ainda não venceu nunca é cobrado', () => {
+  assert.equal(deveCobrarPrazoVencido(-1), false);
+});
+
+test('a cobrança do vencido soma dois dias, e ninguém mais', () => {
+  // Trava contra alguém "só acrescentar mais um" sem discutir: a lista é a
+  // decisão, e mudá-la tem de quebrar este teste.
+  assert.deepEqual([...DIAS_DE_COBRANCA_DO_VENCIDO], [0, 3]);
+});
+
+test('a conta do prazo real: seis dias de disparo viram três', () => {
+  // CONTRAMINUTA AO A.I, avisar 2 dias antes, venceu em 27/08. Os seis dias
+  // medidos no banco, um por linha, com os dois canais que existiam então.
+  const dias = [
+    { faltam: 2,  vencido: -1 }, // 25/08
+    { faltam: 1,  vencido: -1 }, // 26/08
+    { faltam: -1, vencido: 0 },  // 27/08 — venceu
+    { faltam: -1, vencido: 1 },  // 28/08
+    { faltam: -1, vencido: 2 },  // 29/08
+    { faltam: -1, vencido: 3 },  // 30/08
+  ];
+  const disparos = dias.filter(
+    (d) => deveLembrarDoPrazo(d.faltam, 2) || deveCobrarPrazoVencido(d.vencido),
+  );
+  // 25/08 (lembrete), 27/08 (venceu) e 30/08 (a insistência).
+  assert.equal(disparos.length, 3);
+  // A janela medida SUBESTIMA o ganho: ela para no 3º dia de atraso, que é
+  // justamente onde a regra nova cala. Um prazo esquecido por trinta dias
+  // rendia sessenta avisos e passa a render os mesmos três disparos.
+  const trintaDias = Array.from({ length: 30 }, (_, i) => i);
+  assert.equal(trintaDias.filter(deveCobrarPrazoVencido).length, 2);
 });

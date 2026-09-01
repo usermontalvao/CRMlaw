@@ -7,6 +7,8 @@ import {
   montarMensagemNotificacao,
   normalizarConfigWhatsApp,
   primeiroNome,
+  deveLembrarDoPrazo,
+  deveCobrarPrazoVencido,
   telefoneInternacional,
   telefoneLegivel,
   templateDaNotificacao,
@@ -487,9 +489,10 @@ async function checkDeadlineReminders(
           ? Number(notifyDaysBeforeRaw)
           : null;
 
-    if (daysUntilDue < 0) continue;
-    if (notifyDaysBefore === null || notifyDaysBefore < 0) continue;
-    if (daysUntilDue > notifyDaysBefore) continue;
+    // UMA VEZ SÓ, no dia exato que o prazo pede. Era `>`, e por isso o aviso
+    // saía todo dia desde "avisar N antes" até o vencimento — três lembretes
+    // por prazo, vezes três canais. Ver `deveLembrarDoPrazo`.
+    if (!deveLembrarDoPrazo(daysUntilDue, notifyDaysBefore)) continue;
 
     // Notificar apenas o responsável; sem responsável → pula
     if (!deadline.responsible_id) continue;
@@ -676,6 +679,21 @@ async function checkOverdueDeadlines(
 
     const dueDate = new Date(deadline.due_date);
     const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    // A COBRANÇA TEM FIM. Antes esta varredura cobrava todo dia, para sempre,
+    // até alguém marcar o prazo como concluído — um prazo esquecido rendia dois
+    // ou três avisos por dia indefinidamente, e foi a maior fonte de ruído que
+    // a medição encontrou. Agora sai no dia do vencimento e mais uma vez três
+    // dias depois. Ver `deveCobrarPrazoVencido`.
+    //
+    // O prazo NÃO some por isso: ele continua pendente, no painel e na lista.
+    // O que acaba é a repetição diária no telefone de alguém.
+    //
+    // Vale para o responsável E para a administração de propósito: os dois
+    // avisos falam do mesmo prazo no mesmo dia, e calar só um deixaria o outro
+    // gritando sozinho.
+    if (!deveCobrarPrazoVencido(daysOverdue)) continue;
+
     const clientName = deadline.clients?.full_name || "";
     const responsavelNome = perfis.get(deadline.responsible_id)?.nome ?? "";
     const dedupeKey = `deadline_overdue_${deadline.id}_${today}`;
