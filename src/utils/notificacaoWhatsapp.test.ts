@@ -198,14 +198,22 @@ test('18:00 em Brasília já é tarde demais', () => {
   assert.equal(dentroDoHorarioDeAviso(emBrasilia('2026-09-01T21:00:00Z')), false);
 });
 
-test('sábado e domingo não recebem aviso de prazo', () => {
+test('sábado e domingo RECEBEM aviso de prazo, dentro do horário', () => {
   // 05/09/2026 é sábado; 06/09/2026 é domingo. Meio-dia de Brasília nos dois.
-  assert.equal(dentroDoHorarioDeAviso(emBrasilia('2026-09-05T15:00:00Z')), false);
-  assert.equal(dentroDoHorarioDeAviso(emBrasilia('2026-09-06T15:00:00Z')), false);
+  //
+  // Até 29/08/2026 esta trava barrava o fim de semana, e o resultado era um
+  // aviso de PRAZO VENCIDO que saía por push e por e-mail no sábado e era
+  // engolido justamente no canal que a pessoa olha fora do expediente. Prazo
+  // não espera segunda-feira — decisão do escritório.
+  assert.equal(dentroDoHorarioDeAviso(emBrasilia('2026-09-05T15:00:00Z')), true);
+  assert.equal(dentroDoHorarioDeAviso(emBrasilia('2026-09-06T15:00:00Z')), true);
 });
 
-test('a virada de dia pelo fuso não conta domingo como segunda', () => {
-  // Segunda 07/09, 00:30 UTC = domingo 06/09, 21:30 em Brasília.
+test('o piso de horário vale igual no fim de semana', () => {
+  // A madrugada continua barrada: a razão do piso é não acordar ninguém às 3h,
+  // e isso não muda por ser domingo. Sábado 05/09, 04:00 de Brasília.
+  assert.equal(dentroDoHorarioDeAviso(emBrasilia('2026-09-05T07:00:00Z')), false);
+  // Segunda 07/09, 00:30 UTC = domingo 06/09, 21:30 em Brasília: tarde demais.
   assert.equal(dentroDoHorarioDeAviso(emBrasilia('2026-09-07T00:30:00Z')), false);
 });
 

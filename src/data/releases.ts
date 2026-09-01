@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.44',
+    date: '01/09/2026',
+    summary: 'O aviso de prazo por WhatsApp passou a sair de verdade: faltava o código do país no telefone.',
+    modules: [
+      {
+        moduleId: 'prazos',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O telefone do aviso de prazo sai com o 55',
+            description: 'O aviso de prazo por WhatsApp nunca tinha chegado a ninguém. Os perfis guardam o telefone como o brasileiro escreve — "(65) 98417-3292" — e o agendador entregava os onze dígitos sem o país, que a Evolution recusa com "não possui WhatsApp ativo". Num único domingo foram 38 tentativas e zero envios. A normalização passou a acontecer na origem, para a mensagem e o link de cobrança lerem o mesmo número.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Sábado e domingo voltaram a receber aviso de prazo',
+            description: 'A trava de fim de semana valia só para o WhatsApp: no sábado o aviso de prazo vencido saía por push e por e-mail e era engolido justamente no canal que a pessoa olha fora do expediente. O piso de horário fica de pé — a razão dele é não acordar ninguém às 3h, e isso não muda por ser domingo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.43',
     date: '01/09/2026',
     summary: 'A Central de ajuda entrou no CRM como módulo próprio, em /wiki.',

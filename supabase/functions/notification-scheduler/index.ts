@@ -7,6 +7,7 @@ import {
   montarMensagemNotificacao,
   normalizarConfigWhatsApp,
   primeiroNome,
+  telefoneInternacional,
   telefoneLegivel,
   templateDaNotificacao,
   type NotificacaoWhatsAppConfig,
@@ -276,14 +277,26 @@ async function carregarPerfisDoAviso(): Promise<Map<string, PerfilDoAviso>> {
   const mapa = new Map<string, PerfilDoAviso>();
   for (const p of profiles || []) {
     if (!p.id || !p.user_id) continue;
-    const telefone = String(p.phone ?? "").replace(/\D/g, "");
+    // COM O 55, SEMPRE. Os perfis guardam o telefone como o brasileiro escreve
+    // — "(65) 98417-3292", onze dígitos, sem país — e tirar só a pontuação
+    // devolve `65984173292`, que a Evolution não reconhece: o
+    // `/chat/whatsappNumbers` responde `exists:false` e o envio morre em 422
+    // ("não possui WhatsApp ativo"). Era isso, e não a trava de fim de semana,
+    // que fazia o aviso de prazo nunca chegar: 38 tentativas em 24h, zero
+    // envios, e nenhum carimbo em `deadline_whatsapp_notice` desde sempre.
+    //
+    // A normalização é aqui, na origem, e não na hora do envio, para que os
+    // dois consumidores do campo — a mensagem e o `{link_cobranca}` — leiam o
+    // mesmo número. `telefoneInternacional` devolve vazio para o que não
+    // reconhece, que é a mesma resposta que o piso de dez dígitos dava: telefone
+    // curto demais não é telefone, e mandar para ele é entregar o aviso do
+    // escritório a um desconhecido.
+    const telefone = telefoneInternacional(p.phone);
     mapa.set(p.id, {
       profileId: p.id,
       userId: p.user_id,
       nome: String(p.name ?? ""),
-      // Telefone curto demais não é telefone: mandar para ele é entregar o aviso
-      // do escritório a um desconhecido.
-      telefone: telefone.length >= 10 ? telefone : null,
+      telefone: telefone || null,
       cargo: String(p.role ?? "")
         .toLowerCase()
         .normalize("NFD")
