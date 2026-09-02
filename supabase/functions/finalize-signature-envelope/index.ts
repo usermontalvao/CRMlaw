@@ -168,8 +168,12 @@ async function selarDocumentos(
       if (corpo?.status === 'ja_assinado') { ignorados += 1; continue; }
       if (corpo?.status === 'assinado') {
         selados += 1;
-        await audit(supabase, requestId, signerId, 'pades_signed',
-          `Documento ${alvo.rotulo} selado criptograficamente. SHA-256 do arquivo selado: ${corpo.sha256_depois}.`, ip, ua);
+        // SEM registro de auditoria aqui. A `pades-sign` já escreve o dela, e
+        // escrever de novo criava DUAS linhas por documento na trilha — seis
+        // para um kit de três, dizendo a mesma coisa duas vezes. Quem for
+        // conferir o dossiê tem de ler um evento por fato, não um por camada
+        // de código que participou dele. E a trilha é imutável por gatilho:
+        // duplicata que entra não sai mais.
         continue;
       }
       falhas += 1;

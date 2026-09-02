@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.17.1',
+    date: '02/09/2026',
+    summary: 'A trilha de auditoria registrava a selagem duas vezes por documento.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Selagem aparecia em dobro no histórico',
+            description: 'Duas camadas do código registravam o mesmo fato: um kit de três arquivos gerava seis linhas iguais no histórico do documento. Quem confere precisa ler um evento por acontecimento, não um por camada que participou dele. Ficou apenas o registro da própria rotina de selagem. A trilha é imutável por gatilho, então as linhas duplicadas do envelope de 02/09 continuam lá — apagá-las quebraria a cadeia de hash que garante que nada foi mexido.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.17.0',
     date: '02/09/2026',
     summary: 'O selo agora aparece na página de conferência, com o certificado para baixar — e a selagem passou a alcançar também os envelopes do modelo antigo.',
