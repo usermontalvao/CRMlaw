@@ -29,6 +29,7 @@ import {
   type EstadoDeteccao,
   avaliarQuadro,
   avancarEstabilidade,
+  deveDispararSozinho,
 } from './deteccaoDeRosto.logica';
 
 export type { EstadoDeteccao };
@@ -44,7 +45,14 @@ export interface DeteccaoDeRosto {
   estado: EstadoDeteccao;
   /** Se o botão de tirar foto pode ser acionado. */
   liberado: boolean;
-  /** Rosto enquadrado e parado por tempo suficiente para disparar sozinho. */
+  /**
+   * Se a contagem regressiva do disparo automático pode correr.
+   *
+   * NÃO é só "o rosto está parado": os escapes do portão também abrem esta
+   * porta. Ver `deveDispararSozinho` — o botão já era liberado por eles, e
+   * deixar o automático de fora fazia a tela prometer uma contagem que nunca
+   * vinha.
+   */
   estavel: boolean;
   /** Frase curta para mostrar sob o visor. */
   dica: string;
@@ -112,8 +120,14 @@ export function useDeteccaoDeRosto(
       estabilidade = avancarEstabilidade(estabilidade, melhor);
       setEstavel(estabilidade.estavel);
 
-      if (melhor === 'pronto' && escapeTimer !== undefined) {
-        // Achou rosto: o cronômetro do escape não é mais necessário.
+      // O escape só é dispensado quando a detecção PROVA que funciona — isto
+      // é, quando a estabilidade se forma. Antes bastava UM quadro em
+      // 'pronto' para cancelá-lo, e aí um rosto que oscila (luz fraca, pele
+      // escura, pessoa se ajeitando) ficava no pior dos mundos: nunca somava
+      // os quadros seguidos para virar estável, e tinha perdido a rede de
+      // segurança que existia justamente para esse caso. A contagem
+      // regressiva não vinha nunca, e só a foto manual funcionava.
+      if (estabilidade.estavel && escapeTimer !== undefined) {
         window.clearTimeout(escapeTimer);
         escapeTimer = undefined;
       }
@@ -160,7 +174,7 @@ export function useDeteccaoDeRosto(
   return {
     estado,
     liberado: estado === 'pronto' || escapou,
-    estavel,
+    estavel: deveDispararSozinho({ estavel, escapou }),
     dica: DICAS[estado],
   };
 }

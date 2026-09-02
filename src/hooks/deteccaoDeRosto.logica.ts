@@ -150,3 +150,27 @@ export const avancarEstabilidade = (
   }
   return { bons: 0, ruins, estavel: false };
 };
+
+/**
+ * SE O DISPARO AUTOMÁTICO PODE CORRER.
+ *
+ * O portão tem escapes para nunca prender ninguém (ver o cabeçalho de
+ * `useDeteccaoDeRosto`), e eles funcionavam — para o BOTÃO. O disparo
+ * automático continuava amarrado só a `estavel`, que só existe quando o modelo
+ * está dando veredito e o rosto chega a `pronto`.
+ *
+ * O resultado era um sintoma que não se explicava sozinho: a foto manual
+ * funcionava e a automática nunca saía. Acontecia sempre que o modelo não
+ * carregava, e também quando ele carregava mas nunca dizia `pronto` — rosto um
+ * pouco fora do centro, luz fraca, pele escura. A tela prometia uma contagem
+ * regressiva que não vinha, e a pessoa ficava esperando.
+ *
+ * A conta é a mesma do resto deste portão, e ela já estava escrita: deixar
+ * passar uma foto ruim custa pouco (a IA atrás reprova e a pessoa repete),
+ * mas travar quem quer assinar custa um contrato. Se escapou, a contagem
+ * corre — visível, cancelável, e com a validação por IA ainda no caminho.
+ */
+export const deveDispararSozinho = (params: {
+  estavel: boolean;
+  escapou: boolean;
+}): boolean => params.estavel || params.escapou;

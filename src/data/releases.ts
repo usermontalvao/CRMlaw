@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.20.1',
+    date: '02/09/2026',
+    summary: 'A foto automática não saía: os escapes do detector soltavam o botão e deixavam a contagem regressiva presa.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A foto não saía sozinha — só apertando o botão',
+            description: 'O detector de rosto tem escapes para nunca prender ninguém, e eles funcionavam para o botão de tirar foto. A contagem regressiva do disparo automático, porém, continuava amarrada só ao rosto reconhecido como estável — então, quando o reconhecimento não fechava, a tela prometia uma contagem que nunca vinha e só a foto manual funcionava. Agora o escape solta os dois.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A rede de segurança do detector era desligada cedo demais',
+            description: 'Bastava um único quadro com o rosto bem enquadrado para o sistema desistir do plano B. Um rosto que oscila — luz fraca, pele escura, pessoa ainda se ajeitando — ficava no pior dos mundos: nunca somava quadros suficientes para valer como estável, e já tinha perdido a rede que existia exatamente para esse caso. Agora o plano B só é dispensado quando o reconhecimento prova que está funcionando.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.20.0',
     date: '02/09/2026',
     summary: 'A primeira selfie era recusada sem motivo: a imagem chegava reduzida demais para a análise. E o cartão do selo ficou mais enxuto.',

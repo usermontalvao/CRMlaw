@@ -10,6 +10,7 @@ import {
   avaliarQuadro,
   avancarEstabilidade,
   geometriaPlausivel,
+  deveDispararSozinho,
 } from './deteccaoDeRosto.logica.ts';
 
 /** Roda uma sequência de quadros pelo acompanhamento de estabilidade. */
@@ -151,4 +152,16 @@ test('mão sobre o rosto AINDA passa pelo detector local — é a IA que barra',
     'pronto',
     'o detector local só julga enquadramento; obstrução é decidida por analyze-facial-photo',
   );
+});
+
+test('o escape do portão também solta o disparo automático, não só o botão', () => {
+  // O sintoma que isto conserta: a foto manual funcionava e a automática nunca
+  // saía. Os escapes liberavam o BOTÃO e deixavam o automático amarrado a
+  // `estavel`, que só existe com o modelo dando veredito e o rosto em 'pronto'.
+  assert.equal(deveDispararSozinho({ estavel: true, escapou: false }), true);
+  assert.equal(deveDispararSozinho({ estavel: false, escapou: true }), true);
+  assert.equal(deveDispararSozinho({ estavel: true, escapou: true }), true);
+  // Sem rosto estável e sem escape, nada dispara sozinho — a contagem só corre
+  // quando há motivo.
+  assert.equal(deveDispararSozinho({ estavel: false, escapou: false }), false);
 });
