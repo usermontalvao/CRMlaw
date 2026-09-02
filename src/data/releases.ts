@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.15.0',
+    date: '02/09/2026',
+    summary: 'Os PDFs assinados passam a levar uma assinatura criptográfica dentro do arquivo — a integridade deixa de depender de vir ao nosso site.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Selo criptográfico dentro do PDF assinado',
+            description: 'Até aqui a prova de que o arquivo não foi alterado morava só no nosso banco: quem abrisse o PDF no Adobe não via assinatura nenhuma, e a integridade só se verificava vindo à página de conferência. Agora o arquivo se defende sozinho, offline, em qualquer leitor: mexeu um byte depois de assinado, a assinatura quebra e o leitor avisa. Conferido com openssl — íntegro dá "verificação bem-sucedida", e com um único byte trocado dá falha.',
+          },
+          {
+            type: 'security' as const,
+            title: 'A chave de assinatura vive fora do repositório',
+            description: 'O par de chaves é do escritório, guardado como secret do Supabase e numa pasta protegida da máquina — nunca no código, nunca no navegador, nunca em coluna de banco. O certificado é autoassinado: prova que o arquivo não mudou e que quem selou foi a nossa chave, mas não prova identidade para quem não nos conhece. Trocar por um e-CNPJ da ICP-Brasil, quando houver, não exige mudança nenhuma de código.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.14.1',
     date: '02/09/2026',
     summary: 'O arquivo original entrou para download na conferência pública — sem ele, o SHA-256 impresso era um número que ninguém podia recalcular.',

@@ -71,3 +71,12 @@ extension-signing-key.pem
 scripts/authenticator-e2e/estado.json
 .preview-botoes.html
 .preview-assinatura.html
+
+# Chaves de assinatura PAdES — nunca versionadas.
+# A chave privada do selo de integridade vive em ~/.jurius-pades/ e nos secrets
+# do Supabase. Estes padrões existem para que um `git add -A` distraído não
+# consiga levá-la junto. Ver supabase/functions/pades-sign/CERTIFICADO.md
+*.p12
+*.pfx
+*.key
+jurius-pades*
