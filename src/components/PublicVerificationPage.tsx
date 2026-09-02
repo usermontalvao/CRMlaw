@@ -1,12 +1,12 @@
 // (o @ts-nocheck saiu: esta tela passou a ser conferida pelo compilador)
 import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { ArrowLeft, CheckCircle, ChevronDown, ChevronRight, Download, Eye, FileText, Loader2, Lock, Shield, XCircle } from 'lucide-react';
+import { ArrowLeft, Download, Eye, FileText, Lock, Shield } from 'lucide-react';
 import {
   AcaoPrimaria,
   AcaoSecundaria,
-  DivisorPicotado,
   Explicacao,
+  LINHA,
   LinhaDoRecibo,
   MolduraPublica,
   Recibo,
@@ -19,13 +19,27 @@ import {
   TINTA_2,
   TINTA_3,
   TINTA_4,
-  VERDE,
   sobe,
   type Tom,
 } from './publicSigning/ui';
 import {
+  Abas,
+  CartaoDeSignatario,
+  CartaoDoEmissor,
+  ChipDeCodigo,
+  FaixaDaContagem,
+  ListaDoHistorico,
+  Opcao,
+  Painel,
+  TituloDoPainel,
+} from './publicSigning/dossie';
+import {
   canalDoRegistro,
   classificarCodigo,
+  codigoDoArquivoParaPrevia,
+  contagemDeAssinaturas,
+  emailPublicoDoSignatario,
+  nomeDoDocumentoDoKit,
   documentoSemOSignatario,
   mascararCpf,
   nomeDoCanal,
@@ -38,25 +52,20 @@ import {
   rotuloDoCodigo,
 } from '../utils/assinaturaPublica';
 import { signatureService } from '../services/signature.service';
-import type { VerifiedDocument } from '../services/signature.service';
+import type { VerifiedDocument, VerifyDossier } from '../services/signature.service';
 import { pdfSignatureService } from '@/services/pdfSignature.service';
+import type { SignatarioDoDossie } from '../utils/assinaturaPublica';
 import type { Signer, SignatureRequest } from '../types/signature.types';
 import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 
-interface VerificationResult {
+interface VerificationResult extends VerifyDossier {
   valid: boolean;
   signer?: Signer;
   request?: SignatureRequest;
   documents?: VerifiedDocument[];
   message: string;
 }
-
-const isInternalPlaceholderEmail = (email: string | null | undefined): boolean => {
-  const e = String(email || '').trim().toLowerCase();
-  if (!e) return false;
-  return e.startsWith('public+') && e.endsWith('@crm.local');
-};
 
 const stripDocumentExtension = (name: string | null | undefined): string => {
   return String(name || '').trim().replace(/\.(pdf|docx?|rtf|odt)$/i, '');
@@ -75,7 +84,15 @@ const PublicVerificationPage: React.FC = () => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [viewerLoading, setViewerLoading] = useState(false);
-  const [meaningOpen, setMeaningOpen] = useState(false);
+
+  // ── O dossiê ──────────────────────────────────────────────────────────────
+  const [abaDoDossie, setAbaDoDossie] = useState<'signatarios' | 'historico'>('signatarios');
+  /** A prévia embutida: o PDF assinado renderizado na própria página. */
+  const [previaUrl, setPreviaUrl] = useState<string | null>(null);
+  const [previaCarregando, setPreviaCarregando] = useState(false);
+  const [previaFalhou, setPreviaFalhou] = useState(false);
+  /** Qual chip acabou de ser copiado — o certinho verde dura 1,6 s. */
+  const [copiado, setCopiado] = useState('');
 
   const extractCodeFromUrl = () => {
     const hashRoute = typeof window !== 'undefined' ? window.location.hash || '' : '';
@@ -107,13 +124,27 @@ const PublicVerificationPage: React.FC = () => {
       setSearched(true);
       const data = await signatureService.verifySignatureByHash(codeToUse);
       if (data && data.status === 'valid') {
-        setResult({ valid: true, signer: data.signer, request: data.request, documents: data.documents, message: 'Assinatura válida e autêntica.' });
+        setResult({
+          valid: true,
+          signer: data.signer,
+          request: data.request,
+          documents: data.documents,
+          signers: data.signers,
+          creator: data.creator,
+          history: data.history,
+          envelope: data.envelope,
+          message: 'Assinatura válida e autêntica.',
+        });
       } else if (data && data.status === 'blocked') {
         setResult({
           valid: false,
           signer: data.signer,
           request: data.request,
           documents: data.documents,
+          signers: data.signers,
+          creator: data.creator,
+          history: data.history,
+          envelope: data.envelope,
           message: data.reason
             ? `Validação pública desativada pelo emissor. Motivo: ${data.reason}`
             : 'A validação pública deste documento foi desativada pelo emissor. Os dados de auditoria abaixo comprovam que a assinatura ocorreu.',
@@ -147,7 +178,16 @@ const PublicVerificationPage: React.FC = () => {
 
       const data = await signatureService.verifySignedPdfBySha256(computed);
       if (data) {
-        setResult({ valid: true, signer: data.signer, request: data.request, message: 'Documento válido e íntegro (hash confirmado).' });
+        setResult({
+          valid: true,
+          signer: data.signer,
+          request: data.request,
+          signers: data.signers,
+          creator: data.creator,
+          history: data.history,
+          envelope: data.envelope,
+          message: 'Documento válido e íntegro (hash confirmado).',
+        });
       } else {
         setResult({ valid: false, message: 'Não foi possível validar: hash do arquivo não encontrado na base.' });
       }
@@ -282,7 +322,6 @@ const PublicVerificationPage: React.FC = () => {
   const isValid = !!(searched && result && result.valid && result.signer && result.request);
   const hasResultState = searched && !!result;
   const verifiedByUploadedFile = isValid && activeMode === 'file' && !!fileHash;
-  const statusBadgeLabel = result?.request?.status === 'signed' ? 'Concluído' : 'Registrado';
   // Falha de verificação: distinguir "bloqueado pelo emissor" (há trilha de
   // auditoria) de "não encontrado" (nenhum registro corresponde ao código).
   const isBlocked = hasResultState && !result?.valid && !!(result?.signer || result?.request);
@@ -362,7 +401,7 @@ const PublicVerificationPage: React.FC = () => {
     && !!protocoloDoEnvelope
     && normalizarCodigo(protocoloDoEnvelope) !== normalizarCodigo(codigoDoRecibo);
   const protocoloExibido = codigoDoRecibo;
-  const emailDoSignatario = isInternalPlaceholderEmail(result?.signer?.email) ? '' : (result?.signer?.email || '');
+  const emailDoSignatario = emailPublicoDoSignatario(result?.signer);
   const cpfDoSignatario = mascararCpf(result?.signer?.cpf);
   const canal = canalDoRegistro(result?.signer);
   const autenticacaoUsada = fatoresDeAutenticacao({
@@ -374,6 +413,130 @@ const PublicVerificationPage: React.FC = () => {
   const identidadeDoRecibo = cpfDoSignatario
     ? `${nomeDoCanal(canal)} · CPF ${cpfDoSignatario}`
     : nomeDoCanal(canal);
+
+  /* ══════════ O DOSSIÊ ══════════
+     Tudo que a consulta pública passou a devolver além do último signatário:
+     quem emitiu, todos os signatários (inclusive quem ainda não assinou) e a
+     trilha de auditoria. Registros antigos podem não ter nada disso — daí os
+     fallbacks, que reconstroem uma lista de um só a partir do `signer`. */
+  const emissor = result?.creator || null;
+  const historico = result?.history || [];
+  const listaDeSignatarios = (result?.signers && result.signers.length > 0)
+    ? result.signers
+    : (result?.signer ? [result.signer as unknown as SignatarioDoDossie] : []);
+  const contagem = contagemDeAssinaturas(listaDeSignatarios);
+  const criadoEm = result?.envelope?.created_at || null;
+  const tituloDoDocumento = documentoSemOSignatario(
+    stripDocumentExtension(result?.request?.document_name) || 'Documento assinado',
+    result?.signer?.name,
+  );
+  /**
+   * PELO PROTOCOLO NÃO HÁ "O" DOCUMENTO.
+   *
+   * O kit tem principal e anexos, e a prévia só cabe um. Escolher o principal
+   * por conta própria é responder outra pergunta: quem digitou o protocolo
+   * perguntou pelo ENVELOPE, e receber de volta um único arquivo — sem dizer
+   * qual, nem que havia outros — esconde o resto do kit atrás de uma folha.
+   * Aí a lista ocupa o lugar da prévia, e cada arquivo abre no seu clique.
+   */
+  const consultaDeEnvelope = isProtocolResult;
+
+  /** O código que o `public-verify-file` consegue transformar em arquivo. */
+  const codigoDaPrevia = codigoDoArquivoParaPrevia({
+    tipo: tipoDoCodigo,
+    codigoConsultado,
+    documentos: result?.documents,
+    codigoDoSignatario: result?.signer?.verification_hash,
+  });
+
+  /*
+    OS HASHES DOS CHIPS SEGUEM O DOCUMENTO QUE ESTÁ NA PRÉVIA.
+
+    Consultando pelo PROTOCOLO do envelope, `codigoConsultado` não é de arquivo
+    nenhum — é do kit —, então `hashDoPdfAssinadoConsultado` não achava nada e a
+    coluna do meio ficava com um chip só. A mesma página, aberta pelo código do
+    documento, mostrava três. Era o mesmo envelope parecendo duas telas
+    diferentes.
+
+    Os chips passam a descrever o arquivo EXIBIDO ao lado. Quando ele foi
+    escolhido por nós (o principal do kit), a legenda diz isso — e a lista
+    completa, com os dois hashes de cada arquivo, continua logo abaixo.
+  */
+  const hashDoArquivoExibido = hashDoPdfAssinadoConsultado(
+    codigoDaPrevia,
+    result?.documents,
+    hashDoPdfAssinado || result?.signer?.signed_pdf_sha256,
+  );
+  const hashOriginalDoArquivoExibido = hashDoOriginalConsultado(
+    codigoDaPrevia,
+    result?.documents,
+    hashDoOriginal,
+  );
+  const previaEhOutroDocumento =
+    !!codigoConsultado && normalizarCodigo(codigoDaPrevia) !== normalizarCodigo(codigoConsultado);
+
+  /** Copiar com aviso: sem o certinho ninguém sabe se o clique pegou. */
+  const copiar = async (texto: string, chave: string) => {
+    if (!texto) return;
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(chave);
+      window.setTimeout(() => setCopiado((atual) => (atual === chave ? '' : atual)), 1600);
+    } catch { /* sem área de transferência */ }
+  };
+
+  /*
+    A PRÉVIA EMBUTIDA.
+
+    O documento aparece renderizado assim que a conferência dá certo, sem
+    depender de um clique. Quem chega aqui veio conferir um papel que tem na
+    mão: obrigá-lo a abrir um visualizador antes de comparar era um degrau no
+    meio da única coisa que a página existe para fazer.
+
+    A URL é assinada e temporária (`public-verify-file`), e vira blob local para
+    que ela não fique escrita na barra de endereço nem no histórico.
+  */
+  useEffect(() => {
+    if (!isValid || consultaDeEnvelope || !codigoDaPrevia) {
+      setPreviaUrl((anterior) => {
+        if (anterior && anterior.startsWith('blob:')) URL.revokeObjectURL(anterior);
+        return null;
+      });
+      return;
+    }
+    let cancelado = false;
+    let criada: string | null = null;
+    setPreviaCarregando(true);
+    setPreviaFalhou(false);
+    (async () => {
+      try {
+        const url = await resolveSignedDocumentUrl(codigoDaPrevia, result?.signer?.signed_document_path);
+        if (!url) throw new Error('sem url');
+        let destino = url;
+        try {
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const blob = await res.blob();
+          criada = URL.createObjectURL(blob);
+          destino = criada;
+        } catch { /* servidor sem CORS para o GET: usa a própria URL assinada */ }
+        if (cancelado) {
+          if (criada) URL.revokeObjectURL(criada);
+          return;
+        }
+        setPreviaUrl(destino);
+      } catch {
+        if (!cancelado) setPreviaFalhou(true);
+      } finally {
+        if (!cancelado) setPreviaCarregando(false);
+      }
+    })();
+    return () => {
+      cancelado = true;
+      if (criada) URL.revokeObjectURL(criada);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isValid, consultaDeEnvelope, codigoDaPrevia]);
 
   /** As linhas do recibo — as mesmas que o signatário guardou no comprovante. */
   const linhasDoRecibo = (
@@ -425,7 +588,7 @@ const PublicVerificationPage: React.FC = () => {
     <MolduraPublica
       tom={tom}
       alinhamento="inicio"
-      largura={720}
+      largura={isValid ? 1360 : 720}
       topo={<TopoDaMarca etiqueta="Validador público" />}
       rodape={rodapeDaPagina}
     >
@@ -450,238 +613,390 @@ const PublicVerificationPage: React.FC = () => {
         </div>
       )}
 
-      {/* ══════════ RESULTADO ══════════ */}
+      {/* ══════════ O DOSSIÊ ══════════
+          Três colunas: quem participou, o documento, o que se leva embora. No
+          celular a grade desmonta com o DOCUMENTO em primeiro lugar — ver
+          `.ap-dossie` em publicSigning/dossie.tsx. */}
       {isValid && result?.signer && result?.request && (
-        <div style={{ marginTop: 4 }}>
-          <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', ...sobe(0, 0.5) }}>
+        <div>
+          {/* O TÍTULO É O DOCUMENTO. A página não fala de si mesma: quem abriu
+              este link já sabe que veio conferir; o que ele não sabe ainda é
+              QUAL documento respondeu. */}
+          <div style={{ ...sobe(0, 0.5) }}>
             <span style={{
-              flex: '0 0 auto', marginTop: 2, width: 40, height: 40, borderRadius: 999,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-              background: 'linear-gradient(135deg,#34d399,#059669)',
-              boxShadow: '0 12px 26px -12px rgba(5,150,105,.8)',
-              animation: 'ap-selo .6s cubic-bezier(.2,1.4,.4,1) .25s both',
+              display: 'block', fontSize: 10, fontWeight: 700, letterSpacing: '.18em',
+              textTransform: 'uppercase', color: '#c2410c',
             }}>
-              <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#fff" strokeWidth="3.2"
-                   strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 12l5 5L20 6" /></svg>
+              Documento conferido
             </span>
-            <div>
-              {/* A tela afirma só o que conferiu. Ver `afirmacaoDaConsulta`:
-                  consulta por código ENCONTRA um registro; ela não compara
-                  arquivo nenhum. Dizer "nada foi alterado" ali era uma
-                  afirmação de integridade não verificada — a primeira coisa
-                  que um perito da parte contrária derrubaria. */}
-              <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, letterSpacing: '-.95px', lineHeight: 1.08, color: TINTA }}>
-                {afirmacao.titulo} <span style={{ color: VERDE }}>{afirmacao.destaque}</span>.
-              </h1>
-              <Explicacao style={{ marginTop: 8, maxWidth: 460 }}>
-                {afirmacao.explicacao}
-              </Explicacao>
-            </div>
+            <h1 style={{
+              margin: '7px 0 0', fontSize: 30, fontWeight: 700, letterSpacing: '-1px',
+              lineHeight: 1.12, color: TINTA, overflowWrap: 'anywhere',
+            }}>
+              {tituloDoDocumento}
+            </h1>
+            <span style={{ display: 'block', marginTop: 6, fontSize: 13, color: TINTA_3 }}>
+              {criadoEm ? `Criado em ${formatDate(criadoEm)}` : 'Registro de assinatura eletrônica'}
+              {result.request.client_name ? ` · ${result.request.client_name}` : ''}
+            </span>
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 22, alignItems: 'flex-start', marginTop: 24 }}>
-            {/* O RECIBO — literalmente a mesma peça do comprovante do signatário. */}
-            <Recibo
-              codigo={protocoloExibido}
-              rotulo={rotuloDoRecibo}
-              estado="valido"
-              aoCopiar={() => { void copiarProtocolo(); }}
-              acaoDeCopia={tipoDoCodigo === 'envelope' || !codigoConsultado ? 'Copiar protocolo' : 'Copiar código'}
-              style={{ flex: '0 0 auto', width: 300, ...sobe(2, 0.5) }}
-            >
-              {linhasDoRecibo}
-            </Recibo>
+          <div className="ap-dossie" style={{ marginTop: 20 }}>
+            {/* ── ESQUERDA: quem participou e o que aconteceu ─────────────── */}
+            <div className="ap-dossie-lado" style={sobe(1)}>
+              <Painel>
+                <Abas
+                  ativa={abaDoDossie}
+                  aoTrocar={(chave) => setAbaDoDossie(chave as 'signatarios' | 'historico')}
+                  itens={[
+                    { chave: 'signatarios', rotulo: 'Signatários', contagem: listaDeSignatarios.length },
+                    { chave: 'historico', rotulo: 'Histórico', contagem: historico.length },
+                  ]}
+                />
+                {abaDoDossie === 'signatarios' ? (
+                  <>
+                    {emissor?.name && (
+                      <CartaoDoEmissor nome={emissor.name} email={emissor.email} criadoEm={criadoEm} />
+                    )}
+                    {listaDeSignatarios.map((assinante, indice) => (
+                      <CartaoDeSignatario
+                        key={assinante.id || `${assinante.name}-${indice}`}
+                        signatario={assinante}
+                        ultimo={indice === listaDeSignatarios.length - 1}
+                      />
+                    ))}
+                    {listaDeSignatarios.length === 0 && (
+                      <p style={{ margin: 0, padding: '14px 13px', fontSize: 11, lineHeight: 1.55, color: TINTA_3 }}>
+                        Nenhum signatário detalhado neste registro.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <ListaDoHistorico eventos={historico} />
+                )}
+              </Painel>
+            </div>
 
-            <div style={{ flex: 1, minWidth: 250 }}>
-              {/* A impressão digital sai da caixa cinza e vira dado de primeira
-                  classe. No modo arquivo, as DUAS aparecem lado a lado: é a
-                  comparação que sustenta o resultado, e o leitor precisa vê-la
-                  em vez de acreditar que aconteceu. */}
-              {/* No envelope com vários arquivos, o hash de cada um vive na lista
-                  abaixo; repetir um deles aqui em cima só confundiria qual é
-                  qual. Este bloco fica para o documento único e para a
-                  comparação da validação por arquivo. */}
-              {(fileHash || hashDoPdfAssinado || hashDoOriginal) && !(isProtocolResult && !verifiedByUploadedFile) && (
-                <div style={{
-                  border: '1px solid #e7e5e4', borderRadius: 11, background: '#fff',
-                  padding: '11px 13px', ...sobe(3),
-                }}>
-                  {verifiedByUploadedFile ? (
-                    <>
-                      <span style={rotuloDoHash}>Do seu arquivo</span>
-                      <code style={codigoDoHash}>{fileHash}</code>
-                      <DivisorPicotado style={{ margin: '9px 0' }} />
-                      <span style={rotuloDoHash}>Do registro do PDF assinado</span>
-                      <code style={codigoDoHash}>{hashDoPdfAssinado || fileHash}</code>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 9,
-                        fontSize: 9.5, fontWeight: 700, color: VERDE,
-                      }}>
-                        <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor"
-                             strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                          <path d="M4 12l5 5L20 6" />
-                        </svg>
-                        Idênticos — uma vírgula alterada mudaria isto
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      {/* OS DOIS HASHES, porque respondem a perguntas diferentes.
-                          O do ORIGINAL é o que está impresso no PDF; o do
-                          ASSINADO é o do arquivo que se baixa e não pode ser
-                          impresso dentro dele mesmo (mudaria os bytes). Mostrar
-                          só um fazia a pessoa comparar o número impresso com o
-                          arquivo em mãos e achar que nada batia. */}
-                      {hashDoOriginal ? (
-                        <>
-                          <span style={rotuloDoHash}>SHA-256 do documento original</span>
-                          <code style={codigoDoHash}>{hashDoOriginal}</code>
-                          <span style={{ display: 'block', marginTop: 5, fontSize: 9, color: '#78716c', lineHeight: 1.45 }}>
-                            É este que aparece impresso no rodapé do documento assinado.
-                          </span>
-                          <DivisorPicotado style={{ margin: '9px 0' }} />
-                        </>
-                      ) : null}
-                      <span style={rotuloDoHash}>SHA-256 do PDF assinado</span>
-                      <code style={codigoDoHash}>{fileHash || hashDoPdfAssinado}</code>
-                      <span style={{ display: 'block', marginTop: 5, fontSize: 9, color: '#78716c', lineHeight: 1.45 }}>
-                        É este que corresponde ao arquivo que você baixa aqui.
-                      </span>
-                    </>
-                  )}
-                </div>
+            {/* ── MEIO: o documento ──────────────────────────────────────── */}
+            <div className="ap-dossie-meio" style={sobe(2)}>
+              <FaixaDaContagem texto={contagem.texto} completo={contagem.completo} />
+
+              {/* A comparação que sustenta a validação por arquivo. Só existe
+                  quando houve arquivo — na consulta por código nada foi
+                  comparado, e a página não pode insinuar que foi. */}
+              {verifiedByUploadedFile && (
+                <Tarja tom="pronto" style={{ marginTop: 9 }}>
+                  A impressão digital do arquivo que você enviou é idêntica à do registro. Byte a
+                  byte, é o mesmo PDF que foi assinado.
+                </Tarja>
               )}
 
-              {/* Modelo per_document: cada arquivo do kit tem o seu código. */}
-              {isProtocolResult && (
-                <div style={{
-                  marginTop: 12, border: '1px solid #e7e5e4', borderRadius: 11,
-                  background: '#fff', overflow: 'hidden', ...sobe(4),
-                }}>
-                  <span style={{
-                    display: 'block', padding: '9px 12px 5px', fontSize: 8.5, fontWeight: 700,
-                    letterSpacing: '.14em', textTransform: 'uppercase', color: TINTA_4,
+              {/* Os identificadores, lado a lado e inteiros. */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 11, marginTop: 14 }}>
+                {protocoloExibido && (
+                  <ChipDeCodigo
+                    rotulo={rotuloDoRecibo}
+                    valor={protocoloExibido}
+                    copiado={copiado === 'protocolo'}
+                    aoCopiar={() => { void copiar(protocoloExibido, 'protocolo'); }}
+                    icone={<Lock size={12} strokeWidth={2.4} />}
+                  />
+                )}
+                {!consultaDeEnvelope && (hashDoArquivoExibido || fileHash) && (
+                  <ChipDeCodigo
+                    rotulo="SHA-256 do PDF assinado"
+                    valor={hashDoArquivoExibido || fileHash}
+                    copiado={copiado === 'sha-assinado'}
+                    aoCopiar={() => { void copiar(hashDoArquivoExibido || fileHash, 'sha-assinado'); }}
+                    icone={<Shield size={12} strokeWidth={2.4} />}
+                  />
+                )}
+                {!consultaDeEnvelope && hashOriginalDoArquivoExibido && (
+                  <ChipDeCodigo
+                    rotulo="SHA-256 do original"
+                    valor={hashOriginalDoArquivoExibido}
+                    copiado={copiado === 'sha-original'}
+                    aoCopiar={() => { void copiar(hashOriginalDoArquivoExibido, 'sha-original'); }}
+                    icone={<FileText size={12} strokeWidth={2.4} />}
+                  />
+                )}
+              </div>
+
+              {/* O que a página PODE afirmar. Ver `afirmacaoDaConsulta`: consulta
+                  por código encontra um registro; ela não compara arquivo
+                  nenhum, e prometer integridade aí derrubaria o laudo inteiro. */}
+              <p style={{ margin: '12px 0 0', fontSize: 12, lineHeight: 1.65, color: TINTA_3 }}>
+                {/* No envelope a frase do meio ficaria apontando para um chip
+                    que não existe ("compare o SHA-256 acima"): pelo protocolo
+                    não há um hash só, há um par por arquivo. */}
+                {consultaDeEnvelope ? (
+                  <>
+                    Este protocolo corresponde a um envelope no registro e vale o kit inteiro.
+                    Cada arquivo abaixo tem o seu código e os seus dois SHA-256 — compare com o
+                    PDF que você tem em mãos, ou envie o arquivo para conferência.
+                  </>
+                ) : (
+                  <>
+                    {afirmacao.explicacao}
+                    {hashOriginalDoArquivoExibido
+                      ? ' O SHA-256 do original é o que vai impresso no rodapé do PDF; o do PDF assinado é o do arquivo que se baixa aqui.'
+                      : ''}
+                  </>
+                )}
+              </p>
+
+              {/* ── A PRÉVIA, ou A LISTA ──────────────────────────────────────
+                  Documento único: o PDF renderizado, que é o que a pessoa veio
+                  ver. Protocolo de envelope: a lista dos arquivos no MESMO
+                  lugar — mostrar um deles ali seria escolher por quem
+                  perguntou pelo kit inteiro. */}
+              {!consultaDeEnvelope && (
+                <Painel style={{ marginTop: 16 }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                    padding: '12px 16px', borderBottom: `1px solid ${LINHA}`, background: '#fafafa',
                   }}>
-                    Documentos deste envelope ({result.documents!.length})
-                  </span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 12px' }}>
+                    <span style={{
+                      minWidth: 0, fontSize: 12.5, fontWeight: 700, color: TINTA_2,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {tituloDoDocumento}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { void openDocumentViewer(codigoDaPrevia, result.signer?.signed_document_path); }}
+                      style={{
+                        flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '6px 12px', border: `1px solid ${LINHA}`, borderRadius: 9,
+                        background: '#fff', color: TINTA_2, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                      }}
+                    >
+                      <Eye size={13} strokeWidth={2.2} /> Tela cheia
+                    </button>
+                  </div>
+                  {previaUrl ? (
+                    /* `navpanes=0` tira a tira de miniaturas do leitor do Chrome,
+                       que come quase metade da largura da coluna; `view=FitH`
+                       abre o documento já na largura da página, que é como ele
+                       seria lido no papel. */
+                    <iframe
+                      title="Documento assinado"
+                      src={`${previaUrl}#navpanes=0&view=FitH`}
+                      className="ap-dossie-visor"
+                      style={{ display: 'block', width: '100%', border: 'none', background: '#fff' }}
+                    />
+                  ) : (
+                    <div
+                      className="ap-dossie-visor"
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        justifyContent: 'center', gap: 9, padding: 22, textAlign: 'center',
+                      }}
+                    >
+                      {previaCarregando ? (
+                        <>
+                          <Roda tamanho={24} />
+                          <span style={{ fontSize: 13, fontWeight: 600, color: TINTA_2 }}>Carregando o documento…</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileText size={28} strokeWidth={1.6} color={TINTA_4} />
+                          <span style={{ fontSize: 13, lineHeight: 1.65, color: TINTA_3, maxWidth: 400 }}>
+                            {previaFalhou
+                              ? 'O arquivo assinado não pôde ser exibido aqui. A assinatura continua registrada e os dados ao lado seguem válidos.'
+                              : 'Este registro não tem um arquivo assinado para exibir.'}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </Painel>
+              )}
+
+              {consultaDeEnvelope && (
+                <Painel style={{ marginTop: 16 }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                    padding: '13px 16px', borderBottom: `1px solid ${LINHA}`, background: '#fafafa',
+                  }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: TINTA_2 }}>
+                      Documentos deste envelope
+                    </span>
+                    <span style={{ fontSize: 12, color: TINTA_3 }}>
+                      {result.documents!.length} {result.documents!.length === 1 ? 'arquivo' : 'arquivos'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
                     {result.documents!.map((doc, index) => {
                       const codigo = (doc.verification_code || '').trim();
+                      const principal = doc.document_type === 'main';
                       return (
-                        <div key={codigo || index} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          key={codigo || index}
+                          className="ap-dossie-arquivo"
+                          style={{
+                            padding: 18,
+                            borderBottom: index === result.documents!.length - 1 ? 'none' : `1px solid ${LINHA}`,
+                          }}
+                        >
+                          <div style={{ display: 'flex', gap: 13, alignItems: 'flex-start' }}>
                             <span style={{
-                              display: 'block', fontSize: 11.5, fontWeight: 600, color: TINTA,
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              flex: '0 0 auto', width: 38, height: 44, borderRadius: 8, marginTop: 1,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              background: principal ? '#fff7ed' : '#f8fafc',
+                              border: `1px solid ${principal ? '#fed7aa' : '#e2e8f0'}`,
+                              color: principal ? '#c2410c' : TINTA_3,
                             }}>
-                              {stripDocumentExtension(doc.display_name) || codigo || `Documento ${index + 1}`}
+                              <FileText size={18} strokeWidth={1.9} />
                             </span>
-                            <span style={{
-                              display: 'block', marginTop: 1, fontSize: 9.5, color: TINTA_3,
-                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                            }}>
-                              {codigo}
-                            </span>
-                            {/* A impressão digital DESTE arquivo. É o que permite
-                                conferir o PDF que a pessoa tem na mão — um hash
-                                só, do envelope, não responde isso quando o kit
-                                tem principal e dois anexos. */}
-                            {/* Sem reticências: hash cortado não serve para conferir
-                                nem para copiar, que é a única coisa que se faz
-                                com ele. */}
-                            {/* OS DOIS HASHES, cada um dizendo de quê.
-                                Antes saía só "SHA-256 …" com o valor do
-                                ASSINADO — e um rótulo que não diz qual é qual
-                                faz a pessoa comparar o número impresso no
-                                rodapé do PDF (que é o do ORIGINAL) com este, e
-                                concluir que não bate. */}
-                            {doc.document_hash && (
-                              <span style={{
-                                display: 'block', marginTop: 3, fontSize: 8.5, color: TINTA_4,
-                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                                lineHeight: 1.5, overflowWrap: 'anywhere',
-                              }}>
-                                <b style={{ fontFamily: 'inherit', fontWeight: 700 }}>ORIGINAL</b>{' '}
-                                {doc.document_hash}
-                              </span>
-                            )}
-                            {doc.signed_pdf_sha256 && (
-                              <span style={{
-                                display: 'block', marginTop: 2, fontSize: 8.5, color: TINTA_4,
-                                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-                                lineHeight: 1.5, overflowWrap: 'anywhere',
-                              }}>
-                                <b style={{ fontFamily: 'inherit', fontWeight: 700 }}>ASSINADO</b>{' '}
-                                {doc.signed_pdf_sha256}
-                              </span>
-                            )}
-                          </span>
-                          {codigo && (
-                            <button
-                              type="button"
-                              onClick={() => { void openDocumentViewer(codigo); }}
-                              style={{
-                                flex: '0 0 auto', padding: '5px 10px', border: '1px solid #e2e8f0',
-                                borderRadius: 8, background: '#fff', color: TINTA_2,
-                                fontSize: 10.5, fontWeight: 600, cursor: 'pointer',
-                              }}
-                            >
-                              Abrir
-                            </button>
-                          )}
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 15, fontWeight: 700, color: TINTA, letterSpacing: '-.2px', overflowWrap: 'anywhere' }}>
+                                  {/* Anexo guardado com uuid por nome vira "Anexo N". */}
+                                  {nomeDoDocumentoDoKit(doc.display_name, doc.document_type, index)}
+                                </span>
+                                <span style={{
+                                  padding: '3px 8px', borderRadius: 999, fontSize: 9.5, fontWeight: 700,
+                                  letterSpacing: '.06em', textTransform: 'uppercase',
+                                  background: principal ? '#ffedd5' : '#f1f5f9',
+                                  color: principal ? '#9a3412' : TINTA_2,
+                                }}>
+                                  {principal ? 'Principal' : 'Anexo'}
+                                </span>
+                              </div>
+                              {codigo && (
+                                <span style={{
+                                  display: 'block', marginTop: 5, fontSize: 12, color: TINTA_2,
+                                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                                  letterSpacing: '-.2px',
+                                }}>
+                                  {codigo}
+                                </span>
+                              )}
+                              {/* Sem reticências: hash cortado não serve para conferir
+                                  nem para copiar, que é a única coisa que se faz com ele. */}
+                              {doc.document_hash && (
+                                <span style={{
+                                  display: 'block', marginTop: 7, fontSize: 10, color: TINTA_3,
+                                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                                  lineHeight: 1.6, letterSpacing: '-.2px', overflowWrap: 'anywhere',
+                                }}>
+                                  <b style={{ fontFamily: 'inherit', fontWeight: 700 }}>ORIGINAL</b>{' '}
+                                  {doc.document_hash}
+                                </span>
+                              )}
+                              {doc.signed_pdf_sha256 && (
+                                <span style={{
+                                  display: 'block', marginTop: 3, fontSize: 10, color: TINTA_3,
+                                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                                  lineHeight: 1.6, letterSpacing: '-.2px', overflowWrap: 'anywhere',
+                                }}>
+                                  <b style={{ fontFamily: 'inherit', fontWeight: 700 }}>ASSINADO</b>{' '}
+                                  {doc.signed_pdf_sha256}
+                                </span>
+                              )}
+                              {codigo ? (
+                                <span style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => { void openDocumentViewer(codigo); }}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                                      padding: '8px 15px', border: 'none', borderRadius: 10,
+                                      background: '#ea580c', color: '#fff', fontSize: 12.5,
+                                      fontWeight: 700, cursor: 'pointer',
+                                      boxShadow: '0 8px 18px -12px rgba(234,88,12,.9)',
+                                    }}
+                                  >
+                                    <Eye size={13} strokeWidth={2.3} /> Abrir
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { void downloadSignedByCode(codigo, doc.display_name || ''); }}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                                      padding: '8px 15px', border: `1px solid ${LINHA}`, borderRadius: 10,
+                                      background: '#fff', color: TINTA_2, fontSize: 12.5,
+                                      fontWeight: 700, cursor: 'pointer',
+                                    }}
+                                  >
+                                    <Download size={13} strokeWidth={2.2} /> Baixar
+                                  </button>
+                                </span>
+                              ) : (
+                                <span style={{ display: 'block', marginTop: 8, fontSize: 11.5, lineHeight: 1.55, color: TINTA_3 }}>
+                                  Este arquivo faz parte do kit, mas não tem código próprio de
+                                  verificação — ele foi assinado num envelope anterior ao modelo
+                                  por documento.
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
                   </div>
-                  <p style={{
-                    margin: 0, padding: '0 12px 11px', fontSize: 9.5, lineHeight: 1.5, color: TINTA_4,
-                  }}>
-                    São dois SHA-256 por arquivo. O <b>ORIGINAL</b> é o do documento antes de
-                    assinar — é ele que aparece impresso no rodapé do PDF. O <b>ASSINADO</b> é o do
-                    arquivo que você baixa aqui; baixe e compare com este para provar que é
-                    exatamente ele.
-                  </p>
-                </div>
+                </Painel>
               )}
+            </div>
 
-              <div style={{ marginTop: 12, ...sobe(5) }}>
-                <AcaoPrimaria
-                  onClick={() => { void openDocumentViewer(protocoloExibido, result.signer?.signed_document_path); }}
-                  disabled={viewerLoading}
-                  icone={viewerLoading ? <Roda tamanho={17} cor="#fff" /> : undefined}
-                >
-                  {viewerLoading ? 'Abrindo…' : 'Abrir documento assinado'}
-                </AcaoPrimaria>
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <AcaoSecundaria onClick={() => { void handleDownloadSigned(); }}>Baixar PDF</AcaoSecundaria>
-                  <AcaoSecundaria
-                    onClick={() => {
-                      setResult(null); setSearched(false); setHash(''); setFileHash('');
-                      autoVerifiedRef.current = true;
-                    }}
-                  >
-                    Nova consulta
-                  </AcaoSecundaria>
-                </div>
-              </div>
+            {/* ── DIREITA: o que se leva embora ──────────────────────────── */}
+            <div className="ap-dossie-opcoes" style={sobe(3)}>
+              <Painel>
+                <TituloDoPainel>Opções</TituloDoPainel>
+                {/* No envelope não há "o" arquivo para baixar: um botão aqui
+                    entregaria o principal calado, e cada arquivo do kit já tem
+                    o seu par de botões na lista ao lado. */}
+                {!consultaDeEnvelope && (
+                  <>
+                    <Opcao
+                      icone={<Download size={15} strokeWidth={2.1} />}
+                      titulo="Baixar PDF assinado"
+                      descricao="O arquivo com as assinaturas e a página de auditoria no fim."
+                      desabilitado={viewerLoading || !codigoDaPrevia}
+                      onClick={() => { void handleDownloadSigned(); }}
+                    />
+                    <Opcao
+                      icone={<Eye size={15} strokeWidth={2.1} />}
+                      titulo="Abrir em tela cheia"
+                      descricao="Lê o documento sem as colunas ao lado."
+                      desabilitado={viewerLoading || !codigoDaPrevia}
+                      onClick={() => { void openDocumentViewer(codigoDaPrevia, result.signer?.signed_document_path); }}
+                    />
+                  </>
+                )}
+                <Opcao
+                  icone={<Shield size={15} strokeWidth={2.1} />}
+                  titulo={copiado === 'link' ? 'Link copiado' : 'Copiar link desta conferência'}
+                  descricao="Manda a mesma página para quem também precisa conferir."
+                  onClick={() => { void copiar(`${window.location.origin}/#/verificar/${protocoloExibido}`, 'link'); }}
+                />
+                <Opcao
+                  icone={<ArrowLeft size={15} strokeWidth={2.1} />}
+                  titulo="Conferir outro documento"
+                  descricao="Volta ao campo de protocolo e ao envio de PDF."
+                  onClick={() => {
+                    setResult(null); setSearched(false); setHash(''); setFileHash('');
+                    autoVerifiedRef.current = true;
+                  }}
+                />
+              </Painel>
 
               {qrDataUrl && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 11, marginTop: 12,
-                  border: '1px solid #e7e5e4', borderRadius: 11, background: '#fff',
-                  padding: '10px 12px', ...sobe(6),
-                }}>
-                  <img src={qrDataUrl} alt="QR desta validação" style={{ width: 48, height: 48, flex: '0 0 auto' }} />
-                  <span style={{ fontSize: 11, lineHeight: 1.5, color: TINTA_2 }}>
-                    Aponte a câmera para reabrir esta conferência, ou compartilhe o QR com quem
-                    precisar conferir também.
-                  </span>
-                </div>
+                <Painel style={{ marginTop: 16 }}>
+                  <div style={{ display: 'flex', gap: 13, padding: '15px 16px', alignItems: 'center' }}>
+                    <img src={qrDataUrl} alt="QR desta conferência" style={{ width: 62, height: 62, flex: '0 0 auto' }} />
+                    <span style={{ fontSize: 11.5, lineHeight: 1.55, color: TINTA_3 }}>
+                      Aponte a câmera para reabrir esta conferência em outro aparelho.
+                    </span>
+                  </div>
+                </Painel>
               )}
             </div>
           </div>
         </div>
       )}
+
 
       {/* ══════════ DESATIVADO PELO EMISSOR ══════════
           Âmbar, não vermelho: o documento existe e a assinatura vale. O que foi
@@ -937,16 +1252,6 @@ const PublicVerificationPage: React.FC = () => {
       )}
     </MolduraPublica>
   );
-};
-
-const rotuloDoHash: React.CSSProperties = {
-  display: 'block', fontSize: 8, fontWeight: 700, letterSpacing: '.16em',
-  textTransform: 'uppercase', color: '#cbd5e1',
-};
-
-const codigoDoHash: React.CSSProperties = {
-  display: 'block', marginTop: 5, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  fontSize: 10, lineHeight: 1.6, color: '#64748b', wordBreak: 'break-all',
 };
 
 export default PublicVerificationPage;

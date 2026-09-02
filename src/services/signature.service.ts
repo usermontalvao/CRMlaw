@@ -14,6 +14,7 @@ import type {
   SignatureAuditLog,
   SignatureStats,
 } from '../types/signature.types';
+import type { SignatarioDoDossie } from '../utils/assinaturaPublica';
 import { matchesNormalizedSearch, normalizeSearchText } from '../utils/search';
 import { buildPublicSigningUrl, buildPublicVerificationUrl } from '../utils/publicAppUrl';
 
@@ -62,9 +63,50 @@ export interface VerifiedDocument {
   document_hash?: string | null;
 }
 
+/**
+ * O DOSSIÊ do envelope — o que a consulta pública devolve além do signatário
+ * que assinou por último. Vem da migration `validador_dossie_publico`.
+ *
+ * Consultas antigas (e a validação por arquivo) podem não trazer nada disso:
+ * tudo é opcional, e a tela precisa continuar de pé sem essas chaves.
+ */
+export interface VerifiedCreator {
+  name?: string | null;
+  email?: string | null;
+  role?: string | null;
+}
+
+export interface VerifiedHistoryEvent {
+  action?: string | null;
+  description?: string | null;
+  created_at?: string | null;
+  ip_address?: string | null;
+  signer_id?: string | null;
+}
+
+export interface VerifiedEnvelope {
+  id?: string | null;
+  created_at?: string | null;
+  signed_at?: string | null;
+  status?: string | null;
+  document_name?: string | null;
+  client_name?: string | null;
+  signature_model?: 'consolidated' | 'per_document' | null;
+  signing_order?: 'parallel' | 'sequential' | null;
+  envelope_verification_code?: string | null;
+  verification_hash?: string | null;
+}
+
+export interface VerifyDossier {
+  signers?: SignatarioDoDossie[];
+  creator?: VerifiedCreator | null;
+  history?: VerifiedHistoryEvent[];
+  envelope?: VerifiedEnvelope | null;
+}
+
 export type VerifyResult =
-  | { status: 'valid';   signer: Signer; request: SignatureRequest; documents?: VerifiedDocument[] }
-  | { status: 'blocked'; reason?: string | null; signer?: Signer; request?: SignatureRequest; documents?: VerifiedDocument[] }
+  | ({ status: 'valid';   signer: Signer; request: SignatureRequest; documents?: VerifiedDocument[] } & VerifyDossier)
+  | ({ status: 'blocked'; reason?: string | null; signer?: Signer; request?: SignatureRequest; documents?: VerifiedDocument[] } & VerifyDossier)
   | null;
 
 class SignatureService {
@@ -78,7 +120,30 @@ class SignatureService {
     return true;
   }
 
-  async verifySignedPdfBySha256(sha256: string): Promise<{ signer: Signer; request: SignatureRequest } | null> {
+  /**
+   * O dossiê do envelope (signatários, emissor, trilha) por id da solicitação.
+   *
+   * A consulta por CÓDIGO já vem com tudo embutido; a validação por ARQUIVO
+   * passa por outra RPC, que só devolve signatário e solicitação — sem isto, o
+   * mesmo documento mostraria o painel completo por um caminho e um painel
+   * vazio pelo outro.
+   */
+  async getVerificationDossier(requestId: string): Promise<VerifyDossier> {
+    if (!requestId) return {};
+    const { data, error } = await supabase.rpc('public_verify_extras_json', { p_request_id: requestId });
+    if (error || !data) {
+      console.warn('[getVerificationDossier] falha:', error);
+      return {};
+    }
+    return {
+      signers: Array.isArray((data as any).signers) ? ((data as any).signers as SignatarioDoDossie[]) : undefined,
+      creator: ((data as any).creator ?? null) as VerifiedCreator | null,
+      history: Array.isArray((data as any).history) ? ((data as any).history as VerifiedHistoryEvent[]) : undefined,
+      envelope: ((data as any).envelope ?? null) as VerifiedEnvelope | null,
+    };
+  }
+
+  async verifySignedPdfBySha256(sha256: string): Promise<({ signer: Signer; request: SignatureRequest } & VerifyDossier) | null> {
     const codeToUse = (sha256 || '').trim();
     if (!codeToUse) return null;
 
@@ -107,7 +172,7 @@ class SignatureService {
       );
     }
 
-    return { signer, request };
+    return { signer, request, ...(await this.getVerificationDossier(request.id)) };
   }
 
   // ==================== SIGNATURE REQUESTS ====================
@@ -1859,10 +1924,19 @@ class SignatureService {
       ? ((data as any).documents as VerifiedDocument[])
       : undefined;
 
+    // O dossiê é aditivo: registros antigos e respostas sem `request.id`
+    // continuam válidos sem nenhuma dessas chaves.
+    const dossie: VerifyDossier = {
+      signers: Array.isArray((data as any).signers) ? ((data as any).signers as SignatarioDoDossie[]) : undefined,
+      creator: ((data as any).creator ?? null) as VerifiedCreator | null,
+      history: Array.isArray((data as any).history) ? ((data as any).history as VerifiedHistoryEvent[]) : undefined,
+      envelope: ((data as any).envelope ?? null) as VerifiedEnvelope | null,
+    };
+
     if (status === 'blocked') {
-      return { status: 'blocked', reason: (data as any).reason ?? null, signer, request, documents };
+      return { status: 'blocked', reason: (data as any).reason ?? null, signer, request, documents, ...dossie };
     }
-    return { status: 'valid', signer: signer as any, request: request as any, documents };
+    return { status: 'valid', signer: signer as any, request: request as any, documents, ...dossie };
   }
 
   generateVerificationHash(): string {

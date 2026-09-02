@@ -205,6 +205,9 @@ export type DocumentoVerificavel = {
   signed_pdf_sha256?: string | null;
   /** SHA-256 do documento de ORIGEM — o que vai impresso no PDF. */
   document_hash?: string | null;
+  /** `main` é o documento principal do kit; o resto são anexos. */
+  document_type?: string | null;
+  display_name?: string | null;
 };
 
 /**
@@ -475,4 +478,335 @@ export function afirmacaoDaConsulta(conferidoPorArquivo: boolean): {
     explicacao: 'Este código corresponde a uma assinatura no registro, com o signatário e a data abaixo. '
       + 'Para provar que o arquivo em suas mãos é exatamente este, compare o SHA-256 do PDF assinado ou envie o arquivo para conferência.',
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O DOSSIÊ — o envelope inteiro, não só quem assinou por último.
+//
+// A consulta pública passou a devolver todos os signatários, quem emitiu e a
+// trilha de auditoria (migration `validador_dossie_publico`). As regras de
+// leitura desse pacote moram aqui, longe do JSX, porque são elas que os testes
+// vigiam: contar assinatura errado ou nomear um evento errado é o tipo de
+// defeito que só aparece na frente de quem foi conferir.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SituacaoDoSignatario = 'assinou' | 'recusou' | 'visualizou' | 'aguardando';
+
+export type SignatarioDoDossie = {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+  /** Endereço usado na autenticação — o plano B quando `email` é o placeholder. */
+  auth_email?: string | null;
+  cpf?: string | null;
+  phone?: string | null;
+  role?: string | null;
+  order?: number | null;
+  status?: string | null;
+  signed_at?: string | null;
+  viewed_at?: string | null;
+  refused_at?: string | null;
+  refusal_reason?: string | null;
+  signer_ip?: string | null;
+  signer_geolocation?: string | null;
+  auth_method?: string | null;
+  auth_provider?: string | null;
+  auth_verified_channel?: CanalDeIdentidade;
+  auth_verified_identifier?: string | null;
+  has_signature_image?: boolean | null;
+  has_facial_image?: boolean | null;
+  has_document_image?: boolean | null;
+  verification_hash?: string | null;
+};
+
+/**
+ * Em que pé está cada signatário.
+ *
+ * `signed_at` manda mais que `status`: em envelopes antigos o status do
+ * signatário ficou 'pending' mesmo depois de assinar (o carimbo ia só na
+ * solicitação), e um painel que lesse o status diria "aguardando" embaixo de
+ * uma assinatura que existe.
+ */
+export function situacaoDoSignatario(signatario: SignatarioDoDossie | null | undefined): SituacaoDoSignatario {
+  if (!signatario) return 'aguardando';
+  if (signatario.refused_at || signatario.status === 'refused') return 'recusou';
+  if (signatario.signed_at || signatario.status === 'signed') return 'assinou';
+  if (signatario.viewed_at) return 'visualizou';
+  return 'aguardando';
+}
+
+export function rotuloDaSituacao(situacao: SituacaoDoSignatario): string {
+  switch (situacao) {
+    case 'assinou': return 'Assinou';
+    case 'recusou': return 'Recusou';
+    case 'visualizou': return 'Visualizou';
+    default: return 'Aguardando';
+  }
+}
+
+/**
+ * "Assinado por 1 de 1 signatário" — a frase do cabeçalho.
+ *
+ * O plural muda com o TOTAL, não com o assinado: "1 de 2 signatários".
+ */
+export function contagemDeAssinaturas(signatarios: readonly SignatarioDoDossie[] | null | undefined): {
+  assinados: number;
+  total: number;
+  completo: boolean;
+  texto: string;
+} {
+  const lista = signatarios || [];
+  const total = lista.length;
+  const assinados = lista.filter((s) => situacaoDoSignatario(s) === 'assinou').length;
+  if (total === 0) {
+    return { assinados: 0, total: 0, completo: false, texto: 'Sem signatários registrados' };
+  }
+  const palavra = total === 1 ? 'signatário' : 'signatários';
+  return {
+    assinados,
+    total,
+    completo: assinados >= total,
+    texto: `Assinado por ${assinados} de ${total} ${palavra}`,
+  };
+}
+
+/**
+ * O nome de cada evento da trilha de auditoria.
+ *
+ * A `description` gravada no banco é boa, mas repete o nome do signatário em
+ * toda linha ("Documento assinado por FULANO") — numa lista já agrupada por
+ * pessoa, isso vira ruído. O rótulo é o título; a descrição fica no detalhe.
+ */
+export function rotuloDoEvento(acao: string | null | undefined): string {
+  switch (String(acao || '').trim()) {
+    case 'created': return 'Documento criado';
+    case 'sent': return 'Enviado para assinatura';
+    case 'viewed': return 'Documento visualizado';
+    case 'signed': return 'Documento assinado';
+    case 'refused': return 'Assinatura recusada';
+    case 'finalized': return 'Envelope finalizado';
+    case 'finalization_failed': return 'Falha ao finalizar';
+    case 'integrity_verified': return 'Integridade conferida';
+    case 'reminder_sent': return 'Lembrete enviado';
+    case 'expired': return 'Prazo expirado';
+    default: return 'Registro de auditoria';
+  }
+}
+
+/**
+ * O E-MAIL QUE VALE MOSTRAR — que às vezes não é o da coluna `email`.
+ *
+ * Quem entra pelo atendimento (pré-cadastro) nasce com um endereço INTERNO,
+ * `public+<uuid>@crm.local`, só para o registro ter uma chave. Não é o e-mail
+ * de ninguém, não recebe nada e não existe fora do banco. Escrever isso num
+ * dossiê público, embaixo do nome de uma pessoa real, é pior do que não
+ * mostrar e-mail nenhum: parece dado conferido e não é.
+ *
+ * Quando o placeholder está lá, o endereço REAL é o que recebeu o link ou o
+ * código: `auth_verified_identifier`, conferido pelo servidor, e — em registros
+ * anteriores àquela coluna — `auth_email`, o endereço usado na autenticação.
+ * A ordem é essa de propósito: o conferido antes do declarado.
+ */
+export function emailInternoDeSistema(email: string | null | undefined): boolean {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return false;
+  return (e.startsWith('public+') && e.endsWith('@crm.local')) || e.endsWith('@crm.local');
+}
+
+export type EnderecoDoSignatario = {
+  endereco: string;
+  /** `cadastro` é o e-mail da pessoa; `autenticacao` é a conta por onde ela entrou. */
+  origem: 'cadastro' | 'autenticacao' | 'nenhum';
+};
+
+/**
+ * DE ONDE VEIO O ENDEREÇO importa tanto quanto o endereço.
+ *
+ * Num envelope assinado pela conta Google do escritório, o `auth_email` de
+ * todos os signatários é o MESMO — o do advogado. Imprimir isso como uma linha
+ * de e-mail embaixo do nome de cada cliente diz uma coisa que não é verdade:
+ * que aquele é o e-mail dele. É o endereço da conta que autenticou, e a página
+ * precisa dizer exatamente isso.
+ */
+export function enderecoDoSignatario(registro: {
+  email?: string | null;
+  auth_email?: string | null;
+  auth_verified_channel?: string | null;
+  auth_verified_identifier?: string | null;
+} | null | undefined): EnderecoDoSignatario {
+  const email = String(registro?.email || '').trim();
+  if (email && !emailInternoDeSistema(email)) return { endereco: email, origem: 'cadastro' };
+
+  for (const candidato of [registro?.auth_verified_identifier, registro?.auth_email]) {
+    const valor = String(candidato || '').trim();
+    if (valor.includes('@') && !emailInternoDeSistema(valor)) {
+      return { endereco: valor, origem: 'autenticacao' };
+    }
+  }
+  return { endereco: '', origem: 'nenhum' };
+}
+
+export function emailPublicoDoSignatario(registro: Parameters<typeof enderecoDoSignatario>[0]): string {
+  return enderecoDoSignatario(registro).endereco;
+}
+
+/**
+ * A PROVA DE IDENTIDADE, numa linha só — e-mail OU telefone, nunca os dois.
+ *
+ * O cartão listava e-mail e telefone lado a lado como se ambos tivessem
+ * participado. Só um participou: o canal por onde o código chegou (ou a conta
+ * Google que entrou). O outro é dado de cadastro, e num dossiê de assinatura
+ * ele não é prova de nada — é ruído que ainda expõe o contato do cliente.
+ *
+ * O rótulo diz O QUE aquele endereço provou, não só que ele existe.
+ */
+export function provaDeIdentidade(signatario: SignatarioDoDossie | null | undefined): {
+  rotulo: string;
+  valor: string;
+} {
+  const canal = canalDoRegistro(signatario);
+  const endereco = enderecoDoSignatario(signatario).endereco;
+  const telefone = telefoneQueAutenticou(signatario);
+
+  if (canal === 'google' && endereco) return { rotulo: 'Conta Google', valor: endereco };
+  if (canal === 'email' && endereco) return { rotulo: 'Código por e-mail', valor: endereco };
+  if (canal === 'whatsapp' && telefone) return { rotulo: 'Código por WhatsApp', valor: telefone };
+  if (canal === 'sms' && telefone) return { rotulo: 'Código por SMS', valor: telefone };
+  // `phone` sem canal: houve código por telefone, mas o registro não diz se foi
+  // SMS ou WhatsApp — e chutar o nome do canal é o que esta função evita.
+  if (telefone) return { rotulo: 'Código por telefone', valor: telefone };
+  // Sem canal nenhum registrado, o e-mail do cadastro ainda identifica a pessoa,
+  // mas entra sem prometer que provou alguma coisa.
+  if (endereco) return { rotulo: 'E-mail', valor: endereco };
+  return { rotulo: '', valor: '' };
+}
+
+/**
+ * A COORDENADA DA ASSINATURA, lida da string que o banco guarda.
+ *
+ * `signer_geolocation` é texto: "-15.620415200527303, -55.99076480213347". A
+ * página mostra a coordenada arredondada (ver `formatarCoordenadas`) e um link
+ * para o mapa — não há consulta reversa neste fluxo, e escrever "Cuiabá, MT"
+ * sem um serviço que confirme seria inventar um fato num documento de prova.
+ */
+export function localizacaoDaAssinatura(valor: string | null | undefined): {
+  texto: string;
+  mapa: string;
+} {
+  const cru = String(valor || '').trim();
+  if (!cru) return { texto: '', mapa: '' };
+
+  const partes = cru.split(',').map((parte) => Number(parte.trim()));
+  if (partes.length !== 2) return { texto: '', mapa: '' };
+  const [lat, lng] = partes;
+  const texto = formatarCoordenadas({ lat, lng });
+  if (!texto) return { texto: '', mapa: '' };
+
+  return { texto, mapa: `https://www.google.com/maps?q=${lat},${lng}` };
+}
+
+/**
+ * O TELEFONE SÓ APARECE SE FOI ELE QUE RECEBEU O CÓDIGO.
+ *
+ * O celular do signatário vem do cadastro (quase sempre do atendimento), e não
+ * de nada que tenha acontecido na assinatura. Impresso no cartão ao lado de
+ * "código por E-mail", ele passa a ler como um segundo canal de autenticação
+ * que não existiu — foi exatamente essa a leitura de quem abriu a página. E
+ * quando não participou, publicar o celular de um cliente numa página aberta a
+ * quem tiver o código é expor dado pessoal sem nada em troca.
+ *
+ * `auth_provider === 'phone'` entra porque `canalDoRegistro` devolve null nesse
+ * caso de propósito: `phone` não distingue WhatsApp de SMS, e chutar o nome do
+ * canal num comprovante de assinatura é pior do que não nomeá-lo.
+ */
+export function telefoneQueAutenticou(registro: {
+  phone?: string | null;
+  auth_provider?: string | null;
+  auth_verified_channel?: string | null;
+  auth_verified_identifier?: string | null;
+} | null | undefined): string {
+  const canal = String(registro?.auth_verified_channel || '').trim();
+  const participou = canal === 'whatsapp' || canal === 'sms' || registro?.auth_provider === 'phone';
+  if (!participou) return '';
+
+  // O número que RECEBEU o código vale mais que o do cadastro.
+  const verificado = String(registro?.auth_verified_identifier || '').trim();
+  if (verificado && !verificado.includes('@')) return verificado;
+  return String(registro?.phone || '').trim();
+}
+
+/**
+ * O DETALHE de um evento — quando ele acrescenta alguma coisa.
+ *
+ * A `description` do banco costuma repetir o próprio nome do evento
+ * ("Documento visualizado" embaixo de "Documento visualizado") e ainda pendura
+ * um "(IP: 201.71.165.203)" que a linha de cima já mostra. Repetido três vezes
+ * numa trilha de dez linhas, isso deixa de ser informação e vira parede de
+ * texto — e o evento que de fato explica alguma coisa se perde no meio.
+ */
+export function detalheDoEvento(
+  acao: string | null | undefined,
+  descricao: string | null | undefined,
+): string {
+  const texto = String(descricao || '').replace(/\s*\(IP:[^)]*\)/gi, '').trim();
+  if (!texto) return '';
+  const rotulo = rotuloDoEvento(acao);
+  const cru = (valor: string) => valor
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const a = cru(texto);
+  const b = cru(rotulo);
+  if (!a || a === b || b.includes(a) || a.includes(b)) return '';
+  return texto;
+}
+
+/**
+ * O NOME DE UM ARQUIVO DO KIT — quando o que está gravado não é um nome.
+ *
+ * Os anexos são guardados no Storage com um uuid por nome de arquivo, e é esse
+ * uuid que sobra em `display_name` quando o envelope foi montado sem título
+ * próprio. Na lista pública isso vira três linhas de
+ * "b3398785-c617-487d-aefe-45830b80c00e" — nada que ajude alguém a achar o
+ * papel que tem na mão. "Anexo 1" ao menos ordena.
+ */
+const PARECE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function nomeDoDocumentoDoKit(
+  displayName: string | null | undefined,
+  tipo: string | null | undefined,
+  indice: number,
+): string {
+  const nome = String(displayName || '').trim().replace(/\.(pdf|docx?|rtf|odt)$/i, '').trim();
+  if (nome && !PARECE_UUID.test(nome)) return nome;
+  if (tipo === 'main') return 'Documento principal';
+  return `Anexo ${Math.max(indice, 1)}`;
+}
+
+/**
+ * QUAL CÓDIGO ABRE O ARQUIVO — que nem sempre é o que foi digitado.
+ *
+ * O `public-verify-file` resolve código de signatário, de solicitação e de
+ * documento; o código de ENVELOPE não resolve nada, porque envelope não é
+ * arquivo. Quem consulta o protocolo do kit e vê a página sem pré-visualização
+ * conclui que o documento sumiu — quando o que falta é escolher o arquivo
+ * principal do kit para mostrar.
+ */
+export function codigoDoArquivoParaPrevia(params: {
+  tipo: TipoDeCodigo;
+  codigoConsultado?: string | null;
+  documentos?: readonly DocumentoVerificavel[] | null;
+  codigoDoSignatario?: string | null;
+}): string {
+  const consultado = normalizarCodigo(params.codigoConsultado);
+  if (consultado && params.tipo !== 'envelope') return consultado;
+
+  const documentos = params.documentos || [];
+  const principal = documentos.find(
+    (item) => item.document_type === 'main' && normalizarCodigo(item.verification_code),
+  );
+  const qualquer = documentos.find((item) => normalizarCodigo(item.verification_code));
+  const doKit = normalizarCodigo(principal?.verification_code || qualquer?.verification_code);
+  if (doKit) return doKit;
+
+  return normalizarCodigo(params.codigoDoSignatario) || consultado;
 }

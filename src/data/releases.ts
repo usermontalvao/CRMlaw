@@ -37,6 +37,43 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.14.0',
+    date: '02/09/2026',
+    summary: 'A página pública de conferência virou o dossiê do envelope: quem assinou, de onde, quando e com que prova — com o documento aberto ao lado.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'A conferência pública virou um dossiê de três colunas',
+            description: 'Quem abre um link de validação não é o cliente: é um cartório, um banco, o advogado da outra parte. A página respondia com um signatário só — o último que assinou — e nada sobre quem emitiu o documento nem sobre o que aconteceu entre a criação e a assinatura. Agora são três colunas: à esquerda todos os signatários (inclusive quem ainda não assinou) e a trilha de auditoria evento a evento; no meio o PDF assinado renderizado na própria página, com o selo "Assinado por X de Y signatários" e os códigos; à direita baixar, abrir em tela cheia, copiar o link e o QR.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Cada signatário com a prova inteira: IP, localização e o que foi coletado',
+            description: 'O cartão de cada pessoa traz CPF, o canal que provou a identidade, quando assinou, o endereço IP, a coordenada da assinatura (com link para o mapa) e selos do que foi coletado — assinatura, selfie, documento de identidade. Sem máscara: numa página de conferência, esconder dígito impede casar o dado com o papel que a pessoa tem na mão.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Pelo protocolo do envelope, a lista dos arquivos no lugar da prévia',
+            description: 'O kit tem principal e anexos, e mostrar um deles seria escolher por quem perguntou pelo pacote inteiro. Consultando pelo protocolo, a lista ocupa o lugar da prévia: cada arquivo com o seu código, os dois SHA-256 (original e assinado) e os botões de abrir e baixar.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O e-mail interno do pré-cadastro aparecia como se fosse do cliente',
+            description: 'Quem entra pelo atendimento nasce com um endereço interno (public+…@crm.local) que não é de ninguém e não recebe nada. Ele saía impresso embaixo do nome da pessoa. Agora some, e no lugar entra o endereço que de fato recebeu o código — identificado como tal quando vem da conta que autenticou, para não parecer o e-mail pessoal do signatário.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'O telefone do cadastro parecia um segundo canal de autenticação',
+            description: 'Numa assinatura confirmada por código no e-mail, o celular do cadastro aparecia logo abaixo, lendo como se também tivesse sido usado. Não foi — e ainda publicava o contato do cliente sem motivo. O dossiê passa a mostrar só o que participou da assinatura: e-mail OU telefone, com o rótulo dizendo o que aquilo provou.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.53',
     date: '01/09/2026',
     summary: 'A comunicação ao cliente ganhou canal próprio em Configurações, alcança quem nunca conversou, e adotou o texto do escritório.',

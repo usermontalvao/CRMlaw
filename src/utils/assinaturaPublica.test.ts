@@ -19,6 +19,19 @@ import {
   progresso,
   rotularCanal,
   saudacao,
+  situacaoDoSignatario,
+  rotuloDaSituacao,
+  contagemDeAssinaturas,
+  rotuloDoEvento,
+  detalheDoEvento,
+  nomeDoDocumentoDoKit,
+  emailInternoDeSistema,
+  emailPublicoDoSignatario,
+  enderecoDoSignatario,
+  telefoneQueAutenticou,
+  localizacaoDaAssinatura,
+  provaDeIdentidade,
+  codigoDoArquivoParaPrevia,
 } from './assinaturaPublica.ts';
 
 const emHora = (h: number) => new Date(2026, 7, 29, h, 30, 0);
@@ -262,4 +275,213 @@ test('o progresso sobe, desacelera e nunca fecha a conta', () => {
   assert.ok(progresso(1) > 0 && progresso(1) < progresso(3));
   assert.ok(progresso(3) < progresso(8));
   assert.ok(progresso(600) <= 99, 'nunca chega a 100 — quem fecha é o servidor');
+});
+
+
+// ── O dossiê público ─────────────────────────────────────────────────────────
+
+test('quem assinou continua tendo assinado, mesmo com o status parado em pending', () => {
+  // Envelopes antigos carimbavam a data só na solicitação; ler o `status`
+  // escreveria "Aguardando" embaixo de uma assinatura que existe.
+  assert.equal(situacaoDoSignatario({ status: 'pending', signed_at: '2026-03-07T15:22:53Z' }), 'assinou');
+  assert.equal(situacaoDoSignatario({ status: 'signed' }), 'assinou');
+  assert.equal(situacaoDoSignatario({ status: 'pending', viewed_at: '2026-03-07T15:22:23Z' }), 'visualizou');
+  assert.equal(situacaoDoSignatario({ status: 'pending' }), 'aguardando');
+  assert.equal(situacaoDoSignatario(null), 'aguardando');
+});
+
+test('recusa vence assinatura na leitura da situação', () => {
+  // Um signatário que assinou e depois recusou não pode aparecer como "Assinou".
+  assert.equal(situacaoDoSignatario({ signed_at: '2026-03-07T15:00:00Z', refused_at: '2026-03-07T16:00:00Z' }), 'recusou');
+  assert.equal(rotuloDaSituacao('recusou'), 'Recusou');
+  assert.equal(rotuloDaSituacao('aguardando'), 'Aguardando');
+});
+
+test('a contagem do cabeçalho concorda o plural com o total', () => {
+  assert.equal(contagemDeAssinaturas([{ signed_at: 'x' }]).texto, 'Assinado por 1 de 1 signatário');
+  assert.equal(contagemDeAssinaturas([{ signed_at: 'x' }, { status: 'pending' }]).texto, 'Assinado por 1 de 2 signatários');
+  assert.equal(contagemDeAssinaturas([{ signed_at: 'x' }, { signed_at: 'y' }]).completo, true);
+  assert.equal(contagemDeAssinaturas([{ signed_at: 'x' }, { status: 'pending' }]).completo, false);
+  assert.equal(contagemDeAssinaturas([]).texto, 'Sem signatários registrados');
+  assert.equal(contagemDeAssinaturas(null).total, 0);
+});
+
+test('cada ação da auditoria tem nome de gente', () => {
+  assert.equal(rotuloDoEvento('created'), 'Documento criado');
+  assert.equal(rotuloDoEvento('integrity_verified'), 'Integridade conferida');
+  assert.equal(rotuloDoEvento('finalization_failed'), 'Falha ao finalizar');
+  assert.equal(rotuloDoEvento('acao_que_ainda_nao_existe'), 'Registro de auditoria');
+  assert.equal(rotuloDoEvento(null), 'Registro de auditoria');
+});
+
+test('o protocolo do envelope não abre arquivo — a prévia cai no documento principal', () => {
+  const documentos = [
+    { verification_code: 'AAA1', document_type: 'attachment' },
+    { verification_code: 'BBB2', document_type: 'main' },
+  ];
+  assert.equal(
+    codigoDoArquivoParaPrevia({ tipo: 'envelope', codigoConsultado: '3C5AF699', documentos }),
+    'BBB2',
+  );
+  // Código de documento individual abre a si mesmo.
+  assert.equal(
+    codigoDoArquivoParaPrevia({ tipo: 'documento', codigoConsultado: 'aaa1', documentos }),
+    'AAA1',
+  );
+  // Envelope sem nenhum código de documento cai no do signatário.
+  assert.equal(
+    codigoDoArquivoParaPrevia({ tipo: 'envelope', codigoConsultado: 'ZZZ9', documentos: [], codigoDoSignatario: 'S1' }),
+    'S1',
+  );
+  // Validação por arquivo (sem código digitado) também precisa de algo para abrir.
+  assert.equal(
+    codigoDoArquivoParaPrevia({ tipo: 'desconhecido', codigoConsultado: '', documentos }),
+    'BBB2',
+  );
+});
+
+test('detalhe que repete o título do evento não vira linha', () => {
+  assert.equal(detalheDoEvento('viewed', 'Documento visualizado'), '');
+  assert.equal(detalheDoEvento('created', 'Solicitação de assinatura criada'), 'Solicitação de assinatura criada');
+  // O IP já aparece na linha de cima; repetir dentro da frase é ruído.
+  assert.equal(
+    detalheDoEvento('viewed', 'FULANO abriu o documento para leitura (IP: 201.71.165.203)'),
+    'FULANO abriu o documento para leitura',
+  );
+  assert.equal(detalheDoEvento('signed', ''), '');
+  assert.equal(detalheDoEvento('signed', null), '');
+});
+
+test('o endereço interno do pré-cadastro não é e-mail de ninguém', () => {
+  assert.equal(emailInternoDeSistema('public+affc1d26-261d-4815-bc34-08cccc1038ed@crm.local'), true);
+  assert.equal(emailInternoDeSistema('PUBLIC+ABC@CRM.LOCAL'), true);
+  assert.equal(emailInternoDeSistema('jeniffer@gmail.com'), false);
+  assert.equal(emailInternoDeSistema(''), false);
+  assert.equal(emailInternoDeSistema(null), false);
+});
+
+test('com o placeholder no lugar do e-mail, vale o endereço que recebeu o código', () => {
+  assert.equal(
+    emailPublicoDoSignatario({ email: 'public+abc@crm.local', auth_verified_identifier: 'jeniffer@gmail.com' }),
+    'jeniffer@gmail.com',
+  );
+  // Registro anterior ao `auth_verified_identifier`: sobra o `auth_email`.
+  assert.equal(
+    emailPublicoDoSignatario({ email: 'public+abc@crm.local', auth_email: 'alvesjeniffer820@gmail.com' }),
+    'alvesjeniffer820@gmail.com',
+  );
+  // O conferido pelo servidor vence o declarado no login.
+  assert.equal(
+    emailPublicoDoSignatario({
+      email: 'public+abc@crm.local',
+      auth_verified_identifier: 'conferido@gmail.com',
+      auth_email: 'declarado@gmail.com',
+    }),
+    'conferido@gmail.com',
+  );
+  // Sem nada real, some — melhor vazio do que um endereço que não existe.
+  assert.equal(emailPublicoDoSignatario({ email: 'public+abc@crm.local' }), '');
+  // Telefone verificado não vira e-mail.
+  assert.equal(
+    emailPublicoDoSignatario({ email: 'public+abc@crm.local', auth_verified_identifier: '5565999248258' }),
+    '',
+  );
+  assert.equal(emailPublicoDoSignatario({ email: 'real@escritorio.com' }), 'real@escritorio.com');
+  assert.equal(emailPublicoDoSignatario(null), '');
+});
+
+test('uuid no lugar do nome vira "Anexo N", não uma linha de hexadecimal', () => {
+  assert.equal(nomeDoDocumentoDoKit('b3398785-c617-487d-aefe-45830b80c00e', 'attachment', 1), 'Anexo 1');
+  assert.equal(nomeDoDocumentoDoKit('4e6c63cd-fcd4-4409-bfb9-84206e00da50', 'main', 0), 'Documento principal');
+  assert.equal(nomeDoDocumentoDoKit('', 'attachment', 2), 'Anexo 2');
+  // Nome de verdade passa intacto, sem a extensão.
+  assert.equal(nomeDoDocumentoDoKit('Procuração.pdf', 'attachment', 1), 'Procuração');
+  assert.equal(nomeDoDocumentoDoKit('KIT CONSUMIDOR - FULANO', 'main', 0), 'KIT CONSUMIDOR - FULANO');
+});
+
+test('a conta que autenticou não se disfarça de e-mail do signatário', () => {
+  // Envelope assinado pela conta Google do escritório: o mesmo endereço apareceria
+  // embaixo do nome de todo cliente, como se fosse dele.
+  assert.deepEqual(
+    enderecoDoSignatario({ email: '', auth_email: 'pedro@advcuiaba.com' }),
+    { endereco: 'pedro@advcuiaba.com', origem: 'autenticacao' },
+  );
+  assert.deepEqual(
+    enderecoDoSignatario({ email: 'cliente@gmail.com', auth_email: 'pedro@advcuiaba.com' }),
+    { endereco: 'cliente@gmail.com', origem: 'cadastro' },
+  );
+  assert.deepEqual(enderecoDoSignatario({}), { endereco: '', origem: 'nenhum' });
+});
+
+test('telefone que não participou da assinatura não entra no dossiê', () => {
+  // Autenticação por código no e-mail: o celular do cadastro não teve papel
+  // nenhum, e ao lado de "código por E-mail" ele lê como um segundo canal.
+  assert.equal(
+    telefoneQueAutenticou({ phone: '(65) 99924-8258', auth_provider: 'email_link' }),
+    '',
+  );
+  assert.equal(telefoneQueAutenticou({ phone: '(65) 99924-8258', auth_provider: 'google' }), '');
+  // Recebeu o código: aparece.
+  assert.equal(
+    telefoneQueAutenticou({ phone: '(65) 99924-8258', auth_verified_channel: 'whatsapp' }),
+    '(65) 99924-8258',
+  );
+  // `phone` não distingue WhatsApp de SMS, mas prova que foi por telefone.
+  assert.equal(telefoneQueAutenticou({ phone: '(65) 99924-8258', auth_provider: 'phone' }), '(65) 99924-8258');
+  // O número que recebeu o código vence o do cadastro.
+  assert.equal(
+    telefoneQueAutenticou({
+      phone: '(65) 99924-8258',
+      auth_verified_channel: 'sms',
+      auth_verified_identifier: '5565988887777',
+    }),
+    '5565988887777',
+  );
+  assert.equal(telefoneQueAutenticou(null), '');
+});
+
+test('a coordenada da assinatura vira texto curto e link de mapa', () => {
+  const local = localizacaoDaAssinatura('-15.620415200527303, -55.99076480213347');
+  assert.equal(local.texto, '−15.6204, −55.9908');
+  assert.equal(local.mapa, 'https://www.google.com/maps?q=-15.620415200527303,-55.99076480213347');
+  // Lixo não vira mapa nenhum.
+  assert.deepEqual(localizacaoDaAssinatura('sem coordenada'), { texto: '', mapa: '' });
+  assert.deepEqual(localizacaoDaAssinatura(''), { texto: '', mapa: '' });
+  assert.deepEqual(localizacaoDaAssinatura(null), { texto: '', mapa: '' });
+});
+
+test('a prova de identidade é uma linha só, com o nome do que provou', () => {
+  // O caso real: código por e-mail. O celular do cadastro fica fora.
+  assert.deepEqual(
+    provaDeIdentidade({
+      auth_provider: 'email_link',
+      auth_email: 'alvesjeniffer820@gmail.com',
+      email: 'public+abc@crm.local',
+      phone: '(65) 99924-8258',
+    }),
+    { rotulo: 'Código por e-mail', valor: 'alvesjeniffer820@gmail.com' },
+  );
+  assert.deepEqual(
+    provaDeIdentidade({ auth_provider: 'google', email: 'pedro@advcuiaba.com' }),
+    { rotulo: 'Conta Google', valor: 'pedro@advcuiaba.com' },
+  );
+  assert.deepEqual(
+    provaDeIdentidade({ auth_verified_channel: 'whatsapp', phone: '(65) 99924-8258' }),
+    { rotulo: 'Código por WhatsApp', valor: '(65) 99924-8258' },
+  );
+  assert.deepEqual(
+    provaDeIdentidade({ auth_verified_channel: 'sms', phone: '(65) 99924-8258' }),
+    { rotulo: 'Código por SMS', valor: '(65) 99924-8258' },
+  );
+  // `phone` não diz se foi SMS ou WhatsApp — e o rótulo não chuta.
+  assert.deepEqual(
+    provaDeIdentidade({ auth_provider: 'phone', phone: '(65) 99924-8258' }),
+    { rotulo: 'Código por telefone', valor: '(65) 99924-8258' },
+  );
+  // Sem canal nenhum: o e-mail identifica, mas não promete ter provado.
+  assert.deepEqual(
+    provaDeIdentidade({ email: 'cliente@gmail.com' }),
+    { rotulo: 'E-mail', valor: 'cliente@gmail.com' },
+  );
+  assert.deepEqual(provaDeIdentidade({}), { rotulo: '', valor: '' });
 });
