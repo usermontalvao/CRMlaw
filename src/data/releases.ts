@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.20.2',
+    date: '02/09/2026',
+    summary: 'No PDF, o selo passa a citar o amparo legal em vez de dizer o que ele não é.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'O selo cita a base legal, não a ausência de ICP-Brasil',
+            description: 'O parágrafo do certificado avisava que o certificado não era da ICP-Brasil. Num documento que circula, essa frase não informa nada útil — deprecia, e convida quem recebe a tratar como de segunda o que é válido. No lugar dela entrou o amparo: assinatura eletrônica válida nos termos da MP 2.200-2/2001 e do entendimento do STJ. O parágrafo também ganhou os acentos que faltavam.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.20.1',
     date: '02/09/2026',
     summary: 'A foto automática não saía: os escapes do detector soltavam o botão e deixavam a contagem regressiva presa.',

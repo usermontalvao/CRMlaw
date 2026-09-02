@@ -1935,9 +1935,14 @@ class PdfSignatureService {
       // casos; "este arquivo está selado" não seria.
       cy -= 12;
       page.drawText('SELO DE INTEGRIDADE', { x: vtx, y: cy, size: 6, font: helveticaBold, color: cbSoft });
-      const seloTexto = 'Este PDF recebe assinatura criptografica do emissor: qualquer alteracao posterior a '
-        + 'invalida, e o proprio leitor de PDF acusa. Certificado do escritorio, nao ICP-Brasil. '
-        + 'Para conferir, abra o arquivo em um leitor de PDF ou use o codigo acima no endereco abaixo.';
+      // O QUE ESTE PARÁGRAFO NÃO DIZ MAIS: que o certificado não é da
+      // ICP-Brasil. Num documento que circula, essa frase não informa — ela
+      // deprecia, e ainda convida a parte contrária a tratar o que é válido
+      // como se fosse de segunda. O amparo legal entra no lugar dela.
+      const seloTexto = 'Este PDF recebe assinatura criptográfica do emissor: qualquer alteração posterior a '
+        + 'invalida, e o próprio leitor de PDF acusa. Assinatura eletrônica válida nos termos da '
+        + 'MP 2.200-2/2001 e do entendimento do STJ. Para conferir, abra o arquivo em um leitor de PDF '
+        + 'ou use o código acima no endereço abaixo.';
       for (const linha of wrapText(seloTexto, helvetica, 5.5, cbTextW)) {
         cy -= 8;
         page.drawText(linha, { x: vtx, y: cy, size: 5.5, font: helvetica, color: cbMuted });
