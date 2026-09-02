@@ -1656,7 +1656,10 @@ class PdfSignatureService {
         // Dashed line above
         const dashW = 5; const dashGap = 4;
         const dLineY1 = wmCenterY + 14;
-        const dLineY2 = wmCenterY - 16;
+        // Antes o traço de baixo ficava em -16 para abrir espaço a uma data que
+        // não existe mais (ver abaixo). Sem ela, o vão sobrava e a marca
+        // d'água ficava pendurada no alto do próprio quadro.
+        const dLineY2 = wmCenterY - 6;
         const dLineX1 = photoX + imgPad + 16;
         const dLineX2 = photoX + photoW - imgPad - 16;
         for (let cx = dLineX1; cx < dLineX2; cx += dashW + dashGap) {
@@ -1673,13 +1676,20 @@ class PdfSignatureService {
           size: confSize, font: helveticaBold, color: rgb(0.30, 0.30, 0.30), opacity: 0.42,
         });
 
-        // Date below text
-        const dtSize = 6;
-        const dtW = helvetica.widthOfTextAtSize(signedAtStr, dtSize);
-        page.drawText(signedAtStr, {
-          x: wmCenterX - dtW / 2, y: wmCenterY - 9,
-          size: dtSize, font: helvetica, color: rgb(0.30, 0.30, 0.30), opacity: 0.32,
-        });
+        // A DATA SAIU DAQUI, e sair era a correção.
+        //
+        // Ela vinha de `signedAtStr`, que é o instante da ASSINATURA — não o da
+        // foto. Resultado: a mesma selfie exibia dois relógios diferentes, o da
+        // faixa de baixo (15:56:16, quando a foto foi tirada) e o desta marca
+        // d'água (15:56:24, quando a pessoa assinou). Sete segundos de
+        // diferença numa única imagem, sem nada explicando por quê — em peça de
+        // prova, isso não é detalhe: é a brecha que a outra parte usa para
+        // sugerir montagem.
+        //
+        // Fica UM carimbo só, o da faixa, que já traz data, hora com segundos,
+        // finalidade e protocolo, e que sai de `facial_captured_at` — a mesma
+        // fonte que a trilha de auditoria usa para o evento da biometria. Um
+        // número, uma origem.
 
         // Dashed line below
         for (let cx = dLineX1; cx < dLineX2; cx += dashW + dashGap) {

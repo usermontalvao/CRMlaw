@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.21.0',
+    date: '02/09/2026',
+    summary: 'A selfie exibia dois horários diferentes; ficou um só, o mesmo da trilha de auditoria.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A foto mostrava dois horários que não conversavam',
+            description: 'A marca d\'água CONFIDENTIAL trazia o horário da ASSINATURA, enquanto a faixa embaixo da foto traz o horário em que a foto foi tirada. Na última assinatura eram 15:56:24 e 15:56:16 na mesma imagem — sete segundos de diferença, sem nada explicando por quê. Numa peça de prova isso não é detalhe: é a brecha que a outra parte usa para sugerir montagem. Ficou um carimbo só, o da faixa, que já traz data, hora com segundos, finalidade e protocolo.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O horário da foto e o da trilha vêm da mesma origem',
+            description: 'O carimbo que sobrou sai exatamente do mesmo registro que a linha do tempo do documento usa para o evento da biometria. Conferir a foto contra a trilha passa a ser comparar dois números iguais, e não interpretar por que eles diferem.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.20.2',
     date: '02/09/2026',
     summary: 'No PDF, o selo passa a citar o amparo legal em vez de dizer o que ele não é.',
