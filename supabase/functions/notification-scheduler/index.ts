@@ -1150,7 +1150,7 @@ async function checkAppointmentReminders(thresholds: typeof THRESHOLDS_DEFAULTS)
  * de "ler mais" no aparelho do cliente — e o recado importante é o texto.
  * Falha na mídia não desfaz o texto que já saiu; ela é o complemento.
  */
-async function checkClientAppointmentNotices() {
+async function checkClientAppointmentNotices(waConfig: NotificacaoWhatsAppConfig) {
   console.log("📣 Verificando comunicações ao cliente...");
 
   const agora = new Date();
@@ -1163,7 +1163,7 @@ async function checkClientAppointmentNotices() {
     .select(
       "id, title, description, event_mode, location, event_type, start_at, status, client_id, client_notify_minutes_before, " +
       "client_notify_message, client_notify_media_id, client_notify_sent_at, " +
-      "client_notify_enabled, process_id, processes(process_code), clients(full_name)",
+      "client_notify_enabled, process_id, processes(process_code), clients(full_name, mobile, phone)",
     )
     .eq("client_notify_enabled", true)
     .is("client_notify_sent_at", null)
@@ -1195,27 +1195,62 @@ async function checkClientAppointmentNotices() {
       continue;
     }
 
-    // A conversa aberta do cliente. Sem ela não há para onde mandar: o cliente
-    // nunca falou com o escritório por WhatsApp, e abrir conversa por conta
-    // própria para entregar um lembrete é começar uma conversa que ninguém
-    // pediu.
+    // ── PARA ONDE MANDAR ──────────────────────────────────────────────────
+    //
+    // A primeira versão exigia CONVERSA ABERTA, e isso quase matou o recurso:
+    // dos 46 clientes com compromisso futuro, 29 tinham só conversas ENCERRADAS
+    // e apenas 1 tinha conversa aberta — encerrar é o fluxo normal do
+    // atendimento. Medido em 01/09/2026: 82 de 84 compromissos não receberiam
+    // nada.
+    //
+    // Então são dois caminhos, nesta ordem:
+    //
+    //  1. tem conversa (aberta ou encerrada) → manda POR ELA. O cliente vê a
+    //     mensagem na mesma thread e no mesmo número que já conhece, e o
+    //     histórico do atendimento continua num lugar só;
+    //  2. não tem conversa nenhuma → manda pelo telefone do cadastro, no canal
+    //     escolhido em Configurações. É o único jeito de alcançar quem nunca
+    //     escreveu — que é a maioria de quem tem audiência marcada.
+    //
+    // Conversa BLOQUEADA é o único caso que continua sem saída: o escritório
+    // bloqueou aquele contato de propósito, e furar isso por um lembrete
+    // automático seria desfazer uma decisão de alguém.
     const { data: conv } = await supabase
       .from("whatsapp_conversations")
       .select("id, is_blocked, instance_id, contact_name")
       .eq("client_id", ev.client_id)
-      .neq("status", "closed")
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .limit(1)
       .maybeSingle();
 
-    if (!conv || conv.is_blocked) {
-      await marcarFalhaDaComunicacao(ev.id, "O cliente não tem conversa aberta no WhatsApp.");
+    if (conv?.is_blocked) {
+      await marcarFalhaDaComunicacao(ev.id, "A conversa deste cliente está bloqueada no WhatsApp.");
       continue;
     }
-    if (!await canalPodeFalarAgora(conv.instance_id)) continue; // volta no cron seguinte
+
+    const cliente = (ev as any).clients ?? {};
+    const telefoneDoCadastro = telefoneInternacional(cliente.mobile ?? cliente.phone);
+    const canalDoCliente = waConfig.client_channel_id;
+
+    if (!conv && !telefoneDoCadastro) {
+      await marcarFalhaDaComunicacao(ev.id, "O cliente não tem telefone no cadastro nem conversa no WhatsApp.");
+      continue;
+    }
+    if (!conv && !canalDoCliente) {
+      await marcarFalhaDaComunicacao(
+        ev.id,
+        "Nenhum canal escolhido para falar com clientes. Defina em Configurações › Notificações por WhatsApp.",
+      );
+      continue;
+    }
+
+    // O expediente é o do canal por onde a mensagem vai sair — o da conversa,
+    // quando ela existe, e o configurado quando é primeiro contato.
+    const canalDeSaida = conv?.instance_id ?? canalDoCliente;
+    if (!await canalPodeFalarAgora(canalDeSaida)) continue; // volta no cron seguinte
 
     const inicio = new Date(ev.start_at);
-    const clienteNome = (ev as any).clients?.full_name || conv.contact_name || "";
+    const clienteNome = (ev as any).clients?.full_name || conv?.contact_name || "";
     const texto = montarMensagemDaComunicacao(String(ev.client_notify_message ?? ""), {
       // O cadastro guarda o cliente em CAIXA ALTA; "Bom dia, HELEN." se lê como
       // grito. Ver `nomeApresentavel`.
@@ -1237,16 +1272,26 @@ async function checkClientAppointmentNotices() {
     }
 
     try {
+      // Conversa existente → `conversation_id`. Primeiro contato → `phone` +
+      // `channel_id`, que é o que faz o `evolution-send` abrir a conversa.
+      const destino = conv
+        ? { conversation_id: conv.id }
+        : { phone: telefoneDoCadastro, channel_id: canalDoCliente };
+
       const resp = await fetch(`${supabaseUrl}/functions/v1/evolution-send`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${supabaseServiceKey}`,
         },
-        body: JSON.stringify({ conversation_id: conv.id, sender_user_id: null, text: texto }),
+        body: JSON.stringify({ ...destino, sender_user_id: null, text: texto }),
       });
       const out = await resp.json().catch(() => ({}));
       if (!resp.ok || out?.error) throw new Error(out?.error || `HTTP ${resp.status}`);
+
+      // Sem conversa antes, o envio acabou de criar uma — é nela que a mídia e
+      // a nota interna entram.
+      const conversaId: string | null = conv?.id ?? out?.conversation_id ?? null;
 
       // O CARIMBO VEM AQUI, depois do texto confirmado e ANTES da mídia. Se a
       // mídia falhar, o cliente já recebeu o recado e não pode receber o texto
@@ -1256,15 +1301,17 @@ async function checkClientAppointmentNotices() {
         .update({ client_notify_sent_at: new Date().toISOString(), client_notify_error: null })
         .eq("id", ev.id);
 
-      if (ev.client_notify_media_id) {
-        await enviarMidiaDaComunicacao(conv.id, ev.id, String(ev.client_notify_media_id));
+      if (ev.client_notify_media_id && conversaId) {
+        await enviarMidiaDaComunicacao(conversaId, ev.id, String(ev.client_notify_media_id));
       }
 
-      await supabase.from("whatsapp_internal_notes").insert({
-        conversation_id: conv.id,
-        author_id: null,
-        body: `📣 Comunicação de compromisso enviada ao cliente: "${ev.title ?? ""}".`,
-      });
+      if (conversaId) {
+        await supabase.from("whatsapp_internal_notes").insert({
+          conversation_id: conversaId,
+          author_id: null,
+          body: `📣 Comunicação de compromisso enviada ao cliente: "${ev.title ?? ""}".`,
+        });
+      }
       console.log(`📣 Comunicação enviada ao cliente do compromisso ${ev.id}`);
     } catch (err: any) {
       await marcarFalhaDaComunicacao(ev.id, String(err?.message ?? err).slice(0, 300));
@@ -1730,7 +1777,7 @@ Deno.serve(async (req: Request) => {
     // compromisso a compromisso, no próprio painel da Agenda, e não por uma
     // regra geral do sistema. Desligar "Lembrete de compromisso" cala a equipe,
     // não o cliente — são decisões diferentes de gente diferente.
-    checks.push(checkClientAppointmentNotices());
+    checks.push(checkClientAppointmentNotices(waConfig));
     if (shouldSendTrigger(rules, "new_intimation") && getRuleChannels(rules, "new_intimation").includes("push"))
       checks.push(checkUrgentIntimations(getRuleRecipients(rules, "new_intimation")));
     if (shouldSendTrigger(rules, "requirement_alert") && getRuleChannels(rules, "requirement_alert").includes("push"))

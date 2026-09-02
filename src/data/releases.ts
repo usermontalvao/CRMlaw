@@ -37,6 +37,43 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.13.53',
+    date: '01/09/2026',
+    summary: 'A comunicação ao cliente ganhou canal próprio em Configurações, alcança quem nunca conversou, e adotou o texto do escritório.',
+    modules: [
+      {
+        moduleId: 'agenda',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A comunicação alcançava quase ninguém',
+            description: 'Ela só saía para clientes com conversa ABERTA no WhatsApp — e encerrar conversa é o fluxo normal do atendimento. Dos 84 compromissos futuros com cliente vinculado, apenas 2 receberiam a mensagem. Agora, quem tem conversa (aberta ou encerrada) recebe por ela, e quem nunca conversou recebe pelo telefone do cadastro, no canal escolhido em Configurações. O alcance passa de 2 para 82.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'Canal para falar com o cliente, em Configurações',
+            description: 'Em Notificações por WhatsApp há um seletor novo: de qual número sai a comunicação de compromisso. É separado do canal padrão dos avisos internos — aquele é por onde o escritório fala consigo mesmo, este é o número que o cliente vê chegar. Começa no canal Pedro. Vale só no primeiro contato: quem já tem conversa recebe por ela, para não abrir uma segunda no aparelho do cliente.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A mensagem adotou o texto do escritório',
+            description: 'O modelo de audiência passou a seguir o texto que já era enviado à mão: lembrete com data, hora e modalidade, endereço em linha própria, chegar com 1h de antecedência, aviso sobre testemunha e sobre a obrigatoriedade da presença. O endereço vem do campo Local do compromisso, e a linha some quando ele está vazio.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Salvar a comunicação já aparece na hora',
+            description: 'Depois de salvar era preciso recarregar a página para ver o estado novo: a lista era recarregada, mas o painel aberto continuava mostrando o retrato tirado no clique.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Miniaturas de vídeo quebradas na biblioteca',
+            description: 'Os vídeos apareciam como ícone de imagem quebrada, porque a miniatura usava <img> para um arquivo .mp4. Agora vídeo usa player e imagem usa imagem, e nenhuma das duas transborda por cima do nome do arquivo.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.13.52',
     date: '01/09/2026',
     summary: 'O compromisso ganhou campo de local, e a mensagem ao cliente passou a falar do que ele vai enfrentar.',

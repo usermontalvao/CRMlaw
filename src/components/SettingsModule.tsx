@@ -4060,6 +4060,46 @@ const SettingsModule: React.FC<{ open?: boolean; initialSection?: SettingsSectio
                                 Sem canal padrão, só os eventos com exceção própria conseguem enviar.
                               </p>
                             )}
+
+                            {/* ── Canal do CLIENTE ──
+                                Campo próprio, e não o padrão acima: aquele é por
+                                onde o escritório fala consigo mesmo (avisos de
+                                prazo à equipe), e este é o número que o cliente
+                                vê chegar. Hoje coincidem, mas são decisões
+                                diferentes — amarrá-las faria trocar o canal dos
+                                avisos internos mudar de onde o cliente recebe. */}
+                            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(15,23,42,0.08)' }}>
+                              <label style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                                Canal para falar com o cliente
+                              </label>
+                              <select
+                                className="settings-input"
+                                style={{ maxWidth: '380px' }}
+                                disabled={notifWaSaving}
+                                value={notifWaConfig.client_channel_id ?? ''}
+                                onChange={(e) => salvarConfigWa({ ...notifWaConfig, client_channel_id: e.target.value || null })}
+                              >
+                                <option value="">— nenhum —</option>
+                                {waChannels.map((canal) => (
+                                  <option key={canal.id} value={canal.id}>
+                                    {canal.name || canal.instance_name}
+                                    {canal.phone_number ? ` · ${canal.phone_number}` : ''}
+                                    {canal.status === 'connected' ? '' : ' (desconectado)'}
+                                  </option>
+                                ))}
+                              </select>
+                              <p style={{ fontSize: '11.5px', color: '#747878', margin: '6px 0 0' }}>
+                                De qual número sai a comunicação de compromisso da Agenda. Vale só no primeiro
+                                contato: quem já tem conversa com o escritório recebe pela conversa dele, para
+                                não abrir uma segunda no aparelho do cliente.
+                              </p>
+                              {!notifWaConfig.client_channel_id && (
+                                <p style={{ fontSize: '11.5px', color: '#b45309', margin: '6px 0 0', fontWeight: 500 }}>
+                                  Sem canal escolhido, o cliente que ainda não conversou com o escritório não
+                                  recebe a comunicação — e hoje esse é o caso da maioria de quem tem audiência marcada.
+                                </p>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>

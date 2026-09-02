@@ -149,30 +149,39 @@ test('data de início ilegível não vira envio às cegas', () => {
 
 // ── A mensagem segue o contexto ─────────────────────────────────────────────
 
-test('audiência presencial COM endereço manda comparecer no lugar certo', () => {
+test('audiência presencial COM endereço traz o endereço em linha própria', () => {
   const t = mensagemSugerida('hearing', 'presencial', true);
-  assert.ok(t.includes('Sua audiência'), 'diz que é audiência, não "seu compromisso"');
-  assert.ok(t.includes('{local}'), 'cita o endereço');
-  assert.ok(t.includes('documento oficial com foto'));
-  assert.ok(t.includes('30 minutos'));
+  assert.ok(t.includes('Sua audiência') || t.includes('nossa audiência'), 'diz que é audiência');
+  assert.ok(t.includes('\nEndereço: {local}'), 'endereço em linha rotulada, não no meio da frase');
+  assert.ok(t.includes('de forma presencial'));
+  assert.ok(t.includes('01h00 de antecedência'));
+  assert.ok(t.includes('Sua presença é obrigatória'));
 });
 
-test('presencial SEM endereço não sugere "Compareça em ." ', () => {
-  // A frase inteira some. Esta mensagem sai sozinha, sem ninguém reler antes —
-  // um "Compareça em ." chegaria ao cliente exatamente assim.
+test('presencial SEM endereço não sugere "Endereço:" seguido de nada', () => {
+  // A linha inteira some. Esta mensagem sai sozinha, sem ninguém reler antes —
+  // um "Endereço:" vazio chegaria ao cliente exatamente assim.
   const t = mensagemSugerida('hearing', 'presencial', false);
   assert.ok(!t.includes('{local}'));
-  assert.ok(!t.includes('Compareça em'));
-  // Mas o que não depende do endereço continua valendo.
-  assert.ok(t.includes('documento oficial com foto'));
+  assert.ok(!t.includes('Endereço'));
+  // O que não depende do endereço continua valendo.
+  assert.ok(t.includes('01h00 de antecedência'));
+  assert.ok(t.includes('Sua presença é obrigatória'));
 });
 
-test('audiência online fala em videoconferência e link, nunca em comparecer', () => {
-  const t = mensagemSugerida('hearing', 'online');
-  assert.ok(t.includes('videoconferência'));
+test('audiência online fala em link e nunca em endereço nem em chegar antes', () => {
+  const t = mensagemSugerida('hearing', 'online', true);
+  assert.ok(t.includes('de forma online'));
   assert.ok(t.includes('link'));
-  assert.ok(!t.includes('Compareça'));
-  assert.ok(!t.includes('{local}'), 'online não tem endereço para citar');
+  assert.ok(!t.includes('{local}'), 'videoconferência não tem endereço');
+  assert.ok(!t.includes('antecedência'), 'não se "chega antes" numa chamada de vídeo');
+});
+
+test('sem modalidade escolhida a frase não fica truncada', () => {
+  // "no dia X às Y de forma ." seria o resultado de concatenar às cegas.
+  const t = mensagemSugerida('hearing', '', false);
+  assert.ok(!t.includes('de forma '), 'o trecho inteiro sai quando não há modalidade');
+  assert.ok(t.includes('{data}') && t.includes('{hora}'));
 });
 
 test('perícia pede exames; audiência não', () => {
@@ -180,11 +189,17 @@ test('perícia pede exames; audiência não', () => {
   assert.ok(!mensagemSugerida('hearing', 'presencial', true).toLowerCase().includes('exames'));
 });
 
-test('reunião não manda levar documento com foto', () => {
+test('reunião não manda levar documento nem fala em multa', () => {
   // É reunião com o próprio advogado, não ato processual.
   const t = mensagemSugerida('meeting', 'presencial', true);
   assert.ok(!t.includes('documento oficial com foto'));
+  assert.ok(!t.toLowerCase().includes('multa'));
   assert.ok(t.includes('{local}'));
+});
+
+test('só a audiência avisa da multa por ausência', () => {
+  assert.ok(mensagemSugerida('hearing', 'presencial', true).includes('multa'));
+  assert.ok(!mensagemSugerida('pericia', 'presencial', true).includes('multa'));
 });
 
 test('tipo desconhecido cai no genérico, sem inventar recado', () => {

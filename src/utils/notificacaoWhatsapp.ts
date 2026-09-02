@@ -155,12 +155,26 @@ export interface NotificacaoWhatsAppConfig {
   enabled: boolean;
   /** De qual canal saem os avisos, quando o evento não escolhe outro. */
   default_channel_id: string | null;
+  /**
+   * De qual canal sai a COMUNICAÇÃO AO CLIENTE da Agenda.
+   *
+   * Campo próprio, e não o `default_channel_id`: aquele é o canal por onde o
+   * escritório fala consigo mesmo (avisos de prazo à equipe), e este é o número
+   * que o CLIENTE vê chegar. Podem coincidir — hoje coincidem — mas são
+   * decisões diferentes, e amarrá-las faria trocar o canal dos avisos internos
+   * mudar de qual número o cliente recebe a audiência.
+   *
+   * Só vale quando o cliente NÃO tem conversa aberta: tendo, a mensagem sai
+   * pela conversa dele, para não abrir uma segunda thread com o escritório.
+   */
+  client_channel_id: string | null;
   eventos: Record<string, NotificacaoWhatsAppEventoConfig>;
 }
 
 export const NOTIF_WA_CONFIG_PADRAO: NotificacaoWhatsAppConfig = {
   enabled: false,
   default_channel_id: null,
+  client_channel_id: null,
   eventos: {},
 };
 
@@ -189,6 +203,7 @@ export function normalizarConfigWhatsApp(bruto: unknown): NotificacaoWhatsAppCon
   return {
     enabled: obj.enabled === true,
     default_channel_id: texto(obj.default_channel_id),
+    client_channel_id: texto(obj.client_channel_id),
     eventos,
   };
 }

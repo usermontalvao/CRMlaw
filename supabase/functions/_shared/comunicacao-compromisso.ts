@@ -50,79 +50,6 @@ export const MENSAGEM_PADRAO_DA_COMUNICACAO =
   'Bom dia, {primeiro_nome}. Seu compromisso "{titulo}" está marcado para ' +
   '{data} às {hora}. Qualquer dúvida, é só responder por aqui.';
 
-// ── A MENSAGEM SEGUE O CONTEXTO ─────────────────────────────────────────────
-//
-// "Seu compromisso está marcado" é verdade e não serve para nada. O que o
-// cliente precisa saber depende do que ele vai enfrentar: numa audiência
-// presencial é o endereço, a antecedência e o documento com foto; numa perícia
-// é levar exames; numa reunião online é aguardar o link.
-//
-// Escrever isso à mão em todo compromisso é o tipo de tarefa que se faz duas
-// vezes e depois se abandona — então o texto já nasce certo, e continua
-// editável. Quem mexer nele manda o que escreveu; quem não mexer manda algo que
-// serve.
-//
-// A escolha é por TIPO + MODALIDADE. Tipos personalizados (a Agenda permite
-// criar) caem no genérico, que é o comportamento correto: não dá para adivinhar
-// o recado de um tipo que o escritório inventou ontem.
-
-const PRESENCIAL_COM_LOCAL =
-  ' Compareça em {local}. Chegue com 30 minutos de antecedência e leve um ' +
-  'documento oficial com foto.';
-const PRESENCIAL_SEM_LOCAL =
-  ' Chegue com 30 minutos de antecedência e leve um documento oficial com foto.';
-
-/**
- * O texto sugerido para um compromisso, a partir do tipo e da modalidade.
- *
- * `temLocal` decide entre citar o endereço ou omitir a frase inteira: sugerir
- * "Compareça em {local}" com o campo vazio entregaria "Compareça em ." ao
- * cliente — e essa mensagem sai sozinha, sem ninguém reler antes.
- */
-export function mensagemSugerida(
-  tipo: string | null | undefined,
-  modalidade: string | null | undefined,
-  temLocal = false,
-): string {
-  const online = (modalidade || '').toLowerCase() === 'online';
-  const presencial = (modalidade || '').toLowerCase() === 'presencial';
-  const compareca = temLocal ? PRESENCIAL_COM_LOCAL : PRESENCIAL_SEM_LOCAL;
-
-  switch ((tipo || '').toLowerCase()) {
-    case 'hearing':
-      if (online) {
-        return 'Bom dia, {primeiro_nome}. Sua audiência está marcada para {data} às {hora}, ' +
-          'por videoconferência. Enviaremos o link de acesso por aqui antes do horário. ' +
-          'Deixe um documento oficial com foto à mão.';
-      }
-      return 'Bom dia, {primeiro_nome}. Sua audiência está marcada para {data} às {hora}.' +
-        (presencial ? compareca : '') +
-        ' Qualquer dúvida, é só responder por aqui.';
-
-    case 'pericia':
-      if (online) {
-        return 'Bom dia, {primeiro_nome}. Sua perícia está marcada para {data} às {hora}, ' +
-          'por videoconferência. Enviaremos o link de acesso por aqui antes do horário. ' +
-          'Tenha em mãos seus documentos e exames.';
-      }
-      return 'Bom dia, {primeiro_nome}. Sua perícia está marcada para {data} às {hora}.' +
-        (presencial ? compareca : '') +
-        ' Leve também seus exames e laudos médicos.';
-
-    case 'meeting':
-      if (online) {
-        return 'Bom dia, {primeiro_nome}. Nossa reunião está marcada para {data} às {hora}, ' +
-          'por videoconferência. Enviaremos o link de acesso por aqui antes do horário.';
-      }
-      return 'Bom dia, {primeiro_nome}. Nossa reunião está marcada para {data} às {hora}.' +
-        (presencial && temLocal ? ' Nós o aguardamos em {local}.' : '') +
-        ' Qualquer dúvida, é só responder por aqui.';
-
-    default:
-      return MENSAGEM_PADRAO_DA_COMUNICACAO;
-  }
-}
-
 /** O que `{...}` pode virar no texto. Tudo string — quem não tem, vira vazio. */
 export interface CamposDaComunicacao {
   primeiro_nome: string;
@@ -143,6 +70,96 @@ export interface CamposDaComunicacao {
 // onde guardar endereço, e a variável teria saído literal. A coluna `location`
 // foi criada justamente para isto — um compromisso presencial sem endereço
 // esconde a informação de quem mais precisa dela, que é o cliente.
+
+// ── A MENSAGEM SEGUE O CONTEXTO ─────────────────────────────────────────────
+//
+// "Seu compromisso está marcado" é verdade e não serve para nada. O que o
+// cliente precisa saber depende do que ele vai enfrentar: numa audiência
+// presencial é o endereço, a antecedência e o documento com foto; numa perícia
+// é levar exames; numa reunião online é aguardar o link.
+//
+// Escrever isso à mão em todo compromisso é o tipo de tarefa que se faz duas
+// vezes e depois se abandona — então o texto já nasce certo, e continua
+// editável. Quem mexer nele manda o que escreveu; quem não mexer manda algo que
+// serve.
+//
+// A escolha é por TIPO + MODALIDADE. Tipos personalizados (a Agenda permite
+// criar) caem no genérico, que é o comportamento correto: não dá para adivinhar
+// o recado de um tipo que o escritório inventou ontem.
+
+// O formato veio do escritório (01/09/2026), a partir do texto que a advogada
+// já mandava à mão. Duas escolhas dele que não são minhas:
+//
+//   • o ENDEREÇO fica em linha própria, rotulada, e não embutido numa frase.
+//     Cliente lê mensagem de WhatsApp na diagonal, e endereço no meio de um
+//     parágrafo se perde;
+//   • o endereço vem de `{local}`, e NÃO cravado no modelo. Um endereço fixo
+//     seria enviado sozinho, sem ninguém reler, para audiências em outras
+//     comarcas. Quem tem o endereço é o compromisso, não o modelo.
+//
+// A linha inteira SOME quando `{local}` está vazio — ver `temLocal`. "Endereço:"
+// seguido de nada é pior que nenhuma linha.
+
+const LINHA_ENDERECO = '\nEndereço: {local}';
+
+/**
+ * O texto sugerido para um compromisso, a partir do tipo e da modalidade.
+ *
+ * `temLocal` decide se a linha do endereço entra: sugeri-la com o campo vazio
+ * entregaria "Endereço:" e nada ao cliente — e essa mensagem sai sozinha, sem
+ * ninguém reler antes.
+ */
+export function mensagemSugerida(
+  tipo: string | null | undefined,
+  modalidade: string | null | undefined,
+  temLocal = false,
+): string {
+  const modo = (modalidade || '').toLowerCase();
+  const online = modo === 'online';
+  const presencial = modo === 'presencial';
+  // "de forma presencial" / "de forma online"; sem modalidade a frase cortaria
+  // estranho, então o trecho inteiro sai.
+  const comoSera = modo ? ` de forma ${modo}` : '';
+  const endereco = presencial && temLocal ? LINHA_ENDERECO : '';
+
+  switch ((tipo || '').toLowerCase()) {
+    case 'hearing':
+      return (
+        'Bom dia, {primeiro_nome}.' +
+        `\nEstou passando para te lembrar da nossa audiência no dia {data} às {hora}${comoSera}.` +
+        endereco +
+        (online
+          ? '\nEnviaremos o link de acesso por aqui antes do horário.'
+          : '\n\nChegar com 01h00 de antecedência.') +
+        '\n\nNessa primeira audiência não vamos precisar de testemunha.' +
+        '\nSua presença é obrigatória, sob pena de pagar multa.'
+      );
+
+    case 'pericia':
+      return (
+        'Bom dia, {primeiro_nome}.' +
+        `\nEstou passando para te lembrar da sua perícia no dia {data} às {hora}${comoSera}.` +
+        endereco +
+        (online
+          ? '\nEnviaremos o link de acesso por aqui antes do horário.'
+          : '\n\nChegar com 30 minutos de antecedência.') +
+        '\n\nLeve um documento oficial com foto e todos os seus exames e laudos médicos.' +
+        '\nSua presença é obrigatória.'
+      );
+
+    case 'meeting':
+      return (
+        'Bom dia, {primeiro_nome}.' +
+        `\nEstou passando para te lembrar da nossa reunião no dia {data} às {hora}${comoSera}.` +
+        endereco +
+        (online ? '\nEnviaremos o link de acesso por aqui antes do horário.' : '') +
+        '\n\nQualquer dúvida, é só responder por aqui.'
+      );
+
+    default:
+      return MENSAGEM_PADRAO_DA_COMUNICACAO;
+  }
+}
 
 /**
  * O nome como se escreve numa mensagem, não como está no cadastro.

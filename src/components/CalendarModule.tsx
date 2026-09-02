@@ -4108,7 +4108,11 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({
               clienteTelefone={selectedEvent.extendedProps.clientPhone ?? null}
               processoCodigo={selectedEventProcess?.process_code ?? null}
               onVincularCliente={handleEditSelectedEvent}
-              onSalvo={() => { void loadData(); }}
+              // `applyEventUpdateLocally` e NÃO `loadData()`: o `selectedEvent`
+              // é um retrato tirado no clique, e recarregar a lista não o
+              // atualiza — o painel continuava mostrando o estado velho até
+              // alguém recarregar a página. Este helper mexe nos DOIS lugares.
+              onSalvo={(atualizado) => applyEventUpdateLocally(atualizado)}
             />
           )}
 

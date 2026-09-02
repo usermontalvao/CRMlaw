@@ -329,10 +329,36 @@ export const ClientNoticeFields: React.FC<CamposProps> = ({
                         escolhida ? 'border-orange-400 ring-2 ring-orange-200' : 'border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      <span className="grid h-12 place-items-center bg-slate-100">
-                        {m.preview_url
-                          ? <img src={m.preview_url} alt="" className="h-full w-full object-cover" />
-                          : <Icone className="h-4 w-4 text-slate-400" />}
+                      {/* A miniatura é `relative` + filho `absolute` de propósito:
+                          `h-full` dentro de um `grid` deixava a imagem crescer e
+                          passar POR CIMA do nome e do tipo. E vídeo precisa de
+                          <video>, não de <img> — a URL assinada aponta para um
+                          .mp4, e o <img> só sabia mostrar ícone de quebrado. */}
+                      <span className="relative block h-12 w-full overflow-hidden bg-slate-100">
+                        {m.preview_url && m.type === 'image' ? (
+                          <img
+                            src={m.preview_url}
+                            alt=""
+                            className="absolute inset-0 h-full w-full object-cover"
+                            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        ) : m.preview_url && m.type === 'video' ? (
+                          <video
+                            src={m.preview_url}
+                            muted
+                            playsInline
+                            // `metadata` traz o primeiro quadro sem baixar o
+                            // vídeo inteiro — a lista tem várias miniaturas.
+                            preload="metadata"
+                            className="absolute inset-0 h-full w-full object-cover"
+                          />
+                        ) : null}
+                        {/* Fica ATRÁS da mídia: quando ela não carrega (URL
+                            expirada, formato que o navegador recusa), o ícone
+                            aparece sozinho em vez de um retângulo vazio. */}
+                        <span className="absolute inset-0 -z-10 grid place-items-center">
+                          <Icone className="h-4 w-4 text-slate-400" />
+                        </span>
                       </span>
                       <span className="block px-1.5 pt-1 text-[10px] font-semibold leading-tight text-slate-700 line-clamp-2">
                         {m.name}
