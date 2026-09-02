@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.18.0',
+    date: '02/09/2026',
+    summary: 'Na página de biometria do PDF, o hash não invade mais o QR Code, o QR ganhou moldura e legenda, e entrou a explicação do selo.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'O SHA-256 passava por cima do QR Code',
+            description: 'Na página "Biometria & Verificação" do PDF, o hash de 64 caracteres era desenhado na mesma linha do rótulo e terminava 11 pontos DENTRO do QR — e como o texto é desenhado depois do código, passava por cima dele, justamente onde a leitura por câmera não perdoa. Agora o hash tem linha própria e todo o bloco respeita a borda do QR, com 115 pontos de folga.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O QR Code ganhou moldura e legenda',
+            description: 'Era um quadrado branco cru colado na borda da página. Agora é um cartão emoldurado, um pouco menor, com a legenda "Aponte a câmera para validar" — um QR sem legenda num documento jurídico é um borrão que ninguém aponta a câmera.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'A explicação do selo entrou no certificado',
+            description: 'Abaixo dos dados do signatário, o PDF passa a explicar o selo de integridade: que o arquivo recebe assinatura criptográfica do emissor, que qualquer alteração posterior a invalida e o próprio leitor de PDF acusa, e que o certificado é do escritório e não da ICP-Brasil. Está escrito como instrução de conferência, não como afirmação — a selagem acontece segundos depois de a página ser desenhada.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.17.2',
     date: '02/09/2026',
     summary: 'A trilha de auditoria registrava a selagem duas vezes por documento, e o cartão do selo ficou enxuto.',

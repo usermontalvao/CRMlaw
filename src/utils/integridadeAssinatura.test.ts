@@ -122,14 +122,38 @@ test('todo SHA-256 impresso no PDF diz que é DO DOCUMENTO ORIGINAL', () => {
 test('o SHA-256 do PDF ASSINADO nunca é impresso dentro do próprio PDF', () => {
   // Dependência circular: escrever o hash muda os bytes e produz outro hash.
   const fonte = readFileSync(new URL('../services/pdfSignature.service.ts', import.meta.url), 'utf8');
-  // O valor desenhado sai sempre de `integritySha256` (a origem), nunca do
-  // sha256 do artefato final.
-  const linhasDeHash = fonte.split('\n').filter((l) => /drawText\(\s*(originalHash|cbOriginal)/.test(l));
-  assert.ok(linhasDeHash.length >= 2, 'o desenho do hash mudou de forma; revisar');
+
+  // ESTE TESTE JÁ DISPAROU UMA VEZ, e é bom que tenha disparado. Em 02/09/2026
+  // o bloco do certificado passou a desenhar o hash por um ajudante
+  // (`linhaDoCertificado`) em vez de chamar `drawText` direto, para o valor
+  // poder quebrar de linha e parar de invadir o QR. A invariante continuava
+  // intacta; o que quebrou foi o DETECTOR, que procurava a forma da chamada.
+  //
+  // A lição virou o desenho de agora: em vez de contar linhas com um formato
+  // específico, o teste checa a PROCEDÊNCIA do valor. Refatorar a forma do
+  // desenho deixa de dar alarme falso; trocar a origem do número — que é o
+  // defeito de verdade — continua sendo pego.
+  assert.match(
+    fonte, /const cbOriginal = String\(integritySha256/,
+    'o hash do bloco do certificado deixou de vir de `integritySha256`',
+  );
+  assert.match(
+    fonte, /const originalHash = String\(integritySha256/,
+    'o hash do rodapé deixou de vir de `integritySha256`',
+  );
+
+  // A invariante de verdade: o sha do artefato FINAL nunca é desenhado.
+  // Escrevê-lo mudaria os bytes e produziria outro hash.
   assert.equal(
-    /drawText\(\s*sha256|drawText\(\s*signedSha/.test(fonte), false,
+    /drawText\(\s*sha256|drawText\(\s*signedSha|drawText\(\s*signed_pdf_sha256/.test(fonte), false,
     'passou a imprimir o hash do PDF assinado dentro dele mesmo',
   );
+  // E nenhum valor desenhado pode sair de `signed_pdf_sha256`, seja qual for o
+  // caminho — direto, por ajudante ou por variável intermediária.
+  const suspeitas = fonte.split('\n').filter(
+    (l) => /drawText\(|linhaDoCertificado\(/.test(l) && /signed_pdf_sha256/.test(l),
+  );
+  assert.equal(suspeitas.length, 0, `hash do assinado chegou ao desenho: ${suspeitas.join(' | ')}`);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

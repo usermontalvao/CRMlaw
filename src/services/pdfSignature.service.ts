@@ -1767,8 +1767,19 @@ class PdfSignatureService {
       }
 
       // ── Certificate / integrity block — white, ZapSign-style ──
+      //
+      // O HASH ENTRAVA POR CIMA DO QR. As posições eram fixas e o SHA-256 era
+      // desenhado na mesma linha do rótulo: 30 caracteres de rótulo (Helvetica
+      // 6) + 64 de hash (Courier 5,5 = 3,3 pt por caractere) terminavam em
+      // 391,2 pt, e o fundo branco do QR começava em 380,3 pt. Como o texto é
+      // desenhado DEPOIS do QR, ele passava por cima — 11 pt de hash em cima do
+      // código, exatamente onde a leitura por câmera não perdoa.
+      //
+      // Agora o bloco desce por um CURSOR e o hash tem linha própria, com a
+      // largura limitada pela borda do QR. Acrescentar uma linha aqui deixou de
+      // exigir recontar todos os offsets.
       const legalTopY  = photoY - 18;
-      const verBlockH  = 162;
+      const verBlockH  = 196;
       const verBlockW  = pageWidth - lm * 2;
       const verBlockY  = legalTopY - verBlockH;
 
@@ -1780,54 +1791,89 @@ class PdfSignatureService {
       const cbValue  = rgb(0.20, 0.255, 0.333); // #334155 — código
       const cbValueAlt = rgb(0.278, 0.333, 0.412); // #475569 — link/hash
 
-      // Card branco sem bordas nem acento — apenas o preenchimento
       roundRect(page, lm, legalTopY, verBlockW, verBlockH, 9, { fill: cbWhite });
-      void cbBorder;
 
-      // QR code — right side (grandão: quase encostando no fim do hash)
-      const cbQrSize = 150;
-      const cbQrX    = lm + verBlockW - cbQrSize - 12;
-      const cbQrY    = verBlockY + (verBlockH - cbQrSize) / 2;
+      // ── QR — cartão emoldurado, com legenda ───────────────────────────────
+      // Era um quadrado branco cru de 150 pt colado na borda. Emoldurado e um
+      // pouco menor ele lê melhor, sobra espaço para o texto respirar, e a
+      // legenda diz para que serve — um QR sem legenda num documento jurídico
+      // é um borrão que ninguém aponta a câmera.
+      const cbQrSize = 132;
+      const cbQrPad  = 9;
+      const cbQrX    = lm + verBlockW - cbQrSize - cbQrPad - 14;
+      const cbQrCapH = 12;
+      const cbQrTop  = legalTopY - (verBlockH - (cbQrSize + cbQrPad * 2 + cbQrCapH)) / 2;
+      const cbQrY    = cbQrTop - cbQrPad - cbQrSize;
+
+      roundRect(page, cbQrX - cbQrPad, cbQrTop, cbQrSize + cbQrPad * 2, cbQrSize + cbQrPad * 2 + cbQrCapH, 8, {
+        fill: cbWhite, stroke: cbBorder, strokeW: 0.8,
+      });
       if (asset.qr) {
-        page.drawRectangle({ x: cbQrX - 3, y: cbQrY - 3, width: cbQrSize + 6, height: cbQrSize + 6, color: cbWhite });
         page.drawImage(asset.qr, { x: cbQrX, y: cbQrY, width: cbQrSize, height: cbQrSize });
       }
+      {
+        const cap = 'Aponte a câmera para validar';
+        const capW = helvetica.widthOfTextAtSize(cap, 5.5);
+        page.drawText(cap, {
+          x: cbQrX + (cbQrSize - capW) / 2, y: cbQrY - 9,
+          size: 5.5, font: helvetica, color: cbMuted,
+        });
+      }
 
+      // A borda esquerda do QR é o limite de TODO texto deste bloco.
       const vtx = lm + 14;
+      const cbTextLimite = cbQrX - cbQrPad - 12;
+      const cbTextW = cbTextLimite - vtx;
+
+      let cy = legalTopY - 18;
 
       // Brand + title
-      const cbBrandY = legalTopY - 18;
       let cbBrandEnd: number;
       if (brandWordmark) {
         const wmH = 11;
         const wmW = wmH * brandWordmark.ratio;
-        page.drawImage(brandWordmark.image, { x: vtx, y: cbBrandY - 2, width: wmW, height: wmH });
+        page.drawImage(brandWordmark.image, { x: vtx, y: cy - 2, width: wmW, height: wmH });
         cbBrandEnd = vtx + wmW;
       } else {
-        page.drawText('jurius', { x: vtx, y: cbBrandY, size: 9, font: helveticaBold, color: cbDark });
+        page.drawText('jurius', { x: vtx, y: cy, size: 9, font: helveticaBold, color: cbDark });
         cbBrandEnd = vtx + helveticaBold.widthOfTextAtSize('jurius', 9);
       }
-      page.drawText('·', { x: cbBrandEnd + 6, y: cbBrandY, size: 8, font: helvetica, color: cbMuted });
-      page.drawText('Certificado de Assinatura Eletrônica', { x: cbBrandEnd + 13, y: cbBrandY, size: 7.5, font: helvetica, color: cbSoft });
+      page.drawText('·', { x: cbBrandEnd + 6, y: cy, size: 8, font: helvetica, color: cbMuted });
+      page.drawText('Certificado de Assinatura Eletrônica', { x: cbBrandEnd + 13, y: cy, size: 7.5, font: helvetica, color: cbSoft });
 
-      // Thin separator
-      page.drawLine({ start: { x: vtx, y: legalTopY - 26 }, end: { x: cbQrX - 8, y: legalTopY - 26 }, thickness: 0.4, color: cbBorder });
+      cy -= 8;
+      page.drawLine({ start: { x: vtx, y: cy }, end: { x: cbTextLimite, y: cy }, thickness: 0.4, color: cbBorder });
+
+      /** Rótulo + valor na mesma linha; se não couber, o valor cai para a linha de baixo. */
+      const linhaDoCertificado = (
+        rotulo: string, valor: string, fonteValor: any, tamValor: number,
+      ) => {
+        cy -= 11;
+        page.drawText(rotulo, { x: vtx, y: cy, size: 6, font: helvetica, color: cbMuted });
+        const rotW = helvetica.widthOfTextAtSize(rotulo, 6);
+        const sobra = cbTextW - rotW - 8;
+        const valW = fonteValor.widthOfTextAtSize(valor, tamValor);
+        if (valW <= sobra) {
+          page.drawText(valor, { x: vtx + rotW + 8, y: cy, size: tamValor, font: fonteValor, color: cbValueAlt });
+          return;
+        }
+        // Não coube: linha própria, e aí quebra pela largura disponível.
+        for (const linha of wrapText(valor, fonteValor, tamValor, cbTextW)) {
+          cy -= 9;
+          page.drawText(linha, { x: vtx, y: cy, size: tamValor, font: fonteValor, color: cbValueAlt });
+        }
+      };
 
       // Código canônico do documento — nunca o identificador interno do signatário.
+      cy -= 11;
       const cbCodeLabel = 'CÓDIGO DO DOCUMENTO:';
-      page.drawText(cbCodeLabel, { x: vtx, y: legalTopY - 37, size: 6, font: helvetica, color: cbMuted });
+      page.drawText(cbCodeLabel, { x: vtx, y: cy, size: 6, font: helvetica, color: cbMuted });
       page.drawText(documentCode || 'N/A', {
         x: vtx + helvetica.widthOfTextAtSize(cbCodeLabel, 6) + 8,
-        y: legalTopY - 37,
-        size: 7.5,
-        font: courierBold,
-        color: cbValue,
+        y: cy, size: 7.5, font: courierBold, color: cbValue,
       });
 
-      // Protocolo do envelope (identifica o kit/processo)
-      const cbProtoLabel = 'PROTOCOLO DO ENVELOPE:';
-      page.drawText(cbProtoLabel, { x: vtx, y: legalTopY - 49, size: 6, font: helvetica, color: cbMuted });
-      page.drawText(request.id, { x: vtx + helvetica.widthOfTextAtSize(cbProtoLabel, 6) + 8, y: legalTopY - 49, size: 6, font: courier, color: cbValueAlt });
+      linhaDoCertificado('PROTOCOLO DO ENVELOPE:', request.id, courier, 6);
 
       // SHA-256 do documento ORIGINAL — rotulado. O hash do PDF assinado NÃO
       // entra aqui: escrevê-lo dentro do próprio arquivo mudaria os bytes e
@@ -1835,25 +1881,41 @@ class PdfSignatureService {
       // acima no validador público.
       const cbOriginal = String(integritySha256 || '').trim().toLowerCase();
       if (cbOriginal) {
-        const cbShaLabel = 'SHA-256 DO DOCUMENTO ORIGINAL:';
-        page.drawText(cbShaLabel, { x: vtx, y: legalTopY - 61, size: 6, font: helvetica, color: cbMuted });
-        page.drawText(cbOriginal, {
-          x: vtx + helvetica.widthOfTextAtSize(cbShaLabel, 6) + 8,
-          y: legalTopY - 61, size: 5.5, font: courier, color: cbValueAlt,
-        });
+        linhaDoCertificado('SHA-256 DO DOCUMENTO ORIGINAL:', cbOriginal, courier, 5.5);
       }
 
-      // Separator
-      page.drawLine({ start: { x: vtx, y: legalTopY - 69 }, end: { x: cbQrX - 8, y: legalTopY - 69 }, thickness: 0.4, color: cbBorder });
+      cy -= 9;
+      page.drawLine({ start: { x: vtx, y: cy }, end: { x: cbTextLimite, y: cy }, thickness: 0.4, color: cbBorder });
 
-      // Verification URL — logo abaixo do separador (segue o conteúdo, não o rodapé)
+      // ── SELO DE INTEGRIDADE ───────────────────────────────────────────────
+      // Esta página vive DENTRO do arquivo que é selado (`generateSignedPdf`),
+      // então o texto fala do próprio PDF que a pessoa tem na mão.
+      //
+      // Está escrito como INSTRUÇÃO, não como afirmação: a selagem acontece
+      // segundos depois desta página ser desenhada, e é falha macia — um
+      // envelope pode fechar sem selo. "Confira no leitor" é verdade nos dois
+      // casos; "este arquivo está selado" não seria.
+      cy -= 12;
+      page.drawText('SELO DE INTEGRIDADE', { x: vtx, y: cy, size: 6, font: helveticaBold, color: cbSoft });
+      const seloTexto = 'Este PDF recebe assinatura criptografica do emissor: qualquer alteracao posterior a '
+        + 'invalida, e o proprio leitor de PDF acusa. Certificado do escritorio, nao ICP-Brasil. '
+        + 'Para conferir, abra o arquivo em um leitor de PDF ou use o codigo acima no endereco abaixo.';
+      for (const linha of wrapText(seloTexto, helvetica, 5.5, cbTextW)) {
+        cy -= 8;
+        page.drawText(linha, { x: vtx, y: cy, size: 5.5, font: helvetica, color: cbMuted });
+      }
+
+      // Verification URL
       if (asset.verificationUrl) {
+        cy -= 10;
         const urlD = asset.verificationUrl.length > 80 ? `${asset.verificationUrl.slice(0, 77)}...` : asset.verificationUrl;
-        page.drawText(urlD, { x: vtx, y: legalTopY - 80, size: 5.5, font: helvetica, color: cbValueAlt });
+        page.drawText(urlD, { x: vtx, y: cy, size: 5.5, font: helvetica, color: cbValueAlt });
       }
 
       // Signer note
-      page.drawText(`Signatário: ${item.name}`, { x: vtx, y: legalTopY - 91, size: 5, font: helvetica, color: cbMuted });
+      cy -= 10;
+      page.drawText(`Signatário: ${item.name}`, { x: vtx, y: cy, size: 5, font: helvetica, color: cbMuted });
+      void verBlockY; void cbBorder;
     }
 
     let currentHistPage = pdfDoc.addPage([pageWidth, pageHeight]);
