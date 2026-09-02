@@ -153,8 +153,21 @@ AS $function$
   );
 $function$;
 
+-- ┌─ CORRIGIDO DEPOIS, E O ARQUIVO FOI EMENDADO DE PROPÓSITO ────────────────┐
+-- │ Aqui havia `GRANT EXECUTE ... TO anon, authenticated`. Foi o furo: esta   │
+-- │ função recebe o UUID do envelope — que é o PROTOCOLO impresso no rodapé   │
+-- │ do PDF — e devolvia CPF, telefone, e-mail, IP, coordenadas e a trilha.    │
+-- │                                                                          │
+-- │ Normalmente não se edita migration já aplicada. Aqui se edita, porque     │
+-- │ deixar o GRANT no arquivo significa que toda reconstrução do banco        │
+-- │ REABRE o vazamento até a migration seguinte rodar. Um arquivo de          │
+-- │ histórico não vale uma janela de exposição.                               │
+-- │                                                                          │
+-- │ Ver 20260902220000 (guarda + minimização) e 20260902220100 (núcleo).      │
+-- └──────────────────────────────────────────────────────────────────────────┘
 REVOKE ALL ON FUNCTION public.public_verify_extras_json(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.public_verify_extras_json(uuid) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.public_verify_extras_json(uuid) FROM anon;
+REVOKE ALL ON FUNCTION public.public_verify_extras_json(uuid) FROM authenticated;
 
 -- ── 2) Clona a função atual como núcleo ─────────────────────────────────────
 DO $do$
@@ -184,7 +197,11 @@ BEGIN
 END
 $do$;
 
+-- Só de PUBLIC NÃO BASTA neste projeto: o Supabase concede EXECUTE nominal a
+-- anon/authenticated por privilégio padrão. Ver 20260902220100.
 REVOKE ALL ON FUNCTION public.public_verify_by_hash_core(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.public_verify_by_hash_core(text) FROM anon;
+REVOKE ALL ON FUNCTION public.public_verify_by_hash_core(text) FROM authenticated;
 
 -- ── 3) O invólucro público ──────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.public_verify_by_hash(p_hash text)

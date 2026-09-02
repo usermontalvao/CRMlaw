@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.2',
+    date: '02/09/2026',
+    summary: 'Fechado um desvio que contornava a proteção do dia anterior, e a página pública passou a mostrar menos dado pessoal.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'Um atalho interno permitia contornar todas as proteções',
+            description: 'A consulta pública é feita por uma rotina que aplica as proteções (bloqueio, lixeira, mascaramento) em cima de outra rotina interna. Essa rotina interna havia ficado acessível por fora — e chamá-la direto pulava todas as proteções de uma vez. A causa foi um detalhe da plataforma: fechar o acesso "para todos" não remove as permissões que o Supabase concede nominalmente a cada função nova. Agora as auxiliares são fechadas nominalmente, uma a uma, e só as duas portas de entrada ficam abertas.',
+          },
+          {
+            type: 'security' as const,
+            title: 'A página pública mostra menos dado pessoal',
+            description: 'CPF e e-mail aparecem mascarados; telefone, coordenadas de GPS, o e-mail de quem emitiu e as descrições livres do histórico saíram. Continuam completos dentro do PDF assinado, no banco e no CRM — quem tem direito à evidência já tem o documento. A prova de integridade (códigos, hashes e selo) segue inteiramente aberta, que é o que a página existe para permitir conferir.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Documento na lixeira deixa de se confirmar publicamente',
+            description: 'Um documento excluído do painel ainda respondia como válido para quem tivesse o código. Agora responde como se não existisse.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.1',
     date: '02/09/2026',
     summary: 'Correção de segurança: o dossiê da conferência podia ser consultado direto pela API com o número do protocolo, e ignorava o bloqueio e a lixeira.',
