@@ -2916,6 +2916,15 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     // Com o protocolo gravado na imagem, a foto deixa de ser uma selfie avulsa
     // e passa a apontar para o envelope que ela prova, fechando a cadeia de
     // custódia mesmo que o arquivo circule sozinho.
+    // A CÓPIA QUE A IA VÊ SAI DAQUI — antes do carimbo.
+    //
+    // O carimbo é uma faixa escura que cobre ~10% da altura da foto. Ele existe
+    // para o arquivo guardado (cadeia de custódia) e não tem função nenhuma na
+    // análise; do lado do modelo ele é só uma tarja preta ocupando parte de uma
+    // imagem que já chega reduzida. Guardar a foto carimbada e ANALISAR a
+    // limpa custa uma linha e devolve ao modelo os pixels que interessam.
+    const paraAnalise = canvas.toDataURL('image/jpeg', 0.9);
+
     const capturadaEm = agoraDoServidor();
     desenharCarimboDaEvidencia(ctx, canvas.width, canvas.height, {
       quando: capturadaEm,
@@ -2929,7 +2938,7 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
     facialCapturedAtRef.current = capturadaEm.toISOString(); // instante real da selfie
     stopCamera();
 
-    const result = await validateFacialPhotoWithAI(imageData);
+    const result = await validateFacialPhotoWithAI(paraAnalise);
     if (result) {
       setFacialValidation(result);
     }

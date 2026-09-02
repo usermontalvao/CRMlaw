@@ -179,7 +179,17 @@ Se a foto não for válida, a message deve pedir para tirar nova foto e menciona
                 type: 'image_url',
                 image_url: {
                   url: `data:image/jpeg;base64,${base64Data}`,
-                  detail: 'low'
+                  // `low` reduzia a selfie a um quadro de 512 px. Numa foto em
+                  // RETRATO (1080x1440) isso vira 384x512, e o rosto, a uma
+                  // distancia normal de braco, ocupava pouco mais de 150 px —
+                  // no limite do que o modelo consegue chamar de "rosto
+                  // claramente visivel". Quem era recusado se aproximava da
+                  // camera na segunda tentativa e passava, o que explica a
+                  // primeira foto ser reprovada "sem ter nada".
+                  //
+                  // Sao poucas chamadas por assinatura; a diferenca de custo
+                  // nao se compara a recusar a foto de um cliente sem motivo.
+                  detail: 'high'
                 }
               }
             ]

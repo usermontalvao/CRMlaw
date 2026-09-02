@@ -631,20 +631,23 @@ export const Opcao: React.FC<{
  * forma de descobrir isso era abrir o arquivo no Adobe. Fazer a prova e não
  * mostrá-la é metade do trabalho.
  *
- * O parágrafo de ressalvas saiu a pedido: numa página que precisa transmitir
- * confiança, quatro frases de aviso embaixo do selo faziam o contrário. O FATO
- * ficou, como rótulo de uma linha ("certificado próprio · não ICP-Brasil"),
- * porque anunciar "assinatura criptográfica" sem dizer de quem é o certificado
- * seria afirmar mais do que se tem — e é a primeira coisa que a outra parte
- * checaria.
+ * O cartão foi ENXUGANDO a pedido: primeiro saiu o parágrafo de ressalvas,
+ * depois o rótulo sobre a ICP-Brasil e o botão de baixar o certificado. Numa
+ * página cuja função é transmitir confiança, aviso e opção demais faziam o
+ * contrário.
+ *
+ * O que NÃO pode sair é a impressão digital: sem ela o cartão afirmaria
+ * "assinatura criptográfica" sem dar como conferir de quem ela é, e a página
+ * inteira existe para permitir conferência, não para pedir fé. Quem quiser o
+ * certificado inteiro o tem dentro do próprio PDF assinado — ele viaja no
+ * PKCS#7, e a impressão daqui é o que permite compará-los.
  */
 export const SeloDeIntegridade: React.FC<{
   seladoEm?: string | null;
   total: number;
   selados: number;
   impressao: string;
-  urlDoCertificado: string;
-}> = ({ seladoEm, total, selados, impressao, urlDoCertificado }) => {
+}> = ({ seladoEm, total, selados, impressao }) => {
   const completo = total > 0 && selados >= total;
   return (
     <div style={{
@@ -694,34 +697,12 @@ export const SeloDeIntegridade: React.FC<{
             <span style={{ display: 'block', marginTop: 3, fontSize: 12.5, fontWeight: 600, color: TINTA }}>
               Jurius — Selo de Integridade
             </span>
-            {/* Uma linha, não um parágrafo. Sem ela o cartão anunciaria
-                "assinatura criptográfica" sem dizer de quem é o certificado —
-                e num documento de prova isso é afirmar mais do que se tem. */}
-            <span style={{ display: 'block', marginTop: 1, fontSize: 11, color: TINTA_3 }}>
-              Certificado próprio do escritório · não ICP-Brasil
-            </span>
             <code style={{
               display: 'block', marginTop: 5, fontFamily: MONO, fontSize: 10,
               lineHeight: 1.6, color: TINTA_3, wordBreak: 'break-all',
             }}>
               SHA-256 {impressao}
             </code>
-            <a
-              href={urlDoCertificado}
-              download
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 9,
-                padding: '6px 12px', border: `1px solid ${LINHA}`, borderRadius: 9,
-                background: '#f8fafc', color: TINTA_2, fontSize: 11.5, fontWeight: 700,
-                textDecoration: 'none',
-              }}
-            >
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"
-                   strokeWidth="2.2" strokeLinecap="round" aria-hidden>
-                <path d="M12 3v12" /><path d="M7 11l5 5 5-5" /><path d="M4 20h16" />
-              </svg>
-              Baixar o certificado
-            </a>
           </div>
 
 

@@ -60,7 +60,7 @@ import type { Signer, SignatureRequest } from '../types/signature.types';
 import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 // A impressão digital do certificado vive num lugar só — ver constants/selo.ts.
-import { SELO_IMPRESSAO_DIGITAL, SELO_URL_DO_CERTIFICADO } from '../constants/selo';
+import { SELO_IMPRESSAO_DIGITAL } from '../constants/selo';
 
 interface VerificationResult extends VerifyDossier {
   valid: boolean;
@@ -811,7 +811,6 @@ const PublicVerificationPage: React.FC = () => {
                   total={result.selo?.total ?? 0}
                   selados={result.selo?.selados ?? 0}
                   impressao={SELO_IMPRESSAO_DIGITAL}
-                  urlDoCertificado={SELO_URL_DO_CERTIFICADO}
                 />
               )}
 

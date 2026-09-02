@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.20.0',
+    date: '02/09/2026',
+    summary: 'A primeira selfie era recusada sem motivo: a imagem chegava reduzida demais para a análise. E o cartão do selo ficou mais enxuto.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A primeira foto era recusada sem ter nada de errado',
+            description: 'A selfie era enviada para análise reduzida a um quadro de 512 pixels. Numa foto em retrato isso vira 384x512, e o rosto — a uma distância normal de braço — ficava no limite do que dá para chamar de "claramente visível". Quem era recusado se aproximava da câmera na segunda tentativa e passava. Agora a análise recebe a imagem em resolução alta e sem a faixa do carimbo, que cobria 10% da foto e não tem função nenhuma ali: o arquivo guardado continua carimbado, só a cópia analisada é limpa.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O cartão do selo ficou só com o essencial',
+            description: 'Saíram o rótulo sobre a ICP-Brasil e o botão de baixar o certificado. Ficou o que permite conferir: o nome do certificado e a impressão digital dele — que é o que se compara com o certificado embutido no próprio PDF assinado.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.19.0',
     date: '02/09/2026',
     summary: 'O protocolo passa a marcar a lateral da foto, e a margem de cada página diz qual certificado sela o documento.',
