@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.19.0',
+    date: '02/09/2026',
+    summary: 'O protocolo passa a marcar a lateral da foto, e a margem de cada página diz qual certificado sela o documento.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'O protocolo na borda lateral da foto',
+            description: 'A selfie do certificado passa a levar o protocolo do envelope escrito na borda direita, na vertical. Sem tarja atrás: é só o texto em cinza translúcido, para não esconder justamente o que a página existe para mostrar. Serve para quando a foto é recortada e circula sozinha — o fragmento continua dizendo de qual envelope saiu.',
+          },
+          {
+            type: 'feature' as const,
+            title: 'A margem diz qual certificado sela o documento',
+            description: 'O carimbo vertical das margens, que já trazia protocolo, código e data, passa a trazer também a identificação do certificado do selo. Assim uma folha recortada responde à pergunta seguinte: quem carimbou. São os 8 primeiros bytes da impressão digital — os 32 completos estão no certificado que a página de conferência entrega para download.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A impressão digital do certificado vive num lugar só',
+            description: 'Ela precisa aparecer no PDF, na página de conferência e no arquivo publicado. Estava escrita à mão em dois lugares — e um valor de conferência copiado é um valor que um dia diverge, o que faria a página apontar um certificado e o arquivo trazer outro: exatamente a falsificação que a impressão digital existe para detectar.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.18.0',
     date: '02/09/2026',
     summary: 'Na página de biometria do PDF, o hash não invade mais o QR Code, o QR ganhou moldura e legenda, e entrou a explicação do selo.',

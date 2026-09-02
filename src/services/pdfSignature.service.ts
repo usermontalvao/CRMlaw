@@ -3,6 +3,7 @@ import { getLogoBytes } from '../utils/logoBase64';
 import { degrees } from 'pdf-lib';
 import QRCode from 'qrcode';
 import { BRAND_SERIF, BRAND_DOT, BRAND_WORDMARK } from '../constants/brand';
+import { seloImpressaoCurta } from '../constants/selo';
 import html2canvas from 'html2canvas';
 import { supabase } from '../config/supabase';
 import { signatureFieldsService } from './signatureFields.service';
@@ -776,6 +777,18 @@ class PdfSignatureService {
       const quando = this.formatCuiabaDateTime(new Date(signedAt));
       if (quando) partes.push(quando.toUpperCase());
     }
+
+    // O CERTIFICADO QUE SELA, para o fragmento de margem também responder
+    // "quem carimbou?". É a identidade do certificado, não a afirmação de que
+    // ESTE arquivo foi selado — a selagem acontece depois desta página ser
+    // desenhada e pode falhar (falha macia). Por isso o rótulo diz `CERT.
+    // SELO`: nomeia o certificado, não o ato.
+    //
+    // Só os 8 primeiros bytes: os 95 caracteres da impressão inteira seriam
+    // ilegíveis a 6 pt e empurrariam o protocolo para fora da folha. Quem
+    // quiser os 32 bytes baixa o certificado na página de conferência.
+    partes.push(`CERT. SELO ${seloImpressaoCurta(4)}`);
+
     if (partes.length === 0) return;
 
     const texto = partes.join('   ·   ');
@@ -1672,6 +1685,31 @@ class PdfSignatureService {
         for (let cx = dLineX1; cx < dLineX2; cx += dashW + dashGap) {
           const ex = Math.min(cx + dashW, dLineX2);
           page.drawLine({ start: { x: cx, y: dLineY2 }, end: { x: ex, y: dLineY2 }, thickness: 0.6, color: rgb(0.38, 0.38, 0.38), opacity: 0.3 });
+        }
+
+        // ── PROTOCOLO na borda lateral da foto ──────────────────────────
+        // SEM caixa atrás, de propósito: uma tarja opaca sobre a selfie
+        // esconderia justamente o que a página existe para mostrar. É só o
+        // glifo, em cinza claro e translúcido, na mesma linguagem do carimbo
+        // de margem das páginas de conteúdo (ver `drawSideStamp`).
+        //
+        // Serve para o caso em que a foto é recortada e circula sozinha: o
+        // fragmento continua dizendo de qual envelope ele saiu.
+        const selo = `PROTOCOLO ${String(request.id || '').toUpperCase()}`;
+        const seloSize = 5;
+        const seloW = courier.widthOfTextAtSize(selo, seloSize);
+        if (seloW < photoH - 24) {
+          // Girado 90°, o texto cresce em +y e o corpo ocupa x para a ESQUERDA
+          // da âncora — por isso ela fica encostada na borda direita interna.
+          page.drawText(selo, {
+            x: photoX + photoW - 7,
+            y: photoY + (photoH - seloW) / 2,
+            size: seloSize,
+            font: courier,
+            color: rgb(0.85, 0.87, 0.90),
+            opacity: 0.62,
+            rotate: degrees(90),
+          });
         }
       } else {
         roundRect(page, photoX, photoY + photoH, photoW, photoH, 8, { fill: bgLight, stroke: border, strokeW: 1 });

@@ -59,6 +59,8 @@ import type { SignatarioDoDossie } from '../utils/assinaturaPublica';
 import type { Signer, SignatureRequest } from '../types/signature.types';
 import { DISPLAY_APP_VERSION_LABEL } from '../utils/appVersion';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
+// A impressão digital do certificado vive num lugar só — ver constants/selo.ts.
+import { SELO_IMPRESSAO_DIGITAL, SELO_URL_DO_CERTIFICADO } from '../constants/selo';
 
 interface VerificationResult extends VerifyDossier {
   valid: boolean;
@@ -67,19 +69,6 @@ interface VerificationResult extends VerifyDossier {
   documents?: VerifiedDocument[];
   message: string;
 }
-
-/**
- * A IDENTIDADE DO SELO — pública por natureza.
- *
- * A impressão digital do certificado só serve para alguma coisa se estiver
- * publicada num lugar que a outra parte possa conferir: é ela que transforma
- * "confie em nós" em "confira você mesmo". O arquivo fica em `public/`, servido
- * junto com o site. Se o certificado for trocado (por um e-CNPJ da ICP-Brasil,
- * por exemplo), estes dois valores mudam junto.
- */
-const IMPRESSAO_DO_CERTIFICADO =
-  '82:96:16:50:C2:60:54:2C:C1:48:83:D4:54:BA:6C:E1:E8:7B:45:59:69:27:44:5F:50:F6:6D:05:8E:DD:E7:80';
-const URL_DO_CERTIFICADO = '/selo-de-integridade.crt';
 
 const stripDocumentExtension = (name: string | null | undefined): string => {
   return String(name || '').trim().replace(/\.(pdf|docx?|rtf|odt)$/i, '');
@@ -821,8 +810,8 @@ const PublicVerificationPage: React.FC = () => {
                   seladoEm={result.selo?.selado_em}
                   total={result.selo?.total ?? 0}
                   selados={result.selo?.selados ?? 0}
-                  impressao={IMPRESSAO_DO_CERTIFICADO}
-                  urlDoCertificado={URL_DO_CERTIFICADO}
+                  impressao={SELO_IMPRESSAO_DIGITAL}
+                  urlDoCertificado={SELO_URL_DO_CERTIFICADO}
                 />
               )}
 
