@@ -1718,6 +1718,35 @@ class SignatureService {
   }
 
   /**
+   * O ARQUIVO DE ORIGEM — o que foi enviado para assinatura, antes de qualquer
+   * carimbo. É dele que sai o "SHA-256 do original" impresso no rodapé do PDF
+   * e mostrado na página de conferência.
+   *
+   * Sem este download aquele número é enfeite: ninguém consegue recalcular a
+   * impressão digital de um arquivo que não tem em mãos.
+   *
+   * `hashScope` diz o que o download prova. `file` — cada arquivo tem o seu
+   * hash e o download o reproduz. `set` — envelope consolidado ANTIGO com
+   * anexos, onde o hash de integridade cobre a concatenação de todos os
+   * arquivos na ordem: baixar um só não reproduz o número, e a tela precisa
+   * dizer isso em vez de deixar a pessoa concluir que algo não fecha.
+   */
+  async getOriginalFiles(hash: string, expiresIn = 3600): Promise<{
+    files: { name: string; url: string; document_type: 'main' | 'attachment'; sha256: string | null }[];
+    hashScope: 'file' | 'set';
+  }> {
+    if (!hash) return { files: [], hashScope: 'file' };
+    const { data, error } = await supabase.functions.invoke('public-verify-file', {
+      body: { hash, expiresIn, kind: 'original' },
+    });
+    if (error || !Array.isArray(data?.files)) {
+      console.warn('[getOriginalFiles] falha ao obter origem:', error ?? data?.error);
+      return { files: [], hashScope: 'file' };
+    }
+    return { files: data.files, hashScope: data.hash_scope === 'set' ? 'set' : 'file' };
+  }
+
+  /**
    * Fluxo PÚBLICO: lista os co-signatários do request do `token` via RPC
    * SECURITY DEFINER token-scoped, sem leitura anon direta na tabela. Usado
    * para compor o certificado/relatório do PDF assinado (multi-signatário).

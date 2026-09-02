@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.14.1',
+    date: '02/09/2026',
+    summary: 'O arquivo original entrou para download na conferência pública — sem ele, o SHA-256 impresso era um número que ninguém podia recalcular.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Baixar o arquivo original, para conferir o hash de verdade',
+            description: 'A página de conferência sempre imprimiu o "SHA-256 do original", mas não havia como obter esse original — e impressão digital que ninguém consegue recalcular não é prova, é enfeite. Agora o arquivo como foi enviado para assinatura, sem carimbo nenhum, está em Opções e num botão por documento na lista do envelope. Baixe, calcule o SHA-256 e compare: confere byte a byte com o número mostrado na tela.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Envelopes antigos avisam quando o hash é do conjunto',
+            description: 'Nos envelopes consolidados anteriores ao modelo por documento, o hash de integridade foi calculado sobre todos os arquivos juntos, na ordem em que foram enviados. Baixar um só e recalcular dá outro número — e isso não indica adulteração. A página passa a dizer isso na cara, em vez de deixar quem confere concluir sozinho que algo não fecha.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.14.0',
     date: '02/09/2026',
     summary: 'A página pública de conferência virou o dossiê do envelope: quem assinou, de onde, quando e com que prova — com o documento aberto ao lado.',

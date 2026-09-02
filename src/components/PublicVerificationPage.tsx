@@ -475,6 +475,56 @@ const PublicVerificationPage: React.FC = () => {
   const previaEhOutroDocumento =
     !!codigoConsultado && normalizarCodigo(codigoDaPrevia) !== normalizarCodigo(codigoConsultado);
 
+  /*
+    BAIXAR O ARQUIVO DE ORIGEM.
+
+    A página imprime o "SHA-256 do original" desde sempre, e até aqui não havia
+    como obter esse original: um número que ninguém pode recalcular não é prova,
+    é enfeite. O arquivo já estava guardado (`source_file_path`) — só não era
+    servido.
+
+    O que volta é o arquivo COMO FOI ENVIADO, normalmente um .docx, e não um
+    PDF: é dele que o hash foi tirado, e converter para PDF antes de entregar
+    mudaria os bytes e o número deixaria de bater.
+  */
+  const [origemCarregando, setOrigemCarregando] = useState(false);
+  const [origemDoConjunto, setOrigemDoConjunto] = useState(false);
+
+  const baixarArquivo = async (url: string, nome: string) => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    const downloadUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = nome.replace(/[\\/:*?"<>|]+/g, '_');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
+  };
+
+  const baixarOriginal = async (codigo: string) => {
+    if (!codigo) return;
+    try {
+      setOrigemCarregando(true);
+      const { files, hashScope } = await signatureService.getOriginalFiles(codigo);
+      if (files.length === 0) return;
+      setOrigemDoConjunto(hashScope === 'set');
+      // Vários arquivos saem em sequência: o navegador engasga se todos os
+      // cliques sintéticos acontecerem no mesmo quadro.
+      for (let i = 0; i < files.length; i += 1) {
+        const arquivo = files[i];
+        await baixarArquivo(arquivo.url, arquivo.name);
+        if (i < files.length - 1) await new Promise((r) => window.setTimeout(r, 350));
+      }
+    } catch (e) {
+      console.error('Erro ao baixar o arquivo de origem:', e);
+    } finally {
+      setOrigemCarregando(false);
+    }
+  };
+
   /** Copiar com aviso: sem o certinho ninguém sabe se o clique pegou. */
   const copiar = async (texto: string, chave: string) => {
     if (!texto) return;
@@ -739,11 +789,26 @@ const PublicVerificationPage: React.FC = () => {
                   <>
                     {afirmacao.explicacao}
                     {hashOriginalDoArquivoExibido
-                      ? ' O SHA-256 do original é o que vai impresso no rodapé do PDF; o do PDF assinado é o do arquivo que se baixa aqui.'
+                      ? ' O SHA-256 do original é o que vai impresso no rodapé do PDF — baixe o arquivo de origem ao lado e recalcule para conferir. O do PDF assinado é o do arquivo que se baixa aqui.'
                       : ''}
                   </>
                 )}
               </p>
+
+              {/* Envelope consolidado ANTIGO com anexos: o hash de integridade
+                  cobre a concatenação dos arquivos, na ordem. Sem este aviso, a
+                  pessoa baixa o principal, recalcula, vê outro número e conclui
+                  que o documento foi adulterado — quando o que ela comparou foi
+                  uma parte com o todo. */}
+              {origemDoConjunto && (
+                <Tarja tom="atencao" style={{ marginTop: 10 }}>
+                  Neste envelope o <strong>SHA-256 do original</strong> cobre os arquivos
+                  <strong> em conjunto</strong>, na ordem em que foram enviados — é assim que ele
+                  foi calculado na época. Recalcular o hash de um arquivo sozinho dá outro número,
+                  e isso não indica adulteração. Os documentos assinados mais recentes têm um hash
+                  por arquivo, que confere um a um.
+                </Tarja>
+              )}
 
               {/* ── A PRÉVIA, ou A LISTA ──────────────────────────────────────
                   Documento único: o PDF renderizado, que é o que a pessoa veio
@@ -920,7 +985,23 @@ const PublicVerificationPage: React.FC = () => {
                                       fontWeight: 700, cursor: 'pointer',
                                     }}
                                   >
-                                    <Download size={13} strokeWidth={2.2} /> Baixar
+                                    <Download size={13} strokeWidth={2.2} /> Assinado
+                                  </button>
+                                  {/* A origem DESTE arquivo — é dela que sai o
+                                      SHA-256 marcado ORIGINAL logo acima. */}
+                                  <button
+                                    type="button"
+                                    onClick={() => { void baixarOriginal(codigo); }}
+                                    disabled={origemCarregando}
+                                    style={{
+                                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                                      padding: '8px 15px', border: `1px solid ${LINHA}`, borderRadius: 10,
+                                      background: '#fff', color: TINTA_2, fontSize: 12.5,
+                                      fontWeight: 700, cursor: origemCarregando ? 'default' : 'pointer',
+                                      opacity: origemCarregando ? 0.5 : 1,
+                                    }}
+                                  >
+                                    <FileText size={13} strokeWidth={2.2} /> Original
                                   </button>
                                 </span>
                               ) : (
@@ -965,6 +1046,13 @@ const PublicVerificationPage: React.FC = () => {
                     />
                   </>
                 )}
+                <Opcao
+                  icone={<FileText size={15} strokeWidth={2.1} />}
+                  titulo={origemCarregando ? 'Baixando…' : 'Baixar arquivo original'}
+                  descricao="Como foi enviado para assinatura, sem carimbo nenhum. É dele que sai o SHA-256 do original."
+                  desabilitado={origemCarregando || !protocoloExibido}
+                  onClick={() => { void baixarOriginal(protocoloExibido); }}
+                />
                 <Opcao
                   icone={<Shield size={15} strokeWidth={2.1} />}
                   titulo={copiado === 'link' ? 'Link copiado' : 'Copiar link desta conferência'}
