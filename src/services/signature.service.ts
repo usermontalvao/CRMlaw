@@ -97,7 +97,21 @@ export interface VerifiedEnvelope {
   verification_hash?: string | null;
 }
 
+/**
+ * O SELO do envelope: quantos arquivos carregam assinatura criptográfica.
+ *
+ * É um resumo, e é resumo de propósito: um envelope com 1 de 3 selados não
+ * pode ser anunciado como "selado". Envelopes anteriores a 02/09/2026 vêm com
+ * `selados: 0` — não é defeito, é a data em que o selo passou a existir.
+ */
+export interface VerifiedSeal {
+  total?: number | null;
+  selados?: number | null;
+  selado_em?: string | null;
+}
+
 export interface VerifyDossier {
+  selo?: VerifiedSeal | null;
   signers?: SignatarioDoDossie[];
   creator?: VerifiedCreator | null;
   history?: VerifiedHistoryEvent[];
@@ -136,6 +150,7 @@ class SignatureService {
       return {};
     }
     return {
+      selo: ((data as any).selo ?? null) as VerifiedSeal | null,
       signers: Array.isArray((data as any).signers) ? ((data as any).signers as SignatarioDoDossie[]) : undefined,
       creator: ((data as any).creator ?? null) as VerifiedCreator | null,
       history: Array.isArray((data as any).history) ? ((data as any).history as VerifiedHistoryEvent[]) : undefined,
@@ -1956,6 +1971,7 @@ class SignatureService {
     // O dossiê é aditivo: registros antigos e respostas sem `request.id`
     // continuam válidos sem nenhuma dessas chaves.
     const dossie: VerifyDossier = {
+      selo: ((data as any).selo ?? null) as VerifiedSeal | null,
       signers: Array.isArray((data as any).signers) ? ((data as any).signers as SignatarioDoDossie[]) : undefined,
       creator: ((data as any).creator ?? null) as VerifiedCreator | null,
       history: Array.isArray((data as any).history) ? ((data as any).history as VerifiedHistoryEvent[]) : undefined,

@@ -202,16 +202,20 @@ Deno.serve(async (req: Request) => {
     // O hash registrado passa a ser o do arquivo QUE EXISTE no Storage. Sem
     // isto a reconferência do `finalize-signature-envelope` acusaria violação
     // de integridade no próprio arquivo que acabamos de selar.
+    // `pades_signed_at` é o que permite a página de conferência DIZER que o
+    // arquivo está selado. Sem o carimbo, a prova existiria e ficaria invisível.
+    const seladoEm = new Date().toISOString();
     if (docId) {
       // `hash_source: 'server'` porque foi o servidor que produziu estes bytes
       // e mediu este hash. Sem isso o valor ficaria marcado como vindo do
       // cliente — justamente o contrário do que acabou de acontecer.
       await supabase.from('signature_request_documents')
-        .update({ signed_pdf_sha256: shaDepois, hash_source: 'server' }).eq('id', docId);
+        .update({ signed_pdf_sha256: shaDepois, hash_source: 'server', pades_signed_at: seladoEm })
+        .eq('id', docId);
     }
     if (signerId) {
       await supabase.from('signature_signers')
-        .update({ signed_pdf_sha256: shaDepois }).eq('id', signerId);
+        .update({ signed_pdf_sha256: shaDepois, pades_signed_at: seladoEm }).eq('id', signerId);
     }
 
     // O erro da auditoria é CAPTURADO e devolvido. Um insert que falha calado
@@ -231,6 +235,7 @@ Deno.serve(async (req: Request) => {
       sha256_antes: shaAntes,
       sha256_depois: shaDepois,
       bytes_depois: assinado.length,
+      selado_em: seladoEm,
       auditoria: erroAuditoria ? 'falhou' : 'registrada',
     });
   } catch (err) {

@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.17.0',
+    date: '02/09/2026',
+    summary: 'O selo agora aparece na página de conferência, com o certificado para baixar — e a selagem passou a alcançar também os envelopes do modelo antigo.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'A página mostra o selo, e entrega o certificado',
+            description: 'Antes, para saber que o PDF carregava assinatura criptográfica era preciso abrir o arquivo no Adobe: a prova existia e ficava invisível. Agora a conferência mostra um cartão dizendo que o arquivo está selado, quando foi selado, o certificado que assinou e a impressão digital dele — com um botão para baixar o certificado e conferir por conta própria. Documento anterior ao selo não mostra nada: ausência de selo em documento antigo não é defeito, e alarmar seria pior que silenciar.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A selagem ignorava os envelopes do modelo antigo, em silêncio',
+            description: 'A rotina procurava os arquivos numa tabela que só existe no modelo por documento. Nos envelopes consolidados — 231 dos 246 já assinados — ela não encontrava nada e devolvia "0 selados, 0 falhas": passava batido, sem selo e sem reclamar. Agora ela procura também o arquivo do signatário, e informa quantos alvos encontrou, para que "não havia o que selar" nunca mais se confunda com "selou tudo".',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'O leitor vai dizer "validade desconhecida" — e a página explica por quê',
+            description: 'Como o certificado é do próprio escritório e não da ICP-Brasil, qualquer leitor de PDF mostra a validade como desconhecida até que a pessoa confira a impressão digital ou marque o certificado como confiável. A página diz isso com todas as letras, para que ninguém conclua que há algo errado com o documento quando o que o leitor está dizendo é que não conhece o emissor.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.16.0',
     date: '02/09/2026',
     summary: 'O selo criptográfico entrou no fluxo: todo envelope finalizado a partir de agora sai com a assinatura dentro do PDF.',

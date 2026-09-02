@@ -99,6 +99,39 @@ AS $function$
         AND a.action <> 'cancelled'
     ), '[]'::jsonb),
 
+    -- O SELO: quantos artefatos do envelope carregam assinatura criptográfica.
+    --
+    -- É um RESUMO, e resumo de propósito: um envelope com 1 de 3 selados não
+    -- pode ser anunciado como "selado". A página só mostra o cartão quando há
+    -- selo, e diz "parcial" quando é parcial — dizer mais do que se pode provar
+    -- é o erro que este validador existe para não cometer.
+    'selo', (
+      WITH artefatos AS (
+        SELECT d.pades_signed_at
+        FROM public.signature_request_documents d
+        WHERE d.signature_request_id = p_request_id
+          AND d.signed_file_path IS NOT NULL
+        UNION ALL
+        -- Modelo consolidado: o artefato é do signatário, e só entra quando não
+        -- há linhas de documento (senão o mesmo arquivo contaria duas vezes).
+        SELECT s.pades_signed_at
+        FROM public.signature_signers s
+        WHERE s.signature_request_id = p_request_id
+          AND s.signed_document_path IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM public.signature_request_documents d2
+            WHERE d2.signature_request_id = p_request_id
+              AND d2.signed_file_path IS NOT NULL
+          )
+      )
+      SELECT jsonb_build_object(
+        'total', count(*),
+        'selados', count(pades_signed_at),
+        'selado_em', max(pades_signed_at)
+      )
+      FROM artefatos
+    ),
+
     -- O envelope em si: a data de criação é o "Criado em" do cabeçalho.
     'envelope', (
       SELECT jsonb_build_object(

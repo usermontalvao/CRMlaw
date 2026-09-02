@@ -118,18 +118,40 @@ async function avisarWhatsApp(
 async function selarDocumentos(
   supabase: Supa, supabaseUrl: string, serviceRoleKey: string,
   requestId: string, signerId: string | null, ip: string | null, ua: string | null,
-): Promise<{ selados: number; ignorados: number; falhas: number; desligado?: boolean }> {
+): Promise<{ alvos: number; selados: number; ignorados: number; falhas: number; desligado?: boolean }> {
   const token = (Deno.env.get('PADES_SIGN_TOKEN') ?? '').trim();
-  if (!token) return { selados: 0, ignorados: 0, falhas: 0, desligado: true };
+  if (!token) return { alvos: 0, selados: 0, ignorados: 0, falhas: 0, desligado: true };
 
+  // OS DOIS MODELOS, e é por isto que esta busca tem duas pernas.
+  //
+  // No `per_document` o artefato é do DOCUMENTO e tem código próprio. No
+  // `consolidated` (legado, 231 dos 246 envelopes assinados) não existe linha
+  // em `signature_request_documents` — o PDF pendura no SIGNATÁRIO. A primeira
+  // versão só olhava a tabela de documentos, e num envelope consolidado ela
+  // devolvia `selados: 0, falhas: 0`: passava batido, sem selo e sem reclamar.
+  // Fecho silencioso é o pior defeito possível numa etapa de prova.
   const { data: docs } = await supabase.from('signature_request_documents')
     .select('document_key, verification_code, signed_file_path')
     .eq('signature_request_id', requestId)
     .not('signed_file_path', 'is', null)
     .not('verification_code', 'is', null);
 
+  let alvos: Array<{ rotulo: string; code: string }> = (docs ?? [])
+    .map((d: any) => ({ rotulo: String(d.document_key), code: String(d.verification_code) }));
+
+  if (alvos.length === 0) {
+    const { data: signers } = await supabase.from('signature_signers')
+      .select('id, name, verification_hash, signed_document_path')
+      .eq('signature_request_id', requestId)
+      .not('signed_document_path', 'is', null)
+      .not('verification_hash', 'is', null);
+    alvos = (signers ?? []).map((s: any) => ({
+      rotulo: `assinatura de ${s.name ?? s.id}`, code: String(s.verification_hash),
+    }));
+  }
+
   let selados = 0, ignorados = 0, falhas = 0;
-  for (const d of (docs ?? [])) {
+  for (const alvo of alvos) {
     try {
       const res = await fetch(`${supabaseUrl}/functions/v1/pades-sign`, {
         method: 'POST',
@@ -139,24 +161,27 @@ async function selarDocumentos(
           'apikey': serviceRoleKey,
           'x-pades-token': token,
         },
-        body: JSON.stringify({ code: d.verification_code }),
+        body: JSON.stringify({ code: alvo.code }),
       });
       const corpo = await res.json().catch(() => ({}));
-      if (!res.ok) { falhas += 1; console.error('[pades] falhou', d.document_key, corpo); continue; }
+      if (!res.ok) { falhas += 1; console.error('[pades] falhou', alvo.rotulo, corpo); continue; }
       if (corpo?.status === 'ja_assinado') { ignorados += 1; continue; }
       if (corpo?.status === 'assinado') {
         selados += 1;
         await audit(supabase, requestId, signerId, 'pades_signed',
-          `Documento ${d.document_key} selado criptograficamente. SHA-256 do arquivo selado: ${corpo.sha256_depois}.`, ip, ua);
+          `Documento ${alvo.rotulo} selado criptograficamente. SHA-256 do arquivo selado: ${corpo.sha256_depois}.`, ip, ua);
         continue;
       }
       falhas += 1;
     } catch (e) {
       falhas += 1;
-      console.error('[pades] erro ao selar', d.document_key, e);
+      console.error('[pades] erro ao selar', alvo.rotulo, e);
     }
   }
-  return { selados, ignorados, falhas };
+
+  // `alvos` na resposta para que "não havia o que selar" NUNCA mais se
+  // confunda com "selou tudo": os dois casos davam `selados: 0` antes.
+  return { alvos: alvos.length, selados, ignorados, falhas };
 }
 
 /**
@@ -348,7 +373,7 @@ Deno.serve(async (req: Request) => {
       // jogado fora a cada passagem.
       const selagem = allSigned
         ? await selarDocumentos(supabase, supabaseUrl, serviceRoleKey, requestId, signerId, ip, ua)
-        : { selados: 0, ignorados: 0, falhas: 0 };
+        : { alvos: 0, selados: 0, ignorados: 0, falhas: 0 };
 
       const { data: docs } = await supabase.from('signature_request_documents')
         .select('id, document_key, signed_file_path, signed_pdf_sha256, hash_source')

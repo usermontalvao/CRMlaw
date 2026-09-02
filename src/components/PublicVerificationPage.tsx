@@ -31,6 +31,7 @@ import {
   ListaDoHistorico,
   Opcao,
   Painel,
+  SeloDeIntegridade,
   TituloDoPainel,
 } from './publicSigning/dossie';
 import {
@@ -66,6 +67,19 @@ interface VerificationResult extends VerifyDossier {
   documents?: VerifiedDocument[];
   message: string;
 }
+
+/**
+ * A IDENTIDADE DO SELO — pública por natureza.
+ *
+ * A impressão digital do certificado só serve para alguma coisa se estiver
+ * publicada num lugar que a outra parte possa conferir: é ela que transforma
+ * "confie em nós" em "confira você mesmo". O arquivo fica em `public/`, servido
+ * junto com o site. Se o certificado for trocado (por um e-CNPJ da ICP-Brasil,
+ * por exemplo), estes dois valores mudam junto.
+ */
+const IMPRESSAO_DO_CERTIFICADO =
+  '82:96:16:50:C2:60:54:2C:C1:48:83:D4:54:BA:6C:E1:E8:7B:45:59:69:27:44:5F:50:F6:6D:05:8E:DD:E7:80';
+const URL_DO_CERTIFICADO = '/selo-de-integridade.crt';
 
 const stripDocumentExtension = (name: string | null | undefined): string => {
   return String(name || '').trim().replace(/\.(pdf|docx?|rtf|odt)$/i, '');
@@ -130,6 +144,7 @@ const PublicVerificationPage: React.FC = () => {
           request: data.request,
           documents: data.documents,
           signers: data.signers,
+          selo: data.selo,
           creator: data.creator,
           history: data.history,
           envelope: data.envelope,
@@ -142,6 +157,7 @@ const PublicVerificationPage: React.FC = () => {
           request: data.request,
           documents: data.documents,
           signers: data.signers,
+          selo: data.selo,
           creator: data.creator,
           history: data.history,
           envelope: data.envelope,
@@ -183,6 +199,7 @@ const PublicVerificationPage: React.FC = () => {
           signer: data.signer,
           request: data.request,
           signers: data.signers,
+          selo: data.selo,
           creator: data.creator,
           history: data.history,
           envelope: data.envelope,
@@ -794,6 +811,20 @@ const PublicVerificationPage: React.FC = () => {
                   </>
                 )}
               </p>
+
+              {/* O SELO. Só aparece quando existe: envelope anterior a 02/09/2026
+                  não tem, e anunciar ausência de selo em documento antigo seria
+                  alarmar sem motivo — a assinatura eletrônica dele continua
+                  inteira. */}
+              {(result.selo?.selados ?? 0) > 0 && (
+                <SeloDeIntegridade
+                  seladoEm={result.selo?.selado_em}
+                  total={result.selo?.total ?? 0}
+                  selados={result.selo?.selados ?? 0}
+                  impressao={IMPRESSAO_DO_CERTIFICADO}
+                  urlDoCertificado={URL_DO_CERTIFICADO}
+                />
+              )}
 
               {/* Envelope consolidado ANTIGO com anexos: o hash de integridade
                   cobre a concatenação dos arquivos, na ordem. Sem este aviso, a

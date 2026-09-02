@@ -623,3 +623,110 @@ export const Opcao: React.FC<{
     </span>
   </button>
 );
+
+/**
+ * O SELO DE INTEGRIDADE — a prova que existia e não era mostrada.
+ *
+ * O PDF passou a carregar uma assinatura criptográfica, e até aqui a única
+ * forma de descobrir isso era abrir o arquivo no Adobe. Fazer a prova e não
+ * mostrá-la é metade do trabalho.
+ *
+ * As duas frases finais não são disclaimer decorativo. Sem a primeira, quem
+ * abre no Adobe vê "validade desconhecida" e conclui que há algo errado com o
+ * documento — quando o que o leitor está dizendo é que não conhece o nosso
+ * certificado. Sem a segunda, o selo seria lido como certificação de
+ * identidade, que ele não é.
+ */
+export const SeloDeIntegridade: React.FC<{
+  seladoEm?: string | null;
+  total: number;
+  selados: number;
+  impressao: string;
+  urlDoCertificado: string;
+}> = ({ seladoEm, total, selados, impressao, urlDoCertificado }) => {
+  const completo = total > 0 && selados >= total;
+  return (
+    <div style={{
+      marginTop: 14, padding: '15px 17px', borderRadius: 14,
+      background: completo ? 'linear-gradient(180deg,#f8fdfa,#f4fbf7)' : '#fffbeb',
+      border: `1px solid ${completo ? '#bbf7d0' : '#fde68a'}`,
+    }}>
+      <div style={{ display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+        <span style={{
+          flex: '0 0 auto', width: 30, height: 30, borderRadius: 9, marginTop: 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+          background: completo
+            ? 'linear-gradient(135deg,#34d399,#059669)'
+            : 'linear-gradient(135deg,#fbbf24,#d97706)',
+        }}>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M12 3l7 3v5c0 4.4-3 8.4-7 10-4-1.6-7-5.6-7-10V6z" /><path d="M9 12l2 2 4-4" />
+          </svg>
+        </span>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <span style={{
+            display: 'block', fontSize: 14, fontWeight: 700, letterSpacing: '-.2px',
+            color: completo ? '#047857' : '#b45309',
+          }}>
+            {completo
+              ? 'Este arquivo carrega assinatura criptográfica'
+              : `Selo parcial — ${selados} de ${total} arquivos`}
+          </span>
+          <p style={{ margin: '5px 0 0', fontSize: 12.5, lineHeight: 1.6, color: TINTA_2 }}>
+            O PDF que você baixa aqui traz uma assinatura digital embutida. Qualquer alteração
+            posterior a quebra, e <strong>qualquer leitor de PDF detecta</strong> — sem depender
+            desta página.
+            {seladoEm ? ` Selado em ${dataLonga(seladoEm)}.` : ''}
+          </p>
+
+          <div style={{
+            marginTop: 11, padding: '10px 12px', borderRadius: 10,
+            background: '#fff', border: `1px solid ${LINHA}`,
+          }}>
+            <span style={{
+              display: 'block', fontSize: 9.5, fontWeight: 700, letterSpacing: '.13em',
+              textTransform: 'uppercase', color: TINTA_4,
+            }}>
+              Certificado que selou
+            </span>
+            <span style={{ display: 'block', marginTop: 3, fontSize: 12.5, fontWeight: 600, color: TINTA }}>
+              Jurius — Selo de Integridade
+            </span>
+            <code style={{
+              display: 'block', marginTop: 5, fontFamily: MONO, fontSize: 10,
+              lineHeight: 1.6, color: TINTA_3, wordBreak: 'break-all',
+            }}>
+              SHA-256 {impressao}
+            </code>
+            <a
+              href={urlDoCertificado}
+              download
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 9,
+                padding: '6px 12px', border: `1px solid ${LINHA}`, borderRadius: 9,
+                background: '#f8fafc', color: TINTA_2, fontSize: 11.5, fontWeight: 700,
+                textDecoration: 'none',
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"
+                   strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+                <path d="M12 3v12" /><path d="M7 11l5 5 5-5" /><path d="M4 20h16" />
+              </svg>
+              Baixar o certificado
+            </a>
+          </div>
+
+          <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.6, color: TINTA_3 }}>
+            O certificado é <strong>do próprio escritório</strong>, não emitido pela ICP-Brasil.
+            Ele prova que o arquivo não mudou e que o selo saiu daqui; não substitui certificação
+            de identidade por terceiro. Por isso, ao abrir o PDF, o leitor mostrará a validade como
+            <strong> desconhecida</strong> até que você confira a impressão digital acima ou marque
+            este certificado como confiável — isso é o leitor dizendo que não conhece o emissor,
+            não que o documento tenha problema.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
