@@ -37,13 +37,18 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
-    version: '1.17.1',
+    version: '1.17.2',
     date: '02/09/2026',
-    summary: 'A trilha de auditoria registrava a selagem duas vezes por documento.',
+    summary: 'A trilha de auditoria registrava a selagem duas vezes por documento, e o cartão do selo ficou enxuto.',
     modules: [
       {
         moduleId: 'assinaturas',
         changes: [
+          {
+            type: 'improvement' as const,
+            title: 'O cartão do selo perdeu o parágrafo de ressalvas',
+            description: 'Quatro frases de aviso embaixo do selo faziam o contrário do que a página precisa transmitir. Ficou o fato, em uma linha, junto ao nome do certificado: "certificado próprio do escritório · não ICP-Brasil".',
+          },
           {
             type: 'fix' as const,
             title: 'Selagem aparecia em dobro no histórico',

@@ -631,11 +631,12 @@ export const Opcao: React.FC<{
  * forma de descobrir isso era abrir o arquivo no Adobe. Fazer a prova e não
  * mostrá-la é metade do trabalho.
  *
- * As duas frases finais não são disclaimer decorativo. Sem a primeira, quem
- * abre no Adobe vê "validade desconhecida" e conclui que há algo errado com o
- * documento — quando o que o leitor está dizendo é que não conhece o nosso
- * certificado. Sem a segunda, o selo seria lido como certificação de
- * identidade, que ele não é.
+ * O parágrafo de ressalvas saiu a pedido: numa página que precisa transmitir
+ * confiança, quatro frases de aviso embaixo do selo faziam o contrário. O FATO
+ * ficou, como rótulo de uma linha ("certificado próprio · não ICP-Brasil"),
+ * porque anunciar "assinatura criptográfica" sem dizer de quem é o certificado
+ * seria afirmar mais do que se tem — e é a primeira coisa que a outra parte
+ * checaria.
  */
 export const SeloDeIntegridade: React.FC<{
   seladoEm?: string | null;
@@ -693,6 +694,12 @@ export const SeloDeIntegridade: React.FC<{
             <span style={{ display: 'block', marginTop: 3, fontSize: 12.5, fontWeight: 600, color: TINTA }}>
               Jurius — Selo de Integridade
             </span>
+            {/* Uma linha, não um parágrafo. Sem ela o cartão anunciaria
+                "assinatura criptográfica" sem dizer de quem é o certificado —
+                e num documento de prova isso é afirmar mais do que se tem. */}
+            <span style={{ display: 'block', marginTop: 1, fontSize: 11, color: TINTA_3 }}>
+              Certificado próprio do escritório · não ICP-Brasil
+            </span>
             <code style={{
               display: 'block', marginTop: 5, fontFamily: MONO, fontSize: 10,
               lineHeight: 1.6, color: TINTA_3, wordBreak: 'break-all',
@@ -717,14 +724,7 @@ export const SeloDeIntegridade: React.FC<{
             </a>
           </div>
 
-          <p style={{ margin: '10px 0 0', fontSize: 11, lineHeight: 1.6, color: TINTA_3 }}>
-            O certificado é <strong>do próprio escritório</strong>, não emitido pela ICP-Brasil.
-            Ele prova que o arquivo não mudou e que o selo saiu daqui; não substitui certificação
-            de identidade por terceiro. Por isso, ao abrir o PDF, o leitor mostrará a validade como
-            <strong> desconhecida</strong> até que você confira a impressão digital acima ou marque
-            este certificado como confiável — isso é o leitor dizendo que não conhece o emissor,
-            não que o documento tenha problema.
-          </p>
+
         </div>
       </div>
     </div>
