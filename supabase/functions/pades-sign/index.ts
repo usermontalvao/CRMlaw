@@ -203,20 +203,27 @@ Deno.serve(async (req: Request) => {
     // isto a reconferência do `finalize-signature-envelope` acusaria violação
     // de integridade no próprio arquivo que acabamos de selar.
     if (docId) {
+      // `hash_source: 'server'` porque foi o servidor que produziu estes bytes
+      // e mediu este hash. Sem isso o valor ficaria marcado como vindo do
+      // cliente — justamente o contrário do que acabou de acontecer.
       await supabase.from('signature_request_documents')
-        .update({ signed_pdf_sha256: shaDepois }).eq('id', docId);
+        .update({ signed_pdf_sha256: shaDepois, hash_source: 'server' }).eq('id', docId);
     }
     if (signerId) {
       await supabase.from('signature_signers')
         .update({ signed_pdf_sha256: shaDepois }).eq('id', signerId);
     }
 
-    await supabase.from('signature_audit_log').insert({
+    // O erro da auditoria é CAPTURADO e devolvido. Um insert que falha calado
+    // aqui produziria o pior estado possível: arquivo selado e trilha muda —
+    // que foi exatamente o que o CHECK sem `pades_signed` teria causado.
+    const { error: erroAuditoria } = await supabase.from('signature_audit_log').insert({
       signature_request_id: requestId,
       signer_id: signerId,
       action: 'pades_signed',
       description: `Assinatura criptográfica PAdES aplicada ao documento. SHA-256 do arquivo selado: ${shaDepois}.`,
     });
+    if (erroAuditoria) console.error('[pades-sign] auditoria falhou:', erroAuditoria);
 
     return jsonResponse({
       status: 'assinado',
@@ -224,6 +231,7 @@ Deno.serve(async (req: Request) => {
       sha256_antes: shaAntes,
       sha256_depois: shaDepois,
       bytes_depois: assinado.length,
+      auditoria: erroAuditoria ? 'falhou' : 'registrada',
     });
   } catch (err) {
     console.error('[pades-sign] erro:', err);

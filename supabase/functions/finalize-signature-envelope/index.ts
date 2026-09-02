@@ -101,6 +101,65 @@ async function avisarWhatsApp(
 }
 
 /**
+ * SELAGEM: pendura a assinatura criptográfica dentro de cada PDF do envelope.
+ *
+ * Chama a `pades-sign`, que é quem tem a chave. Roda ANTES do recálculo de
+ * hash, e essa ordem não pode inverter: selar muda os bytes, então um hash
+ * calculado antes viraria "divergente" no arquivo que nós mesmos acabamos de
+ * selar — e o orquestrador abortaria a finalização acusando adulteração.
+ *
+ * FALHA MACIA, de propósito. Envelope que finaliza sem selo é muito melhor que
+ * envelope preso: a assinatura eletrônica, o dossiê e o SHA-256 continuam
+ * valendo sem isto. Nenhum erro daqui derruba a finalização.
+ *
+ * INTERRUPTOR: sem o secret `PADES_SIGN_TOKEN` nada acontece e o fluxo segue
+ * exatamente como antes. Tirar o secret desliga a selagem sem deploy.
+ */
+async function selarDocumentos(
+  supabase: Supa, supabaseUrl: string, serviceRoleKey: string,
+  requestId: string, signerId: string | null, ip: string | null, ua: string | null,
+): Promise<{ selados: number; ignorados: number; falhas: number; desligado?: boolean }> {
+  const token = (Deno.env.get('PADES_SIGN_TOKEN') ?? '').trim();
+  if (!token) return { selados: 0, ignorados: 0, falhas: 0, desligado: true };
+
+  const { data: docs } = await supabase.from('signature_request_documents')
+    .select('document_key, verification_code, signed_file_path')
+    .eq('signature_request_id', requestId)
+    .not('signed_file_path', 'is', null)
+    .not('verification_code', 'is', null);
+
+  let selados = 0, ignorados = 0, falhas = 0;
+  for (const d of (docs ?? [])) {
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/pades-sign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey,
+          'x-pades-token': token,
+        },
+        body: JSON.stringify({ code: d.verification_code }),
+      });
+      const corpo = await res.json().catch(() => ({}));
+      if (!res.ok) { falhas += 1; console.error('[pades] falhou', d.document_key, corpo); continue; }
+      if (corpo?.status === 'ja_assinado') { ignorados += 1; continue; }
+      if (corpo?.status === 'assinado') {
+        selados += 1;
+        await audit(supabase, requestId, signerId, 'pades_signed',
+          `Documento ${d.document_key} selado criptograficamente. SHA-256 do arquivo selado: ${corpo.sha256_depois}.`, ip, ua);
+        continue;
+      }
+      falhas += 1;
+    } catch (e) {
+      falhas += 1;
+      console.error('[pades] erro ao selar', d.document_key, e);
+    }
+  }
+  return { selados, ignorados, falhas };
+}
+
+/**
  * RECONFERÊNCIA: relê cada PDF do Storage e recalcula o SHA-256 no servidor.
  *
  * Só toca em documento que ainda não foi conferido (`hash_source <> 'server'`),
@@ -227,6 +286,9 @@ Deno.serve(async (req: Request) => {
       // Conferir aqui resolve sem tocar na auto-finalização (que, se removida,
       // deixaria envelopes presos caso o orquestrador falhasse). Só processa
       // documento ainda não conferido, então a segunda chamada não baixa nada.
+      // Selar ANTES de reconferir: a reconferência é quem carimba
+      // `hash_source = 'server'`, e ela precisa ver os bytes finais.
+      const selagem = await selarDocumentos(supabase, supabaseUrl, serviceRoleKey, requestId, signerId, ip, ua);
       const conferencia = await reconferirDocumentos(supabase, requestId, signerId, ip, ua);
 
       // ── Recuperação ──
@@ -240,9 +302,9 @@ Deno.serve(async (req: Request) => {
       // roda no máximo uma vez por envelope.
       if (request0.wa_tracking_stopped !== true) {
         await avisarWhatsApp(supabase, supabaseUrl, serviceRoleKey, requestId);
-        return jsonResponse({ success: true, finalized: true, request_status: 'signed', wa_recovered: true, integridade: conferencia });
+        return jsonResponse({ success: true, finalized: true, request_status: 'signed', wa_recovered: true, integridade: conferencia, selagem });
       }
-      return jsonResponse({ success: true, finalized: true, request_status: 'signed', integridade: conferencia });
+      return jsonResponse({ success: true, finalized: true, request_status: 'signed', integridade: conferencia, selagem });
     }
 
     const expectedCount = Math.max(1, 1 + (Array.isArray(request0.attachment_paths) ? request0.attachment_paths.length : 0));
@@ -269,15 +331,28 @@ Deno.serve(async (req: Request) => {
     }
 
     try {
-      // 1) Carregar documentos persistidos e signatários.
-      const [{ data: docs }, { data: signers }] = await Promise.all([
-        supabase.from('signature_request_documents')
-          .select('id, document_key, signed_file_path, signed_pdf_sha256, hash_source')
-          .eq('signature_request_id', requestId).not('signed_file_path', 'is', null),
-        supabase.from('signature_signers').select('id, status').eq('signature_request_id', requestId),
-      ]);
+      // 1) Carregar signatários e, só depois, os documentos.
+      //
+      // A ordem mudou por causa da selagem. Ela reescreve o artefato e regrava
+      // o `signed_pdf_sha256`; se os documentos fossem lidos ANTES, o laço de
+      // recálculo compararia o hash velho com os bytes novos, veria divergência
+      // e abortaria a finalização acusando adulteração do arquivo que nós
+      // mesmos acabamos de selar.
+      const { data: signers } = await supabase.from('signature_signers')
+        .select('id, status').eq('signature_request_id', requestId);
 
       const allSigned = !!signers?.length && signers.every((s: any) => s.status === 'signed');
+
+      // Selar só quando todo mundo já assinou: antes disso o artefato ainda
+      // pode ser substituído pelo próximo signatário, e selar seria trabalho
+      // jogado fora a cada passagem.
+      const selagem = allSigned
+        ? await selarDocumentos(supabase, supabaseUrl, serviceRoleKey, requestId, signerId, ip, ua)
+        : { selados: 0, ignorados: 0, falhas: 0 };
+
+      const { data: docs } = await supabase.from('signature_request_documents')
+        .select('id, document_key, signed_file_path, signed_pdf_sha256, hash_source')
+        .eq('signature_request_id', requestId).not('signed_file_path', 'is', null);
 
       // 2) Re-hash server-side (A1) + detecção de sobrescrita (A4).
       await setJob(supabase, jobId, { status: 'hashing', stage: 'recalculando hashes', progress: 20 });
@@ -405,7 +480,7 @@ Deno.serve(async (req: Request) => {
       }
 
       await setJob(supabase, jobId, { status: 'finalized', stage: 'concluído', progress: 100, persisted_document_count: persisted, finalized_at: nowIso, locked_at: null, lock_expires_at: null, last_error: null });
-      return jsonResponse({ success: true, finalized: true, job_id: jobId, persisted, expected: expectedCount, was_new_finalization: weFinalized });
+      return jsonResponse({ success: true, finalized: true, job_id: jobId, persisted, expected: expectedCount, was_new_finalization: weFinalized, selagem });
     } catch (err) {
       const msg = (err as Error)?.message ?? 'erro desconhecido';
       // Falha: incrementa attempts; se estourar, marca failed; senão, volta pra queued (retry).

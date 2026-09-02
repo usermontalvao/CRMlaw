@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.16.0',
+    date: '02/09/2026',
+    summary: 'O selo criptográfico entrou no fluxo: todo envelope finalizado a partir de agora sai com a assinatura dentro do PDF.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'Todo documento finalizado sai selado',
+            description: 'A finalização do envelope passou a selar cada PDF antes de recalcular o hash. Quem receber o arquivo pode conferir a integridade em qualquer leitor de PDF, sem depender do nosso site — e qualquer alteração posterior quebra a assinatura. Vale para os envelopes assinados de agora em diante; os antigos continuam como estão.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'Se a selagem falhar, o documento finaliza mesmo assim',
+            description: 'O selo é uma camada a mais, não uma condição. Envelope que finaliza sem ele continua com a assinatura eletrônica, o dossiê e o SHA-256 valendo — muito melhor que um envelope preso esperando uma etapa opcional. E há um interruptor: sem a chave configurada, o fluxo roda exatamente como antes.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.15.0',
     date: '02/09/2026',
     summary: 'Os PDFs assinados passam a levar uma assinatura criptográfica dentro do arquivo — a integridade deixa de depender de vir ao nosso site.',
