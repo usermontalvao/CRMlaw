@@ -7,6 +7,7 @@ import { seloImpressaoCurta } from '../constants/selo';
 import html2canvas from 'html2canvas';
 import { supabase } from '../config/supabase';
 import { signatureFieldsService } from './signatureFields.service';
+import { escolherCorte, linhaTemTintaEm } from './fatiamentoDePagina';
 import { SYSTEM_ISSUER_LABEL } from './signature.service';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 import { lerIdentidadeConfirmada, fraseIdentidadeConfirmada, resumoIdentidadeConfirmada, rotuloIdentificadorConfirmado, autenticacaoOtpSemCanal, formatarTelefoneConfirmado } from '../utils/identidadeConfirmada';
@@ -3439,13 +3440,23 @@ class PdfSignatureService {
           // em uma única página.
           const sliceHeightPx = Math.floor(contentHeightPt / scalePtPerPx);
 
-          // Janela de busca por espaço em branco acima do limite ideal (~12% da
-          // página, suficiente para 1-2 linhas de texto).
-          const WHITESPACE_SEARCH_PX = Math.max(40, Math.round(sliceHeightPx * 0.12));
+          // Janela de busca por espaço em branco acima do limite ideal. Era 12%
+          // da página; subiu para 18% porque o fim de um contrato é justamente
+          // onde as linhas se adensam (traço, nome, qualificação, OAB) e a
+          // janela curta não alcançava o vão anterior ao bloco.
+          const WHITESPACE_SEARCH_PX = Math.max(60, Math.round(sliceHeightPx * 0.18));
           const sliceCtx = canvas.getContext('2d');
 
-          // Retorna o y (px) onde cortar: a linha branca mais baixa dentro da
-          // janela [idealEnd - janela, idealEnd]. Se não achar, corta no ideal.
+          // Onde cortar. A DECISÃO mora em `fatiamentoDePagina.ts`, coberta por
+          // teste; aqui fica só a leitura dos pixels.
+          //
+          // O QUE ESTAVA ERRADO: a regra antiga exigia a linha PERFEITAMENTE
+          // branca de ponta a ponta. Um único pixel abaixo do limiar em
+          // qualquer coluna — a borda da folha, um respingo de antisserrilhado
+          // do html2canvas a 2,5x, um filete — reprovava a linha inteira. Numa
+          // página em que nenhuma linha passava no teste, a busca desistia e
+          // cortava no ideal, ou seja, no meio do texto. Foi assim que a linha
+          // "OAB/MT 30.021" saiu partida ao meio no fim do contrato.
           const findWhitespaceCut = (idealEndPx: number): number => {
             if (idealEndPx >= canvas.height || !sliceCtx) return Math.min(idealEndPx, canvas.height);
             const searchTop = Math.max(0, idealEndPx - WHITESPACE_SEARCH_PX);
@@ -3457,17 +3468,16 @@ class PdfSignatureService {
             } catch {
               return idealEndPx; // canvas tainted → fallback
             }
-            const w = canvas.width;
-            for (let row = bandH - 1; row >= 0; row--) {
-              let white = true;
-              const base = row * w * 4;
-              for (let col = 0; col < w; col++) {
-                const i = base + col * 4;
-                if (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245) { white = false; break; }
-              }
-              if (white) return searchTop + row + 1;
-            }
-            return idealEndPx; // sem linha totalmente branca → corta no ideal
+            return escolherCorte({
+              alturaIdeal: idealEndPx,
+              janela: bandH,
+              alturaTotal: canvas.height,
+              linhaTemTinta: (y) => linhaTemTintaEm({
+                dados: data,
+                larguraDoBloco: canvas.width,
+                linha: y - searchTop,
+              }),
+            });
           };
 
           let cursorPx = 0;

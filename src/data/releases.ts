@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.0',
+    date: '02/09/2026',
+    summary: 'A selfie aparecia espelhada ao ser consultada, e a última linha do contrato saía partida ao meio.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'A foto aparecia espelhada ao consultar a assinatura',
+            description: 'O espelho existe no visor da câmera, porque a pessoa precisa se ver como num espelho para se enquadrar. Mas ele estava sendo aplicado também ao arquivo já guardado, em quatro telas — inclusive na miniatura que vai dentro do PDF. O carimbo gravado na própria imagem denunciava: aparecia escrito de trás para frente. Agora só o vídeo ao vivo é espelhado.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'A última linha do contrato saía cortada ao meio',
+            description: 'O documento é montado como um bloco contínuo e fatiado em páginas. O corte procurava uma linha de pixels totalmente branca para não partir texto — mas exigia branco absoluto de ponta a ponta, e um único pixel escuro na beirada da folha, ou um respingo do próprio processo de captura, reprovava a linha inteira. Sem nenhuma linha aprovada, o corte caía no meio do texto: foi assim que a linha da OAB saiu partida no fim do contrato. Agora a busca olha a faixa central da página, tolera respingos e procura numa janela maior.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.21.0',
     date: '02/09/2026',
     summary: 'A selfie exibia dois horários diferentes; ficou um só, o mesmo da trilha de auditoria.',

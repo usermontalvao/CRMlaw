@@ -315,7 +315,9 @@ const SignatureReport: React.FC<SignatureReportProps> = ({ signer, request, crea
               <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: '1px solid #f8fafc' }}>
                 {faceUrl ? (
                   <div className="relative w-12 h-12 flex-shrink-0">
-                    <img src={faceUrl} alt="Foto" className="w-12 h-12 rounded-xl object-cover" style={{ border: '2px solid #f1f5f9', transform: 'scaleX(-1)' }} />
+                    {/* Sem espelho: a página de biometria do mesmo PDF desenha esta foto
+                        sem inverter, e as duas precisam mostrar o mesmo rosto. */}
+                    <img src={faceUrl} alt="Foto" className="w-12 h-12 rounded-xl object-cover" style={{ border: '2px solid #f1f5f9' }} />
                     <div className="absolute -bottom-1 -right-1 w-[18px] h-[18px] rounded-full flex items-center justify-center" style={{ background: '#10b981', border: '2px solid white' }}>
                       <CheckCircle className="w-2.5 h-2.5 text-white" />
                     </div>

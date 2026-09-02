@@ -4797,7 +4797,11 @@ const PublicSigningPage: React.FC<PublicSigningPageProps> = ({ token }) => {
                             src={facialData}
                             alt="Foto"
                             className="w-[108px] border border-white object-cover shadow-sm"
-                            style={{ transform: 'scaleX(-1)', aspectRatio: `${FOTO_PROPORCAO}` }}
+                            /* Sem espelho: é o arquivo guardado, não o visor.
+                               O carimbo gravado na imagem é a prova — espelhado
+                               ele fica de trás para frente. O <video> ali
+                               embaixo continua espelhado, que é o certo. */
+                            style={{ aspectRatio: `${FOTO_PROPORCAO}` }}
                           />
                           <p
                             className={`mt-3 text-[13px] font-bold ${

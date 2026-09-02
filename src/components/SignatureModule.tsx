@@ -6795,7 +6795,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
                         <div className={`flex items-center gap-2.5 px-3 py-2.5 ${isSigned ? 'bg-emerald-50' : isRefused ? 'bg-rose-50' : signer.viewed_at ? 'bg-sky-50/60' : 'bg-slate-50'}`}>
                           {isSigned && facialUrl ? (
                             <button onClick={() => setZoomImageUrl(facialUrl)} className="relative group flex-shrink-0" title="Ampliar foto">
-                              <img src={facialUrl} alt="Foto facial" className="w-10 h-10 rounded-lg object-cover border-2 border-emerald-300 group-hover:border-emerald-500 transition-all" style={{ transform: 'scaleX(-1)' }} />
+                              <img src={facialUrl} alt="Foto facial" className="w-10 h-10 rounded-lg object-cover border-2 border-emerald-300 group-hover:border-emerald-500 transition-all" />
                               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 rounded-lg flex items-center justify-center transition-all">
                                 <ZoomIn className="w-3.5 h-3.5 text-white opacity-0 group-hover:opacity-100 transition-all" />
                               </div>
@@ -7169,7 +7169,7 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               {facialData && (
                 <div className="p-3 bg-slate-50 rounded">
                   <p className="text-xs text-slate-500 mb-1">Foto</p>
-                  <img src={facialData} alt="Foto" className="w-20 h-20 object-cover rounded border" style={{ transform: 'scaleX(-1)' }} />
+                  <img src={facialData} alt="Foto" className="w-20 h-20 object-cover rounded border" />
                 </div>
               )}
             </div>
@@ -7190,7 +7190,11 @@ const SignatureModule: React.FC<SignatureModuleProps> = ({ prefillData, focusReq
               src={zoomImageUrl}
               alt="Imagem ampliada"
               className="max-w-full max-h-[70vh] sm:max-h-[75vh] object-contain rounded-xl border border-[#e7e5df] bg-[#f8f7f5]"
-              style={{ transform: zoomImageUrl.includes('facial') ? 'scaleX(-1)' : 'none' }}
+              /* A selfie NÃO é espelhada aqui. O espelho pertence ao visor da
+                 câmera, onde a pessoa se enquadra; o arquivo guardado tem
+                 orientação real, e o carimbo gravado nos pixels denuncia a
+                 inversão — aparecia escrito de trás para frente. */
+              style={{ transform: 'none' }}
             />
           )}
         </ModalBody>
