@@ -135,16 +135,27 @@ class SignatureService {
   }
 
   /**
-   * O dossiê do envelope (signatários, emissor, trilha) por id da solicitação.
+   * O dossiê do envelope (signatários, emissor, trilha) pelo SHA-256 do arquivo.
    *
    * A consulta por CÓDIGO já vem com tudo embutido; a validação por ARQUIVO
    * passa por outra RPC, que só devolve signatário e solicitação — sem isto, o
    * mesmo documento mostraria o painel completo por um caminho e um painel
    * vazio pelo outro.
    */
-  async getVerificationDossier(requestId: string): Promise<VerifyDossier> {
-    if (!requestId) return {};
-    const { data, error } = await supabase.rpc('public_verify_extras_json', { p_request_id: requestId });
+  async getVerificationDossier(sha256: string): Promise<VerifyDossier> {
+    if (!sha256) return {};
+    // POR QUE PELO SHA-256, E NÃO PELO ID DO ENVELOPE.
+    //
+    // `public_verify_extras_json` era concedida ao papel anônimo e recebia o
+    // UUID da solicitação — que é o PROTOCOLO, impresso no rodapé de toda
+    // página. Ou seja: qualquer um com o protocolo puxava CPF, telefone,
+    // e-mail, IP, coordenadas e a trilha inteira direto pela API, sem passar
+    // por nenhuma verificação. Ela foi fechada.
+    //
+    // Aqui o portão é melhor: para saber o SHA-256 é preciso TER o arquivo, e
+    // não há como enumerar. O bloqueio e a lixeira são conferidos do lado do
+    // banco, na origem do dado.
+    const { data, error } = await supabase.rpc('public_verify_dossier_by_sha256', { p_sha256: sha256 });
     if (error || !data) {
       console.warn('[getVerificationDossier] falha:', error);
       return {};
@@ -187,7 +198,7 @@ class SignatureService {
       );
     }
 
-    return { signer, request, ...(await this.getVerificationDossier(request.id)) };
+    return { signer, request, ...(await this.getVerificationDossier(codeToUse)) };
   }
 
   // ==================== SIGNATURE REQUESTS ====================

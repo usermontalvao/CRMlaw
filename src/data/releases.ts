@@ -37,6 +37,33 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.1',
+    date: '02/09/2026',
+    summary: 'Correção de segurança: o dossiê da conferência podia ser consultado direto pela API com o número do protocolo, e ignorava o bloqueio e a lixeira.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'security' as const,
+            title: 'Dados pessoais podiam ser consultados só com o protocolo',
+            description: 'A rotina que monta o dossiê da página de conferência estava aberta a chamadas diretas e aceitava o número do protocolo — que é impresso no rodapé de toda página do documento. Quem tivesse esse número conseguia puxar CPF, telefone, e-mail, IP, coordenadas e a trilha completa pela API, sem passar pela página. O acesso direto foi fechado; a página continua funcionando normalmente.',
+          },
+          {
+            type: 'security' as const,
+            title: 'O bloqueio do escritório não bloqueava o dossiê',
+            description: 'Ao desativar a validação pública de um documento, a página passava a dizer "consulta fechada" — mas os dados do signatário seguiam sendo entregues na mesma resposta. Documentos na lixeira também continuavam respondendo. Havia 13 documentos bloqueados nessa situação. Agora a checagem é feita na origem do dado, e vale para todos os caminhos.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A validação por arquivo ganhou porta própria',
+            description: 'Quem confere enviando o PDF continua vendo o dossiê, agora por um caminho que exige o SHA-256 do arquivo — ou seja, é preciso ter o arquivo em mãos, e não há como sair testando números.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.0',
     date: '02/09/2026',
     summary: 'A selfie aparecia espelhada ao ser consultada, e a última linha do contrato saía partida ao meio.',

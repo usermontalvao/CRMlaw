@@ -1,0 +1,11 @@
+-- A porta do dossiê para quem valida POR ARQUIVO.
+--
+-- `public_verify_extras_json` deixou de ser pública (virava consulta a dado
+-- pessoal por UUID). A validação por upload precisa do dossiê, e ali o portão
+-- é melhor que o do código impresso: para saber o SHA-256 é preciso TER o
+-- arquivo, e não há como enumerar.
+--
+-- O bloqueio e a lixeira valem aqui também — a guarda mora dentro da
+-- `public_verify_extras_json`, então este caminho a herda.
+--
+-- Aplicada por `apply_migration`; registrada aqui.

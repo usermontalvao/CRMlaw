@@ -1,0 +1,28 @@
+-- SEGURANÇA: o dossiê público vazava por dois caminhos.
+--
+-- Achado em auditoria e confirmado em produção antes da correção:
+--
+--  1) `public_verify_extras_json` estava concedida a `anon` e recebia o UUID da
+--     solicitação — que é o PROTOCOLO, impresso no rodapé de toda página do
+--     PDF. Qualquer pessoa com o protocolo puxava CPF, telefone, e-mail, IP,
+--     coordenadas, identificador de autenticação, trilha completa e os dados de
+--     quem emitiu, direto pela API. Um auxiliar interno virou endpoint de
+--     consulta a dado pessoal.
+--
+--  2) A função não olhava `blocked_at` nem `deleted_at`. Consequência medida:
+--     envelope BLOQUEADO pelo escritório respondia `status: blocked` na tela e
+--     entregava o dossiê completo no MESMO payload — o interruptor de bloqueio
+--     não bloqueava nada. Envelope na lixeira idem. Havia 13 bloqueados e 1
+--     excluído em produção quando isto foi corrigido.
+--
+-- A guarda entra DENTRO da função, não só em quem chama: guarda no chamador
+-- protege um caminho, guarda na fonte protege todos.
+--
+-- E o acesso direto fecha. O invólucro `public_verify_by_hash` é SECURITY
+-- DEFINER e continua podendo executá-la sem o grant.
+--
+-- Ver `20260902220100_dossie_por_sha256_do_arquivo.sql` para a porta que
+-- substitui o acesso direto no fluxo de validação por upload.
+--
+-- O corpo aplicado é o mesmo do arquivo 20260901210000, com o CASE de guarda
+-- em volta; ele foi aplicado por `apply_migration` e está registrado aqui.
