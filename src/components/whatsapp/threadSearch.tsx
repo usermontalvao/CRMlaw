@@ -37,6 +37,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, FileText, Loader2, Mic, Search, X } from 'lucide-react';
 import { whatsappService, type WhatsAppMessageHit } from '../../services/whatsapp.service';
 import { trechoDoAchado, textoBuscavel, type TrechoDoAchado } from './threadSearchText';
+import { useThreadTermHighlight } from './hooks/useThreadTermHighlight';
 import { dayLabel, maskSensitive } from './format';
 
 export interface ThreadSearchProps {
@@ -49,6 +50,13 @@ export interface ThreadSearchProps {
   /** Levar a thread até a mensagem e piscá-la. */
   onJump: (conversationId: string, messageId: string) => void;
   onClose: () => void;
+  /** O conteúdo da conversa — onde a palavra procurada fica acesa. */
+  threadRef: React.RefObject<HTMLElement | null>;
+  /**
+   * Muda quando a conversa muda debaixo da busca (mensagem nova, bloco antigo
+   * carregado, áudio transcrito). É o que manda repintar o grifo.
+   */
+  threadVersion: unknown;
 }
 
 interface Achado {
@@ -64,7 +72,7 @@ interface Achado {
 const quemFalou = (direcao: string, contato: string) => (direcao === 'out' ? 'Você' : contato);
 
 export const ThreadSearch: React.FC<ThreadSearchProps> = ({
-  conversationIds, contactName, privateMode, onJump, onClose,
+  conversationIds, contactName, privateMode, onJump, onClose, threadRef, threadVersion,
 }) => {
   const [termo, setTermo] = useState('');
   const [buscando, setBuscando] = useState(false);
@@ -126,6 +134,11 @@ export const ThreadSearch: React.FC<ThreadSearchProps> = ({
   }, [termo, escopo]);
 
   const total = achados?.length ?? 0;
+
+  // Acende TODA ocorrência dentro das bolhas — o último passo da busca, que até
+  // aqui ficava por conta do olho. Ver `useThreadTermHighlight`: é feito pela
+  // API de destaque do navegador, sem tocar no HTML da conversa.
+  useThreadTermHighlight(threadRef, termo, true, threadVersion);
 
   /**
    * O primeiro Enter VISITA o resultado em que o cursor já está; do segundo em

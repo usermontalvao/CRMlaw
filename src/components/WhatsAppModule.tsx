@@ -125,6 +125,7 @@ import { ConversationList } from './whatsapp/conversationList';
 import { ThreadSkeleton } from './whatsapp/skeletons';
 import { resolveInboxKey, isTypingTarget } from './whatsapp/inboxKeyboard';
 import { ThreadSearch } from './whatsapp/threadSearch';
+import { InboxMessageHits } from './whatsapp/inboxMessageHits';
 import { WaLightbox } from './whatsapp/lightbox';
 import { WaAudioDeviceButton } from './whatsapp/audioDeviceSettings';
 import { WaNotifyBell } from './whatsapp/notifyBell';
@@ -366,6 +367,13 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
    * o painel já aberto não é atalho.
    */
   const [threadSearchOpen, setThreadSearchOpen] = useState(false);
+  /**
+   * Quantas MENSAGENS a busca da lista achou (a seção abaixo das conversas).
+   *
+   * A lista precisa do número para não escrever "Nenhuma conversa para este
+   * filtro" logo acima de resultados de verdade — ver `inboxMessageHits`.
+   */
+  const [msgHitCount, setMsgHitCount] = useState(0);
   // Menu "+" do composer (documento, modelo, agendar) — mantém a barra enxuta.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
@@ -1898,8 +1906,16 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
   }, [pending]);
 
   const listEmptyMessage = useMemo(
-    () => `Nenhuma conversa${search || filter !== 'all' || channelFilter !== 'all' || deptFilter !== 'all' ? ' para este filtro' : ' ainda'}.`,
-    [search, filter, channelFilter, deptFilter],
+    () => {
+      // Procurar "holerite" não casa com o nome de ninguém — mas casa com o que
+      // foi escrito em cinco conversas. Nesse caso a lista não diz que não
+      // achou: ela aponta para onde está a resposta, logo abaixo.
+      if (search.trim().length >= 2 && msgHitCount > 0) {
+        return 'Nenhuma conversa com esse nome — o termo aparece nas mensagens abaixo.';
+      }
+      return `Nenhuma conversa${search || filter !== 'all' || channelFilter !== 'all' || deptFilter !== 'all' ? ' para este filtro' : ' ainda'}.`;
+    },
+    [search, filter, channelFilter, deptFilter, msgHitCount],
   );
 
   // Não-lidas ignoram conversas bloqueadas: elas saem da fila normal.
@@ -2993,6 +3009,7 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
             onOpenConversation={openConversationAt}
           />
           ) : (
+          <>
           <ConversationList
             conversations={filtered}
             selectedId={selectedId}
@@ -3019,6 +3036,18 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
             onStopSignatureTracking={stopSignatureTracking}
             onStopTemplateFillTracking={stopTemplateFillTracking}
           />
+          {/* A busca da lista deixa de parar no NOME: abaixo das conversas
+              vêm as MENSAGENS em que o termo aparece, em qualquer atendimento.
+              Ver o cabeçalho de `inboxMessageHits.tsx` — inclusive por que ela
+              fica embaixo, e não no lugar da fila. */}
+          <InboxMessageHits
+            term={deferredSearch}
+            conversations={conversations}
+            privateMode={privateMode}
+            onOpen={openConversationAt}
+            onResultCount={setMsgHitCount}
+          />
+          </>
           )}
         </div>
 
@@ -3351,6 +3380,8 @@ const WhatsAppModule: React.FC<WhatsAppModuleProps> = ({ openConversationId, ope
                 privateMode={privateMode}
                 onJump={openConversationAt}
                 onClose={() => setThreadSearchOpen(false)}
+                threadRef={threadContentRef}
+                threadVersion={allMessages}
               />
             )}
             </header>

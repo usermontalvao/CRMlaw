@@ -136,18 +136,30 @@ export const messagesApi = {
    * resultado seria oferecer um salto para uma bolha que não existe.
    */
   async searchMessages(
-    conversationId: string | string[],
+    /**
+     * O grupo de linhas a varrer — ou `null` para varrer TUDO que este usuário
+     * pode ler. O `null` é a busca da inbox ("em que conversa foi que…?"); a
+     * lista de ids é a busca dentro de uma conversa aberta.
+     *
+     * Quem responde por quais linhas cada um alcança é a policy de
+     * `whatsapp_messages`. Do lado da tela, a inbox ainda confere cada achado
+     * contra a lista de conversas que ela já tem (recortada por canal duas
+     * vezes) — a mesma segunda tranca de `listConversations`.
+     */
+    conversationId: string | string[] | null,
     term: string,
     opts?: { limit?: number },
   ): Promise<WhatsAppMessageHit[]> {
-    const ids = Array.isArray(conversationId) ? conversationId : [conversationId];
+    const ids = conversationId === null
+      ? null
+      : (Array.isArray(conversationId) ? conversationId : [conversationId]);
     const termo = term.trim();
     // Uma letra casa com quase tudo: a lista viria cheia e sem serventia, e a
     // varredura custaria o histórico inteiro para nada.
-    if (ids.length === 0 || termo.length < 2) return [];
+    if ((ids !== null && ids.length === 0) || termo.length < 2) return [];
 
     let q = supabase.from(MSG_TABLE).select(MSG_COLUMNS_BUSCA);
-    q = ids.length === 1 ? q.eq('conversation_id', ids[0]) : q.in('conversation_id', ids);
+    if (ids !== null) q = ids.length === 1 ? q.eq('conversation_id', ids[0]) : q.in('conversation_id', ids);
     const { data, error } = await q
       .is('deleted_at', null)
       .or(ouIlikeSemAcento(termo, ['content', 'transcription_text', 'file_name']))

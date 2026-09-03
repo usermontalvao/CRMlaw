@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.14',
+    date: '03/09/2026',
+    summary: 'A busca do WhatsApp passa a procurar dentro das mensagens de TODAS as conversas — e acende a palavra dentro da conversa.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'feature' as const,
+            title: 'A busca da lista agora encontra o que foi ESCRITO, não só quem escreveu',
+            description: 'O campo de busca da lista de conversas sempre casou com nome, telefone e cliente — servia para "abre a conversa da Maria" e para mais nada. Agora, abaixo das conversas, aparece a seção "Nas mensagens": todas as mensagens do escritório em que o termo aparece, em qualquer atendimento, da mais recente para a mais antiga, com a frase em volta e a palavra destacada. Clicar em uma delas abre a conversa exatamente naquele ponto. Procurar "holerite" deixa de responder "nenhuma conversa" e passa a mostrar as cinco vezes em que o assunto foi tratado — e quando nenhum nome casa, a própria lista aponta para os resultados abaixo em vez de dizer que não achou nada. Vale também para o que foi dito em áudio e para o nome dos anexos, e respeita a régua de canais: só aparece o que aquele usuário já podia ler.',
+          },
+          {
+            type: 'improvement' as const,
+            title: 'A palavra procurada fica acesa dentro da conversa',
+            description: 'Com a busca da conversa aberta, toda ocorrência do termo passa a ficar grifada dentro dos balões, e não só a mensagem inteira piscando. Era o último passo que ainda ficava por conta do olho: numa transcrição de áudio de dois minutos, saber "é esta mensagem" ainda deixava a palavra para ser procurada à mão. O grifo é feito pelo recurso de destaque do próprio navegador, sem alterar o conteúdo da mensagem — selecionar, copiar e o menu do clique direito continuam idênticos.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.13',
     date: '03/09/2026',
     summary: 'Procurar dentro da conversa do WhatsApp — inclusive no que foi dito em áudio.',

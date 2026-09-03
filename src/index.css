@@ -3748,6 +3748,24 @@ div.pericia-light-modal[class*="fixed"][class*="inset-0"][class*="z-"] {
   100% { background-color: transparent;              box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
 }
 
+/* A PALAVRA PROCURADA, acesa dentro das bolhas enquanto a busca da conversa
+   está aberta (ver `hooks/useThreadTermHighlight.ts`).
+
+   `::highlight()` pinta trechos que o JavaScript registrou como `Range`, sem
+   que exista elemento nenhum no HTML para eles. É por isso que o grifo não
+   mexe no menu do clique direito, na seleção nem no copiar: para o DOM, a
+   mensagem continua sendo um pedaço de texto só.
+
+   O amarelo é o MESMO da lista de resultados, de propósito — o olho sai do
+   trecho no painel e reencontra a mesma marca dentro da conversa. Sem sombra
+   e sem peso: o balão já traz a informação de quem falou, e o grifo só aponta
+   onde. `::highlight` aceita poucas propriedades (cor, fundo, sublinhado,
+   sombra do texto) — layout não é uma delas, e é isso que o torna seguro. */
+::highlight(wa-busca) {
+  background-color: #ffe08a;
+  color: #0f172a;
+}
+
 /* Mensagem com o MENU ABERTO. Enquanto o menu está de pé, a bolha sobre a qual
    ele vai agir fica acesa — é a resposta à única pergunta que o menu não
    responde sozinho: "apagar QUAL?". Numa thread densa, com o menu por cima das

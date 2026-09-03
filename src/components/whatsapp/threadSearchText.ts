@@ -25,6 +25,45 @@ function dobrar(valor: string): string {
   return valor.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR');
 }
 
+/** Um pedaço casado dentro do texto ORIGINAL: `[ini, fim)`. */
+export interface Ocorrencia { ini: number; fim: number; }
+
+/**
+ * TODAS as posições em que `termo` aparece em `texto`, sem diferenciar acento,
+ * já convertidas para os índices do texto original.
+ *
+ * É o que permite acender a palavra procurada dentro das bolhas da conversa
+ * sem mexer no HTML delas: cada par vira um `Range`, e os Ranges vão para a
+ * API de destaque do navegador (`CSS.highlights`). Nenhum nó é criado,
+ * removido ou reescrito — o menu da mensagem, a seleção e o copiar continuam
+ * exatamente como eram.
+ */
+export function ocorrenciasNoTexto(
+  texto: string | null | undefined,
+  termo: string,
+  maximo = 200,
+): Ocorrencia[] {
+  const cru = String(texto ?? '');
+  const agulha = dobrar(termo.trim());
+  if (!cru || !agulha) return [];
+
+  const { dobrado, ini, fim } = mapear(cru);
+  const achadas: Ocorrencia[] = [];
+  let de = 0;
+  while (achadas.length < maximo) {
+    const at = dobrado.indexOf(agulha, de);
+    if (at < 0) break;
+    const comeco = ini[at];
+    const termino = fim[at + agulha.length - 1];
+    if (comeco === undefined || termino === undefined) break;
+    achadas.push({ ini: comeco, fim: termino });
+    // Avança PARA DEPOIS do casamento: sem isso, procurar "aa" em "aaaa"
+    // devolveria sobreposições que o navegador desenha empilhadas.
+    de = at + agulha.length;
+  }
+  return achadas;
+}
+
 export interface TrechoDoAchado {
   /** O que vem antes da palavra, já cortado na janela. */
   antes: string;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { trechoDoAchado, semAssinaturaDoAgente, textoBuscavel } from './threadSearchText.ts';
+import { trechoDoAchado, ocorrenciasNoTexto, semAssinaturaDoAgente, textoBuscavel } from './threadSearchText.ts';
 // A outra redação da mesma regra de assinatura. O teste existe para as duas
 // nunca divergirem — ver o comentário em `semAssinaturaDoAgente`.
 import { stripAgentSignature } from './waRichText.ts';
@@ -79,4 +79,37 @@ test('sem texto, o áudio vale pelo que foi DITO; sem isso, pelo nome do arquivo
   assert.equal(textoBuscavel({ direction: 'in', content: '', transcription_text: 'o valor ficou em 40%' }), 'o valor ficou em 40%');
   assert.equal(textoBuscavel({ direction: 'in', content: null, transcription_text: null, file_name: 'procuracao.pdf' }), 'procuracao.pdf');
   assert.equal(textoBuscavel({ direction: 'in' }), '');
+});
+
+// ── As posições que acendem a palavra dentro da bolha ──────────────
+
+test('devolve TODAS as ocorrências, e nos índices do texto original', () => {
+  const t = 'perícia hoje, perícia amanhã';
+  const oc = ocorrenciasNoTexto(t, 'pericia');
+  assert.equal(oc.length, 2);
+  assert.equal(t.slice(oc[0].ini, oc[0].fim), 'perícia');
+  assert.equal(t.slice(oc[1].ini, oc[1].fim), 'perícia');
+});
+
+test('o acento do original não desloca a posição das ocorrências seguintes', () => {
+  const t = 'ação, ação e orçamento';
+  const oc = ocorrenciasNoTexto(t, 'orcamento');
+  assert.equal(oc.length, 1);
+  assert.equal(t.slice(oc[0].ini, oc[0].fim), 'orçamento');
+});
+
+test('casamentos não se sobrepõem', () => {
+  const oc = ocorrenciasNoTexto('aaaa', 'aa');
+  assert.equal(oc.length, 2);
+  assert.deepEqual(oc, [{ ini: 0, fim: 2 }, { ini: 2, fim: 4 }]);
+});
+
+test('sem ocorrência, sem termo ou sem texto devolve lista vazia', () => {
+  assert.deepEqual(ocorrenciasNoTexto('bom dia', 'audiencia'), []);
+  assert.deepEqual(ocorrenciasNoTexto('bom dia', '  '), []);
+  assert.deepEqual(ocorrenciasNoTexto(null, 'dia'), []);
+});
+
+test('o teto impede que uma transcrição enorme vire milhares de destaques', () => {
+  assert.equal(ocorrenciasNoTexto('a '.repeat(500), 'a', 10).length, 10);
 });
