@@ -8,6 +8,7 @@ import html2canvas from 'html2canvas';
 import { supabase } from '../config/supabase';
 import { signatureFieldsService } from './signatureFields.service';
 import { escolherCorte, linhaTemTintaEm } from './fatiamentoDePagina';
+import { calcularYDaAssinatura } from './posicionamentoDeAssinatura';
 import { SYSTEM_ISSUER_LABEL } from './signature.service';
 import { buildPublicSignatureTermsUrl } from '../utils/publicAppUrl';
 import { lerIdentidadeConfirmada, fraseIdentidadeConfirmada, resumoIdentidadeConfirmada, rotuloIdentificadorConfirmado, autenticacaoOtpSemCanal, formatarTelefoneConfirmado } from '../utils/identidadeConfirmada';
@@ -2933,7 +2934,6 @@ class PdfSignatureService {
     const contentBottomY = FOOTER_RESERVED_H;
     const contentHeightPt = contentTopY - contentBottomY;
     const contentWidthPt = pdfPageWidth - (CONTENT_MARGIN_X * 2);
-    const PLACEHOLDER_Y_OFFSET_PT = 40;
     const placeholderDetectedByDocument: Record<string, boolean> = {};
     const ENABLE_ATTACHMENT_FALLBACK_SIGNATURE = false;
     
@@ -3406,7 +3406,12 @@ class PdfSignatureService {
                 if (fieldYTopFull + fieldHFull < effectiveSliceStartPt || fieldYTopFull > sliceEndPt) continue;
 
                 const yInSlice = fieldYTopFull - effectiveSliceStartPt;
-                const y = drawY + (drawHPt - yInSlice - fieldHFull) + (isAuto ? PLACEHOLDER_Y_OFFSET_PT : 0);
+                const y = calcularYDaAssinatura({
+                  baseDaFatia: drawY,
+                  alturaDaFatia: drawHPt,
+                  yDoCampoAPartirDoTopo: yInSlice,
+                  alturaDoCampo: fieldHFull,
+                });
 
                 drawSignatureField({
                   pdfPage,

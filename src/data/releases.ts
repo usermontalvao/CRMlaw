@@ -37,6 +37,23 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.10',
+    date: '03/09/2026',
+    summary: 'A assinatura automática volta a respeitar o campo marcado no template, sem subir para perto da data.',
+    modules: [
+      {
+        moduleId: 'assinaturas',
+        changes: [
+          {
+            type: 'fix' as const,
+            title: 'Assinatura apoiada na linha do template',
+            description: 'Documentos com o marcador [[ASSINATURA]] recebiam uma compensação fixa que deslocava a rubrica cerca de 14 mm para cima. O posicionamento automático agora usa exatamente a coordenada do marcador; campos configurados manualmente permanecem inalterados.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.9',
     date: '03/09/2026',
     summary: 'Criar uma solicitação de assinatura deixou de significar enviá-la — agora é uma escolha explícita, e a lista deixa de esconder o telefone e o prazo vencido.',
