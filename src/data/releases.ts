@@ -37,6 +37,28 @@ export type ReleaseNote = {
 
 export const releases: ReleaseNote[] = [
   {
+    version: '1.22.17',
+    date: '03/09/2026',
+    summary: 'A busca de mensagens do WhatsApp ficou 60 vezes mais rápida — de 4,5 segundos para 72 milissegundos.',
+    modules: [
+      {
+        moduleId: 'whatsapp',
+        changes: [
+          {
+            type: 'improvement' as const,
+            title: 'A busca responde na hora',
+            description: 'Procurar nas mensagens levava cerca de cinco segundos até a lista aparecer — tempo suficiente para parecer que nada tinha acontecido. Agora responde em menos de um segundo (72 ms no banco, contra 4.500 ms antes). Duas causas, as duas corrigidas: a busca gerava 72 comparações por mensagem para dar conta dos acentos, sendo que 22 delas eram combinações que não existem em português; e, sem índice, a regra de quem pode ver qual canal era conferida em todas as 6.563 mensagens da base antes de o texto sequer importar. O banco passou a ter um índice próprio de busca, e a régua de canal é conferida só sobre as poucas mensagens que casaram — continua sendo exatamente a mesma regra, conferida linha por linha contra o caminho normal.',
+          },
+          {
+            type: 'fix' as const,
+            title: 'Procurar com acento, e procurar por “%”',
+            description: 'Digitar “perícia” com acento só encontrava o texto se a variante certa tivesse sido gerada pela lista de tentativas — agora os dois lados são normalizados e o resultado é o mesmo com ou sem acento. E um “%” digitado no campo virava curinga: casava com a conversa inteira. O termo passou a ser tratado como texto.',
+          },
+        ],
+      },
+    ],
+  },
+  {
     version: '1.22.16',
     date: '03/09/2026',
     summary: 'Fixar conversa no topo da lista — a exceção que faltava na ordem por atividade.',

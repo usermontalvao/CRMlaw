@@ -110,20 +110,26 @@ function ouIlikeSemAcento(termo: string, colunas: readonly string[]): string {
     .join(',');
 }
 
+/** `null` = ainda não se sabe; vira `false` no primeiro "função não existe". */
+let bancoTemBuscaIndexada: boolean | null = null;
+
+/** O código que o PostgREST usa para "esta função não existe". */
+const FUNCAO_INEXISTENTE = 'PGRST202';
+
+function ehFuncaoInexistente(erro: { code?: string; message?: string } | null): boolean {
+  if (!erro) return false;
+  return erro.code === FUNCAO_INEXISTENTE
+    || erro.code === '42883'
+    || /wa_buscar_mensagens/.test(erro.message ?? '');
+}
+
 export const messagesApi = {
   /**
-   * BUSCA DENTRO DA CONVERSA — no histórico inteiro, não na janela carregada.
+   * BUSCA DE MENSAGENS — no banco, e não na janela carregada.
    *
-   * A thread abre com os 60 últimos e pagina para trás sob demanda. Procurar
-   * "onde ele mandou o RG" ou "quanto ficou combinado" no que está na tela só
-   * responde quando a resposta é recente; em qualquer conversa de verdade o
-   * atendente rolava às cegas até desistir e perguntar de novo ao cliente —
-   * que é a pergunta que o escritório já fez e não devia repetir.
-   *
-   * Por isso a varredura é NO BANCO. O filtro é o mesmo grupo de linhas que
-   * monta a thread (`conversationId` aceita as irmãs de outro canal do mesmo
-   * contato), então o resultado cobre a pessoa e não o número por onde ela
-   * escreveu.
+   * Responde às duas perguntas do módulo com a mesma consulta: "onde NESTA
+   * conversa" (com a lista de linhas irmãs) e "em QUAL conversa" (com `null`,
+   * que é a busca da inbox).
    *
    * TRÊS COLUNAS, e a terceira é a que surpreende:
    *   · `content` — o texto e a legenda da mídia;
@@ -132,19 +138,40 @@ export const messagesApi = {
    *     cliente conta chega em áudio de dois minutos, e até aqui essa metade
    *     era invisível para qualquer busca do CRM.
    *
-   * Apagadas ficam de fora: o histórico não as mostra, e trazê-las no
-   * resultado seria oferecer um salto para uma bolha que não existe.
+   * ── POR QUE UM RPC, E NÃO ILIKE PELO PostgREST ────────────────────────────
+   *
+   * A primeira versão montava um `or(...)` com as variantes acentuadas do termo
+   * (o mesmo truque do e-mail e do feed, já que o PostgREST não oferece
+   * comparação sem acento). Medido em produção, com a base como ela é:
+   *
+   *   6 cláusulas, sem a política de acesso ....... 32 ms
+   *   72 cláusulas, sem a política ................ 304 ms
+   *   72 cláusulas, COMO O APP FAZ (com RLS) .... 4.500 ms
+   *
+   * Duas coisas erradas ao mesmo tempo. A primeira: "pericia" gerava 24
+   * variantes × 3 colunas = 72 comparações, e 22 daquelas variantes eram
+   * combinações que não existem em português ("périciã", "pericíã"). A
+   * segunda, e a que dominava: sem índice, a política de `whatsapp_messages`
+   * — um EXISTS por linha — era avaliada nas 6.563 linhas da tabela.
+   *
+   * O RPC resolve as duas. Uma comparação só, sobre `wa_texto_procuravel`
+   * (texto + transcrição + anexo, minúsculo e sem acento), apoiada num índice
+   * de trigrama: a varredura entrega ~36 linhas, e é sobre essas que a
+   * política roda. Ele é SECURITY INVOKER — a régua de canal continua valendo
+   * dentro dele, e é justamente por isso que a conta fecha.
+   *
+   * De quebra, dois defeitos de comportamento: procurar "perícia" COM acento
+   * dependia de a variante certa ter sido gerada, e um "%" digitado no campo
+   * virava curinga e casava com a conversa inteira. O RPC escapa o termo.
+   *
+   * Apagadas ficam de fora: o histórico não as mostra, e trazê-las seria
+   * oferecer um salto para uma bolha que não existe.
    */
   async searchMessages(
     /**
      * O grupo de linhas a varrer — ou `null` para varrer TUDO que este usuário
-     * pode ler. O `null` é a busca da inbox ("em que conversa foi que…?"); a
-     * lista de ids é a busca dentro de uma conversa aberta.
-     *
-     * Quem responde por quais linhas cada um alcança é a policy de
-     * `whatsapp_messages`. Do lado da tela, a inbox ainda confere cada achado
-     * contra a lista de conversas que ela já tem (recortada por canal duas
-     * vezes) — a mesma segunda tranca de `listConversations`.
+     * pode ler. O `null` é a busca da inbox; a lista de ids é a busca dentro de
+     * uma conversa aberta.
      */
     conversationId: string | string[] | null,
     term: string,
@@ -155,20 +182,55 @@ export const messagesApi = {
       : (Array.isArray(conversationId) ? conversationId : [conversationId]);
     const termo = term.trim();
     // Uma letra casa com quase tudo: a lista viria cheia e sem serventia, e a
-    // varredura custaria o histórico inteiro para nada.
+    // varredura custaria o histórico inteiro para nada. O RPC repete esta
+    // guarda do lado de lá — quem chama por fora do app não a contorna.
     if ((ids !== null && ids.length === 0) || termo.length < 2) return [];
 
+    const limite = opts?.limit ?? 80;
+
+    if (bancoTemBuscaIndexada !== false) {
+      const { data, error } = await supabase.rpc('wa_buscar_mensagens', {
+        p_termo: termo,
+        p_conversas: ids,
+        p_limite: limite,
+      });
+      if (!error) {
+        bancoTemBuscaIndexada = true;
+        return ((data || []) as unknown) as WhatsAppMessageHit[];
+      }
+      // Banco ainda sem a função: cai no caminho antigo e não pergunta de novo
+      // nesta sessão. Mesma rede do `sender_role` logo acima — migration e
+      // front-end sobem em momentos diferentes neste projeto, e a busca não
+      // pode simplesmente parar de existir enquanto um espera o outro.
+      if (!ehFuncaoInexistente(error)) throw new Error(error.message);
+      bancoTemBuscaIndexada = false;
+    }
+
+    return this.searchMessagesLegado(ids, termo, limite);
+  },
+
+  /**
+   * O caminho anterior, por ILIKE das variantes acentuadas. Fica de reserva
+   * para o banco que ainda não recebeu `wa_buscar_mensagens` — é lento e
+   * impreciso (ver acima), mas responder devagar é melhor do que não responder.
+   */
+  async searchMessagesLegado(
+    ids: string[] | null,
+    termo: string,
+    limite: number,
+  ): Promise<WhatsAppMessageHit[]> {
     let q = supabase.from(MSG_TABLE).select(MSG_COLUMNS_BUSCA);
     if (ids !== null) q = ids.length === 1 ? q.eq('conversation_id', ids[0]) : q.in('conversation_id', ids);
     const { data, error } = await q
       .is('deleted_at', null)
       .or(ouIlikeSemAcento(termo, ['content', 'transcription_text', 'file_name']))
       .order('wa_timestamp', { ascending: false })
-      .limit(opts?.limit ?? 80);
+      .limit(limite);
 
     if (error) throw new Error(error.message);
     return ((data || []) as unknown) as WhatsAppMessageHit[];
   },
+
 
   /**
    * O TEXTO de uma mensagem, para quem só precisa da prévia do aviso.
